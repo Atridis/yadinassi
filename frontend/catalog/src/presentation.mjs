@@ -24,3 +24,11 @@ export function workspacePreview(previous,snapshot){
     list:previous?.list?.catalog===catalog?previous.list:null,
   };
 }
+
+/** Check results belong to the current list snapshot, never the editor preview. */
+export function listCheckPresentation(snapshot){
+  const state=snapshot?.state;
+  if(state?.kind!=='list'||state.editor||!state.listCheck?.available)
+    return {available:false,messages:[]};
+  return {available:true,messages:state.listCheck.messages||[]};
+}

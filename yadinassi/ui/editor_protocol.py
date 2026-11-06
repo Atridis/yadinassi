@@ -9,7 +9,7 @@ from .protocol import (UIError, MAX_COUNTER, bounded_text, counter, decode_line,
                        decode_value, encode_line, uuid_text)
 
 PROTOCOL = 'yadinassi-editor/0'
-_EVENTS = {'selectCatalog': {'catalog'}, 'create': set(), 'openCard': {'reference'},
+_EVENTS = {'checkCard': {'reference'}, 'selectCatalog': {'catalog'}, 'create': set(), 'openCard': {'reference'},
            'change': {'control', 'value'}, 'command': {'control'}, 'closeCard': set(),
            'page': {'offset', 'limit'}, 'close': set(), 'addRow': {'section'},
            'deleteRow': {'section', 'row'}, 'changeRow': {'section', 'row', 'value'}}
@@ -33,7 +33,8 @@ def validate_request(value):
             raise UIError('invalid_message')
         counter(params['baseRevision'])
         if event == 'selectCatalog': uuid_text(params['catalog'], nonzero=True)
-        elif event == 'openCard': decode_value(params['reference'])
+        elif event in ('openCard', 'checkCard'):
+            if event != 'checkCard' or params['reference'] is not None: decode_value(params['reference'])
         elif event in ('change', 'command'):
             bounded_text(params['control'], 128)
             if event == 'change': decode_value(params['value'])
@@ -113,7 +114,8 @@ class CatalogEditorSession:
             if params['baseRevision'] != self.revision: raise UIError('stale_revision')
             values = {key: item for key, item in params.items() if key not in ('event', 'baseRevision')}
             for key in ('value', 'reference'):
-                if key in values: values[key] = decode_value(values[key])
+                if key in values and not (params['event'] == 'checkCard' and values[key] is None):
+                    values[key] = decode_value(values[key])
             try:
                 self.application.event(params['event'], **values)
             finally:

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {THEME_KEY,themePreference,resolvedTheme,readTheme,rememberTheme,workspacePreview} from '../src/presentation.mjs';
+import {THEME_KEY,themePreference,resolvedTheme,readTheme,rememberTheme,workspacePreview,listCheckPresentation} from '../src/presentation.mjs';
 
 test('new or invalid preferences default to dark independent of OS',()=>{
   for(const value of [undefined,null,'','auto','DARK','session=secret',{},false]){
@@ -49,4 +49,23 @@ test('return refreshes preview and closing clears all retained navigation',()=>{
   const refreshed={...list,rows:[{description:'Saved value'}]};
   assert.equal(workspacePreview(previous,{state:{kind:'list',catalogs,list:refreshed}}).list,refreshed);
   for(const snapshot of [null,{state:{kind:'closed'}}])assert.deepEqual(workspacePreview(previous,snapshot),{catalogs:[],list:null});
+});
+
+test('list check is enabled only by the current supported list snapshot',()=>{
+  const messages=[{text:'Карточка проверена',field:''}];
+  assert.deepEqual(listCheckPresentation({state:{kind:'list',listCheck:{available:true,messages}}}),{available:true,messages});
+  for(const snapshot of [null,browsing,{state:{kind:'list',listCheck:{available:false,messages}}}])
+    assert.deepEqual(listCheckPresentation(snapshot),{available:false,messages:[]});
+});
+test('list check never reuses diagnostics while an editor or closed state is shown',()=>{
+  const listCheck={available:true,messages:[{text:'Old result',field:'Name'}]};
+  for(const state of [{kind:'editor'},{kind:'closed'},{kind:'catalogs'},{kind:'list',editor:{dirty:true}}])
+    assert.deepEqual(listCheckPresentation({state:{...state,listCheck}}),{available:false,messages:[]});
+});
+test('fresh list snapshots clear prior results and preserve diagnostic text literally',()=>{
+  const messages=[{text:'<script>untrusted</script>',field:'<Name>'}];
+  const snapshot={state:{kind:'list',listCheck:{available:true,messages}}};
+  assert.deepEqual(listCheckPresentation(snapshot).messages,messages);
+  assert.deepEqual(listCheckPresentation({state:{kind:'list',listCheck:{available:true,messages:[]}}}).messages,[]);
+  assert.deepEqual(listCheckPresentation({state:{kind:'list',listCheck:{available:true}}}).messages,[]);
 });

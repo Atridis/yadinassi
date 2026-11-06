@@ -1,4 +1,4 @@
-/** One opt-in reference-row scenario: authored by default, exact demo with --demo-products. No native parity claim. */
+/** One opt-in scenario: authored rows, demo products, or demo product list check. No native parity claim. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir,readlink,realpath,open as openFile} from 'node:fs/promises';
@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import {launchOutputReader,allowedRequest,childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
 const args=process.argv.slice(2);
-assert.ok(args.length===0||(args.length===1&&args[0]==='--demo-products'),'invalid_arguments');
+assert.ok(args.length===0||(args.length===1&&['--demo-products','--demo-product-list-check'].includes(args[0])),'invalid_arguments');
 const demoProducts=args.length===1;
+const demoProductListCheck=args[0]==='--demo-product-list-check';
 const startedAt=Date.now();
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
@@ -28,7 +29,7 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>{if(browserGroup)try{process.kill(-browserGroup,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}};
 const abort=()=>{aborted=true;killHost('SIGKILL');killBrowser();};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:demoProducts?'demo_products_v1':'authored-logical-reference-rows',expectedScenarios:1};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:demoProductListCheck?'demo_products_list_check_v1':demoProducts?'demo_products_v1':'authored-logical-reference-rows',expectedScenarios:1};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>JSON.parse(execFileSync(python,[path.join(repo,'tests/browser_ui/reference_rows_fixture.py'),mode,owned],
   {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','pipe']}));
@@ -90,7 +91,8 @@ async function main(){
   for(const required of ['tests/browser_ui/reference_rows_browser_qa.mjs','tests/browser_ui/reference_rows_fixture.py',
     'tests/browser_ui/support.mjs','tests/browser_ui/package-lock.json'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
   if(demoProducts)for(const required of ['Configuration.xml','Catalogs/Номенклатура.xml',
-    'Catalogs/Номенклатура/Ext/ObjectModule.bsl','Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl'])
+    'Catalogs/Номенклатура/Ext/ObjectModule.bsl','Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
+    ...(demoProductListCheck?['Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl']:[])])
     assert.ok(names.includes('tests/fixtures/demo_cf/source/'+required),'original_fixture_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
@@ -157,9 +159,18 @@ async function main(){
   });
   page=await context.newPage();page.setDefaultTimeout(10000);
   await page.goto(url);
-  await scenario(demoProducts?'original_product_normalize_save_restart_refuse_delete_discard':'create_save_restart_reopen_delete_discard_reference_row',async()=>{
+  await scenario(demoProductListCheck?'original_product_list_check_repeat_dirty_discard_restart':demoProducts?'original_product_normalize_save_restart_refuse_delete_discard':'create_save_restart_reopen_delete_discard_reference_row',async()=>{
     phase='create_product_and_reference_row';
     await page.getByRole('button',{name:demoProducts?/^Номенклатура\s*›?$/:/^Products\s*›?$/}).click();
+    if(demoProductListCheck){
+      phase='check_without_selected_product';
+      await recordsReady();
+      assert.equal(await button('Проверить карточку').count(),1,'empty_list_check_missing');
+      await button('Проверить карточку').click();
+      await page.getByRole('status',{name:'Результат проверки карточки',exact:true})
+        .filter({hasText:'Выберите номенклатуру в списке.'}).waitFor();
+      await recordsReady();
+    }
     await button('+ New record').click();
     if(demoProducts){
       assert.equal(await field('Code').isDisabled(),true,'original_code_not_readonly');
@@ -180,6 +191,60 @@ async function main(){
     await persistedRow();
     await button('← Back to records').click();await recordsReady();
     assert.equal(await page.locator('.records tbody tr').count(),1,'created_record_count_mismatch');
+    if(demoProductListCheck){
+      const diagnostics=()=>page.getByRole('status',{name:'Результат проверки карточки',exact:true});
+      const validMessage='Карточка заполнена корректно: указан действующий вид и неповторяющиеся склады хранения.';
+      const durableBefore=audit();
+      const checkSaved=async()=>{
+        await recordsReady();
+        assert.equal(await page.locator('.records tbody tr').count(),1,'saved_product_count_mismatch');
+        assert.equal(await page.locator('.records tbody tr').getByRole('button',{name:'Проверить карточку',exact:true}).count(),1,'row_check_missing');
+        // Observe this click's RPC so an old identical success message cannot
+        // satisfy the repeated-check assertion before the request completes.
+        const response=page.waitForResponse(reply=>reply.url()===origin+'/rpc'&&
+          reply.request().postDataJSON()?.params?.event==='checkCard');
+        await button('Проверить карточку').click();
+        await (await response).finished();
+        await diagnostics().filter({hasText:validMessage}).waitFor();
+        await recordsReady();
+        assert.equal(await diagnostics().innerText(),validMessage,'saved_check_diagnostic_mismatch');
+        assert.deepEqual(audit(),durableBefore,'list_check_changed_durable_identity_or_revision');
+      };
+      phase='check_saved_product';await checkSaved();
+      phase='repeat_saved_product_check';await checkSaved();
+      await screenshot('list.png');
+      phase='dirty_editor_cannot_check';
+      await button('Open →').click();await persistedRow();
+      await button('Delete row 1 from Склады').click();
+      await page.getByText('No rows. Add a row to select a reference.',{exact:true}).waitFor();
+      await ready();
+      await page.locator('.editor .badge.dirty').filter({hasText:'Unsaved changes'}).waitFor();
+      assert.equal(await button('Проверить карточку').count(),0,'list_check_exposed_in_editor');
+      assert.equal(await diagnostics().count(),0,'stale_list_diagnostic_in_editor');
+      assert.deepEqual(audit(),durableBefore,'dirty_editor_changed_saved_card');
+      await screenshot('editor.png');
+      phase='discard_then_check_saved_product';
+      await button('Discard & return').click();await recordsReady();
+      assert.equal(await diagnostics().count(),0,'stale_list_diagnostic_after_discard');
+      await checkSaved();
+      phase='close_list_check_runtime';await closeHostThroughUI();
+      assert.deepEqual(audit(),durableBefore,'close_changed_saved_card');
+      phase='restart_list_check_runtime';
+      await startHost();await page.goto(url);
+      await page.getByRole('button',{name:/^Номенклатура\s*›?$/}).click();
+      await recordsReady();
+      assert.equal(await diagnostics().count(),0,'stale_list_diagnostic_after_restart');
+      await checkSaved();
+      await page.setViewportSize({width:390,height:844});
+      await screenshot('narrow.png');
+      phase='close_and_audit_list_check';await closeHostThroughUI();
+      assert.deepEqual(audit(),durableBefore,'list_check_restart_changed_saved_card');
+      report.durable={products:1,warehouses:1,kinds:1,referenceRows:1,processRestartVerified:true,
+        emptySelectionDiagnosticVerified:true,persistedCardCheckVerified:true,repeatedCheckVerified:true,
+        dirtyEditorCheckUnavailable:true,discardRestoredSavedCheck:true,
+        checksPreservedAllRecordAndRowIdentitiesAndRevisions:true};
+      return;
+    }
     await screenshot('list.png');
     phase='close_first_runtime';await closeHostThroughUI();
     const durableBefore=audit();

@@ -1017,6 +1017,23 @@ class _View:
         return schemas
 
     @_boundary
+    def product_list_sources(self, catalog_id):
+        """Exact list/object bytes admitted in this same read-only snapshot."""
+        self._require()
+        backend = self._backend
+        if (self._operation_id is not None or backend.storage_version != 6
+                or backend._demo_profile() != DEMO_PRODUCTS_PROFILE):
+            raise BackendError('unsupported')
+        imported, catalogs, _, _ = backend._demo_source_snapshot(self._connection)
+        product = next(c for c in catalogs if c.name == 'Номенклатура')
+        if product.identity != catalog_id:
+            raise BackendError('unsupported')
+        files = {f.path: f.content for f in imported.files}
+        base = 'Catalogs/Номенклатура/'
+        return (files[base + 'Forms/ФормаСписка/Ext/Form/Module.bsl'],
+                files[base + 'Ext/ObjectModule.bsl'])
+
+    @_boundary
     def catalog_schema(self, catalog_id):
         self._require(); _uuid(catalog_id)
         row = self._connection.execute('SELECT definition FROM catalog_schema WHERE identity=?', (str(catalog_id),)).fetchone()
