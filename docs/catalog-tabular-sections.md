@@ -47,7 +47,7 @@ Validation errors, duplicate codes and stale revisions preserve the edit buffer 
 
 ## Explicit boundaries
 
-Interpreter activation opts into this bounded section adapter. Existing UI activation does not opt in and continues to refuse section-bearing databases; no UI editor or renderer code is changed. Direct `Ref.Section` and `Selection.Section` access remain unsupported: obtain the detached object with `GetObject()`.
+Interpreter activation opts into this bounded section adapter. The [bounded reference-row editor](catalog-editor.md#reference-row-sections-experimental-host-adapter) also opts in for already-admitted logical schemas; other section shapes remain explicitly read-only in that UI. This does not activate original imported product forms. Direct `Ref.Section` and `Selection.Section` access remain unsupported: obtain the detached object with `GetObject()`.
 
 Dynamic section/row TypeOf descriptors, presentation strings, external codecs/transport, LineNumber/НомерСтроки, row UUID APIs, nested metadata collections, Insert/Move/Sort/Find/Load/Unload/Copy and unlisted methods remain unsupported. Row identity and lifecycle are internal local choices until appropriate behavior evidence exists. References still obey the backend's create-time existence checks described in the [storage contract](sqlite-catalog-sections.md).
 

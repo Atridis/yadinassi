@@ -8,16 +8,16 @@
     "package.json": "3d21d35754f9d16f1e07b239c27a8b31b6451efeb2f0189372203ae5e9266d09",
     "package-lock.json": "33747f75a1c0c7ad808932f1a4530ac0b9ed273f3fe7918413c8240ba49dbb92",
     "build.mjs": "e3859fd740adb7c6c5ec69ad719df647c4fb9e017058871011bca32d8c3a7d27",
-    "src/app.jsx": "1c699e4d67d6b9fad21a891a2c3ca6385ee6174a08a4b24fa73f94fd5c658e55",
-    "src/client.mjs": "d9409c75a041bbd6cadb7fd782ba4c96fec701e99e647d2b756799cd8c4fa58d",
+    "src/app.jsx": "c25fe7e7fdabe819c46430d459d3fc9013c97bb9b8dda2b0d2af2256cad288e4",
+    "src/client.mjs": "f22e96e762ee1c1aafa1fd4377fe0e3009cc93285906c89df93a0d640e770868",
     "src/presentation.mjs": "789bab01730a6766ddfbb662edc31d692d5df30c4a3575a45feee6d517840309",
     "src/index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
-    "src/style.css": "025c58cfd58fbe49357f71a4551e8eff7f86f163bf96688470d92e1646f85a02"
+    "src/style.css": "f65edf99766705ceed50ff85894cca91e64a7d7792beb389cf8a41af0b95ec36"
   },
   "outputs": {
-    "app.js": "ae85277d33f3b7f682a85d26b0271f6c0572ba830daf72e5f03de61bb855ce75",
+    "app.js": "83ee84078732738a277e071c26c4840c06ec1f68a6b16a2539ffa462e735116a",
     "index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
-    "style.css": "025c58cfd58fbe49357f71a4551e8eff7f86f163bf96688470d92e1646f85a02",
+    "style.css": "f65edf99766705ceed50ff85894cca91e64a7d7792beb389cf8a41af0b95ec36",
     "LICENSE.txt": "1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4"
   }
 }

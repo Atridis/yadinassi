@@ -56,6 +56,62 @@ export function typedInput(field,value){
   if(field.kind==='datetime'&&/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}$/.test(value))value+=':00';
   return {type:'String',value};
 }
+
+// Display row numbers may change after deletion. Only the host-issued row UUID
+// and section name identify a draft or a row event; never use array indexes.
+export const rowDraftKey=(section,row)=>JSON.stringify([section,row]);
+export function editorDraft(editor){
+  return {
+    fields:Object.fromEntries((editor?.fields||[]).map(field=>[field.control,field.inputText])),
+    rows:Object.fromEntries((editor?.sections||[]).flatMap(section=>
+      section.rows.map(row=>[rowDraftKey(section.name,row.id),row.field.inputText])))
+  };
+}
+export function reconcileDraft(editor,draft){
+  const fresh=editorDraft(editor);
+  for(const kind of ['fields','rows']){
+    for(const key of Object.keys(fresh[kind])){
+      if(Object.hasOwn(draft[kind]||{},key))fresh[kind][key]=draft[kind][key];
+    }
+  }
+  return fresh;
+}
+function draftChanges(editor,draft){
+  const changes=[];
+  for(const field of editor?.fields||[]){
+    if(Object.hasOwn(draft.fields||{},field.control)&&draft.fields[field.control]!==field.inputText)
+      changes.push({event:'change',field,value:draft.fields[field.control],values:{control:field.control}});
+  }
+  for(const section of editor?.sections||[]){
+    for(const row of section.rows){
+      const key=rowDraftKey(section.name,row.id);
+      if(Object.hasOwn(draft.rows||{},key)&&draft.rows[key]!==row.field.inputText)
+        changes.push({event:'changeRow',field:row.field,readOnly:section.readOnly,value:draft.rows[key],
+          values:{section:section.name,row:row.id}});
+    }
+  }
+  return changes;
+}
+export const hasDraftChanges=(editor,draft)=>draftChanges(editor,draft).length>0;
+export function draftEvents(editor,draft){
+  const changes=draftChanges(editor,draft);
+  if(changes.length&&(editor.editingLocked||editor.sourceStale))throw Error('Editing is locked; current inputs are preserved.');
+  return changes.map(change=>{
+    if(change.readOnly||change.field.readOnly||change.field.enabled===false)
+      throw Error('A changed field is read-only; current inputs are preserved.');
+    return {event:change.event,values:{...change.values,value:typedInput(change.field,change.value)}};
+  });
+}
+export async function flushDraft(client,editor,draft){
+  // Validate the entire batch before sending anything. Each accepted event
+  // advances the client's authoritative revision; a failure stops the batch.
+  for(const change of draftEvents(editor,draft)){
+    const current=client.snapshot?.state?.editor;
+    if(current?.editorId!==editor.editorId||current?.editingLocked||current?.sourceStale)
+      throw Error('Editor changed while applying inputs; current inputs are preserved.');
+    await client.event(change.event,change.values);
+  }
+}
 export async function readBoundedJSON(response){
   if(!response.ok)throw Error(`Local UI transport rejected request (${response.status})`);
   const reader=response.body.getReader();const chunks=[];let size=0;

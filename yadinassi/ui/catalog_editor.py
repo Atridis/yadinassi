@@ -23,6 +23,7 @@ from ..form_event_simulation import VerifiedFormDraftSession
 from ..type_descriptions import BSLTypeDescription
 from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
+from ..catalog_sections import BSLCatalogSection
 from .protocol import CatalogRef, UIError, bounded_text, encode_line, encode_value, uuid_text, MAX_LINE_BYTES
 
 # Fixed reviewed application code. Metadata names and user values are host values,
@@ -110,6 +111,8 @@ class CatalogEditController:
                 raise BackendError('unsupported')
             self._source_record = manager._backend.read_form_source(schema.identity)
             self._source_draft(obj.get_member('Code'), obj.get_member('Description'))
+        self.sections = ReferenceSections(self)
+        self.section_baseline = self._section_values(obj)
         self.fields = []
         self.references = []
         self.reference_fields = {}
@@ -213,6 +216,10 @@ class CatalogEditController:
         reference = self.object.get_member('Ref')
         return CatalogRef(str(self.schema.identity), str(reference.reference_uuid))
 
+    @staticmethod
+    def _section_values(obj):
+        return tuple(section._stored_rows() for section in obj._sections.values())
+
     def _refresh(self):
         reference = self.object.get_member('Ref')
         fresh = reference.get_object(reference)
@@ -221,6 +228,12 @@ class CatalogEditController:
         values = tuple(self._field_value(fresh, field[0]) for field in self.fields)
         # Adoption must follow the form's complete result validation/application.
         # A backend-valid value need not be admitted by this bounded scalar form.
+        patches = dict((field[2], value) for field, value in zip(self.fields, values))
+        patches.update(IsDirty=False, Status="Saved")
+        current = self._action_snapshot
+        prospective = replace(current, attributes=tuple((key, patches.get(key, value))
+                                                       for key, value in current.attributes))
+        self._check_size(prospective, obj=fresh)
         self._refreshed = (fresh, values)
         return FormActionResult(tuple((field[2], value) for field, value in zip(self.fields, values)) +
                                 (('IsDirty', False), ('Status', 'Saved')))
@@ -228,6 +241,7 @@ class CatalogEditController:
     def _accept_refresh(self):
         if self._refreshed is not None:
             self.object, self.baseline = self._refreshed
+            self.section_baseline = self._section_values(self.object)
             self._refreshed = None
             self.pending_refresh = False
             self.pending_commit = False
@@ -252,7 +266,7 @@ class CatalogEditController:
                     self._source_stale = True
                 self.error = 'refresh_required'
                 return FormActionResult((('Status', 'Saved; refresh required'),))
-        if self._source_record is None and not self.pending_commit and not self.object.is_new() and values == self.baseline:
+        if self._source_record is None and not self.pending_commit and not self.object.is_new() and values == self.baseline and self._section_values(self.object) == self.section_baseline:
             self.save_state = 'unchanged'
             return FormActionResult((('IsDirty', False), ('Status', 'No changes')))
         try:
@@ -372,10 +386,32 @@ class CatalogEditController:
         self.save_state = 'editing'
         return result
 
+    def row_event(self, event, section, row=None, value=None):
+        if self.pending_commit or self.pending_refresh:
+            raise UIError('busy')
+        candidate = self.sections.changed(event, section, row, value)
+        current = self.form.snapshot()
+        prospective = replace(current, attributes=tuple(
+            (key, True if key == 'IsDirty' else '' if key == 'Status' else old)
+            for key, old in current.attributes))
+        self._check_size(prospective, sections=candidate)
+        # The reviewed autoform handler owns dirty/close state. No row or save
+        # effect is exposed to BSL or selected by renderer-supplied source.
+        attribute = self.fields[0][2]
+        self.form.dispatch('change', revision=self.form.revision,
+                           control='Input' + attribute, value=dict(current.attributes)[attribute])
+        self.object._sections = candidate
+        self.error = None
+        self.save_state = 'editing'
+
     def command(self, control):
         if control not in ('SaveButton', 'CancelButton'):
             raise UIError('invalid_value')
-        result = self.form.dispatch('command', revision=self.form.revision, control=control)
+        self._action_snapshot = self.form.snapshot()
+        try:
+            result = self.form.dispatch('command', revision=self.form.revision, control=control)
+        finally:
+            self._action_snapshot = None
         if control == 'CancelButton':
             result = self.form.dispatch('close', revision=self.form.revision)
         return result
@@ -385,7 +421,7 @@ class CatalogEditController:
             raise UIError('busy')
         return self.form.dispatch('close', revision=self.form.revision)
 
-    def snapshot(self, form_snapshot=None):
+    def snapshot(self, form_snapshot=None, *, obj=None, sections=None):
         snapshot = self.form.snapshot() if form_snapshot is None else form_snapshot
         values = dict(snapshot.attributes)
         items = {item[0]: item for item in snapshot.items}
@@ -410,6 +446,7 @@ class CatalogEditController:
             'dirty': values['IsDirty'], 'status': values['Status'], 'saveState': self.save_state,
             'error': self.error, 'editingLocked': self.pending_commit or self.pending_refresh,
             'fields': fields, 'references': self.references,
+            'sections': self.sections.snapshot(obj, sections),
             'commands': [{'control': item[0], 'title': item[2], 'visible': item[3], 'enabled': item[4]}
                          for item in snapshot.items if item[1] == 'button'],
             'messages': list(self.form.messages),
@@ -418,17 +455,22 @@ class CatalogEditController:
             'fieldMessages': [{'text': message.text, 'field': message.field}
                               for message in self._source_messages]}
 
-    def _check_size(self, snapshot=None):
+    def _check_size(self, snapshot=None, *, obj=None, sections=None):
         # Reserve space for the transport envelope/status/commit identity. No BSL
         # effect or database write is performed to discover an oversized state.
-        if len(encode_line(self.snapshot(snapshot))) > MAX_LINE_BYTES - 8192:
+        editor = self.snapshot(snapshot, obj=obj, sections=sections)
+        # Exercise the deepest error-envelope shape as well as reserving nodes
+        # for the surrounding session/capabilities fields, not bytes alone.
+        envelope = {'error': {'data': {'snapshot': {'state': {'editor': editor}}}},
+                    'reserved': [None] * 128}
+        if len(encode_line(envelope)) > MAX_LINE_BYTES - 8192:
             raise UIError('message_limit')
 
 
 class CatalogEditorApplication:
     """Host-owned local application service. Renderer never chooses its database."""
     def __init__(self, context):
-        context.require_active()
+        context.require_active(tabular_sections=True)
         self.context = context
         self.backend = context.backend
         self._active_forms = self.backend.active_form_catalogs()
@@ -494,10 +536,11 @@ class CatalogEditorApplication:
             if self.editor is not None or self.view is None: raise UIError('busy')
             self.view.page(values['offset'], values['limit'])
             self.page = (values['offset'], values['limit'])
-        elif event in ('change', 'command', 'closeCard'):
+        elif event in ('change', 'command', 'closeCard', 'addRow', 'deleteRow', 'changeRow'):
             if self.editor is None: raise UIError('closed')
             if event == 'change': self.editor.change(values['control'], values['value'])
             elif event == 'command': self.editor.command(values['control'])
+            elif event in ('addRow', 'deleteRow', 'changeRow'): self.editor.row_event(event, **values)
             else: self.editor.close()
             if self.editor.form.closed:
                 source_stale = self.editor._source_stale
@@ -524,7 +567,7 @@ class CatalogEditorApplication:
                  'list': self.view.page(*self.page) if self.view is not None and self.editor is None else None,
                  'editor': self.editor.snapshot() if self.editor is not None else None}
         return {'capabilities': {'canCreate': writable, 'canEdit': writable, 'canWrite': writable,
-                'referenceEditing': True, 'referenceChoiceLimit': 64, 'actual1CForms': False, 'autoform': True,
+                'referenceEditing': True, 'referenceChoiceLimit': 64, 'referenceRowEditing': True, 'sectionRowLimit': 32, 'actual1CForms': False, 'autoform': True,
                 'standardFormWrite': False, 'remoteService': False,
                 'importedNameValidation': bool(self._active_forms)}, 'state': state}
 
@@ -532,3 +575,93 @@ class CatalogEditorApplication:
         if not self.closed:
             self.closed = True
             self.context.close()
+
+
+MAX_SECTION_ROWS = 32
+
+
+class ReferenceSections:
+    """Captured choices; detached runtime rows retain their opaque identities."""
+    def __init__(self, owner):
+        self.owner = owner
+        self.options = {}
+        for schema in owner.schema.tabular_sections:
+            if len(schema.fields) != 1 or schema.fields[0].kind != 'catalog_ref':
+                continue
+            field = schema.fields[0]
+            repository = CatalogRepository(owner.manager._backend, own_backend=False)
+            try:
+                target = repository.load(str(field.target_catalog_id))
+            except UIError as error:
+                if error.code != 'catalog_unavailable':
+                    raise
+                target = None
+            finally:
+                repository.close()
+            if target is None or len(target.cards) > 64:
+                continue
+            choices = {str(UUID(int=0)): 'Empty reference'}
+            choices.update((card.reference.record, _reference_label(
+                card.value('Code'), card.value('Description')))
+                for card in target.cards if not card.value('DeletionMark'))
+            self.options[schema.name] = choices
+
+    def snapshot(self, obj=None, replacement=None):
+        obj = self.owner.object if obj is None else obj
+        sections = obj._sections if replacement is None else replacement
+        total = sum(len(section._rows) for section in sections.values())
+        result = []
+        for schema in self.owner.schema.tabular_sections:
+            section = sections[schema.name.casefold()]
+            choices = self.options.get(schema.name)
+            reason = ('section-profile-unsupported' if len(schema.fields) != 1 or schema.fields[0].kind != 'catalog_ref'
+                      else 'reference-options-unavailable' if choices is None
+                      else 'section-row-limit' if total > MAX_SECTION_ROWS else None)
+            item = {'name': schema.name, 'title': schema.name, 'readOnly': reason is not None,
+                    'reason': reason, 'rowCount': len(section._rows), 'rows': [],
+                    'canAdd': reason is None and total < MAX_SECTION_ROWS}
+            if reason is None:
+                field = schema.fields[0]
+                for index, row in enumerate(section._rows):
+                    value = row.get_member(field.name)
+                    record = str(value.reference_uuid)
+                    item['rows'].append({'id': str(row._identity), 'number': index + 1,
+                        'field': {'name': field.name, 'kind': 'catalog_ref',
+                            'value': encode_value(CatalogRef(str(field.target_catalog_id), record)),
+                            'inputText': record, 'choices': [{'value': key, 'label': label} for key, label in choices.items()],
+                            'readOnly': record not in choices}})
+            result.append(item)
+        return result
+
+    def changed(self, event, name, row=None, value=None):
+        owner = self.owner
+        state = next((item for item in self.snapshot() if item['name'] == name), None)
+        if state is None or state['readOnly']:
+            raise UIError('invalid_value')
+        schema = next(s for s in owner.schema.tabular_sections if s.name == name)
+        original = owner.object._sections[name.casefold()]
+        candidate = BSLCatalogSection(owner.object, schema, original._stored_rows().rows)
+        if event == 'addRow':
+            if not state['canAdd']:
+                raise UIError('invalid_value')
+            candidate.add()
+        else:
+            current = next((r for r in candidate._rows if str(r._identity) == row), None)
+            if current is None:
+                raise UIError('invalid_value')
+            if event == 'deleteRow':
+                candidate.delete(current)
+            elif event == 'changeRow':
+                field = schema.fields[0]
+                choices = self.options[name]
+                if (str(current.get_member(field.name).reference_uuid) not in choices
+                        or type(value) is not CatalogRef or value.catalog != str(field.target_catalog_id)
+                        or value.record not in choices):
+                    raise UIError('invalid_value')
+                manager = owner.manager._catalogs._manager_by_metadata_uuid(field.target_catalog_id)
+                current.set_member(field.name, manager.get_ref(BSLUUID(value.record)))
+            else:
+                raise UIError('invalid_value')
+        sections = dict(owner.object._sections)
+        sections[name.casefold()] = candidate
+        return sections

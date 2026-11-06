@@ -28,8 +28,8 @@ class SQLiteDBContext:
         if type(tabular_sections) is not bool: raise BackendError('invalid_input')
         if self._backend.storage_version == 5 or not self._backend.activated:
             raise BackendError('unsupported')
-        # Only the bounded BSL adapter opts in. Existing UI callers remain
-        # closed until they have a real tabular-section editor.
+        # Callers opt in explicitly. The BSL adapter and bounded reference-row
+        # editor do so; other consumers retain the default refusal.
         if self._backend.capabilities().catalog_tabular_sections and not tabular_sections:
             raise BackendError('unsupported')
 
