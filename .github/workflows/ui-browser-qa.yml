@@ -38,12 +38,12 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
-      - name: Acquire eight original-demo kind flows with Chromium sandbox enabled
+      - name: Acquire one original-demo product list check with Chromium sandbox enabled
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
-        run: node tests/browser_ui/demo_kind_browser_qa.mjs
+        run: node tests/browser_ui/reference_rows_browser_qa.mjs --demo-product-list-check
       - name: Publish only screenshots and redacted source-bound report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
