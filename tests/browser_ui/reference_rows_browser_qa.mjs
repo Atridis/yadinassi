@@ -1,4 +1,4 @@
-/** One opt-in authored reference-row browser scenario. No original/native parity claim. */
+/** One opt-in reference-row scenario: authored by default, exact demo with --demo-products. No native parity claim. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir,readlink,realpath,open as openFile} from 'node:fs/promises';
@@ -8,6 +8,9 @@ import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import {launchOutputReader,allowedRequest,childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
+const args=process.argv.slice(2);
+assert.ok(args.length===0||(args.length===1&&args[0]==='--demo-products'),'invalid_arguments');
+const demoProducts=args.length===1;
 const startedAt=Date.now();
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
@@ -25,11 +28,11 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>{if(browserGroup)try{process.kill(-browserGroup,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}};
 const abort=()=>{aborted=true;killHost('SIGKILL');killBrowser();};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'authored-logical-reference-rows',expectedScenarios:1};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:demoProducts?'demo_products_v1':'authored-logical-reference-rows',expectedScenarios:1};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>JSON.parse(execFileSync(python,[path.join(repo,'tests/browser_ui/reference_rows_fixture.py'),mode,owned],
   {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','pipe']}));
-const audit=()=>fixture('audit');
+const audit=()=>fixture(demoProducts?'audit-products':'audit');
 function killHost(signal){if(host?.pid)try{process.kill(-host.pid,signal);}catch(e){if(e.code!=='ESRCH')throw e;}}
 async function stopHost(){if(!host)return;const done=host.exitCode!==null||host.signalCode!==null;if(!done){const ended=new Promise(r=>host.once('exit',r));killHost('SIGINT');try{await bounded(ended,5000,'host_close_timeout');}catch{killHost('SIGKILL');await bounded(ended,2000,'host_kill_timeout');}}killHost('SIGKILL');}
 async function startHost(){
@@ -44,7 +47,7 @@ async function startHost(){
 }
 const button=name=>page.getByRole('button',{name,exact:true});
 const field=name=>page.getByLabel(name,{exact:true});
-const warehouseRow=()=>field('Warehouses row 1: Warehouse');
+const warehouseRow=()=>field(demoProducts?'Склады row 1: Склад':'Warehouses row 1: Warehouse');
 const ready=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(
   button=>button.textContent==='Save changes'&&!button.disabled));
 async function recordsReady(){
@@ -54,11 +57,15 @@ async function recordsReady(){
 }
 async function persistedRow(){
   await warehouseRow().waitFor();await ready();
-  assert.equal(await field('Code').inputValue(),'ROWQA1','saved_code_mismatch');
-  assert.equal(await field('Description').inputValue(),'Browser row persistence','saved_description_mismatch');
+  assert.equal(await field('Code').inputValue(),demoProducts?'000000001':'ROWQA1','saved_code_mismatch');
+  assert.equal(await field('Description').inputValue(),demoProducts?'Кабель USB-C':'Browser row persistence','saved_description_mismatch');
   assert.equal(await page.locator('table.section-rows tbody tr').count(),1,'saved_row_count_mismatch');
-  assert.equal(await warehouseRow().locator('option:checked').innerText(),'WH1 · Main warehouse','saved_reference_mismatch');
+  assert.equal(await warehouseRow().locator('option:checked').innerText(),demoProducts?'000000001 · Основной склад':'WH1 · Main warehouse','saved_reference_mismatch');
   assert.equal(await warehouseRow().isDisabled(),false,'reference_unexpectedly_readonly');
+  if(demoProducts){
+    assert.equal(await field('Code').isDisabled(),true,'original_code_not_readonly');
+    assert.equal(await field('ВидНоменклатуры').locator('option:checked').innerText(),'000000001 · Товары','saved_kind_mismatch');
+  }
 }
 async function screenshot(name){
   assert.ok(['list.png','editor.png','narrow.png'].includes(name),'unexpected_screenshot');
@@ -79,14 +86,17 @@ async function main(){
   const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',timeout:remaining(5000),maxBuffer:1024*1024}).trim();
   assert.equal(report.sourceCommit,process.env.QA_SOURCE_SHA,'source_commit_mismatch');
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','.github/workflows/ui-browser-qa.yml',...(demoProducts?['tests/fixtures/demo_cf/source']:[])).split('\0').filter(Boolean);
   for(const required of ['tests/browser_ui/reference_rows_browser_qa.mjs','tests/browser_ui/reference_rows_fixture.py',
     'tests/browser_ui/support.mjs','tests/browser_ui/package-lock.json'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
+  if(demoProducts)for(const required of ['Configuration.xml','Catalogs/Номенклатура.xml',
+    'Catalogs/Номенклатура/Ext/ObjectModule.bsl','Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl'])
+    assert.ok(names.includes('tests/fixtures/demo_cf/source/'+required),'original_fixture_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
   report.versions={node:process.version,playwright:JSON.parse(await readFile(new URL('./node_modules/playwright/package.json',import.meta.url),'utf8')).version};
   assert.equal(report.versions.playwright,'1.64.1');
-  phase='authored_fixture';assert.equal(fixture('seed').seeded,true);
+  phase=demoProducts?'original_product_fixture':'authored_fixture';assert.equal(fixture(demoProducts?'seed-products':'seed').seeded,true);
   phase='browser_socket_path_preflight';
   assert.ok(Buffer.byteLength(path.join(home,'org.chromium.Chromium.XXXXXX','SingletonSocket'))<108,
     'socket_path_too_long');
@@ -147,14 +157,23 @@ async function main(){
   });
   page=await context.newPage();page.setDefaultTimeout(10000);
   await page.goto(url);
-  await scenario('create_save_restart_reopen_delete_discard_reference_row',async()=>{
+  await scenario(demoProducts?'original_product_normalize_save_restart_refuse_delete_discard':'create_save_restart_reopen_delete_discard_reference_row',async()=>{
     phase='create_product_and_reference_row';
-    await page.getByRole('button',{name:/^Products\s*›?$/}).click();
+    await page.getByRole('button',{name:demoProducts?/^Номенклатура\s*›?$/:/^Products\s*›?$/}).click();
     await button('+ New record').click();
-    await field('Code').fill('ROWQA1');
-    await field('Description').fill('Browser row persistence');
-    await button('Add row to Warehouses').click();
-    await warehouseRow().selectOption({label:'WH1 · Main warehouse'});
+    if(demoProducts){
+      assert.equal(await field('Code').isDisabled(),true,'original_code_not_readonly');
+      await field('Description').fill('  Кабель USB-C  ');
+      await field('Description').press('Tab');
+      await page.waitForFunction(()=>document.querySelector('input[aria-label="Description"]')?.value==='Кабель USB-C');
+      await ready();
+      await field('ВидНоменклатуры').selectOption({label:'000000001 · Товары'});
+    }else{
+      await field('Code').fill('ROWQA1');
+      await field('Description').fill('Browser row persistence');
+    }
+    await button(demoProducts?'Add row to Склады':'Add row to Warehouses').click();
+    await warehouseRow().selectOption({label:demoProducts?'000000001 · Основной склад':'WH1 · Main warehouse'});
     phase='save_and_return';
     await button('Save changes').click();
     await page.getByRole('status').filter({hasText:/^Saved$/}).waitFor();
@@ -166,16 +185,26 @@ async function main(){
     const durableBefore=audit();
     phase='restart_runtime_and_reopen';
     await startHost();await page.goto(url);
-    await page.getByRole('button',{name:/^Products\s*›?$/}).click();
+    await page.getByRole('button',{name:demoProducts?/^Номенклатура\s*›?$/:/^Products\s*›?$/}).click();
     await button('Open →').click();await persistedRow();
     assert.deepEqual(audit(),durableBefore,'restart_changed_persisted_identity');
     await screenshot('editor.png');
     phase='delete_then_discard';
-    await button('Delete row 1 from Warehouses').click();
+    await button(demoProducts?'Delete row 1 from Склады':'Delete row 1 from Warehouses').click();
     await page.getByText('No rows. Add a row to select a reference.',{exact:true}).waitFor();
     await ready();
     assert.equal(await page.locator('table.section-rows tbody tr').count(),0,'row_not_removed_from_draft');
     await page.locator('.editor .badge.dirty').filter({hasText:'Unsaved changes'}).waitFor();
+    if(demoProducts){
+      phase='original_handler_refuses_last_row_save';
+      await button('Save changes').click();
+      await page.getByRole('status').filter({hasText:/^Save refused by original form handler$/}).waitFor();
+      await page.getByRole('alert').filter({hasText:'Укажите хотя бы один склад хранения.'}).waitFor();
+      await ready();
+      assert.equal(await page.locator('table.section-rows tbody tr').count(),0,'refusal_lost_draft');
+      await page.locator('.editor .badge.dirty').filter({hasText:'Unsaved changes'}).waitFor();
+      assert.deepEqual(audit(),durableBefore,'refused_save_changed_durable_record_or_row');
+    }
     await button('Discard & return').click();await recordsReady();
     phase='reopen_after_discard';
     await button('Open →').click();await persistedRow();
@@ -184,7 +213,8 @@ async function main(){
     phase='close_and_audit_discard';await closeHostThroughUI();
     assert.deepEqual(audit(),durableBefore,'discard_changed_durable_record_or_row');
     report.durable={products:1,warehouses:1,referenceRows:1,processRestartVerified:true,
-      savedReferencePreserved:true,discardPreservedRowIdentityAndRevision:true};
+      savedReferencePreserved:true,discardPreservedRowIdentityAndRevision:true,
+      ...(demoProducts?{kinds:1,originalNameNormalizationVerified:true,lastRowSaveRefused:true,refusalPreservedRowIdentityAndRevision:true}:{})};
   });
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');
   assert.equal(git('rev-parse','HEAD'),report.sourceCommit,'source_commit_changed');

@@ -276,6 +276,13 @@ class BSLCatalogObject(BSLObject):
             # Never reinterpret a previously submitted ordinary write as one
             # protected by a new source/validation contract.
             raise BackendError('uncertain_commit')
+        if self._pending_write is None:
+            policy = getattr(m._backend, 'catalog_write_preparation', None)
+            source = policy(m._schema.identity) if policy is not None else None
+            if source is not None:
+                if preparation is not None and preparation[0] != source:
+                    raise BackendError('schema_changed')
+                preparation = (source, preparation[1] if preparation is not None else False)
         retry=self._pending_write is not None
         if self._pending_write is not None:
             draft,expected,operation=self._pending_write

@@ -327,3 +327,148 @@ class VerifiedFormDraftSession:
         self._verify_source()
         self._require_revision(revision)
         return candidate
+
+
+@dataclass(frozen=True, slots=True)
+class ProductFormEventResult:
+    """Messages/cancellation only, not persistence authority or native parity."""
+    cancel: bool
+    messages: tuple
+    native_parity: bool = False
+
+
+def simulate_product_form_event(form_source, object_source, receiver, *, event,
+                                current_row_id=None, cancel=False):
+    """Execute one pinned original demo handler over a disposable host candidate.
+
+    The trusted host authenticates stored sources/schema and clones its draft
+    before calling. Errors may mutate this candidate, never the live draft or
+    durable state. No archive activation, managed-form dispatch or writes occur.
+    Server preparation is informational; saving still requires the atomic writer.
+    Row UUIDs identify current buffer rows, never native line numbers.
+    """
+    from .catalogs import BSLCatalogObject
+    from .catalog_object_preparation import _ObjectInterpreter
+    from .configuration_xml import _DEMO_KINDS_SOURCE_SHA256
+    from .syntax.parser import parse
+    from .values import BSLObject, Reference
+    import re
+
+    handlers = {'DescriptionOnChange': 'НаименованиеПриИзменении',
+                'KindOnChange': 'ВидНоменклатурыПриИзменении',
+                'WarehouseOnChange': 'СкладыСкладПриИзменении',
+                'BeforeWriteAtServer': 'ПередЗаписьюНаСервере'}
+    if type(receiver) is not BSLCatalogObject or type(cancel) is not bool:
+        raise TypeError('product form: exact object and Boolean required')
+    if receiver._pending_write is not None:
+        raise BackendError('uncertain_commit')
+    if type(event) is not str or event not in handlers:
+        raise ValueError('product form: unsupported event')
+    if event != 'BeforeWriteAtServer' and cancel:
+        raise ValueError('product form: cancellation belongs to server event')
+    if current_row_id is not None and (event != 'WarehouseOnChange'
+            or type(current_row_id) is not UUID or not current_row_id.int):
+        raise ValueError('product form: invalid current row')
+    base = 'Catalogs/Номенклатура/'
+    for source, path in ((form_source, base + 'Forms/ФормаЭлемента/Ext/Form/Module.bsl'),
+                         (object_source, base + 'Ext/ObjectModule.bsl')):
+        if type(source) is not bytes or sha256(source).hexdigest() != _DEMO_KINDS_SOURCE_SHA256[path]:
+            raise ValueError('product form: original source required')
+    schema = receiver._manager._schema
+    if (schema.name != 'Номенклатура' or len(schema.fields) != 1
+            or len(schema.tabular_sections) != 1):
+        raise ValueError('product form: unsupported schema')
+    kind = schema.fields[0]
+    section = schema.tabular_sections[0]
+    if (kind.name != 'ВидНоменклатуры' or kind.kind != 'catalog_ref'
+            or kind.qualifiers or section.name != 'Склады' or len(section.fields) != 1
+            or section.fields[0].name != 'Склад' or section.fields[0].kind != 'catalog_ref'
+            or section.fields[0].qualifiers):
+        raise ValueError('product form: unsupported fields')
+    catalogs = receiver._manager._catalogs
+    for field, name in ((kind, 'ВидыНоменклатуры'), (section.fields[0], 'Склады')):
+        target = catalogs._manager_by_metadata_uuid(field.target_catalog_id)._schema
+        if target.name != name or target.fields or target.tabular_sections:
+            raise ValueError('product form: unsupported reference target')
+    rows = receiver._sections['склады']._rows
+    if len(rows) > 32:
+        raise ValueError('product form: row limit')
+    current = None
+    if current_row_id is not None:
+        matches = [row for row in rows if row._identity == current_row_id and row._attached]
+        if len(matches) != 1:
+            raise ValueError('product form: stale current row')
+        current = matches[0]
+
+    class Members(BSLObject):
+        def __init__(self, members):
+            self.members = members
+
+        def get_member(self, name):
+            if name.casefold() not in self.members:
+                raise ValueError('product form: unavailable control member')
+            return self.members[name.casefold()]
+
+    records = []
+
+    def sink(record):
+        if (type(record) is not UserMessageRecord or type(record.text) is not str
+                or not 1 <= len(record.text) <= 1024 or '\x00' in record.text
+                or type(record.field) is not str
+                or re.fullmatch(r'(?:Объект\.)?(?:Наименование|ВидНоменклатуры|Склады(?:\[(?:[0-9]{1,2})?\]\.Склад)?)', record.field) is None
+                or len(records) >= 128):
+            raise ValueError('product form: message outside profile')
+        # Deliberately drop object navigation/data identity from original records.
+        records.append(FormEventMessage(record.text, record.field))
+
+    class ProductInterpreter(_ObjectInterpreter):
+        def __init__(self):
+            super().__init__(receiver, sink)
+            self.member_names |= {'текущиеданные'}
+
+        def _object_name(self, name):
+            # Form globals do not implicitly alias the object's unqualified fields.
+            return False
+
+        def call(self, node, *, require_value):
+            callee = self.ungroup(node.callee)
+            if type(callee) is ast.Attribute and callee.name.casefold() == 'подготовитьданныекзаписи':
+                if (require_value or len(node.arguments) != 1
+                        or (yield from self.receiver(callee.object)) is not receiver):
+                    raise ValueError('product form: invalid preparation call')
+                argument = yield from self.argument(node.arguments[0])
+                if not isinstance(argument, Reference) or type(argument.get()) is not bool:
+                    raise ValueError('product form: cancellation reference required')
+                object_vm = _ObjectInterpreter(receiver, sink)
+                try:
+                    object_vm.execute_program(parse(object_source.decode('utf-8-sig')))
+                    object_vm.variables['отказ'] = argument.get()
+                    object_vm.execute('ПодготовитьДанныеКЗаписи(Отказ);')
+                    result = object_vm.variables['отказ']
+                    if type(result) is not bool:
+                        raise ValueError('product form: invalid cancellation')
+                    argument.set(result)
+                finally:
+                    object_vm.close()
+                return None
+            return (yield from super().call(node, require_value=require_value))
+
+    program = parse(form_source.decode('utf-8-sig'))
+    routine = next(node for node in program if node.name == handlers[event])
+    vm = ProductInterpreter()
+    try:
+        # Register original routines only; invoke selected routine on its own side.
+        vm.execute_program(program)
+        vm._logical_side = routine.execution_context
+        vm._context_stack = [routine.execution_context]
+        vm.variables.update({'объект': receiver, 'элемент': None, 'отказ': cancel,
+            'текущийобъект': receiver, 'параметрызаписи': None,
+            'элементы': Members({'склады': Members({'текущиеданные': current})})})
+        vm.module_names.update(vm.variables)
+        arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
+        vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
+        if type(vm.variables['отказ']) is not bool:
+            raise ValueError('product form: invalid cancellation')
+        return ProductFormEventResult(vm.variables['отказ'], tuple(records))
+    finally:
+        vm.close()

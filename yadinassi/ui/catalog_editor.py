@@ -6,6 +6,7 @@ use a bounded host selection adapter; its scalar selection keys are not native
 FormData or managed-form references.
 """
 from dataclasses import replace
+from copy import copy
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 import re
@@ -19,7 +20,8 @@ from ..unique_identifiers import BSLUUID
 from ..dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from ..form_model import BSLFormAttribute
 from ..form_runtime import FormApplicationAction, FormActionResult, FormSession
-from ..form_event_simulation import VerifiedFormDraftSession
+from ..form_event_simulation import VerifiedFormDraftSession, simulate_product_form_event
+from ..catalog_object_preparation import CatalogWriteRefused
 from ..type_descriptions import BSLTypeDescription
 from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
@@ -104,13 +106,17 @@ class CatalogEditController:
         self.error = None
         self._source_backend = manager._backend if imported_form else None
         self._source_record = None
+        self._product_source = None
         self._source_stale = False
         self._source_messages = ()
         if imported_form:
-            if schema.fields or schema.tabular_sections:
-                raise BackendError('unsupported')
             self._source_record = manager._backend.read_form_source(schema.identity)
-            self._source_draft(obj.get_member('Code'), obj.get_member('Description'))
+            self._product_source = manager._backend.catalog_write_preparation(
+                schema.identity, expected=self._source_record.identity)
+            if self._product_source is None:
+                if schema.fields or schema.tabular_sections:
+                    raise BackendError('unsupported')
+                self._source_draft(obj.get_member('Code'), obj.get_member('Description'))
         self.sections = ReferenceSections(self)
         self.section_baseline = self._section_values(obj)
         self.fields = []
@@ -180,6 +186,9 @@ class CatalogEditController:
                 self.schema.identity, expected=self._source_record.identity)
             if current != self._source_record:
                 raise BackendError('schema_changed')
+            if self._product_source is not None and self.manager._backend.catalog_write_preparation(
+                    self.schema.identity, expected=current.identity) != self._product_source:
+                raise BackendError('schema_changed')
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):
                 self._source_stale = True
@@ -199,6 +208,34 @@ class CatalogEditController:
             if error.code in ('schema_changed', 'integrity'):
                 self._source_stale = True
             raise
+
+    def _product_candidate(self, values, *, sections=None):
+        # Copy the same detached identity/revision, never allocate a replacement
+        # new-object key. No mutable field/section aliases escape into execution.
+        candidate = copy(self.object)
+        candidate._values = dict(self.object._values)
+        candidate._sections = {}
+        for schema in self.schema.tabular_sections:
+            original = (self.object._sections if sections is None else sections)[schema.name.casefold()]
+            section = BSLCatalogSection(candidate, schema, original._stored_rows().rows)
+            section._dirty = original._dirty
+            candidate._sections[schema.name.casefold()] = section
+        for field, value in zip(self.fields, values):
+            if field[1] == 'catalog_ref':
+                target, manager, choices = self.reference_fields[field[0]]
+                if value not in choices:
+                    raise UIError('invalid_value')
+                value = manager.get_ref(BSLUUID(value))
+            candidate.set_member(field[0], value)
+        return candidate
+
+    def _product_event(self, candidate, event, *, row=None):
+        self._verify_source()
+        result = simulate_product_form_event(self._source_record.module_source,
+            self._product_source.encode('utf-8'), candidate, event=event,
+            current_row_id=None if row is None else UUID(row))
+        self._verify_source()
+        return result
 
     def _field_value(self, obj, field):
         value = obj.get_member(field)
@@ -271,7 +308,19 @@ class CatalogEditController:
             return FormActionResult((('IsDirty', False), ('Status', 'No changes')))
         try:
             if not self.pending_commit:
-                if self._source_record is not None:
+                if self._product_source is not None:
+                    candidate = self._product_candidate(values)
+                    prepared = self._product_event(candidate, 'BeforeWriteAtServer')
+                    self._source_messages = prepared.messages
+                    if prepared.cancel:
+                        self.save_state = 'rejected'
+                        self.error = 'form_validation'
+                        return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
+                    # Only a successfully prepared candidate replaces the writer
+                    # receiver. Its own mandatory BeforeWrite runs in transaction.
+                    self.object = candidate
+                    values = tuple(self._field_value(candidate, f[0]) for f in self.fields)
+                elif self._source_record is not None:
                     draft = self._source_draft(values[0], values[1])
                     prepared = draft.prepare_save(revision=0)
                     self._verify_source()
@@ -296,6 +345,14 @@ class CatalogEditController:
             # A retained uncertain object resolves its exact submitted intent before
             # any retry. Never reload latest before Write or allocate another object.
             self.object.write()
+        except CatalogWriteRefused as error:
+            # This rejection happens before commit, including after a proven
+            # absent receipt. The writer has released its retained intent.
+            self.pending_commit = self.object._pending_write is not None
+            self._source_messages = error.messages
+            self.save_state = 'rejected'
+            self.error = 'object_validation'
+            return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original object handler')))
         except BackendError as error:
             if self._source_record is not None and error.code in ('schema_changed', 'integrity'):
                 self._source_stale = True
@@ -360,12 +417,20 @@ class CatalogEditController:
         field = next((field for field in self.fields if control == 'Input' + field[2]), None)
         if field is None:
             raise UIError('invalid_value')
-        if self._source_record is not None and field[0] != 'Description':
+        if self._source_record is not None and (field[0] == 'Code' or
+                self._product_source is None and field[0] != 'Description'):
             raise UIError('invalid_value')
         value = self._parse_input(field, value)
         snapshot = self.form.snapshot()
         source_messages = None
-        if self._source_record is not None:
+        if self._product_source is not None:
+            values = tuple(value if f[2] == field[2] else dict(snapshot.attributes)[f[2]] for f in self.fields)
+            candidate = self._product_candidate(values)
+            event = 'DescriptionOnChange' if field[0] == 'Description' else 'KindOnChange'
+            changed = self._product_event(candidate, event)
+            value = self._field_value(candidate, field[0])
+            source_messages = changed.messages
+        elif self._source_record is not None:
             current = dict(snapshot.attributes)
             try:
                 draft = self._source_draft(current['Data0'], current['Data1'])
@@ -391,6 +456,15 @@ class CatalogEditController:
             raise UIError('busy')
         candidate = self.sections.changed(event, section, row, value)
         current = self.form.snapshot()
+        source_messages = None
+        if self._product_source is not None:
+            self._verify_source()
+            source_messages = ()  # Structural edits invalidate old positional diagnostics.
+            if event == 'changeRow':
+                receiver = self._product_candidate(self._values(current.attributes), sections=candidate)
+                changed = self._product_event(receiver, 'WarehouseOnChange', row=row)
+                candidate = receiver._sections
+                source_messages = changed.messages
         prospective = replace(current, attributes=tuple(
             (key, True if key == 'IsDirty' else '' if key == 'Status' else old)
             for key, old in current.attributes))
@@ -401,6 +475,11 @@ class CatalogEditController:
         self.form.dispatch('change', revision=self.form.revision,
                            control='Input' + attribute, value=dict(current.attributes)[attribute])
         self.object._sections = candidate
+        # Rebind the adopted detached sections to the live editor receiver.
+        for section_value in candidate.values():
+            section_value._owner = self.object
+        if source_messages is not None:
+            self._source_messages = source_messages
         self.error = None
         self.save_state = 'editing'
 

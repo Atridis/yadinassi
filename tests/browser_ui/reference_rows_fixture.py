@@ -1,4 +1,4 @@
-"""Authored logical reference-row fixture; no imported source, native or user data."""
+"""Owned authored or exact public demo product fixtures; never user data."""
 import json
 from pathlib import Path
 import sys
@@ -93,14 +93,86 @@ def audit(root):
             backend.close()
 
 
+def seed_products(root):
+    from yadinassi import Interpreter
+    from yadinassi.database_context import SQLiteDBContext
+
+    source = Path(__file__).resolve().parents[1] / 'fixtures/demo_cf/source'
+    files = {p.relative_to(source).as_posix(): p.read_bytes()
+             for p in source.rglob('*') if p.is_file()}
+    SQLiteCatalogBackend.create_demo_products(root / 'owned.sqlite', files).close()
+    context = SQLiteDBContext(root / 'owned.sqlite')
+    vm = None
+    try:
+        vm = Interpreter(database_context=context)
+        vm.execute('''
+            Вид=Справочники.ВидыНоменклатуры.СоздатьЭлемент();
+            Вид.Наименование="Товары"; Вид.Записать();
+            Склад=Справочники.Склады.СоздатьЭлемент();
+            Склад.Наименование="Основной склад"; Склад.Записать();
+        ''')
+    finally:
+        try:
+            if vm is not None:
+                vm.close()
+        finally:
+            context.close()
+    return {'seeded': True, 'schema': 'demo_products_v1'}
+
+
+def audit_products(root):
+    """Read-only exact identities/revisions for in-memory comparisons, not export."""
+    backend = SQLiteCatalogBackend(root / 'owned.sqlite', read_only=True)
+    view = None
+    try:
+        view = backend.begin_read()
+        schemas = {s.name: s for s in view.catalogs()}
+        if set(schemas) != {'ВидыНоменклатуры', 'Склады', 'Номенклатура'}:
+            raise ValueError('product_schema_mismatch')
+        records = {name: view.select_catalog(schema.identity, CatalogSelection(limit=10))
+                   for name, schema in schemas.items()}
+        if any(len(cards) != 1 for cards in records.values()):
+            raise ValueError('product_record_count_mismatch')
+        kind, warehouse, product = (records[name][0] for name in
+                                    ('ВидыНоменклатуры', 'Склады', 'Номенклатура'))
+        for card, description in ((kind, 'Товары'), (warehouse, 'Основной склад'),
+                                  (product, 'Кабель USB-C')):
+            if (card.code, card.description, card.deletion_mark) != ('000000001', description, False):
+                raise ValueError('product_record_mismatch')
+        if kind.values or kind.tabular_sections or warehouse.values or warehouse.tabular_sections:
+            raise ValueError('seed_record_shape_mismatch')
+        if product.values != (kind.key,) or len(product.tabular_sections) != 1:
+            raise ValueError('product_shape_mismatch')
+        section = product.tabular_sections[0]
+        if section.section_id != schemas['Номенклатура'].tabular_sections[0].identity or len(section.rows) != 1:
+            raise ValueError('product_section_mismatch')
+        row = section.rows[0]
+        if row.values != (warehouse.key,):
+            raise ValueError('product_warehouse_mismatch')
+        return {
+            'durable': True, 'kinds': 1, 'warehouses': 1, 'products': 1, 'referenceRows': 1,
+            'productIdentity': str(product.key.record_id), 'productRevision': product.revision.token,
+            'rowIdentity': str(row.identity), 'warehouseIdentity': str(warehouse.key.record_id),
+            'warehouseRevision': warehouse.revision.token, 'kindIdentity': str(kind.key.record_id),
+            'kindRevision': kind.revision.token,
+        }
+    finally:
+        try:
+            if view is not None:
+                view.close()
+        finally:
+            backend.close()
+
+
 if __name__ == '__main__':
     try:
-        if len(sys.argv) != 3 or sys.argv[1] not in ('seed', 'audit'):
+        operations = {'seed': seed, 'audit': audit, 'seed-products': seed_products, 'audit-products': audit_products}
+        if len(sys.argv) != 3 or sys.argv[1] not in operations:
             raise ValueError('invalid_arguments')
         root = Path(sys.argv[2])
         if not root.is_absolute() or not root.is_dir() or root.is_symlink():
             raise ValueError('invalid_owned_root')
-        result = (seed if sys.argv[1] == 'seed' else audit)(root)
+        result = operations[sys.argv[1]](root)
         print(json.dumps(result, sort_keys=True))
     except Exception:
         print('{"error":"owned_reference_rows_fixture_failed"}', file=sys.stderr)
