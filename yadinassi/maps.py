@@ -5,6 +5,7 @@ from decimal import Decimal
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
 from .type_descriptions import BSLTypeDescription
+from .catalog_types import BSLCatalogReference
 
 from .structures import BSLKeyAndValue
 from .values import BSLFixedCollection, BSLNull, BSLObject, BSLType, HostFunction
@@ -16,6 +17,11 @@ def _key(value: object) -> tuple[type, object]:
     # semantics. Each entry retains the original object, so its id cannot be
     # reused while the entry exists.
     kind = type(value)
+    if kind is BSLCatalogReference:
+        # Equal immutable references can be separately materialized by a read
+        # or detached form clone. Preserve catalog/snapshot/record value identity.
+        # Subclasses and arbitrary host objects still use identity keys below.
+        return kind, value
     if kind is BSLUUID:
         return kind, value.text
     if kind is BSLTypeDescription:

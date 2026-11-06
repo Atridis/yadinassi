@@ -15,7 +15,8 @@ from dataclasses import replace
 
 from .configuration_import import _host_directory
 from .configuration_xml import (INERT_SOURCE_ISSUE, DEMO_KINDS_SOURCE_ISSUE, DEMO_KINDS_PROFILE,
-                                DEMO_DIRECTORIES_SOURCE_ISSUE, DEMO_DIRECTORIES_PROFILE)
+                                DEMO_DIRECTORIES_SOURCE_ISSUE, DEMO_DIRECTORIES_PROFILE,
+                                DEMO_PRODUCTS_SOURCE_ISSUE, DEMO_PRODUCTS_PROFILE)
 from .catalog_backend import ConfigurationSourceIdentity, CatalogFormSource
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
@@ -41,6 +42,7 @@ _MAX_SECTION_ROWS = 1000
 _OWNER_BATCH = 128
 _UNLOADED = object()
 _DEMO_SOURCE_ISSUES = {
+    DEMO_PRODUCTS_PROFILE: DEMO_PRODUCTS_SOURCE_ISSUE,
     DEMO_KINDS_PROFILE: DEMO_KINDS_SOURCE_ISSUE,
     DEMO_DIRECTORIES_PROFILE: DEMO_DIRECTORIES_SOURCE_ISSUE,
 }
@@ -600,6 +602,44 @@ class SQLiteCatalogBackend:
         return cls.create(path, import_demo_directories_configuration(files),
                           _source_profile=DEMO_DIRECTORIES_PROFILE)
 
+    @classmethod
+    @_boundary
+    def create_demo_products(cls, path, files):
+        """Fresh exact-demo product storage with mandatory host preparation."""
+        from .configuration_xml import import_demo_products_configuration
+        return cls.create(path, import_demo_products_configuration(files),
+                          _source_profile=DEMO_PRODUCTS_PROFILE)
+
+    @_boundary
+    def catalog_write_preparation(self, catalog_id, *, expected=None):
+        """Exact product source capability, never arbitrary archive activation.
+
+        Raw transaction methods remain storage-only. CatalogObject writes use
+        this policy automatically; begin_write rechecks the manifest under lock.
+        """
+        _uuid(catalog_id)
+        if self._closed: raise BackendError('closed')
+        if self.storage_version != 6 or self._demo_profile() != DEMO_PRODUCTS_PROFILE:
+            return None
+        if self._active is not None: raise BackendError('busy')
+        connection = self._connect()
+        try:
+            connection.execute('BEGIN')
+            imported, catalogs, info, manifest = self._demo_source_snapshot(connection)
+            product = next(c for c in catalogs if c.name == 'Номенклатура')
+            if catalog_id != product.identity: return None
+            form = next(f for f in product.forms if product.default_object_form ==
+                        'Catalog.' + product.name + '.Form.' + f.name)
+            identity = ConfigurationSourceIdentity(self.database_id,
+                imported.config_uuid, info[2], manifest, product.identity, form.identity)
+            if expected is not None and (type(expected) is not ConfigurationSourceIdentity
+                                         or expected != identity):
+                raise BackendError('schema_changed')
+            files = {f.path: f.content for f in imported.files}
+            return files['Catalogs/Номенклатура/Ext/ObjectModule.bsl'].decode('utf-8-sig')
+        finally:
+            connection.close()
+
     def _demo_profile(self):
         for profile, issue in _DEMO_SOURCE_ISSUES.items():
             if self.activation_issues == (issue,):
@@ -658,7 +698,7 @@ class SQLiteCatalogBackend:
         expected = {(str(c.identity), c.name, _json(_schema_data(c))) for c in imported.catalogs}
         if connection.execute("SELECT 1 FROM catalog_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))>36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>4096 LIMIT 1").fetchone():
             raise BackendError('integrity')
-        rows = connection.execute('SELECT identity,name,definition FROM catalog_schema LIMIT 3').fetchall()
+        rows = connection.execute('SELECT identity,name,definition FROM catalog_schema LIMIT ?', (len(expected) + 1,)).fetchall()
         if len(rows) != len(expected) or set(rows) != expected: raise BackendError('schema_changed')
         manifest = hashlib.sha256(_json([self._demo_profile(), entries]).encode('utf-8')).hexdigest()
         if not admitting and (imported.config_uuid != self._demo_configuration_id or manifest != self._demo_manifest):
@@ -750,7 +790,8 @@ class SQLiteCatalogBackend:
     def capabilities(self):
         active = self.activated and self.storage_version != 5
         return Capabilities(active, active and not self.read_only, active and not self.read_only, active and not self.read_only,
-                            catalog_tabular_sections=active and self.storage_version in (3, 4),
+                            catalog_tabular_sections=active and (self.storage_version in (3, 4)
+                                or (self.storage_version == 6 and self._demo_profile() == DEMO_PRODUCTS_PROFILE)),
                             catalog_write_outcomes=active and self.storage_version in (4, 6))
 
     @_boundary

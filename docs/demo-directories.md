@@ -72,3 +72,8 @@ source/generation drift, uncertain commit, pending refresh and read-only access.
 Existing kinds, inert-source, importer, SQLite, controller and protocol tests
 remain regression gates. No native integration scenario or browser acquisition
 is changed by this slice. Host tests alone do not establish browser acceptance.
+
+For the separate fresh profile that also enables the original product card's
+bounded local form projection and mandatory object checks, see
+[original demo products](demo-products.md). Existing directories databases retain
+their two-catalog contract.

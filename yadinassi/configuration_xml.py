@@ -740,6 +740,8 @@ def import_inert_configuration(files):
 # requires a fresh review of the entire profile, not an automatic fixture rehash.
 DEMO_KINDS_PROFILE = 'demo_kinds_v1'
 DEMO_KINDS_SOURCE_ISSUE = 'bounded configuration source profile:demo_kinds_v1'
+DEMO_PRODUCTS_PROFILE = 'demo_products_v1'
+DEMO_PRODUCTS_SOURCE_ISSUE = 'bounded configuration source profile:demo_products_v1'
 DEMO_DIRECTORIES_PROFILE = 'demo_directories_v1'
 DEMO_DIRECTORIES_SOURCE_ISSUE = 'bounded configuration source profile:demo_directories_v1'
 _DEMO_KINDS_SOURCE_SHA256 = {
@@ -882,7 +884,49 @@ def import_demo_directories_configuration(files):
     return _demo_directories_configuration(files)[0]
 
 
+def _demo_products_configuration(files):
+    """Fresh exact-demo product admission; execution is a bounded host policy.
+
+    The complete original archive, including the inactive list form, remains
+    byte-bound. No generic module activation or native form parity is implied.
+    """
+    directories, catalogs = _demo_directories_configuration(files)
+    source = {f.path: f.content for f in directories.files}
+    product = next(c for c in catalogs if c.name == 'Номенклатура')
+    obj, _ = _object(source[product.path], 'Catalog')
+    props = _props(obj)
+    if (_int(props, 'CodeLength', 1, 9) != 9
+            or _int(props, 'DescriptionLength', 0, 1024) != 150
+            or _text(props, 'Autonumbering') != 'true'
+            or _text(props, 'Hierarchical') != 'false'):
+        _fail('demo_products_v1 product semantics')
+    children = obj.find('{' + MD + '}ChildObjects')
+    attribute, = children.findall('{' + MD + '}Attribute')
+    section, = children.findall('{' + MD + '}TabularSection')
+    row_attribute, = section.find('{' + MD + '}ChildObjects').findall('{' + MD + '}Attribute')
+    kind, warehouse = directories.catalogs
+    # These identities/names/types come from the already closed full-byte
+    # envelope, not a permissive import of arbitrary product metadata.
+    schema = CatalogSchema(product.identity, product.name, 9, 150,
+        (FieldSchema(_uuid(attribute.get('uuid')), 'ВидНоменклатуры',
+                     'catalog_ref', (), kind.identity),),
+        (TabularSectionSchema(_uuid(section.get('uuid')), 'Склады',
+            (FieldSchema(_uuid(row_attribute.get('uuid')), 'Склад',
+                         'catalog_ref', (), warehouse.identity),)),),
+        numbering='decimal_v1')
+    return ConfigurationImport(directories.config_uuid, directories.name,
+        (*directories.catalogs, schema), directories.files, (),
+        (DEMO_PRODUCTS_SOURCE_ISSUE,)), catalogs
+
+
+def import_demo_products_configuration(files):
+    """Admit three original catalogs in a fresh, exact-source host profile."""
+    return _demo_products_configuration(files)[0]
+
+
 def _demo_configuration(files, profile):
+    if profile == DEMO_PRODUCTS_PROFILE:
+        return _demo_products_configuration(files)
     if profile == DEMO_KINDS_PROFILE:
         return _demo_kinds_configuration(files)
     if profile == DEMO_DIRECTORIES_PROFILE:

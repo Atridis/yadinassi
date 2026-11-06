@@ -207,3 +207,11 @@ capabilities. Its original fields, form handlers and pinned object source need
 a separate admission/integration step. The original demo-directories profile is
 unchanged. No native FormData, native GUI parity or arbitrary table-cell editing
 is claimed.
+
+### Exact original product profile
+
+The fresh `demo_products_v1` profile connects the bounded reference-row editor to
+the original product form's field/row handlers and mandatory atomic object
+validation. See [original demo products](demo-products.md) for creation, the
+complete save/reopen scenario and explicit limitations. Earlier source profiles
+remain unchanged; this is not general imported-form activation.

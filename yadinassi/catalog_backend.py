@@ -239,6 +239,10 @@ class CatalogWriteTransaction(CatalogReadView, Protocol):
 
 
 class CatalogBackend(Protocol):
+    def catalog_write_preparation(self, catalog_id: UUID, *, expected=None) -> str | None:
+        """Optional bounded host write policy; ordinary adapters have none."""
+        return None
+
     def capabilities(self) -> Capabilities: ...
     def begin_read(self) -> CatalogReadView: ...
     def begin_write(self, operation_id: UUID) -> CatalogWriteTransaction: ...
