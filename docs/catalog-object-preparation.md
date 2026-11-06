@@ -22,6 +22,70 @@ and authorizing exact source and schema identities.
 
 ## Write coordinator contract
 
+`write_prepared_catalog_object(source, receiver, cancel=False)` now implements
+the bounded host write coordinator. It is not an installed object-module hook,
+an importer activation or a renderer command. Ordinary BSL `Write` keeps its
+existing behavior. The host explicitly selects the exact source and a disposable
+object from an admitted logical schema.
+
+```python
+from yadinassi.catalog_object_preparation import (
+    CatalogWriteRefused, write_prepared_catalog_object,
+)
+
+# source is the host-selected original ObjectModule.bsl text.
+# candidate is a disposable CatalogObject with its kind reference and warehouse
+# rows already populated. No stored module is selected automatically.
+try:
+    messages = write_prepared_catalog_object(source, candidate)
+except CatalogWriteRefused as refused:
+    messages = refused.messages  # No record was written.
+```
+
+The writer begins its ordinary transaction and verifies database, generation and
+catalog schema before executing the handler. In this route, each reference
+`GetObject`/`ПолучитьОбъект` reads from that same writer view. The original kind
+and warehouse deletion-mark checks therefore cannot race a separate writer
+between validation and commit. Existing SQLite scalar/row reference-existence
+checks remain in force; the host does not duplicate or relax them. These
+GetObject reads use no separate connection, long-lived reference cache or
+temporary global backend swap. Direct reference attribute reads and
+`Строка(reference)` are outside this writer profile: their ordinary reader fails
+closed with `busy`, rather than reading outside the active transaction. The
+original BSL still owns its required-reference, duplicate-row and name
+rules. Messages remain inert host records, not navigation instructions.
+
+On ordinary success the same candidate is durably written through the existing
+create/update, numbering and receipt pipeline. Its prepared values are visible
+to the caller. Refusal, parser/runtime error or conflict does not report success
+and releases the writer. Preparation can still change this disposable candidate
+on failure, as in the original preparation-only API; it is not a UI edit-buffer
+rollback guarantee.
+
+An uncertain outcome retains the exact source, input cancellation, backend
+instance, complete prepared rows and original write intent. Resolution happens
+before parsing or running BSL. A found receipt is accepted without preparation
+or another write, returning no regenerated messages. Ordinary `Write` on that
+same pending object also retains this
+guard; it cannot silently turn a guarded retry into an unguarded one. Another
+source/backend or an attempt to relabel an ordinary pending write is refused.
+
+Only when the receipt is confirmed absent can a new transaction retry. It runs
+the retained checks against a detached copy of the frozen intent, using the new
+writer snapshot. A newly marked/missing target refuses the retry before writing.
+The prepared result must equal the retained intent: a non-idempotent handler
+cannot silently replace an already submitted payload. A pre-commit refusal after
+confirmed absence releases the pending lock; the host can then correct its
+buffer and explicitly request another guarded write. This revalidation is a new
+attempt, not BSL execution to discover a historical commit outcome.
+
+The source is retained only for this in-memory pending operation. There is no
+persistent handler registration, automatic source admission or crash-persistent
+edit session. This does not yet make the original demo's Номенклатура available
+in the local UI: its imported form and tabular editor remain separate work.
+
+### Preparation-only callers
+
 1. Resolve pending commit/recovery **before** invoking this bridge. A receiver
    with a pending write is rejected before parsing or execution.
 2. Obtain a disposable candidate and exact admitted object source for the current
@@ -38,8 +102,10 @@ and authorizing exact source and schema identities.
 Tests execute the unchanged demo object BSL over a separate explicit logical
 SQLite schema, real catalog objects, real references and real tabular rows.
 They do not activate the imported demo archive or establish end-to-end GUI/native
-acceptance. One test separately writes the successfully prepared candidate and
-reads back its normalized name.
+acceptance. `test_catalog_object_write` adds actual atomic write/reopen with its
+kind and warehouse references and unsaved rows, original refusals, transaction
+lock coverage, revision conflicts, both uncertain-COMMIT sides, retained-source
+checks and exact retry behavior. No native integration scenario is changed.
 
 The unchanged demo source uses `Формат(НомерСтроки - 1, "ЧГ=0")`; the existing
 formatter suppresses numeric zero, so its first-row message field is
