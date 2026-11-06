@@ -740,6 +740,8 @@ def import_inert_configuration(files):
 # requires a fresh review of the entire profile, not an automatic fixture rehash.
 DEMO_KINDS_PROFILE = 'demo_kinds_v1'
 DEMO_KINDS_SOURCE_ISSUE = 'bounded configuration source profile:demo_kinds_v1'
+DEMO_DIRECTORIES_PROFILE = 'demo_directories_v1'
+DEMO_DIRECTORIES_SOURCE_ISSUE = 'bounded configuration source profile:demo_directories_v1'
 _DEMO_KINDS_SOURCE_SHA256 = {
     'Catalogs/ВидыНоменклатуры.xml':
         '723c973982629b92c183d68b24aef8fde1771b34e649e536749354d7a14cc2d0',
@@ -835,3 +837,54 @@ def import_demo_kinds_configuration(files):
     The marker requires the dedicated storage profile, not ordinary activation.
     """
     return _demo_kinds_configuration(files)[0]
+
+
+def _demo_directories_configuration(files):
+    """Add the original module-free warehouse catalog to the exact demo.
+
+    The kinds admission freezes the complete source mapping first. No second
+    caller mapping read, rewritten XML or unbound module activation is allowed.
+    Warehouse presentation settings remain a bounded host-autoform projection,
+    not a claim of native standard-form behavior.
+    """
+    kinds, catalogs = _demo_kinds_configuration(files)
+    source = {f.path: f.content for f in kinds.files}
+    warehouse = next(c for c in catalogs if c.name == 'Склады')
+    obj, _ = _object(source[warehouse.path], 'Catalog')
+    props = _props(obj)
+    expected = {'Autonumbering': 'true', 'Hierarchical': 'false',
+                'CodeType': 'String', 'CodeSeries': 'WholeCatalog',
+                'CheckUnique': 'true', 'DefaultObjectForm': '',
+                'DefaultListForm': '', 'DataHistory': 'DontUse'}
+    child = obj.find('{' + MD + '}ChildObjects')
+    owners = props.get('{' + MD + '}Owners')
+    if (warehouse.forms or warehouse.default_object_form
+            or child is None or len(child)
+            or owners is None or len(owners) or (owners.text or '').strip()
+            or any(_text(props, name) != value for name, value in expected.items())
+            or _int(props, 'CodeLength', 1, 9) != 9
+            or _int(props, 'DescriptionLength', 0, 1024) != 100
+            or any(f.path.startswith('Catalogs/Склады/') for f in kinds.files)):
+        _fail('demo_directories_v1 warehouse semantics')
+    schema = CatalogSchema(warehouse.identity, warehouse.name, 9, 100,
+                           numbering='decimal_v1')
+    imported = ConfigurationImport(kinds.config_uuid, kinds.name,
+        (*kinds.catalogs, schema), kinds.files, (), (DEMO_DIRECTORIES_SOURCE_ISSUE,))
+    return imported, catalogs
+
+
+def import_demo_directories_configuration(files):
+    """Admit original kinds and warehouses, leaving products archived/inert.
+
+    This fresh source profile reuses the v6 physical layout. Existing kinds-only
+    databases and inert v5 archives are not migrated or activated in place.
+    """
+    return _demo_directories_configuration(files)[0]
+
+
+def _demo_configuration(files, profile):
+    if profile == DEMO_KINDS_PROFILE:
+        return _demo_kinds_configuration(files)
+    if profile == DEMO_DIRECTORIES_PROFILE:
+        return _demo_directories_configuration(files)
+    _fail('unsupported demo source profile')
