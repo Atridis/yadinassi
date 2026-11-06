@@ -1,7 +1,7 @@
 /** One opt-in authored reference-row browser scenario. No original/native parity claim. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir,readlink,open as openFile} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir,readlink,realpath,open as openFile} from 'node:fs/promises';
 import path from 'node:path';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -97,6 +97,7 @@ async function main(){
     const children=readFileSync(childrenPath,'utf8').trim().split(/\s+/).filter(x=>x&&!priorChildren.has(x));
     assert.ok(children.length<=1,'unexpected_launch_children');
     if(children.length){
+      phase='browser_owner_verification';
       const pid=Number(children[0]);assert.ok(Number.isSafeInteger(pid)&&pid>0);
       const stat=readFileSync('/proc/'+pid+'/stat','utf8');
       const fields=stat.slice(stat.lastIndexOf(')')+2).trim().split(/\s+/);
@@ -104,7 +105,12 @@ async function main(){
       assert.equal(Number(fields[2]),pid,'browser_process_group_not_owned');browserGroup=pid;
       const processRoot='/proc/'+pid;
       assert.equal((await lstat(processRoot)).uid,process.getuid(),'browser_uid_mismatch');
-      assert.equal(await readlink(processRoot+'/exe'),chromium.executablePath(),'browser_executable_mismatch');
+      phase='browser_executable_verification';
+      // procfs reports the canonical target, while the pinned registry path can
+      // contain a runner-temp symlink. Compare the same exact file identity.
+      const expectedExecutable=await realpath(chromium.executablePath());
+      assert.equal(await readlink(processRoot+'/exe'),expectedExecutable,'browser_executable_mismatch');
+      phase='browser_command_verification';
       const command=await openFile(processRoot+'/cmdline','r');
       try{
         const buffer=Buffer.alloc(16385);let length=0;
@@ -116,6 +122,7 @@ async function main(){
     }
   }
   check();assert.ok(browserGroup,'browser_process_missing');report.browser=browser.version();
+  phase='browser_cdp_verification';
   const cdp=await bounded(browser.newBrowserCDPSession(),remaining(5000),'cdp_setup_timeout');
   const info=await bounded(cdp.send('SystemInfo.getProcessInfo'),remaining(5000),'cdp_process_timeout');
   assert.equal(ownBrowserPid(info.processInfo),browserGroup,'browser_pid_mismatch');
@@ -123,6 +130,7 @@ async function main(){
   context=await browser.newContext({viewport:{width:1320,height:1000},locale:'en-US',timezoneId:'UTC',
     acceptDownloads:false,serviceWorkers:'block'});
   context.setDefaultTimeout(10000);context.setDefaultNavigationTimeout(15000);
+  phase='browser_sandbox_status';
   const probe=await context.newPage();probe.setDefaultTimeout(remaining(10000));await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
   await startHost();
   await context.route('**/*',route=>{
@@ -182,7 +190,25 @@ async function main(){
 }
 // Reserve 20 seconds for verified bounded cleanup within the 180s total.
 const deadline=setTimeout(abort,Math.max(0,160000-(Date.now()-startedAt)));
-try{await main();check();}catch(error){failure=error;report.status='FAIL';report.failure={phase,reason:aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&/Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};}
+// Export only fixed codes. Assertion messages can append paths/actual values;
+// neither those details nor raw browser logs belong in the artifact.
+const safeFailureCodes=new Set([
+  'unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
+  'browser_uid_mismatch','browser_executable_mismatch','browser_command_budget',
+  'browser_command_invalid','sandbox_command_missing','sandbox_disabled','unexpected_browser_transport',
+  'browser_process_missing','browser_pid_mismatch','browser_pid_invalid',
+  'cdp_setup_timeout','cdp_process_timeout','sandbox_status_invalid','sandbox_not_confirmed',
+]);
+function failureReason(error){
+  if(aborted)return 'deadline_or_rpc_budget';
+  const message=typeof error?.message==='string'?error.message:'';
+  for(const code of safeFailureCodes)if(message===code||message.startsWith(code+'\n'))return code;
+  if(['EACCES','EPERM','ENOENT','ESRCH'].includes(error?.code))return 'verification_'+error.code.toLowerCase();
+  if(phase==='sandbox_launch'&&/Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(message))
+    return 'sandbox_start_denied';
+  return 'step_failed';
+}
+try{await main();check();}catch(error){failure=error;report.status='FAIL';report.failure={phase,reason:failureReason(error)};}
 finally{
   aborted=true;clearTimeout(deadline);
   try{if(browser)await bounded(browser.close(),10000,'browser_close_timeout');}catch{report.status='FAIL';report.cleanup='browser_close_failed';}
