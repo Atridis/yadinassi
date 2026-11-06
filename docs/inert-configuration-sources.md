@@ -71,3 +71,27 @@ is resolved; source invalidation cannot convert uncertainty into safe discard.
 This increment does not connect the renderer, run the actual demo end-to-end,
 resolve its native numbering/section-query gates, or admit its modules for
 activation. The archive itself is preserved byte-for-byte for that later work.
+
+## Exact original demo kinds admission
+
+`import_demo_kinds_configuration(files)` is a separate, deliberately fixed
+`demo_kinds_v1` profile. Its allowlist commits to every path and SHA-256 in the
+complete original 19-file `tests/fixtures/demo_cf/source` archive. Missing, extra
+or changed files are rejected, including otherwise harmless whitespace, BOM,
+line endings, presentation settings and sources of inactive catalogs. The
+allowlist is reviewed profile code, not a manifest regenerated from input.
+
+The result retains all original bytes and all catalog/form identities remain
+available for source inventory. Only the real `ВидыНоменклатуры` catalog schema
+is eligible for activation: its original UUID, string code width 9, description
+width 100 and the local `decimal_v1` numbering policy. No object/manager modules
+are registered. `Номенклатура`, `Склады`, their forms and modules remain inert.
+The original kinds form also passes `analyze_form_module` as defense in depth;
+that analyzer's metadata projections do not replace the full byte allowlist.
+
+The result carries the explicit activation marker
+`bounded configuration source profile:demo_kinds_v1`, not an empty issue list.
+This marker requires the dedicated version 6 storage boundary and must never
+be cleared to request ordinary version 4 activation. The source-only version 5
+archive remains inactive. This profile is not arbitrary configuration/form
+support, full-demo activation, a GUI run or evidence of native 1C parity.

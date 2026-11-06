@@ -17,7 +17,7 @@ function App(){
   const [snapshot,setSnapshot]=useState(null),[draft,setDraft]=useState({}),[busy,setBusy]=useState(false),
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
-  const gate=useRef(false);
+  const gate=useRef(false),actionPointer=useRef(false);
   const apply=(preserveDraft=false)=>{if(client.snapshot){setSnapshot(client.snapshot);setPreview(previous=>workspacePreview(previous,client.snapshot));if(!preserveDraft)setDraft(initialDraft(client.snapshot));}};
   useEffect(()=>{
     const system=matchMedia('(prefers-color-scheme: dark)');
@@ -53,7 +53,7 @@ function App(){
   async function run(event,values={},flush=false){
     if(gate.current)return;
     gate.current=true;setBusy(true);setError('');
-    let flushComplete=!flush;
+    let flushComplete=!flush,eventComplete=false;
     try{
       if(flush&&editor&&!editor.editingLocked){
         for(const field of editor.fields){
@@ -63,14 +63,26 @@ function App(){
       }
       flushComplete=true;
       await client.event(event,values);
+      eventComplete=true;
       const current=client.snapshot?.state?.editor;
       if((event==='closeCard'||event==='close')&&current?.state==='open'&&current.dirty&&
           confirm('Discard unsaved changes?')){
         await client.event('command',{control:'CancelButton'});
-        if(event==='close')await client.event('close');
+        if(event==='close'&&client.snapshot?.state?.kind!=='closed')await client.event('close');
       }
     }catch(e){setError(e.message);}
-    finally{apply(!flushComplete&&client.snapshot?.state?.editor?.editorId===editor?.editorId);gate.current=false;setBusy(false);}
+    finally{apply((!flushComplete||(event==='change'&&!eventComplete))&&client.snapshot?.state?.editor?.editorId===editor?.editorId);gate.current=false;setBusy(false);}
+  }
+  function commitImportedField(field,value,relatedTarget){
+    const current=client.snapshot?.state?.editor;
+    // A pointer/keyboard transition to a command belongs to that command's
+    // existing flush/discard path, never a racing blur request.
+    if(actionPointer.current||relatedTarget?.closest?.('[data-editor-action]'))return;
+    if(!current?.originalForm||current.editorId!==editor?.editorId||field.readOnly||
+       gate.current||client.uncertain||current.editingLocked||current.sourceStale)return;
+    const active=current.fields.find(item=>item.control===field.control);
+    if(active&&!active.readOnly&&active.inputText!==value)
+      run('change',{control:field.control,value:typedInput(field,value)});
   }
   async function resync(){
     if(gate.current)return;gate.current=true;setBusy(true);
@@ -81,14 +93,15 @@ function App(){
   const catalogs=editor?preview.catalogs:state?.catalogs||[];
   const list=editor?preview.list:state?.list;
   const visibleCatalogs=catalogs.filter(c=>c.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
-  return <main>
+  return <main onPointerDownCapture={e=>{actionPointer.current=Boolean(e.target.closest?.('[data-editor-action]'));}}
+    onPointerUpCapture={()=>{actionPointer.current=false;}} onPointerCancelCapture={()=>{actionPointer.current=false;}}>
     <header><div><span class="brand">YADINASSI</span><h1>Catalog workspace</h1></div>
       <div class="header-actions"><span class="badge connection">Local SQLite</span>
       <label class="theme-control"><span>Theme</span><select aria-label="Color theme" value={theme}
         onChange={e=>changeTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
-      {snapshot&&state.kind!=='closed'&&<button class="quiet" disabled={busy||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
+      {snapshot&&state.kind!=='closed'&&<button data-editor-action="close" class="quiet" disabled={busy||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
     </header>
-    <p class="scope">Auto-generated editor · bounded reference choices · no imported 1C forms</p>
+    <p class="scope">{editor?.originalForm?'Imported name-validation handlers · local host form adapter · no native parity claim':'Auto-generated editor · bounded reference choices · no imported 1C forms'}</p>
     {error&&<section role="alert" class="notice error"><strong>Action not completed</strong><span>{error}</span>
       {client.uncertain&&token&&<button disabled={busy} onClick={resync}>Resynchronize — do not repeat Save</button>}</section>}
     {!snapshot&&<section class="panel empty">{busy?'Opening database…':'Use the host launcher to select a supported SQLite file.'}</section>}
@@ -111,30 +124,33 @@ function App(){
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>
       </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'Return to records to refresh the list.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
-    {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button class="quiet back" disabled={busy||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
+    {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button data-editor-action="back" class="quiet back" disabled={busy||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
       <h2>{editor.isNew?'New record':'Edit record'} <span class="muted">/ {editor.catalogName}</span></h2></div>
       <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.editingLocked?'Outcome pending':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>
       {editor.status&&(!localDirty||editor.error)&&<div role="status" class={'notice '+(editor.error?'error':'success')}>{editor.status}</div>}
+      {editor.sourceStale&&<div role="alert" class="notice error">Configuration source changed. Edits are preserved; discard closes this database. Reopen the database to use the current source.</div>}
+      {(editor.fieldMessages||[]).length>0&&<div role="alert" class="notice error">{editor.fieldMessages.map((message,index)=><div key={index}><strong>{message.field}</strong><span>{message.text}</span></div>)}</div>}
       <form onSubmit={e=>{e.preventDefault();run('command',{control:'SaveButton'},true);}}>
         <div class="fields">{editor.fields.filter(field=>field.visible).map(field=><label key={field.control} class={field.kind==='boolean'?'check-field':'field'}>
           <span>{field.title||field.name}</span>
           {field.kind==='catalog_ref'?<select aria-label={field.name} value={draft[field.control]}
-            disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
+            disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>setDraft({...draft,[field.control]:e.currentTarget.value})}>
             {field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
-          </select>:field.kind==='boolean'?<input type="checkbox" checked={draft[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
+          </select>:field.kind==='boolean'?<input type="checkbox" checked={draft[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>setDraft({...draft,[field.control]:e.currentTarget.checked})}/>:
           <input aria-label={field.name} type={field.kind==='datetime'?'datetime-local':'text'} step={field.kind==='datetime'?'1':undefined}
             inputMode={field.kind==='number'?'decimal':undefined} value={draft[field.control]??''}
-            disabled={busy||client.uncertain||editor.editingLocked||!field.enabled||field.readOnly}
-            onInput={e=>setDraft({...draft,[field.control]:e.currentTarget.value})}/>}
+            disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
+            onInput={e=>setDraft({...draft,[field.control]:e.currentTarget.value})}
+            onBlur={e=>commitImportedField(field,e.currentTarget.value,e.relatedTarget)}/>}
           {field.kind==='number'&&<small>Exact decimal · decimal point “.”</small>}
         </label>)}</div>
         {editor.references.length>0&&<section class="references"><h3>References <span class="badge">Read-only</span></h3>
           {editor.references.map(ref=><div key={ref.name}><strong>{ref.name}</strong><span>{ref.presentation||'Empty reference'}</span></div>)}
           <p>These references are preserved: choices are unavailable, exceed 64 records, or the current value is not selectable. Native FormData is not supported.</p></section>}
-        <div class="editor-actions"><button type="button" disabled={busy||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
-          <button type="submit" class="primary" disabled={busy}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
+        <div class="editor-actions"><button data-editor-action="discard" type="button" disabled={busy||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
+          <button data-editor-action="save" type="submit" class="primary" disabled={busy||(editor.sourceStale&&!editor.editingLocked)}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
       </form>
     </section>}
     </div>}

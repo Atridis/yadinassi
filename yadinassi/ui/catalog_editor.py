@@ -19,6 +19,7 @@ from ..unique_identifiers import BSLUUID
 from ..dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from ..form_model import BSLFormAttribute
 from ..form_runtime import FormApplicationAction, FormActionResult, FormSession
+from ..form_event_simulation import VerifiedFormDraftSession
 from ..type_descriptions import BSLTypeDescription
 from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
@@ -90,7 +91,9 @@ def _reference_label(code, description):
 
 class CatalogEditController:
     """One detached object and scalar selection keys. No persistent read transaction."""
-    def __init__(self, manager, schema, obj):
+    def __init__(self, manager, schema, obj, *, imported_form=False):
+        if type(imported_form) is not bool:
+            raise TypeError('exact imported-form flag required')
         self.identity = uuid4().hex
         self.manager, self.schema, self.object = manager, schema, obj
         self.pending_commit = False
@@ -98,6 +101,15 @@ class CatalogEditController:
         self._refreshed = None
         self.save_state = 'new' if obj.is_new() else 'unchanged'
         self.error = None
+        self._source_backend = manager._backend if imported_form else None
+        self._source_record = None
+        self._source_stale = False
+        self._source_messages = ()
+        if imported_form:
+            if schema.fields or schema.tabular_sections:
+                raise BackendError('unsupported')
+            self._source_record = manager._backend.read_form_source(schema.identity)
+            self._source_draft(obj.get_member('Code'), obj.get_member('Description'))
         self.fields = []
         self.references = []
         self.reference_fields = {}
@@ -155,6 +167,36 @@ class CatalogEditController:
         self.form.open()
         self._check_size()
 
+    def _verify_source(self):
+        if self.manager._backend is not self._source_backend:
+            self._source_stale = True
+        if self._source_stale:
+            raise BackendError('schema_changed')
+        try:
+            current = self.manager._backend.read_form_source(
+                self.schema.identity, expected=self._source_record.identity)
+            if current != self._source_record:
+                raise BackendError('schema_changed')
+        except BackendError as error:
+            if error.code in ('schema_changed', 'integrity'):
+                self._source_stale = True
+            raise
+
+    def _source_draft(self, code, description):
+        # Each event starts from the authoritative form buffer, never a second
+        # mutable draft. The pinned source is checked around detached execution.
+        self._verify_source()
+        try:
+            draft = VerifiedFormDraftSession(self._source_backend, self.schema.identity,
+                code=code, description=description,
+                deletion_mark=self.object.get_member('DeletionMark'))
+            self._verify_source()
+            return draft
+        except BackendError as error:
+            if error.code in ('schema_changed', 'integrity'):
+                self._source_stale = True
+            raise
+
     def _field_value(self, obj, field):
         value = obj.get_member(field)
         if field in self.reference_fields:
@@ -196,17 +238,40 @@ class CatalogEditController:
         self._refreshed = None
         values = self._values(attributes)
         self.error = None
+        # Recovery may not run BSL or source reads, but it must still use the
+        # exact backend which owns the retained intent and refresh obligation.
+        if self._source_record is not None and self.manager._backend is not self._source_backend:
+            self._source_stale = True
+            self.error = 'schema_changed'
+            return FormActionResult((('Status', 'Original database session required'),))
         if self.pending_refresh:
             try:
                 return self._refresh()
-            except Exception:
+            except Exception as error:
+                if self._source_record is not None and isinstance(error, BackendError) and error.code in ('schema_changed', 'integrity'):
+                    self._source_stale = True
                 self.error = 'refresh_required'
                 return FormActionResult((('Status', 'Saved; refresh required'),))
-        if not self.pending_commit and not self.object.is_new() and values == self.baseline:
+        if self._source_record is None and not self.pending_commit and not self.object.is_new() and values == self.baseline:
             self.save_state = 'unchanged'
             return FormActionResult((('IsDirty', False), ('Status', 'No changes')))
         try:
             if not self.pending_commit:
+                if self._source_record is not None:
+                    draft = self._source_draft(values[0], values[1])
+                    prepared = draft.prepare_save(revision=0)
+                    self._verify_source()
+                    self._source_messages = prepared.messages
+                    if prepared.cancel:
+                        self.save_state = 'rejected'
+                        self.error = 'form_validation'
+                        return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
+                    candidate = dict(prepared.candidate)
+                    values = (candidate['Code'], candidate['Description'])
+                    if not self.object.is_new() and values == self.baseline:
+                        self.save_state = 'unchanged'
+                        return FormActionResult(tuple((field[2], value) for field, value in zip(self.fields, values)) +
+                                                (('IsDirty', False), ('Status', 'No changes')))
                 for field, value in zip(self.fields, values):
                     if field[1] == 'catalog_ref':
                         target, manager, choices = self.reference_fields[field[0]]
@@ -218,6 +283,8 @@ class CatalogEditController:
             # any retry. Never reload latest before Write or allocate another object.
             self.object.write()
         except BackendError as error:
+            if self._source_record is not None and error.code in ('schema_changed', 'integrity'):
+                self._source_stale = True
             # Resolution failure does not prove the retained intent absent.
             # Keep the existing lock even for transient busy/storage errors.
             self.pending_commit = self.pending_commit or error.code == 'uncertain_commit'
@@ -237,7 +304,9 @@ class CatalogEditController:
         self.save_state = 'committed'
         try:
             return self._refresh()
-        except Exception:
+        except Exception as error:
+            if self._source_record is not None and isinstance(error, BackendError) and error.code in ('schema_changed', 'integrity'):
+                self._source_stale = True
             self.error = 'refresh_required'
             return FormActionResult((('Status', 'Saved; refresh required'),))
 
@@ -277,11 +346,28 @@ class CatalogEditController:
         field = next((field for field in self.fields if control == 'Input' + field[2]), None)
         if field is None:
             raise UIError('invalid_value')
+        if self._source_record is not None and field[0] != 'Description':
+            raise UIError('invalid_value')
         value = self._parse_input(field, value)
         snapshot = self.form.snapshot()
+        source_messages = None
+        if self._source_record is not None:
+            current = dict(snapshot.attributes)
+            try:
+                draft = self._source_draft(current['Data0'], current['Data1'])
+                changed = draft.change_description(value, revision=0)
+                self._verify_source()
+                value = dict(changed.values)['Description']
+                source_messages = changed.messages
+            except BackendError as error:
+                if error.code in ('schema_changed', 'integrity'):
+                    self._source_stale = True
+                raise
         attributes = tuple((key, value if key == field[2] else old) for key, old in snapshot.attributes)
         self._check_size(replace(snapshot, attributes=attributes))
         result = self.form.dispatch('change', revision=self.form.revision, control=control, value=value)
+        if source_messages is not None:
+            self._source_messages = source_messages
         self.error = None
         self.save_state = 'editing'
         return result
@@ -316,7 +402,7 @@ class CatalogEditController:
                 value = CatalogRef(target, value)
             fields.append({'name': field, 'kind': kind, 'control': control,
                 'value': encode_value(value), 'inputText': _input_text(values[attribute]),
-                'title': item[2], 'visible': item[3], 'enabled': item[4], 'readOnly': item[5],
+                'title': item[2], 'visible': item[3], 'enabled': item[4], 'readOnly': item[5] or (self._source_record is not None and field == 'Code'),
                 'view': views[control], **({'choices': choices} if choices is not None else {})})
         return {'editorId': self.identity, 'catalog': str(self.schema.identity), 'catalogName': self.schema.name,
             'reference': encode_value(self._saved_reference()), 'isNew': self.object.is_new(),
@@ -326,7 +412,11 @@ class CatalogEditController:
             'fields': fields, 'references': self.references,
             'commands': [{'control': item[0], 'title': item[2], 'visible': item[3], 'enabled': item[4]}
                          for item in snapshot.items if item[1] == 'button'],
-            'messages': list(self.form.messages)}
+            'messages': list(self.form.messages),
+            'originalForm': self._source_record is not None,
+            'sourceStale': self._source_stale,
+            'fieldMessages': [{'text': message.text, 'field': message.field}
+                              for message in self._source_messages]}
 
     def _check_size(self, snapshot=None):
         # Reserve space for the transport envelope/status/commit identity. No BSL
@@ -341,6 +431,10 @@ class CatalogEditorApplication:
         context.require_active()
         self.context = context
         self.backend = context.backend
+        self._active_forms = self.backend.active_form_catalogs()
+        if (type(self._active_forms) is not tuple or
+                any(type(identity) is not UUID or not identity.int for identity in self._active_forms)):
+            raise BackendError('unsupported')
         self.metadata = BSLCatalogMetadataCollection(context)
         self.catalogs = BSLCatalogs(self.metadata, context)
         self.selected = None
@@ -387,7 +481,8 @@ class CatalogEditorApplication:
             ref = manager.get_ref(BSLUUID(reference.record))
             obj = ref.get_object(ref)
             if obj is None: raise UIError('record_not_found')
-        editor = CatalogEditController(manager, schema, obj)
+        editor = CatalogEditController(manager, schema, obj,
+            imported_form=schema.identity in self._active_forms)
         self.editor = editor
 
     def event(self, event, **values):
@@ -405,8 +500,15 @@ class CatalogEditorApplication:
             elif event == 'command': self.editor.command(values['control'])
             else: self.editor.close()
             if self.editor.form.closed:
+                source_stale = self.editor._source_stale
                 self.editor = None
-                self.view = self._load()
+                if source_stale:
+                    # Discard must leave a usable terminal snapshot, not attempt
+                    # fresh catalog reads against a permanently invalidated pin.
+                    self.view = None
+                    self.close()
+                else:
+                    self.view = self._load()
         elif event == 'close':
             if self.editor is not None:
                 self.editor.close()
@@ -423,7 +525,8 @@ class CatalogEditorApplication:
                  'editor': self.editor.snapshot() if self.editor is not None else None}
         return {'capabilities': {'canCreate': writable, 'canEdit': writable, 'canWrite': writable,
                 'referenceEditing': True, 'referenceChoiceLimit': 64, 'actual1CForms': False, 'autoform': True,
-                'standardFormWrite': False, 'remoteService': False}, 'state': state}
+                'standardFormWrite': False, 'remoteService': False,
+                'importedNameValidation': bool(self._active_forms)}, 'state': state}
 
     def close(self):
         if not self.closed:
