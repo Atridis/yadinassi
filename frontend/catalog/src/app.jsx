@@ -2,7 +2,7 @@ import {h,render,Fragment} from 'preact';
 import {useEffect,useRef,useState} from 'preact/hooks';
 import {EditorClient,typedInput,readBoundedJSON,takeSessionCapability,
   rowDraftKey,editorDraft,reconcileDraft,hasDraftChanges,flushDraft} from './client.mjs';
-import {readTheme,rememberTheme,resolvedTheme,workspacePreview} from './presentation.mjs';
+import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation} from './presentation.mjs';
 
 let token=takeSessionCapability(location,history);
 // The capability is memory-only: never store it with the presentation preference.
@@ -60,6 +60,7 @@ function App(){
   },[localDirty,editor?.dirty,editor?.editingLocked,busy]);
   async function run(event,values={},flush=false){
     if(gate.current||client.uncertain)return;
+    if(event==='checkCard'&&!listCheckPresentation(client.snapshot).available)return;
     if(['addRow','deleteRow','changeRow'].includes(event)&&(!editor||editor.editingLocked||editor.sourceStale))return;
     gate.current=true;setBusy(true);setError('');
     let flushComplete=!flush,eventComplete=false;
@@ -93,6 +94,7 @@ function App(){
     try{await client.resync();setError('');}catch(e){setError(e.message);}finally{apply(client.snapshot?.state?.editor?.editorId===editor?.editorId);gate.current=false;setBusy(false);}
   }
   const state=snapshot?.state;
+  const listCheck=listCheckPresentation(snapshot);
   const navigationLocked=busy||client.uncertain||Boolean(editor);
   const catalogs=editor?preview.catalogs:state?.catalogs||[];
   const list=editor?preview.list:state?.list;
@@ -120,10 +122,14 @@ function App(){
       <section class="panel records" aria-label="Records">{list?<><div class="section-head"><div><h2>{list.catalogName}</h2><span class="muted">{list.total} records</span></div>
         <button class="primary" disabled={navigationLocked||!snapshot.capabilities.canCreate} onClick={()=>run('create')}>+ New record</button></div>
         {editor&&<p class="preview-note">List preview · refreshed when you return</p>}
-        <div class="table-scroll"><table><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
+        {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
+          {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
+        </div>}
+        <div class="table-scroll"><table class={listCheck.available?'list-check-table':undefined}><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
           {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}</td>
-            <td><button disabled={navigationLocked} onClick={()=>run('openCard',{reference:row.reference})}>Open →</button></td></tr>)}</tbody></table></div>
-        {!list.rows.length&&<div class="empty">No records on this page.</div>}
+            <td>{listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:row.reference})}>Проверить карточку</button>} <button disabled={navigationLocked} onClick={()=>run('openCard',{reference:row.reference})}>Open →</button></td></tr>)}</tbody></table></div>
+        {!list.rows.length&&<div class="empty">No records on this page.
+          {listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:null})}>Проверить карточку</button>}</div>}
         <footer class="pagination"><button disabled={navigationLocked||list.offset===0} onClick={()=>run('page',{offset:Math.max(0,list.offset-list.limit),limit:list.limit})}>← Previous</button>
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>

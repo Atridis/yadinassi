@@ -563,6 +563,7 @@ class CatalogEditorApplication:
         self.page = (0, 8)
         self.editor = None
         self.closed = False
+        self.list_messages = ()
 
     def _inventory(self):
         view = self.backend.begin_read()
@@ -590,6 +591,28 @@ class CatalogEditorApplication:
             self.selected = old; raise
         self.page = (0, 8)
 
+    def check_card(self, reference):
+        self.list_messages = ()
+        if self.editor is not None or self.view is None:
+            raise UIError('busy')
+        schema = self._schema(self.selected)
+        if schema.identity not in self._active_forms or schema.name != 'Номенклатура':
+            raise UIError('invalid_message')
+        manager = self.catalogs.get_index(schema.name)
+        if reference is None:
+            selected = manager.empty_ref()
+        else:
+            if type(reference) is not CatalogRef or reference.catalog != self.selected:
+                raise UIError('catalog_identity')
+            selected = manager.get_ref(BSLUUID(reference.record))
+        from ..product_list_check import check_product_list
+        view = self.backend.begin_read()
+        try:
+            sources = view.product_list_sources(schema.identity)
+            self.list_messages = check_product_list(manager, selected, view, *sources)
+        finally:
+            view.close()
+
     def open(self, reference=None):
         if self.editor is not None: raise UIError('busy')
         schema = self._schema(self.selected)
@@ -608,7 +631,9 @@ class CatalogEditorApplication:
 
     def event(self, event, **values):
         if self.closed: raise UIError('closed')
-        if event == 'selectCatalog': self.select(values['catalog'])
+        if event != 'checkCard': self.list_messages = ()
+        if event == 'checkCard': self.check_card(values['reference'])
+        elif event == 'selectCatalog': self.select(values['catalog'])
         elif event == 'create': self.open()
         elif event == 'openCard': self.open(values['reference'])
         elif event == 'page':
@@ -644,7 +669,11 @@ class CatalogEditorApplication:
         state = {'kind': 'closed' if self.closed else 'editor' if self.editor else 'list' if self.view else 'catalogs',
                  'catalogs': [] if self.closed or self.editor is not None else [{'id': str(schema.identity), 'name': schema.name} for schema in self._inventory()],
                  'list': self.view.page(*self.page) if self.view is not None and self.editor is None else None,
-                 'editor': self.editor.snapshot() if self.editor is not None else None}
+                 'editor': self.editor.snapshot() if self.editor is not None else None,
+                 'listCheck': {'available': bool(not self.closed and self.editor is None and self.view is not None
+                     and any(str(s.identity) == self.selected and s.identity in self._active_forms
+                             and s.name == 'Номенклатура' for s in self._inventory())),
+                     'messages': [{'text': m.text, 'field': m.field} for m in self.list_messages]}}
         return {'capabilities': {'canCreate': writable, 'canEdit': writable, 'canWrite': writable,
                 'referenceEditing': True, 'referenceChoiceLimit': 64, 'referenceRowEditing': True, 'sectionRowLimit': 32, 'actual1CForms': False, 'autoform': True,
                 'standardFormWrite': False, 'remoteService': False,

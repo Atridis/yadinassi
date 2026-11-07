@@ -32,10 +32,27 @@ Ordinary `CatalogObject.Write`/`Записать` in this exact profile cannot s
 
 ## Boundaries
 
-- This is a local host form projection, not native 1C managed-form or client/server parity. The original list form and its commands are archived but not activated.
+- This is a local host form projection, not native 1C managed-form or client/server parity. The product list exposes one bounded **Проверить карточку** command. The host invokes the byte-pinned original `ПроверитьКарточкуНаСервере` handler directly, not native managed-form client/server dispatch.
 - Choices are bounded to 64 records per target catalog, with at most 32 editable rows. Unsupported or unavailable selections remain read-only. Existing larger sections remain visible as a read-only summary; this bounded original-form adapter does not save them.
 - No arbitrary XML/BSL, modified demo archive, additional form fields, or arbitrary handlers are admitted.
 - The existing formatter can render zero as empty for the original `ЧГ=0` expression. A first-row diagnostic may therefore show `Склады[].Склад`; the diagnostic remains visible and saving remains refused. This is not a native formatting-parity claim.
 - Source/schema drift fails closed. Uncertain commits retain the exact submitted object and source; receipt recovery does not replay form handlers. Refresh failure is retried without a second write.
 
 See [catalog editor](catalog-editor.md), [tabular sections](catalog-tabular-sections.md), and [original kinds/warehouses](demo-directories.md).
+
+## Check a saved card from the list
+
+Each product row has **Проверить карточку**. An empty list offers the same
+command without a selection and shows the original selection diagnostic.
+The command reads the saved product, its kind and warehouses, and both original
+BSL modules through one read-only SQLite snapshot. It calls the original
+`ПроверитьДанные`, not save preparation: names, rows and revisions are unchanged.
+Deleted/missing products and invalid referenced records produce the original
+bounded diagnostics. Field labels are plain text, not navigation authority.
+
+Checking is unavailable while any editor is open, including a dirty editor.
+Return to the list first; no unsaved form buffer is accepted by this command.
+Repeated checks read fresh saved data. Navigation clears old messages, and a
+failed check clears prior success. Modified source, another catalog/profile,
+and products beyond the 32-row check budget fail closed. This is an owned demo
+application adapter, not arbitrary list-form activation or native GUI parity.

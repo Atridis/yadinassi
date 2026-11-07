@@ -77,6 +77,9 @@ th:first-child { width: 24%; }
 th:last-child { width: 90px; }
 td:last-child { text-align: right; }
 td button { padding: 7px 9px; }
+.list-check-table th:last-child { width: 180px; }
+.list-check-table td:last-child button { max-width: 100%; white-space: normal; }
+.list-check-table td:last-child button + button { margin-top: 4px; }
 .code { font-variant-numeric: tabular-nums; color: var(--muted); }
 .current-record { background: var(--selected); }
 .current-record .code { color: var(--accent); }
@@ -137,6 +140,7 @@ td button { padding: 7px 9px; }
   .fields { grid-template-columns: minmax(0, 1fr); }
   .editor .section-head { flex-direction: column; }
   th, td { padding: 11px 10px; }
+  .list-check-table th:last-child { width: 112px; }
   .pagination { padding: 12px; gap: 8px; }
   .references > div { flex-wrap: wrap; }
   .theme-control > span { display: none; }
