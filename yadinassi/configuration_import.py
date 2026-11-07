@@ -57,6 +57,12 @@ def _host_directory(directory):
 
 
 def load_configuration_directory(directory, *, numbering_policy='explicit'):
+    return import_configuration(read_configuration_directory(directory),
+                                numbering_policy=numbering_policy)
+
+
+def read_configuration_directory(directory):
+    """Read bounded, unchanged source bytes without choosing an active profile."""
     raw = os.fspath(directory)
     if type(raw) is not str or not raw or '\x00' in raw or raw.startswith(('//','\\\\')):
         raise ValueError('invalid configuration directory')
@@ -116,4 +122,4 @@ def load_configuration_directory(directory, *, numbering_policy='explicit'):
                 total+=len(content);files[logical]=content
     except OSError:
         raise ValueError('configuration source unavailable') from None
-    return import_configuration(files, numbering_policy=numbering_policy)
+    return files
