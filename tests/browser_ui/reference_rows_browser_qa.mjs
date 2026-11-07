@@ -1,4 +1,4 @@
-/** One opt-in scenario: authored rows, demo products, or demo product list check. No native parity claim. */
+/** One opt-in scenario: authored rows, demo products, demo product list check, or deletion marks. No native parity claim. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir,readlink,realpath,open as openFile} from 'node:fs/promises';
@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import {launchOutputReader,allowedRequest,childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
 const args=process.argv.slice(2);
-assert.ok(args.length===0||(args.length===1&&['--demo-products','--demo-product-list-check'].includes(args[0])),'invalid_arguments');
+assert.ok(args.length===0||(args.length===1&&['--demo-products','--demo-product-list-check','--demo-deletion-marks'].includes(args[0])),'invalid_arguments');
 const demoProducts=args.length===1;
+const demoDeletionMarks=args[0]==='--demo-deletion-marks';
 const demoProductListCheck=args[0]==='--demo-product-list-check';
 const startedAt=Date.now();
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
@@ -29,11 +30,11 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>{if(browserGroup)try{process.kill(-browserGroup,'SIGKILL');}catch(e){if(e.code!=='ESRCH')throw e;}};
 const abort=()=>{aborted=true;killHost('SIGKILL');killBrowser();};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:demoProductListCheck?'demo_products_list_check_v1':demoProducts?'demo_products_v1':'authored-logical-reference-rows',expectedScenarios:1};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:demoDeletionMarks?'demo_products_deletion_marks_v1':demoProductListCheck?'demo_products_list_check_v1':demoProducts?'demo_products_v1':'authored-logical-reference-rows',expectedScenarios:1};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>JSON.parse(execFileSync(python,[path.join(repo,'tests/browser_ui/reference_rows_fixture.py'),mode,owned],
   {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','pipe']}));
-const audit=()=>fixture(demoProducts?'audit-products':'audit');
+const audit=()=>fixture(demoDeletionMarks?'audit-deletion-marks':demoProducts?'audit-products':'audit');
 function killHost(signal){if(host?.pid)try{process.kill(-host.pid,signal);}catch(e){if(e.code!=='ESRCH')throw e;}}
 async function stopHost(){if(!host)return;const done=host.exitCode!==null||host.signalCode!==null;if(!done){const ended=new Promise(r=>host.once('exit',r));killHost('SIGINT');try{await bounded(ended,5000,'host_close_timeout');}catch{killHost('SIGKILL');await bounded(ended,2000,'host_kill_timeout');}}killHost('SIGKILL');}
 async function startHost(){
@@ -159,7 +160,7 @@ async function main(){
   });
   page=await context.newPage();page.setDefaultTimeout(10000);
   await page.goto(url);
-  await scenario(demoProductListCheck?'original_product_list_check_repeat_dirty_discard_restart':demoProducts?'original_product_normalize_save_restart_refuse_delete_discard':'create_save_restart_reopen_delete_discard_reference_row',async()=>{
+  await scenario(demoDeletionMarks?'original_deletion_marks_refs_refusal_bypass_recovery_restart':demoProductListCheck?'original_product_list_check_repeat_dirty_discard_restart':demoProducts?'original_product_normalize_save_restart_refuse_delete_discard':'create_save_restart_reopen_delete_discard_reference_row',async()=>{
     phase='create_product_and_reference_row';
     await page.getByRole('button',{name:demoProducts?/^Номенклатура\s*›?$/:/^Products\s*›?$/}).click();
     if(demoProductListCheck){
@@ -191,6 +192,102 @@ async function main(){
     await persistedRow();
     await button('← Back to records').click();await recordsReady();
     assert.equal(await page.locator('.records tbody tr').count(),1,'created_record_count_mismatch');
+    if(demoDeletionMarks){
+      const mark=()=>field('Пометка удаления');
+      const back=async()=>{await button('← Back to records').click();await recordsReady();};
+      const openCatalog=async name=>{
+        await page.getByRole('button',{name:new RegExp('^'+name+'\\s*›?$')}).click();
+        await recordsReady();await button('Open →').click();await ready();
+      };
+      const save=async expected=>{
+        const response=page.waitForResponse(reply=>reply.url()===origin+'/rpc'&&
+          reply.request().postDataJSON()?.params?.event==='command');
+        await button('Save changes').click();await (await response).finished();
+        await ready();await page.getByRole('status').filter({hasText:new RegExp('^'+expected+'$')}).waitFor();
+      };
+      const initial=audit();
+      const assertIdentity=current=>{
+        for(const key of ['productIdentity','kindIdentity','warehouseIdentity','rowIdentity'])
+          assert.equal(current[key],initial[key],'deletion_mark_changed_identity');
+      };
+      const toggleReference=async(catalog,key,value)=>{
+        await openCatalog(catalog);const before=audit();
+        await mark().setChecked(value);
+        assert.deepEqual(audit(),before,'checkbox_persisted_before_save');
+        await save('Saved');const after=audit();assertIdentity(after);
+        assert.equal(after[key],value,'reference_mark_not_persisted');
+        const prefix=key==='kindMarked'?'kind':'warehouse';
+        assert.notEqual(after[prefix+'Revision'],before[prefix+'Revision'],'reference_mark_revision_unchanged');
+        for(const other of ['kind','warehouse','product'].filter(name=>name!==prefix)){
+          assert.equal(after[other+'Revision'],before[other+'Revision'],'reference_save_changed_other_revision');
+          assert.equal(after[other+'Marked'],before[other+'Marked'],'reference_save_changed_other_mark');
+        }
+        await back();
+        assert.equal(await page.locator('.records .deletion-mark').count(),value?1:0,'reference_list_mark_mismatch');
+      };
+      const refuseProduct=async message=>{
+        const before=audit();await save('Save refused by original form handler');
+        await page.getByRole('alert').filter({hasText:message}).waitFor();
+        assert.deepEqual(audit(),before,'refused_save_changed_durable_record_or_row');
+      };
+      phase='mark_kind_and_refuse_product';
+      await toggleReference('ВидыНоменклатуры','kindMarked',true);
+      await openCatalog('Номенклатура');
+      await refuseProduct('Выбранный вид номенклатуры помечен на удаление. Выберите другой вид.');
+      await button('Discard & return').click();await recordsReady();
+      phase='unmark_kind_and_mark_warehouse';
+      await toggleReference('ВидыНоменклатуры','kindMarked',false);
+      await toggleReference('Склады','warehouseMarked',true);
+      await openCatalog('Номенклатура');
+      await refuseProduct('Склад помечен на удаление. Выберите другой склад.');
+      phase='mark_product_bypasses_original_validation';
+      const beforeProductMark=audit();await mark().check();
+      assert.deepEqual(audit(),beforeProductMark,'product_checkbox_persisted_before_save');
+      phase='mark_survives_imported_name_normalization';
+      await field('Description').fill('  Кабель USB-C  ');
+      const nameResponse=page.waitForResponse(reply=>reply.url()===origin+'/rpc'&&
+        reply.request().postDataJSON()?.params?.event==='change');
+      // Theme is a noncommand focus target, so this exercises the original blur handler.
+      await field('Color theme').focus();await (await nameResponse).finished();await ready();
+      assert.equal(await field('Description').inputValue(),'Кабель USB-C','name_not_normalized');
+      assert.equal(await mark().isChecked(),true,'name_blur_lost_local_mark');
+      assert.deepEqual(audit(),beforeProductMark,'name_blur_persisted_local_mark');
+      await save('Saved');const marked=audit();assertIdentity(marked);
+      assert.equal(marked.productMarked,true,'product_mark_not_persisted');
+      assert.equal(marked.warehouseMarked,true,'warehouse_mark_lost');
+      assert.notEqual(marked.productRevision,beforeProductMark.productRevision,'product_mark_revision_unchanged');
+      assert.equal(marked.warehouseRevision,beforeProductMark.warehouseRevision,'product_save_changed_warehouse');
+      assert.equal(marked.kindRevision,beforeProductMark.kindRevision,'product_save_changed_kind');
+      await screenshot('editor.png');
+      await page.setViewportSize({width:390,height:844});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'viewport_overflow');
+      assert.equal(await mark().isVisible(),true,'narrow_checkbox_missing');await screenshot('narrow.png');
+      await page.setViewportSize({width:1320,height:1000});await back();
+      assert.equal(await page.locator('.records .deletion-mark').count(),1,'product_list_mark_missing');
+      await screenshot('list.png');
+      phase='restart_marked_product';await closeHostThroughUI();
+      await startHost();await page.goto(url);await openCatalog('Номенклатура');
+      assert.equal(await mark().isChecked(),true,'product_mark_not_reopened');
+      assert.deepEqual(audit(),marked,'restart_changed_marked_identity_or_revision');
+      phase='unmark_product_refused_and_discarded';await mark().uncheck();
+      await refuseProduct('Склад помечен на удаление. Выберите другой склад.');
+      assert.equal(await mark().isChecked(),false,'refusal_lost_unmark_draft');
+      await button('Discard & return').click();await recordsReady();
+      assert.deepEqual(audit(),marked,'discard_changed_marked_identity_or_revision');
+      assert.equal(await page.locator('.records .deletion-mark').count(),1,'discard_lost_product_badge');
+      phase='recover_warehouse_then_product';await toggleReference('Склады','warehouseMarked',false);
+      await openCatalog('Номенклатура');assert.equal(await mark().isChecked(),true,'discard_lost_product_mark');
+      await mark().uncheck();await save('Saved');const recovered=audit();assertIdentity(recovered);
+      for(const key of ['kindMarked','warehouseMarked','productMarked'])assert.equal(recovered[key],false,'mark_recovery_failed');
+      await back();assert.equal(await page.locator('.records .deletion-mark').count(),0,'recovered_badge_remaining');
+      phase='close_recovered_marks';await closeHostThroughUI();
+      assert.deepEqual(audit(),recovered,'close_changed_recovered_card');
+      report.durable={products:1,warehouses:1,kinds:1,referenceRows:1,processRestartVerified:true,
+        referenceMarkAndUnmarkVerified:true,invalidReferencesRefused:true,productMarkBypassVerified:true,
+        invalidProductUnmarkRefused:true,discardPreservedSavedMark:true,referenceAndProductRecoveryVerified:true,
+        identitiesAndRowsPreserved:true,draftCheckboxDoesNotWrite:true};
+      return;
+    }
     if(demoProductListCheck){
       const diagnostics=()=>page.getByRole('status',{name:'Результат проверки карточки',exact:true});
       const validMessage='Карточка заполнена корректно: указан действующий вид и неповторяющиеся склады хранения.';

@@ -32,3 +32,6 @@ export function listCheckPresentation(snapshot){
     return {available:false,messages:[]};
   return {available:true,messages:state.listCheck.messages||[]};
 }
+
+/** Only the host's typed Boolean marks a persisted list record. */
+export const isDeletionMarked=row=>row?.deletionMark?.type==='Boolean'&&row.deletionMark.value===true;
