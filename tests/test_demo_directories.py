@@ -264,3 +264,22 @@ class DemoDirectoriesTests(unittest.TestCase):
             self.backend.begin_write(uuid4())
         with self.assertRaisesRegex(BackendError, 'schema_changed'):
             self.backend.resolve_write_outcome(operation, draft)
+
+    def test_warehouse_mark_unmark_preserves_code_and_reopens(self):
+        app = self.app()
+        editor = app.editor
+        editor.change('InputData1', 'Основной склад'); editor.command('SaveButton')
+        reference = editor._saved_reference(); code = editor.object.get_member('Code')
+        control = next(f['control'] for f in editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+        for value in (True, False):
+            editor.change(control, value)
+            self.assertNotEqual(editor.object.get_member('DeletionMark'), value)
+            editor.command('SaveButton')
+            self.assertEqual(editor.object.get_member('DeletionMark'), value)
+            self.assertEqual(editor.object.get_member('Code'), code)
+            app.event('closeCard')
+            self.assertEqual(app.snapshot()['state']['list']['rows'][0]['deletionMark']['value'], value)
+            app.open(reference); editor = app.editor
+            field = next(f for f in editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+            self.assertEqual(field['inputText'], value)
+            self.assertFalse(editor.snapshot()['originalForm'])

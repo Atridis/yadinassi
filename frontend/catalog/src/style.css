@@ -147,3 +147,5 @@ td button { padding: 7px 9px; }
   .editor-actions { padding: 14px; gap: 8px; }
   .editor-actions button { flex: 1; }
 }
+
+.deletion-mark { display: block; width: fit-content; max-width: 100%; margin-top: 6px; white-space: normal; background: var(--dirty); color: var(--dirty-text); }

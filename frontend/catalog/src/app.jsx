@@ -2,7 +2,7 @@ import {h,render,Fragment} from 'preact';
 import {useEffect,useRef,useState} from 'preact/hooks';
 import {EditorClient,typedInput,readBoundedJSON,takeSessionCapability,
   rowDraftKey,editorDraft,reconcileDraft,hasDraftChanges,flushDraft} from './client.mjs';
-import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation} from './presentation.mjs';
+import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation,isDeletionMarked} from './presentation.mjs';
 
 let token=takeSessionCapability(location,history);
 // The capability is memory-only: never store it with the presentation preference.
@@ -23,8 +23,8 @@ function App(){
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
   const gate=useRef(false),actionPointer=useRef(false);
-  const apply=(preserveDraft=false)=>{if(client.snapshot){setSnapshot(client.snapshot);setPreview(previous=>workspacePreview(previous,client.snapshot));
-    setDraft(previous=>preserveDraft?reconcileDraft(client.snapshot.state.editor,previous):editorDraft(client.snapshot.state.editor));}};
+  const apply=(preserveDraft=false,acceptedControl)=>{if(client.snapshot){setSnapshot(client.snapshot);setPreview(previous=>workspacePreview(previous,client.snapshot));
+    setDraft(previous=>preserveDraft?reconcileDraft(client.snapshot.state.editor,previous,acceptedControl):editorDraft(client.snapshot.state.editor));}};
   const changeField=(control,value)=>setDraft(previous=>({...previous,fields:{...previous.fields,[control]:value}}));
   const changeRow=(section,row,value)=>setDraft(previous=>({...previous,rows:{...previous.rows,[rowDraftKey(section,row)]:value}}));
   useEffect(()=>{
@@ -63,6 +63,7 @@ function App(){
     if(event==='checkCard'&&!listCheckPresentation(client.snapshot).available)return;
     if(['addRow','deleteRow','changeRow'].includes(event)&&(!editor||editor.editingLocked||editor.sourceStale))return;
     gate.current=true;setBusy(true);setError('');
+    const singleImportedChange=event==='change'&&!flush&&Boolean(editor?.originalForm);
     let flushComplete=!flush,eventComplete=false;
     try{
       if(flush&&editor&&!editor.editingLocked)await flushDraft(client,editor,draft);
@@ -76,7 +77,12 @@ function App(){
         if(event==='close'&&client.snapshot?.state?.kind!=='closed')await client.event('close');
       }
     }catch(e){setError(e.message);}
-    finally{apply((!flushComplete||!eventComplete)&&client.snapshot?.state?.editor?.editorId===editor?.editorId);gate.current=false;setBusy(false);}
+    finally{
+      const sameEditor=Boolean(editor?.editorId)&&client.snapshot?.state?.editor?.editorId===editor.editorId;
+      apply(sameEditor&&(!flushComplete||!eventComplete||singleImportedChange),
+        singleImportedChange&&eventComplete?values.control:undefined);
+      gate.current=false;setBusy(false);
+    }
   }
   function commitImportedField(field,value,relatedTarget){
     const current=client.snapshot?.state?.editor;
@@ -126,7 +132,7 @@ function App(){
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
         </div>}
         <div class="table-scroll"><table class={listCheck.available?'list-check-table':undefined}><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
-          {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}</td>
+          {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}{isDeletionMarked(row)&&<span class="badge deletion-mark">Помечен на удаление</span>}</td>
             <td>{listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:row.reference})}>Проверить карточку</button>} <button disabled={navigationLocked} onClick={()=>run('openCard',{reference:row.reference})}>Open →</button></td></tr>)}</tbody></table></div>
         {!list.rows.length&&<div class="empty">No records on this page.
           {listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:null})}>Проверить карточку</button>}</div>}
@@ -147,7 +153,7 @@ function App(){
             disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>changeField(field.control,e.currentTarget.value)}>
             {field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
-          </select>:field.kind==='boolean'?<input type="checkbox" checked={draft.fields[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
+          </select>:field.kind==='boolean'?<input aria-label={field.title||field.name} aria-describedby={field.name==='DeletionMark'?'deletion-mark-note':undefined} type="checkbox" checked={draft.fields[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>changeField(field.control,e.currentTarget.checked)}/>:
           <input aria-label={field.name} type={field.kind==='datetime'?'datetime-local':'text'} step={field.kind==='datetime'?'1':undefined}
             inputMode={field.kind==='number'?'decimal':undefined} value={draft.fields[field.control]??''}
@@ -156,6 +162,7 @@ function App(){
             onBlur={e=>commitImportedField(field,e.currentTarget.value,e.relatedTarget)}/>}
           {field.kind==='number'&&<small>Exact decimal · decimal point “.”</small>}
         </label>)}</div>
+        {editor.fields.some(field=>field.visible&&field.name==='DeletionMark')&&<p id="deletion-mark-note" class="section-note">Пометка удаления изменяется только после «Save changes». Запись и строки не удаляются физически.</p>}
         {editor.references.length>0&&<section class="references"><h3>References <span class="badge">Read-only</span></h3>
           {editor.references.map(ref=><div key={ref.name}><strong>{ref.name}</strong><span>{ref.presentation||'Empty reference'}</span></div>)}
           <p>These references are preserved: choices are unavailable, exceed 64 records, or the current value is not selectable. Native FormData is not supported.</p></section>}

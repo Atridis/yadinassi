@@ -67,11 +67,14 @@ export function editorDraft(editor){
       section.rows.map(row=>[rowDraftKey(section.name,row.id),row.field.inputText])))
   };
 }
-export function reconcileDraft(editor,draft){
+// Callers keep drafts only within the same editor identity. A successful single
+// field event adopts its normalized value without discarding unrelated input.
+export function reconcileDraft(editor,draft,acceptedControl){
   const fresh=editorDraft(editor);
   for(const kind of ['fields','rows']){
     for(const key of Object.keys(fresh[kind])){
-      if(Object.hasOwn(draft[kind]||{},key))fresh[kind][key]=draft[kind][key];
+      if(!(kind==='fields'&&key===acceptedControl)&&Object.hasOwn(draft[kind]||{},key))
+        fresh[kind][key]=draft[kind][key];
     }
   }
   return fresh;

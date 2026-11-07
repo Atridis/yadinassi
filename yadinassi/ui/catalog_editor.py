@@ -156,12 +156,16 @@ class CatalogEditController:
             target_manager = manager._catalogs._manager_by_metadata_uuid(field.target_catalog_id)
             self.reference_fields[field.name] = (str(field.target_catalog_id), target_manager, MappingProxyType(choices))
             definitions.append((field.name, 'catalog_ref', (36,)))
+        # A host draft field, not an original form OnChange binding. Append it
+        # to preserve existing control identities. Only Save writes this value.
+        definitions.append(('DeletionMark', 'boolean', ()))
         attributes, initial = [], {}
         for index, (field, kind, qualifiers) in enumerate(definitions):
             attribute = 'Data' + str(index)
             descriptor = _descriptor('string' if kind == 'catalog_ref' else kind, qualifiers)
             self.fields.append((field, kind, attribute, descriptor))
-            attributes.append(BSLFormAttribute(attribute, descriptor, title=field))
+            attributes.append(BSLFormAttribute(attribute, descriptor,
+                title='Пометка удаления' if field == 'DeletionMark' else field))
             initial[attribute] = self._field_value(obj, field)
         attributes += [BSLFormAttribute('IsDirty', BSLTypeDescription('Boolean')),
                        BSLFormAttribute('DiscardChanges', BSLTypeDescription('Boolean')),
@@ -194,14 +198,15 @@ class CatalogEditController:
                 self._source_stale = True
             raise
 
-    def _source_draft(self, code, description):
+    def _source_draft(self, code, description, deletion_mark=None):
         # Each event starts from the authoritative form buffer, never a second
         # mutable draft. The pinned source is checked around detached execution.
         self._verify_source()
         try:
             draft = VerifiedFormDraftSession(self._source_backend, self.schema.identity,
                 code=code, description=description,
-                deletion_mark=self.object.get_member('DeletionMark'))
+                deletion_mark=(self.object.get_member('DeletionMark')
+                               if deletion_mark is None else deletion_mark))
             self._verify_source()
             return draft
         except BackendError as error:
@@ -321,7 +326,8 @@ class CatalogEditController:
                     self.object = candidate
                     values = tuple(self._field_value(candidate, f[0]) for f in self.fields)
                 elif self._source_record is not None:
-                    draft = self._source_draft(values[0], values[1])
+                    data = dict((f[0], v) for f, v in zip(self.fields, values))
+                    draft = self._source_draft(data['Code'], data['Description'], data['DeletionMark'])
                     prepared = draft.prepare_save(revision=0)
                     self._verify_source()
                     self._source_messages = prepared.messages
@@ -330,7 +336,7 @@ class CatalogEditController:
                         self.error = 'form_validation'
                         return FormActionResult((('IsDirty', True), ('Status', 'Save refused by original form handler')))
                     candidate = dict(prepared.candidate)
-                    values = (candidate['Code'], candidate['Description'])
+                    values = tuple(candidate[field[0]] for field in self.fields)
                     if not self.object.is_new() and values == self.baseline:
                         self.save_state = 'unchanged'
                         return FormActionResult(tuple((field[2], value) for field, value in zip(self.fields, values)) +
@@ -418,12 +424,18 @@ class CatalogEditController:
         if field is None:
             raise UIError('invalid_value')
         if self._source_record is not None and (field[0] == 'Code' or
-                self._product_source is None and field[0] != 'Description'):
+                self._product_source is None and field[0] not in ('Description', 'DeletionMark')):
             raise UIError('invalid_value')
         value = self._parse_input(field, value)
         snapshot = self.form.snapshot()
         source_messages = None
-        if self._product_source is not None:
+        if field[0] == 'DeletionMark':
+            # No original deletion-mark change handler exists. Verify its source
+            # but leave validation to the original before-save/object handlers.
+            if self._source_record is not None:
+                self._verify_source()
+            source_messages = ()
+        elif self._product_source is not None:
             values = tuple(value if f[2] == field[2] else dict(snapshot.attributes)[f[2]] for f in self.fields)
             candidate = self._product_candidate(values)
             event = 'DescriptionOnChange' if field[0] == 'Description' else 'KindOnChange'
@@ -433,7 +445,8 @@ class CatalogEditController:
         elif self._source_record is not None:
             current = dict(snapshot.attributes)
             try:
-                draft = self._source_draft(current['Data0'], current['Data1'])
+                data = dict((f[0], current[f[2]]) for f in self.fields)
+                draft = self._source_draft(data['Code'], data['Description'], data['DeletionMark'])
                 changed = draft.change_description(value, revision=0)
                 self._verify_source()
                 value = dict(changed.values)['Description']

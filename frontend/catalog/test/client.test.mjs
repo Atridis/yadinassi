@@ -256,4 +256,32 @@ test('changed editor identity or new lock aborts a flush before the next row',as
     assert.deepEqual(seen,['change']);assert.equal(draft.rows[key(first)],selected);
   }
 });
+
+test('single imported field acceptance normalizes only that input and failure retains the whole draft',async()=>{
+  for(const rejected of [false,true]){
+    const current=editor();current.originalForm=true;
+    current.fields.push({control:'InputDeletionMark',kind:'boolean',inputText:false,enabled:true,readOnly:false});
+    const draft=changedDraft(current);draft.fields.InputDescription='  Trimmed  ';draft.fields.InputDeletionMark=true;
+    const original=structuredClone(draft);
+    const client=new EditorClient(async request=>{
+      if(request.method==='editor.hello')return {jsonrpc:'2.0',id:request.id,result:snapshot(current)};
+      const normalized=accept(current,{...request.params,value:{type:'String',value:'Trimmed'}});
+      const result=snapshot(normalized,1);
+      return rejected?{jsonrpc:'2.0',id:request.id,error:{data:{reason:'field_rejected',snapshot:result}}}:
+        {jsonrpc:'2.0',id:request.id,result};
+    });
+    await client.hello();let acceptedControl;
+    try{
+      await client.event('change',{control:'InputDescription',value:{type:'String',value:draft.fields.InputDescription}});
+      acceptedControl='InputDescription';
+    }catch(error){assert.equal(error.message,'field_rejected');}
+    const reconciled=reconcileDraft(client.snapshot.state.editor,draft,acceptedControl);
+    assert.equal(reconciled.fields.InputDescription,rejected?'  Trimmed  ':'Trimmed');
+    assert.equal(reconciled.fields.InputDeletionMark,true);
+    assert.deepEqual(reconciled.rows,draft.rows);
+    assert.deepEqual(draft,original);
+    if(rejected)assert.deepEqual(reconciled,original);
+  }
+});
+
 }
