@@ -235,3 +235,60 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.assertNotIn('error', result)
         self.assertEqual(result['result']['state']['kind'], 'closed')
         self.assertIsNone(result['result']['state']['editor'])
+
+    def mark(self, value):
+        control = next(f['control'] for f in self.editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+        return self.editor.change(control, value)
+
+    def test_kind_deletion_mark_uses_current_draft_in_original_save(self):
+        self.change('x'); self.mark(True); self.editor.command('SaveButton')
+        self.assertEqual(self.editor.save_state, 'saved')
+        self.assertTrue(self.editor.object.get_member('DeletionMark'))
+        self.assertEqual(self.editor.object.get_member('Description'), 'x')
+        reference = self.editor._saved_reference()
+        self.app.event('closeCard'); self.app.open(reference); self.editor = self.app.editor
+        self.mark(False); self.editor.command('SaveButton')
+        self.assertEqual(self.editor.error, 'form_validation')
+        self.assertTrue(self.editor.object.get_member('Ref').get_member('DeletionMark'))
+        self.assertFalse(next(f for f in self.editor.snapshot()['fields'] if f['name'] == 'DeletionMark')['inputText'])
+        self.change('Valid kind'); self.editor.command('SaveButton')
+        self.assertEqual(self.editor.save_state, 'saved')
+        self.assertFalse(self.editor.object.get_member('DeletionMark'))
+
+    def test_kind_checkbox_does_not_invent_original_change_handler(self):
+        with mock.patch.object(self.editor, '_source_draft', side_effect=AssertionError('invented handler')):
+            self.mark(True)
+        self.assertTrue(self.editor.snapshot()['dirty'])
+        self.assertFalse(self.editor.object.get_member('DeletionMark'))
+        self.assertEqual(self.editor.snapshot()['fieldMessages'], [])
+
+    def test_kind_mark_change_does_not_skip_original_description_handler(self):
+        self.mark(True); self.change(' x ')
+        self.assertEqual(self.editor.snapshot()['fields'][1]['inputText'], 'x')
+        self.assertTrue(self.editor.snapshot()['fieldMessages'])
+        self.editor.command('SaveButton')
+        self.assertEqual(self.editor.save_state, 'saved')
+        self.assertTrue(self.editor.object.get_member('DeletionMark'))
+
+    def test_kind_mark_is_not_lost_as_unchanged_save(self):
+        self.change('Valid kind'); self.editor.command('SaveButton')
+        self.mark(True); self.editor.command('SaveButton')
+        self.assertTrue(self.editor.object.get_member('DeletionMark'))
+        with mock.patch.object(self.editor.object, 'write', side_effect=AssertionError('duplicate write')):
+            self.editor.command('SaveButton')
+        self.assertEqual(self.editor.save_state, 'unchanged')
+        self.mark(False); self.editor.command('SaveButton')
+        self.assertFalse(self.editor.object.get_member('DeletionMark'))
+
+    def test_kind_mark_uncertain_commit_preserves_exact_value(self):
+        self.change('x'); self.mark(True)
+        original = _View.commit
+        def uncertain(view): original(view); raise BackendError('uncertain_commit')
+        with mock.patch.object(_View, 'commit', uncertain): self.editor.command('SaveButton')
+        self.assertTrue(self.editor.pending_commit)
+        with self.assertRaises(UIError): self.mark(False)
+        with mock.patch.object(self.editor, '_source_draft', side_effect=AssertionError('form replay')), \
+             mock.patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.editor.command('SaveButton')
+        self.assertEqual(self.editor.save_state, 'saved')
+        self.assertTrue(self.editor.object.get_member('DeletionMark'))

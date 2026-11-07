@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {THEME_KEY,themePreference,resolvedTheme,readTheme,rememberTheme,workspacePreview,listCheckPresentation} from '../src/presentation.mjs';
+import {THEME_KEY,themePreference,resolvedTheme,readTheme,rememberTheme,workspacePreview,listCheckPresentation,isDeletionMarked} from '../src/presentation.mjs';
 
 test('new or invalid preferences default to dark independent of OS',()=>{
   for(const value of [undefined,null,'','auto','DARK','session=secret',{},false]){
@@ -68,4 +68,12 @@ test('fresh list snapshots clear prior results and preserve diagnostic text lite
   assert.deepEqual(listCheckPresentation(snapshot).messages,messages);
   assert.deepEqual(listCheckPresentation({state:{kind:'list',listCheck:{available:true,messages:[]}}}).messages,[]);
   assert.deepEqual(listCheckPresentation({state:{kind:'list',listCheck:{available:true}}}).messages,[]);
+});
+
+test('deletion badge requires a true typed Boolean, never a truthy wire value',()=>{
+  assert.equal(isDeletionMarked({deletionMark:{type:'Boolean',value:true}}),true);
+  for(const deletionMark of [undefined,null,false,true,{type:'Boolean',value:false},
+    {type:'Boolean',value:'true'},{type:'Boolean',value:1},{type:'String',value:'true'},{}])
+    assert.equal(isDeletionMarked({deletionMark}),false);
+  assert.equal(isDeletionMarked(null),false);
 });

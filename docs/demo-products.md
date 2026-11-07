@@ -56,3 +56,41 @@ Repeated checks read fresh saved data. Navigation clears old messages, and a
 failed check clears prior success. Modified source, another catalog/profile,
 and products beyond the 32-row check budget fail closed. This is an owned demo
 application adapter, not arbitrary list-form activation or native GUI parity.
+
+## Deletion marks in the local editor
+
+The **Пометка удаления** checkbox in kinds, warehouses and products edits the
+current form draft. **Save changes** persists it through the same write/recovery
+path as the other fields. The list displays **Помечен на удаление** for saved
+marked records. This is a reversible flag, not physical deletion and not an
+implementation of native `SetDeletionMark`/`УстановитьПометкуУдаления`.
+
+The host does not invent an original checkbox OnChange handler. Kind Save runs
+the original form validation using the draft mark. Product Save runs both the
+original form preparation and mandatory object validation. Their original
+marking bypass remains intact: an incomplete product or one referencing a
+marked warehouse can be marked; clearing its mark requires valid data. A kind
+with an invalid short name can likewise be marked, while unmarking requires
+fixing its name. Warehouse autoforms have no original handler to execute.
+
+For local demo scenarios 8 and 12, save a valid product, return to its warehouse
+or kind, set the checkbox and save. Reopen the product: ordinary Save refuses
+with the original reference diagnostic and leaves the saved card and rows
+unchanged. Mark the product and save to exercise the original bypass. Clearing
+the product's mark is refused until its references are valid again. Restore the
+warehouse/kind mark in its own editor, then reopen the product and clear its
+mark. Existing unavailable reference choices remain read-only; no record or row
+is silently removed or replaced. The existing 32-row editing limit remains.
+
+Dirty Back is refused; Discard abandons the draft flag. A refused Save retains
+the checkbox and other edits. Uncertain commit and refresh recovery retain the
+submitted flag and do not replay original handlers or write twice. This local
+adapter and its tests do not establish native managed-form parity or completion
+of the twelve native demo scenarios.
+
+The opt-in source-bound browser harness is
+`node tests/browser_ui/reference_rows_browser_qa.mjs --demo-deletion-marks`.
+It declares one scenario covering reference marking/unmarking, original refusal,
+product marking bypass, failed unmark/discard, restart, and recovery. It uses the
+existing sandbox, source checks, bounded RPC/deadline and artifact rules. Merely
+adding this harness does not establish a passed browser run.

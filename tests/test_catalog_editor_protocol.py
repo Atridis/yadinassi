@@ -124,3 +124,26 @@ class CatalogEditorProtocolTests(unittest.TestCase):
         with redirect_stderr(diagnostic):
             self.assertEqual(bridge_main([str(missing)], source=io.BytesIO(), target=io.BytesIO()), 1)
         self.assertFalse(missing.exists()); self.assertNotIn(str(missing), diagnostic.getvalue())
+
+    def test_boolean_deletion_mark_wire_roundtrip_discard_and_list(self):
+        self.hello(); self.event('selectCatalog', catalog=self.ids['category'])
+        reference = self.app.snapshot()['state']['list']['rows'][0]['reference']
+        self.event('openCard', reference=reference)
+        field = next(f for f in self.app.editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+        before = self.app.editor.snapshot()
+        wrong = self.event('change', control=field['control'], value=encode_value('true'))
+        self.assertEqual(wrong['error']['data']['reason'], 'invalid_value')
+        self.assertEqual(self.app.editor.snapshot(), before)
+        changed = self.event('change', control=field['control'], value=encode_value(True))
+        self.assertTrue(changed['result']['state']['editor']['dirty'])
+        self.event('command', control='CancelButton')
+        row = self.app.snapshot()['state']['list']['rows'][0]
+        self.assertEqual(row['deletionMark'], encode_value(False))
+        self.event('openCard', reference=reference)
+        self.event('change', control=field['control'], value=encode_value(True))
+        saved = self.event('command', control='SaveButton')
+        self.assertIn('result', saved)
+        self.event('closeCard')
+        row = self.app.snapshot()['state']['list']['rows'][0]
+        self.assertEqual(row['reference'], reference)
+        self.assertEqual(row['deletionMark'], encode_value(True))

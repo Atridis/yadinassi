@@ -120,7 +120,7 @@ def seed_products(root):
     return {'seeded': True, 'schema': 'demo_products_v1'}
 
 
-def audit_products(root):
+def audit_products(root, *, allow_marks=False):
     """Read-only exact identities/revisions for in-memory comparisons, not export."""
     backend = SQLiteCatalogBackend(root / 'owned.sqlite', read_only=True)
     view = None
@@ -137,7 +137,7 @@ def audit_products(root):
                                     ('ВидыНоменклатуры', 'Склады', 'Номенклатура'))
         for card, description in ((kind, 'Товары'), (warehouse, 'Основной склад'),
                                   (product, 'Кабель USB-C')):
-            if (card.code, card.description, card.deletion_mark) != ('000000001', description, False):
+            if (card.code, card.description) != ('000000001', description) or (not allow_marks and card.deletion_mark):
                 raise ValueError('product_record_mismatch')
         if kind.values or kind.tabular_sections or warehouse.values or warehouse.tabular_sections:
             raise ValueError('seed_record_shape_mismatch')
@@ -155,6 +155,8 @@ def audit_products(root):
             'rowIdentity': str(row.identity), 'warehouseIdentity': str(warehouse.key.record_id),
             'warehouseRevision': warehouse.revision.token, 'kindIdentity': str(kind.key.record_id),
             'kindRevision': kind.revision.token,
+            **({'kindMarked': kind.deletion_mark, 'warehouseMarked': warehouse.deletion_mark,
+                'productMarked': product.deletion_mark} if allow_marks else {}),
         }
     finally:
         try:
@@ -166,7 +168,8 @@ def audit_products(root):
 
 if __name__ == '__main__':
     try:
-        operations = {'seed': seed, 'audit': audit, 'seed-products': seed_products, 'audit-products': audit_products}
+        operations = {'seed': seed, 'audit': audit, 'seed-products': seed_products, 'audit-products': audit_products,
+                      'audit-deletion-marks': lambda root: audit_products(root, allow_marks=True)}
         if len(sys.argv) != 3 or sys.argv[1] not in operations:
             raise ValueError('invalid_arguments')
         root = Path(sys.argv[2])

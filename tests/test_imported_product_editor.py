@@ -1,5 +1,6 @@
 """Original exact-demo product form projection and atomic durable UI writes."""
 from pathlib import Path
+from dataclasses import replace
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -174,3 +175,176 @@ class ImportedProductEditorTests(unittest.TestCase):
         self.assertIsNone(self.stored())
         self.change('Description', 'Still editable')
         self.editor.command('CancelButton'); self.assertTrue(self.editor.form.closed)
+
+    def mark(self, obj, value):
+        app = CatalogEditorApplication(SQLiteDBContext(self.path))
+        try:
+            app.select(str(obj._key.catalog_id)); app.open(self.ref(obj))
+            control = next(f['control'] for f in app.editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+            app.event('change', control=control, value=value)
+            app.event('command', control='SaveButton')
+            self.assertIsNone(app.editor.error)
+        finally:
+            app.close()
+
+    def deletion_field(self):
+        return next(f for f in self.editor.snapshot()['fields'] if f['name'] == 'DeletionMark')
+
+    def test_deletion_checkbox_is_draft_only_and_has_no_invented_handler(self):
+        self.valid(); self.save(); before = self.stored()
+        with patch.object(self.editor, '_product_event', side_effect=AssertionError('invented handler')):
+            self.change('DeletionMark', True)
+        self.assertTrue(self.deletion_field()['inputText'])
+        self.assertTrue(self.editor.snapshot()['dirty'])
+        self.assertEqual(self.stored(), before)
+        self.assertFalse(self.editor.object.get_member('DeletionMark'))
+
+    def test_deletion_checkbox_rejects_non_boolean_before_mutation(self):
+        before = self.editor.snapshot()
+        for value in (1, 0, 'true', None):
+            with self.subTest(value=value), self.assertRaises(UIError):
+                self.change('DeletionMark', value)
+            self.assertEqual(self.editor.snapshot(), before)
+
+    def test_deletion_checkbox_discard_preserves_saved_record(self):
+        self.valid(); self.save(); before = self.stored()
+        self.change('DeletionMark', True)
+        self.editor.close(); self.assertFalse(self.editor.form.closed)
+        self.editor.command('CancelButton')
+        self.assertTrue(self.editor.form.closed)
+        self.assertEqual(self.stored(), before)
+
+    def test_marked_kind_refuses_product_save_without_changing_saved_rows(self):
+        row = self.valid(); self.save(); before = self.stored()
+        self.mark(self.kind, True); self.save()
+        self.assertEqual(self.editor.error, 'form_validation')
+        self.assertIn('вид номенклатуры помечен', self.editor.snapshot()['fieldMessages'][0]['text'])
+        self.assertEqual(self.stored(), before)
+        self.assertEqual(self.editor.snapshot()['sections'][0]['rows'][0]['id'], row)
+        self.mark(self.kind, False); self.save()
+        self.assertIsNone(self.editor.error)
+        self.assertEqual(replace(self.stored(), revision=before.revision), before)
+
+    def test_mark_product_with_marked_warehouse_then_refuse_unmark_until_fixed(self):
+        row = self.valid(); self.save(); before = self.stored()
+        self.mark(self.warehouse, True); self.save()
+        self.assertEqual(self.editor.error, 'form_validation')
+        self.assertIn('Склад помечен на удаление', self.editor.snapshot()['fieldMessages'][0]['text'])
+        self.assertEqual(self.stored(), before)
+        self.change('DeletionMark', True); self.save()
+        marked = self.stored()
+        self.assertTrue(marked.deletion_mark)
+        self.assertEqual((marked.key, marked.code, marked.description, marked.values),
+                         (before.key, before.code, before.description, before.values))
+        self.assertEqual(self.editor.snapshot()['sections'][0]['rows'][0]['id'], row)
+        self.change('DeletionMark', False); self.save()
+        self.assertEqual(self.editor.error, 'form_validation')
+        self.assertFalse(self.deletion_field()['inputText'])
+        self.assertEqual(self.stored(), marked)
+        self.mark(self.warehouse, False); self.save()
+        self.assertFalse(self.stored().deletion_mark)
+        self.assertEqual(self.editor.snapshot()['sections'][0]['rows'][0]['id'], row)
+
+    def test_mark_incomplete_product_preserves_original_deletion_bypass(self):
+        self.change('Description', 'x'); self.change('DeletionMark', True); self.save()
+        self.assertEqual(self.editor.save_state, 'saved')
+        self.assertTrue(self.stored().deletion_mark)
+        self.assertEqual(self.stored().description, 'x')
+        before = self.stored()
+        self.change('DeletionMark', False); self.save()
+        self.assertEqual(self.editor.error, 'form_validation')
+        self.assertEqual(len(self.editor.snapshot()['fieldMessages']), 3)
+        self.assertEqual(self.stored(), before)
+
+    def test_reopen_marked_product_preserves_unselectable_references_and_row(self):
+        row = self.valid(); self.save(); reference = self.ref(self.editor.object)
+        self.mark(self.warehouse, True); self.mark(self.kind, True)
+        self.change('DeletionMark', True); self.save(); before = self.stored()
+        self.app.event('closeCard'); self.app.open(reference); self.editor = self.app.editor
+        self.assertTrue(self.deletion_field()['inputText'])
+        self.assertTrue(self.editor.snapshot()['references'])
+        self.assertTrue(self.editor.snapshot()['sections'][0]['rows'][0]['field']['readOnly'])
+        self.assertEqual(self.editor.snapshot()['sections'][0]['rows'][0]['id'], row)
+        self.change('DeletionMark', False); self.save()
+        self.assertEqual(self.editor.error, 'form_validation'); self.assertEqual(self.stored(), before)
+        self.change('DeletionMark', True); self.save()
+        self.assertIsNone(self.editor.error)
+        self.assertEqual(replace(self.stored(), revision=before.revision), before)
+
+    def test_mark_repeated_save_revalidates_and_preserves_record_values(self):
+        self.valid(); self.save(); self.change('DeletionMark', True); self.save()
+        marked = self.stored()
+        # Ordinary product Save retains its original mandatory object validation
+        # and fresh revision, unlike receipt/refresh recovery (which cannot write).
+        event = self.editor._product_event
+        with patch.object(self.editor, '_product_event', wraps=event) as prepared:
+            self.save()
+        prepared.assert_called_once()
+        self.assertNotEqual(self.stored().revision, marked.revision)
+        self.assertEqual(replace(self.stored(), revision=marked.revision), marked)
+        self.assertFalse(self.editor.snapshot()['dirty'])
+
+    def test_mark_source_drift_preserves_draft_and_saved_record(self):
+        self.valid(); self.save(); before = self.stored(); fields = self.editor.snapshot()['fields']
+        with patch.object(self.app.backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+            with self.assertRaises(BackendError): self.change('DeletionMark', True)
+        self.assertEqual(self.editor.snapshot()['fields'], fields)
+        self.assertEqual(self.stored(), before)
+        self.assertTrue(self.editor.snapshot()['sourceStale'])
+
+    def test_mark_conflict_never_overwrites_other_writer(self):
+        self.valid(); self.save()
+        other = self.editor.object.get_member('Ref').get_object(self.editor.object.get_member('Ref'))
+        other.set_member('Description', 'Other writer'); other.write(); before = self.stored()
+        self.change('DeletionMark', True); self.save()
+        self.assertEqual(self.editor.error, 'conflict')
+        self.assertTrue(self.deletion_field()['inputText'])
+        self.assertEqual(self.stored(), before)
+
+    def test_mark_uncertain_commit_resolves_retained_boolean_without_replay(self):
+        self.valid(); self.save(); self.change('DeletionMark', True)
+        commit = _View.commit
+        def uncertain(view): commit(view); raise BackendError('uncertain_commit')
+        with patch.object(_View, 'commit', uncertain): self.save()
+        self.assertTrue(self.editor.pending_commit)
+        with self.assertRaises(UIError): self.change('DeletionMark', False)
+        with self.assertRaises(UIError): self.editor.command('CancelButton')
+        with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
+             patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.save()
+        self.assertFalse(self.editor.pending_commit)
+        self.assertTrue(self.stored().deletion_mark)
+        self.assertTrue(self.deletion_field()['inputText'])
+        self.assertFalse(self.editor.snapshot()['dirty'])
+
+    def test_unmark_absent_receipt_revalidation_refuses_and_keeps_mark(self):
+        self.valid(); self.change('DeletionMark', True); self.save(); marked = self.stored()
+        self.change('DeletionMark', False)
+        with patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')): self.save()
+        self.assertTrue(self.editor.pending_commit)
+        self.mark(self.warehouse, True); self.save()
+        self.assertEqual(self.editor.error, 'object_validation')
+        self.assertFalse(self.editor.pending_commit)
+        self.assertFalse(self.deletion_field()['inputText'])
+        self.assertEqual(self.stored(), marked)
+        self.change('DeletionMark', True); self.save()
+        self.assertIsNone(self.editor.error)
+        self.assertTrue(self.stored().deletion_mark)
+
+    def test_mark_refresh_retry_adopts_checkbox_without_second_write(self):
+        self.valid(); self.save(); self.change('DeletionMark', True)
+        with patch.object(self.editor, '_refresh', side_effect=BackendError('storage_error')): self.save()
+        self.assertTrue(self.editor.pending_refresh)
+        with self.assertRaises(UIError): self.change('DeletionMark', False)
+        with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
+             patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
+            self.save()
+        self.assertFalse(self.editor.pending_refresh)
+        self.assertTrue(self.deletion_field()['inputText'])
+        self.assertFalse(self.editor.snapshot()['dirty'])
+
+    def test_mark_wire_budget_failure_does_not_adopt_checkbox(self):
+        before = self.editor.snapshot()
+        with patch('yadinassi.ui.catalog_editor.MAX_LINE_BYTES', 1), self.assertRaises(UIError):
+            self.change('DeletionMark', True)
+        self.assertEqual(self.editor.snapshot(), before)
