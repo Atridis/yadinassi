@@ -6,18 +6,17 @@ The fresh `demo_products_v1` profile admits the original **ВидыНоменк�
 
 From the repository checkout, with the project's Python dependencies installed:
 
-```python
-from pathlib import Path
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-
-root = Path("tests/fixtures/demo_cf/source")
-files = {p.relative_to(root).as_posix(): p.read_bytes()
-         for p in root.rglob("*") if p.is_file()}
-backend = SQLiteCatalogBackend.create_demo_products("demo-products.sqlite", files)
-backend.close()
+```console
+python -m yadinassi --create-demo-db demo-products.sqlite --import-xml tests/fixtures/demo_cf/source
+python -m yadinassi.ui.local_app --f demo-products.sqlite --open-browser
 ```
 
-Run `python -m yadinassi.ui.local_app --f demo-products.sqlite`.
+The destination must not exist. For later sessions, run only the second command.
+The explicit demo command retains all source bytes and activates only the existing
+exact-demo profile. It does not seed records, rewrite handlers, or upgrade an
+existing database. The Python API `SQLiteCatalogBackend.create_demo_products`
+remains available. See the [step-by-step quickstart](demo-quickstart.md).
+
 Create a kind (for example, **Товары**) and a warehouse (**Основной склад**), then open **Номенклатура** and create a card. Enter a name, select the kind, add a **Склады** row, select its warehouse, and save. The automatically assigned code, reference, and row identity survive database close/reopen.
 
 ## Original behavior exercised

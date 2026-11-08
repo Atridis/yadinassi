@@ -136,7 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
     parser.add_argument("--f", metavar="SQLITE_FILE",
                         help="файл SQLite базы yadinassi с конфигурацией и данными")
-    parser.add_argument("--create-db", metavar="SQLITE_FILE", help="создать новую SQLite базу из XML конфигурации")
+    creation = parser.add_mutually_exclusive_group()
+    creation.add_argument("--create-db", metavar="SQLITE_FILE", help="создать новую SQLite базу из XML конфигурации")
+    creation.add_argument("--create-demo-db", metavar="SQLITE_FILE",
+                          help="создать новую SQLite демо-базу из точных исходников демо: виды, склады, номенклатура")
     parser.add_argument("--import-xml", metavar="DIRECTORY", help="каталог штатной XML-выгрузки конфигурации")
     parser.add_argument("--numbering-policy", choices=("explicit", "decimal_v1"),
                         help="локальная политика нумерации при импорте; не гарантия совместимости с 1С")
@@ -146,19 +149,29 @@ def main(argv: list[str] | None = None) -> int:
                         help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(arguments)
-    if args.create_db is not None or args.import_xml is not None or args.inactive or args.numbering_policy is not None:
-        if args.create_db is None or args.import_xml is None:
-            parser.error("--create-db и --import-xml требуются вместе")
+    demo = args.create_demo_db is not None
+    if args.create_db is not None or demo or args.import_xml is not None or args.inactive or args.numbering_policy is not None:
+        if (args.create_db is None and not demo) or args.import_xml is None:
+            parser.error("--create-db или --create-demo-db требуется вместе с --import-xml")
         if args.f is not None or args.file is not None or args.command is not None:
             parser.error("импорт конфигурации не совмещается с исполнением или --f")
-        from .configuration_import import load_configuration_directory
+        if demo and (args.inactive or args.numbering_policy is not None):
+            parser.error("--create-demo-db не совмещается с --inactive или --numbering-policy")
+        from .configuration_import import load_configuration_directory, read_configuration_directory
         try:
-            configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit')
+            if demo:
+                configuration = read_configuration_directory(args.import_xml)
+            else:
+                configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit')
         except (BackendError, ValueError, OSError):
             print("yadinassi: configuration import refused", file=sys.stderr)
             return 1
         try:
-            context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
+            if demo:
+                from .sqlite_catalog import SQLiteCatalogBackend
+                context = SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration)
+            else:
+                context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
             context.close()
         except BackendError as error:
             if error.code == 'uncertain_commit':
@@ -169,7 +182,11 @@ def main(argv: list[str] | None = None) -> int:
         except (ValueError, OSError):
             print("yadinassi: database creation failed; if a destination exists, preserve and inspect it before retrying or deleting", file=sys.stderr)
             return 1
-        print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
+        if demo:
+            print("Created demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура.")
+            print("Original demo handlers; bounded local editor, not native 1C managed-form parity.")
+        else:
+            print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
         if args.inactive:
             for issue in configuration.activation_issues:
                 print("Activation issue: " + issue)
