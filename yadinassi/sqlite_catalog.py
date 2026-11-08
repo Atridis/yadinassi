@@ -28,7 +28,8 @@ from .catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogDr
                               FieldSchema, Revision, CatalogComparison, CatalogPredicate,
                               CatalogOrder, CatalogScanRequest, CatalogPage, CatalogScalarRow,
                               CatalogValueRow, CatalogValuePage, TabularSectionSchema,
-                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome)
+                              TabularRow, TabularSectionRows, CatalogSectionRecord, CatalogSectionPage, CatalogWriteOutcome,
+                              CatalogWriteRequest)
 
 _APPLICATION_ID = 0x59414449
 _MAX_ROWS = 10000
@@ -243,11 +244,20 @@ def _intent(draft, revision, values, sections):
 
 
 def _receipt_digest(intents, outcomes=None):
-    payload = intents
+    # Stream canonical intents: resolving a bounded batch must not retain a
+    # second copy of every scalar/section payload. Preserve historical hashes.
+    digest = hashlib.sha256()
+    digest.update(b'[' if outcomes is None else b'["write_outcomes_v1",[')
+    for index, intent in enumerate(intents):
+        if index: digest.update(b',')
+        digest.update(_json(intent).encode('utf-8'))
+    digest.update(b']')
     if outcomes is not None:
         entries = [[str(o.revision.catalog_id),str(o.revision.record_id),o.revision.token,o.code] for o in outcomes]
-        payload = ['write_outcomes_v1', intents, entries]
-    return hashlib.sha256(_json(payload).encode('utf-8')).hexdigest()
+        digest.update(b',')
+        digest.update(_json(entries).encode('utf-8'))
+        digest.update(b']')
+    return digest.hexdigest()
 
 
 def _encode(value, field, database_id):
@@ -792,7 +802,8 @@ class SQLiteCatalogBackend:
         return Capabilities(active, active and not self.read_only, active and not self.read_only, active and not self.read_only,
                             catalog_tabular_sections=active and (self.storage_version in (3, 4)
                                 or (self.storage_version == 6 and self._demo_profile() == DEMO_PRODUCTS_PROFILE)),
-                            catalog_write_outcomes=active and self.storage_version in (4, 6))
+                            catalog_write_outcomes=active and self.storage_version in (4, 6),
+                            catalog_batch_receipts=active)
 
     @_boundary
     def begin_read(self): return self._begin(None)
@@ -901,37 +912,61 @@ class SQLiteCatalogBackend:
         return self._resolve_write_result(operation_id, draft, expected_revision)
 
     def _resolve_write_result(self, operation_id, draft, expected_revision):
+        results = self._resolve_write_results(operation_id, (CatalogWriteRequest(draft, expected_revision),))
+        return None if results is None else results[0]
+
+    @_boundary
+    def resolve_writes(self, operation_id, requests):
+        """Read the exact ordered transaction receipt; never replay writes."""
+        if self.storage_version == 5: raise BackendError('unsupported')
+        results = self._resolve_write_results(operation_id, requests)
+        return None if results is None else tuple(
+            result.revision if type(result) is CatalogWriteOutcome else result for result in results)
+
+    @_boundary
+    def resolve_write_outcomes(self, operation_id, requests):
+        if self.storage_version not in (4, 6): raise BackendError('unsupported')
+        return self._resolve_write_results(operation_id, requests)
+
+    def _resolve_write_results(self, operation_id, requests):
+        if (type(requests) is not tuple or len(requests) > _MAX_ROWS
+                or any(type(request) is not CatalogWriteRequest for request in requests)):
+            raise BackendError('invalid_input')
         receipt = self._committed_results(operation_id)
         if receipt is None: return None
+        if len(requests) != len(receipt[1]): raise BackendError('conflict')
         view = self._begin(None, _receipt_only=self.storage_version == 6)
         try:
-            draft, values = view._draft(draft)
-            sections = view._draft_sections(draft)
-            if expected_revision is None:
-                revision = 1
-            else:
-                if draft.auto_number: raise BackendError('invalid_input')
-                r = expected_revision
-                if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id) != (self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
-                    raise BackendError('conflict')
-                revision = _revision_number(r.token) + 1
-            intent = [_intent(draft, revision, values, sections)]
-            digest = _receipt_digest(intent, receipt[1] if self.storage_version in (4, 6) else None)
-            if digest != receipt[0] or len(receipt[1]) != 1:
-                raise BackendError('conflict')
-            expected = Revision(self.database_id, self.configuration_generation,
-                draft.key.catalog_id, draft.key.record_id, str(revision))
-            result = receipt[1][0]
-            actual = result.revision if type(result) is CatalogWriteOutcome else result
-            if actual != expected: raise BackendError('integrity')
-            if type(result) is CatalogWriteOutcome:
-                if not draft.auto_number and result.code != draft.code: raise BackendError('integrity')
-                if draft.auto_number:
-                    schema = view.catalog_schema(draft.key.catalog_id)
-                    if (len(result.code) != schema.code_length or not result.code.isascii()
-                            or not result.code.isdecimal() or int(result.code) == 0):
-                        raise BackendError('integrity')
-            return result
+            invalid_outcome = False
+            def intents():
+                nonlocal invalid_outcome
+                for request, result in zip(requests, receipt[1]):
+                    draft, values = view._draft(request.draft)
+                    sections = view._draft_sections(draft)
+                    if request.expected_revision is None:
+                        revision = 1
+                    else:
+                        if draft.auto_number: raise BackendError('invalid_input')
+                        r = request.expected_revision
+                        if type(r) is not Revision or (r.database_id,r.configuration_generation,r.catalog_id,r.record_id) != (self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id) or type(r.token) is not str:
+                            raise BackendError('conflict')
+                        revision = _revision_number(r.token) + 1
+                    expected = Revision(self.database_id, self.configuration_generation,
+                        draft.key.catalog_id, draft.key.record_id, str(revision))
+                    actual = result.revision if type(result) is CatalogWriteOutcome else result
+                    invalid_outcome |= actual != expected
+                    if type(result) is CatalogWriteOutcome:
+                        if not draft.auto_number: invalid_outcome |= result.code != draft.code
+                        else:
+                            schema = view.catalog_schema(draft.key.catalog_id)
+                            invalid_outcome |= (len(result.code) != schema.code_length or not result.code.isascii()
+                                or not result.code.isdecimal() or int(result.code) == 0)
+                    yield _intent(draft, revision, values, sections)
+
+            digest = _receipt_digest(intents(), receipt[1] if self.storage_version in (4, 6) else None)
+            if digest != receipt[0]: raise BackendError('conflict')
+            if invalid_outcome: raise BackendError('integrity')
+            return receipt[1]
         finally: view.close()
 
     @_boundary

@@ -47,6 +47,9 @@ recorded outcome in one versioned digest. The request is not silently replaced
 with a generated-code draft. `resolve_write_outcome()` returns that exact
 recorded result, including the original code if the record was later edited.
 It does not derive a result from a new card read or allocate a replacement code.
+For multi-write transactions, `resolve_write_outcomes()` verifies the complete
+ordered tuple of `CatalogWriteRequest` intents and returns every original code;
+see [batch receipt recovery](catalog-batch-receipts.md).
 `resolve_write()` and `committed_operation()` retain revision-only views.
 
 This is structural/integrity checking of owned storage, not cryptographic
