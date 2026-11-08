@@ -35,6 +35,11 @@ Connections explicitly disable implicit Python transaction creation (`isolation_
 
 An update checks its opaque expected revision inside the write transaction; duplicate code, stale edits and cross-database references refuse. This revision is not native DataVersion. Cancel/discard does not call Write. Successful Write clears new/dirty state only after a confirmed receipt. An uncertain COMMIT response preserves the exact pending intent, blocks further mutation, and resolves the persisted operation receipt before any retry. A mismatch refuses rather than replaying a different create.
 
+Host transactions containing several successful writes can resolve the complete
+ordered batch through the [batch receipt recovery contract](catalog-batch-receipts.md).
+It preserves original revisions and, where supported, generated codes without
+replaying writes or reading a later card as the original outcome.
+
 Process termination before commit and after commit is tested with real temporary SQLite files; reopening observes the old or committed state and a matching receipt. This does not prove universal power-loss durability on every filesystem or hardware device. SQLite owns recovery/journaling; do not remove its journal or copy only a live main file. No network filesystem or native concurrent-writer compatibility is claimed.
 
 Initial host authority is a local, host-selected regular file under an owned directory (POSIX rejects group/world-writable parents and foreign ownership). Symlink/reparse ancestors and hardlinked database files refuse. macOS’s verified OS-owned `/var` and `/tmp` aliases are normalized before those checks; Windows case/8.3 spelling is canonicalized only after every directory component passes no-link admission. This is **not** protection against a malicious process running as the same OS user or a portable Windows ACL proof. Keep application files in a private local directory. The renderer cannot select database paths or submit SQL.
