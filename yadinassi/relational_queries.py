@@ -1,6 +1,7 @@
 """Bounded relational execution over CatalogReadView, independent of SQL engines.
 
-Joins, grouping and aggregates operate on one logical transaction snapshot.
+Joins, computed expressions, grouping and aggregates operate on one logical
+transaction snapshot. Computed numeric scale and rounding are host rules.
 Input/intermediate bounds fail explicitly, never return partial aggregate totals.
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
@@ -29,7 +30,7 @@ class _BoundField:
 @dataclass(frozen=True)
 class _BoundAggregate:
     function: str
-    field: _BoundField | None
+    field: object | None
     distinct: bool
 
 
@@ -38,11 +39,11 @@ def required(query):
         if type(node) is syntax.Predicate:
             return any(extended(term) for term in node.terms)
         return (type(node) is syntax.Comparison and
-                (node.operator in ('is_null', 'is_not_null') or type(node.field) is syntax.Aggregate or
-                 type(node.value) in (syntax.Field, syntax.Aggregate)))
+                (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
+                 type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
     return (query.joins or query.groups or query.having is not None or query.distinct
-            or any(type(p.field) is syntax.Aggregate for p in query.projections)
-            or any(type(o.field) is syntax.Aggregate for o in query.order)
+            or any(type(p.field) is not syntax.Field for p in query.projections)
+            or any(type(o.field) is not syntax.Field for o in query.order)
             or extended(query.predicate))
 
 
@@ -81,6 +82,7 @@ class _Plan:
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
+        self._descriptors = {}
         self.sources = (syntax.Source(query.catalog, query.source_alias, query.section),
                         *(join.source for join in query.joins))
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
@@ -109,12 +111,11 @@ class _Plan:
             else: expression = self.bind(order.field)
             self.orders.append((expression, order.descending))
         expressions = (*self.projections, *(e for e, _ in self.orders), *self.condition_expressions(self.having))
-        self.grouped = bool(self.groups or any(type(e) is _BoundAggregate for e in expressions))
+        self.grouped = bool(self.groups or any(self.has_aggregate(e) for e in expressions))
         if query.having is not None and not self.grouped: raise ValueError('HAVING requires grouping or aggregates')
         if self.grouped:
             for expression in expressions:
-                if type(expression) is _BoundField and expression not in self.groups:
-                    raise ValueError('Nonaggregate query field must appear in GROUP BY')
+                self.check_grouped(expression)
         if query.distinct and any(e not in self.projections for e, _ in self.orders):
             raise ValueError('DISTINCT ordering must use projected expressions')
         columns = []
@@ -125,16 +126,11 @@ class _Plan:
                 column = _Column(name, column.field, column.kind, column.qualifiers,
                                  column.custom, projection.explicit_alias)
             else:
-                original = expression.field.column if expression.field is not None else None
-                if expression.function in ('sum', 'avg') and original.kind != 'number':
-                    raise TypeError('SUM/AVG require a Number field')
-                if expression.function in ('min', 'max') and original.kind in ('catalog_ref', 'boolean'):
-                    raise TypeError('MIN/MAX require String, Number or Date')
-                if expression.function in ('count', 'sum', 'avg'):
-                    scale = 0 if expression.function == 'count' else (10 if expression.function == 'avg' else original.qualifiers[1])
-                    column = _Column(projection.alias, None, 'number', (38, scale, 'Any'), explicit_alias=True)
-                else:
-                    column = _Column(projection.alias, None, original.kind, original.qualifiers, original.custom, True)
+                descriptor = self.describe(expression)
+                if descriptor.kind == 'null':
+                    raise TypeError('A NULL-only projection requires a typed expression')
+                column = _Column(projection.alias, None, descriptor.kind, descriptor.qualifiers,
+                                 descriptor.custom, True)
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)
@@ -145,13 +141,28 @@ class _Plan:
 
     def bind(self, expression, *, aggregates=True, source_limit=None):
         from .queries import _field
+        if expression is None or type(expression) is syntax.NullLiteral: return NULL
+        if type(expression) is syntax.Parameter:
+            if expression.name.casefold() not in self.parameters: raise ValueError('Query parameter is not set')
+            return self.parameters[expression.name.casefold()]
+        if type(expression) is syntax.Expression:
+            if expression.operator == 'case':
+                branches, otherwise = expression.arguments
+                result = syntax.Expression('case', (tuple((self.condition(condition, aggregates=aggregates, source_limit=source_limit),
+                    self.bind(value, aggregates=aggregates, source_limit=source_limit)) for condition, value in branches),
+                    self.bind(otherwise, aggregates=aggregates, source_limit=source_limit)))
+            else:
+                result = syntax.Expression(expression.operator, tuple(self.bind(arg, aggregates=aggregates,
+                    source_limit=source_limit) for arg in expression.arguments))
+            self.describe(result)  # Validate all branches before opening a read view.
+            return result
         if type(expression) is syntax.Aggregate:
             if not aggregates: raise ValueError('Aggregates are not allowed in ON/WHERE/GROUP BY')
             field = None if expression.field is None else self.bind(expression.field, aggregates=False, source_limit=source_limit)
             if field is not None:
-                if expression.function in ('sum','avg') and field.column.kind != 'number':
+                if expression.function in ('sum','avg') and self.describe(field).kind not in ('number', 'null'):
                     raise TypeError('SUM/AVG require a Number field')
-                if expression.function in ('min','max') and field.column.kind in ('boolean','catalog_ref'):
+                if expression.function in ('min','max') and self.describe(field).kind in ('boolean','catalog_ref'):
                     raise TypeError('MIN/MAX require String, Number or Date')
             return _BoundAggregate(expression.function, field, expression.distinct)
         if type(expression) is not syntax.Field: return expression
@@ -177,24 +188,14 @@ class _Plan:
             right = self.parameters[right.name.casefold()]
         # Validate comparison types before reading, even for an empty source.
         def kind(e):
-            if type(e) is _BoundField: return e.column.kind
-            if type(e) is _BoundAggregate:
-                return 'number' if e.function in ('count','sum','avg') else e.field.column.kind
-            return _key(e)[0]
+            return self.describe(e).kind
         if node.operator in ('is_null', 'is_not_null'):
             return syntax.Comparison(left, node.operator, None)
-        if kind(left) != kind(right): raise TypeError('Query comparison requires exact field type')
+        if kind(left) != kind(right) and 'null' not in (kind(left), kind(right)): raise TypeError('Query comparison requires exact field type')
         if kind(left) in ('boolean','catalog_ref') and node.operator not in ('eq','ne'):
             raise ValueError('Query value does not support ordering comparison')
-        if kind(left) == 'catalog_ref':
-            def reference_type(expression):
-                if type(expression) is _BoundField:
-                    manager = self.managers[expression.source]
-                    target = (manager._schema.identity if expression.column.field == 'ref'
-                              else expression.column.custom.target_catalog_id)
-                    return manager._catalogs._metadata, target
-                return expression.value_type.snapshot, expression.value_type.metadata_uuid
-            a, b = reference_type(left), reference_type(right)
+        if kind(left) == kind(right) == 'catalog_ref':
+            a, b = self.reference_identity(left), self.reference_identity(right)
             if a[0] is not b[0] or a[1] != b[1]:
                 raise TypeError('Query references require same database and catalog')
         return syntax.Comparison(left, node.operator, right)
@@ -205,11 +206,140 @@ class _Plan:
             return tuple(e for term in node.terms for e in self.condition_expressions(term))
         return (node.field, node.value)
 
+    def children(self, expression):
+        if type(expression) is syntax.Expression:
+            if expression.operator == 'case':
+                branches, otherwise = expression.arguments
+                return tuple(e for condition, value in branches
+                             for e in (*self.condition_expressions(condition), value)) + (otherwise,)
+            return expression.arguments
+        return ()
+
+    def has_aggregate(self, expression):
+        return type(expression) is _BoundAggregate or any(self.has_aggregate(e) for e in self.children(expression))
+
+    def check_grouped(self, expression):
+        if expression in self.groups or type(expression) is _BoundAggregate: return
+        if type(expression) is _BoundField:
+            raise ValueError('Nonaggregate query field must appear in GROUP BY')
+        for child in self.children(expression): self.check_grouped(child)
+
+    def reference_identity(self, expression):
+        if type(expression) is _BoundField:
+            manager = self.managers[expression.source]
+            target = (manager._schema.identity if expression.column.field == 'ref'
+                      else expression.column.custom.target_catalog_id)
+            return manager._catalogs._metadata, target
+        if type(expression) is syntax.Expression:
+            if expression.operator == 'case':
+                branches, otherwise = expression.arguments
+                candidates = [value for _, value in branches] + [otherwise]
+            else: candidates = expression.arguments
+            return next(self.reference_identity(e) for e in candidates if self.describe(e).kind == 'catalog_ref')
+        return expression.value_type.snapshot, expression.value_type.metadata_uuid
+
+    def describe(self, expression):
+        # Bound nodes are immutable and retained with their cached descriptor.
+        # Avoid repeated recursive inference for deeply nested conditional arms.
+        cached = self._descriptors.get(id(expression))
+        if cached is not None: return cached[1]
+        result = self._describe(expression)
+        self._descriptors[id(expression)] = (expression, result)
+        return result
+
+    def _describe(self, expression):
+        from .queries import _Column
+        def column(kind, qualifiers=(), custom=None):
+            return _Column('', None, kind, qualifiers, custom)
+        if type(expression) is _BoundField: return expression.column
+        if type(expression) is _BoundAggregate:
+            original = None if expression.field is None else self.describe(expression.field)
+            if expression.function in ('count', 'sum', 'avg'):
+                scale = (0 if expression.function == 'count' else 10 if expression.function == 'avg'
+                         else original.qualifiers[1] if original.kind == 'number' else 0)
+                return column('number', (38, scale, 'Any'))
+            return original
+        if type(expression) is syntax.Expression:
+            op, args = expression.operator, expression.arguments
+            if op in ('case', 'coalesce'):
+                if op == 'case':
+                    branches, otherwise = args
+                    candidates = [value for _, value in branches] + [otherwise]
+                else: candidates = args
+                typed = [(e, self.describe(e)) for e in candidates if self.describe(e).kind != 'null']
+                if not typed: return column('null')
+                kinds = {c.kind for _, c in typed}
+                if len(kinds) != 1: raise TypeError('Query conditional branches require the same type')
+                kind = typed[0][1].kind
+                if kind == 'number':
+                    scale = max(c.qualifiers[1] for _, c in typed)
+                    return column(kind, (38, scale, 'Any'))
+                if kind == 'string': return column(kind, (max(c.qualifiers[0] for _, c in typed),))
+                if kind == 'datetime': return column(kind, ('DateTime',))
+                if kind == 'catalog_ref':
+                    identities = [self.reference_identity(e) for e, _ in typed]
+                    if any(a[0] is not identities[0][0] or a[1] != identities[0][1] for a in identities):
+                        raise TypeError('Query references require same database and catalog')
+                return typed[0][1]
+            descriptions = [self.describe(e) for e in args]
+            if any(c.kind not in ('number', 'null') for c in descriptions):
+                raise TypeError('Query arithmetic requires Number operands')
+            scales = [c.qualifiers[1] if c.kind == 'number' else 0 for c in descriptions]
+            scale = 10 if op == '/' else sum(scales) if op == '*' else max(scales)
+            if scale > 38: raise ValueError('Query expression Number scale exceeded')
+            return column('number', (38, scale, 'Any'))
+        if expression is NULL: return column('null')
+        kind = _key(expression)[0]
+        if kind == 'number':
+            scale = max(0, -expression.as_tuple().exponent)
+            if scale > 38: raise ValueError('Query expression Number scale exceeded')
+            return column(kind, (38, scale, 'Any'))
+        if kind == 'string': return column(kind, (max(1, len(expression)),))
+        if kind == 'datetime': return column(kind, ('DateTime',))
+        return column(kind)
+
+    def checked_number(self, result, scale):
+        if not result.is_finite() or result.copy_abs() >= Decimal((0, (1,), 38 - scale)):
+            raise ValueError('Query expression Number range exceeded')
+        return result
+
     def value(self, expression, row, group=None):
         if type(expression) is _BoundField:
             source = row[expression.source]
             return NULL if source is None else source[self.fields[expression.source].index(expression.column)]
-        if type(expression) is not _BoundAggregate: return expression
+        if type(expression) is syntax.Expression:
+            op, args = expression.operator, expression.arguments
+            if op in ('case', 'coalesce'):
+                def branch_value(branch):
+                    value = self.value(branch, row, group)
+                    if type(value) is Decimal:
+                        self.checked_number(value, self.describe(expression).qualifiers[1])
+                    return value
+                if op == 'case':
+                    branches, otherwise = args
+                    for condition, branch in branches:
+                        if self.test(condition, row, group): return branch_value(branch)
+                    return branch_value(otherwise)
+                first = branch_value(args[0])
+                return branch_value(args[1]) if first is NULL else first
+            left = self.value(args[0], row, group)
+            if left is NULL: return NULL
+            context = Context(prec=80, rounding=ROUND_HALF_EVEN, Emin=-999999, Emax=999999,
+                              capitals=1, clamp=0, flags=[], traps=[InvalidOperation])
+            if op in ('unary+', 'unary-'):
+                result = left if op == 'unary+' else left.copy_negate()
+            else:
+                right = self.value(args[1], row, group)
+                if right is NULL: return NULL
+                if op == '/' and right.is_zero(): raise ValueError('Query division by zero')
+                result = {'+': context.add, '-': context.subtract, '*': context.multiply,
+                          '/': context.divide}[op](left, right)
+                if op == '/': result = context.quantize(result, Decimal('0.0000000001'))
+            return self.checked_number(result, self.describe(expression).qualifiers[1])
+        if type(expression) is not _BoundAggregate:
+            if type(expression) is Decimal:
+                self.checked_number(expression, self.describe(expression).qualifiers[1])
+            return expression
         if group is None: raise ValueError('Aggregate outside grouped execution')
         values = ([Decimal(1)] * len(group) if expression.field is None else
                   [self.value(expression.field, item) for item in group])
@@ -224,7 +354,8 @@ class _Plan:
                           capitals=1, clamp=0, flags=[], traps=[InvalidOperation])
         result = Decimal(0)
         for value in values: result = context.add(result, value)
-        scale = expression.field.column.qualifiers[1]
+        descriptor = self.describe(expression.field)
+        scale = descriptor.qualifiers[1] if descriptor.kind == 'number' else 0
         if expression.function == 'avg':
             scale = 10
             result = context.divide(result, Decimal(len(values)))
