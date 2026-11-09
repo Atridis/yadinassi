@@ -740,11 +740,11 @@ if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
 return {mountForm};
 })();
 const __workspaceClient = (() => {
-const {FormError, validateScalar, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
+const {FormError, validateScalar, validateSnapshot, LIMITS, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
 const REFERENCE_PROTOCOL = 'yadinassi-reference-orders/1';
-const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
-const integer = value => Number.isSafeInteger(value) && value >= 0;
+const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === expected.length && expected.every(name => Object.hasOwn(value,name));
+const integer = value => Number.isInteger(value) && value >= 0 && value <= LIMITS.counter;
 const text = (value, max) => typeof value === 'string' && value.length <= max;
 const sessionId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const invalid = () => { throw new FormError('transport'); };
@@ -819,7 +819,7 @@ class ReferenceClient {
       const request = {jsonrpc:'2.0',id:++this.id,method,params};
       let result;
       try {
-        if (!Number.isSafeInteger(this.id)) invalid();
+        if (!integer(this.id)) invalid();
         result = validateReferenceReply(await this.exchange(request),request,this.state);
         for (const session of result.state.sessions) {
           if (this.issued.has(session.id) && !this.state?.sessions.some(prior => prior.id === session.id)) invalid();
@@ -956,7 +956,14 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
         if (entry.kind === 'order' && request.method === 'form.event' && blocked(entry)) {
           client.lock(); return Promise.reject(new FormError('transport'));
         }
-        return client.form(session.id,request);
+        return client.form(session.id,request).then(reply => {
+          // A recovery read must succeed before the frozen owner becomes usable.
+          if (entry.kind === 'order' && recovering.has(entry.id) &&
+              request.method === 'form.snapshot' && reply.result.error !== null) {
+            client.lock(); throw new FormError('transport');
+          }
+          return reply;
+        });
       },
       isActive: () => !blocked(entry),
       onChange: () => {
@@ -988,7 +995,10 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
     paint();
   }
   async function perform(method, params) {
-    try { const result = await client.request(method,params); status = result.error ? `Workspace: ${result.error}` : ''; return result; }
+    try {
+      const request = client.request(method,params); paint();
+      const result = await request; status = result.error ? `Workspace: ${result.error}` : ''; return result;
+    }
     catch { status = 'Workspace connection failed.'; }
     finally { paint(); }
   }

@@ -1,6 +1,6 @@
 """Closed reference-order application and a server-owned child choice.
 
-CatalogKey never enters the scalar form. The reusable choice ticket binds an
+CatalogKey never enters the scalar form. The one-shot choice ticket binds an
 owner generation and an exact live form row, not a position or presentation.
 The Orders workbench supplies projection preflight and receipt-based writes.
 This opt-in catalog profile is independent of document storage and native UI.
@@ -64,8 +64,10 @@ class ReferenceOrdersSession(OrdersWorkbenchSession):
     def __init__(self, context, *, initial_record=None):
         super().__init__(context, initial_record=initial_record)
         self.generation = self.choice_serial = 0
+        self.choice_limit = 256
         self.active_choice = None
         self.choice_result = _UNSET
+        self.apply_uncertain = False
         self.customer = None
         self.products = {}
         self.customers_manager = self.products_manager = None
@@ -220,7 +222,7 @@ class ReferenceOrdersSession(OrdersWorkbenchSession):
     def _start_choice(self, session, target, row=None):
         if self._blocked(session) or self.object is None:
             return
-        if self.choice_serial >= 256:
+        if self.choice_serial >= self.choice_limit:
             self._status(session, 'Selection limit reached; save or discard and reopen the order')
             return
         if row is not None:
@@ -256,40 +258,56 @@ class ReferenceOrdersSession(OrdersWorkbenchSession):
         if not self.result_ready:
             raise ValueError('no owned selection result')
         ticket, result = self.active_choice, self.choice_result
+        # All fallible validation runs before installation or reference mutation.
+        # A fault during installation cannot be reported as "previous value kept".
+        # The broker treats that exceptional outcome as workspace-wide uncertainty.
         try:
-            if ticket.generation != self.generation:
+            if ticket.generation != self.generation or ticket.target not in ('Customers', 'Products'):
                 raise ValueError('stale owner generation')
+            if (ticket.target == 'Customers') != (ticket.row is None):
+                raise ValueError('invalid selection target')
             if ticket.row is not None:
                 session.form._tables['lines']._lookup_id(ticket.row)
-            if result is None:
-                self._status(session, 'Selection cancelled; the previous value was kept')
-                return
-            manager = self.customers_manager if ticket.target == 'Customers' else self.products_manager
-            card = self._record(manager, result)
+            customer, products = self.customer, dict(self.products)
             replacements = {}
-            patches = {'status': 'Selection applied; order is not yet saved', 'dirty': True}
-            if ticket.target == 'Customers':
-                patches['customer'] = card.description
-            else:
-                price = card.values[0]
-                if type(price) is not Decimal or not 0 <= price <= Decimal(1000000):
-                    raise ValueError('invalid product price')
-                rows = session.form._tables['lines']._snapshot().rows
-                replacements['lines'] = tuple((identity, (card.description, card.description, values[2], price, values[4])
-                    if identity == ticket.row else values) for identity, values in rows)
+            patches = {'status': 'Selection cancelled; the previous value was kept'}
+            if result is not None:
+                manager = self.customers_manager if ticket.target == 'Customers' else self.products_manager
+                card = self._record(manager, result)
+                patches['status'] = 'Selection applied; order is not yet saved'
+                if ticket.target == 'Customers':
+                    patches['customer'] = card.description
+                    customer = result
+                else:
+                    price = card.values[0]
+                    if type(price) is not Decimal or not price.is_finite() or not 0 <= price <= Decimal(1000000):
+                        raise ValueError('invalid product price')
+                    rows = session.form._tables['lines']._snapshot().rows
+                    replacements['lines'] = tuple((identity,
+                        (card.description, card.description, values[2], price, values[4])
+                        if identity == ticket.row else values) for identity, values in rows)
+                    products[ticket.row] = result
+            rows = replacements.get('lines', session.form._tables['lines']._snapshot().rows)
+            prospective = (tuple(session.form._data[k] for k in ('code', 'description', 'total')),
+                tuple(values for _, values in rows), customer,
+                tuple(products.get(identity) for identity, _ in rows))
+            patches['dirty'] = prospective != self.baseline
             prepared = self._preflight(session, patches, replacements)
-            self._install(session, prepared)
-            if ticket.target == 'Customers':
-                self.customer = result
-            else:
-                self.products[ticket.row] = result
-            self.dirty(session)
         except Exception:
             self._status(session, 'Selection could not be applied; owner and previous reference were kept')
-        finally:
             self.active_choice = None
             self.choice_result = _UNSET
             self._locked(session)
+            return
+        try:
+            self._install(session, prepared)
+            self.customer, self.products = customer, products
+            self.active_choice = None
+            self.choice_result = _UNSET
+            self._locked(session)
+        except BaseException:
+            self.apply_uncertain = True
+            raise
 
 
 class CatalogChoiceSession:

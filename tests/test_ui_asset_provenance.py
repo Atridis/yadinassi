@@ -19,10 +19,10 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 150)
+        self.assertEqual(result['source_file_count'], 158)
         # All added runtime modules are hashed, as well as packaged renderer assets.
         original = full.read_regular
-        for changed_name in ('app.js', 'http_security.py', 'relational_queries.py', 'form_replication.py', 'callbacks.py', 'form_app.py', 'form_package.py', 'json_dates.py', 'query_packages.py', 'form_tables.py', 'form_table_replication.py', 'order_workbench.py', 'orders_workspace.py'):
+        for changed_name in ('app.js', 'http_security.py', 'relational_queries.py', 'form_replication.py', 'callbacks.py', 'form_app.py', 'form_package.py', 'json_dates.py', 'query_packages.py', 'form_tables.py', 'form_table_replication.py', 'order_workbench.py', 'orders_workspace.py', 'reference_orders.py', 'reference_orders_workspace.py', 'query_sources.py'):
             def changed(path, *args, **kwargs):
                 data = original(path, *args, **kwargs)
                 return data + b'\n' if path.name == changed_name else data

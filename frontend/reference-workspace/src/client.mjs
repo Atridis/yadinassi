@@ -1,8 +1,8 @@
-import {FormError, validateScalar, validateSnapshot, PROTOCOL as FORM_PROTOCOL} from '../../form/src/client.mjs';
+import {FormError, validateScalar, validateSnapshot, LIMITS, PROTOCOL as FORM_PROTOCOL} from '../../form/src/client.mjs';
 
 export const REFERENCE_PROTOCOL = 'yadinassi-reference-orders/1';
-const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
-const integer = value => Number.isSafeInteger(value) && value >= 0;
+const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === expected.length && expected.every(name => Object.hasOwn(value,name));
+const integer = value => Number.isInteger(value) && value >= 0 && value <= LIMITS.counter;
 const text = (value, max) => typeof value === 'string' && value.length <= max;
 const sessionId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const invalid = () => { throw new FormError('transport'); };
@@ -77,7 +77,7 @@ export class ReferenceClient {
       const request = {jsonrpc:'2.0',id:++this.id,method,params};
       let result;
       try {
-        if (!Number.isSafeInteger(this.id)) invalid();
+        if (!integer(this.id)) invalid();
         result = validateReferenceReply(await this.exchange(request),request,this.state);
         for (const session of result.state.sessions) {
           if (this.issued.has(session.id) && !this.state?.sessions.some(prior => prior.id === session.id)) invalid();

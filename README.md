@@ -75,7 +75,8 @@ yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 эксперименты доступны в истории Git. Документы и регистры ещё не портированы. Для справочников и их табличных
 частей доступны [ограниченные запросы с соединениями и сводными итогами](docs/relational-catalog-queries.md),
 [вычисляемыми полями и условными отчётами](docs/computed-catalog-queries.md),
-[пакетами и временными таблицами](docs/query-packages-temporary-tables.md). Реальная 1С остаётся эталоном поведения BSL через официальные
+[пакетами и временными таблицами](docs/query-packages-temporary-tables.md),
+[объединениями и типизированными внешними таблицами](docs/query-unions-external-sources.md). Реальная 1С остаётся эталоном поведения BSL через официальные
 XML/BSL-интерфейсы, а не эталоном внутреннего формата хранения.
 
 `InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` возвращает
@@ -134,6 +135,10 @@ python -m yadinassi.ui.form_app examples/forms/order-editor --f orders.sqlite --
 Старые скалярные пакеты совместимы. Это ограниченный host-API, не импорт форм 1С.
 [Запуск и границы](docs/form-app.md), [таблицы и создание заказа](docs/form-tables.md),
 [редактирование существующих заказов](docs/order-workbench.md).
+Отдельный [пример заказов со ссылками](docs/reference-orders.md) добавляет выбор
+контрагента и товара через подчинённую форму, с сохранением точных типизированных
+ссылок. Для него создаётся новая база по отдельной конфигурации; прежние примеры
+и их базы не меняются.
 
 ## Разработка
 
@@ -339,4 +344,7 @@ separate owned process, optionally with server-only SQLite access.
 See [run a replicated form application](docs/form-app.md) for a calculation
 example and a persisted product-intake form. The [existing order workbench](docs/order-workbench.md)
 loads full headers and lines, saves the same record, and supports explicit discard
-and optimistic-conflict feedback. Plain BSL execution is unchanged.
+and optimistic-conflict feedback. The separate [reference Orders workspace](docs/reference-orders.md)
+adds an owned customer/product choice, then saves and reopens exact typed catalog
+references. It uses a new opt-in configuration, not a migration or generic
+reference wire codec. Plain BSL execution is unchanged.

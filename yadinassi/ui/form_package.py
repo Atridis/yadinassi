@@ -94,7 +94,7 @@ def load_client(directory):
     return ClientPackage(source, handlers, _bindings(manifest['bindings']), tuple(policies), dirty)
 
 
-def load_server(directory):
+def load_server(directory, *, owned_choices=False):
     manifest = decode_document(_read(directory, 'server.json', MAX_LINE_BYTES))
     protocol = manifest.get('protocol') if type(manifest) is dict else None
     _keys(manifest, 'protocol handlers endpoints lifecycle attributes' +
@@ -106,6 +106,8 @@ def load_server(directory):
     if protocol == OBJECT_PACKAGE_PROTOCOL and application not in (
             'orders-workbench/1', 'reference-orders/1', 'catalog-choice/1'):
         raise ValueError('unknown trusted form application')
+    if application in ('reference-orders/1', 'catalog-choice/1') and not owned_choices:
+        raise ValueError('owned choice application requires its workspace broker')
     source = _read(directory, 'server.bsl', MAX_SOURCE).decode('utf-8')
     endpoints = {}
     for row in _list(manifest['endpoints'], 64):

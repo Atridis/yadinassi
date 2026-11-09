@@ -102,7 +102,14 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
         if (entry.kind === 'order' && request.method === 'form.event' && blocked(entry)) {
           client.lock(); return Promise.reject(new FormError('transport'));
         }
-        return client.form(session.id,request);
+        return client.form(session.id,request).then(reply => {
+          // A recovery read must succeed before the frozen owner becomes usable.
+          if (entry.kind === 'order' && recovering.has(entry.id) &&
+              request.method === 'form.snapshot' && reply.result.error !== null) {
+            client.lock(); throw new FormError('transport');
+          }
+          return reply;
+        });
       },
       isActive: () => !blocked(entry),
       onChange: () => {
@@ -134,7 +141,10 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
     paint();
   }
   async function perform(method, params) {
-    try { const result = await client.request(method,params); status = result.error ? `Workspace: ${result.error}` : ''; return result; }
+    try {
+      const request = client.request(method,params); paint();
+      const result = await request; status = result.error ? `Workspace: ${result.error}` : ''; return result;
+    }
     catch { status = 'Workspace connection failed.'; }
     finally { paint(); }
   }

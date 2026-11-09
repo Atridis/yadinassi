@@ -133,12 +133,6 @@
       "endpoint": 6,
       "parameters": [],
       "isFunction": false
-    },
-    {
-      "name": "RemoteApplyChoice",
-      "endpoint": 9,
-      "parameters": [],
-      "isFunction": false
     }
   ],
   "discardCommands": [

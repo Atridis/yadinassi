@@ -127,7 +127,11 @@ class OrdersWorkbenchSession:
             if key in replacements:
                 rows = replacements[key]
                 table['rows'] = [[identity, [encode_value(v) for v in row]] for identity, row in rows]
-                table['allocated'] = rows[-1][0] if rows else form._tables[key]._allocated
+                # Replacements may retain live IDs rather than allocate fresh
+                # ones. Deleting the newest row must not lower the high-water
+                # mark or make a retired identity available for reuse.
+                table['allocated'] = max(form._tables[key]._allocated,
+                    max((identity for identity, _ in rows), default=0))
         for item in packet['items']:
             if item[1] == 'table' and item[6].casefold() in replacements:
                 item[10] = None
