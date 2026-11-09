@@ -95,9 +95,11 @@ _TYPE_IDS = {
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
 _UNSUPPORTED_CODEC_TYPES = frozenset({
-    BSLType.USER_MESSAGE,
+    BSLType.USER_MESSAGE, BSLType.CALLBACK_DESCRIPTION,
     BSLType.QUERY, BSLType.QUERY_RESULT, BSLType.QUERY_RESULT_SELECTION,
     BSLType.HTTP_CONNECTION, BSLType.HTTP_REQUEST, BSLType.HTTP_RESPONSE, BSLType.BYTE_ORDER_MARK_USE,
+    BSLType.OPENSSL_SECURE_CONNECTION, BSLType.FILE_CA_CERTIFICATES,
+    BSLType.OS_CA_CERTIFICATES, BSLType.INTERNET_PROXY,
     BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
     BSLType.XDTO_FACTORY, BSLType.XDTO_OBJECT, BSLType.XDTO_VALUE, BSLType.XDTO_LIST, BSLType.XDTO_VALUE_TYPE, BSLType.XDTO_OBJECT_TYPE, BSLType.XDTO_PROPERTY, BSLType.XDTO_PROPERTIES, BSLType.XDTO_PACKAGE, BSLType.XDTO_PACKAGES, BSLType.XML_FORM,
     BSLType.DOM_DOCUMENT, BSLType.DOM_ELEMENT, BSLType.DOM_ATTRIBUTE, BSLType.DOM_TEXT, BSLType.DOM_CDATA, BSLType.DOM_COMMENT, BSLType.DOM_PI, BSLType.DOM_FRAGMENT, BSLType.DOM_NODE_LIST, BSLType.DOM_ELEMENT_LIST, BSLType.DOM_ATTRIBUTE_MAP, BSLType.DOM_NODE_TYPE, BSLType.DOM_BUILDER, BSLType.DOM_WRITER,
@@ -276,6 +278,8 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ТекстовыйДокумент пока не поддерживается")
         if kind is BSLType.VALUE_STORAGE or (kind is BSLType.TYPE and value is BSLType.VALUE_STORAGE):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ХранилищеЗначения пока не поддерживается")
+        if kind is BSLType.CALLBACK_DESCRIPTION or (kind is BSLType.TYPE and value is BSLType.CALLBACK_DESCRIPTION):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ОписаниеОповещения пока не поддерживается")
         if kind in _UNSUPPORTED_CODEC_TYPES or (
                 kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
             if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):

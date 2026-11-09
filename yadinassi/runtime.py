@@ -1,3 +1,5 @@
+from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+                            BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
@@ -25,6 +27,7 @@ from .value_storage import BSLValueStorage
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
+from .callbacks import BSLCallbackDescription, callback_description_marker, run_callback_marker
 from pathlib import Path
 from typing import Callable
 
@@ -216,6 +219,8 @@ class Interpreter:
         self._execute_depth = [0]
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
         self.register_function("Вычислить", _eval_marker, "Eval")
+        self.register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
+        self.register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
         self.register_function("Сообщить", self._message, "Message")
         self.register_function("Строка", to_string, "String")
         self.register_function("Число", number, "Number")
@@ -251,6 +256,10 @@ class Interpreter:
         self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
         self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
         self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
+        self.register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
+        self.register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
+        self.register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
+        self.register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
         self.register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
         self.register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
         self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
@@ -890,7 +899,8 @@ class Interpreter:
         registered = (self.functions.get(callee.name.casefold())
                       if isinstance(callee, ast.Name) else None)
         if table_optional is None and (registered is None or
-                (registered.function is not fill_property_values
+                (registered.function is not run_callback_marker
+                 and registered.function is not fill_property_values
                  and registered.function is not strings.str_find
                  and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
                  and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
@@ -907,6 +917,8 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if function.function is run_callback_marker:
+            return (yield from self._run_callback(node))
         if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
             self.reject_host_omissions(node.arguments[:1])
         elif function.function is fill_property_values:
@@ -957,6 +969,67 @@ class Interpreter:
             values.append(value)
         return function(*values)
 
+    def _require_callback_context(self):
+        if self.execution_context != "client":
+            raise ValueError("ОписаниеОповещения поддерживается только на клиенте")
+        self._require_module_storage_context()
+
+    def _callback_module(self, value):
+        # Strings select already imported modules only. Never import code, read
+        # arbitrary paths or expose Python attributes on behalf of a callback.
+        if type(value) is str:
+            parts = value.split(".")
+            receiver = self.imports.get(parts[0].casefold())
+            for part in parts[1:]:
+                receiver = (receiver.members.get(part.casefold())
+                            if type(receiver) is _Namespace else None)
+            if type(receiver) is not _Module:
+                raise ValueError(f"Модуль оповещения не импортирован: {value}")
+            value = receiver
+        if value is not None and type(value) is not _Module:
+            raise TypeError("ОписаниеОповещения: ожидается объект импортированного модуля")
+        if value is not None and value.interpreter._scheduler is not self._scheduler:
+            raise ValueError("ОписаниеОповещения: модуль другого интерпретатора")
+        return value
+
+    def _new_callback(self, values):
+        self._require_callback_context()
+        if len(values) > 5:
+            raise TypeError("ОписаниеОповещения ожидает от 0 до 5 аргументов")
+        name, module, additional, error_name, error_module = [*values, *([None] * (5 - len(values)))]
+        if name is not None and type(name) is not str:
+            raise TypeError("ОписаниеОповещения: имя процедуры должно быть строкой")
+        # This family implements direct completion dispatch, not an async
+        # operation/error-dialog protocol. Never silently discard a handler.
+        if error_name is not None or error_module is not None:
+            raise ValueError("Обработчик ошибки ОписаниеОповещения пока не поддерживается")
+        return BSLCallbackDescription(name, self._callback_module(module), additional)
+
+    def _run_callback(self, node):
+        self._require_callback_context()
+        if not 1 <= len(node.arguments) <= 2:
+            raise TypeError("ВыполнитьОбработкуОповещения ожидает от 1 до 2 аргументов")
+        self.reject_host_omissions(node.arguments[:1])
+        description = yield from self._visit(node.arguments[0])
+        result = None
+        if len(node.arguments) == 2 and not isinstance(node.arguments[1], ast.OmittedArgument):
+            result = yield from self._visit(node.arguments[1])
+        if type(description) is not BSLCallbackDescription:
+            raise TypeError("ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения")
+        module = self._callback_module(description.module)
+        if module is None or not description.procedure_name:
+            raise ValueError("ОписаниеОповещения: не заданы имя процедуры и модуль")
+        routine = module.routine(description.procedure_name)
+        if routine.execution_context != "client":
+            raise ValueError("Обработчик оповещения должен выполняться на клиенте")
+        # Feed already evaluated values into ordinary routine dispatch. No caller
+        # variable alias is manufactured; shared objects keep normal identity.
+        # The same path owns Export, arity/defaults, frames, errors and Async.
+        arguments = [ast.Literal(node.token, result),
+                     ast.Literal(node.token, description.additional_parameters)]
+        return (yield from self.call_routine(routine, arguments, module.interpreter,
+                                            require_value=False))
+
     def known_receiver(self, node: ast.Node) -> object:
         """Read explicit receiver storage only, never factories or arbitrary fields."""
         node = self.ungroup(node)
@@ -981,7 +1054,7 @@ class Interpreter:
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
                                        BSLTextReader, BSLTextWriter, BSLTextDocument, BSLXMLReader, BSLXMLWriter,
-                                       BSLDataReader, BSLDataWriter, BSLDataHashing, BSLHTTPRequest, BSLHTTPResponse, BSLHTTPConnection) else None
+                                       BSLDataReader, BSLDataWriter, BSLDataHashing, BSLHTTPRequest, BSLHTTPResponse, BSLHTTPConnection, BSLInternetProxy) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -1000,6 +1073,7 @@ class Interpreter:
         key = name.casefold()
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
             return frozenset({1, 2})
+        if type(receiver) is BSLInternetProxy and key in {"set", "установить"}: return frozenset({2, 3, 4, 5})
         if type(receiver) is BSLHTTPRequest and key in {"setbodyfromstring", "установитьтелоизстроки"}: return frozenset({1, 2})
         if type(receiver) is BSLHTTPResponse and key in {"getbodyasstring", "получитьтелокакстроку"}: return frozenset({0})
         if type(receiver) is BSLHTTPConnection:
@@ -1364,6 +1438,20 @@ class Interpreter:
 
     def visit_New(self, node: ast.New) -> object:
         factory = self.types.get(node.name.casefold())
+        if factory is not None and factory.function is callback_description_marker:
+            self._require_callback_context()
+            if len(node.arguments) > 5:
+                raise TypeError("ОписаниеОповещения ожидает от 0 до 5 аргументов")
+            values = []
+            for index, argument in enumerate(node.arguments):
+                if isinstance(argument, ast.OmittedArgument):
+                    value = None
+                elif index in (1, 4):
+                    value = yield from self.receiver(argument)
+                else:
+                    value = yield from self._visit(argument)
+                values.append(value)
+            return self._new_callback(values)
         if factory is not None and (factory.function is BSLTypeDescription
                                     or factory.function is BSLXMLReaderSettings
                                     or factory.function is BSLXMLWriterSettings
@@ -1372,10 +1460,13 @@ class Interpreter:
                                     or factory.function is BSLTextWriter
                                     or factory.function is BSLDataReader
                                     or factory.function is BSLDataWriter
+                                    or factory.function is BSLOpenSSLSecureConnection
+                                    or factory.function is BSLFileCertificationAuthorityCertificates
                                     or factory.function is BSLHTTPConnection
                                     or factory.function is BSLHTTPRequest):
             if (factory.function is BSLTextReader or factory.function is BSLTextWriter
                     or factory.function is BSLDataReader or factory.function is BSLDataWriter
+                    or factory.function is BSLFileCertificationAuthorityCertificates
                     or factory.function is BSLHTTPConnection or factory.function is BSLHTTPRequest):
                 self.reject_host_omissions(node.arguments[:1])
             # The observed descriptor overloads use positional qualifier holes.
@@ -1410,6 +1501,8 @@ class Interpreter:
             raise ValueError(f"Тип не определен или не имеет конструктора: {name}")
         # No reflection, conversion, or arbitrary host iterable expansion.
         arguments = tuple(parameters.items) if type(parameters) is BSLArray else ()
+        if factory.function is callback_description_marker:
+            return self._new_callback(arguments)
         return factory(*arguments)
 
     def visit_Assign(self, node: ast.Assign) -> None:

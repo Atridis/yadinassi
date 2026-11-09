@@ -1,3 +1,5 @@
+from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+                            BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
@@ -57,9 +59,14 @@ from .value_lists import BSLValueList, BSLValueListItem
 
 
 from .async_runtime import Promise
+from .callbacks import BSLCallbackDescription
 
 
 _VALUE_TYPES = (
+    (BSLOpenSSLSecureConnection, BSLType.OPENSSL_SECURE_CONNECTION, "OpenSSLSecureConnection"),
+    (BSLFileCertificationAuthorityCertificates, BSLType.FILE_CA_CERTIFICATES, "FileCertificationAuthorityCertificates"),
+    (BSLOSCertificationAuthorityCertificates, BSLType.OS_CA_CERTIFICATES, "OSCertificationAuthorityCertificates"),
+    (BSLInternetProxy, BSLType.INTERNET_PROXY, "InternetProxy"),
     (BSLUserMessage, BSLType.USER_MESSAGE, "UserMessage"),
     (BSLQuery, BSLType.QUERY, "Query"),
     (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
@@ -157,6 +164,7 @@ _VALUE_TYPES = (
     (BSLValueStorage, BSLType.VALUE_STORAGE, "ValueStorage"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
+    (BSLCallbackDescription, BSLType.CALLBACK_DESCRIPTION, "CallbackDescription"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),
     (BSLErrorCategory, BSLType.ERROR_CATEGORY, "ErrorCategory"),
     (BSLXMLStringProcessingManager, BSLType.XML_STRING_PROCESSING_MANAGER, "XMLStringProcessingManager"),
