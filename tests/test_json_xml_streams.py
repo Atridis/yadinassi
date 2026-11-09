@@ -149,7 +149,7 @@ Calls=0; S=New MemoryStream; W=New JSONWriter; W.OpenStream(S);
 V=New Structure("ID,When",New UUID("12345678-1234-1234-1234-123456789abc"),Date(2024,1,2));
 WriteJSON(W,V,,"Convert",ThisObject); W.Close(); S.Seek(0,PositionInStream.Begin);
 R=New JSONReader; R.OpenStream(S); V2=ReadJSON(R,False,"When"); R.Close();
-''')
+''', 'StreamConversion.bsl')
             self.assertEqual(vm.execute('Calls'), 1)
             self.assertEqual(str(vm.execute('V2.ID')), '12345678-1234-1234-1234-123456789abc')
             self.assertEqual(vm.execute('V2.When=Date(2024,1,2)'), True)
