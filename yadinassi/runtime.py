@@ -188,6 +188,8 @@ class Interpreter:
         self.functions: dict[str, HostFunction] = {}
         self.routines: dict[str, ast.Routine] = {}
         self.server_routines: dict[str, ast.Routine] = {}
+        # Host-installed InvocationPort stubs contain signatures, never server bodies.
+        self._invocation_bindings: dict[str, tuple] = {}
         self.server_module_names: set[str] = set()
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
@@ -1087,6 +1089,10 @@ class Interpreter:
         if not self._has_module_context and function.module_context:
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = caller_side == "client" and function.execution_context == "server"
+        invocation = owner._invocation_bindings.get(function.name.casefold())
+        invocation = invocation[1] if invocation and invocation[0] is function else None
+        if invocation is not None and not crossing:
+            raise ValueError("InvocationPort доступен только с логического клиента")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
         required = max((index + 1 for index, parameter in enumerate(function.parameters)
@@ -1139,6 +1145,8 @@ class Interpreter:
             names = list(bindings)
             copied = self._copy_context_packet([bindings[name] for name in names])
             bindings = dict(zip(names, copied))
+            if invocation is not None:
+                return self._copy_context_packet([invocation(copied)])[0]
             owner = (owner._new_server_activation() if function.module_context else
                      owner._new_server_activation(module_context=False))
         if function.is_async:
@@ -1262,6 +1270,7 @@ class Interpreter:
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
+        server._invocation_bindings = self._invocation_bindings.copy()
         server.module_names = self.server_module_names.copy() if module_context else set()
         server.variables = dict.fromkeys(server.module_names)
         server.server_initializers = self.server_initializers.copy() if module_context else []
