@@ -88,7 +88,10 @@ remain regression coverage.
 This is local host-functional evidence. No integration scenario, native fixture,
 or evidence gate is changed. Existing native Query24 observations cover their
 original scalar slice, not these new expressions. Detailed native calibration,
-additional scalar functions, casts, date/string arithmetic, subqueries, UNION,
+additional scalar functions, casts, date/string arithmetic, subqueries,
 documents and registers remain future blocks.
 [Packages and temporary tables](query-packages-temporary-tables.md) extend this
 profile with staged multi-step reports.
+
+[UNION and typed external ValueTable sources](query-unions-external-sources.md)
+combine these reports with caller-provided scalar data and temporary stages.
