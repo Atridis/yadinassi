@@ -40,7 +40,7 @@ def query_table():
     columns = (_Column('Label', 'label', 'string', (12,)),
                _Column('Amount', 'amount', 'number', (12, 2, 'Any')),
                _Column('Flag', 'flag', 'boolean', ()),
-               _Column('Stamp', 'stamp', 'datetime', ()))
+               _Column('Stamp', 'stamp', 'datetime', ('DateTime',)))
     return BSLQueryResult(columns, (('one', D('12.50'), True, date('20240229')),
                                     (NULL, NULL, NULL, NULL))).unload()
 
