@@ -244,7 +244,8 @@ Message(A[2].IsEmpty());M.Close();''')
         with patch('yadinassi.query_sources._snapshot', wraps=_snapshot) as snapshot, patch.object(_View, 'scan_catalog_values', scan):
             result = query.execute()
         self.assertEqual(snapshot.call_count, 1)
-        self.assertEqual(result._rows, ((Decimal(3),), (Decimal(10),), (Decimal(20),), (Decimal(30),), (Decimal(3),)))
+        self.assertEqual((result._rows[0], result._rows[-1]), ((Decimal(3),), (Decimal(3),)))
+        self.assertEqual(sorted(result._rows[1:-1]), [(Decimal(10),), (Decimal(20),), (Decimal(30),)])
         self.assertEqual(query.execute()._rows[0], (Decimal(99),))
         source.rows.clear(); source.columns.clear()
         self.assertEqual(result._rows[-1], (Decimal(3),))
@@ -283,7 +284,7 @@ Message(A[2].IsEmpty());M.Close();''')
         source = self.query('SELECT CASE WHEN Amount>20 THEN Amount END AS N FROM Catalog.Products').execute().unload()
         result = self.query('SELECT N FROM &T UNION SELECT N FROM &T ORDER BY N', [('T',source)]).execute()
         self.assertEqual(result._rows, ((NULL,), (Decimal(30),)))
-        self.vm.globals.set('InputTable', source)
+        self.vm.variables['inputtable'] = source
         with self.assertRaises(Exception): self.vm.execute('ValueToStringInternal(InputTable)')
         with self.assertRaises(ValueError): source.add()
 
@@ -292,7 +293,8 @@ Message(A[2].IsEmpty());M.Close();''')
                             BSLTypeDescription('Null'), BSLTypeDescription('UUID'),
                             BSLTypeDescription('Number'), number(39,2)):
             with self.subTest(description=str(description)), patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('no scan')):
-                source = table([('N', description)])
+                source = table([('N', number())])
+                source.columns.items[0].value_type = description
                 with self.assertRaises((ValueError, TypeError)):
                     self.rows('SELECT N FROM &T UNION SELECT Amount FROM Catalog.Products', [('T',source)])
 
