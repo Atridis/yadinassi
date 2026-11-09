@@ -7,7 +7,10 @@ import base64
 from dataclasses import dataclass
 from decimal import Decimal
 import ipaddress
+import os
 import ssl
+import sys
+import warnings
 
 from .values import BSLObject
 from .file_io import _FileMethods, _methods, _open_regular, _file_errors
@@ -97,7 +100,27 @@ class BSLOSCertificationAuthorityCertificates(BSLObject):
 
     def _context(self):
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.load_default_certs(ssl.Purpose.SERVER_AUTH)
+        # load_default_certs() honors SSL_CERT_FILE / SSL_CERT_DIR. Selecting
+        # OS trust must not silently select a process-environment trust bundle.
+        # Load Windows stores explicitly, then compiled-in OpenSSL locations.
+        if sys.platform == 'win32':
+            for store in ('CA', 'ROOT'):
+                try:
+                    certificates = ssl.enum_certificates(store)
+                except PermissionError:
+                    warnings.warn('TLS: Windows certificate store is unavailable')
+                    continue
+                for certificate, encoding, trust in certificates:
+                    if encoding == 'x509_asn' and (trust is True or ssl.Purpose.SERVER_AUTH.oid in trust):
+                        try:
+                            context.load_verify_locations(cadata=certificate)
+                        except ssl.SSLError:
+                            warnings.warn('TLS: unsupported certificate in Windows store')
+        paths = ssl.get_default_verify_paths()
+        cafile = paths.openssl_cafile if paths.openssl_cafile and os.path.isfile(paths.openssl_cafile) else None
+        capath = paths.openssl_capath if paths.openssl_capath and os.path.isdir(paths.openssl_capath) else None
+        if cafile is not None or capath is not None:
+            context.load_verify_locations(cafile=cafile, capath=capath)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
         return context
 

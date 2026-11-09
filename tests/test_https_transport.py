@@ -166,7 +166,9 @@ class HTTPSTransportTests(unittest.TestCase):
         connection = http.BSLHTTPConnection('localhost', self.secure.server_port, 'demo', 'test', timeout=3, secure_connection=tls)
         target = self.root / 'protected'; target.write_bytes(b'keep')
         request = http.BSLHTTPRequest('/echo'); request.set_body_from_string('must-not-send')
-        with self.assertRaises(ValueError): connection.post(request, str(target))
+        # An environment-only CA must not silently replace explicitly selected OS trust.
+        with mock.patch.dict('os.environ', {'SSL_CERT_FILE': str(self.root / 'ca.pem'), 'SSL_CERT_DIR': str(self.root)}):
+            with self.assertRaises(ValueError): connection.post(request, str(target))
         self.assertEqual(self.secure.records, [])
         self.assertEqual(target.read_bytes(), b'keep')
 

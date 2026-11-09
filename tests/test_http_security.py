@@ -21,6 +21,21 @@ class SecurityObjectTests(unittest.TestCase):
         self.assertTrue(context.check_hostname)
         self.assertEqual(context.minimum_version, ssl.TLSVersion.TLSv1_2)
 
+    def test_os_trust_uses_compiled_paths_and_windows_server_auth_roots(self):
+        paths = ssl.DefaultVerifyPaths('/env/ca.pem', '/env/certs', 'SSL_CERT_FILE', '/compiled/ca.pem', 'SSL_CERT_DIR', '/compiled/certs')
+        entries = [(b'root', 'x509_asn', True), (b'server', 'x509_asn', {ssl.Purpose.SERVER_AUTH.oid}),
+                   (b'client', 'x509_asn', {ssl.Purpose.CLIENT_AUTH.oid}), (b'pkcs7', 'pkcs_7_asn', True)]
+        with mock.patch.object(api.sys, 'platform', 'win32'), mock.patch.object(api.ssl, 'SSLContext') as factory, \
+                mock.patch.object(api.ssl, 'enum_certificates', return_value=entries, create=True), \
+                mock.patch.object(api.ssl, 'get_default_verify_paths', return_value=paths), \
+                mock.patch.object(api.os.path, 'isfile', return_value=True), mock.patch.object(api.os.path, 'isdir', return_value=True):
+            context = api.BSLOSCertificationAuthorityCertificates()._context()
+        self.assertEqual(context.load_verify_locations.call_args_list, [
+            mock.call(cadata=b'root'), mock.call(cadata=b'server'),
+            mock.call(cadata=b'root'), mock.call(cadata=b'server'),
+            mock.call(cafile='/compiled/ca.pem', capath='/compiled/certs')])
+        context.load_default_certs.assert_not_called()
+
     def test_no_implicit_tls_key_log(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'must-not-log'
