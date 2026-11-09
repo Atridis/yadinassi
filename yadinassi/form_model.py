@@ -1,8 +1,8 @@
 """Bounded programmatic managed-form model; rendering is deliberately external.
 
 Native semantics are provisional until the managed-form oracle is acquired.
-!todo Nested form data/tables, standard persistence commands and layout are not
-part of this first scalar slice. No network, file or database write capability.
+!todo Nested/dynamic form data schemas, standard persistence commands and layout
+are not part of this bounded host slice. No network, file or database write capability.
 """
 from decimal import Decimal
 from enum import Enum
@@ -191,6 +191,53 @@ class BSLFormField(_Owned):
         else: return super().set_member(member, value)
 
 
+class BSLFormTable(BSLFormField):
+    """One fixed-schema table view with control-local current-row selection."""
+    def __init__(self, form, item_name):
+        super().__init__(form, item_name)
+        self.current_row = None
+
+    def _table(self):
+        table = self._form._tables.get(self.data_path.casefold())
+        if table is None: raise ValueError('ТаблицаФормы: таблица не привязана')
+        return table
+
+    def get_member(self, member):
+        self._check(); key = member.casefold()
+        if key in ('currentrow', 'текущаястрока'):
+            if self.current_row is None: return None
+            self._table()._lookup_id(self.current_row)
+            return Decimal(self.current_row)
+        if key in ('currentdata', 'текущиеданные'):
+            return None if self.current_row is None else self._table()._lookup_id(self.current_row)
+        if key in ('type', 'вид'):
+            raise ValueError('ТаблицаФормы: свойство не поддерживается')
+        return super().get_member(member)
+
+    def set_member(self, member, value):
+        self._check(); key = member.casefold()
+        if key in ('datapath', 'путькданным'):
+            self._check(True)
+            if self.data_path: raise ValueError('ТаблицаФормы: ПутьКДанным уже задан')
+            value = name(value)
+            if value.casefold() not in self._form._tables: raise ValueError('ТаблицаФормы: таблица не найдена')
+            if any(type(item) is BSLFormTable and item is not self and item.data_path.casefold() == value.casefold()
+                   for item in self._form.items._values.values()):
+                raise ValueError('ТаблицаФормы: таблица уже привязана')
+            self.data_path = value
+        elif key in ('currentrow', 'текущаястрока'):
+            if value is None:
+                self.current_row = None; return
+            if (type(value) is not Decimal or not value.is_finite() or
+                    value != value.to_integral_value() or not 1 <= value <= 4096):
+                raise ValueError('ТаблицаФормы: неверный идентификатор строки')
+            self._table()._lookup_id(int(value))
+            self.current_row = int(value)
+        elif key in ('currentdata', 'текущиеданные', 'type', 'вид'):
+            raise ValueError('ТаблицаФормы: свойство недоступно для изменения')
+        else: return super().set_member(member, value)
+
+
 class BSLFormButton(BSLFormField):
     _methods = {}
     def __init__(self, form, item_name):
@@ -227,7 +274,12 @@ class BSLFormCollection(_Owned):
             if parent is not None and parent is not self._form: raise ValueError('Форма: вложенные элементы пока не поддерживаются')
             if item_type is BSLType.FORM_FIELD: item = BSLFormField(self._form, item_name)
             elif item_type is BSLType.FORM_BUTTON: item = BSLFormButton(self._form, item_name)
-            else: raise TypeError('Форма: поддерживаются ПолеФормы и КнопкаФормы')
+            elif item_type is BSLType.FORM_TABLE:
+                from .form_tables import MAX_TABLES
+                if sum(type(x) is BSLFormTable for x in self._values.values()) >= MAX_TABLES:
+                    raise ValueError('ТаблицаФормы: превышен предел элементов таблиц')
+                item = BSLFormTable(self._form, item_name)
+            else: raise TypeError('Форма: поддерживаются ПолеФормы, КнопкаФормы и ТаблицаФормы')
         self._form._session._allocated += 1
         self._values[key] = item
         return item
@@ -235,7 +287,7 @@ class BSLFormCollection(_Owned):
     def count(self): self._check(); return Decimal(len(self._values))
     def delete(self, item):
         self._check(True)
-        if type(item) not in (BSLFormField, BSLFormButton, BSLFormCommand) or item._form is not self._form or self._values.get(item.name.casefold()) is not item:
+        if type(item) not in (BSLFormField, BSLFormButton, BSLFormTable, BSLFormCommand) or item._form is not self._form or self._values.get(item.name.casefold()) is not item:
             raise ValueError('Форма: чужой или удаленный объект')
         if self._commands and any(type(x) is BSLFormButton and x.command_name.casefold() == item.name.casefold() for x in self._form.items._values.values()):
             raise ValueError('Форма: команда используется кнопкой')
@@ -264,7 +316,7 @@ class BSLClientApplicationForm(_Owned):
     EVENT_NAMES = {'присозданиинасервере':'oncreateatserver','приоткрытии':'onopen',
                    'передзакрытием':'beforeclose','призакрытии':'onclose'}
     def __init__(self, session):
-        self._session = session; self._attributes = {}; self._data = {}; self._static = set()
+        self._session = session; self._attributes = {}; self._data = {}; self._tables = {}; self._static = set()
         self.items = BSLFormItems(self); self.commands = BSLFormCommands(self)
         self.actions = {}; self.title = ''
     def _check(self, server=False):
@@ -295,17 +347,21 @@ class BSLClientApplicationForm(_Owned):
         for attr in ([] if added is None else added.items):
             if type(attr) is not BSLFormAttribute: raise TypeError('Форма: требуется РеквизитФормы')
             key = attr.name.casefold()
-            if key in attrs or key in self._session.reserved_names or len(attrs) >= MAX_ATTRIBUTES: raise ValueError('Форма: имя занято или превышен предел')
+            if key in attrs or key in self._tables or key in self._session.reserved_names or len(attrs) >= MAX_ATTRIBUTES: raise ValueError('Форма: имя занято или превышен предел')
             default_length = int(attr.value_type.string_qualifiers.length)
-            if sum(len(x) for x in data.values() if type(x) is str) + default_length > MAX_TOTAL_TEXT:
+            if sum(len(x) for x in data.values() if type(x) is str) + self._table_text_size() + default_length > MAX_TOTAL_TEXT:
                 raise ValueError("Форма: превышен предел данных")
             attrs[key] = attr._copy(); data[key] = scalar(attr.value_type.adjust_value())
         allocated = len([] if added is None else added.items)
         if self._session._allocated + allocated > MAX_ALLOCATED: raise ValueError("Форма: превышен предел созданных объектов")
         self._session._allocated += allocated
         self._attributes, self._data = attrs, data
+    def _table_text_size(self):
+        from .form_tables import table_text_size
+        return table_text_size(self)
     def get_member(self, member):
         self._check(); key = member.casefold()
+        if key in self._tables: return self._tables[key]
         if key in self._data: return self._data[key]
         if key in ('items','элементы'): return self.items
         if key in ('commands','команды'): return self.commands
@@ -317,7 +373,8 @@ class BSLClientApplicationForm(_Owned):
             scalar(value)
             value = scalar(self._attributes[key].value_type.adjust_value(value))
             total = sum(len(x) for k,x in self._data.items() if k != key and type(x) is str)
-            if total + (len(value) if type(value) is str else 0) > MAX_TOTAL_TEXT: raise ValueError('Форма: превышен предел данных')
+            if total + self._table_text_size() + (len(value) if type(value) is str else 0) > MAX_TOTAL_TEXT: raise ValueError('Форма: превышен предел данных')
             self._data[key] = value
+        elif key in self._tables: raise ValueError('ТаблицаФормы: замена коллекции запрещена')
         elif key in ('title','заголовок'): self.title = text(value, 1024)
         else: return super().set_member(member, value)

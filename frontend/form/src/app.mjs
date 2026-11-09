@@ -5,7 +5,7 @@ import {createFormView} from './view.mjs';
 export function mountForm(environment, root) {
   let client = null, token = null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
-    change: name => run('change', name), action: (event, name) => run(event, name), refresh: () => refresh(),
+    change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
   const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
@@ -29,15 +29,28 @@ export function mountForm(environment, root) {
   }
   async function sendChange(change) {
     const before = client.snapshot;
-    try { await client.event('change', change); }
+    try { await client.event(Object.hasOwn(change, 'row') ? 'cell' : 'change', change); }
     finally {
       // An authoritative error snapshot can include effects completed before failure.
-      if (client.snapshot !== before && !client.transportFailed) view.accept(change.control);
+      if (client.snapshot !== before && !client.transportFailed) view.accept(change);
       paint();
     }
   }
-  async function run(event, name) {
+  async function run(event, name, row) {
     if (busy || !client || client.locked) return;
+    // Only an explicit host policy may discard unvalidated local drafts. Keep
+    // them until an authoritative response, including a recoverable handler error.
+    if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
+      busy = true; error = ''; paint();
+      const before = client.snapshot;
+      try { await client.event('command', {control: name}); }
+      catch (caught) { showError(caught); }
+      finally {
+        if (client.snapshot !== before && !client.transportFailed && !client.outcomeUnknown && !client.snapshot.uncertain) view.clearDrafts();
+        finish();
+      }
+      return;
+    }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try { changes = view.changes(event === 'change' ? name : undefined); }
@@ -45,8 +58,16 @@ export function mountForm(environment, root) {
     if (event === 'change' && !changes.length) return;
     busy = true; error = ''; paint();
     try {
-      for (const change of changes) await sendChange(change);
+      for (const change of changes) {
+        // An earlier handler may delete, retype or supersede a later draft. Do not
+        // retarget it or run a command that silently lost part of the user's edit.
+        const locator = Object.hasOwn(change, 'row') ? change : change.control;
+        const pending = view.changes(locator);
+        if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
+        await sendChange(change);
+      }
       if (event === 'command') await client.event('command', {control: name});
+      else if (event === 'select') await client.event('select', {control: name, row});
       else if (event === 'close') await client.event('close');
     } catch (caught) { showError(caught); }
     finally { finish(); }
@@ -67,7 +88,7 @@ export function mountForm(environment, root) {
   };
   environment.addEventListener('hashchange', reattach);
   environment.addEventListener('beforeunload', event => {
-    if (busy || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
+    if (busy || client?.snapshot?.dirty || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
   });
   paint(); const ready = reattach();
   return {ready, refresh, run, reattach, get client() { return client; }, view};

@@ -1,4 +1,4 @@
-# Replicated scalar form host API
+# Replicated form host API
 
 `yadinassi.form_replication` is an opt-in Python embedding API for a detached
 client/server form pair. It is not a new CLI mode, network listener or native 1C
@@ -8,7 +8,7 @@ The synthetic tests do not replace native platform observations.
 ## Host ownership
 
 Create `ReplicatedFormServer(server_source, endpoints, handlers=..., attributes=...,
-initial_values=..., bindings=...)` on the server. `endpoints` maps opaque positive
+tables=..., initial_values=..., bindings=...)` on the server. `endpoints` maps opaque positive
 integers to contextful server routines with required `Val` parameters. Lifecycle
 `bindings` select the server-create handler and client lifecycle handlers.
 `handlers` is a tuple of trusted `InvocationBinding` procedure signatures
@@ -75,7 +75,7 @@ name, type and creation identity still match. Deleting and recreating a same-nam
 control invalidates the old reference instead of redirecting it to the replacement.
 
 This bounded prototype does not establish native automatic-event ordering,
-reference/table-part replication, arbitrary form values, remote module caching,
+catalog-reference replication, arbitrary nested form values, remote module caching,
 WebSocket support or native managed-form parity. No native integration scenarios
 are changed by this host API.
 
@@ -96,7 +96,22 @@ any server mutation; an entire response is validated before any client mutation.
 Rejected deltas do not consume the accepted client sequence or server revision.
 Requests still have monotonically increasing identities and are never replayed.
 
-## Local verification
+## Fixed table replication
+
+The private pair protocol is `yadinassi-form/1`. Trusted host registration supplies
+`FormTableSchema` objects; the browser cannot define columns. Tables carry bounded
+scalar cells, monotonic row identities and per-control selection. Client barriers
+send existing-cell and selection deltas. Only server BSL can add/delete rows.
+Detached admission validates the entire scalar/cell/selection candidate before
+installation, preserves surviving row objects and invalidates removed rows.
+An initially empty table schema inventory is also fixed after bootstrap.
+
+The [table guide](form-tables.md) documents the limits, package manifest, browser
+editing and durable create-only order example. Form collection/row handles cannot
+cross an ordinary InvocationPort or serialization boundary. Known errors retain
+completed effects; unknown outcomes remain locked without replay.
+
+## Historical scalar verification
 
 The dedicated `tests/test_form_replication.py` contains 30 scenario tests,
 including a persistent separate Python server process. They exercise bootstrap,
@@ -105,8 +120,8 @@ NoContext isolation, lifecycle cancellation/disposal, failure synchronization,
 malformed frames, replay, stale revisions and unknown outcomes. The saved
 NoContext form adapter adds 15 tests in `tests/test_form_invocation.py`.
 
-The following 245-test regression set passed normally and with `python -O` on
-the candidate. Tests execute real interpreter/transport code; native-runtime
+The original scalar milestone used the following 245-test regression set normally
+and with `python -O`; this historical result is not evidence for later table changes. Tests execute real interpreter/transport code; native-runtime
 harness tests in this command use their existing offline fixtures.
 
 ```sh
@@ -119,7 +134,7 @@ PYTHONPATH=tests:scripts python -m unittest \
   test_native_preprocessor_runtime -v
 ```
 
-The new production module increases the strict runtime inventory from 128 to 129
+That original production module increased the strict runtime inventory from 128 to 129
 files; its three current expectation helpers are updated without changing the
 inventory validator or its bounds. Browser assets and native integration sources
 are unchanged. No browser test, new real-1C capture, complete repository suite,

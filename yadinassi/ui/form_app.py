@@ -16,9 +16,9 @@ from ..form_replication import ReplicatedFormServer, ReplicatedFormSession
 from ..invocation import InvocationError, _decode_scalar
 from .form_package import load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
-from .protocol import encode_line, encode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
+from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
 
-PROTOCOL = 'yadinassi-form-ui/0'
+PROTOCOL = 'yadinassi-form-ui/1'
 
 
 class FormProcess(RuntimeBridge):
@@ -61,6 +61,20 @@ class FormProcess(RuntimeBridge):
             self.gate.release()
 
 
+def create_server(package, context=None):
+    """Closed host application factory. Nothing is imported from package data."""
+    application = None
+    if package.application == 'orders-workbench/1':
+        from .order_workbench import OrdersWorkbenchSession
+        application = OrdersWorkbenchSession(context)
+    server = ReplicatedFormServer(package.source, package.endpoints,
+        handlers=package.handlers, attributes=package.attributes, tables=package.tables,
+        initial_values=package.initial_values, bindings=package.lifecycle,
+        database_context=context,
+        server_bindings=() if application is None else application.bindings())
+    return server
+
+
 def serve_runtime(directory, database=None, *, input_stream=None, output_stream=None):
     """Host-owned stdio service. EOF closes the database, never creates one."""
     context = None
@@ -68,10 +82,7 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
         package = load_server(directory)
         if database is not None:
             context = SQLiteDBContext(database)
-        server = ReplicatedFormServer(package.source, package.endpoints,
-            handlers=package.handlers, attributes=package.attributes,
-            initial_values=package.initial_values, bindings=package.lifecycle,
-            database_context=context)
+        server = create_server(package, context)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         while True:
@@ -97,14 +108,30 @@ class FormController:
             handlers=package.handlers, bindings=package.bindings)
         self._gate = Lock()
         self._opened = False
+        self._discard_commands = dict(package.discard_commands)
+        self._dirty_attribute = package.dirty_attribute
 
     def _snapshot(self):
         session = self.session
         snapshot = session.snapshot()
         values = {key.casefold(): value for key, value in snapshot.attributes}
         views = {key.casefold(): value for key, value in snapshot.item_views}
+        tables = {table.name.casefold(): table for table in snapshot.tables}
+        selections = dict(snapshot.selections)
         items = []
         for name, kind, title, visible, enabled, read_only, path in snapshot.items:
+            if kind == 'table':
+                table = tables[path.casefold()]
+                control_id = session.form.items._values[name.casefold()]._replica_id
+                items.append({'name': name, 'kind': 'table', 'title': title or table.title,
+                    'visible': visible, 'enabled': enabled, 'readOnly': read_only,
+                    'controlId': control_id, 'tableId': table.identity,
+                    'columns': [{'name': key, 'title': caption, 'type': value_type, 'readOnly': readonly}
+                                for key, caption, value_type, readonly in table.columns],
+                    'rows': [{'id': identity, 'values': [encode_value(value) for value in values]}
+                             for identity, values in table.rows],
+                    'currentRow': selections.get(name)})
+                continue
             view = views.get(name.casefold(), 'input')
             # Native view names are not renderer-controlled.
             view = {'InputField': 'input', 'CheckBoxField': 'checkbox', 'LabelField': 'label'}.get(view, view)
@@ -113,9 +140,24 @@ class FormController:
             value = None if kind == 'button' else encode_value(values.get(path.casefold()))
             items.append({'name': name, 'kind': kind, 'title': title, 'visible': visible,
                 'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value})
-        return {'kind': 'closed' if session.closed and not session.uncertain else 'form',
+        state = {'kind': 'closed' if session.closed and not session.uncertain else 'form',
             'revision': snapshot.revision, 'lifecycle': snapshot.state, 'title': snapshot.title,
             'uncertain': session.uncertain, 'items': items, 'messages': list(session.messages)}
+        if self._dirty_attribute:
+            dirty = values.get(self._dirty_attribute.casefold())
+            if type(dirty) is not bool:
+                raise ValueError('invalid trusted dirty attribute')
+            state['dirty'] = dirty
+            discard = []
+            for item in session.form.items._values.values():
+                if getattr(item, 'command_name', '') not in self._discard_commands:
+                    continue
+                command = session.form.commands._values.get(item.command_name.casefold())
+                if command is None or command.action.casefold() != self._discard_commands[item.command_name].casefold():
+                    raise ValueError('discard command binding changed')
+                discard.append(item.name)
+            state['discardCommands'] = discard
+        return state
 
     def exchange(self, request):
         if not self._gate.acquire(blocking=False):
@@ -144,15 +186,25 @@ class FormController:
             elif method == 'form.event':
                 event = params.get('event')
                 keys = {'event', 'revision'}
-                if event in ('change', 'command'):
+                if event in ('change', 'command', 'cell', 'select'):
                     keys.add('control')
-                if event == 'change':
+                if event in ('change', 'cell'):
                     keys.add('value')
-                if (event not in ('change', 'command', 'close') or set(params) != keys
+                if event in ('cell', 'select'):
+                    keys.add('row')
+                if event == 'cell':
+                    keys.add('column')
+                if (event not in ('change', 'command', 'close', 'cell', 'select') or set(params) != keys
                         or type(params['revision']) is not int or not 0 <= params['revision'] <= MAX_COUNTER
                         or event != 'close' and type(params['control']) is not str):
                     raise ValueError('invalid form event')
-                value = _decode_scalar(params['value']) if event == 'change' else None
+                if event in ('cell', 'select'):
+                    row = params['row']
+                    if (row is not None and (type(row) is not int or not 1 <= row <= 4096)
+                            or event == 'cell' and (row is None or type(params['column']) is not str)):
+                        raise ValueError('invalid table event')
+                value = (decode_value(params['value']) if event == 'cell' else
+                         _decode_scalar(params['value']) if event == 'change' else None)
                 if self.session.uncertain:
                     error = 'outcome_unknown'
                 elif params['revision'] != self.session.revision:
@@ -162,7 +214,8 @@ class FormController:
                 else:
                     try:
                         self.session.dispatch(event, revision=params['revision'],
-                            control=params.get('control', ''), value=value)
+                            control=params.get('control', ''), value=value,
+                            row=params.get('row'), column=params.get('column', ''))
                     except Exception:
                         error = 'outcome_unknown' if self.session.uncertain else 'event_failed'
             else:

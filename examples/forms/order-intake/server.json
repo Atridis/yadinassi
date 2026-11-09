@@ -1,0 +1,175 @@
+{
+  "protocol": "yadinassi-form-app/1",
+  "handlers": [
+    {
+      "name": "Changed",
+      "endpoint": 1,
+      "parameters": [
+        "Element"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "AddCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "DeleteCommand",
+      "endpoint": 3,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "RecalculateCommand",
+      "endpoint": 4,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "SaveCommand",
+      "endpoint": 5,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 6,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    }
+  ],
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "routine": "AddLine"
+    },
+    {
+      "endpoint": 2,
+      "routine": "DeleteLine"
+    },
+    {
+      "endpoint": 3,
+      "routine": "Recalculate"
+    },
+    {
+      "endpoint": 4,
+      "routine": "SaveOrder"
+    }
+  ],
+  "lifecycle": {
+    "OnCreateAtServer": "Create",
+    "BeforeClose": "BeforeClose"
+  },
+  "attributes": [
+    {
+      "name": "Code",
+      "type": "String",
+      "title": "Order code",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Description",
+      "type": "String",
+      "title": "Description",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Total",
+      "type": "Number",
+      "title": "Total",
+      "value": {
+        "type": "Number",
+        "value": "0"
+      }
+    },
+    {
+      "name": "Status",
+      "type": "String",
+      "title": "Status",
+      "value": {
+        "type": "String",
+        "value": "Add lines to create a new order"
+      }
+    },
+    {
+      "name": "Saved",
+      "type": "Boolean",
+      "title": "Saved",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    },
+    {
+      "name": "SaveAttempted",
+      "type": "Boolean",
+      "title": "Save attempted",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    },
+    {
+      "name": "Dirty",
+      "type": "Boolean",
+      "title": "Dirty",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    }
+  ],
+  "tables": [
+    {
+      "name": "Lines",
+      "title": "Order lines",
+      "columns": [
+        {
+          "name": "Description",
+          "type": "String",
+          "title": "Description",
+          "readOnly": false
+        },
+        {
+          "name": "Quantity",
+          "type": "Number",
+          "title": "Quantity",
+          "readOnly": false
+        },
+        {
+          "name": "Price",
+          "type": "Number",
+          "title": "Price",
+          "readOnly": false
+        },
+        {
+          "name": "Amount",
+          "type": "Number",
+          "title": "Amount",
+          "readOnly": true
+        }
+      ]
+    }
+  ]
+}

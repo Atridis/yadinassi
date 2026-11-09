@@ -14,8 +14,11 @@ from .syntax.parser import parse
 from .values import Reference, HostFunction
 from .native_targets import target_context
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
-                         BSLFormButton, BSLFormCommand, FORM_FIELD_VIEWS,
+                         BSLFormButton, BSLFormTable, BSLFormCommand, FORM_FIELD_VIEWS,
                          MAX_ATTRIBUTES, MAX_TOTAL_TEXT, name, scalar, text)
+
+from .form_tables import (FormTableSchema, BSLFormDataCollection, MAX_TABLES,
+                          validate_table_data, table_text_size)
 
 MAX_SOURCE = 65536
 MAX_STEPS = 100000
@@ -45,6 +48,17 @@ class FormApplicationAction:
 
 
 @dataclass(frozen=True)
+class FormServerBinding:
+    """Host-owned, zero-argument callback retained across fresh server activations.
+
+    Only a scalar result can reach BSL. No callback or object is wire-selected.
+    The trusted callback receives the owning session, never a renderer object.
+    """
+    name: str
+    callback: object
+
+
+@dataclass(frozen=True)
 class FormSnapshot:
     revision: int
     state: str
@@ -53,6 +67,8 @@ class FormSnapshot:
     items: tuple
     commands: tuple
     item_views: tuple = ()
+    tables: tuple = ()
+    selections: tuple = ()
 
 
 class _FormInterpreter(Interpreter):
@@ -90,7 +106,7 @@ class _FormInterpreter(Interpreter):
         if key in ('видполяформы','formfieldtype'):
             return FORM_FIELD_VIEWS
         form = self._form_session.form
-        if key in ('thisobject','этотобъект','items','элементы','commands','команды') or key in form._static:
+        if key in ('thisobject','этотобъект','items','элементы','commands','команды') or key in form._static or key in form._tables:
             form._check()
             if key in ('thisobject','этотобъект'): return form
             if key in ('items','элементы'): return form.items
@@ -98,10 +114,27 @@ class _FormInterpreter(Interpreter):
             return form.get_member(node.name)
         return super().visit_Name(node)
 
+    def visit_Index(self, node):
+        # Evaluate the receiver once. Keep the ordinary collection rules intact.
+        from . import runtime
+        value = yield from self._visit(node.object)
+        if type(value) is BSLFormDataCollection:
+            return value.get_index((yield from self._visit(node.index)))
+        if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,
+                           runtime.BSLCatalogs, runtime.BSLDocumentMetadataCollection,
+                           runtime.BSLDocuments):
+            return value.get_index((yield from self._visit(node.index)))
+        if not isinstance(value, runtime._COLLECTIONS):
+            raise TypeError('Индексирование поддерживается только для коллекций')
+        index = yield from self._visit(node.index)
+        if isinstance(value, (runtime.BSLFixedMap, *runtime._TABLE_COLLECTIONS)):
+            return value.get_index(index)
+        return value.get(index)
+
     def visit_ForEach(self, node):
         from .form_model import BSLFormItems, BSLFormCommands
         collection = yield from self._visit(node.collection)
-        if type(collection) in (BSLFormItems, BSLFormCommands):
+        if type(collection) in (BSLFormItems, BSLFormCommands, BSLFormDataCollection):
             for item in collection:
                 self.set_variable(node.name,item)
                 if not (yield from self.iteration(node.body)): break
@@ -116,13 +149,13 @@ class _FormInterpreter(Interpreter):
 
     def set_variable(self, variable, value):
         key = variable.casefold(); form = self._form_session.form
-        if key in form._static and not (self.locals is not None and key in self.locals):
+        if (key in form._static or key in form._tables) and not (self.locals is not None and key in self.locals):
             form.set_member(variable, value); return
         return super().set_variable(variable, value)
 
     def argument(self, node):
         ungrouped = self.ungroup(node); form = self._form_session.form
-        if isinstance(ungrouped, ast.Name) and ungrouped.name.casefold() in form._static and not (self.locals is not None and ungrouped.name.casefold() in self.locals):
+        if isinstance(ungrouped, ast.Name) and (ungrouped.name.casefold() in form._static or ungrouped.name.casefold() in form._tables) and not (self.locals is not None and ungrouped.name.casefold() in self.locals):
             # !todo Native form-attribute non-Val crossing/copyout needs its own proof.
             raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
         if (isinstance(ungrouped, ast.Attribute) and isinstance(ungrouped.object, ast.Name)
@@ -142,16 +175,22 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=()):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=()):
         text(source, MAX_SOURCE)
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
+        if type(tables) is not tuple or len(tables) > MAX_TABLES or any(type(t) is not FormTableSchema for t in tables):
+            raise ValueError('Форма: неверные таблицы')
         if bindings is None: bindings = {}
         if type(bindings) is not dict or len(bindings)>4: raise ValueError('Форма: неверные события')
         if initial_values is None: initial_values = {}
         if type(initial_values) is not dict or len(initial_values)>MAX_ATTRIBUTES: raise ValueError('Форма: неверные начальные данные')
         if type(application_actions) is not tuple or len(application_actions) > 64:
             raise ValueError('Форма: неверные действия приложения')
+        if (type(server_bindings) is not tuple or len(server_bindings) > 16 or
+                any(type(binding) is not FormServerBinding or not callable(binding.callback)
+                    for binding in server_bindings)):
+            raise TypeError('trusted server bindings required')
         self._application_actions = {}
         attribute_names = {a.name.casefold() for a in attributes if type(a) is BSLFormAttribute}
         for action in application_actions:
@@ -183,11 +222,28 @@ class FormSession:
         self.reserved_names.update(self.form._methods)
         self.reserved_names.update(n.name.casefold() for n in program if isinstance(n,ast.Routine))
         self.reserved_names.update(x.casefold() for n in program if isinstance(n,ast.Var) for x in n.names)
+        for binding in server_bindings:
+            key = name(binding.name).casefold()
+            if (key in self.reserved_names or key in attribute_names or key in self.interpreter.functions
+                    or key in {table.name.casefold() for table in tables}):
+                raise ValueError('server binding name already bound')
+            self.reserved_names.add(key)
+            def make_callback(owned):
+                def invoke():
+                    self.form._check(True)
+                    return scalar(owned.callback(self))
+                return invoke
+            self.interpreter.functions[key] = HostFunction(binding.name, make_callback(binding))
         self._busy = True
         try:
             self.interpreter.execute_program(program)
+            for identity, schema in enumerate(tables, 1):
+                key = schema.name.casefold()
+                if key in self.reserved_names or key in self.form._tables:
+                    raise ValueError('Форма: неверная или повторная таблица')
+                self.form._tables[key] = BSLFormDataCollection(self.form, schema, identity)
             for attr in attributes:
-                if type(attr) is not BSLFormAttribute or attr.name.casefold() in self.reserved_names or attr.name.casefold() in self.form._attributes:
+                if type(attr) is not BSLFormAttribute or attr.name.casefold() in self.reserved_names or attr.name.casefold() in self.form._attributes or attr.name.casefold() in self.form._tables:
                     raise ValueError('Форма: неверный или повторный реквизит')
                 key = attr.name.casefold()
                 if sum(len(x) for x in self.form._data.values() if type(x) is str) + int(attr.value_type.string_qualifiers.length) > MAX_TOTAL_TEXT:
@@ -195,6 +251,7 @@ class FormSession:
                 self.form._attributes[key] = attr._copy()
                 self.form._data[key] = scalar(attr.value_type.adjust_value())
                 self.form._static.add(key)
+            validate_table_data(self.form)
             for key, value in initial_values.items():
                 key = name(key)
                 if key.casefold() not in self.form._static: raise ValueError("Форма: неизвестный начальный реквизит")
@@ -268,7 +325,7 @@ class FormSession:
         total = sum(len(value) for key, value in self.form._data.items()
                     if key not in changes and type(value) is str)
         total += sum(len(value) for value in changes.values() if type(value) is str)
-        if total > MAX_TOTAL_TEXT:
+        if total + table_text_size(self.form) > MAX_TOTAL_TEXT:
             raise ValueError('Форма: превышен предел данных')
         # Shrink first so every intermediate text total also fits the validated
         # final bound. No handlers/observers run between these ordinary setters.
@@ -316,22 +373,35 @@ class FormSession:
             self._busy = False; self.revision += 1; self._gate.release()
         return self.snapshot()
 
-    def dispatch(self, event, *, revision, control='', value=None):
-        if type(event) is not str or event not in ('change','command','close'):
+    def dispatch(self, event, *, revision, control='', value=None, row=None, column=''):
+        if type(event) is not str or event not in ('change','command','close','cell','select'):
             raise ValueError('Форма: недопустимое событие')
         if self.state != 'open': raise ValueError('Форма не открыта')
         if event != 'close': name(control)
-        if event == 'change': scalar(value)
+        if event in ('change', 'cell'): scalar(value)
+        if event in ('cell', 'select'):
+            if row is not None and (type(row) is not int or not 1 <= row <= 4096):
+                raise ValueError('ТаблицаФормы: неверный идентификатор строки')
+            if event == 'cell':
+                if row is None: raise ValueError('ТаблицаФормы: строка не выбрана')
+                name(column)
         self._begin(revision)
         try:
             item = command = None
             if event != 'close':
                 item = self.form.items._values.get(control.casefold())
-                expected = BSLFormField if event=='change' else BSLFormButton
+                expected = BSLFormTable if event in ('cell', 'select') else BSLFormField if event=='change' else BSLFormButton
                 if type(item) is not expected or not item.visible or not item.enabled or item._removed:
                     raise ValueError('Форма: недоступный элемент')
                 if event == 'change':
                     if item.read_only or not item.data_path: raise ValueError('Форма: поле недоступно для ввода')
+                elif event in ('cell', 'select'):
+                    table = item._table()
+                    selected = None if row is None else table._lookup_id(row)
+                    if event == 'cell':
+                        col = next((c for c in table.schema.columns if c.name.casefold() == column.casefold()), None)
+                        if item.read_only or col is None or col.read_only:
+                            raise ValueError('ТаблицаФормы: ячейка недоступна для ввода')
                 else:
                     command = self.form.commands._values.get(item.command_name.casefold())
                     if command is None or not command.action: raise ValueError('Форма: команда не привязана')
@@ -351,6 +421,10 @@ class FormSession:
                 if event=='change':
                     self.form.set_member(item.data_path,value)
                     if item.action: self._invoke(item.action,'client',[item])
+                elif event in ('cell', 'select'):
+                    if event == 'cell': selected.set_member(column, value)
+                    item.current_row = row
+                    if event == 'cell' and item.action: self._invoke(item.action, 'client', [item])
                 else:
                     self._invoke(command.action,'client',[command])
                     self._application_action(command)
@@ -362,7 +436,7 @@ class FormSession:
         if self._busy: raise ValueError("Форма: снимок во время обработчика недоступен")
         form = self.form
         # Detached immutable scalar records, not Python/BSL object handles.
-        items = tuple((x.name, 'button' if type(x) is BSLFormButton else 'field',x.title,
+        items = tuple((x.name, 'button' if type(x) is BSLFormButton else 'table' if type(x) is BSLFormTable else 'field',x.title,
                        x.visible,x.enabled,x.read_only,
                        x.command_name if type(x) is BSLFormButton else x.data_path)
                       for x in form.items._values.values())
@@ -370,4 +444,7 @@ class FormSession:
         return FormSnapshot(self.revision,self.state,form.title,
                             tuple((a.name,form._data[k]) for k,a in form._attributes.items()),items,commands,
                             tuple((x.name,x.view.value[0]) for x in form.items._values.values()
-                                  if type(x) is BSLFormField))
+                                  if type(x) is BSLFormField),
+                            tuple(table._snapshot() for table in form._tables.values()),
+                            tuple((x.name, x.current_row) for x in form.items._values.values()
+                                  if type(x) is BSLFormTable))

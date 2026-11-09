@@ -98,8 +98,9 @@ projection, source, join-work and expression-depth limits continue to apply.
 Resource overflow fails explicitly; materialization must not silently turn a
 partial scan into a successful intermediate table.
 
-This block does not add UNION, arbitrary subqueries, external ValueTable query
-sources, temporary indexes, query writes, documents or registers. It does not
+The [UNION and external source extension](query-unions-external-sources.md) adds
+combined report sets and typed scalar ValueTable inputs. Arbitrary subqueries,
+temporary indexes, query writes, documents and registers remain out of scope. It does not
 change native integration scenarios or lower evidence gates. Native measurement
 of package command results and lifetime details remains future calibration.
 

@@ -45,7 +45,7 @@ jobs:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/demo_kind_browser_qa.mjs
-      - name: Acquire three form flows with Chromium sandbox enabled
+      - name: Acquire five form flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/form-browser-reviewed'
         timeout-minutes: 5
         env:
@@ -75,5 +75,7 @@ jobs:
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/manifest.json
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/estimate.png
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/product-narrow.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-table-narrow.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-editor-narrow.png
           if-no-files-found: error
           retention-days: 14
