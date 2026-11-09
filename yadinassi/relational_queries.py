@@ -6,7 +6,7 @@ Input/intermediate bounds fail explicitly, never return partial aggregate totals
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from uuid import UUID
 
@@ -78,15 +78,22 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
         self._descriptors = {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section),
+        self.temporary_tables = temporary_tables or {}
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary),
                         *(join.source for join in query.joins))
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
         for source in self.sources:
+            if source.temporary:
+                if source.catalog.casefold() not in self.temporary_tables:
+                    raise ValueError('Unknown temporary query source')
+                self.managers.append(None)
+                self.sections.append(None)
+                continue
             manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
             section = None
@@ -131,13 +138,29 @@ class _Plan:
                     raise TypeError('A NULL-only projection requires a typed expression')
                 column = _Column(projection.alias, None, descriptor.kind, descriptor.qualifiers,
                                  descriptor.custom, True)
+            if column.kind == 'catalog_ref':
+                column = replace(column, reference_identity=self.reference_identity(expression))
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)
         # COUNT(*) still scans Ref so rows and source identity can be validated.
         for i, fields in enumerate(self.fields):
-            if not fields:
+            if not fields and not self.sources[i].temporary:
                 fields.append(_field(self.managers[i], syntax.Field(('Ref',)), self.sources[i].alias, self.sections[i]))
+
+    def resolve_field(self, index, expression):
+        from .queries import _field
+        source = self.sources[index]
+        if not source.temporary:
+            return _field(self.managers[index], expression, source.alias, self.sections[index])
+        if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
+            raise ValueError('Unknown temporary source qualifier')
+        table = self.temporary_tables[source.catalog.casefold()]
+        matches = [(i, column) for i, column in enumerate(table.columns)
+                   if column.name.casefold() == expression.parts[-1].casefold()]
+        if len(matches) != 1: raise ValueError('Unknown temporary table column')
+        i, column = matches[0]
+        return replace(column, field=i, explicit_alias=True)
 
     def bind(self, expression, *, aggregates=True, source_limit=None):
         from .queries import _field
@@ -169,7 +192,7 @@ class _Plan:
         matches = []
         for i, source in enumerate(self.sources[:source_limit]):
             if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold(): continue
-            try: column = _field(self.managers[i], expression, source.alias, self.sections[i])
+            try: column = self.resolve_field(i, expression)
             except ValueError: continue
             matches.append(_BoundField(i, column))
         if len(matches) != 1: raise ValueError('Unknown or ambiguous query field')
@@ -226,6 +249,8 @@ class _Plan:
 
     def reference_identity(self, expression):
         if type(expression) is _BoundField:
+            if expression.column.reference_identity is not None:
+                return expression.column.reference_identity
             manager = self.managers[expression.source]
             target = (manager._schema.identity if expression.column.field == 'ref'
                       else expression.column.custom.target_catalog_id)
@@ -377,6 +402,14 @@ class _Plan:
     def load(self, index, view, budget):
         from .queries import _logical, _section_row, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
         manager, section, columns = self.managers[index], self.sections[index], self.fields[index]
+        if self.sources[index].temporary:
+            table = self.temporary_tables[self.sources[index].catalog.casefold()]
+            rows = [tuple(row[column.field] for column in columns) for row in table.rows]
+            budget[0] += len(rows) * len(columns)
+            budget[1] += sum(len(v) for row in rows for v in row if type(v) is str)
+            if len(rows) > syntax.MAX_ROWS or budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query input resource limit exceeded')
+            return rows
         if view.catalog_schema(manager._schema.identity) != manager._schema: raise BackendError('schema_changed')
         rows, seen, cursors = [], set(), set()
         continuation = None
@@ -451,13 +484,19 @@ class _Plan:
             if len(result) > MAX_INTERMEDIATE_ROWS: raise ValueError('Query intermediate row limit exceeded')
         return result
 
-    def execute(self):
+    def execute(self, view=None, budget=None):
         from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
-        view = self.managers[0]._view()
+        owner = False
+        if view is None:
+            manager = next((m for m in self.managers if m is not None), None)
+            if manager is not None:
+                view = manager._view()
+                owner = True
         try:
-            budget = [0, 0]
+            if budget is None: budget = [0, 0]
             sources = [self.load(i, view, budget) for i in range(len(self.sources))]
-        finally: view.close()
+        finally:
+            if owner: view.close()
         rows = [(row,) for row in sources[0]]
         for index, join in enumerate(self.query.joins, 1):
             rows = self.join(rows, sources[index], index, self.joins[index - 1], join.kind)

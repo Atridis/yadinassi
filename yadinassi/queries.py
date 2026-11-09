@@ -41,6 +41,7 @@ class _Column:
     qualifiers: tuple
     custom: object = None
     explicit_alias: bool = False
+    reference_identity: object = None
 
 
 def _field(manager, field, source_alias, section=None):
@@ -206,17 +207,26 @@ class BSLQuery(BSLObject):
     def __init__(self, catalogs, text=''):
         self._catalogs = catalogs
         self._parameters = {}
+        self._temp_tables_manager = None
         self.set_member('Text', text)
 
     def __str__(self):
         return 'Запрос'
 
     def get_member(self, name):
+        if name.casefold() in ('temptablesmanager', 'менеджервременныхтаблиц'):
+            return self._temp_tables_manager
         if name.casefold() in ('text', 'текст'):
             return self._text
         return self.get_method(name)
 
     def set_member(self, name, value):
+        if name.casefold() in ('temptablesmanager', 'менеджервременныхтаблиц'):
+            from .query_packages import BSLTempTablesManager
+            if value is not None and type(value) is not BSLTempTablesManager:
+                raise TypeError('Query.TempTablesManager requires TempTablesManager or Undefined')
+            self._temp_tables_manager = value
+            return
         if name.casefold() not in ('text', 'текст'):
             return super().set_member(name, value)
         if type(value) is not str:
@@ -229,6 +239,8 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key in ('setparameter', 'установитьпараметр'):
             return HostFunction(name, self.set_parameter, returns_value=False)
+        if key in ('executebatch', 'выполнитьпакет'):
+            return HostFunction(name, self.execute_batch)
         if key in ('execute', 'выполнить'):
             return HostFunction(name, self.execute)
         return super().get_member(name)
@@ -241,8 +253,20 @@ class BSLQuery(BSLObject):
             raise ValueError('Query parameter count limit exceeded')
         self._parameters[key] = _parameter_value(value)
 
+    def execute_batch(self):
+        from .query_packages import execute_package
+        return execute_package(syntax.parse_package(self._text), self._catalogs,
+                               dict(self._parameters), self._temp_tables_manager)
+
     def execute(self):
-        query = syntax.parse_query(self._text)
+        statements = syntax.parse_package(self._text)
+        query = statements[0]
+        if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
+                or query.temporary or any(join.source.temporary for join in query.joins)
+                or self._temp_tables_manager is not None):
+            from .query_packages import execute_package
+            return execute_package(statements, self._catalogs, dict(self._parameters),
+                                   self._temp_tables_manager).items[-1]
         from . import relational_queries
         if relational_queries.required(query):
             return relational_queries.execute(query, self._catalogs, dict(self._parameters))

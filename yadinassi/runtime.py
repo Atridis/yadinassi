@@ -40,6 +40,7 @@ from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMeta
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
+from .query_packages import BSLTempTablesManager
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
 from .document_types import BSLDocumentType
@@ -295,6 +296,7 @@ class Interpreter:
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
+        self.register_type("МенеджерВременныхТаблиц", lambda: BSLTempTablesManager(self._catalogs._metadata), "TempTablesManager")
         self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text), "Query")
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
