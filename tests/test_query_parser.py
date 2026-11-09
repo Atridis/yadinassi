@@ -37,7 +37,6 @@ class QueryParserTests(unittest.TestCase):
             'SELECT Code FROM Catalog.Products, Catalog.Categories',
             'SELECT Code FROM Catalog.Products UNION SELECT Code FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products; SELECT Code FROM Catalog.Products',
-            'SELECT Code INTO Temp FROM Catalog.Products',
             'DELETE FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products WHERE Code = (SELECT Code FROM Catalog.Categories)',
             'SELECT Code FROM Catalog.Products WHERE Code LIKE "A%"',
@@ -49,6 +48,10 @@ class QueryParserTests(unittest.TestCase):
 
     def test_relational_extension_accepts_previously_unsupported_shapes(self):
         from yadinassi.query_parser import Aggregate, Field
+        materialized = parse_query('SELECT Code INTO Temp FROM Catalog.Products')
+        self.assertEqual(materialized.into, 'Temp')
+        temporary = parse_query('SELECT Code FROM Temp')
+        self.assertTrue(temporary.temporary)
         aggregate = parse_query('SELECT COUNT(Code) FROM Catalog.Products')
         self.assertIsInstance(aggregate.projections[0].field, Aggregate)
         joined = parse_query('SELECT P.Code FROM Catalog.Products AS P JOIN Catalog.Categories AS C ON P.Category=C.Ref')

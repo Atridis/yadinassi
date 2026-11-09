@@ -1,5 +1,6 @@
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
+from .query_packages import BSLTempTablesManager
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_tables import BSLFormDataCollection, BSLFormDataCollectionItem
@@ -33,6 +34,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTe
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage
 from .value_storage import BSLValueStorage
+from .json_dates import BSLJSONSerializerSettings, BSLJSONDateFormat, BSLJSONDateWritingVariant
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
@@ -69,6 +71,7 @@ _VALUE_TYPES = (
     (BSLOSCertificationAuthorityCertificates, BSLType.OS_CA_CERTIFICATES, "OSCertificationAuthorityCertificates"),
     (BSLInternetProxy, BSLType.INTERNET_PROXY, "InternetProxy"),
     (BSLUserMessage, BSLType.USER_MESSAGE, "UserMessage"),
+    (BSLTempTablesManager, BSLType.TEMP_TABLES_MANAGER, "TempTablesManager"),
     (BSLQuery, BSLType.QUERY, "Query"),
     (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
     (BSLQueryResultSelection, BSLType.QUERY_RESULT_SELECTION, "QueryResultSelection"),
@@ -159,6 +162,9 @@ _VALUE_TYPES = (
     (BSLTextWriter, BSLType.TEXT_WRITER, "TextWriter"),
     (BSLBinaryData, BSLType.BINARY_DATA, "BinaryData"),
     (BSLTextEncoding, BSLType.TEXT_ENCODING, "TextEncoding"),
+    (BSLJSONSerializerSettings, BSLType.JSON_SERIALIZER_SETTINGS, "JSONSerializerSettings"),
+    (BSLJSONDateFormat, BSLType.JSON_DATE_FORMAT, "JSONDateFormat"),
+    (BSLJSONDateWritingVariant, BSLType.JSON_DATE_WRITING_VARIANT, "JSONDateWritingVariant"),
     (BSLJSONWriterSettings, BSLType.JSON_WRITER_SETTINGS, "JSONWriterSettings"),
     (BSLJSONLineBreak, BSLType.JSON_LINE_BREAK, "JSONLineBreak"),
     (BSLJSONReader, BSLType.JSON_READER, "JSONReader"),
