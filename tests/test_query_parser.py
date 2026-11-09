@@ -33,11 +33,8 @@ class QueryParserTests(unittest.TestCase):
     def test_unsupported_language_is_never_partially_accepted(self):
         variants = [
             'SELECT * FROM Catalog.Products',
-            'SELECT COUNT(Code) FROM Catalog.Products',
             'SELECT Code FROM Document.Invoice',
             'SELECT Code FROM Catalog.Products, Catalog.Categories',
-            'SELECT Code FROM Catalog.Products JOIN Catalog.Categories ON Code=Code',
-            'SELECT Code FROM Catalog.Products GROUP BY Code',
             'SELECT Code FROM Catalog.Products UNION SELECT Code FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products; SELECT Code FROM Catalog.Products',
             'SELECT Code INTO Temp FROM Catalog.Products',
@@ -45,12 +42,22 @@ class QueryParserTests(unittest.TestCase):
             'SELECT Code FROM Catalog.Products WHERE Code = (SELECT Code FROM Catalog.Categories)',
             'SELECT Code FROM Catalog.Products WHERE Code LIKE "A%"',
             'SELECT Code FROM Catalog.Products WHERE Code = NULL',
-            'SELECT Code FROM Catalog.Products WHERE Code = Code',
             'SELECT P.Category.Code FROM Catalog.Products AS P',
         ]
         for text in variants:
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_query(text)
+
+    def test_relational_extension_accepts_previously_unsupported_shapes(self):
+        from yadinassi.query_parser import Aggregate, Field
+        aggregate = parse_query('SELECT COUNT(Code) FROM Catalog.Products')
+        self.assertIsInstance(aggregate.projections[0].field, Aggregate)
+        joined = parse_query('SELECT P.Code FROM Catalog.Products AS P JOIN Catalog.Categories AS C ON P.Category=C.Ref')
+        self.assertEqual(joined.joins[0].source.catalog, 'Categories')
+        grouped = parse_query('SELECT Code FROM Catalog.Products GROUP BY Code')
+        self.assertEqual(grouped.groups, (Field(('Code',)),))
+        compared = parse_query('SELECT Code FROM Catalog.Products WHERE Code=Code')
+        self.assertEqual(compared.predicate.value, Field(('Code',)))
 
     def test_duplicate_projection_and_invalid_top(self):
         for text in ('SELECT Code, Code FROM Catalog.Products',

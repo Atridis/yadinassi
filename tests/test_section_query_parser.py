@@ -26,11 +26,17 @@ class SectionQueryParserTests(unittest.TestCase):
             'SELECT Text FROM Catalog.Products.Lines.More',
             'SELECT L.Ref.Code FROM Catalog.Products.Lines AS L',
             'SELECT L.Category.Description FROM Catalog.Products.Lines AS L',
-            'SELECT Text FROM Catalog.Products.Lines JOIN Catalog.Categories AS C ON Ref=C.Ref',
             'SELECT Text FROM Catalog.Products.Lines, Catalog.Products.Notes',
             'SELECT * FROM Catalog.Products.Lines',
-            'SELECT COUNT(Text) FROM Catalog.Products.Lines',
             'SELECT Text FROM Catalog.Products.Lines; DELETE FROM Catalog.Products',
         ):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_query(text)
+
+    def test_section_sources_can_join_and_aggregate_without_owner_dereference(self):
+        from yadinassi.query_parser import Aggregate
+        joined = parse_query('SELECT L.Text FROM Catalog.Products.Lines AS L JOIN Catalog.Categories AS C ON L.Category=C.Ref')
+        self.assertEqual((joined.catalog, joined.section), ('Products', 'Lines'))
+        self.assertEqual(joined.joins[0].source.catalog, 'Categories')
+        aggregate = parse_query('SELECT COUNT(Text) FROM Catalog.Products.Lines')
+        self.assertIsInstance(aggregate.projections[0].field, Aggregate)
