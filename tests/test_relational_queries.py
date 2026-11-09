@@ -2,7 +2,7 @@
 
 These are host reference-model tests, not native 1C parity observations.
 """
-from decimal import Decimal, Inexact, Rounded, localcontext
+from decimal import Decimal, Inexact, InvalidOperation, Rounded, localcontext
 from unittest.mock import patch
 import unittest
 
@@ -100,10 +100,15 @@ S=Q.Execute().Select();While S.Next() Do Message(S.Product);Message(S.Category);
         with localcontext() as context:
             context.prec = 2
             context.traps[Inexact] = context.traps[Rounded] = True
+            # Preserve a pre-existing ConversionSyntax subcondition too. The
+            # C Decimal SignalDict compares raw status bits with a plain dict;
+            # compare public signal mappings on both sides instead.
+            try: Decimal('invalid-number')
+            except InvalidOperation: pass
             before = dict(context.flags)
             result = self.rows('SELECT SUM(Amount) AS Total,AVG(Amount) AS Mean FROM Catalog.Products')
             self.assertEqual(result, ((Decimal('60.01'),Decimal('20.0033333333')),))
-            self.assertEqual(context.flags, before)
+            self.assertEqual(dict(context.flags), before)
 
     def test_aggregate_unload_and_nullable_left_join_unload(self):
         table = self.query('SELECT SUM(Amount) AS Total,COUNT(*) AS N FROM Catalog.Products').execute().unload()

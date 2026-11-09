@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TextDocumentSmokeTests(unittest.TestCase):
-    def test_program_covers_core_and_closed_file_api(self):
+    def test_program_covers_core_and_invalid_file_options(self):
         source, expected = smoke_test.text_document_smoke_program()
         messages = []
         Interpreter(messages.append).execute(source)
@@ -20,15 +20,15 @@ class TextDocumentSmokeTests(unittest.TestCase):
         for name in ('SetText', 'GetText', 'LineCount', 'GetLine', 'AddLine',
                      'ВставитьСтроку', 'ReplaceLine', 'УдалитьСтроку', 'Очистить'):
             self.assertIn('.' + name + '(', source)
-        self.assertEqual(messages[-2:], ['line-boundary', 'file-api-closed'])
+        self.assertEqual(messages[-2:], ['line-boundary', 'file-option-rejected'])
 
     def test_all_cli_transports_preserve_output_and_never_create_write_target(self):
         source, expected = smoke_test.text_document_smoke_program()
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'ТекстовыйДокумент.bsl'
             path.write_text(source, encoding='utf-8-sig')
-            # -m resolves the checked-out package from ROOT; the inert target
-            # name is never interpreted as a path by the in-memory object.
+            # -m resolves the checked-out package from ROOT. Invalid encoding
+            # is rejected before the target is opened or created.
             for args, stdin in (([str(path)], None), (['-c', source], None),
                                 (['-с', source], None), (['--command', source], None),
                                 (['-'], source), ([], source + '/exit\n')):

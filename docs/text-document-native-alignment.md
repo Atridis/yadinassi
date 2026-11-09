@@ -95,8 +95,11 @@ All listed arguments are required; optional omitted forms are not added.
 
 ## Closed boundaries and validation
 
-No filesystem Read/Write, streams, UI, encoding properties, async API, indexer,
-iteration or host reflection is exposed. Internal/XML codecs (including Type
+The original measured slice excluded filesystem Read/Write. A later
+[local file extension](text-document-files.md) now provides those two methods;
+the 44 observations above do not establish their native behavior. Streams, UI,
+encoding properties, async API, indexer, iteration and host reflection remain
+closed. Internal/XML codecs (including Type
 records), TypeDescription/typed cells, ValueIsFilled and cross-context transport
 remain unsupported. Ordinary same-side references use the existing object model;
 this is not evidence for native transport or object identity contracts.
@@ -110,5 +113,6 @@ headroom (8185 of 8192) and 237 bytes of public-summary headroom (32531 of 32768
 Oversize payloads still fail closed. Further runtime modules require a separate
 budget/design review, not an increase to these caps.
 The bounded packaged smoke exercises the API through command aliases, BOM file,
-stdin and console without calling any file method. Native-witness unit tests,
+stdin and console, rejecting invalid file options before opening a destination.
+Native-witness unit tests,
 local boundary/budget tests and whole-source replay remain distinct checks.
