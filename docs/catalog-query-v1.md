@@ -32,8 +32,10 @@ an inactive configuration archive or bypass catalog/schema admission.
 - `Text`, `SetParameter`, `Execute`; result `IsEmpty`, `Select`, `Unload`;
   result selection `Next` and projected field access, with Russian aliases.
 
-Joins, expressions/functions, grouping/aggregates, subqueries, packages, temporary
-tables, `NOT`, query writes and arbitrary SQL are refused, not approximated.
+The [relational query block](relational-catalog-queries.md) extends this initial
+single-source profile with joins, grouping, aggregates, HAVING, DISTINCT and Null
+predicates. General expressions/functions, subqueries, packages, temporary tables,
+unary `NOT`, query writes and arbitrary SQL remain unsupported.
 `Result.Columns` is currently unsupported. The observed cursor starts with Undefined field values; after exhaustion it
 retains the last selected row while subsequent `Next` calls stay false. An empty
 selection has no last row and continues to expose Undefined.
@@ -53,7 +55,8 @@ column descriptions are implemented. No untyped stand-in is returned.
 Numbers remain exact Decimal values; no float or SQLite numeric coercion is used.
 Boolean and date comparisons require their exact logical types. References retain
 database/catalog identity; a foreign-database or wrong-target parameter refuses.
-No implicit cross-type conversion or Null/Undefined predicate semantics is claimed.
+There is no implicit cross-type conversion. The relational profile separately
+defines Null from LEFT JOIN and empty aggregates; Undefined predicates are not admitted.
 
 Each execution consumes pages from one pinned read view, closes that view, and
 returns detached result rows. Parameters are bound for that execution; subsequent
@@ -150,8 +153,9 @@ profile. It is not evidence that native section query column descriptions match.
 A result containing owner or custom references still refuses `Unload` before
 creating a table. Detached results and unloaded tables do not write section rows.
 
-Joins, owner dereferencing, LineNumber/НомерСтроки, row UUID APIs, section writes
-through Query, and UI support remain outside this increment. This source syntax
+The relational block now joins sections with their owners and other catalogs
+through explicit ON predicates. Owner dereferencing, LineNumber/НомерСтроки, row
+UUID APIs, section writes through Query, and UI support remain outside this increment. This source syntax
 does not widen the XML admission profile, accept additional standard Designer
 properties, or establish native compatibility. See the
 [section adapter boundary](catalog-tabular-sections.md).
