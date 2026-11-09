@@ -57,7 +57,8 @@ CONFIG/PARAMS/DBNames; их reader/API и экспериментальные м�
 - `ЧтениеXML`, `ЗаписьXML`, DOM и XDTO. JSON имеет отдельную ограниченную реализацию, см. ниже.
 - FTP/почтовые соединения и сообщения, веб-сервисы, COM и внешние компоненты.
 - HTTP: обычный bounded sync checkpoint реализован, native parity пока не установлена;
-  TLS/auth/proxy/redirect follow/async — явные !todo, см. docs/http-family.md.
+  явный verified TLS/Basic/Bearer/HTTP proxy/CONNECT имеет [локальную реализацию](docs/secure-http-transport.md);
+  mTLS, OS/challenge auth, HTTPS proxy, redirect follow/async остаются !todo.
 - Для `Символы / Chars` не предоставляются конструктор, перечисление,
   отражение, тип/строковое представление/кодек самого пространства или свойства
   за пределами шести описанных строковых констант.
