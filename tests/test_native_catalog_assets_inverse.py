@@ -22,6 +22,7 @@ class CatalogAssetsInverseTests(unittest.TestCase):
 
     def test_unknown_source_drift_and_missing_or_duplicate_hunk_reject(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_form_assets_provenance(source)
         contract = json.loads((ROOT / 'tests/catalog_assets_source_inverse.json').read_text())
         new = contract['edits'][0]['new']
         for changed in (source + '# drift\n', source.replace(new, '', 1), source + new,
@@ -37,3 +38,21 @@ class CatalogAssetsInverseTests(unittest.TestCase):
             else: contract[field] = '0' * 64
             with mock.patch.object(history.json, 'loads', return_value=contract):
                 with self.assertRaises(AssertionError): history.without_catalog_assets_provenance(source)
+
+
+class FormAssetsInverseTests(unittest.TestCase):
+    def test_new_inventory_restores_exact_catalog_layer(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        restored = history.without_form_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         'e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4')
+        self.assertEqual(history.without_form_assets_provenance(restored), restored)
+        self.assertEqual(history.without_catalog_assets_provenance(source),
+                         history.without_catalog_assets_provenance(restored))
+
+    def test_new_layer_rejects_unknown_source_and_inventory_drift(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        for changed in (source + '# drift\n', source.replace('("catalog", "form")', '("catalog", "other")'),
+                        source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
+            with self.subTest(changed=changed[-20:]), self.assertRaises(AssertionError):
+                history.without_form_assets_provenance(changed)

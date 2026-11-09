@@ -311,3 +311,10 @@ MIT, см. [LICENSE](LICENSE).
 Клиентское [асинхронное ядро языка](docs/async-language.md) поддерживает
 `Асинх` / `Async`, `Ждать` / `Await` и обещания с настоящим сохранением кадров.
 Асинхронные семейства API платформы этим не добавляются.
+
+### Replicated form applications
+
+An opt-in browser form launcher runs client BSL locally and server BSL in a
+separate owned process, optionally with server-only SQLite access.
+See [run a replicated form application](docs/form-app.md) for a calculation
+example and a persisted product-intake form. Plain BSL execution is unchanged.
