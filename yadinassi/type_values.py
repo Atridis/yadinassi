@@ -57,6 +57,7 @@ from .value_lists import BSLValueList, BSLValueListItem
 
 
 from .async_runtime import Promise
+from .callbacks import BSLCallbackDescription
 
 
 _VALUE_TYPES = (
@@ -157,6 +158,7 @@ _VALUE_TYPES = (
     (BSLValueStorage, BSLType.VALUE_STORAGE, "ValueStorage"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
+    (BSLCallbackDescription, BSLType.CALLBACK_DESCRIPTION, "CallbackDescription"),
     (BSLErrorInfo, BSLType.ERROR_INFO, "ErrorInfo"),
     (BSLErrorCategory, BSLType.ERROR_CATEGORY, "ErrorCategory"),
     (BSLXMLStringProcessingManager, BSLType.XML_STRING_PROCESSING_MANAGER, "XMLStringProcessingManager"),
