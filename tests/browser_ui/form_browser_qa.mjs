@@ -278,7 +278,9 @@ async function main(){
     for(const name of ['Order code','Description','Description, row 1','Quantity, row 1','Price, row 3'])
       assert.equal(await field(name).isEditable(),false);
     await page.setViewportSize({width:390,height:844});
-    await page.getByRole('heading',{name:'Order lines',exact:true}).scrollIntoViewIfNeeded();
+    await page.getByRole('region',{name:'Order lines',exact:true}).evaluate(node=>node.scrollIntoView({block:'start'}));
+    assert.equal(await field('Description, row 1').isVisible(),true);
+    assert.equal(await field('Description, row 3').isVisible(),true);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_page_overflow');
     await screenshot('order-table-narrow.png');
     await button('Close form').click();

@@ -192,6 +192,8 @@ class FormBrowserQAContractTests(unittest.TestCase):
                          "await button(name).isDisabled(),true",
                          "await field(name).isEditable(),false",
                          "await page.setViewportSize({width:390,height:844})",
+                         "node.scrollIntoView({block:'start'})",
+                         "await field('Description, row 3').isVisible(),true",
                          "document.documentElement.scrollWidth<=innerWidth",
                          "await screenshot('order-table-narrow.png')",
                          'A=O.Lines.Get(0); B=O.Lines.Get(1)',
