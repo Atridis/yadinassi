@@ -1,16 +1,16 @@
-name: Reviewed catalog browser acceptance
+name: Reviewed browser acceptance
 
-# Advancing this exact branch explicitly opts in a reviewed acquisition.
+# Advancing either exact branch explicitly opts in its reviewed acquisition.
 # No ordinary PR, main push, schedule, native job or user browser is dispatched.
 on:
   push:
-    branches: [codex/ui-browser-reviewed]
+    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: catalog-browser-reviewed
+  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || 'form-browser-reviewed' }}
   cancel-in-progress: false
 
 jobs:
@@ -39,13 +39,21 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
       - name: Acquire eight original-demo kind flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/ui-browser-reviewed'
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/demo_kind_browser_qa.mjs
-      - name: Publish only screenshots and redacted source-bound report
-        if: always()
+      - name: Acquire three form flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/form-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/form_browser_qa.mjs
+      - name: Publish only catalog screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/ui-browser-reviewed'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: catalog-browser-${{ github.sha }}-${{ github.run_attempt }}
@@ -55,5 +63,17 @@ jobs:
             ${{ runner.temp }}/yadinassi-browser-artifacts/list.png
             ${{ runner.temp }}/yadinassi-browser-artifacts/editor.png
             ${{ runner.temp }}/yadinassi-browser-artifacts/narrow.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only form screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/form-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: form-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/estimate.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/product-narrow.png
           if-no-files-found: error
           retention-days: 14
