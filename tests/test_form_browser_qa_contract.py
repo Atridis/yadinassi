@@ -156,6 +156,11 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertIn("assert.equal(await field('Unit price').inputValue(),'9')", source)
         self.assertIn("assert.equal(await field('Total').inputValue(),'27')", source)
         self.assertIn('assert.deepEqual(results.map(row=>row.name),scenarioNames', source)
+        workspace = source.split('await scenario(scenarioNames[5]', 1)[1]
+        self.assertIn("visibleField('Order code').waitFor()", workspace)
+        self.assertIn("visibleField('Order code').fill('B003')", workspace)
+        self.assertNotIn("visibleField('Code')", workspace)
+        self.assertIn("phase='workspace_independent_readback'", workspace)
 
     def test_actual_product_is_saved_closed_then_reopened_for_exact_amount(self):
         source = self.source().split('await scenario(scenarioNames[2]', 1)[1]

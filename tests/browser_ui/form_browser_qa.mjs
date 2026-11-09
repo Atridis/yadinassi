@@ -358,15 +358,17 @@ async function main(){
   await scenario(scenarioNames[5],async()=>{
     const database=path.join(owned,'orders.sqlite');
     await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    phase='workspace_launch';
     await startHost('workspace',database);await page.goto(url);
     await page.getByRole('heading',{name:'Orders workspace',exact:true}).waitFor();
     const workspaceIdle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].filter(node=>node.checkVisibility()).every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
     const visibleField=name=>field(name).filter({visible:true});
     const visibleButton=name=>button(name).filter({visible:true});
     const toolbar=page.locator('.orders-workspace > nav').first();
+    phase='workspace_create_intake';
     await toolbar.getByRole('button',{name:'New order',exact:true}).click();
-    await visibleField('Code').waitFor();await workspaceIdle();
-    await visibleField('Code').fill('B003');
+    await visibleField('Order code').waitFor();await workspaceIdle();
+    await visibleField('Order code').fill('B003');
     await visibleField('Description').fill('Workspace created order');
     await visibleButton('Add line').click();await workspaceIdle();
     await visibleField('Description, row 1').fill('Workspace line');
@@ -375,8 +377,10 @@ async function main(){
     await visibleButton('Close form').click();
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
     await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
+    phase='workspace_refresh_list';
     await button('Find / Refresh orders').click();
     await page.getByText('B003 · Workspace created order · 3.25 ',{exact:true}).waitFor();
+    phase='workspace_retain_hidden_draft';
     const first=page.locator('.orders-workspace section p').filter({hasText:'B002 ·'});
     await first.getByRole('button',{name:'Open order',exact:true}).click();
     await visibleField('Price, row 1').waitFor();await workspaceIdle();
@@ -384,24 +388,29 @@ async function main(){
     const beforeSwitch=rpc;
     await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
     assert.equal(rpc,beforeSwitch,'navigation_flushed_hidden_draft');
+    phase='workspace_edit_second_order';
     await page.locator('.orders-workspace section p').filter({hasText:'B003 ·'}).getByRole('button',{name:'Open order',exact:true}).click();
     await visibleField('Description').waitFor();await workspaceIdle();
     await visibleField('Description').fill('Workspace edited order');
     await visibleButton('Save changes').click();await workspaceIdle();
+    phase='workspace_guard_hidden_draft';
     await button('Close workspace').click();
     assert.equal(await page.getByText('Save or discard every form, including hidden tabs, and wait for pending requests before closing.',{exact:true}).isVisible(),true);
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
     assert.equal(await visibleField('Price, row 1').inputValue(),'invalid hidden decimal');
     await visibleButton('Discard / Reload').click();await workspaceIdle();
+    phase='workspace_narrow_screenshot';
     await page.setViewportSize({width:390,height:844});
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_workspace_overflow');
     await screenshot('orders-workspace-narrow.png');
+    phase='workspace_close_editors';
     await visibleButton('Close form').click();
     await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="Open forms"] button').length===1);
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
     await visibleButton('Close form').click();
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
     await button('Close workspace').click();await stopHost();
+    phase='workspace_independent_readback';
     const readback=runPython(['-m','yadinassi','--f',database,'-c',
       'O=Catalogs.Orders.FindByCode("B003").GetObject(); '+
       'If O.Description<>"Workspace edited order" Or O.Total<>3.25 Or O.Lines.Count()<>1 Then Raise "workspace readback"; EndIf; '+
