@@ -133,3 +133,7 @@ integrational_tests/measurements/value_storage.bsl text eol=lf
 
 # Exact original source archive for the bounded demo_kinds_v1 profile.
 tests/fixtures/demo_cf/source/** -text
+
+# Deterministic replicated form renderer manifests must hash the same on every OS.
+frontend/form/** text eol=lf
+yadinassi/ui/assets/form/* text eol=lf

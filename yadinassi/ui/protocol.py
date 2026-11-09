@@ -181,6 +181,16 @@ def encode_line(message):
 
 
 def decode_line(raw):
+    """Decode one finite NDJSON transport frame."""
+    return _decode_json(raw, framed=True)
+
+
+def decode_document(raw):
+    """Decode a bounded local JSON document, allowing formatting whitespace."""
+    return _decode_json(raw, framed=False)
+
+
+def _decode_json(raw, *, framed):
     if type(raw) is not bytes:
         raise UIError('invalid_json')
     if len(raw) > MAX_LINE_BYTES:
@@ -219,7 +229,7 @@ def decode_line(raw):
     try:
         # Exactly one NDJSON frame. Embedded newlines must be JSON escapes.
         body = raw[:-1] if raw.endswith(b'\n') else raw
-        if b'\n' in body or b'\r' in body:
+        if framed and (b'\n' in body or b'\r' in body):
             raise UIError('invalid_json')
         value = json.loads(body.decode('utf-8'), object_pairs_hook=pairs,
                            parse_int=integer, parse_float=reject, parse_constant=reject)
