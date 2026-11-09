@@ -1,7 +1,7 @@
 """Closed catalog SELECT grammar; this AST is never database SQL.
 
 Field projections, bounded joins, grouping, aggregates and ordering are admitted. Bounds are implementation limits, not native platform limits.
-!todo arithmetic expressions, packages, general functions and temporary tables.
+!todo packages, general functions and temporary tables.
 """
 from dataclasses import dataclass
 from decimal import Decimal
@@ -20,8 +20,19 @@ class Field:
 @dataclass(frozen=True, slots=True)
 class Aggregate:
     function: str
-    field: Field | None
+    field: object | None
     distinct: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class NullLiteral:
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class Expression:
+    operator: str
+    arguments: tuple
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +56,7 @@ class Parameter:
 
 @dataclass(frozen=True, slots=True)
 class Comparison:
-    field: Field
+    field: object
     operator: str
     value: object
 
@@ -58,14 +69,14 @@ class Predicate:
 
 @dataclass(frozen=True, slots=True)
 class Projection:
-    field: Field
+    field: object
     alias: str
     explicit_alias: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Order:
-    field: Field
+    field: object
     descending: bool
 
 
@@ -79,7 +90,7 @@ class Select:
     limit: int
     section: str | None = None
     joins: tuple[Join, ...] = ()
-    groups: tuple[Field, ...] = ()
+    groups: tuple[object, ...] = ()
     having: Comparison | Predicate | None = None
     distinct: bool = False
 
@@ -98,10 +109,13 @@ _KEYWORDS = {
     'outer':'outer', 'внешнее':'outer', 'join':'join', 'соединение':'join',
     'on':'on', 'group':'group', 'сгруппировать':'group',
     'having':'having', 'имеющие':'having',
+    'case':'case', 'выбор':'case', 'when':'when', 'когда':'when',
+    'then':'then', 'тогда':'then', 'else':'else', 'иначе':'else',
+    'end':'case_end', 'конец':'case_end',
     'is':'is', 'есть':'is', 'not':'not', 'не':'not', 'null':'null',
     'true':'true', 'истина':'true', 'false':'false', 'ложь':'false',
 }
-_TOKEN = re.compile(r'\s+|"(?:[^"\r\n]|"")*"|[0-9]+(?:\.[0-9]+)?|[^\W\d]\w*|<=|>=|<>|[&.,()=<>+*\-]', re.UNICODE)
+_TOKEN = re.compile(r'\s+|"(?:[^"\r\n]|"")*"|[0-9]+(?:\.[0-9]+)?|[^\W\d]\w*|<=|>=|<>|[&.,()=<>+*/\-]', re.UNICODE)
 _IDENTIFIER = re.compile(r'[^\W\d]\w*\Z', re.UNICODE)
 
 
@@ -146,6 +160,8 @@ class _Parser:
         self.tokens = _lex(text)
         self.position = 0
         self.comparisons = 0
+        self.expression_depth = 0
+        self.expression_heights = {}
 
     def peek(self):
         return self.tokens[self.position][0]
@@ -169,19 +185,73 @@ class _Parser:
             parts.append(self.take('name'))
         return Field(tuple(parts))
 
-    def expression(self, *, aggregates=True):
-        if (aggregates and self.peek() == 'name'
-                and self.tokens[self.position][1].casefold() in _AGGREGATES
-                and self.tokens[self.position + 1][0] == '('):
-            function = _AGGREGATES[self.take('name').casefold()]
-            self.take('(')
-            distinct = self.accept('distinct')
-            field = None if self.accept('*') else self.field()
-            if field is None and (function != 'count' or distinct):
-                raise ValueError('Only COUNT(*) admits a wildcard')
-            self.take(')')
-            return Aggregate(function, field, distinct)
-        return self.field()
+    def expression_node(self, operator, arguments):
+        def height(node):
+            if type(node) is Expression: return self.expression_heights[id(node)][1]
+            if type(node) is Aggregate: return 1 + height(node.field)
+            if type(node) is Comparison: return max(height(node.field), height(node.value))
+            if type(node) is Predicate: return max(map(height, node.terms), default=0)
+            if type(node) is tuple: return max(map(height, node), default=0)
+            return 0
+        depth = 1 + height(arguments)
+        if depth > 32: raise ValueError('Query expression nesting limit exceeded')
+        result = Expression(operator, arguments)
+        self.expression_heights[id(result)] = (result, depth)
+        return result
+
+    def expression(self, *, aggregates=True, precedence=0):
+        self.expression_depth += 1
+        try:
+            if self.expression_depth > 32:
+                raise ValueError('Query expression nesting limit exceeded')
+            if self.peek() in ('+', '-'):
+                operator = self.peek(); self.position += 1
+                operand = self.expression(aggregates=aggregates, precedence=3)
+                left = ((operand.copy_negate() if operator == '-' else operand) if type(operand) is Decimal
+                        else self.expression_node('unary' + operator, (operand,)))
+            elif self.accept('('):
+                left = self.expression(aggregates=aggregates)
+                self.take(')')
+            elif self.accept('case'):
+                branches = []
+                while self.accept('when'):
+                    condition = self.condition()
+                    self.take('then')
+                    branches.append((condition, self.expression(aggregates=aggregates)))
+                if not branches: raise ValueError('CASE requires WHEN')
+                otherwise = self.expression(aggregates=aggregates) if self.accept('else') else None
+                self.take('case_end')
+                left = self.expression_node('case', (tuple(branches), otherwise))
+            elif (self.peek() == 'name' and self.tokens[self.position + 1][0] == '('):
+                function = self.take('name').casefold()
+                self.take('(')
+                if function in ('isnull', 'естьnull'):
+                    first = self.expression(aggregates=aggregates)
+                    self.take(',')
+                    left = self.expression_node('coalesce', (first, self.expression(aggregates=aggregates)))
+                elif aggregates and function in _AGGREGATES:
+                    function = _AGGREGATES[function]
+                    distinct = self.accept('distinct')
+                    field = None if self.accept('*') else self.expression(aggregates=False)
+                    if field is None and (function != 'count' or distinct):
+                        raise ValueError('Only COUNT(*) admits a wildcard')
+                    left = Aggregate(function, field, distinct)
+                else: raise ValueError('Unsupported query function or nested aggregate')
+                self.take(')')
+            elif self.accept('null'):
+                left = NullLiteral()
+            elif self.peek() == 'name':
+                left = self.field()
+            else:
+                left = self.scalar()
+            priorities = {'+': 1, '-': 1, '*': 2, '/': 2}
+            while self.peek() in priorities and priorities[self.peek()] > precedence:
+                operator = self.peek(); self.position += 1
+                right = self.expression(aggregates=aggregates, precedence=priorities[operator])
+                left = self.expression_node(operator, (left, right))
+            return left
+        finally:
+            self.expression_depth -= 1
 
     def source(self):
         if self.take('name').casefold() not in ('catalog', 'справочник'):
@@ -221,10 +291,25 @@ class _Parser:
         return terms[0] if len(terms) == 1 else Predicate('and', tuple(terms))
 
     def atom(self, depth):
-        if self.accept('('):
-            result = self.condition(depth + 1)
-            self.take(')')
-            return result
+        if self.peek() == '(':
+            # Decide from the matching close instead of recursively reparsing a
+            # failed predicate as arithmetic. This bounds work for nested input.
+            nesting, close = 0, None
+            for position in range(self.position, len(self.tokens)):
+                token = self.tokens[position][0]
+                if token == '(': nesting += 1
+                elif token == ')':
+                    nesting -= 1
+                    if nesting == 0:
+                        close = position
+                        break
+            if close is None: raise ValueError('Unclosed query parenthesis')
+            follows = self.tokens[close + 1][0]
+            if follows not in ('=', '<>', '<', '<=', '>', '>=', 'is', '+', '-', '*', '/'):
+                self.position += 1
+                result = self.condition(depth + 1)
+                self.take(')')
+                return result
         field = self.expression()
         if self.accept('is'):
             negate = self.accept('not')
@@ -238,7 +323,7 @@ class _Parser:
         self.comparisons += 1
         if self.comparisons > 128:
             raise ValueError('Query predicate budget exceeded')
-        return Comparison(field, operator, self.expression() if self.peek() == 'name' else self.scalar())
+        return Comparison(field, operator, self.expression())
 
     def parse(self):
         self.take('select')
@@ -255,7 +340,10 @@ class _Parser:
         while True:
             field = self.expression()
             explicit = self.accept('as')
-            alias = self.take('name') if explicit else (field.function if type(field) is Aggregate else field.parts[-1])
+            if explicit: alias = self.take('name')
+            elif type(field) is Aggregate: alias = field.function
+            elif type(field) is Field: alias = field.parts[-1]
+            else: raise ValueError('Computed query projection requires AS alias')
             projections.append(Projection(field, alias, explicit))
             if len(projections) > 128:
                 raise ValueError('Query projection budget exceeded')
@@ -282,7 +370,7 @@ class _Parser:
         if self.accept('group'):
             self.take('by')
             while True:
-                groups.append(self.field())
+                groups.append(self.expression(aggregates=False))
                 if len(groups) > 32: raise ValueError('Query grouping budget exceeded')
                 if not self.accept(','): break
         having = self.condition() if self.accept('having') else None
