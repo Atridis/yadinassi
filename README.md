@@ -74,7 +74,8 @@ yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 Чтение `.1CD`, CF/DT и внутренних CONFIG/PARAMS/DBNames удалено; прежние
 эксперименты доступны в истории Git. Документы и регистры ещё не портированы. Для справочников и их табличных
 частей доступны [ограниченные запросы с соединениями и сводными итогами](docs/relational-catalog-queries.md),
-[вычисляемыми полями и условными отчётами](docs/computed-catalog-queries.md). Реальная 1С остаётся эталоном поведения BSL через официальные
+[вычисляемыми полями и условными отчётами](docs/computed-catalog-queries.md),
+[пакетами и временными таблицами](docs/query-packages-temporary-tables.md). Реальная 1С остаётся эталоном поведения BSL через официальные
 XML/BSL-интерфейсы, а не эталоном внутреннего формата хранения.
 
 `InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` возвращает

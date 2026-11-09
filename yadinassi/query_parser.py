@@ -1,7 +1,7 @@
 """Closed catalog SELECT grammar; this AST is never database SQL.
 
 Field projections, bounded joins, grouping, aggregates and ordering are admitted. Bounds are implementation limits, not native platform limits.
-!todo packages, general functions and temporary tables.
+!todo general functions, UNION and subqueries.
 """
 from dataclasses import dataclass
 from decimal import Decimal
@@ -40,6 +40,12 @@ class Source:
     catalog: str
     alias: str
     section: str | None = None
+    temporary: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Destroy:
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,12 +99,15 @@ class Select:
     groups: tuple[object, ...] = ()
     having: Comparison | Predicate | None = None
     distinct: bool = False
+    temporary: bool = False
+    into: str | None = None
 
 
 _AGGREGATES = {'count':'count', 'количество':'count', 'sum':'sum', 'сумма':'sum',
                'avg':'avg', 'среднее':'avg', 'min':'min', 'минимум':'min',
                'max':'max', 'максимум':'max'}
 _KEYWORDS = {
+    'into':'into', 'поместить':'into', 'destroy':'destroy', 'уничтожить':'destroy',
     'select':'select', 'выбрать':'select', 'top':'top', 'первые':'top',
     'from':'from', 'из':'from', 'as':'as', 'как':'as',
     'where':'where', 'где':'where', 'order':'order', 'упорядочить':'order',
@@ -115,7 +124,7 @@ _KEYWORDS = {
     'is':'is', 'есть':'is', 'not':'not', 'не':'not', 'null':'null',
     'true':'true', 'истина':'true', 'false':'false', 'ложь':'false',
 }
-_TOKEN = re.compile(r'\s+|"(?:[^"\r\n]|"")*"|[0-9]+(?:\.[0-9]+)?|[^\W\d]\w*|<=|>=|<>|[&.,()=<>+*/\-]', re.UNICODE)
+_TOKEN = re.compile(r'\s+|"(?:[^"\r\n]|"")*"|[0-9]+(?:\.[0-9]+)?|[^\W\d]\w*|<=|>=|<>|[&.,;()=<>+*/\-]', re.UNICODE)
 _IDENTIFIER = re.compile(r'[^\W\d]\w*\Z', re.UNICODE)
 
 
@@ -254,8 +263,12 @@ class _Parser:
             self.expression_depth -= 1
 
     def source(self):
-        if self.take('name').casefold() not in ('catalog', 'справочник'):
-            raise ValueError('Only catalog sources are supported')
+        family = self.take('name')
+        if self.peek() != '.':
+            alias = self.take('name') if self.accept('as') else family
+            return Source(family, alias, temporary=True)
+        if family.casefold() not in ('catalog', 'справочник'):
+            raise ValueError('Only catalog or temporary sources are supported')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
@@ -325,7 +338,7 @@ class _Parser:
             raise ValueError('Query predicate budget exceeded')
         return Comparison(field, operator, self.expression())
 
-    def parse(self):
+    def parse(self, *, complete=True):
         self.take('select')
         distinct = self.accept('distinct')
         limit = MAX_ROWS
@@ -351,6 +364,7 @@ class _Parser:
                 break
         if len({p.alias.casefold() for p in projections}) != len(projections):
             raise ValueError('Duplicate query output column')
+        into = self.take('name') if self.accept('into') else None
         self.take('from')
         source = self.source()
         joins = []
@@ -387,10 +401,31 @@ class _Parser:
                     raise ValueError('Query order budget exceeded')
                 if not self.accept(','):
                     break
-        self.take('end')
+        if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into)
 
 
 def parse_query(text):
     return _Parser(text).parse()
+
+
+MAX_STATEMENTS = 32
+
+
+def parse_package(text):
+    """Parse a complete bounded package, with one optional trailing semicolon."""
+    parser = _Parser(text)
+    statements = []
+    while True:
+        if parser.accept('destroy'):
+            statement = Destroy(parser.take('name'))
+        else:
+            statement = parser.parse(complete=False)
+        statements.append(statement)
+        if len(statements) > MAX_STATEMENTS:
+            raise ValueError('Query package statement limit exceeded')
+        if not parser.accept(';') or parser.peek() == 'end':
+            break
+    parser.take('end')
+    return tuple(statements)

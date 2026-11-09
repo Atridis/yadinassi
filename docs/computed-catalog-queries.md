@@ -89,4 +89,6 @@ This is local host-functional evidence. No integration scenario, native fixture,
 or evidence gate is changed. Existing native Query24 observations cover their
 original scalar slice, not these new expressions. Detailed native calibration,
 additional scalar functions, casts, date/string arithmetic, subqueries, UNION,
-temporary tables, query packages, documents and registers remain future blocks.
+documents and registers remain future blocks.
+[Packages and temporary tables](query-packages-temporary-tables.md) extend this
+profile with staged multi-step reports.

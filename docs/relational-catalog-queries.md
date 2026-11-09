@@ -68,7 +68,7 @@ Scalar-only results support the existing typed `Unload` ValueTable, including
 Null from LEFT JOIN or empty aggregates. Dynamic-reference projections retain
 cursor support; their `Unload` remains explicitly unsupported. No query writes,
 implicit casts, SQL passthrough, arbitrary functions,
-nested aggregates, subqueries, UNION, temporary tables, RIGHT/FULL/CROSS JOIN or
+nested aggregates, subqueries, UNION, RIGHT/FULL/CROSS JOIN or
 native regional collation are added. Section line numbers and owner dereferencing
 remain outside the profile; joining the owner is the explicit supported route.
 
@@ -110,3 +110,6 @@ this functional host increment as full native query certification.
 
 [Computed expressions](computed-catalog-queries.md) add arithmetic, CASE, ISNULL,
 parameters/literals and conditional aggregation to this relational profile.
+
+[Query packages and temporary tables](query-packages-temporary-tables.md) allow
+materializing and reusing intermediate report results.
