@@ -15,10 +15,11 @@ const totalDeadline=startedAt+180000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png'];
+const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',
-  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen'];
+  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',
+  'existing_order_edit_discard_save_reopen'];
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -298,6 +299,61 @@ async function main(){
     assert.equal(readback.trim(),'ORDER_READBACK_OK');
     report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']};
   });
+  await scenario(scenarioNames[4],async()=>{
+    const database=path.join(owned,'orders.sqlite');
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    await startHost('order-editor',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Edit existing orders',exact:true}).waitFor();
+    await button('Select row 1 in Existing orders').click();await idle();
+    await button('Open selected order').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser-owned order');
+    assert.equal(await field('Price, row 1').inputValue(),'2.35');
+    // An explicitly bound discard abandons even an invalid unsubmitted decimal.
+    await field('Price, row 1').fill('invalid decimal');
+    const beforeDiscard=rpc;
+    await button('Discard / Reload').click();await idle();
+    assert.equal(rpc,beforeDiscard+1,'discard_flushed_invalid_draft');
+    assert.equal(await field('Price, row 3').inputValue(),'2.35');
+    assert.equal(await field('Price, row 1').count(),0,'discard_reused_row_identity');
+    await field('Description').fill('Browser edited existing');
+    await field('Description').press('Enter');await idle();
+    await button('Close form').click();await idle();
+    assert.equal(await page.getByText('This form is closed. You can close this tab.',{exact:true}).count(),0);
+    await field('Price, row 3').fill('2.40');
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Total').inputValue(),'9.20');
+    assert.equal(await button('Save changes').isEnabled(),true);
+    assert.equal(await field('Price, row 5').isEditable(),true);
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Status').inputValue(),'No changes; nothing was written');
+    await field('Description').fill('Browser edited again');
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser edited again');
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_editor_overflow');
+    await screenshot('order-editor-narrow.png');
+    await button('Close form').click();
+    await page.getByText('This form is closed. You can close this tab.',{exact:true}).waitFor();
+    await stopHost();
+    const readback=runPython(['-m','yadinassi','--f',database,'-c',
+      'O=Catalogs.Orders.FindByCode("B002").GetObject(); '+
+      'If O.Description<>"Browser edited again" Or O.Total<>9.20 Or O.Lines.Count()<>2 Then Raise "edited order readback"; EndIf; '+
+      'If O.Lines.Get(0).ItemDescription<>"Cable" Or O.Lines.Get(0).Price<>2.40 Or O.Lines.Get(0).Amount<>3 Then Raise "edited line readback"; EndIf; '+
+      'N=0; S=Catalogs.Orders.Select(); While S.Next() Do N=N+1; EndDo; '+
+      'If N<>1 Then Raise "edited record count"; EndIf; Message("ORDER_EDITOR_READBACK_OK");']);
+    assert.equal(readback.trim(),'ORDER_EDITOR_READBACK_OK');
+    // A second independent form process opens the durable record, not a client snapshot.
+    await page.close();page=await context.newPage();await startHost('order-editor',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Edit existing orders',exact:true}).waitFor();
+    await button('Select row 1 in Existing orders').click();await idle();
+    await button('Open selected order').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser edited again');
+    assert.equal(await field('Price, row 1').inputValue(),'2.40');
+    await button('Close form').click();
+    await page.getByText('This form is closed. You can close this tab.',{exact:true}).waitFor();
+    await stopHost();
+    report.editorDurable={reopenedAfterHostClose:true,independentFormReopen:true,records:1,rows:2,exactTotal:'9.20'};
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -350,5 +406,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

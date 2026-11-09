@@ -48,6 +48,17 @@ class FormApplicationAction:
 
 
 @dataclass(frozen=True)
+class FormServerBinding:
+    """Host-owned, zero-argument callback retained across fresh server activations.
+
+    Only a scalar result can reach BSL. No callback or object is wire-selected.
+    The trusted callback receives the owning session, never a renderer object.
+    """
+    name: str
+    callback: object
+
+
+@dataclass(frozen=True)
 class FormSnapshot:
     revision: int
     state: str
@@ -164,7 +175,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=()):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=()):
         text(source, MAX_SOURCE)
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
@@ -176,6 +187,10 @@ class FormSession:
         if type(initial_values) is not dict or len(initial_values)>MAX_ATTRIBUTES: raise ValueError('Форма: неверные начальные данные')
         if type(application_actions) is not tuple or len(application_actions) > 64:
             raise ValueError('Форма: неверные действия приложения')
+        if (type(server_bindings) is not tuple or len(server_bindings) > 16 or
+                any(type(binding) is not FormServerBinding or not callable(binding.callback)
+                    for binding in server_bindings)):
+            raise TypeError('trusted server bindings required')
         self._application_actions = {}
         attribute_names = {a.name.casefold() for a in attributes if type(a) is BSLFormAttribute}
         for action in application_actions:
@@ -207,6 +222,18 @@ class FormSession:
         self.reserved_names.update(self.form._methods)
         self.reserved_names.update(n.name.casefold() for n in program if isinstance(n,ast.Routine))
         self.reserved_names.update(x.casefold() for n in program if isinstance(n,ast.Var) for x in n.names)
+        for binding in server_bindings:
+            key = name(binding.name).casefold()
+            if (key in self.reserved_names or key in attribute_names or key in self.interpreter.functions
+                    or key in {table.name.casefold() for table in tables}):
+                raise ValueError('server binding name already bound')
+            self.reserved_names.add(key)
+            def make_callback(owned):
+                def invoke():
+                    self.form._check(True)
+                    return scalar(owned.callback(self))
+                return invoke
+            self.interpreter.functions[key] = HostFunction(binding.name, make_callback(binding))
         self._busy = True
         try:
             self.interpreter.execute_program(program)
