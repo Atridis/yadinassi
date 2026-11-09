@@ -7,12 +7,12 @@
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "src/client.mjs": "98007135df1c2ab7206feb0caa37efd967804efa47a2f491f4d3841555c1150d",
     "src/view.mjs": "52c674a2c1a7736610b1fed87408c79c5b10551964503c5775c0c59be2debb5c",
-    "src/app.mjs": "d7e3c437a49e3b0929590156e49ffe08d1ffcd5227b7c5d4121160ae71f59b48",
+    "src/app.mjs": "a994e3b3c8eb66f046fe75652c94aaecf7bd5d508080897f23e4b104a2b61642",
     "src/index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
     "src/style.css": "c1ba3abea3101ae4a1e5d45b0f4f7aa7df2da925ae5a034ad207b297162f7b78"
   },
   "outputs": {
-    "app.js": "da0bf7c3dd84007b205ae29895bd5057592288d14360a748bc1776c368a1319d",
+    "app.js": "7cfe8690654462d2789ed9a11eca5af3fb5e76d1f33ed9ac3eb34595643dd41e",
     "index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
     "style.css": "c1ba3abea3101ae4a1e5d45b0f4f7aa7df2da925ae5a034ad207b297162f7b78",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

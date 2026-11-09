@@ -130,3 +130,14 @@ test('pending save blocks discard, record selection and duplicate save until aut
   gate.resolve(); await pending; assert.equal(unload(env).prevented, false);
   assert.deepEqual(requests.slice(1).map(request => request.params.control), ['Save']);
 });
+
+
+test('inner server transport uncertainty preserves raw discard drafts even with a valid HTTP snapshot', async () => {
+  const {app, env, requests} = host(snapshot(0, {dirty: true}), () => ({state: snapshot(1, {dirty: true, uncertain: true}), error: 'outcome_unknown'}));
+  await app.ready; edit(input(env.document), 'bad decimal'); edit(cell(env.document), 'invalid');
+  await app.run('command', 'Discard'); await app.run('command', 'Discard');
+  assert.equal(requests.length, 2); assert.equal(app.client.transportFailed, false);
+  assert.equal(app.client.outcomeUnknown, true); assert.equal(app.client.locked, true);
+  assert.equal(app.view.hasDrafts(), true); assert.equal(input(env.document).value, 'bad decimal');
+  assert.equal(cell(env.document).value, 'invalid'); assert.equal(unload(env).prevented, true);
+});

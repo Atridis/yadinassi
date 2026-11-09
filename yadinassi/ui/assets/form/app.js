@@ -677,7 +677,7 @@ function mountForm(environment, root) {
       try { await client.event('command', {control: name}); }
       catch (caught) { showError(caught); }
       finally {
-        if (client.snapshot !== before && !client.transportFailed) view.clearDrafts();
+        if (client.snapshot !== before && !client.transportFailed && !client.outcomeUnknown && !client.snapshot.uncertain) view.clearDrafts();
         finish();
       }
       return;

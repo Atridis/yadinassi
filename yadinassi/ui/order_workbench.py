@@ -7,6 +7,7 @@ an action; no Save looks up an object by its editable code.
 """
 from copy import copy
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from ..catalog_backend import (BackendError, CatalogComparison, CatalogScanRequest,
@@ -36,7 +37,7 @@ class OrdersWorkbenchSession:
     def bindings(self):
         return tuple(FormServerBinding('Workbench' + name, getattr(self, method))
             for name, method in [('Browse', 'browse'), ('Load', 'load'), ('Save', 'save'),
-                                 ('Reload', 'reload'), ('Resolve', 'resolve')])
+                                 ('Reload', 'reload'), ('Resolve', 'resolve'), ('Dirty', 'dirty')])
 
     def _manager(self, session):
         if self.manager is None:
@@ -127,7 +128,12 @@ class OrdersWorkbenchSession:
         encode_line({'protocol': 'yadinassi-form/1', 'id': 2147483647, 'status': 'ok',
             'accepted': True, 'revision': 2147483647, 'sequence': 2147483647,
             'messages': [], 'state': packet, 'value': {'type': 'Undefined'}})
-        return _unpack_state(packet, session, session._replica_handler_names)
+        # The decoder also serves a client before bootstrap, when inventory may
+        # initially be empty. Here the server schema is always already fixed.
+        # Supply that explicit validation context without changing BSL/session
+        # state or weakening the client's post-bootstrap inventory invariant.
+        context = SimpleNamespace(form=form, reserved_names=session.reserved_names, _baseline=True)
+        return _unpack_state(packet, context, session._replica_handlers)
 
     @staticmethod
     def _install(session, prepared):
@@ -267,6 +273,10 @@ class OrdersWorkbenchSession:
         except Exception:
             self.pending_refresh = True
             self._status(session, 'Order saved, but refresh failed. Use Refresh saved record; it will not write again')
+
+    def dirty(self, session):
+        # Recalculation can repair loaded amounts even without a cell OnChange.
+        session.form.set_member('Dirty', self.object is not None and self._image(session.form) != self.baseline)
 
     def save(self, session):
         if self._blocked(session) or self.object is None:

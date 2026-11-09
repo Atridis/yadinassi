@@ -5,6 +5,9 @@ local browser renderer and existing SQLite catalog tabular storage. It does not
 claim native 1C managed-form parity. The XML is an authored configuration in the
 supported official-format subset, not a native acquisition or Designer export.
 
+For editing already saved orders, use the [existing order workbench](order-workbench.md).
+It adds retained object/revision sessions, continued editing after save and explicit discard.
+
 ## Run the complete workflow
 
 From a checkout with the project dependencies installed:

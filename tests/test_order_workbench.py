@@ -227,7 +227,9 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         self.assertTrue(table(failed)['readOnly']); self.assertFalse(item(failed, 'DiscardButton')['enabled'])
         intent = self.application.object._pending_write
         self.assertEqual(event(self.controller, control='DiscardButton')['error'], 'event_failed')
-        with mock.patch.object(self.context.backend, 'resolve_write', side_effect=BackendError('busy')):
+        with mock.patch.object(self.context.backend,
+                'resolve_write_outcome' if self.context.backend.capabilities().catalog_write_outcomes else 'resolve_write',
+                side_effect=BackendError('busy')):
             self.good(event(self.controller, control='ResolveButton'))
         self.assertIs(self.application.object._pending_write, intent)
         self.assertTrue(self.application.pending_commit)
@@ -252,7 +254,6 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
 
     def test_postcommit_projection_rejection_retains_refresh_obligation(self):
         self.open_order(self.controller); self.description(self.controller, 'Committed')
-        original = self.application._preflight
         with mock.patch.object(self.application, '_preflight', side_effect=ValueError('oversized projection')):
             failed = self.good(event(self.controller))
         self.assertTrue(self.application.pending_refresh); self.assertTrue(failed['state']['dirty'])
@@ -260,6 +261,67 @@ class OrdersWorkbenchTests(WorkbenchHelpers, unittest.TestCase):
         with mock.patch.object(self.context.backend, 'begin_write', side_effect=AssertionError('refresh only')):
             self.good(event(self.controller, control='ResolveButton'))
         self.assertFalse(self.application.pending_refresh)
+
+    def test_recalculation_of_loaded_inconsistent_totals_marks_dirty_and_close_cancels(self):
+        vm = Interpreter(database_context=self.context)
+        try:
+            manager = vm._catalogs.get_index('Orders')
+            obj = manager._get_object(manager._ref(self.key.record_id))
+            first = obj.get_member('Lines').get(Decimal(0))
+            first.set_member('Quantity', Decimal('2')); first.set_member('Price', Decimal('3'))
+            first.set_member('Amount', Decimal('0')); obj.set_member('Total', Decimal('0')); obj.write()
+        finally: vm.close()
+        self.open_order(self.controller)
+        result = self.good(event(self.controller, control='RecalculateButton'))
+        self.assertEqual(Decimal(item(result, 'FieldTotal')['value']['value']), Decimal('8.50'))
+        self.assertTrue(result['state']['dirty'])
+        self.assertEqual(event(self.controller, 'close')['state']['kind'], 'form')
+        self.good(event(self.controller))
+        result = self.good(event(self.controller, control='RecalculateButton'))
+        self.assertFalse(result['state']['dirty'])
+
+    def test_uncertain_absent_receipt_retries_only_retained_intent(self):
+        from yadinassi.sqlite_catalog import _View
+        self.open_order(self.controller); self.description(self.controller, 'Exact absent intent')
+        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
+            self.good(event(self.controller))
+        draft, expected, operation = self.application.object._pending_write
+        self.assertEqual(draft.key, self.key)
+        original = self.context.backend.begin_write
+        with mock.patch.object(self.context.backend, 'begin_write', wraps=original) as writes:
+            result = self.good(event(self.controller, control='ResolveButton'))
+        self.assertFalse(result['state']['dirty']); self.assertFalse(self.application.pending_commit)
+        self.assertEqual(writes.call_args_list, [mock.call(operation)])
+        self.assertEqual(self.readback(self.path)[0][1], 'Exact absent intent')
+
+    def test_absent_receipt_then_conflict_releases_lock_but_preserves_draft(self):
+        from yadinassi.sqlite_catalog import _View
+        self.open_order(self.controller); self.description(self.controller, 'My retained draft')
+        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
+            self.good(event(self.controller))
+        with SQLiteDBContext(self.path) as context:
+            second, _, _ = pair(context); self.good(state(second)); self.open_order(second)
+            self.description(second, 'Other writer'); self.good(event(second))
+        result = self.good(event(self.controller, control='ResolveButton'))
+        self.assertIn('conflict', self.status(result)); self.assertTrue(result['state']['dirty'])
+        self.assertFalse(self.application.pending_commit); self.assertFalse(table(result)['readOnly'])
+        self.assertIsNone(self.application.object._pending_write)
+        self.assertEqual(item(result, 'FieldDescription')['value']['value'], 'My retained draft')
+        self.good(event(self.controller, control='DiscardButton'))
+        self.assertEqual(self.readback(self.path)[0][1], 'Other writer')
+
+    def test_more_than_32_results_are_explicitly_bounded_and_exact_search_finds_later_record(self):
+        for index in range(32):
+            seed(self.context, 'Z' + str(index).zfill(3), 'Bounded list', 1)
+        result = self.good(event(self.controller, control='SearchOrdersButton'))
+        self.assertEqual(len(item(result, 'OrdersTable')['rows']), 32)
+        self.assertIn('first 32', self.status(result)); self.assertEqual(len(self.application.choices), 32)
+        self.good(event(self.controller, 'change', 'FieldSearchCode', value=scalar('Z031')))
+        result = self.good(event(self.controller, control='SearchOrdersButton'))
+        self.assertEqual(len(item(result, 'OrdersTable')['rows']), 1)
+        self.assertEqual(item(result, 'OrdersTable')['rows'][0]['values'][0]['value'], 'Z031')
+        self.open_order(self.controller, 'Z031')
+        self.assertEqual(self.application.object.get_member('Code'), 'Z031')
 
     def test_discard_policy_live_handler_change_fails_closed(self):
         self.controller.session.form.commands._values['discard'].action = 'SaveCommand'

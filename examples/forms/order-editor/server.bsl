@@ -104,6 +104,7 @@ Procedure Recalculate()
     If ThisObject.Locked Or Not ThisObject.Loaded Then Return; EndIf;
     ValidateLines();
     CalculateTotals();
+    WorkbenchDirty();
     ThisObject.Status = "Totals recalculated; order is not yet saved";
 EndProcedure
 

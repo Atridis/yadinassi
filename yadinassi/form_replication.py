@@ -365,6 +365,7 @@ class ReplicatedFormServer:
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
             database_context=database_context, server_bindings=server_bindings)
         self.session._replica_handler_names = self._handler_names
+        self.session._replica_handlers = self._handlers
         for binding in handlers:
             key = binding.name.casefold()
             if (key in self.session.reserved_names or key in self.session.form._attributes
