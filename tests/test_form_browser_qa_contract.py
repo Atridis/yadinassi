@@ -56,7 +56,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         form = self.step('Publish only form screenshots and redacted source-bound report')
         for step, branch, prefix, files in (
                 (catalog, 'ui', 'yadinassi-browser-artifacts', ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png']),
-                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png'])):
+                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png', 'orders-workspace-narrow.png'])):
             self.assertIn(f"if: always() && github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             paths = step.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in paths.splitlines()],
@@ -144,8 +144,8 @@ class FormBrowserQAContractTests(unittest.TestCase):
 
     def test_five_scenarios_include_exact_decimal_repeated_click_cancel_and_reattach(self):
         source = self.source()
-        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2', '3', '4'])
-        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',\n  'existing_order_edit_discard_save_reopen']", source)
+        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2', '3', '4', '5'])
+        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',\n  'existing_order_edit_discard_save_reopen','workspace_retained_forms_create_edit_reopen']", source)
         self.assertIn("page.getByLabel(name,{exact:true})", source)
         self.assertIn("await field('Unit price').fill('7.25');\n    await button('Calculate').click()", source)
         self.assertIn("assert.equal(await field('Total').inputValue(),'21.75')", source)
@@ -204,7 +204,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
                          "report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']}"):
             self.assertIn(required, source)
         self.assertLess(source.index('await stopHost()'), source.index('const readback=runPython'))
-        self.assertIn('completed:results.length,total:5,', self.source())
+        self.assertIn('completed:results.length,total:6,', self.source())
 
     def test_existing_order_edits_discard_invalid_draft_and_independently_reopens(self):
         source = self.source().split('await scenario(scenarioNames[4]', 1)[1]
@@ -228,7 +228,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_only_bounded_source_bound_screenshots_and_fixed_verdicts_are_emitted(self):
         source = self.source()
         for required in ("output=path.join(temporary,'yadinassi-form-browser-artifacts')", 'await mkdir(output);',
-                         "const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png']",
+                         "const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png','orders-workspace-narrow.png']",
                          "const artifacts=['result.json','manifest.json',...screenshots]",
                          'stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<=4*1024*1024',
                          "'89504e470d0a1a0a'", 'Buffer.byteLength(raw)<=65536',

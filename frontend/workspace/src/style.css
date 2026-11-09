@@ -1,0 +1,5 @@
+.orders-workspace { max-width: 1200px; margin: auto; padding: 24px; }
+.orders-workspace > nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.orders-workspace > section { padding: 20px; border: 1px solid #d8dde5; border-radius: 12px; }
+.orders-workspace [aria-selected="true"] { outline: 2px solid #2368b3; }
+.orders-workspace [hidden] { display: none !important; }

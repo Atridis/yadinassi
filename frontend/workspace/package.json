@@ -1,0 +1,8 @@
+{
+  "name": "yadinassi-orders-workspace-renderer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {"build": "node ../form/build.mjs && node build.mjs", "test": "node --test test/*.test.mjs"},
+  "engines": {"node": ">=20"}
+}

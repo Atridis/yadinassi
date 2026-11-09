@@ -15,11 +15,11 @@ const totalDeadline=startedAt+180000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png'];
+const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png','orders-workspace-narrow.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',
   'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',
-  'existing_order_edit_discard_save_reopen'];
+  'existing_order_edit_discard_save_reopen','workspace_retained_forms_create_edit_reopen'];
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -83,7 +83,8 @@ async function stopHost(){
 }
 async function startHost(example,database){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  const args=['-m','yadinassi.ui.form_app',path.join(repo,'examples/forms',example)];
+  const args=example==='workspace' ? ['-m','yadinassi.ui.orders_workspace',path.join(repo,'examples/forms')] :
+    ['-m','yadinassi.ui.form_app',path.join(repo,'examples/forms',example)];
   if(database)args.push('--f',database);
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=launchOutputReader();let settled=false;
@@ -111,7 +112,7 @@ async function screenshot(name){
   await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
 }
 async function sourceBinding(){
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','examples/forms','tests/browser_ui',
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/workspace','examples/forms','tests/browser_ui',
     'tests/test_ui_browser_qa_contract.py','tests/test_form_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   return {commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}'),source};
@@ -354,6 +355,61 @@ async function main(){
     await stopHost();
     report.editorDurable={reopenedAfterHostClose:true,independentFormReopen:true,records:1,rows:2,exactTotal:'9.20'};
   });
+  await scenario(scenarioNames[5],async()=>{
+    const database=path.join(owned,'orders.sqlite');
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    await startHost('workspace',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Orders workspace',exact:true}).waitFor();
+    const workspaceIdle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].filter(node=>node.checkVisibility()).every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
+    const visibleField=name=>field(name).filter({visible:true});
+    const visibleButton=name=>button(name).filter({visible:true});
+    const toolbar=page.locator('.orders-workspace > nav').first();
+    await toolbar.getByRole('button',{name:'New order',exact:true}).click();
+    await visibleField('Code').waitFor();await workspaceIdle();
+    await visibleField('Code').fill('B003');
+    await visibleField('Description').fill('Workspace created order');
+    await visibleButton('Add line').click();await workspaceIdle();
+    await visibleField('Description, row 1').fill('Workspace line');
+    await visibleField('Price, row 1').fill('3.25');
+    await visibleButton('Save order').click();await workspaceIdle();
+    await visibleButton('Close form').click();
+    await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="Open forms"] button').length===1);
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
+    await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
+    await button('Find / Refresh orders').click();
+    await page.getByText('B003 · Workspace created order · 3.25 ',{exact:true}).waitFor();
+    const first=page.locator('.orders-workspace section p').filter({hasText:'B002 ·'});
+    await first.getByRole('button',{name:'Open order',exact:true}).click();
+    await visibleField('Price, row 1').waitFor();await workspaceIdle();
+    await visibleField('Price, row 1').fill('invalid hidden decimal');
+    const beforeSwitch=rpc;
+    await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
+    assert.equal(rpc,beforeSwitch,'navigation_flushed_hidden_draft');
+    await page.locator('.orders-workspace section p').filter({hasText:'B003 ·'}).getByRole('button',{name:'Open order',exact:true}).click();
+    await visibleField('Description').waitFor();await workspaceIdle();
+    await visibleField('Description').fill('Workspace edited order');
+    await visibleButton('Save changes').click();await workspaceIdle();
+    await button('Close workspace').click();
+    assert.equal(await page.getByText('Save or discard every form, including hidden tabs, and wait for pending requests before closing.',{exact:true}).isVisible(),true);
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
+    assert.equal(await visibleField('Price, row 1').inputValue(),'invalid hidden decimal');
+    await visibleButton('Discard / Reload').click();await workspaceIdle();
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_workspace_overflow');
+    await screenshot('orders-workspace-narrow.png');
+    await visibleButton('Close form').click();
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
+    await visibleButton('Close form').click();
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
+    await button('Close workspace').click();await stopHost();
+    const readback=runPython(['-m','yadinassi','--f',database,'-c',
+      'O=Catalogs.Orders.FindByCode("B003").GetObject(); '+
+      'If O.Description<>"Workspace edited order" Or O.Total<>3.25 Or O.Lines.Count()<>1 Then Raise "workspace readback"; EndIf; '+
+      'A=Catalogs.Orders.FindByCode("B002").GetObject(); If A.Description<>"Browser edited again" Then Raise "hidden edit leaked"; EndIf; '+
+      'Message("WORKSPACE_READBACK_OK");']);
+    assert.equal(readback.trim(),'WORKSPACE_READBACK_OK');
+    report.workspaceDurable={reopenedAfterHostClose:true,hiddenDraftRetained:true,independentEditors:true,exactTotal:'3.25'};
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -406,5 +462,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:6,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

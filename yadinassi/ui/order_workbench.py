@@ -22,9 +22,11 @@ from .protocol import encode_line, encode_value
 
 class OrdersWorkbenchSession:
     """Retains one selected identity and its original optimistic revision."""
-    def __init__(self, context):
+    def __init__(self, context, *, initial_record=None):
         if context is None:
             raise ValueError('Orders workbench requires an existing database')
+        self.initial_record = initial_record
+        self.workspace_editor = initial_record is not None
         self.context = context
         self.manager = None
         self.object = None
@@ -82,6 +84,10 @@ class OrdersWorkbenchSession:
             form.items._values[(name + 'Button').casefold()].enabled = not locked
         form.items._values['ordersTable'.casefold()].enabled = not locked
         form.items._values['fieldsearchcode'].read_only = locked
+        if self.workspace_editor:
+            for name in ('SearchOrdersButton', 'OpenOrderButton', 'OrdersTable', 'FieldSearchCode'):
+                form.items._values[name.casefold()].visible = False
+                form.items._values[name.casefold()].enabled = False
         resolve = form.items._values['resolveButton'.casefold()]
         resolve.enabled = locked
         resolve.title = 'Refresh saved record' if self.pending_refresh else 'Resolve save outcome'
@@ -140,35 +146,44 @@ class OrdersWorkbenchSession:
         from ..form_replication import _install_state
         _install_state(session, prepared)
 
+    def list_page(self, session, code):
+        manager = self._manager(session)
+        if type(code) is not str or len(code) > 8:
+            raise ValueError('invalid exact code')
+        view = manager._view()
+        try:
+            page = view.scan_catalog_values(manager._schema.identity,
+                CatalogScanRequest(predicate=None if not code else CatalogComparison('code', 'eq', code),
+                                   order=(CatalogOrder('code'),), page_size=32),
+                ('code', 'description', manager._schema.fields[0].identity))
+            if (type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 32 or
+                    page.continuation is not None and (type(page.continuation) is not str or len(page.continuation) != 32)):
+                raise BackendError('integrity')
+            seen = set()
+            for row in page.rows:
+                if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey or
+                        row.key.database_id != view.database_id or row.key.catalog_id != manager._schema.identity or
+                        type(row.key.record_id) is not UUID or not row.key.record_id.int or row.key in seen or
+                        type(row.values) is not tuple or len(row.values) != 3 or
+                        tuple(type(v) for v in row.values) != (str, str, Decimal)):
+                    raise BackendError('integrity')
+                seen.add(row.key)
+        finally:
+            view.close()
+        return page
+
     def browse(self, session):
+        if self.initial_record is not None:
+            record, self.initial_record = self.initial_record, None
+            self._adopt(session, self._fresh(session, record), 'Order loaded; edits save this same record')
+            return
+        if self.workspace_editor:
+            return
         if self._blocked(session):
             return
         try:
-            manager = self._manager(session)
             code = session.form._data['searchcode']
-            if type(code) is not str or len(code) > 8:
-                self._status(session, 'Search by an exact code of at most 8 characters, or leave it empty')
-                return
-            view = manager._view()
-            try:
-                page = view.scan_catalog_values(manager._schema.identity,
-                    CatalogScanRequest(predicate=None if not code else CatalogComparison('code', 'eq', code),
-                                       order=(CatalogOrder('code'),), page_size=32),
-                    ('code', 'description', manager._schema.fields[0].identity))
-                if (type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 32 or
-                        page.continuation is not None and (type(page.continuation) is not str or len(page.continuation) != 32)):
-                    raise BackendError('integrity')
-                seen = set()
-                for row in page.rows:
-                    if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey or
-                            row.key.database_id != view.database_id or row.key.catalog_id != manager._schema.identity or
-                            type(row.key.record_id) is not UUID or not row.key.record_id.int or row.key in seen or
-                            type(row.values) is not tuple or len(row.values) != 3 or
-                            tuple(type(v) for v in row.values) != (str, str, Decimal)):
-                        raise BackendError('integrity')
-                    seen.add(row.key)
-            finally:
-                view.close()
+            page = self.list_page(session, code)
             rows = self._rows(session.form._tables['orders'], tuple(row.values for row in page.rows))
             message = ('Showing first 32 orders; enter an exact code to find another order'
                        if page.continuation is not None else

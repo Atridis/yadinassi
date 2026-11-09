@@ -5,6 +5,9 @@ its complete `Lines` section. It uses the same authored Orders configuration and
 business rules as [order intake](form-tables.md). It is a host-functional vertical
 slice, not evidence of native 1C managed-form parity.
 
+For continuous list → create/edit → retained form tabs without restarting Python,
+use the [Orders workspace](orders-workspace.md). The standalone flow below remains supported.
+
 ## Run it
 
 Use a database created with the existing intake configuration. To create a sample
