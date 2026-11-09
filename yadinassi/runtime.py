@@ -24,6 +24,9 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage, UserMessageContext
 from .value_storage import BSLValueStorage
+from . import json_processing
+from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
+                         read_json_date, write_json_date)
 from .json_processing import BSLJSONReader, BSLJSONWriter, JSON_VALUE_TYPES, JSON_LINE_BREAKS, BSLJSONWriterSettings, read_json, write_json
 from .unique_identifiers import BSLUUID
 from .async_runtime import Scheduler, Promise, AwaitRequest, SchedulerLimitError
@@ -248,6 +251,9 @@ class Interpreter:
         self.register_function("ОписаниеОшибки", self._error_description, "ErrorDescription")
         self.register_function("ИнформацияОбОшибке", self._error_info, "ErrorInfo")
         self.register_type("ПараметрыЗаписиJSON", BSLJSONWriterSettings, "JSONWriterSettings")
+        self.register_type("НастройкиСериализацииJSON", BSLJSONSerializerSettings, "JSONSerializerSettings")
+        self.register_function("ПрочитатьДатуJSON", read_json_date, "ReadJSONDate")
+        self.register_function("ЗаписатьДатуJSON", write_json_date, "WriteJSONDate")
         self.register_type("ЧтениеXML", BSLXMLReader, "XMLReader")
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
@@ -712,6 +718,10 @@ class Interpreter:
             return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ("форматдатыjson", "jsondateformat"):
+            return JSON_DATE_FORMATS
+        if name in ("вариантзаписидатыjson", "jsondatewritingvariant"):
+            return JSON_DATE_WRITING_VARIANTS
         if name in ("переносстрокjson", "jsonlinebreak"):
             return JSON_LINE_BREAKS
         if name in ("кодировкатекста", "textencoding"):
@@ -902,6 +912,9 @@ class Interpreter:
                       if isinstance(callee, ast.Name) else None)
         if table_optional is None and (registered is None or
                 (registered.function is not run_callback_marker
+                 and registered.function is not read_json
+                 and registered.function is not write_json
+                 and registered.function is not write_json_date
                  and registered.function is not fill_property_values
                  and registered.function is not strings.str_find
                  and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
@@ -921,6 +934,10 @@ class Interpreter:
             raise TypeError("Значение не является функцией")
         if function.function is run_callback_marker:
             return (yield from self._run_callback(node))
+        if function.function is read_json or function.function is write_json:
+            if require_value and not function.returns_value:
+                raise TypeError(f"Процедура не возвращает значение: {function.name}")
+            return (yield from self._convert_json(node, writing=function.function is write_json))
         if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
             self.reject_host_omissions(node.arguments[:1])
         elif function.function is fill_property_values:
@@ -933,6 +950,10 @@ class Interpreter:
             if not required <= len(node.arguments) <= maximum:
                 raise TypeError("Регулярное выражение: неверное количество аргументов")
             self.reject_host_omissions(node.arguments[:required])
+        elif function.function is write_json_date:
+            if not 2 <= len(node.arguments) <= 3:
+                raise TypeError("ЗаписатьДатуJSON ожидает от 2 до 3 аргументов")
+            self.reject_host_omissions(node.arguments[:2])
         elif function.function is strings.str_find:
             if not 2 <= len(node.arguments) <= 5:
                 raise TypeError("СтрНайти ожидает от 2 до 5 аргументов")
@@ -970,6 +991,80 @@ class Interpreter:
                 value = (yield from self._visit(argument))
             values.append(value)
         return function(*values)
+
+    def _convert_json(self, node, *, writing):
+        required, maximum, module_index = (2, 6, 4) if writing else (1, 9, 5)
+        if not required <= len(node.arguments) <= maximum:
+            raise TypeError(f"JSON: ожидается от {required} до {maximum} аргументов")
+        self.reject_host_omissions(node.arguments[:required])
+        values = []
+        for index, argument in enumerate(node.arguments):
+            if isinstance(argument, ast.OmittedArgument):
+                value = None
+            elif index == module_index:
+                receiver = self.import_receiver(argument)
+                value = receiver if receiver is not None else (yield from self._visit(argument))
+            else:
+                value = yield from self._visit(argument)
+            values.append(value)
+        values += [None] * (maximum - len(values))
+        name, module, additional = values[module_index - 1:module_index + 2]
+        handler = None
+        if name is not None or module is not None:
+            if type(name) is not str or not name or module is None:
+                raise TypeError("JSON: требуются имя функции и ее модуль")
+            self._require_module_storage_context()
+            module = self._callback_module(module)
+            routine = module.routine(name)
+            if not routine.is_function or routine.is_async or not routine.module_context:
+                raise TypeError("JSON: обработчик должен быть обычной контекстной функцией")
+            if routine.execution_context != self.execution_context:
+                raise ValueError("JSON: обработчик должен выполняться в текущем контексте")
+            # Validate arity before consuming a reader or invoking any handler.
+            count = 4 if writing else 3
+            required_parameters = max((i + 1 for i, p in enumerate(routine.parameters)
+                                       if p.default is None), default=0)
+            if not required_parameters <= count <= len(routine.parameters):
+                raise TypeError(f"JSON: обработчик должен принимать {count} параметра")
+            handler = routine, module.interpreter
+        if writing:
+            writer, value, settings = values[:3]
+            if type(writer) is not BSLJSONWriter:
+                raise TypeError("ЗаписатьJSON: ожидается ЗаписьJSON")
+            if not writer._active:
+                raise ValueError("JSON: приемник не открыт")
+            operation = json_processing.encode_json_events(value, settings, has_converter=handler is not None)
+        else:
+            operation = json_processing.read_json_events(*values[:4], has_reviver=handler is not None,
+                reviver_properties=values[7], maximum_nesting=values[8])
+        response = None
+        try:
+            while True:
+                try:
+                    request = operation.send(response)
+                except StopIteration as done:
+                    result = done.value
+                    break
+                if handler is None:
+                    raise TypeError("JSON: обработчик не задан")
+                routine, owner = handler
+                arguments = [ast.Literal(node.token, request.property),
+                             ast.Literal(node.token, request.value),
+                             ast.Literal(node.token, additional)]
+                if writing:
+                    # A real temporary property supplies ordinary by-reference
+                    # semantics (including Val), without caller-frame injection.
+                    cancel = BSLStructure("Cancel", False)
+                    arguments.append(ast.Attribute(node.token, ast.Literal(node.token, cancel), "Cancel"))
+                result = yield from self.call_routine(routine, arguments, owner, require_value=True)
+                response = (result, cancel.get_member("Cancel")) if writing else result
+        finally:
+            operation.close()
+        if writing:
+            # Conversion finishes before this value changes the writer state.
+            writer._write_encoded(result)
+            return None
+        return result
 
     def _require_callback_context(self):
         if self.execution_context != "client":
