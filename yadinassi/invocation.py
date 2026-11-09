@@ -85,6 +85,33 @@ class InvocationPort:
     def bind(self, interpreter, binding):
         if type(interpreter) is not Interpreter or type(binding) is not InvocationBinding:
             raise TypeError('plain Interpreter and InvocationBinding required')
+        self._bind(interpreter, binding)
+
+    def bind_form(self, session, binding):
+        """Bind a scalar client call before a trusted local form session opens.
+
+        Only explicit arguments/results cross this port. Form composition and
+        contextful handlers remain local; no shared form object is transported.
+        """
+        from .form_runtime import FormSession
+        if type(session) is not FormSession or type(binding) is not InvocationBinding:
+            raise TypeError('FormSession and InvocationBinding required')
+        if not session._gate.acquire(blocking=False):
+            raise ValueError('form invocation binding requires an idle session')
+        try:
+            if session.state != 'created' or session.closed or session._busy:
+                raise ValueError('form invocation binding must precede open')
+            key = binding.name.casefold()
+            if key in session.reserved_names or key in session.form._static:
+                raise ValueError('form invocation name already bound')
+            self._bind(session.interpreter, binding)
+            # Later server-side composition cannot shadow the trusted alias with
+            # a dynamic attribute. No renderer input can install this binding.
+            session.reserved_names.add(key)
+        finally:
+            session._gate.release()
+
+    def _bind(self, interpreter, binding):
         key = binding.name.casefold()
         if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.functions:
             raise ValueError('invocation name already bound')

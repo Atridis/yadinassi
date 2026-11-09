@@ -56,9 +56,57 @@ interpreter object across the process boundary.
   `database_context` only to the server; there is no database-path request field.
   Source modules contain server NoContext routine declarations only, never
   executable module initialization or client bodies.
-- Binding is currently for plain `Interpreter` embedding. FormSession requires
-  the separate replicated-form-state/barrier work; this API does not silently
-  route shared form objects or controls across a process boundary.
+- `bind` installs a plain `Interpreter` stub. `bind_form` installs one into a
+  trusted local `FormSession` before it opens, for explicit scalar NoContext
+  calls from client handlers. Contextful remote form calls still require separate
+  replicated-form-state/barrier work. Shared form objects never cross this port.
+
+## Remote calculations from local form events
+
+Before opening an existing trusted form session, the host can register:
+
+```python
+port.bind_form(session, InvocationBinding('RemoteTotal', 1, ('Price', 'Quantity')))
+session.open()
+```
+
+A prebound client command handler can then use the remote result in ordinary BSL:
+
+```bsl
+&AtClient
+Procedure CalculateCommand(Command)
+    ThisObject.Result = RemoteTotal(ThisObject.Price, ThisObject.Quantity) + 0.70;
+    Message("client result " + String(ThisObject.Result));
+EndProcedure
+```
+
+`test_form_invocation` opens the form, dispatches its existing button event and
+verifies a result of 61 from Price 20.10 and Quantity 3, including an actual separate
+Python server process. The admitted server messages and result are applied before
+the client continuation and final event snapshot. Later edits use the current
+scalar attribute values; a duplicate event with an old revision is rejected
+without another request. The wire contains no form snapshot, event/handler name,
+control, source or database path.
+
+Bindings are trusted host setup only. They require an exact `FormSession`, cannot
+replace built-ins, module declarations or attributes, and reserve their aliases
+against later dynamic attributes. Registration after open or during an event
+rejects. A local server handler cannot invoke a remote client stub. Use explicit
+`ThisObject.Price` scalar expressions: bare static form-attribute reference
+transfer remains unsupported, even for a Val endpoint. Form objects, controls
+and collections remain outside the scalar wire profile.
+
+The existing form event gate stays held through the synchronous exchange and
+output delivery. Reentrant events and intermediate snapshots reject. On an error,
+completed local mutations remain and the form revision advances; dependent
+assignments do not run. Cancellation propagates, releases the form gate and locks
+an uncertain port, so another click cannot replay a possible server effect.
+Closing the local form remains possible after a failed call.
+
+This is a remote NoContext computation within the existing **local** form host.
+Form composition, local contextful handlers, browser rendering and event routing
+are unchanged. It does not split form ownership, synchronize replicas, add a
+network service, or establish native automatic-event parity.
 
 ## Sequencing, failures and limits
 
@@ -101,3 +149,8 @@ argument ordering, source/body separation, nested server helpers, finite errors,
 lost/corrupted replies and existing direct local execution. Existing context,
 NoContext, scalar copyback and form tests remain regression gates. No native
 fixture or integration scenario is changed by this host transport slice.
+
+`PYTHONPATH=tests:scripts python -m unittest test_form_invocation -v` adds local
+form command/open continuation, input edits, stale clicks, messages, errors,
+cancellation, reentrancy, trusted binding admission and the separate-process
+calculation. These host tests do not launch a browser or real 1C.
