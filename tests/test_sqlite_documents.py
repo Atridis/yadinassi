@@ -1,4 +1,5 @@
 """Owned SQLite document lifecycle; no native compatibility evidence claimed."""
+from contextlib import closing
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
@@ -38,11 +39,37 @@ class SQLiteDocumentTests(unittest.TestCase):
         self.vm.execute('D=Documents.Orders.CreateDocument();D.Date=Date(2026,11,9,12,30,5);')
         return self.vm.execute('D')
     def sql(self,query,args=()):
-        with sqlite3.connect(self.path) as c: return c.execute(query,args).fetchall()
+        # The connection context manager ends the transaction, not the handle.
+        with closing(sqlite3.connect(self.path)) as c, c:
+            return c.execute(query,args).fetchall()
     def draft(self):
         s = self.schema
         values = ('hello',Decimal('12.50'),True,datetime(2026,11,9),CatalogKey(self.context.backend.database_id,s.fields[-1].target_catalog_id,uuid4()))
         return DocumentDraft(DocumentKey(self.context.backend.database_id,s.identity,uuid4()),'',datetime(2026,11,9),False,values,(),True)
+
+    def test_sql_helper_closes_connections_after_success_and_error(self):
+        real_connect = sqlite3.connect
+        connections = []
+        def connect(*args, **kwargs):
+            connection = real_connect(*args, **kwargs)
+            connections.append(connection)
+            return connection
+        try:
+            with patch('test_sqlite_documents.sqlite3.connect', side_effect=connect):
+                self.assertEqual(self.sql('SELECT 1'), [(1,)])
+                self.assertEqual(self.sql('UPDATE document_sequence SET next_value=?', (2,)), [])
+                self.assertEqual(self.sql('SELECT next_value FROM document_sequence'), [(2,)])
+                with self.assertRaises(sqlite3.OperationalError):
+                    self.sql('SELECT * FROM no_such_table')
+            self.assertEqual(len(connections), 4)
+            # Retain each handle so garbage collection cannot conceal a leak,
+            # including on platforms that allow deleting an open database.
+            for connection in connections:
+                with self.assertRaisesRegex(sqlite3.ProgrammingError, 'closed'):
+                    connection.execute('SELECT 1')
+        finally:
+            for connection in connections:
+                connection.close()
 
     def test_bsl_create_read_update_reopen_with_catalog_reference(self):
         result = self.execute('''C=Catalogs.Categories.CreateItem();C.Code="C";C.Description="Customer";C.Write();

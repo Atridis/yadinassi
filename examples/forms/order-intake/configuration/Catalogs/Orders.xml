@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20">
+  <Catalog uuid="5aa4e735-2728-4963-ab8a-290bddb2975e">
+    <Properties>
+      <Name>Orders</Name><Hierarchical>false</Hierarchical>
+      <CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>64</DescriptionLength>
+      <CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering>
+    </Properties>
+    <ChildObjects>
+      <Attribute uuid="0106c4d8-a10a-44a6-b5a7-b7ad32e589b1"><Properties><Name>Total</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+      <TabularSection uuid="c4738896-17b0-4567-bc69-9d9f8798f0d3">
+        <Properties><Name>Lines</Name></Properties>
+        <ChildObjects>
+          <Attribute uuid="060760c6-20ed-4576-bbfd-b552a745758e"><Properties><Name>ItemDescription</Name><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>128</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></Attribute>
+          <Attribute uuid="f005aa64-e1fa-4f8d-a267-a3dcf272d169"><Properties><Name>Quantity</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+          <Attribute uuid="fc25e4e3-d6d8-48b1-8f17-1dedcdb4e121"><Properties><Name>Price</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+          <Attribute uuid="7a052ef5-542d-433d-8294-b561f0962e8b"><Properties><Name>Amount</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+        </ChildObjects>
+      </TabularSection>
+    </ChildObjects>
+  </Catalog>
+</MetaDataObject>
