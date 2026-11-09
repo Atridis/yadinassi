@@ -115,6 +115,7 @@ class BSLType(Enum):
     VALUE_STORAGE = "ХранилищеЗначения"
     UUID = "УникальныйИдентификатор"
     PROMISE = "Обещание"
+    CALLBACK_DESCRIPTION = "ОписаниеОповещения"
     """Opaque, immutable type identities; presentations are not their identity."""
 
     ERROR_INFO = "ИнформацияОбОшибке"
