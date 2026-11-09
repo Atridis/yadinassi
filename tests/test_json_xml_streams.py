@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from yadinassi import Interpreter
+from yadinassi import BSLError, Interpreter
 from yadinassi.binary_streams import (BSLMemoryStream as Memory, BSLBinaryDataBuffer as Buffer,
     BSLFileStream as FileStream, BSLFileOpenMode as Mode, BSLFileAccess as Access,
     BSLPositionInStream as Origin)
@@ -145,15 +145,17 @@ Var Calls;
 Function Convert(Property, Value, Extra, Cancel) Export
  Calls=Calls+1; Return String(Value);
 EndFunction
-Calls=0; S=New MemoryStream; W=New JSONWriter; W.OpenStream(S);
+Calls=0;
+''', 'StreamConversion.bsl')
+            vm.execute('''S=New MemoryStream; W=New JSONWriter; W.OpenStream(S);
 V=New Structure("ID,When",New UUID("12345678-1234-1234-1234-123456789abc"),Date(2024,1,2));
 WriteJSON(W,V,,"Convert",ThisObject); W.Close(); S.Seek(0,PositionInStream.Begin);
 R=New JSONReader; R.OpenStream(S); V2=ReadJSON(R,False,"When"); R.Close();
 ''', 'StreamConversion.bsl')
             self.assertEqual(vm.execute('Calls'), 1)
             self.assertEqual(str(vm.execute('V2.ID')), '12345678-1234-1234-1234-123456789abc')
-            self.assertEqual(vm.execute('V2.When=Date(2024,1,2)'), True)
-            self.assertEqual(vm.execute('S.CurrentPosition()=S.Size()'), True)
+            self.assertEqual(vm.execute('V2.When'), vm.execute('Date(2024,1,2)'))
+            self.assertEqual(vm.execute('S.CurrentPosition()'), vm.execute('S.Size()'))
         finally: vm.close()
 
     def test_xml_roundtrip_all_unicode_encodings_and_bom(self):
@@ -272,3 +274,27 @@ R=New JSONReader; R.OpenStream(S); Body=ReadJSON(R); R.Close();''')
             for cls in (JSONReader, JSONWriter, XMLReader, XMLWriter):
                 with self.subTest(cls=cls.__name__, target=type(target).__name__), self.assertRaises(TypeError):
                     cls().open_stream(target)
+
+    def test_bsl_optional_stream_arguments_and_required_source_guard(self):
+        vm = Interpreter(lambda _: None)
+        try:
+            vm.execute('''S=New MemoryStream; W=New JSONWriter; W.OpenStream(S,,True,);
+W.WriteValue(4); W.Close(); S.Seek(0,PositionInStream.Begin);
+R=New JSONReader; R.OpenStream(S,); N=ReadJSON(R); R.Close();
+S2=New MemoryStream; X=New XMLWriter; X.OpenStream(S2,,False);
+X.WriteStartElement("r"); X.WriteEndElement(); X.Close(); S2.Seek(0,PositionInStream.Begin);
+Q=New XMLReader; Q.OpenStream(S2,,,); Q.Read(); Name=Q.Name;''')
+            self.assertEqual(vm.execute('N'), 4); self.assertEqual(vm.execute('Name'), 'r')
+            for call in ('W.OpenStream(,)', 'R.OpenStream(,)', 'X.OpenStream(,)', 'Q.OpenStream(,)'):
+                with self.subTest(call=call), self.assertRaises(BSLError): vm.execute(call)
+        finally: vm.close()
+
+    def test_optional_stream_receiver_factory_is_not_evaluated(self):
+        vm = Interpreter(lambda _: None)
+        try:
+            vm.execute('''Var Calls; Calls=0;
+Function Factory() Calls=Calls+1; Return New JSONWriter; EndFunction
+S=New MemoryStream;''')
+            with self.assertRaises(BSLError): vm.execute('Factory().OpenStream(S,,True);')
+            self.assertEqual(vm.execute('Calls'), 0)
+        finally: vm.close()
