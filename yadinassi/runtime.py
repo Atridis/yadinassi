@@ -47,7 +47,7 @@ from .query_packages import BSLTempTablesManager
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
 from .document_types import BSLDocumentType
-from .document_lines import BSLDocumentLines, BSLDocumentLinesType
+from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogType
 from .database_context import SQLiteDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
@@ -81,11 +81,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -1585,7 +1585,7 @@ class Interpreter:
         # EDT root_New explicitly says to ignore a non-array second value.
         value_type = (yield from self._visit(node.type_expression))
         parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
-        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or type(value_type) is BSLDocumentLinesType or type(value_type) is BSLInformationRegisterType):
+        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or (type(value_type) is BSLDocumentLinesType or type(value_type) is BSLDocumentSectionType) or type(value_type) is BSLInformationRegisterType):
             raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
             name = value_type.value

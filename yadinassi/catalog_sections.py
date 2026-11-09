@@ -84,6 +84,7 @@ class BSLCatalogSectionRow(BSLObject):
 
 
 class BSLCatalogSection(BSLObject):
+    _row_class = BSLCatalogSectionRow
     def __init__(self, owner, schema, rows=()):
         self._owner, self._schema = owner, schema
         self._fields = {f.name.casefold(): f for f in schema.fields}
@@ -98,7 +99,7 @@ class BSLCatalogSection(BSLObject):
                 raise BackendError('integrity')
             seen.add(row.identity)
             values = {f.name.casefold(): owner._manager._logical(f, v) for f, v in zip(schema.fields, row.values)}
-            loaded = BSLCatalogSectionRow(self, row.identity, values)
+            loaded = self._row_class(self, row.identity, values)
             self._rows.append(loaded); self._bytes += loaded._bytes
             if self._bytes > _MAX_BUFFER_BYTES: raise BackendError('unsupported')
 
@@ -119,7 +120,7 @@ class BSLCatalogSection(BSLObject):
         if self._owner._section_row_count() >= _MAX_ROWS:
             raise ValueError('tabular section row limit')
         values = {f.name.casefold(): self._owner._manager._field_default(f) for f in self._schema.fields}
-        row = BSLCatalogSectionRow(self, uuid4(), values)
+        row = self._row_class(self, uuid4(), values)
         if self._owner._section_buffer_bytes() + row._bytes > _MAX_BUFFER_BYTES:
             raise ValueError('tabular section buffer limit')
         self._rows.append(row); self._bytes += row._bytes
@@ -134,7 +135,7 @@ class BSLCatalogSection(BSLObject):
 
     def delete(self, value):
         self._mutable()
-        if type(value) is BSLCatalogSectionRow:
+        if type(value) is self._row_class:
             if value._section is not self or not value._attached:
                 raise ValueError('tabular row belongs to another section or is detached')
             index = self._rows.index(value)
