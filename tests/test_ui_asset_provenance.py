@@ -19,10 +19,10 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 129)
-        # The new TLS/proxy module is hashed as well as packaged renderer assets.
+        self.assertEqual(result['source_file_count'], 130)
+        # Both added runtime modules are hashed, as well as packaged renderer assets.
         original = full.read_regular
-        for changed_name in ('app.js', 'http_security.py'):
+        for changed_name in ('app.js', 'http_security.py', 'relational_queries.py'):
             def changed(path, *args, **kwargs):
                 data = original(path, *args, **kwargs)
                 return data + b'\n' if path.name == changed_name else data
