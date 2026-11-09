@@ -28,7 +28,7 @@ class DynamicNewTests(unittest.TestCase):
     def test_each_concrete_type_identity_is_supported_or_rejected(self):
         for value_type in BSLType:
             self.vm.variables['kind'] = value_type
-            if value_type in (BSLType.CALLBACK_DESCRIPTION, BSLType.OS_CA_CERTIFICATES, BSLType.INTERNET_PROXY, BSLType.USER_MESSAGE, BSLType.QUERY, BSLType.HTTP_REQUEST,  BSLType.ARRAY, BSLType.STRUCTURE, BSLType.MAP, BSLType.FIXED_STRUCTURE,
+            if value_type in (BSLType.TEMP_TABLES_MANAGER, BSLType.CALLBACK_DESCRIPTION, BSLType.OS_CA_CERTIFICATES, BSLType.INTERNET_PROXY, BSLType.USER_MESSAGE, BSLType.QUERY, BSLType.HTTP_REQUEST,  BSLType.ARRAY, BSLType.STRUCTURE, BSLType.MAP, BSLType.FIXED_STRUCTURE,
                               BSLType.NUMBER_QUALIFIERS, BSLType.STRING_QUALIFIERS,
                               BSLType.DATE_QUALIFIERS, BSLType.BINARY_DATA_QUALIFIERS,
                               BSLType.TYPE_DESCRIPTION, BSLType.VALUE_TABLE, BSLType.VALUE_LIST, BSLType.VALUE_TREE,
