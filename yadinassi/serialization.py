@@ -95,7 +95,7 @@ _TYPE_IDS = {
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
 _UNSUPPORTED_CODEC_TYPES = frozenset({
-    BSLType.USER_MESSAGE,
+    BSLType.USER_MESSAGE, BSLType.CALLBACK_DESCRIPTION,
     BSLType.QUERY, BSLType.QUERY_RESULT, BSLType.QUERY_RESULT_SELECTION,
     BSLType.HTTP_CONNECTION, BSLType.HTTP_REQUEST, BSLType.HTTP_RESPONSE, BSLType.BYTE_ORDER_MARK_USE,
     BSLType.OPENSSL_SECURE_CONNECTION, BSLType.FILE_CA_CERTIFICATES,
@@ -278,6 +278,8 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ТекстовыйДокумент пока не поддерживается")
         if kind is BSLType.VALUE_STORAGE or (kind is BSLType.TYPE and value is BSLType.VALUE_STORAGE):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация ХранилищеЗначения пока не поддерживается")
+        if kind is BSLType.CALLBACK_DESCRIPTION or (kind is BSLType.TYPE and value is BSLType.CALLBACK_DESCRIPTION):
+            raise ValueError("ЗначениеВСтрокуВнутр: сериализация ОписаниеОповещения пока не поддерживается")
         if kind in _UNSUPPORTED_CODEC_TYPES or (
                 kind is BSLType.TYPE and value in _UNSUPPORTED_CODEC_TYPES):
             if kind is BSLType.PROMISE or (kind is BSLType.TYPE and value is BSLType.PROMISE):
