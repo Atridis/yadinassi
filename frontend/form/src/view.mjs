@@ -1,4 +1,4 @@
-import {editable, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
+import {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
 
 /** Keyed, text-only DOM renderer. The host can name controls but cannot supply HTML. */
 export function createFormView(document, root, handlers) {
@@ -35,7 +35,7 @@ export function createFormView(document, root, handlers) {
   panel.append(panelHeader, empty, fields, messages, actions);
   const footer = element('footer', 'page-footer', 'Changes are handled by the host. Refresh reads state only and never repeats a command.');
   main.append(header, error, lock, panel, footer); root.replaceChildren(main);
-  const controls = new Map(); const drafts = new Map();
+  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map();
   let current = null, isBusy = false, focusMemory = null, actionPointer = false;
   let serial = 0;
   const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value) === input;
@@ -97,10 +97,135 @@ export function createFormView(document, root, handlers) {
     }
     return {row, caption, input, hint, item};
   }
+  const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
+  function discardTable(name) {
+    for (const [key, draft] of cellDrafts) if (draft.control === name) cellDrafts.delete(key);
+  }
+  function makeTable(item) {
+    const row = element('section', 'form-table');
+    const toolbar = element('div', 'table-toolbar'), heading = element('h2', 'table-title');
+    const summary = element('span', 'table-summary'); summary.setAttribute('role', 'status');
+    const clear = element('button', 'quiet table-clear', 'Clear selection');
+    clear.type = 'button'; clear.dataset.formAction = 'select';
+    clear.addEventListener('click', () => handlers.select(item.name, null));
+    toolbar.append(heading, summary, clear);
+    const help = element('p', 'table-help', 'Edit cells, then use a form command. Selecting a row first applies all pending edits.');
+    help.id = 'form-table-help-' + ++serial;
+    const scroll = element('div', 'table-scroll'); scroll.tabIndex = 0;
+    scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', item.title || item.name);
+    const table = element('table', 'data-table'), caption = element('caption', 'sr-only');
+    const head = element('thead'), headerRow = element('tr');
+    const selected = element('th', 'selection-heading', 'Current row'); selected.setAttribute('scope', 'col');
+    headerRow.append(selected); head.append(headerRow);
+    const body = element('tbody'); table.append(caption, head, body); scroll.append(table);
+    const empty = element('p', 'table-empty', 'No rows.');
+    row.append(toolbar, help, scroll, empty);
+    return {row, heading, summary, clear, help, scroll, caption, headerRow, body, empty,
+      headers: new Map(), rows: new Map(), item};
+  }
+  function makeCell(control, rowId, column) {
+    const cell = element('td'), input = element('input', 'cell-input'); cell.append(input);
+    input.id = 'form-cell-' + ++serial; input.autocomplete = 'off'; input.spellcheck = false;
+    const name = control.item.name, controlId = control.item.controlId, tableId = control.item.tableId;
+    const locator = {control: name, row: rowId, column: column.name};
+    const key = cellKey(name, controlId, tableId, rowId, column.name);
+    const currentCell = () => tableCell(controls.get(name)?.item, rowId, column.name);
+    input.addEventListener('input', () => {
+      const active = currentCell();
+      if (isBusy || controls.get(name)?.item.tableId !== tableId || controls.get(name)?.item.controlId !== controlId || !editable(active)) return;
+      const value = input.type === 'checkbox' ? input.checked : input.value;
+      if (sameValue(active, value)) cellDrafts.delete(key);
+      else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
+    });
+    input.addEventListener('change', () => { if (input.type === 'checkbox' && !isBusy) handlers.change(locator); });
+    input.addEventListener('blur', event => {
+      if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
+          !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.isComposing && input.type !== 'checkbox') {
+        event.preventDefault(); handlers.change(locator);
+      }
+    });
+    return {cell, input, type: column.type, key};
+  }
+  function renderTable(control, model, active) {
+    const item = control.item;
+    const disabled = model.busy || model.locked || !active || !item.enabled || !item.visible;
+    control.heading.textContent = item.title || item.name;
+    control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
+    control.scroll.setAttribute('aria-label', item.title || item.name);
+    control.summary.textContent = item.rows.length + (item.rows.length === 1 ? ' row' : ' rows') +
+      (item.currentRow === null ? ' · No row selected' : ' · Selected row ' + item.currentRow);
+    control.clear.disabled = disabled || item.readOnly || item.currentRow === null;
+    control.clear.setAttribute('aria-label', 'Clear selection in ' + (item.title || item.name));
+    control.empty.hidden = item.rows.length > 0;
+    const columns = new Set(item.columns.map(column => column.name));
+    for (const [name, header] of control.headers) if (!columns.has(name)) { header.remove(); control.headers.delete(name); }
+    item.columns.forEach((column, index) => {
+      let header = control.headers.get(column.name);
+      if (!header) { header = element('th'); header.setAttribute('scope', 'col'); control.headers.set(column.name, header); }
+      header.textContent = column.title || column.name;
+      header.title = column.type + (column.readOnly ? ' · Read-only' : '');
+      if (control.headerRow.children[index + 1] !== header)
+        control.headerRow.insertBefore(header, control.headerRow.children[index + 1] || null);
+    });
+    const rows = new Set(item.rows.map(row => row.id));
+    for (const [id, row] of control.rows) if (!rows.has(id)) { row.node.remove(); control.rows.delete(id); }
+    item.rows.forEach((data, position) => {
+      let row = control.rows.get(data.id);
+      if (!row) {
+        const node = element('tr'), label = element('th', 'row-selector'); label.setAttribute('scope', 'row');
+        const select = element('button', 'select-row'); select.type = 'button'; select.dataset.formAction = 'select';
+        select.addEventListener('click', () => handlers.select(item.name, data.id));
+        label.append(select); node.append(label); row = {node, select, cells: new Map()}; control.rows.set(data.id, row);
+      }
+      if (control.body.children[position] !== row.node) control.body.insertBefore(row.node, control.body.children[position] || null);
+      const selected = item.currentRow === data.id;
+      row.node.className = selected ? 'current-row' : '';
+      row.select.textContent = (selected ? 'Selected ' : 'Select ') + data.id;
+      row.select.setAttribute('aria-label', (selected ? 'Selected row ' : 'Select row ') + data.id + ' in ' + (item.title || item.name));
+      row.select.setAttribute('aria-pressed', selected ? 'true' : 'false');
+      row.select.disabled = disabled || item.readOnly;
+      for (const [name, cell] of row.cells) if (!columns.has(name)) { cell.cell.remove(); row.cells.delete(name); }
+      item.columns.forEach((column, index) => {
+        const value = data.values[index]; let cell = row.cells.get(column.name);
+        if (cell && (cell.type !== column.type || cell.valueType !== value.type)) {
+          cell.cell.remove(); cellDrafts.delete(cell.key); row.cells.delete(column.name); cell = null;
+        }
+        if (!cell) { cell = makeCell(control, data.id, column); cell.valueType = value.type; row.cells.set(column.name, cell); }
+        if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
+        const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
+        input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
+        input.className = 'cell-input' + (value.type === 'Number' ? ' decimal-cell' : '');
+        input.disabled = disabled || input.type === 'checkbox' && readOnly; input.readOnly = readOnly;
+        input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
+        input.setAttribute('aria-describedby', control.help.id);
+        input.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
+        input.title = value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
+          : ['Null', 'Undefined'].includes(value.type) ? 'Typed empty value · read-only'
+          : readOnly ? 'Read-only' : value.type === 'Number' ? 'Exact decimal · use a decimal point (.)' : '';
+        const draft = cellDrafts.get(cell.key), text = draft ? draft.value : value.type === 'Boolean' ? value.value : scalarText(value);
+        if (input.type === 'checkbox') input.checked = text === true;
+        else if (input.value !== text) input.value = text;
+        input.maxLength = value.type === 'Number' ? 144 : LIMITS.text;
+        input.inputMode = value.type === 'Number' ? 'decimal' : 'text';
+      });
+    });
+  }
+  function reconcileCells() {
+    for (const [key, draft] of cellDrafts) {
+      const item = current?.items.find(item => item.name === draft.control);
+      const cell = tableCell(item, draft.row, draft.column);
+      if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !editable(cell) || cell.value.type !== draft.type ||
+          !scalarEqual(cell.value, draft.base)) cellDrafts.delete(key);
+    }
+  }
   function render(model) {
     const savedFocus = captureFocus();
     if (model.busy && !isBusy) focusMemory = savedFocus;
     const wasBusy = isBusy; isBusy = model.busy; current = model.snapshot;
+    reconcileCells();
     const active = current?.kind === 'form' && current.lifecycle === 'open';
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
@@ -121,20 +246,21 @@ export function createFormView(document, root, handlers) {
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
       : current.kind === 'closed' ? 'This form is ' + current.lifecycle + '. You can close this tab.' : 'No visible controls.';
     const names = new Set((current?.items || []).map(item => item.name));
-    for (const [name, control] of controls) if (!names.has(name)) { control.row.remove(); controls.delete(name); drafts.delete(name); }
+    for (const [name, control] of controls) if (!names.has(name)) { control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
     let fieldIndex = 0, actionIndex = 0;
     for (const item of current?.items || []) {
       let control = controls.get(item.name);
-      if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type)) {
-        control.row.remove(); controls.delete(item.name); drafts.delete(item.name); control = null;
+      if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
+        control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
       }
-      if (!control) { control = makeControl(item); controls.set(item.name, control); }
+      if (!control) { control = item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
       control.item = item;
       const {row, caption, input, hint} = control;
       const parent = item.kind === 'button' ? actions : fields;
       const position = item.kind === 'button' ? actionIndex++ : fieldIndex++;
       if (parent.children[position] !== row) parent.insertBefore(row, parent.children[position] || null);
       row.hidden = !item.visible || current.kind === 'closed';
+      if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
       if (readOnly) drafts.delete(item.name);
       input.disabled = model.busy || model.locked || !active || !item.enabled || !item.visible ||
@@ -167,16 +293,35 @@ export function createFormView(document, root, handlers) {
   }
   return {
     render,
-    accept(name) { drafts.delete(name); },
-    clearDrafts() { drafts.clear(); },
-    hasDrafts() { return drafts.size > 0; },
-    changes(onlyName) {
+    accept(change) {
+      if (typeof change === 'string') drafts.delete(change);
+      else if (!Object.hasOwn(change, 'row')) drafts.delete(change.control);
+      else {
+        const item = current?.items.find(item => item.name === change.control);
+        cellDrafts.delete(cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column));
+      }
+    },
+    clearDrafts() { drafts.clear(); cellDrafts.clear(); },
+    hasDrafts() { return drafts.size + cellDrafts.size > 0; },
+    changes(only) {
       const changes = [];
       for (const item of current?.items || []) {
-        const draft = drafts.get(item.name);
-        if (!draft || onlyName !== undefined && item.name !== onlyName) continue;
-        const value = typedInput(item, draft.value);
-        if (!scalarEqual(value, item.value)) changes.push({control: item.name, value});
+        if (item.kind === 'table') {
+          for (const row of item.rows) for (const column of item.columns) {
+            if (only !== undefined && (typeof only !== 'object' || only.control !== item.name || only.row !== row.id || only.column !== column.name)) continue;
+            const key = cellKey(item.name, item.controlId, item.tableId, row.id, column.name), draft = cellDrafts.get(key);
+            if (!draft) continue;
+            const field = tableCell(item, row.id, column.name), value = typedInput(field, draft.value);
+            if (!scalarEqual(value, field.value)) changes.push({control: item.name, row: row.id, column: column.name, value});
+            else cellDrafts.delete(key);
+          }
+        } else {
+          const draft = drafts.get(item.name);
+          if (!draft || only !== undefined && item.name !== only) continue;
+          const value = typedInput(item, draft.value);
+          if (!scalarEqual(value, item.value)) changes.push({control: item.name, value});
+          else drafts.delete(item.name);
+        }
       }
       return changes;
     },

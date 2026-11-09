@@ -115,6 +115,21 @@ python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
 Это ограниченный локальный редактор, не нативные управляемые формы 1С.
 [Пошаговый запуск и проверка сохранения](docs/demo-quickstart.md).
 
+### Прикладные формы с клиентским и серверным BSL
+
+```console
+python -m yadinassi.ui.form_app examples/forms/estimate --open-browser
+python -m yadinassi --create-db orders.sqlite --import-xml examples/forms/order-intake/configuration
+python -m yadinassi.ui.form_app examples/forms/order-intake --f orders.sqlite --open-browser
+```
+
+Первый пример вычисляет итог, второй позволяет добавить и отредактировать строки,
+выбрать и удалить строку, пересчитать суммы и сохранить шапку с табличной частью
+справочника одним серверным `Write`. Браузер отображает форму; клиентский BSL
+исполняется локально, серверный BSL и SQLite работают в отдельном процессе.
+Старые скалярные пакеты совместимы. Это ограниченный host-API, не импорт форм 1С.
+[Запуск и границы](docs/form-app.md), [таблицы и сохранение заказа](docs/form-tables.md).
+
 ## Разработка
 
 Описание новых возможностей и примеры см. в [features.md](features.md).

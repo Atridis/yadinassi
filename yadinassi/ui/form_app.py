@@ -18,7 +18,7 @@ from .form_package import load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
 from .protocol import encode_line, encode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
 
-PROTOCOL = 'yadinassi-form-ui/0'
+PROTOCOL = 'yadinassi-form-ui/1'
 
 
 class FormProcess(RuntimeBridge):
@@ -69,7 +69,7 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
         if database is not None:
             context = SQLiteDBContext(database)
         server = ReplicatedFormServer(package.source, package.endpoints,
-            handlers=package.handlers, attributes=package.attributes,
+            handlers=package.handlers, attributes=package.attributes, tables=package.tables,
             initial_values=package.initial_values, bindings=package.lifecycle,
             database_context=context)
         source = sys.stdin.buffer if input_stream is None else input_stream
@@ -103,8 +103,22 @@ class FormController:
         snapshot = session.snapshot()
         values = {key.casefold(): value for key, value in snapshot.attributes}
         views = {key.casefold(): value for key, value in snapshot.item_views}
+        tables = {table.name.casefold(): table for table in snapshot.tables}
+        selections = dict(snapshot.selections)
         items = []
         for name, kind, title, visible, enabled, read_only, path in snapshot.items:
+            if kind == 'table':
+                table = tables[path.casefold()]
+                control_id = session.form.items._values[name.casefold()]._replica_id
+                items.append({'name': name, 'kind': 'table', 'title': title or table.title,
+                    'visible': visible, 'enabled': enabled, 'readOnly': read_only,
+                    'controlId': control_id, 'tableId': table.identity,
+                    'columns': [{'name': key, 'title': caption, 'type': value_type, 'readOnly': readonly}
+                                for key, caption, value_type, readonly in table.columns],
+                    'rows': [{'id': identity, 'values': [encode_value(value) for value in values]}
+                             for identity, values in table.rows],
+                    'currentRow': selections.get(name)})
+                continue
             view = views.get(name.casefold(), 'input')
             # Native view names are not renderer-controlled.
             view = {'InputField': 'input', 'CheckBoxField': 'checkbox', 'LabelField': 'label'}.get(view, view)
@@ -144,15 +158,24 @@ class FormController:
             elif method == 'form.event':
                 event = params.get('event')
                 keys = {'event', 'revision'}
-                if event in ('change', 'command'):
+                if event in ('change', 'command', 'cell', 'select'):
                     keys.add('control')
-                if event == 'change':
+                if event in ('change', 'cell'):
                     keys.add('value')
-                if (event not in ('change', 'command', 'close') or set(params) != keys
+                if event in ('cell', 'select'):
+                    keys.add('row')
+                if event == 'cell':
+                    keys.add('column')
+                if (event not in ('change', 'command', 'close', 'cell', 'select') or set(params) != keys
                         or type(params['revision']) is not int or not 0 <= params['revision'] <= MAX_COUNTER
                         or event != 'close' and type(params['control']) is not str):
                     raise ValueError('invalid form event')
-                value = _decode_scalar(params['value']) if event == 'change' else None
+                if event in ('cell', 'select'):
+                    row = params['row']
+                    if (row is not None and (type(row) is not int or not 1 <= row <= 4096)
+                            or event == 'cell' and (row is None or type(params['column']) is not str)):
+                        raise ValueError('invalid table event')
+                value = _decode_scalar(params['value']) if event in ('change', 'cell') else None
                 if self.session.uncertain:
                     error = 'outcome_unknown'
                 elif params['revision'] != self.session.revision:
@@ -162,7 +185,8 @@ class FormController:
                 else:
                     try:
                         self.session.dispatch(event, revision=params['revision'],
-                            control=params.get('control', ''), value=value)
+                            control=params.get('control', ''), value=value,
+                            row=params.get('row'), column=params.get('column', ''))
                     except Exception:
                         error = 'outcome_unknown' if self.session.uncertain else 'event_failed'
             else:
