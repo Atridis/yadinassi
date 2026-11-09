@@ -1,0 +1,98 @@
+{
+  "protocol": "yadinassi-form-app/0",
+  "handlers": [
+    {
+      "name": "Changed",
+      "endpoint": 1,
+      "parameters": [
+        "Element"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "RunCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 3,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    }
+  ],
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "routine": "Run"
+    }
+  ],
+  "lifecycle": {
+    "OnCreateAtServer": "Create",
+    "BeforeClose": "BeforeClose"
+  },
+  "attributes": [
+    {
+      "name": "Code",
+      "type": "String",
+      "title": "Code",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Description",
+      "type": "String",
+      "title": "Description",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Amount",
+      "type": "Number",
+      "title": "Amount",
+      "value": {
+        "type": "Number",
+        "value": "0"
+      }
+    },
+    {
+      "name": "Status",
+      "type": "String",
+      "title": "Status",
+      "value": {
+        "type": "String",
+        "value": "New record"
+      }
+    },
+    {
+      "name": "Saved",
+      "type": "Boolean",
+      "title": "Saved",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    },
+    {
+      "name": "Dirty",
+      "type": "Boolean",
+      "title": "Dirty",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    }
+  ]
+}

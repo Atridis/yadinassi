@@ -358,6 +358,26 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_form_assets_provenance(source):
+    """Exact test-only inverse of the second closed renderer inventory."""
+    base = 'e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4'
+    candidate = '3b0f228a5195de776313c33e33460ffb00a6013102d2a490f2d5082e097d1e79'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('form assets outer source identity')
+    old = '    assets = {"yadinassi/ui/assets/catalog/" + name for name in\n'
+    new = ('    assets = {"yadinassi/ui/assets/" + renderer + "/" + name\n'
+           '              for renderer in ("catalog", "form") for name in\n')
+    if source.count(new) != 1:
+        raise AssertionError('form assets inverse unique hunk')
+    restored = source.replace(new, old, 1)
+    if hashlib.sha256(restored.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('form assets inner source identity')
+    return restored
+
+
 def without_catalog_assets_provenance(source):
     """Exact test-only inverse of the closed renderer asset inventory addition."""
     contract = json.loads((REPOSITORY / 'tests/catalog_assets_source_inverse.json').read_text(encoding='utf-8'))
@@ -366,6 +386,9 @@ def without_catalog_assets_provenance(source):
     if contract.get('base_sha256') != base or contract.get('candidate_sha256') != candidate:
         raise AssertionError('catalog assets inverse identity')
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (base, candidate):
+        source = without_form_assets_provenance(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == base:
         return source
     if digest != candidate:
