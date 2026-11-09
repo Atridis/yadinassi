@@ -181,7 +181,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_unsupported_features_do_not_connect_or_downgrade(self):
         with mock.patch.object(api,'_Connection') as transport:
-            for kwargs in [dict(user='name'),dict(password='secret'),dict(proxy=object()),dict(secure_connection=object()),dict(use_os_authentication=True)]:
+            for kwargs in [dict(user='bad:name'),dict(password='secret'),dict(proxy=object()),dict(secure_connection=object()),dict(use_os_authentication=True)]:
                 with self.assertRaises(ValueError):Connection('localhost',**kwargs)
             for target in ['https://example.test/','//example.test/','/x\nBad']:
                 with self.assertRaises(ValueError):self.connection().get(Request(target))

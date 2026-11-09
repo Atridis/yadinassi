@@ -1,3 +1,5 @@
+from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+                            BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
@@ -60,6 +62,10 @@ from .async_runtime import Promise
 
 
 _VALUE_TYPES = (
+    (BSLOpenSSLSecureConnection, BSLType.OPENSSL_SECURE_CONNECTION, "OpenSSLSecureConnection"),
+    (BSLFileCertificationAuthorityCertificates, BSLType.FILE_CA_CERTIFICATES, "FileCertificationAuthorityCertificates"),
+    (BSLOSCertificationAuthorityCertificates, BSLType.OS_CA_CERTIFICATES, "OSCertificationAuthorityCertificates"),
+    (BSLInternetProxy, BSLType.INTERNET_PROXY, "InternetProxy"),
     (BSLUserMessage, BSLType.USER_MESSAGE, "UserMessage"),
     (BSLQuery, BSLType.QUERY, "Query"),
     (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
