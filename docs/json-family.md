@@ -61,8 +61,13 @@ extension is accepted, without rewriting commas inside strings.
 ## Deliberate remaining scope
 
 Search `# !todo` in `yadinassi/json_processing.py` for deferred work:
-advanced escaping/quote modes, date restoration and serialization options,
-conversion/revival callbacks, other non-standard JSON/comments, reader CurrentLine/CurrentPosition, and exact malformed-input
+advanced escaping/quote modes, other non-standard JSON/comments,
+reader CurrentLine/CurrentPosition, and exact malformed-input
 error diagnostics. XDTO serialization, external Stream objects and
 arbitrary application types are not included. No silent stringification of
 unsupported types or non-string map keys is permitted.
+
+Dates, serializer settings and synchronous BSL conversion/revival functions are
+now implemented in the [advanced conversion profile](json-value-conversion.md).
+That profile documents its separate local limits and documentation conflicts;
+the earlier native observations above do not establish new date/handler parity.

@@ -1,4 +1,5 @@
-"""Bounded JSON objects and collection conversion (no XDTO or callbacks)."""
+"""Bounded JSON streaming and object conversion; BSL owns handler execution."""
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 import json
@@ -8,6 +9,9 @@ import stat
 from .values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from .structures import BSLStructure, BSLFixedStructure
 from .maps import BSLMap, BSLFixedMap
+from .dates import BSLDate
+from .json_dates import (BSLJSONSerializerSettings, BSLJSONDateFormat,
+                         read_json_date, write_json_date)
 
 MAX_TEXT = 1_000_000
 MAX_DEPTH = 128
@@ -230,88 +234,183 @@ class BSLJSONReader(BSLObject):
         return super().get_member(name)
 
 
-def read_json(reader, read_to_map=False):
-    # !todo Native date-name restoration, reviver callbacks and configurable
-    # maximum nesting are not part of the current ordinary collection API.
+@dataclass(frozen=True)
+class JSONCallbackRequest:
+    property: object
+    value: object
+
+
+def _names(value, *, allow_string=False):
+    if value is None:
+        return None
+    if allow_string and type(value) is str:
+        return frozenset((_text(value),))
+    if type(value) not in (BSLArray, BSLFixedArray):
+        raise TypeError("JSON: ожидается массив имен свойств")
+    if len(value.items) > 100_000:
+        raise ValueError("JSON: превышен предел имен свойств Yadinassi")
+    return frozenset(_text(name) for name in value.items)
+
+
+def _nesting(value):
+    if value is None:
+        value = Decimal(500)
+    if type(value) is not Decimal or not value.is_finite() or value < 1 or value > 500 or value != value.to_integral_value():
+        raise ValueError("JSON: максимальная вложенность должна быть целым числом от 1 до 500")
+    # The documented default is 500. The existing bounded parser has its own
+    # smaller resource ceiling, which this option cannot relax.
+    return min(int(value), MAX_DEPTH)
+
+
+def read_json_events(reader, read_to_map=False, date_properties=None, date_format=None,
+                     *, has_reviver=False, reviver_properties=None, maximum_nesting=None):
+    read_to_map = False if read_to_map is None else read_to_map
     if type(reader) is not BSLJSONReader or type(read_to_map) is not bool:
         raise TypeError("ПрочитатьJSON: ожидаются ЧтениеJSON и Булево")
-    # The global method advances first, even if the caller already read a token.
-    # Native cases13/14 distinguish it from consuming the current token.
+    date_names = _names(date_properties, allow_string=True)
+    revive_names = _names(reviver_properties) if has_reviver else None
+    date_format = BSLJSONDateFormat.ISO if date_format is None else date_format
+    if type(date_format) is not BSLJSONDateFormat:
+        raise TypeError("JSON: ожидается ФорматДатыJSON")
+    maximum = _nesting(maximum_nesting)
+    # Preserve the measured cursor rule: always advance before consuming.
     if not reader.read() or reader._current[0] in (T.END_ARRAY, T.END_OBJECT):
         return None
+    remaining = 100_000
 
-    def consume(depth):
-        if depth > MAX_DEPTH:
-            raise ValueError("JSON: превышена глубина Yadinassi")
+    def consume(depth, name=None):
+        nonlocal remaining
+        remaining -= 1
+        if depth > MAX_DEPTH or remaining < 0:
+            raise ValueError("JSON: превышен предел глубины или числа значений Yadinassi")
         kind, value = reader._current
+        if kind in (T.START_OBJECT, T.START_ARRAY) and depth + 1 > maximum:
+            raise ValueError("JSON: превышена максимальная вложенность контейнеров")
         if kind is T.START_OBJECT:
-            result = BSLMap() if read_to_map else BSLStructure()
+            value = BSLMap() if read_to_map else BSLStructure()
             while reader.read() and reader._current[0] is not T.END_OBJECT:
                 if reader._current[0] is not T.PROPERTY_NAME:
                     raise ValueError("JSON: ожидалось имя свойства")
                 key = reader._current[1]
                 reader.read()
-                result.insert(key, consume(depth + 1))
-            return result
-        if kind is T.START_ARRAY:
-            result = BSLArray()
+                value.insert(key, (yield from consume(depth + 1, key)))
+        elif kind is T.START_ARRAY:
+            value = BSLArray()
             while reader.read() and reader._current[0] is not T.END_ARRAY:
-                result.add(consume(depth + 1))
-            return result
-        if kind in (T.STRING, T.NUMBER, T.BOOLEAN, T.NULL):
-            return value
-        raise ValueError("JSON: ожидалось значение")
-    return consume(0)
+                value.add((yield from consume(depth + 1)))
+        elif kind not in (T.STRING, T.NUMBER, T.BOOLEAN, T.NULL):
+            raise ValueError("JSON: ожидалось значение")
+        # Official guide specifies children-before-parent and root-last. A
+        # selected reviver takes precedence over automatic date restoration.
+        if has_reviver and (revive_names is None or name in revive_names):
+            value = yield JSONCallbackRequest(name, value)
+        elif date_names is not None and name in date_names:
+            value = read_json_date(value, date_format)
+        return value
+    return (yield from consume(0))
+
+
+def _without_callbacks(operation):
+    try:
+        next(operation)
+    except StopIteration as done:
+        return done.value
+    finally:
+        operation.close()
+    raise TypeError("JSON: обработчик требует контекст интерпретатора")
+
+
+def read_json(reader, read_to_map=False, date_properties=None, date_format=None):
+    return _without_callbacks(read_json_events(reader, read_to_map, date_properties, date_format))
 
 
 def _quote(value):
     return json.dumps(_text(value), ensure_ascii=False).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 
-def _encode(value):
-    parts, seen, size = [], set(), 0
+_SKIP_JSON_PROPERTY = object()
+_JSON_COLLECTIONS = (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap)
+_JSON_SCALARS = (type(None), bool, str, Decimal, BSLDate)
 
-    def append(text):
+
+def encode_json_events(value, settings=None, *, has_converter=False):
+    if settings is None:
+        settings = BSLJSONSerializerSettings()
+    if type(settings) is not BSLJSONSerializerSettings:
+        raise TypeError("JSON: ожидаются НастройкиСериализацииJSON")
+    if settings.serialize_arrays_as_objects:
+        # Official guide and syntax help disagree on zero/one-based keys.
+        # Do not silently choose a wire contract without a native observation.
+        raise ValueError("JSON: запись массивов как объектов пока не поддерживается")
+    # Capture scalar options once, independently of handler mutations.
+    date_format, date_variant = settings.date_serialization_format, settings.date_writing_variant
+    seen, remaining, size = set(), 100_000, 0
+
+    def account(text):
         nonlocal size
         size += len(text)
         if size > MAX_TEXT:
             raise ValueError("JSON: превышен предел ресурсов Yadinassi")
-        parts.append(text)
+        return text
 
-    def encode(item, depth):
-        if depth > MAX_DEPTH:
-            raise ValueError("JSON: превышена глубина Yadinassi")
+    def encode(item, depth, name=None, *, may_convert=True, can_cancel=False):
+        nonlocal remaining
+        remaining -= 1
+        if depth > MAX_DEPTH or remaining < 0:
+            raise ValueError("JSON: превышен предел глубины или числа значений Yadinassi")
         kind = type(item)
-        if item is None: append("null")
-        elif kind is bool: append("true" if item else "false")
-        elif kind is str: append(_quote(item))
-        elif kind is Decimal:
+        if kind not in (*_JSON_SCALARS, *_JSON_COLLECTIONS):
+            if not has_converter or not may_convert:
+                raise TypeError("ЗаписатьJSON: тип значения пока не поддерживается")
+            item, cancel = yield JSONCallbackRequest(name, item)
+            if type(cancel) is not bool:
+                raise TypeError("JSON: Отказ обработчика должен иметь тип Булево")
+            if cancel:
+                if not can_cancel:
+                    raise ValueError("JSON: отказ записи корня или элемента массива пока не поддерживается")
+                return _SKIP_JSON_PROPERTY
+            # One replacement only; never recursively call a handler on its own
+            # unsupported result. Nested unsupported children still get handlers.
+            return (yield from encode(item, depth, name, may_convert=False, can_cancel=can_cancel))
+        if item is None: return account("null")
+        if kind is bool: return account("true" if item else "false")
+        if kind is str: return account(_quote(item))
+        if kind is BSLDate: return account(_quote(write_json_date(item, date_format, date_variant)))
+        if kind is Decimal:
             if not item.is_finite():
                 raise ValueError("JSON: ожидается конечное число")
             if abs(item.adjusted()) > 4096 or len(item.as_tuple().digits) > 4096:
                 raise ValueError("JSON: превышен предел числа Yadinassi")
-            append(format(item, "f"))
-        elif kind in (BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure, BSLMap, BSLFixedMap):
-            if id(item) in seen:
-                raise ValueError("JSON: циклическая коллекция")
-            seen.add(id(item))
-            try:
-                array = kind in (BSLArray, BSLFixedArray)
-                append("[" if array else "{")
-                for index, child in enumerate(item):
-                    if index: append(",")
-                    if not array:
-                        append(_quote(child.key))
-                        append(":")
-                        child = child.value
-                    encode(child, depth + 1)
-                append("]" if array else "}")
-            finally:
-                seen.remove(id(item))
-        else:
-            raise TypeError("ЗаписатьJSON: тип значения пока не поддерживается")
-    encode(value, 0)
-    return "".join(parts)
+            return account(format(item, "f"))
+        if id(item) in seen:
+            raise ValueError("JSON: циклическая коллекция")
+        seen.add(id(item))
+        try:
+            array = kind in (BSLArray, BSLFixedArray)
+            entries = []
+            # Snapshot this container, not the graph: callbacks cannot invalidate
+            # a live Python iterator or make it grow indefinitely.
+            if len(item.items if array else item._items) > remaining:
+                raise ValueError("JSON: превышен предел числа значений Yadinassi")
+            children = list(item)
+            for child in children:
+                key = None if array else _text(child.key)
+                source = child if array else child.value
+                encoded = yield from encode(source, depth + 1, key, can_cancel=not array)
+                if encoded is _SKIP_JSON_PROPERTY:
+                    continue
+                if not array:
+                    encoded = account(_quote(key) + ":") + encoded
+                entries.append(encoded)
+            account(("[" if array else "{") + ("," * max(0, len(entries) - 1)) + ("]" if array else "}"))
+            return ("[" if array else "{") + ",".join(entries) + ("]" if array else "}")
+        finally:
+            seen.remove(id(item))
+    return (yield from encode(value, 0))
+
+
+def _encode(value, settings=None):
+    return _without_callbacks(encode_json_events(value, settings))
 
 
 class BSLJSONLineBreak(Enum):
@@ -558,9 +657,7 @@ class BSLJSONWriter(BSLObject):
         return super().get_member(name)
 
 
-def write_json(writer, value):
-    # !todo Add native date serialization settings and conversion callbacks;
-    # unsupported values must continue to fail rather than silently stringify.
+def write_json(writer, value, settings=None):
     if type(writer) is not BSLJSONWriter:
         raise TypeError("ЗаписатьJSON: ожидается ЗаписьJSON")
-    writer._write_encoded(_encode(value))
+    writer._write_encoded(_encode(value, settings))

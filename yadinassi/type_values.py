@@ -3,7 +3,8 @@ from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuth
 from .query_packages import BSLTempTablesManager
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
-from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
+from .form_tables import BSLFormDataCollection, BSLFormDataCollectionItem
+from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormTable, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
@@ -33,6 +34,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTe
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage
 from .value_storage import BSLValueStorage
+from .json_dates import BSLJSONSerializerSettings, BSLJSONDateFormat, BSLJSONDateWritingVariant
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
 from .dates import BSLDate
@@ -80,6 +82,9 @@ _VALUE_TYPES = (
     (BSLClientApplicationForm, BSLType.FORM, "ClientApplicationForm"),
     (BSLFormAttribute, BSLType.FORM_ATTRIBUTE, "FormAttribute"),
     (BSLFormField, BSLType.FORM_FIELD, "FormField"),
+    (BSLFormTable, BSLType.FORM_TABLE, "FormTable"),
+    (BSLFormDataCollection, BSLType.FORM_DATA_COLLECTION, "FormDataCollection"),
+    (BSLFormDataCollectionItem, BSLType.FORM_DATA_COLLECTION_ITEM, "FormDataCollectionItem"),
     (BSLFormButton, BSLType.FORM_BUTTON, "FormButton"),
     (BSLFormCommand, BSLType.FORM_COMMAND, "FormCommand"),
     (BSLFormItems, BSLType.FORM_ITEMS, "FormAllItems"),
@@ -157,6 +162,9 @@ _VALUE_TYPES = (
     (BSLTextWriter, BSLType.TEXT_WRITER, "TextWriter"),
     (BSLBinaryData, BSLType.BINARY_DATA, "BinaryData"),
     (BSLTextEncoding, BSLType.TEXT_ENCODING, "TextEncoding"),
+    (BSLJSONSerializerSettings, BSLType.JSON_SERIALIZER_SETTINGS, "JSONSerializerSettings"),
+    (BSLJSONDateFormat, BSLType.JSON_DATE_FORMAT, "JSONDateFormat"),
+    (BSLJSONDateWritingVariant, BSLType.JSON_DATE_WRITING_VARIANT, "JSONDateWritingVariant"),
     (BSLJSONWriterSettings, BSLType.JSON_WRITER_SETTINGS, "JSONWriterSettings"),
     (BSLJSONLineBreak, BSLType.JSON_LINE_BREAK, "JSONLineBreak"),
     (BSLJSONReader, BSLType.JSON_READER, "JSONReader"),
