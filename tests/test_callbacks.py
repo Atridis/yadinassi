@@ -83,7 +83,7 @@ class CallbackTests(unittest.TestCase):
             self.assertIs(self.vm.execute('c.'+ru), self.vm.execute('c.'+en))
             with self.assertRaisesRegex(BSLError, 'недоступно для записи'):
                 self.vm.execute('c.'+en+'=Undefined;')
-        self.assertTrue(self.vm.execute('c.Module=ThisObject'))
+        self.assertTrue(self.vm.execute('(c.Module=ThisObject)'))
         self.assertIs(self.vm.execute('c.AdditionalParameters'), self.vm.variables['extra'])
 
     def test_properties_are_not_callable_and_python_attributes_are_closed(self):
@@ -112,8 +112,8 @@ result=RunCallback(box.Callback,7);
 
     def test_aliases_preserve_description_identity(self):
         self.vm.execute('a=Describe("Echo"); b=a; c=Describe("Echo");')
-        self.assertTrue(self.vm.execute('a=b'))
-        self.assertFalse(self.vm.execute('a=c'))
+        self.assertTrue(self.vm.execute('(a=b)'))
+        self.assertFalse(self.vm.execute('(a=c)'))
 
     def test_repeated_calls_retain_module_state_without_leaking_local_frames(self):
         self.vm.execute('''
@@ -316,13 +316,13 @@ Function Receive(Val D) Return 1; EndFunction
             for name in ('A','B'):
                 (root/(name+'.bsl')).write_text(module,encoding='utf-8')
             self.vm.execute('// #Import A.bsl\n// #Import B.bsl\n'
-                            'a=New CallbackDescription("Add",A,10); '
-                            'b=New CallbackDescription("Add","b",20); '
-                            'a1=RunCallback(a,1); b1=RunCallback(b,1); a2=RunCallback(a,1);',
+                            'da=New CallbackDescription("Add",A,10); '
+                            'db=New CallbackDescription("Add","b",20); '
+                            'a1=RunCallback(da,1); b1=RunCallback(db,1); a2=RunCallback(da,1);',
                             str(root/'Main.bsl'))
         self.assertEqual([self.vm.variables[n] for n in ('a1','b1','a2')],
                          [Decimal(12),Decimal(22),Decimal(13)])
-        self.assertIs(self.vm.execute('a.Module'), self.vm.imports['a'])
+        self.assertIs(self.vm.execute('da.Module'), self.vm.imports['a'])
 
     def test_imported_descriptor_factory_and_cross_module_chain_use_owner_state(self):
         with tempfile.TemporaryDirectory() as temp:
