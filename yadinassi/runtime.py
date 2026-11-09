@@ -986,7 +986,7 @@ class Interpreter:
         value = self.known_receiver(node)
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
-                                       BSLTextReader, BSLTextWriter, BSLXMLReader, BSLXMLWriter,
+                                       BSLTextReader, BSLTextWriter, BSLTextDocument, BSLXMLReader, BSLXMLWriter,
                                        BSLDataReader, BSLDataWriter, BSLDataHashing, BSLHTTPRequest, BSLHTTPResponse, BSLHTTPConnection, BSLInternetProxy) else None
 
     def receiver(self, node: ast.Node) -> object:
@@ -1004,6 +1004,8 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
+            return frozenset({1, 2})
         if type(receiver) is BSLInternetProxy and key in {"set", "установить"}: return frozenset({2, 3, 4, 5})
         if type(receiver) is BSLHTTPRequest and key in {"setbodyfromstring", "установитьтелоизстроки"}: return frozenset({1, 2})
         if type(receiver) is BSLHTTPResponse and key in {"getbodyasstring", "получитьтелокакстроку"}: return frozenset({0})

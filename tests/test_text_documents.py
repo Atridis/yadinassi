@@ -147,10 +147,10 @@ class TextDocumentLocalPolicyTests(unittest.TestCase):
         self.doc.insert_line(D(0), '')
         self.assertEqual(self.snapshot(), ('\n', D(1), ['']))
 
-    def test_no_file_ui_properties_indexer_iteration_or_host_members(self):
+    def test_no_ui_properties_indexer_iteration_or_host_members(self):
         vm = Interpreter(lambda _: None)
         vm.execute('d = New TextDocument();')
-        for code in ('d.Read("not-opened")', 'd.Write("not-written")', 'd.Show()',
+        for code in ('d.Show()',
                      'd.ReadAsync("not-opened")', 'd.Text', 'd._text', 'd.Encoding',
                      'd.Text="X"', 'd[0]', 'd[0]="X"', 'For Each x In d Do EndDo;'):
             with self.subTest(code=code), self.assertRaises(BSLError): vm.execute(code)

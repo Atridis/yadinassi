@@ -148,7 +148,8 @@ Distinct negative-path scope remains unchanged: array gap capacity and state;
 filled-value/string/character arity and conversion errors; Goto static errors;
 rounding assignment recovery; every source location, stderr substring and exit
 code assertion. TextDocument still checks the actual working directory for
-`must-not-write` after both frozen runs. These are not delegated to the shared
+`must-not-write` after both frozen runs: invalid encoding must be rejected before
+file creation, now that ordinary Write is supported. These are not delegated to the shared
 transport matrix.
 
 ### Exact string/composition semantic sub-ledger

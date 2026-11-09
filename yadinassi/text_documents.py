@@ -1,14 +1,17 @@
-"""Bounded in-memory TextDocument, aligned with native run 40254792139.
+"""Bounded TextDocument; in-memory operations match native run 40254792139.
 
 The raw text retains its original CR/LF/CRLF delimiters. Line mutations use LF
 for newly inserted text and leave untouched spans byte-for-byte unchanged.
-No file operations, encoding/UI properties, codecs or cross-context transport.
+Ordinary file Read/Write reuse file_io's bounded regular-file boundary. Their
+encoding/newline policy is a local extension, not new native evidence.
+No streams, encoding/UI properties, codecs or cross-context transport.
 """
 
 from decimal import Decimal
 import re
 
 from .values import BSLObject, HostFunction
+from . import file_io
 
 
 # Explicit local resource limits, not inferred limits of the 1C platform.
@@ -49,6 +52,16 @@ def _index(value):
     if (type(value) is not Decimal or not value.is_finite()
             or value != value.to_integral_value() or value < 0):
         raise TypeError("ТекстовыйДокумент: ожидается целый неотрицательный индекс")
+    return value
+
+
+def _separator(value):
+    if value is None:
+        return "\r\n"
+    if type(value) is not str:
+        raise TypeError("ТекстовыйДокумент: разделитель строк должен быть Строкой")
+    if value not in ("", "\r", "\n", "\r\n"):
+        raise ValueError("ТекстовыйДокумент: недопустимый разделитель строк")
     return value
 
 
@@ -97,6 +110,28 @@ class BSLTextDocument(BSLObject):
         units = _units(text)
         # Commit only after every input/resource validation has succeeded.
         self._text, self._spans, self._units = text, spans, units
+
+    def read(self, filename, encoding=None, separator=None):
+        file_io._encoding(encoding)  # Validate all options before filesystem I/O.
+        separator = _separator(separator)
+        text = file_io._decode(file_io._read_bytes(filename), encoding, default="utf-8")
+        if separator:
+            text = text.replace(separator, "\n")
+        # Decode, scalar Unicode, text/line budgets and span construction must
+        # all succeed before replacing any part of the old document.
+        self.set_text(text)
+
+    def write(self, filename, encoding=None, separator=None):
+        encoding, separator = file_io._encoding(encoding), _separator(separator)
+        text = self._text
+        if separator:
+            # Same ordinary newline policy as TextWriter. Keep isolated CRs;
+            # existing CRLF must not acquire a second CR on default output.
+            text = text.replace("\r\n", "\n").replace("\n", separator)
+        # Encoding and the byte budget (including BOM) are checked before the
+        # destination is opened/truncated. I/O failures are not crash-atomic.
+        data = file_io._encode(text, encoding, bom=True)
+        file_io._write_bytes(filename, data)
 
     def _replace(self, start, end, replacement):
         # A lone CR in an untouched left span must not silently combine with
@@ -155,6 +190,8 @@ class BSLTextDocument(BSLObject):
             "getline": self.get_line, "получитьстроку": self.get_line,
         }
         procedures = {
+            "read": self.read, "прочитать": self.read,
+            "write": self.write, "записать": self.write,
             "settext": self.set_text, "установитьтекст": self.set_text,
             "addline": self.add_line, "добавитьстроку": self.add_line,
             "insertline": self.insert_line, "вставитьстроку": self.insert_line,
