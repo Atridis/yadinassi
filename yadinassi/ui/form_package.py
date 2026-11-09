@@ -8,11 +8,13 @@ from pathlib import Path
 
 from ..form_model import BSLFormAttribute, name
 from ..form_runtime import MAX_SOURCE
+from ..form_tables import FormTableSchema, FormTableColumn, MAX_TABLES, MAX_TABLE_COLUMNS
 from ..invocation import InvocationBinding, _decode_scalar
 from ..type_descriptions import BSLTypeDescription
 from .protocol import decode_document, MAX_LINE_BYTES, bounded_text
 
 PACKAGE_PROTOCOL = 'yadinassi-form-app/0'
+TABLE_PACKAGE_PROTOCOL = 'yadinassi-form-app/1'
 
 
 def _keys(value, keys):
@@ -65,12 +67,13 @@ class ServerPackage:
     lifecycle: dict
     attributes: tuple
     initial_values: dict
+    tables: tuple = ()
 
 
 def load_client(directory):
     manifest = decode_document(_read(directory, 'client.json', MAX_LINE_BYTES))
     _keys(manifest, 'protocol handlers bindings')
-    if manifest['protocol'] != PACKAGE_PROTOCOL:
+    if manifest['protocol'] not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL):
         raise ValueError('invalid form package version')
     source = _read(directory, 'client.bsl', MAX_SOURCE).decode('utf-8')
     return ClientPackage(source, _bindings(manifest['handlers'], handler=True), _bindings(manifest['bindings']))
@@ -78,8 +81,10 @@ def load_client(directory):
 
 def load_server(directory):
     manifest = decode_document(_read(directory, 'server.json', MAX_LINE_BYTES))
-    _keys(manifest, 'protocol handlers endpoints lifecycle attributes')
-    if manifest['protocol'] != PACKAGE_PROTOCOL or type(manifest['lifecycle']) is not dict:
+    protocol = manifest.get('protocol') if type(manifest) is dict else None
+    _keys(manifest, 'protocol handlers endpoints lifecycle attributes' +
+          (' tables' if protocol == TABLE_PACKAGE_PROTOCOL else ''))
+    if protocol not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL) or type(manifest['lifecycle']) is not dict:
         raise ValueError('invalid form package version or lifecycle')
     source = _read(directory, 'server.bsl', MAX_SOURCE).decode('utf-8')
     endpoints = {}
@@ -99,5 +104,20 @@ def load_server(directory):
         attributes.append(BSLFormAttribute(key, BSLTypeDescription(row['type']),
             title=bounded_text(row['title'], 1024)))
         initial[key] = _decode_scalar(row['value'])
+    tables = []
+    for row in _list(manifest.get('tables', []), MAX_TABLES):
+        _keys(row, 'name title columns')
+        key = name(row['name'])
+        if key.casefold() in names:
+            raise ValueError('duplicate form table name')
+        names.add(key.casefold())
+        columns = []
+        for column in _list(row['columns'], MAX_TABLE_COLUMNS):
+            _keys(column, 'name type title readOnly')
+            if column['type'] not in ('String', 'Number', 'Boolean', 'Date'):
+                raise ValueError('invalid form table column type')
+            columns.append(FormTableColumn(column['name'], BSLTypeDescription(column['type']),
+                bounded_text(column['title'], 1024), column['readOnly']))
+        tables.append(FormTableSchema(key, tuple(columns), bounded_text(row['title'], 1024)))
     return ServerPackage(source, _bindings(manifest['handlers'], handler=True), endpoints,
-        dict(manifest['lifecycle']), tuple(attributes), initial)
+        dict(manifest['lifecycle']), tuple(attributes), initial, tuple(tables))

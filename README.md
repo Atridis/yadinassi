@@ -75,7 +75,8 @@ yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 эксперименты доступны в истории Git. Документы и регистры ещё не портированы. Для справочников и их табличных
 частей доступны [ограниченные запросы с соединениями и сводными итогами](docs/relational-catalog-queries.md),
 [вычисляемыми полями и условными отчётами](docs/computed-catalog-queries.md),
-[пакетами и временными таблицами](docs/query-packages-temporary-tables.md). Реальная 1С остаётся эталоном поведения BSL через официальные
+[пакетами и временными таблицами](docs/query-packages-temporary-tables.md),
+[объединениями и типизированными внешними таблицами](docs/query-unions-external-sources.md). Реальная 1С остаётся эталоном поведения BSL через официальные
 XML/BSL-интерфейсы, а не эталоном внутреннего формата хранения.
 
 `InfoBaseConnectionString()` / `СтрокаСоединенияИнформационнойБазы()` возвращает
@@ -115,6 +116,21 @@ python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
 только вторую команду: создание никогда не перезаписывает существующий файл.
 Это ограниченный локальный редактор, не нативные управляемые формы 1С.
 [Пошаговый запуск и проверка сохранения](docs/demo-quickstart.md).
+
+### Прикладные формы с клиентским и серверным BSL
+
+```console
+python -m yadinassi.ui.form_app examples/forms/estimate --open-browser
+python -m yadinassi --create-db orders.sqlite --import-xml examples/forms/order-intake/configuration
+python -m yadinassi.ui.form_app examples/forms/order-intake --f orders.sqlite --open-browser
+```
+
+Первый пример вычисляет итог, второй позволяет добавить и отредактировать строки,
+выбрать и удалить строку, пересчитать суммы и сохранить шапку с табличной частью
+справочника одним серверным `Write`. Браузер отображает форму; клиентский BSL
+исполняется локально, серверный BSL и SQLite работают в отдельном процессе.
+Старые скалярные пакеты совместимы. Это ограниченный host-API, не импорт форм 1С.
+[Запуск и границы](docs/form-app.md), [таблицы и сохранение заказа](docs/form-tables.md).
 
 ## Разработка
 

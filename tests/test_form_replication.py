@@ -286,7 +286,7 @@ for raw in sys.stdin.buffer:
         self.command(client)
         frame = decode_line(requests[-1])
         self.assertEqual(frame['arguments'], [{'type': 'Number', 'value': '0.70'}])
-        self.assertEqual(set(frame['delta']), {'attributes', 'items', 'title'})
+        self.assertEqual(set(frame['delta']), {'attributes', 'items', 'title', 'cells', 'selections'})
         self.assertEqual(dict(frame['delta']['attributes'])['price'], {'type': 'Number', 'value': '7'})
         self.assertEqual(next(item for item in frame['delta']['items'] if item[0] == 'PriceField')[1], 'client edited')
 

@@ -43,12 +43,13 @@ repository source examples, not bundled user data.
 A directory contains four fixed UTF-8 files:
 
 - `client.bsl`: client-only module, without server bodies.
-- `client.json`: `yadinassi-form-app/0`, trusted client handler descriptors and
+- `client.json`: `yadinassi-form-app/0` or `/1`, trusted client handler descriptors and
   remote endpoint signatures. Each binding has `name`, integer `endpoint`,
   `parameters` and exact Boolean `isFunction`.
 - `server.bsl`: server-only module. Code and database handles stay in the child.
 - `server.json`: the same protocol, handler signatures, endpoint/routine map,
-  lifecycle bindings, and scalar attribute definitions.
+  lifecycle bindings, and scalar attribute definitions. Version `/1` also requires
+  fixed `tables` schemas; `/0` scalar packages remain supported unchanged.
 
 The two JSON manifests in each example are complete templates. Each attribute
 has `name`, `type`, `title`, `value`; types are String, Number, Boolean or Date.
@@ -68,7 +69,7 @@ source. Do not edit a package during startup.
 ## Events, failures and shutdown
 
 Browser requests select only `hello`, read-only `snapshot`, or a `change`,
-`command`, ordinary `close` event with exact UI revision and an existing control.
+`command`, `cell`, `select`, or ordinary `close` event with exact UI revision and an existing control.
 A repeated hello reattaches to the same session without repeating OnOpen.
 A stale click returns current state without executing again. Response snapshots
 contain only bounded display data, messages and a finite error code.
@@ -100,7 +101,10 @@ server/TLS deployment. BSL remains trusted and retains its existing capabilities
 Flat scalar fields, checkboxes, labels, buttons and cancelable close are admitted.
 Dates, Undefined and Null are initially display-only in the renderer. Decimal
 inputs retain exact text and never pass through binary floating-point parsing.
-No tables/reference controls, browser BSL engine, NoContext manifest endpoints,
+Fixed scalar tables are supported by version `/1` packages, with row identities,
+selection and cell editing. See [the order-intake guide](form-tables.md) for the
+complete browser-to-SQLite example and explicit limits. No reference controls,
+browser BSL engine, NoContext manifest endpoints,
 async dialogs or network deployment are added. Existing host APIs retain their
 broader composition options. This launcher establishes no new native 1C event
 ordering, cancellation or replication parity.

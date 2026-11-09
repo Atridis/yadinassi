@@ -35,7 +35,6 @@ class QueryParserTests(unittest.TestCase):
             'SELECT * FROM Catalog.Products',
             'SELECT Code FROM Document.Invoice',
             'SELECT Code FROM Catalog.Products, Catalog.Categories',
-            'SELECT Code FROM Catalog.Products UNION SELECT Code FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products; SELECT Code FROM Catalog.Products',
             'DELETE FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products WHERE Code = (SELECT Code FROM Catalog.Categories)',
