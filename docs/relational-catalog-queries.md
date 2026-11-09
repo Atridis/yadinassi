@@ -67,7 +67,7 @@ native measurement. No float conversion or ambient Decimal-context rounding is u
 Scalar-only results support the existing typed `Unload` ValueTable, including
 Null from LEFT JOIN or empty aggregates. Dynamic-reference projections retain
 cursor support; their `Unload` remains explicitly unsupported. No query writes,
-implicit casts, SQL passthrough, arbitrary functions, arithmetic projections,
+implicit casts, SQL passthrough, arbitrary functions,
 nested aggregates, subqueries, UNION, temporary tables, RIGHT/FULL/CROSS JOIN or
 native regional collation are added. Section line numbers and owner dereferencing
 remain outside the profile; joining the owner is the explicit supported route.
@@ -107,3 +107,6 @@ fixture or evidence gate is weakened or relabeled. The existing Query24 native
 observations establish only their earlier scalar slice. Native relational
 observations and detailed parity calibration remain future work; do not interpret
 this functional host increment as full native query certification.
+
+[Computed expressions](computed-catalog-queries.md) add arithmetic, CASE, ISNULL,
+parameters/literals and conditional aggregation to this relational profile.

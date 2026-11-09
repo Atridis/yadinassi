@@ -41,7 +41,6 @@ class QueryParserTests(unittest.TestCase):
             'DELETE FROM Catalog.Products',
             'SELECT Code FROM Catalog.Products WHERE Code = (SELECT Code FROM Catalog.Categories)',
             'SELECT Code FROM Catalog.Products WHERE Code LIKE "A%"',
-            'SELECT Code FROM Catalog.Products WHERE Code = NULL',
             'SELECT P.Category.Code FROM Catalog.Products AS P',
         ]
         for text in variants:
