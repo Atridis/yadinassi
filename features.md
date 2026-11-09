@@ -5931,3 +5931,13 @@ Authorization, HTTP proxy и CONNECT. Существующие методы, т�
 неявных credentials, изменения системного доверия или автоматического redirect.
 Это локальная реализация, без нового native-паритета TLS/auth/proxy.
 [API, примеры, границы и проверки](docs/secure-http-transport.md).
+
+
+## ValueStorage: typed snapshots and Deflation
+
+Added the official Deflation/СжатиеДанных settings and bounded compressed string/binary
+payloads in ValueStorage, plus supported typed ValueTable schemas, qualifiers, column
+metadata and rebuilt index definitions. The same snapshot traversal preserves independent
+Get results and resource/admission rules. This is a local cache profile, not the physical
+1C storage format. Official signatures, native27 evidence and precise limits:
+[contract](docs/value-storage-typed-compression.md).

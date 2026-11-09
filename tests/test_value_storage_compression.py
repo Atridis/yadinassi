@@ -203,3 +203,30 @@ class ValueStorageCompressionTests(unittest.TestCase):
                        'Caught=False; Try X=Broken.Get(); Except Caught=True; EndTry; Y=Good.Get();')
             self.assertIs(vm.variables['caught'], True); self.assertEqual(vm.variables['y'], 'keep')
         finally: vm.close()
+
+    def test_typed_table_metadata_indexes_and_compression_share_one_snapshot(self):
+        from yadinassi.type_descriptions import BSLTypeDescription
+        from test_value_storage_typed_tables import table_with
+        source = table_with(BSLTypeDescription('String'), ('large' * 1000,), title='Label', width=D(24))
+        source.indexes.add('Item')
+        holder = BSLValueStorage(array(source), BSLDeflation(D(9)))
+        source.rows[0].set(D(0), 'changed')
+        first = holder.get().items[0]; second = holder.get().items[0]
+        self.assertEqual(first.rows[0].get(D(0)), 'large' * 1000)
+        self.assertEqual(first.columns.items[0].title, 'Label')
+        self.assertEqual(first.columns.items[0].width, D(24))
+        self.assertIs(first.indexes.items[0].table, first)
+        first.rows[0].set(D(0), 'new')
+        self.assertEqual(second.rows[0].get(D(0)), 'large' * 1000)
+
+    def test_nullable_query_results_roundtrip_with_compression_and_indexes(self):
+        from test_value_storage_typed_tables import query_table, rows
+        source = query_table(); source.indexes.add('Label, Amount')
+        holder = BSLValueStorage(source, BSLDeflation())
+        result = holder.get()
+        self.assertEqual(rows(result), rows(source))
+        for before, after in zip(source.columns.items, result.columns.items):
+            self.assertEqual(after.value_type.types, before.value_type.types)
+            self.assertIsNotNone(after.value_type._query_scalar)
+        self.assertIs(result.indexes.items[0].table, result)
+        with self.assertRaises(ValueError): result.add()

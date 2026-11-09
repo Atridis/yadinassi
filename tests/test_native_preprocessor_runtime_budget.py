@@ -52,7 +52,7 @@ def source_provenance():
     # Exercise the real source inventory/aggregate hashing. Installed dependency
     # availability is irrelevant to this byte budget, so supply pinned versions.
     # Current union: 142 runtime, project/native and packaged renderer files.
-    # Forms add two modules and five assets; JSON dates and query packages add one module each.
+    # The union includes JSON dates, query packages and Deflation settings.
     # This exact source expectation is not the unchanged 512-file protocol cap.
     # Independent provenance checks bind the source additions and reject byte drift.
     with mock.patch.object(full.importlib.metadata,'version',side_effect=lambda name:full.DEPENDENCIES[name]):
