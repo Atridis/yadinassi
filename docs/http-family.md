@@ -22,6 +22,10 @@ Empty bodies and an unset body remain distinct. Response status codes including
 until the complete bounded response has been received and validated. This does
 not promise transactional rollback of a subsequent disk-write failure.
 
+The original plaintext checkpoint is extended by the [verified HTTPS/auth/proxy
+family](secure-http-transport.md). Its new behavior is local and has no new native
+TLS/auth/proxy capture. The policies below are updated for that extension.
+
 ## Explicit implementation policy
 
 * Response framing rejects duplicate Content-Length, Content-Length together
@@ -30,12 +34,11 @@ not promise transactional rollback of a subsequent disk-write failure.
   supported; truncated declared bodies are refused before output-file writes.
 * One fresh connection per operation; no connection pool, cookie jar, automatic
   decompression, environment proxy or inferred credentials.
-* Proxy, nonempty credentials, OS authentication, CONNECT, TRACE and unsupported
-  special request headers are rejected before network access.
-* TLS is **not implemented in this checkpoint**. Supplying a secure-connection
-  object is rejected, never downgraded to plaintext. The native no-CA OpenSSL
-  constructor's disabled-verification default is not reproduced. Verified trust
-  configuration requires a separate ordinary TLS workflow.
+* Explicit verified TLS, Basic/Bearer credentials and HTTP proxies are supported
+  by the linked family. OS authentication, caller-issued CONNECT/TRACE and
+  unsupported special headers are rejected before network access.
+* TLS requires an explicit CA file/OS object; the native no-CA OpenSSL disabled-
+  verification default is rejected. No trust bypass or plaintext downgrade exists.
 * 8 MiB admitted request/response body; 100 admitted headers and 64 KiB aggregate
   admitted header bytes; target at most 8,192 characters/encoded bytes. The stdlib
   response parser first applies its own finite per-line/count bounds, then this
@@ -49,7 +52,7 @@ not promise transactional rollback of a subsequent disk-write failure.
 * Existing regular-file path/read/write boundaries apply; no new filesystem
   authority, network authentication store or process privilege is introduced.
 
-!todo: verified TLS constructors, cancellable DNS, proxy/authentication,
+!todo: client certificates, native TLS/auth/proxy calibration, cancellable DNS,
 redirect policy, async operations, advanced transfer features and exact native
 edge coercions. Unsupported cases must fail explicitly, not silently alter
 security or request meaning.

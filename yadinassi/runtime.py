@@ -1,3 +1,5 @@
+from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
+                            BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
@@ -254,6 +256,10 @@ class Interpreter:
         self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
         self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
         self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
+        self.register_type("ЗащищенноеСоединениеOpenSSL", BSLOpenSSLSecureConnection, "OpenSSLSecureConnection")
+        self.register_type("СертификатыУдостоверяющихЦентровФайл", BSLFileCertificationAuthorityCertificates, "FileCertificationAuthorityCertificates")
+        self.register_type("СертификатыУдостоверяющихЦентровОС", BSLOSCertificationAuthorityCertificates, "OSCertificationAuthorityCertificates")
+        self.register_type("ИнтернетПрокси", BSLInternetProxy, "InternetProxy")
         self.register_type("HTTPСоединение", BSLHTTPConnection, "HTTPConnection")
         self.register_type("HTTPЗапрос", BSLHTTPRequest, "HTTPRequest")
         self.register_type("ХешированиеДанных", BSLDataHashing, "DataHashing")
@@ -1048,7 +1054,7 @@ class Interpreter:
         return value if type(value) in (_Module, BSLValueTable, BSLValueTableColumnCollection,
                                        BSLValueList, BSLValueTreeColumnCollection, BSLJSONReader, BSLJSONWriter,
                                        BSLTextReader, BSLTextWriter, BSLTextDocument, BSLXMLReader, BSLXMLWriter,
-                                       BSLDataReader, BSLDataWriter, BSLDataHashing, BSLHTTPRequest, BSLHTTPResponse, BSLHTTPConnection) else None
+                                       BSLDataReader, BSLDataWriter, BSLDataHashing, BSLHTTPRequest, BSLHTTPResponse, BSLHTTPConnection, BSLInternetProxy) else None
 
     def receiver(self, node: ast.Node) -> object:
         """Use one explicit import-or-value receiver route for all member access."""
@@ -1067,6 +1073,7 @@ class Interpreter:
         key = name.casefold()
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
             return frozenset({1, 2})
+        if type(receiver) is BSLInternetProxy and key in {"set", "установить"}: return frozenset({2, 3, 4, 5})
         if type(receiver) is BSLHTTPRequest and key in {"setbodyfromstring", "установитьтелоизстроки"}: return frozenset({1, 2})
         if type(receiver) is BSLHTTPResponse and key in {"getbodyasstring", "получитьтелокакстроку"}: return frozenset({0})
         if type(receiver) is BSLHTTPConnection:
@@ -1453,10 +1460,13 @@ class Interpreter:
                                     or factory.function is BSLTextWriter
                                     or factory.function is BSLDataReader
                                     or factory.function is BSLDataWriter
+                                    or factory.function is BSLOpenSSLSecureConnection
+                                    or factory.function is BSLFileCertificationAuthorityCertificates
                                     or factory.function is BSLHTTPConnection
                                     or factory.function is BSLHTTPRequest):
             if (factory.function is BSLTextReader or factory.function is BSLTextWriter
                     or factory.function is BSLDataReader or factory.function is BSLDataWriter
+                    or factory.function is BSLFileCertificationAuthorityCertificates
                     or factory.function is BSLHTTPConnection or factory.function is BSLHTTPRequest):
                 self.reject_host_omissions(node.arguments[:1])
             # The observed descriptor overloads use positional qualifier holes.

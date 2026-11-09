@@ -1,9 +1,9 @@
 """Bounded ordinary synchronous HTTP objects, without implicit credentials.
 
-No proxy/environment authentication, redirects, cookie jar, decompression or TLS
-fallback. DNS resolution is OS-controlled and is NOT covered by the finite socket
-operation deadline. !todo cancellable DNS, TLS verified trust-source constructors,
-async operations and advanced authentication need separate reviewed workflows.
+Explicit TLS trust, Basic authentication and HTTP proxies are supported. No
+environment credentials, redirects, cookie jar, decompression or TLS fallback.
+DNS resolution is OS-controlled and is NOT covered by the socket deadline.
+!todo cancellable DNS, client certificates, async and advanced authentication.
 """
 from decimal import Decimal
 import http.client
@@ -20,6 +20,8 @@ from .binary_streams import (_Enum, _Namespace, _number, _stream_path, binary_da
                              BSLMemoryStream, BSLStream)
 from .data_io import _encoded
 from .maps import BSLMap
+from .http_security import (BSLOpenSSLSecureConnection, BSLInternetProxy,
+                            server_name, authority, credentials, basic_authorization)
 
 MAX_BODY = 8 * 1024 * 1024
 MAX_HEADER_BYTES = 65536
@@ -269,13 +271,16 @@ class _ResponseSocket:
 
 
 class _Connection(http.client.HTTPConnection):
-    def __init__(self, host, port, seconds):
+    def __init__(self, host, port, seconds, *, tls_context=None, proxy=None):
         super().__init__(host, port, timeout=seconds)
         self.seconds = seconds; self.deadline = None
+        self._tls_context, self._proxy = tls_context, proxy
     def connect(self):
         # OS name resolution has its own platform policy and may exceed this
         # socket budget. !todo cancellation-aware resolver, not orphan threads.
-        addresses = socket.getaddrinfo(self.host, self.port, 0, socket.SOCK_STREAM)
+        peer_host = self._proxy.host if self._proxy is not None else self.host
+        peer_port = self._proxy.port if self._proxy is not None else self.port
+        addresses = socket.getaddrinfo(peer_host, peer_port, 0, socket.SOCK_STREAM)
         if len(addresses) > 32: raise ValueError('HTTP: слишком много адресов сервера')
         self.deadline = time.monotonic() + self.seconds
         last = None
@@ -284,10 +289,62 @@ class _Connection(http.client.HTTPConnection):
             if remaining <= 0: raise TimeoutError('HTTP socket deadline')
             sock = socket.socket(family, kind, proto)
             try:
-                sock.settimeout(remaining); sock.connect(address); self.sock = sock; return
+                sock.settimeout(remaining); sock.connect(address); self.sock = sock; break
             except OSError as error:
                 last = error; sock.close()
-        raise OSError('HTTP connection failed') from last
+        else:
+            raise OSError('HTTP connection failed') from last
+        try:
+            if self._tls_context is not None:
+                if self._proxy is not None:
+                    self._connect_tunnel()
+                self._set_remaining_timeout()
+                self.sock = self._tls_context.wrap_socket(self.sock, server_hostname=self.host)
+        except BaseException:
+            self.close()
+            raise
+
+    def _set_remaining_timeout(self):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError('HTTP socket deadline')
+        self.sock.settimeout(remaining)
+
+    def _connect_tunnel(self):
+        destination = authority(self.host, self.port)
+        lines = ['CONNECT ' + destination + ' HTTP/1.1', 'Host: ' + destination]
+        authentication = basic_authorization(self._proxy.user, self._proxy.password)
+        if authentication is not None:
+            lines.append('Proxy-Authorization: ' + authentication)
+        self.send(('\r\n'.join(lines) + '\r\n\r\n').encode('ascii'))
+        response = self.response_class(self.sock, method='CONNECT')
+        try:
+            # Parse only the proxy response head. No origin request/body/auth is
+            # sent until CONNECT and the verified TLS handshake both succeed.
+            version, status, reason = response._read_status()
+            if status != 200:
+                raise ValueError('HTTP: прокси отказал в CONNECT')
+            pairs = []; size = 0
+            while True:
+                line = response.fp.readline(MAX_HEADER_BYTES + 1)
+                size += len(line)
+                if size > MAX_HEADER_BYTES or not line.endswith(b'\r\n'):
+                    raise ValueError('HTTP: недопустимый ответ CONNECT')
+                if line == b'\r\n':
+                    break
+                if len(pairs) >= MAX_HEADERS or line[:1] in (b' ', b'\t'):
+                    raise ValueError('HTTP: недопустимые заголовки CONNECT')
+                name, separator, value = line[:-2].partition(b':')
+                if not separator:
+                    raise ValueError('HTTP: недопустимый заголовок CONNECT')
+                pairs.append((name.decode('ascii'), value.strip(b' \t').decode('latin-1')))
+            _header_map(pairs)
+            if any(key.lower() == 'transfer-encoding' or
+                   (key.lower() == 'content-length' and value != '0') for key, value in pairs):
+                raise ValueError('HTTP: тело ответа CONNECT не поддерживается')
+        finally:
+            response.close()
+
     def send(self, data):
         if self.sock is None: self.connect()
         remaining = self.deadline - time.monotonic()
@@ -301,27 +358,28 @@ class _Connection(http.client.HTTPConnection):
 class BSLHTTPConnection(_FileMethods):
     def __init__(self, host, port=None, user=None, password=None, proxy=None,
                  timeout=None, secure_connection=None, use_os_authentication=None):
-        host = _text(host, 253)
-        if not host or any(c in host for c in '/\\@?# ') or any(ord(c)<32 or ord(c)==127 for c in host):
-            raise ValueError('HTTP: требуется имя сервера без схемы и пути')
-        if host.startswith('[') and host.endswith(']'): host = host[1:-1]
-        # No credentials are inferred from environment, URL, OS or proxy config.
-        for value in (user, password):
-            if value is not None and (type(value) is not str or value != ''):
-                raise ValueError('HTTP: аутентификация пока не поддерживается')
-        if proxy is not None or secure_connection is not None:
-            raise ValueError('HTTP: прокси и TLS пока не поддерживаются; понижение до HTTP запрещено')
+        host = server_name(host)
+        user, password = credentials(user, password)
+        if proxy is not None and type(proxy) is not BSLInternetProxy:
+            raise ValueError('HTTP: ожидается ИнтернетПрокси')
+        if secure_connection is not None and type(secure_connection) is not BSLOpenSSLSecureConnection:
+            raise ValueError('HTTP: ожидается ЗащищенноеСоединениеOpenSSL')
         if use_os_authentication is not None and use_os_authentication is not False:
             raise ValueError('HTTP: аутентификация ОС не поддерживается')
-        self._host = host; self._port = 80 if port is None else _number(port,65535,1)
+        self._host = host
+        self._port = (443 if secure_connection is not None else 80) if port is None else _number(port,65535,1)
         self._timeout = 0 if timeout is None else _number(timeout,MAX_TIMEOUT)
+        self._user, self._password = user, password
+        self._proxy, self._secure = proxy, secure_connection
+
     def __str__(self): return 'HTTPСоединение'
     def get_member(self, name):
         key = name.casefold()
         values = {'host':self._host,'сервер':self._host,'port':Decimal(self._port),'порт':Decimal(self._port),
-                  'timeout':Decimal(self._timeout),'таймаут':Decimal(self._timeout),'user':'','пользователь':'',
-                  'password':'','пароль':'','proxy':None,'прокси':None,'secureconnection':None,
-                  'защищенноесоединение':None,'issecure':False,'защищенное':False,
+                  'timeout':Decimal(self._timeout),'таймаут':Decimal(self._timeout),'user':self._user,'пользователь':self._user,
+                  'password':self._password,'пароль':self._password,'proxy':self._proxy,'прокси':self._proxy,
+                  'secureconnection':self._secure,'защищенноесоединение':self._secure,
+                  'issecure':self._secure is not None,'защищенное':self._secure is not None,
                   'useosauthentication':False,'использоватьаутентификациюос':False}
         if key in values: return values[key]
         return super().get_member(name)
@@ -340,17 +398,32 @@ class BSLHTTPConnection(_FileMethods):
         body = request._bytes(); pairs = _headers(request._headers); headers = {}
         for key,value in pairs:
             lower = key.lower()
-            if lower in ('transfer-encoding','expect','host','proxy-authorization','authorization','cookie'):
+            if lower in ('transfer-encoding','expect','host','proxy-authorization','cookie'):
                 raise ValueError('HTTP: специальный заголовок пока не поддерживается')
+            if lower == 'authorization' and self._user:
+                raise ValueError('HTTP: два источника Authorization')
             if lower=='content-length' and value != str(len(body or b'')):
                 raise ValueError('HTTP: Content-Length не соответствует телу')
             if lower=='connection' and value.lower()!='close': raise ValueError('HTTP: постоянное соединение пока не поддерживается')
             headers[key] = value
+        authentication = basic_authorization(self._user, self._password)
+        if authentication is not None:
+            headers['Authorization'] = authentication
         headers['Connection']='close'
+        protocol = 'https' if self._secure is not None else 'http'
+        proxy = self._proxy._settings(protocol) if self._proxy is not None else None
+        if proxy is not None and self._secure is None:
+            authentication = basic_authorization(proxy.user, proxy.password)
+            if authentication is not None:
+                headers['Proxy-Authorization'] = authentication
+            target = 'http://' + authority(self._host, self._port) + target
+        # Generated headers count toward the same admission budget.
+        _header_map(list(headers.items()))
         filename = None if output_file is None else _text(output_file)
         filename = _stream_path(filename) if filename else None
         seconds = self._timeout or DEFAULT_SOCKET_SECONDS
-        connection = _Connection(self._host,self._port,seconds)
+        context = self._secure._context() if self._secure is not None else None
+        connection = _Connection(self._host,self._port,seconds,tls_context=context,proxy=proxy)
         try:
             connection.request(method,target,body=body,headers=headers)
             response = connection.getresponse()

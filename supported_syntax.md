@@ -1059,3 +1059,13 @@ not establish native equivalence; the ordinary40 profile will calibrate it.
 host callback, либо Текст выводится существующим способом. Привязка к экземпляру
 объекта задаётся host API; автоматическая подсветка и открытие форм отсутствуют.
 Это локальный этап без native-подтверждения. [Контракт](docs/user-messages.md).
+
+## Защищённый HTTP transport
+
+`ЗащищенноеСоединениеOpenSSL / OpenSSLSecureConnection`,
+`СертификатыУдостоверяющихЦентровФайл / FileCertificationAuthorityCertificates`,
+`СертификатыУдостоверяющихЦентровОС / OSCertificationAuthorityCertificates` и
+`ИнтернетПрокси / InternetProxy` расширяют HTTP workflow проверенным HTTPS,
+явной Basic/Bearer аутентификацией и HTTP proxy/CONNECT. Имена, аргументы,
+политика доверия, ограничения и отсутствие native-паритета перечислены в
+[контракте](docs/secure-http-transport.md).
