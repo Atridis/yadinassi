@@ -127,8 +127,25 @@ test('explicit intake discard abandons invalid drafts only after authoritative s
   const discard=buttons(env.document).find(value=>value.textContent==='Discard new order');
   const gate=deferred(); let request;
   app.client.exchange=async incoming=>{request=incoming;await gate.promise;return response(incoming,workspace({revision:2}),{session:'s1'});};
-  discard.emit('click'); await Promise.resolve(); assert.equal(request.method,'workspace.discard');
+  const discarding = app.discardActive(); await Promise.resolve(); assert.equal(request.method,'workspace.discard');
   assert.equal(app.mounts.has('s1'),true); assert.equal(node.value,'bad'); gate.resolve();
-  await app.client.tail; await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  await discarding;
   assert.equal(app.mounts.has('s1'),false); assert.equal(app.client.terminal,false);
+});
+
+test('duplicate pending open coalesces but a later deliberate open gets its own session', async () => {
+  const {app,exchange,requests} = host(); await app.ready;
+  const gate = deferred();
+  app.client.exchange = async request => {
+    if (request.method === 'workspace.open') await gate.promise;
+    return exchange(request);
+  };
+  const first = app.openForm(null), duplicate = app.openForm(null);
+  assert.equal(first,duplicate); gate.resolve(); await first;
+  assert.equal(requests.filter(request=>request.method==='workspace.open').length,1);
+  assert.equal(app.mounts.size,1);
+  await app.openForm(null);
+  const opens = requests.filter(request=>request.method==='workspace.open');
+  assert.equal(opens.length,2); assert.notEqual(opens[0].params.request,opens[1].params.request);
+  assert.equal(app.mounts.size,2);
 });

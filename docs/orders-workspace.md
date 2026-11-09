@@ -10,7 +10,8 @@ python -m yadinassi.ui.orders_workspace examples/forms --f orders.sqlite --open-
 
 Database creation is an explicit separate operation. The workspace never creates
 or migrates a database. Its package root is a trusted host argument, not browser
-input. Only the fixed `order-intake` and `order-editor` children are admitted.
+input. Only the fixed `order-intake` and `order-editor` children are admitted. Each side
+loads its package files once at startup; stop/restart to deploy source changes.
 
 Choose New order, or Open order beside a listed record. Up to four live forms are
 retained. Switch between the list and form tabs without saving, validating or

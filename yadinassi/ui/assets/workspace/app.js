@@ -838,7 +838,7 @@ function mountWorkspace(environment, root, exchange = null) {
     // Navigation never blurs an input into a form event. Keyboard targets also carry data-form-action.
     node.addEventListener('pointerdown', event => event.preventDefault()); node.addEventListener('click', action); parent.append(node); return node;
   };
-  const mounts = new Map(); let active = null, navigation = 0, openToken = 0, status = '';
+  const mounts = new Map(), openings = new Map(); let active = null, navigation = 0, openToken = 0, status = '';
   let client;
   function show(id) {
     navigation++; active = id;
@@ -880,7 +880,14 @@ function mountWorkspace(environment, root, exchange = null) {
     }
     paint();
   }
-  async function openForm(row) {
+  function openForm(row) {
+    const key = `${client.state.revision}:${row === null ? 'new' : row}`;
+    if (openings.has(key)) return openings.get(key);
+    const opening = performOpen(row).finally(() => openings.delete(key));
+    openings.set(key, opening);
+    return opening;
+  }
+  async function performOpen(row) {
     const generation = ++navigation;
     const title = row === null ? 'New order' : `Order ${client.state.orders.find(order => order.id === row)?.code || row}`;
     const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${++openToken}`});
@@ -907,11 +914,12 @@ function mountWorkspace(environment, root, exchange = null) {
     if (mounts.size) { status = 'Close each form tab before closing the workspace.'; paint(); return; }
     await perform('workspace.close',{});
   });
-  const discard = button('Discard new order',toolbar, async () => {
+  async function discardActive() {
     if (discard.disabled || discard.hidden) return;
     const result = await perform('workspace.discard',{session:active});
     if (result && result.error === null) reconcile();
-  });
+  }
+  const discard = button('Discard new order',toolbar, discardActive);
   list.append(label);
   const refresh = button('Find / Refresh orders',list, () => perform('workspace.list',{code:code.value}));
   list.append(truncation,rows); shell.append(title,toolbar,tabs,notice,list,panels); root.replaceChildren(shell);
@@ -922,7 +930,7 @@ function mountWorkspace(environment, root, exchange = null) {
   client = new WorkspaceClient(exchange, () => paint(), () => { for (const entry of mounts.values()) entry.mount.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
   paint(); const ready = perform('workspace.hello',{protocol:WORKSPACE_PROTOCOL});
-  return {ready,client,mounts,show,pending,openForm};
+  return {ready,client,mounts,show,pending,openForm,discardActive};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('orders-app')) mountWorkspace(window,window.document.getElementById('orders-app'));
 

@@ -373,7 +373,6 @@ async function main(){
     await visibleField('Price, row 1').fill('3.25');
     await visibleButton('Save order').click();await workspaceIdle();
     await visibleButton('Close form').click();
-    await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="Open forms"] button').length===1);
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
     await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
     await button('Find / Refresh orders').click();
@@ -398,6 +397,7 @@ async function main(){
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_workspace_overflow');
     await screenshot('orders-workspace-narrow.png');
     await visibleButton('Close form').click();
+    await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="Open forms"] button').length===1);
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
     await visibleButton('Close form').click();
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});

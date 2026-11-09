@@ -23,6 +23,11 @@ MAX_SESSIONS = 256
 PACKAGES = {'intake': 'order-intake', 'editor': 'order-editor'}
 
 
+class WorkspaceOperationFailed(ValueError):
+    """An authoritative management refusal, not a broken replica transport."""
+
+
+
 def package_path(root, kind):
     return Path(root) / PACKAGES[kind]
 
@@ -36,6 +41,7 @@ class OrdersBroker:
     """Child-only registry: each replica owns a database context and object session."""
     def __init__(self, root, database):
         self.root, self.database = root, database
+        self.packages = {kind: load_server(package_path(root, kind)) for kind in PACKAGES}
         self.context = SQLiteDBContext(database)
         self.vm = Interpreter(database_context=self.context)
         self.listing = OrdersWorkbenchSession(self.context)
@@ -78,7 +84,7 @@ class OrdersBroker:
             kind = 'intake' if row is None else 'editor'
             context = SQLiteDBContext(self.database)
             try:
-                package = load_server(package_path(self.root, kind))
+                package = self.packages[kind]
                 application = None if row is None else OrdersWorkbenchSession(context, initial_record=self.choices[row])
                 server = ReplicatedFormServer(package.source, package.endpoints,
                     handlers=package.handlers, attributes=package.attributes, tables=package.tables,
@@ -158,6 +164,7 @@ def serve_runtime(root, database):
 class WorkspaceController:
     def __init__(self, root, exchange):
         self.root, self.transport = root, exchange
+        self.packages = {kind: load_client(package_path(root, kind)) for kind in PACKAGES}
         self.sessions = {}
         self.operations = {}
         self.issued = set()
@@ -221,7 +228,15 @@ class WorkspaceController:
                 controller.session.uncertain = True
             raise LocalTransportError('unavailable') from None
         if response['error'] is not None:
-            raise ValueError('workspace operation failed')
+            if operation in ('create', 'list'):
+                raise WorkspaceOperationFailed('workspace operation failed')
+            # A failed retirement/abandon may already have removed child state.
+            # Keep every parent form retained and fail closed, never fabricate a
+            # sessionless ordinary response or replay cleanup on this transport.
+            self.uncertain = True
+            for controller, _ in self.sessions.values():
+                controller.session.uncertain = True
+            raise LocalTransportError('unavailable')
         return response['result']
 
     def _state(self):
@@ -263,7 +278,7 @@ class WorkspaceController:
                     previous, sid, error = self.operations[token]
                     if previous != intent:
                         raise ValueError('open token reused')
-                    if sid not in self.sessions:
+                    if sid is not None and sid not in self.sessions:
                         error, sid = 'retired_session', None
                 elif len(self.operations) >= MAX_SESSIONS:
                     error = 'capacity'
@@ -273,8 +288,9 @@ class WorkspaceController:
                     if not error:
                         sid, kind = result['session'], result['kind']
                         self.issued.add(sid)
+                        controller = None
                         try:
-                            package = load_client(package_path(self.root, kind))
+                            package = self.packages[kind]
                             # Trusted fixed intake lifecycle policy, independent of v2 application selection.
                             if kind == 'intake':
                                 package = replace(package, dirty_attribute='Dirty')
@@ -283,10 +299,18 @@ class WorkspaceController:
                             controller = FormController(package, exchange)
                             form = controller.exchange({'jsonrpc': '2.0', 'id': 1, 'method': 'form.hello',
                                                         'params': {'protocol': FORM_PROTOCOL}})
+                            if controller.session.uncertain:
+                                self.uncertain = True
+                                for other, _ in self.sessions.values():
+                                    other.session.uncertain = True
                             if form['result']['error'] or form['result']['state']['kind'] == 'closed':
                                 raise ValueError('open failed')
                             self.sessions[sid] = (controller, kind)
                         except Exception:
+                            if controller is not None and controller.session.uncertain:
+                                self.uncertain = True
+                                for other, _ in self.sessions.values():
+                                    other.session.uncertain = True
                             if not self.uncertain:
                                 self._call('retire', sid)
                             sid, form, error = None, None, 'open_failed'
@@ -332,6 +356,9 @@ class WorkspaceController:
                 'state': self._state(), 'error': error, 'session': sid, 'form': form}}
             encode_line(response)
             return response
+        except WorkspaceOperationFailed:
+            return {'jsonrpc': '2.0', 'id': request['id'], 'result': {'protocol': PROTOCOL,
+                'state': self._state(), 'error': 'operation_failed', 'session': None, 'form': None}}
         finally:
             self.gate.release()
 

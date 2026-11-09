@@ -5,7 +5,8 @@ from decimal import Decimal
 import test_orders_workspace as base
 from test_order_workbench import seed
 from yadinassi.database_context import SQLiteDBContext
-from yadinassi.ui.protocol import encode_value
+from yadinassi.ui.local_app import LocalTransportError
+from yadinassi.ui.protocol import encode_value, decode_line, encode_line
 
 
 class WorkspaceAcceptanceTests(unittest.TestCase):
@@ -68,9 +69,20 @@ class WorkspaceAcceptanceTests(unittest.TestCase):
 
     def test_partial_client_open_failure_cleans_child_context(self):
         first = self.open()['session']
-        with mock.patch('yadinassi.ui.orders_workspace.load_client', side_effect=ValueError('bad package')):
+        with mock.patch('yadinassi.ui.orders_workspace.FormController', side_effect=ValueError('bad package')):
             self.assertEqual(self.open()['error'], 'open_failed')
         self.assertEqual(list(self.broker.sessions), [first])
+        original = self.controller.transport
+        def refused(raw):
+            packet = decode_line(raw)
+            if packet['operation'] == 'create':
+                return encode_line({'id': packet['id'], 'session': packet['session'],
+                                    'result': None, 'error': 'operation_failed'})
+            return original(raw)
+        self.controller.transport = refused
+        self.assertEqual(self.open()['error'], 'operation_failed')
+        self.assertFalse(self.controller.uncertain)
+        self.assertFalse(self.controller.sessions[first][0].session.uncertain)
 
     def test_identical_row_control_and_revision_are_session_scoped(self):
         a = self.open()['session']; b = self.open()['session']
@@ -86,3 +98,56 @@ class WorkspaceAcceptanceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.open(row=2, token='immutable')
         self.assertEqual(len(self.broker.sessions), 1)
+
+    def test_malformed_open_replica_locks_existing_forms(self):
+        existing = self.open()['session']
+        original = self.broker.exchange
+        def exchange(packet):
+            if packet['operation'] == 'form' and packet['session'] != existing:
+                return {'malformed': True}
+            return original(packet)
+        with mock.patch.object(self.broker, 'exchange', side_effect=exchange):
+            response = self.open(row=2)
+        self.assertEqual(response['error'], 'open_failed')
+        self.assertTrue(response['state']['uncertain'])
+        self.assertTrue(self.controller.sessions[existing][0].session.uncertain)
+        self.assertEqual(self.rpc('close', {})['error'], 'outcome_unknown')
+
+    def fail_management(self, operation):
+        original = self.controller.transport
+        def failed(raw):
+            packet = decode_line(raw)
+            if packet['operation'] == operation:
+                return encode_line({'id': packet['id'], 'session': packet['session'],
+                                    'result': None, 'error': 'operation_failed'})
+            return original(raw)
+        self.controller.transport = failed
+
+    def test_failed_retirement_locks_all_retained_forms(self):
+        a = self.open()['session']; b = self.open(row=2)['session']
+        self.fail_management('retire')
+        with self.assertRaises(LocalTransportError):
+            self.form(a, 'close')
+        self.assertTrue(self.controller.uncertain)
+        self.assertEqual(set(self.controller.sessions), {a, b})
+        self.assertTrue(all(controller.session.uncertain for controller, _ in self.controller.sessions.values()))
+        self.assertEqual(self.open()['error'], 'outcome_unknown')
+
+    def test_failed_abandon_locks_and_retains_intake(self):
+        sid = self.open(row=None)['session']
+        self.fail_management('abandon')
+        with self.assertRaises(LocalTransportError):
+            self.rpc('discard', {'session': sid})
+        self.assertTrue(self.controller.uncertain)
+        self.assertIn(sid, self.controller.sessions)
+        self.assertTrue(self.controller.sessions[sid][0].session.uncertain)
+
+    def test_failed_partial_open_cleanup_locks_existing_forms(self):
+        sid = self.open()['session']
+        self.fail_management('retire')
+        with mock.patch('yadinassi.ui.orders_workspace.FormController', side_effect=ValueError('bad package')):
+            with self.assertRaises(LocalTransportError):
+                self.open(row=2)
+        self.assertTrue(self.controller.uncertain)
+        self.assertTrue(self.controller.sessions[sid][0].session.uncertain)
+        self.assertEqual(len(self.broker.sessions), 2)
