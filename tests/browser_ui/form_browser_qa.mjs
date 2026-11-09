@@ -367,13 +367,27 @@ async function main(){
     const toolbar=page.locator('.orders-workspace > nav').first();
     phase='workspace_create_intake';
     await toolbar.getByRole('button',{name:'New order',exact:true}).click();
+    phase='workspace_intake_visible';
     await visibleField('Order code').waitFor();await workspaceIdle();
-    await visibleField('Order code').fill('B003');
-    await visibleField('Description').fill('Workspace created order');
+    phase='workspace_intake_header';
+    for(const [name,value] of [['Order code','B003'],['Description','Workspace created order']]){
+      phase=name==='Order code'?'workspace_intake_fill_code':'workspace_intake_fill_description';
+      await visibleField(name).fill(value);await visibleField(name).press('Enter');await workspaceIdle();
+    }
+    phase='workspace_intake_add_line';
     await visibleButton('Add line').click();await workspaceIdle();
+    phase='workspace_intake_line_values';
     await visibleField('Description, row 1').fill('Workspace line');
+    await visibleField('Description, row 1').press('Enter');await workspaceIdle();
+    phase='workspace_intake_fill_price';
     await visibleField('Price, row 1').fill('3.25');
+    phase='workspace_intake_save';
     await visibleButton('Save order').click();await workspaceIdle();
+    phase='workspace_intake_assert_saved';
+    assert.equal(await visibleField('Status').inputValue(),'Order saved','workspace_intake_not_saved');
+    assert.equal(await visibleField('Total').inputValue(),'3.25','workspace_intake_total');
+    assert.equal(await visibleButton('Save order').isDisabled(),true,'workspace_intake_save_not_locked');
+    phase='workspace_intake_close';
     await visibleButton('Close form').click();
     await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
     await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
@@ -430,6 +444,22 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 try{await main();check();}
 catch(error){
   failed=true;report.status='FAIL';
+  // Fixed, bounded flags/counts only. Never record DOM text, field contents,
+  // response bodies, exception strings, database identifiers or capability URLs.
+  if(phase.startsWith('workspace_')&&page&&!page.isClosed()){
+    try{
+      report.workspaceCheckpoint=await bounded(page.evaluate(()=>{
+        const count=selector=>Math.min(32,document.querySelectorAll(selector).length);
+        const visible=selector=>[...document.querySelectorAll(selector)].filter(node=>node.checkVisibility()).slice(0,32);
+        return {available:true,openTabs:count('nav[aria-label="Open forms"] button'),
+          visibleForms:visible('[aria-label="Form"]').length,busyForms:count('[aria-busy="true"]'),
+          visibleAlerts:visible('[role="alert"]').length,visibleInputs:visible('input').length,
+          editableInputs:visible('input').filter(node=>!node.disabled&&!node.readOnly).length,
+          visibleRows:visible('tbody tr').length};
+      }),cleanupRemaining(1000),'workspace_diagnostics_timeout');
+    }catch{report.workspaceCheckpoint={available:false};}
+    report.rpcRequests=rpc;
+  }
   report.failure={phase,reason:aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }

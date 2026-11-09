@@ -366,3 +366,44 @@ test('read-only table supports view-only selection and clearing without cell mut
   assert.deepEqual(requests.slice(1).map(request => request.params.event), ['select', 'select']);
   assert.throws(() => app.client.event('cell', {control: 'Lines', row: 1, column: 'Description', value: {type: 'String', value: 'X'}}), {code: 'unavailable'});
 });
+
+test('retained views isolate DOM IDs and label/ARIA references despite identical host identities', () => {
+  const document = new FakeDocument();
+  const roots = [document.createElement('section'), document.createElement('section')];
+  document.root.append(...roots); roots[0].hidden = true;
+  const handlers = {change() {}, action() {}, select() {}, refresh() {}};
+  const snapshot = state(0, {items: [field(), table(), button()]});
+  const views = roots.map(root => createFormView(document, root, handlers));
+  for (const view of views) view.render(model(snapshot));
+  const verify = () => {
+    const nodes = all(document.root).filter(node => node.id);
+    assert.equal(new Set(nodes.map(node => node.id)).size, nodes.length);
+    for (const root of roots) {
+      const labels = all(root).filter(node => node.htmlFor);
+      assert.ok(labels.length > 0);
+      for (const label of labels) {
+        const target = document.getElementById(label.htmlFor);
+        assert.ok(root.contains(target)); assert.ok(label.contains(target));
+        assert.equal(target.tagName, 'INPUT');
+      }
+      const described = all(root).filter(node => node.getAttribute('aria-describedby'));
+      assert.ok(described.length > 1); // Scalar hint and every table cell's help.
+      for (const node of described) for (const id of node.getAttribute('aria-describedby').split(/\s+/)) {
+        const target = document.getElementById(id);
+        assert.ok(root.contains(target)); assert.ok(target.textContent.length > 0);
+      }
+    }
+  };
+  verify();
+  const originalIds = roots.map(root => all(root).filter(node => node.id).map(node => node.id));
+  roots[0].hidden = false; roots[1].hidden = true;
+  for (const view of views) view.render(model({...snapshot, revision: 1}));
+  verify();
+  assert.deepEqual(roots.map(root => all(root).filter(node => node.id).map(node => node.id)), originalIds);
+  // Remounting never reuses an old view's prefix, even though its nodes are gone.
+  createFormView(document, roots[0], handlers).render(model(snapshot));
+  verify();
+  const retired = new Set(originalIds[0]);
+  assert.ok(all(roots[0]).filter(node => node.id).every(node => !retired.has(node.id)));
+  assert.deepEqual(snapshot.items[1], table());
+});
