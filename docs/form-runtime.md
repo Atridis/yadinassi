@@ -199,6 +199,12 @@ The first independent transport step is the [scalar NoContext InvocationPort](in
 plain client BSL can call a prebound server function through a byte exchange and
 resume with its result, including across a separate process. That opt-in embedding
 API carries no form state and does not change FormSession's shared local model.
+The host may also call `port.bind_form(session, binding)` before open. A client
+handler can then pass explicit scalar `ThisObject.Attribute` expressions to a
+prebound NoContext endpoint and use the result before the event snapshot returns.
+The event gate remains held across the exchange, and stale clicks cannot repeat
+it. Form ownership, local contextful handlers and renderer routing are unchanged;
+this is not contextful form replication.
 
 !todo Implement and measure that detached-copy/barrier contract separately;
 current snapshots and logical activation do not prove remote synchronization,
