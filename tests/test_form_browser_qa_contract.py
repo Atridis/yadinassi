@@ -22,7 +22,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         trigger = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
         self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed]')
         catalog = self.step('Acquire eight original-demo kind flows with Chromium sandbox enabled')
-        form = self.step('Acquire three form flows with Chromium sandbox enabled')
+        form = self.step('Acquire four form flows with Chromium sandbox enabled')
         for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form')):
             self.assertIn(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             self.assertIn(f'run: node tests/browser_ui/{script}_browser_qa.mjs', step)
@@ -56,7 +56,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         form = self.step('Publish only form screenshots and redacted source-bound report')
         for step, branch, prefix, files in (
                 (catalog, 'ui', 'yadinassi-browser-artifacts', ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png']),
-                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png'])):
+                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png'])):
             self.assertIn(f"if: always() && github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             paths = step.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in paths.splitlines()],
@@ -142,10 +142,10 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertNotIn('build.mjs', source)
         self.assertNotIn('git checkout', source)
 
-    def test_three_scenarios_include_exact_decimal_repeated_click_cancel_and_reattach(self):
+    def test_four_scenarios_include_exact_decimal_repeated_click_cancel_and_reattach(self):
         source = self.source()
-        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2'])
-        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback']", source)
+        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2', '3'])
+        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen']", source)
         self.assertIn("page.getByLabel(name,{exact:true})", source)
         self.assertIn("await field('Unit price').fill('7.25');\n    await button('Calculate').click()", source)
         self.assertIn("assert.equal(await field('Total').inputValue(),'21.75')", source)
@@ -170,10 +170,46 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertLess(source.index('await stopHost()'), source.index('const readback=runPython'))
         self.assertIn("report.durable={reopenedAfterHostClose:true,exactAmount:'18.75'}", source)
 
+    def test_order_table_uses_real_edits_identity_delete_and_exact_durable_rows(self):
+        source = self.source().split('await scenario(scenarioNames[3]', 1)[1]
+        for required in ("path.join(owned,'orders.sqlite')",
+                         "'--import-xml',path.join(repo,'examples/forms/order-intake/configuration')",
+                         "await startHost('order-intake',database)",
+                         "await button('Add line').click();await idle()",
+                         "await field('Price, row '+id).fill(price)",
+                         "await button('Select row 2 in Order lines').click();await idle()",
+                         "await button('Delete selected line').click();await idle()",
+                         "await field('Description, row 2').count(),0",
+                         "await field('Description, row 3').inputValue(),'Service'",
+                         "locator('tbody tr').count(),2",
+                         "await field('Total').inputValue(),'9.08'",
+                         "assert.equal(rpc,beforeInvalid,'invalid_command_draft_sent')",
+                         "assert.equal(rpc,beforeInvalid,'invalid_selection_draft_sent')",
+                         "await field('Price, row 1').fill('2.35');\n    await button('Save order').click()",
+                         "await field('Total').inputValue(),'9.14'",
+                         "await field('Amount, row 1').inputValue(),'2.94'",
+                         "await field('Amount, row 3').inputValue(),'6.20'",
+                         "await button(name).isDisabled(),true",
+                         "await field(name).isEditable(),false",
+                         "await page.setViewportSize({width:390,height:844})",
+                         "node.scrollIntoView({block:'start'})",
+                         "await field('Description, row 3').isVisible(),true",
+                         "document.documentElement.scrollWidth<=innerWidth",
+                         "await screenshot('order-table-narrow.png')",
+                         'A=O.Lines.Get(0); B=O.Lines.Get(1)',
+                         'A.ItemDescription<>"Cable" Or A.Quantity<>1.25 Or A.Price<>2.35 Or A.Amount<>2.94',
+                         'B.ItemDescription<>"Service" Or B.Quantity<>2 Or B.Price<>3.10 Or B.Amount<>6.20',
+                         'If N<>1 Then Raise "record count"',
+                         "assert.equal(readback.trim(),'ORDER_READBACK_OK')",
+                         "report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']}"):
+            self.assertIn(required, source)
+        self.assertLess(source.index('await stopHost()'), source.index('const readback=runPython'))
+        self.assertIn('completed:results.length,total:4,', self.source())
+
     def test_only_bounded_source_bound_screenshots_and_fixed_verdicts_are_emitted(self):
         source = self.source()
         for required in ("output=path.join(temporary,'yadinassi-form-browser-artifacts')", 'await mkdir(output);',
-                         "const screenshots=['estimate.png','product-narrow.png']",
+                         "const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png']",
                          "const artifacts=['result.json','manifest.json',...screenshots]",
                          'stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<=4*1024*1024',
                          "'89504e470d0a1a0a'", 'Buffer.byteLength(raw)<=65536',

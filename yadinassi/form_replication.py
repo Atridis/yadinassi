@@ -1,4 +1,4 @@
-"""Opt-in replicated scalar forms with a host-owned byte transport.
+"""Opt-in replicated scalar and fixed-table forms with a host-owned byte transport.
 
 Client and server have different modules, interpreters and form objects. Only a
 closed state packet and prebound endpoint IDs cross the boundary. This is not a
@@ -8,7 +8,7 @@ from decimal import Decimal, localcontext
 from threading import Lock
 
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
-    BSLFormButton, BSLFormCommand, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
+    BSLFormButton, BSLFormCommand, BSLFormTable, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
     MAX_COMMANDS, MAX_TOTAL_TEXT, MAX_ALLOCATED, name, scalar, text)
 from .form_runtime import FormSession, MAX_SOURCE
 from .invocation import (InvocationBinding, InvocationPort, InvocationError,
@@ -22,7 +22,11 @@ from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
 from .ui.protocol import encode_line, decode_line, bounded_text, MAX_COUNTER
 
-PROTOCOL = 'yadinassi-form/0'
+from .form_table_replication import (pack_tables, unpack_tables, install_tables,
+    capture_tables, capture_selections, table_delta, selection_delta,
+    admit_table_delta, apply_table_delta)
+
+PROTOCOL = 'yadinassi-form/1'
 _REASONS = frozenset(('invalid_request', 'sequence', 'stale_revision', 'closed',
     'request_limit', 'unknown_endpoint', 'invalid_arguments', 'invalid_delta',
     'server_error', 'result_unavailable', 'busy'))
@@ -135,12 +139,14 @@ def _pack_state(session, handlers):
              kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
              kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
             attribute.title, key in form._static, _encode_scalar(form._data[key])])
-    return {'attributes': attributes, 'title': form.title,
-        'items': [[item.name, 'button' if type(item) is BSLFormButton else 'field',
+    return {'attributes': attributes, 'tables': pack_tables(form), 'title': form.title,
+        'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'field',
             item.title, item.visible, item.enabled, item.read_only,
             item.command_name if type(item) is BSLFormButton else item.data_path,
             0 if type(item) is BSLFormButton else _handler_id(item.action, handlers),
-            item.view.value[0], _object_identity(session, item)] for item in form.items._values.values()],
+            item.view.value[0], _object_identity(session, item)] +
+            ([item.current_row] if type(item) is BSLFormTable else [])
+            for item in form.items._values.values()],
         'commands': [[command.name, command.title, _handler_id(command.action, handlers),
             _object_identity(session, command)]
             for command in form.commands._values.values()],
@@ -151,7 +157,7 @@ def _pack_state(session, handlers):
 
 def _unpack_state(packet, session, handlers):
     """Validate an entire detached candidate before touching live client state."""
-    _keys(packet, 'attributes title items commands actions allocated lifecycle')
+    _keys(packet, 'attributes tables title items commands actions allocated lifecycle')
     candidate = BSLClientApplicationForm(session)
     candidate.title = text(packet['title'], 1024)
     allocated = _integer(packet['allocated'], 0, MAX_ALLOCATED)
@@ -180,6 +186,7 @@ def _unpack_state(packet, session, handlers):
             candidate._static.add(key)
     if sum(len(value) for value in candidate._data.values() if type(value) is str) > MAX_TOTAL_TEXT:
         raise ValueError('form text limit')
+    unpack_tables(packet['tables'], candidate, session)
     identities = set()
     for row in _rows(packet['commands'], MAX_COMMANDS):
         command_name, title, action, identity = _row(row, 4)
@@ -195,17 +202,22 @@ def _unpack_state(packet, session, handlers):
         command.title = text(title, 1024)
         command.action = _handler_name(action, handlers, 1)
         candidate.commands._values[key] = command
+    table_paths = set()
     for row in _rows(packet['items'], MAX_ITEMS):
-        item_name, kind, title, visible, enabled, readonly, path, action, view, identity = _row(row, 10)
+        if type(row) is not list or len(row) not in (10, 11):
+            raise ValueError('invalid form item record')
+        is_table = row[1] == 'table'
+        _row(row, 11 if is_table else 10)
+        item_name, kind, title, visible, enabled, readonly, path, action, view, identity = row[:10]
         _integer(identity, 1, MAX_ALLOCATED)
         if identity in identities:
             raise ValueError('duplicate form identity')
         identities.add(identity)
         key = name(item_name).casefold()
-        if key in candidate.items._values or kind not in ('field', 'button'):
+        if key in candidate.items._values or kind not in ('field', 'button', 'table'):
             raise ValueError('invalid form item')
         _booleans([visible, enabled, readonly])
-        item = (BSLFormButton if kind == 'button' else BSLFormField)(candidate, item_name)
+        item = (BSLFormButton if kind == 'button' else BSLFormTable if kind == 'table' else BSLFormField)(candidate, item_name)
         item._replica_id = identity
         item.title = text(title, 1024)
         item.visible, item.enabled, item.read_only = visible, enabled, readonly
@@ -222,6 +234,16 @@ def _unpack_state(packet, session, handlers):
             if path and path.casefold() not in candidate.commands._values:
                 raise ValueError('unknown form command')
             item.command_name = path
+        elif kind == 'table':
+            key_path = name(path).casefold()
+            if view != 'InputField' or key_path not in candidate._tables or key_path in table_paths:
+                raise ValueError('unknown or duplicate table binding')
+            table_paths.add(key_path)
+            selected = row[10]
+            if selected is not None and _integer(selected, 1, 4096) not in candidate._tables[key_path]._by_id:
+                raise ValueError('removed table selection')
+            item.data_path = path; item.current_row = selected
+            item.action = _handler_name(action, handlers, 1)
         else:
             if path and path.casefold() not in candidate._attributes:
                 raise ValueError('unknown form attribute')
@@ -242,6 +264,7 @@ def _unpack_state(packet, session, handlers):
 def _install_state(session, decoded):
     candidate, allocated, lifecycle = decoded
     form = session.form
+    install_tables(form, candidate)
     # Existing event parameters/references continue to denote their local item.
     # Removed/retyped items are invalidated rather than silently kept usable.
     for destination, source in ((form.items, candidate.items), (form.commands, candidate.commands)):
@@ -267,6 +290,7 @@ def _install_state(session, decoded):
 
 def _capture(form):
     return {'attributes': {key: _encode_scalar(value) for key, value in form._data.items()},
+            'tables': capture_tables(form), 'selections': capture_selections(form),
             'items': {key: _appearance(item) for key, item in form.items._values.items()},
             'title': form.title}
 
@@ -278,11 +302,13 @@ def _delta(form, baseline):
     return {'attributes': [[key, value] for key, value in current['attributes'].items()
             if value != baseline['attributes'][key]],
         'items': [value for key, value in current['items'].items() if value != baseline['items'][key]],
-        'title': current['title'] if current['title'] != baseline['title'] else None}
+        'title': current['title'] if current['title'] != baseline['title'] else None,
+        'cells': table_delta(current['tables'], baseline['tables']),
+        'selections': selection_delta(current['selections'], baseline['selections'])}
 
 
 def _admit_delta(form, packet):
-    _keys(packet, 'attributes items title')
+    _keys(packet, 'attributes items title cells selections')
     data = form._data.copy(); seen = set()
     for row in _rows(packet['attributes'], MAX_ATTRIBUTES):
         attr_name, encoded = _row(row, 2)
@@ -305,19 +331,21 @@ def _admit_delta(form, packet):
         seen.add(key); text(title, 1024); _booleans([visible, enabled, readonly])
         items.append((form.items._values[key], title, visible, enabled, readonly))
     title = form.title if packet['title'] is None else text(packet['title'], 1024)
-    return data, items, title
+    tables = admit_table_delta(form, packet['cells'], packet['selections'], data)
+    return data, items, title, tables
 
 
 def _apply_delta(form, admitted):
-    data, items, title = admitted
+    data, items, title, tables = admitted
     form._data, form.title = data, title
+    apply_table_delta(form, tables)
     for item, item_title, visible, enabled, read_only in items:
         item.title, item.visible, item.enabled, item.read_only = item_title, visible, enabled, read_only
 
 
 class ReplicatedFormServer:
     """One server-owned form. Lifecycle and endpoints are trusted host setup."""
-    def __init__(self, source, endpoints, *, handlers, attributes=(), initial_values=None,
+    def __init__(self, source, endpoints, *, handlers, attributes=(), tables=(), initial_values=None,
                  bindings=None, database_context=None):
         _source(source, 'server')
         self._handlers, self._handler_names = _bindings(handlers, handlers=True)
@@ -333,12 +361,13 @@ class ReplicatedFormServer:
             if event not in BSLClientApplicationForm.EVENTS or event in normalized:
                 raise ValueError('invalid form lifecycle binding')
             normalized[event] = name(handler)
-        self.session = FormSession(source, attributes=attributes, initial_values=initial_values,
+        self.session = FormSession(source, attributes=attributes, tables=tables, initial_values=initial_values,
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
             database_context=database_context)
         for binding in handlers:
             key = binding.name.casefold()
-            if key in self.session.reserved_names or key in self.session.form._attributes:
+            if (key in self.session.reserved_names or key in self.session.form._attributes
+                    or key in self.session.form._tables):
                 raise ValueError('form handler name already bound')
             _stub(self.session.interpreter, binding, side='client')
             self.session.reserved_names.add(key)
@@ -601,10 +630,10 @@ class ReplicatedFormSession(FormSession):
             self.revision += 1; self._busy = False; self._gate.release()
         return self.snapshot()
 
-    def dispatch(self, event, *, revision, control='', value=None):
+    def dispatch(self, event, *, revision, control='', value=None, row=None, column=''):
         if self.uncertain:
             raise InvocationError('outcome_unknown')
-        result = super().dispatch(event, revision=revision, control=control, value=value)
+        result = super().dispatch(event, revision=revision, control=control, value=value, row=row, column=column)
         if result.state == 'closed':
             # Closing remains local/cancelable; only an accepted close flushes
             # pending scalar state and releases the server-owned form.

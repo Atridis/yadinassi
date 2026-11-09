@@ -1,7 +1,7 @@
 /** Bounded form-only renderer protocol. No runtime, BSL or storage dependency. */
-export const PROTOCOL = 'yadinassi-form-ui/0';
+export const PROTOCOL = 'yadinassi-form-ui/1';
 export const LIMITS = Object.freeze({bytes: 131072, text: 8192, controls: 128, messages: 64,
-  counter: 2147483647, dateTicks: '3155378975990000'});
+  counter: 2147483647, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
 export const ERROR_MESSAGES = Object.freeze({
   invalid_request: 'The host rejected this request. The displayed state is authoritative.',
   stale_revision: 'The form changed elsewhere. Review the latest state before another action.',
@@ -13,6 +13,7 @@ export const ERROR_MESSAGES = Object.freeze({
   transport: 'Connection interrupted or response invalid. The outcome may be unknown. Refresh state before another action; do not repeat the action.',
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
+  draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
 export class FormError extends Error {
@@ -84,17 +85,48 @@ export function validateSnapshot(state) {
       !Array.isArray(state.items) || state.items.length > LIMITS.controls ||
       !Array.isArray(state.messages) || state.messages.length > LIMITS.messages ||
       state.messages.some(message => !validText(message))) throw new FormError('transport');
-  const names = new Set();
+  const names = new Set(), tables = new Map(), controlIds = new Set(); let cells = 0;
   for (const item of state.items) {
-    if (!keys(item, ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'view', 'value']) ||
-        !validText(item.name) || !item.name.length || names.has(item.name) || !validText(item.title) ||
-        !['field', 'button'].includes(item.kind) || !['input', 'checkbox', 'label'].includes(item.view) ||
+    const table = item?.kind === 'table';
+    const shape = table ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'tableId', 'columns', 'rows', 'currentRow']
+      : ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'view', 'value'];
+    if (!keys(item, shape) || !validText(item.name) || !item.name.length || names.has(item.name) ||
+        !validText(item.title) || !['field', 'button', 'table'].includes(item.kind) ||
         ['visible', 'enabled', 'readOnly'].some(name => typeof item[name] !== 'boolean')) throw new FormError('transport');
     names.add(item.name);
-    if (item.kind === 'button') { if (item.value !== null) throw new FormError('transport'); }
-    else {
-      validateScalar(item.value);
-      if (item.view === 'checkbox' && item.value.type !== 'Boolean') throw new FormError('transport');
+    if (table) {
+      if (!integer(item.controlId) || !item.controlId || item.controlId > LIMITS.controlIds || controlIds.has(item.controlId) ||
+          !integer(item.tableId) || !item.tableId || !Array.isArray(item.columns) || !item.columns.length ||
+          item.columns.length > LIMITS.columns || !Array.isArray(item.rows) || item.rows.length > LIMITS.rows)
+        throw new FormError('transport');
+      controlIds.add(item.controlId);
+      const columns = new Set(), rows = new Set();
+      for (const column of item.columns) {
+        if (!keys(column, ['name', 'title', 'type', 'readOnly']) || !validText(column.name) || !column.name.length ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date'].includes(column.type) ||
+            typeof column.readOnly !== 'boolean') throw new FormError('transport');
+        columns.add(column.name);
+      }
+      for (const row of item.rows) {
+        if (!keys(row, ['id', 'values']) || !integer(row.id) || !row.id || row.id > LIMITS.rowIds || rows.has(row.id) ||
+            !Array.isArray(row.values) || row.values.length !== item.columns.length) throw new FormError('transport');
+        rows.add(row.id);
+        row.values.forEach((value, index) => {
+          validateScalar(value);
+          if (!['Null', 'Undefined', item.columns[index].type].includes(value.type)) throw new FormError('transport');
+        });
+      }
+      if (item.currentRow !== null && (!integer(item.currentRow) || !rows.has(item.currentRow))) throw new FormError('transport');
+      if (tables.has(item.tableId)) throw new FormError('transport');
+      tables.set(item.tableId, true); cells += item.rows.length * item.columns.length;
+      if (tables.size > LIMITS.tables || cells > LIMITS.cells) throw new FormError('transport');
+    } else {
+      if (!['input', 'checkbox', 'label'].includes(item.view)) throw new FormError('transport');
+      if (item.kind === 'button') { if (item.value !== null) throw new FormError('transport'); }
+      else {
+        validateScalar(item.value);
+        if (item.view === 'checkbox' && item.value.type !== 'Boolean') throw new FormError('transport');
+      }
     }
   }
   if (new TextEncoder().encode(JSON.stringify(state)).length > LIMITS.bytes) throw new FormError('transport');
@@ -112,6 +144,14 @@ export function editable(item) {
   return item?.kind === 'field' && item.visible && item.enabled && !item.readOnly && item.view !== 'label' &&
     ['String', 'Number', 'Boolean'].includes(item.value.type);
 }
+/** A bounded cell uses exactly the same scalar input rules as an ordinary field. */
+export function tableCell(item, rowId, columnName) {
+  if (item?.kind !== 'table') return null;
+  const index = item.columns.findIndex(column => column.name === columnName);
+  const row = item.rows.find(row => row.id === rowId), column = item.columns[index];
+  return !row || !column ? null : {kind: 'field', visible: item.visible, enabled: item.enabled,
+    readOnly: item.readOnly || column.readOnly, view: 'input', value: row.values[index]};
+}
 export function typedInput(item, input) {
   if (!editable(item)) throw new FormError('unavailable');
   if (item.value.type === 'Boolean') {
@@ -122,7 +162,9 @@ export function typedInput(item, input) {
   if (!validText(input)) throw new FormError('invalid_input');
   return {type: 'String', value: input};
 }
-export function scalarEqual(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
+export function scalarEqual(left, right) {
+  return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
+}
 export class FormClient {
   constructor(exchange) {
     this.exchange = exchange; this.id = 0; this.snapshot = null; this.busy = false;
@@ -178,6 +220,21 @@ export class FormClient {
         validateScalar(values.value);
         if (values.value.type !== item.value.type) throw new FormError('invalid_input');
         params.value = values.value;
+      }
+    } else if (event === 'cell' || event === 'select') {
+      if (!keys(values, event === 'cell' ? ['control', 'row', 'column', 'value'] : ['control', 'row']))
+        throw new FormError('invalid_input');
+      const item = this.snapshot.items.find(candidate => candidate.name === values.control);
+      if (item?.kind !== 'table' || !item.visible || !item.enabled || event === 'cell' && item.readOnly) throw new FormError('unavailable');
+      if (values.row !== null && (!integer(values.row) || !values.row || !item.rows.some(row => row.id === values.row)))
+        throw new FormError('invalid_input');
+      params.control = item.name; params.row = values.row;
+      if (event === 'cell') {
+        const cell = tableCell(item, values.row, values.column);
+        if (!editable(cell)) throw new FormError('unavailable');
+        validateScalar(values.value);
+        if (values.value.type !== cell.value.type) throw new FormError('invalid_input');
+        params.column = values.column; params.value = values.value;
       }
     } else throw new FormError('invalid_input');
     return this.request('form.event', params);
