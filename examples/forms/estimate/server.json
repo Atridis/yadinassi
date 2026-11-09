@@ -1,0 +1,89 @@
+{
+  "protocol": "yadinassi-form-app/0",
+  "handlers": [
+    {
+      "name": "Changed",
+      "endpoint": 1,
+      "parameters": [
+        "Element"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "RunCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 3,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    }
+  ],
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "routine": "Run"
+    }
+  ],
+  "lifecycle": {
+    "OnCreateAtServer": "Create",
+    "BeforeClose": "BeforeClose"
+  },
+  "attributes": [
+    {
+      "name": "Price",
+      "type": "Number",
+      "title": "Unit price",
+      "value": {
+        "type": "Number",
+        "value": "20.10"
+      }
+    },
+    {
+      "name": "Quantity",
+      "type": "Number",
+      "title": "Quantity",
+      "value": {
+        "type": "Number",
+        "value": "3"
+      }
+    },
+    {
+      "name": "Total",
+      "type": "Number",
+      "title": "Total",
+      "value": {
+        "type": "Number",
+        "value": "0"
+      }
+    },
+    {
+      "name": "Status",
+      "type": "String",
+      "title": "Status",
+      "value": {
+        "type": "String",
+        "value": "Ready"
+      }
+    },
+    {
+      "name": "Dirty",
+      "type": "Boolean",
+      "title": "Dirty",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    }
+  ]
+}

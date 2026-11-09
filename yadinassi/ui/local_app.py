@@ -35,6 +35,9 @@ class RuntimeBridge:
         else:
             environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
             command = [sys.executable, '-m', 'yadinassi.ui.editor_stdio', database]
+        self._start(command, environment)
+
+    def _start(self, command, environment):
         self.child = subprocess.Popen(command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment, bufsize=0)
         self.gate = Lock()
@@ -130,6 +133,8 @@ _CSP = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'se
 
 
 class _Handler(BaseHTTPRequestHandler):
+    asset_directory = 'catalog'
+    methods = ('editor.hello', 'editor.snapshot', 'editor.event')
     protocol_version = 'HTTP/1.1'
     server_version = 'YadinassiLocalUI'
     sys_version = ''
@@ -161,7 +166,7 @@ class _Handler(BaseHTTPRequestHandler):
         if not self._host(): return self._reply(403)
         asset = _ASSETS.get(self.path)
         if asset is None: return self._reply(404)
-        try: body = files('yadinassi.ui').joinpath('assets', 'catalog', asset[0]).read_bytes()
+        try: body = files('yadinassi.ui').joinpath('assets', self.asset_directory, asset[0]).read_bytes()
         except (OSError, ValueError): return self._reply(503)
         return self._reply(200, body, asset[1])
 
@@ -190,7 +195,7 @@ class _Handler(BaseHTTPRequestHandler):
             if (type(request) is not dict or set(request) != {'jsonrpc', 'id', 'method', 'params'}
                     or request['jsonrpc'] != '2.0' or type(request['id']) is not int
                     or not 1 <= request['id'] <= MAX_COUNTER or type(request['params']) is not dict
-                    or request['method'] not in ('editor.hello', 'editor.snapshot', 'editor.event')):
+                    or request['method'] not in self.methods):
                 return self._reply(400)
             response = self.server.bridge.exchange(request)
             result = encode_line(response)
@@ -209,13 +214,13 @@ class LocalUIServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, bridge, token=None):
+    def __init__(self, bridge, token=None, *, handler=_Handler):
         self.bridge = bridge
         self._connections = BoundedSemaphore(8)
         self.token = secrets.token_urlsafe(32) if token is None else token
         if type(self.token) is not str or not 32 <= len(self.token) <= 128 or not self.token.isascii():
             raise ValueError('invalid local UI capability')
-        super().__init__(('127.0.0.1', 0), _Handler)
+        super().__init__(('127.0.0.1', 0), handler)
         self.authority = f'127.0.0.1:{self.server_port}'
         self.origin = 'http://' + self.authority
 
