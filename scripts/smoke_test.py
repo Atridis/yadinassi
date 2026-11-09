@@ -2558,15 +2558,15 @@ Message(d.GetText() = Char(10));
 d.Очистить();
 Message(d.LineCount());
 Try d.AddLine("unmeasured" + Char(13)); Except Message("line-boundary"); EndTry;
-Try d.Write("must-not-write"); Except Message("file-api-closed"); EndTry;
+Try d.Write("must-not-write", "unsupported-codec"); Except Message("file-option-rejected"); EndTry;
 '''
     expected = ('Да\nТекстовый документ\nТекстовыйДокумент\n2\nB\nДа\n'
-                'Да\nДа\n0\nДа\n0\nline-boundary\nfile-api-closed\n')
+                'Да\nДа\n0\nДа\n0\nline-boundary\nfile-option-rejected\n')
     return code, expected
 
 
 def check_text_document(executable, *, directory, env):
-    """Exercise the in-memory API through the packaged CLI; never file methods."""
+    """Exercise memory edits and file-option rejection before filesystem I/O."""
     code, expected = text_document_smoke_program()
     directory = directory.resolve()
     directory.mkdir()
@@ -2581,9 +2581,9 @@ def check_text_document(executable, *, directory, env):
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed bounded TextDocument {arguments!r}: {result!r}')
     if (directory / 'must-not-write').exists():
-        raise AssertionError('TextDocument unexpectedly exposed filesystem Write')
+        raise AssertionError('TextDocument opened a file before validating encoding')
     print('Binary TextDocument passed: bounded in-memory edits, exact separators, '
-          'RU/EN aliases, closed file API; BOM file and console')
+          'RU/EN aliases, file-option rejection; BOM file and console')
 
 
 def tree_findrows_smoke_program() -> tuple[str, str]:

@@ -121,9 +121,11 @@ def _encoding(value=None, default='utf-8'):
     if type(value) is BSLTextEncoding:
         # !todo ANSI/OEM locale tables beyond the supported Russian target;
         # do not silently substitute a codec for an unknown platform locale.
-        return {BSLTextEncoding.UTF8: 'utf-8', BSLTextEncoding.UTF16: 'utf-16-le',
-                BSLTextEncoding.ANSI: 'cp1251', BSLTextEncoding.OEM: 'cp866',
-                BSLTextEncoding.SYSTEM: locale.getpreferredencoding(False)}[value]
+        # System locales may return aliases such as UTF-8 or UTF-16LE. BOM
+        # matching must use the same canonical codec names as explicit strings.
+        return codecs.lookup({BSLTextEncoding.UTF8: 'utf-8', BSLTextEncoding.UTF16: 'utf-16-le',
+                              BSLTextEncoding.ANSI: 'cp1251', BSLTextEncoding.OEM: 'cp866',
+                              BSLTextEncoding.SYSTEM: locale.getpreferredencoding(False)}[value]).name
     value = _text(value).casefold().replace('_', '-').replace('windows-', 'cp')
     aliases = {'utf8': 'utf-8', 'utf16': 'utf-16-le', 'utf-16': 'utf-16-le',
                'utf16le': 'utf-16-le', 'utf-16le': 'utf-16-le',
