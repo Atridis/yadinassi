@@ -38,6 +38,19 @@ export function mountForm(environment, root) {
   }
   async function run(event, name, row) {
     if (busy || !client || client.locked) return;
+    // Only an explicit host policy may discard unvalidated local drafts. Keep
+    // them until an authoritative response, including a recoverable handler error.
+    if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
+      busy = true; error = ''; paint();
+      const before = client.snapshot;
+      try { await client.event('command', {control: name}); }
+      catch (caught) { showError(caught); }
+      finally {
+        if (client.snapshot !== before && !client.transportFailed) view.clearDrafts();
+        finish();
+      }
+      return;
+    }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try { changes = view.changes(event === 'change' ? name : undefined); }
@@ -75,7 +88,7 @@ export function mountForm(environment, root) {
   };
   environment.addEventListener('hashchange', reattach);
   environment.addEventListener('beforeunload', event => {
-    if (busy || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
+    if (busy || client?.snapshot?.dirty || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
   });
   paint(); const ready = reattach();
   return {ready, refresh, run, reattach, get client() { return client; }, view};
