@@ -172,7 +172,7 @@ duplicate events, new behavioral nodes, changed main attribute/type and other
 versions still fail. Runtime and observer BSL are unchanged. This correction
 still requires a fresh source-bound native40 run before any parity claim.
 
-## SQLite composition and future client/server boundary
+## SQLite composition and opt-in client/server boundary
 
 This source composes the managed-form slice with the SQLite catalog backend and
 retains the separate official-XML CatalogObject behavior profile. It does not
@@ -185,9 +185,10 @@ does not implicitly create a file or require UI/network. Future client-only and
 server-only modes require separate explicit options, not yet defined here.
 
 The current FormSession is a local logical-context implementation, not a remote
-protocol: fresh server activations still share the local form model. The agreed
-future contract is Replicated Form State with distinct logical client/server
-copies, a prebound typed InvocationPort (local direct transport by default),
+protocol: fresh server activations still share the local form model. The opt-in
+[replicated scalar form host API](form-replication.md) implements Replicated Form
+State with distinct logical client/server copies, prebound typed signatures and
+a host-supplied byte exchange (which can be local direct transport),
 dirty-delta admission before a contextful server call and response application
 before dependent client BSL resumes. No-context calls transfer arguments only.
 Server revision, client sequence, request ID and backend record revision remain
@@ -199,9 +200,15 @@ The first independent transport step is the [scalar NoContext InvocationPort](in
 plain client BSL can call a prebound server function through a byte exchange and
 resume with its result, including across a separate process. That opt-in embedding
 API carries no form state and does not change FormSession's shared local model.
+The host may also call `port.bind_form(session, binding)` before open. A client
+handler can then pass explicit scalar `ThisObject.Attribute` expressions to a
+prebound NoContext endpoint and use the result before the event snapshot returns.
+The event gate remains held across the exchange, and stale clicks cannot repeat
+it. Form ownership, local contextful handlers and renderer routing are unchanged;
+this is not contextful form replication.
 
-!todo Implement and measure that detached-copy/barrier contract separately;
-current snapshots and logical activation do not prove remote synchronization,
+The detached-copy/barrier API is separate from local FormSession and has focused
+synthetic byte-transport tests. Neither those tests nor logical activation prove
 exactly-once writes, exception rollback or automatic native UI event parity.
 MessagePack/WebSocket, authenticated module caching and remote resume are future
 transport choices, not dependencies or capabilities added by this slice.
