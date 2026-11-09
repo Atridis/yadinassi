@@ -195,6 +195,11 @@ distinct. UI focus/cursor are local; connections/transactions are server-only.
 No renderer-selected procedure names, Python object handles, pickle, server
 routine bodies in client artifacts or implicit networking are admitted.
 
+The first independent transport step is the [scalar NoContext InvocationPort](invocation-port.md):
+plain client BSL can call a prebound server function through a byte exchange and
+resume with its result, including across a separate process. That opt-in embedding
+API carries no form state and does not change FormSession's shared local model.
+
 !todo Implement and measure that detached-copy/barrier contract separately;
 current snapshots and logical activation do not prove remote synchronization,
 exactly-once writes, exception rollback or automatic native UI event parity.
