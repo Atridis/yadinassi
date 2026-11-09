@@ -201,9 +201,13 @@ class _Handler(BaseHTTPRequestHandler):
             result = encode_line(response)
         except (UIError, ValueError, OSError, TypeError):
             return self._reply(503)
-        self._reply(200, result, 'application/x-ndjson; charset=utf-8')
-        if response.get('result', {}).get('state', {}).get('kind') == 'closed':
-            Thread(target=self.server.shutdown, daemon=True).start()
+        try:
+            self._reply(200, result, 'application/x-ndjson; charset=utf-8')
+        finally:
+            # A completed close still releases owned resources if its HTTP reply
+            # is lost. Never keep a closed form/database alive for a dead browser.
+            if response.get('result', {}).get('state', {}).get('kind') == 'closed':
+                Thread(target=self.server.shutdown, daemon=True).start()
 
     def do_OPTIONS(self): self._reply(405)
     def do_PUT(self): self._reply(405)

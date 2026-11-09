@@ -1804,7 +1804,8 @@ def interpreter_provenance(root: Path) -> dict:
                     if not path.is_dir() and "__pycache__" not in path.parts])
     # Optional prebuilt renderer resources are a closed, fully hashed inventory.
     # Do not broaden suffix admission or exclude these runtime package bytes.
-    assets = {"yadinassi/ui/assets/catalog/" + name for name in
+    assets = {"yadinassi/ui/assets/" + renderer + "/" + name
+              for renderer in ("catalog", "form") for name in
               ("app.js", "index.html", "style.css", "LICENSE.txt", "build-manifest.json")}
     names = {path.relative_to(root).as_posix() for path in files}
     if (not assets <= names or any(

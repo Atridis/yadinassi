@@ -250,192 +250,123 @@ class FormProcessTests(unittest.TestCase):
             self.assertFalse(next(x for x in result['state']['items'] if x['name']=='RunButton')['enabled'])
             self.assertIsNone(controller.session.interpreter.database_context)
             event(controller,'close'); process.close()
-            context=SQLiteDBContext(pa…8231 tokens truncated…s tests -v
-python -m yadinassi basic.bsl
-```
+            context=SQLiteDBContext(path)
+            try:
+                vm=Interpreter(database_context=context)
+                self.assertEqual(vm.execute('Catalogs.Products.FindByCode("P001").Amount'),Decimal('12.75'))
+            finally: context.close()
 
-На Windows создайте окружение через `py -3 -m venv .venv` и активируйте
-`.venv\Scripts\Activate.ps1` (PowerShell) или `.venv\Scripts\activate.bat` (cmd).
-Установка `python -m pip install -e .` добавляет команду `yadinassi` без пакетов
-для сборки. Тесты используют стандартный `unittest`.
+    def test_missing_database_is_not_created_or_disclosed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'missing-private.sqlite'
+            process=self.process(PRODUCT,path)
+            result=state(FormController(load_client(PRODUCT),process.exchange))
+            self.assertEqual(result['error'],'outcome_unknown')
+            self.assertFalse(path.exists())
+            self.assertNotIn(b'missing-private',encode_line(result))
+            process.close()
 
-### Ручной запуск тестов на платформе 1С
+    def test_child_loss_never_restarts_process_or_replays(self):
+        process=self.process(); controller=FormController(load_client(EXAMPLE),process.exchange)
+        state(controller); process.child.terminate(); process.child.wait(timeout=5)
+        result=event(controller)
+        self.assertEqual(result['error'],'outcome_unknown')
+        counter=process.counter
+        self.assertEqual(event(controller)['error'],'outcome_unknown')
+        self.assertEqual(process.counter,counter)
 
-На компьютере с установленной 1С можно собрать и выполнить `.bsl` из
-`integrational_tests/tests`, включая модули с процедурами и функциями:
+    def test_deadline_failure_is_finite_and_transport_is_locked(self):
+        process=self.process()
+        with mock.patch.object(process._replies,'get',side_effect=__import__('queue').Empty):
+            with self.assertRaises(LocalTransportError): process.exchange(b'{}\n')
+        self.assertTrue(process.failed)
+        counter=process.counter
+        with self.assertRaises(LocalTransportError): process.exchange(b'{}\n')
+        self.assertEqual(process.counter,counter)
 
-```console
-python integrational_tests/test_launcher.py --bd "C:\Bases\TestBase" --path-1c "C:\Program Files\1cv8\8.3.27.1859\bin"
-```
+    def test_runtime_truncated_and_oversized_frames_stop_without_dispatch(self):
+        for raw in (b'{}',b'x'*(MAX_LINE_BYTES+1)):
+            output=io.BytesIO()
+            self.assertEqual(serve_runtime(EXAMPLE,input_stream=io.BytesIO(raw),output_stream=output),1)
+            self.assertEqual(output.getvalue(),b'')
+        self.assertEqual(serve_runtime(EXAMPLE,input_stream=io.BytesIO(),output_stream=io.BytesIO()),0)
 
-Вывод сохраняется в `integrational_tests/output/<имя теста>.out`; новые результаты
-игнорируются Git. Исторические Windows-данные для регрессионных проверок находятся
-в [tests/fixtures/native_windows](tests/fixtures/native_windows).
-Каталог `integrational_tests` содержит самостоятельный генератор эталонного
-вывода на 1С. Его Python-проверки запускаются отдельно командой
-`python integrational_tests/check_launcher.py`.
-Инструкция и требования к базе: [integrational_tests/README.md](integrational_tests/README.md).
+    def test_frozen_route_and_process_selection_are_explicit(self):
+        with mock.patch.object(entrypoint.form_app,'main',return_value=6) as app, mock.patch.object(entrypoint,'cli_main',return_value=9):
+            self.assertEqual(entrypoint.main(['--form-ui','owned']),6)
+            app.assert_called_with(['owned'])
+            self.assertEqual(entrypoint.main(['--form-ui-runtime','owned']),6)
+            app.assert_called_with(['--runtime','owned'])
+            self.assertEqual(entrypoint.main(['-c','--form-ui']),9)
+        with mock.patch.object(FormProcess,'_start') as start, mock.patch.object(sys,'frozen',True,create=True):
+            FormProcess('owned','data.sqlite')
+            command=start.call_args.args[0]
+            self.assertEqual(command[:2],[sys.executable,'--form-ui-runtime'])
+            self.assertIn('--f',command)
 
-## Автономная сборка
+    def test_launcher_failure_is_finite_and_plain_mode_is_unchanged(self):
+        output=io.StringIO()
+        with redirect_stderr(output), mock.patch('yadinassi.ui.form_app.load_client',side_effect=OSError('/private/path')):
+            self.assertEqual(main(['private-package']),1)
+        self.assertEqual(output.getvalue(),'Local form application unavailable.\n')
 
-```console
-python scripts/build.py
-```
 
-Скрипт запускает PyInstaller в режиме `--onefile --console`, проверяет бинарник
-вне дерева исходников и упаковывает его вместе с README, лицензией и примером.
-Python, стандартная библиотека и модули интерпретатора включаются в бинарник.
-При старте PyInstaller распаковывает содержимое во временный каталог.
+class FormHTTPTests(unittest.TestCase):
+    def setUp(self):
+        self.controller,self.runtime=pair()
+        self.server=LocalUIServer(self.controller,'a'*43,handler=FormHandler)
+        self.thread=Thread(target=self.server.serve_forever,kwargs={'poll_interval':.01},daemon=True);self.thread.start()
+        self.addCleanup(self.cleanup)
 
-| Цель | ОС и архитектура сборки | Бинарник | Архив |
-| --- | --- | --- | --- |
-| `windows` | Windows x86-64 | `dist/windows/yadinassi.exe` | `dist/yadinassi-<версия>-windows.zip` |
-| `linux` | Linux x86-64 | `dist/linux/yadinassi` | `dist/yadinassi-<версия>-linux.tar.gz` |
-| `mac-x86` | macOS Intel x86-64 | `dist/mac-x86/yadinassi` | `dist/yadinassi-<версия>-mac-x86.tar.gz` |
-| `mac-arm` | macOS Apple Silicon arm64 | `dist/mac-arm/yadinassi` | `dist/yadinassi-<версия>-mac-arm.tar.gz` |
+    def cleanup(self):
+        self.server.shutdown();self.server.server_close();self.thread.join(2)
 
-`python scripts/build.py --target mac-arm` дополнительно проверяет соответствие
-хоста выбранной цели. PyInstaller [требует сборки на целевой ОС](https://pyinstaller.org/en/stable/),
-поэтому платформы собираются отдельными заданиями GitHub Actions. Все четыре
-сохраняются для tag и ручных запусков; для PR/main временное исключение описано ниже.
-`mac-x86` означает 64-битный Intel, не 32-битный x86.
+    def http(self, method='POST', path='/rpc', body=None, headers=None):
+        conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3)
+        values={'Host':self.server.authority,'Origin':self.server.origin,'Content-Type':'application/x-ndjson','X-Yadinassi-Session':self.server.token}
+        values.update(headers or {})
+        try:
+            conn.request(method,path,body=encode_line(request()) if body is None else body,headers=values)
+            response=conn.getresponse();return response.status,dict(response.getheaders()),response.read()
+        finally:conn.close()
 
-Linux-сборка использует Ubuntu 22.04 и требует совместимую glibc (2.35+);
-это не статический musl-бинарник для Alpine. macOS-сборки в CI используют macOS
-15 Intel и macOS 15 ARM. Совместимость с более старыми версиями ОС отдельно не
-проверяется. Apple Developer ID / нотариализация и Authenticode-подпись Windows
-в текущую сборку не входят.
+    def test_loopback_hello_and_readonly_reattach(self):
+        code,headers,raw=self.http()
+        self.assertEqual(code,200);self.assertEqual(decode_line(raw)['result']['state']['kind'],'form')
+        self.assertEqual(headers['Cache-Control'],'no-store')
+        self.assertEqual(self.http()[2],raw)
+        self.assertEqual(self.controller.session.client_sequence,1)
 
-## GitHub Actions и релизы
+    def test_wrong_origin_token_host_and_other_protocol_reject(self):
+        for headers in ({'Host':'other.invalid'},{'Origin':'https://evil.invalid'},{'X-Yadinassi-Session':'b'*43}):
+            self.assertEqual(self.http(headers=headers)[0],403)
+        bad=request();bad['method']='editor.hello'
+        self.assertEqual(self.http(body=encode_line(bad))[0],400)
+        self.assertFalse(self.controller._opened)
 
-Workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) работает
-при push, pull request и ручном запуске через Actions → Test and build → Run workflow.
-Первые попытки обычного PR workflow используют общую группу на номер PR:
-новый запуск может отменить выполняющийся и заменить ожидающий запуск этой группы.
-Повторные попытки, push в `main`, теги и ручные запуски изолированы по
-`run_id` и `run_attempt`, поэтому не вытесняют друг друга или текущую первую
-попытку PR. Это сокращает лишнюю работу, но не гарантирует ускорения очереди.
-[Порядок допуска GitHub](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
-не учитывает возраст SHA: запоздавшее первоначальное событие может попасть в
-группу позже нового. Перед мержем обязательны успешные проверки текущего head
-на всех требуемых платформах; отменённый запуск не считается успехом.
+    def test_static_routes_cannot_read_packages_databases_or_traversal(self):
+        for path in ('/server.bsl','/server.json','/client.bsl','/owned.sqlite','/../server.bsl','/app.js?x=1'):
+            self.assertEqual(self.http('GET',path)[0],404)
+        code,headers,raw=self.http('GET','/')
+        self.assertEqual(code,200);self.assertIn(b'<html',raw)
+        self.assertIn("script-src 'self'",headers['Content-Security-Policy'])
 
-Временно обычные PR и push в `main` запускают light/heavy/package только на Linux,
-Windows и macOS Intel. macOS ARM в этих запусках отсутствует: verdict явно содержит
-`excluded_platforms=["mac-arm"]` и `full_coverage=false`; полнота тестов остальных
-трёх платформ по-прежнему обязательна. Все tag push, включая не-`v` и теги с `/`,
-и ручные запуски сохраняют ARM light/heavy/package и полное четырёхплатформенное
-покрытие. Draft PR запускает только light, Ready PR также heavy и сборку.
-Нативные workflow и их требования не изменяются. Подробности, проверка verdict и
-задача возврата ARM: [tiered CI](docs/tiered-ci.md).
+    def test_extra_event_keys_reject_before_mutation(self):
+        self.http()
+        bad=request('event',event='command',revision=1,control='RunButton',endpoint=1)
+        self.assertEqual(self.http(body=encode_line(bad))[0],503)
+        self.assertEqual(self.controller.session.client_sequence,1)
 
-Для каждой включённой платформы при полном heavy-запуске workflow:
-
-1. Устанавливает Python 3.12 и зависимости сборки.
-2. Запускает тесты интерпретатора и CLI.
-3. Собирает автономный бинарник.
-4. Проверяет запуск файла, `-с`, консоли, стандартного ввода и обработку ошибок.
-5. Загружает архив в артефакты задания.
-
-Отдельный [нативный workflow](docs/native-1c-ci.md) автоматически запускает шесть
-сценариев на настоящей учебной 1С в изолированном Docker для PR владельца из этого
-репозитория в `main` и его push в `main`, включая Draft PR. Он создаёт свежие
-результаты для текущего commit и сравнивает их с интерпретатором; ручная генерация
-эталонов для этих событий не нужна. Форки исключены из этой проверки, отсутствие
-нативного результата не считается успехом. Порядок пар Соответствия имеет
-отдельный согласованный контракт, остальные результаты строгие. Старые Windows
-fixtures сохранены отдельно в `tests/fixtures/native_windows`; теги и публикация релизов этим новым workflow не охвачены.
-
-При push тега `v*`, после успешного завершения всех четырех сборок, workflow
-создает GitHub Release с четырьмя архивами и `SHA256SUMS`. Используется встроенный
-`GITHUB_TOKEN`, отдельные секреты не нужны. Право `contents: write` выдается
-только заданию публикации; pull request не публикует релиз.
-
-Перед релизом измените только `__version__` в `yadinassi/__init__.py`,
-закоммитьте изменение и создайте соответствующий тег. Например, для `0.2.0`:
-
-```console
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-## Расширение интерпретатора
-
-```text
-исходный BSL → syntax/lexer.py → syntax/parser.py → syntax/ast.py → runtime.py → values.py
-```
-
-`syntax/lexer.py` содержит токены и словарь ключевых слов; `syntax/parser.py`
-строит AST, не исполняя код; `syntax/ast.py` описывает узлы. Условная компиляция
-и области исходного кода находятся в `syntax/preprocessor.py`. `runtime.py`
-исполняет дерево, а `values.py` задает значения, преобразования и явно доступные
-методы объектов.
-`cli.py` отвечает за файлы и консоль. Код BSL не передается в Python `eval`/`exec`.
-
-Фронтенд импортируется из `yadinassi.syntax.*`. Временные модули
-`yadinassi.ast`, `yadinassi.lexer`, `yadinassi.parser` и `yadinassi.preprocessor`
-удалены: это намеренное нарушение совместимости прямых Python-импортов.
-Замените `import yadinassi.parser` на `import yadinassi.syntax.parser`,
-`from yadinassi.parser import parse` на `from yadinassi.syntax.parser import parse`,
-а `from yadinassi import ast` на `from yadinassi.syntax import ast`.
-Аналогично перенесите импорты остальных модулей и обращения к их пространствам
-имён; для monkeypatch используйте канонический `yadinassi.syntax.*`.
-Совместимость старых Python pickle и introspection со старыми путями не
-гарантируется. Публичный embedding API (`Interpreter`, `BSLError`,
-`BSLRuntimeError`, `__version__`) сохраняется. Старые пути
-`yadinassi.storage.*` удалены вместе с поддержкой физического формата 1С;
-контекст базы и `--f` теперь используют SQLite.
-
-Числовые реализации находятся в `yadinassi.numeric`: `math_conversion`,
-`binary_exp`, `powers`, `elementary`, `bits`, `numbers` и `round_modes`.
-Их прежние пути `yadinassi.<имя>` также удалены без совместимых aliases.
-Например, замените `from yadinassi.numbers import round_number` на
-`from yadinassi.numeric.numbers import round_number`, а
-`from yadinassi import round_modes` на `from yadinassi.numeric import round_modes`.
-Импорты функций, исключения `UnsupportedConversionRange`, таблиц `BUILTINS`,
-классов `BSLRoundMode`, `BSLRoundModes` и singleton `ROUND_MODES` должны
-использовать канонические модули. Зависимости для monkeypatch меняйте там же
-(например, `Context` в `yadinassi.numeric.binary_exp`). Пакет `numeric`
-не экспортирует функции поверх одноимённых подмодулей. Числовое поведение,
-включая BSL-сериализацию, не изменено; старые прямые Python-импорты больше
-не поддерживаются.
-
-Для новой конструкции добавьте токены при необходимости, узел AST, правило
-парсера и метод `Interpreter.visit_ИмяУзла`, затем тесты поведения и ошибок.
-Новые встроенные функции и типы регистрируются без изменения парсера:
-
-```python
-from yadinassi import Interpreter
-
-output = []
-vm = Interpreter(output=output.append)
-vm.register_function("Удвоить", lambda value: value * 2, "Double")
-vm.execute('Сообщить(Удвоить(21));', source="example.bsl")
-assert output == ["42"]
-```
-
-Для типа используйте `vm.register_type("Имя", factory)`. Объект с доступными из
-BSL методами наследует `BSLObject` и реализует `get_member(name)`, возвращая
-значение или `HostFunction`. Числовые результаты расширений возвращайте как
-`Decimal`, логические как `bool`, неопределенное значение как `None`.
-Имена функций, типов и переменных нормализуются через `casefold()`; расширение
-нормализует имена своих методов в `get_member` самостоятельно.
-
-Интерпретатор предназначен для исполнения доверенного кода: лимиты времени
-и памяти не предусмотрены. Встроенные функции расширения исполняются с правами
-Python-процесса.
-
-## Лицензия
-
-MIT, см. [LICENSE](LICENSE).
-
-Клиентское [асинхронное ядро языка](docs/async-language.md) поддерживает
-`Асинх` / `Async`, `Ждать` / `Await` и обещания с настоящим сохранением кадров.
-Асинхронные семейства API платформы этим не добавляются.
-
-### Replicated form applications
-
-An opt-in browser form launcher runs client BSL locally and server BSL in a
-separate owned process, optionally with server-only SQLite access.
-See [run a replicated form application](docs/form-app.md) for a calculation
-example and a persisted product-intake form. Plain BSL execution is unchanged.
+    def test_accepted_close_still_shuts_down_after_lost_http_response(self):
+        self.http()
+        original = FormHandler._reply
+        def lost(handler, status, body=b'', kind='text/plain'):
+            if status == 200:
+                raise BrokenPipeError('owned lost response')
+            return original(handler, status, body, kind)
+        with mock.patch.object(FormHandler, '_reply', lost):
+            with self.assertRaises(http.client.RemoteDisconnected):
+                self.http(body=encode_line(request('event', event='close', revision=1)))
+        self.thread.join(2)
+        self.assertFalse(self.thread.is_alive())
+        self.assertTrue(self.runtime.session.closed)

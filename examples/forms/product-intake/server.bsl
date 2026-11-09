@@ -5,13 +5,13 @@ Procedure Create(Cancel, StandardProcessing)
         If A.Name <> "Dirty" And A.Name <> "Saved" Then
             F = Items.Add("Field" + A.Name, Type("FormField"));
             F.Title = A.Title;
-            F.DataPath = A.Name;
             If A.Name = "Status" Or A.Name = "Total" Then
                 F.Type = FormFieldType.LabelField;
                 F.ReadOnly = True;
             Else
                 F.SetAction("OnChange", "Changed");
             EndIf;
+            F.DataPath = A.Name;
         EndIf;
     EndDo;
     C = Commands.Add("Run"); C.Action = "RunCommand";

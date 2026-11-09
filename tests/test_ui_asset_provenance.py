@@ -19,7 +19,7 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 130)
+        self.assertEqual(result['source_file_count'], 137)
         # The aggregate changes if even a single packaged asset byte changes.
         original = full.read_regular
         def changed(path, *args, **kwargs):
@@ -51,18 +51,20 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
             with self.assertRaisesRegex(full.FullError, 'unexpected_interpreter_source'): source_provenance()
 
     def test_build_manifest_matches_sources_and_generated_output(self):
-        directory = ROOT / 'yadinassi/ui/assets/catalog'
-        manifest = json.loads((directory / 'build-manifest.json').read_text())
-        self.assertEqual(manifest['schema'], 'yadinassi-catalog-assets/0')
-        self.assertEqual(set(manifest['outputs']), set(ASSETS) - {'build-manifest.json'})
-        for name, digest in manifest['outputs'].items():
-            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
-        for name, digest in manifest['sources'].items():
-            self.assertEqual(hashlib.sha256((ROOT / 'frontend/catalog' / name).read_bytes()).hexdigest(), digest, name)
+        for renderer in ('catalog', 'form'):
+            directory = ROOT / 'yadinassi/ui/assets' / renderer
+            manifest = json.loads((directory / 'build-manifest.json').read_text())
+            self.assertEqual(manifest['schema'], 'yadinassi-' + renderer + '-assets/0')
+            self.assertEqual(set(manifest['outputs']), set(ASSETS) - {'build-manifest.json'})
+            for name, digest in manifest['outputs'].items():
+                self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(), digest, name)
+            for name, digest in manifest['sources'].items():
+                self.assertEqual(hashlib.sha256((ROOT / 'frontend' / renderer / name).read_bytes()).hexdigest(), digest, name)
 
     def test_runtime_resource_loader_finds_nonempty_exact_assets(self):
-        for name in ASSETS:
-            self.assertTrue(files('yadinassi.ui').joinpath('assets', 'catalog', name).read_bytes())
+        for renderer in ('catalog', 'form'):
+            for name in ASSETS:
+                self.assertTrue(files('yadinassi.ui').joinpath('assets', renderer, name).read_bytes())
 
     def test_windows_offline_adapter_keeps_exact_inventory_and_byte_drift_checks(self):
         with mock.patch.object(filesystem_fixture, '_USE_SYNTHETIC_FILE_READER', True):

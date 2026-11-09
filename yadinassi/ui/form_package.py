@@ -10,7 +10,7 @@ from ..form_model import BSLFormAttribute, name
 from ..form_runtime import MAX_SOURCE
 from ..invocation import InvocationBinding, _decode_scalar
 from ..type_descriptions import BSLTypeDescription
-from .protocol import decode_line, MAX_LINE_BYTES, bounded_text
+from .protocol import decode_document, MAX_LINE_BYTES, bounded_text
 
 PACKAGE_PROTOCOL = 'yadinassi-form-app/0'
 
@@ -68,7 +68,7 @@ class ServerPackage:
 
 
 def load_client(directory):
-    manifest = decode_line(_read(directory, 'client.json', MAX_LINE_BYTES))
+    manifest = decode_document(_read(directory, 'client.json', MAX_LINE_BYTES))
     _keys(manifest, 'protocol handlers bindings')
     if manifest['protocol'] != PACKAGE_PROTOCOL:
         raise ValueError('invalid form package version')
@@ -77,7 +77,7 @@ def load_client(directory):
 
 
 def load_server(directory):
-    manifest = decode_line(_read(directory, 'server.json', MAX_LINE_BYTES))
+    manifest = decode_document(_read(directory, 'server.json', MAX_LINE_BYTES))
     _keys(manifest, 'protocol handlers endpoints lifecycle attributes')
     if manifest['protocol'] != PACKAGE_PROTOCOL or type(manifest['lifecycle']) is not dict:
         raise ValueError('invalid form package version or lifecycle')
