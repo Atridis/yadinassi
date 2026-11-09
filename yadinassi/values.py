@@ -156,6 +156,7 @@ class BSLType(Enum):
     VALUE_TREE_COLUMN = "КолонкаДереваЗначений"
     VALUE_TREE_ROW = "СтрокаДереваЗначений"
     VALUE_TREE_ROW_COLLECTION = "КоллекцияСтрокДереваЗначений"
+    TEMP_TABLES_MANAGER = "МенеджерВременныхТаблиц"
     QUERY = "Запрос"
     QUERY_RESULT = "РезультатЗапроса"
     QUERY_RESULT_SELECTION = "ВыборкаИзРезультатаЗапроса"

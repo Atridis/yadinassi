@@ -1,0 +1,124 @@
+"""Atomic, bounded in-memory temporary tables for logical query packages.
+
+These are explicit host semantics, not native temporary-table storage or measured
+native statement-result parity. Persistent database access is read-only through
+one CatalogReadView per package. No table rows escape as mutable buffers.
+"""
+from dataclasses import dataclass
+from decimal import Decimal
+from threading import Lock
+
+from . import query_parser as syntax
+from .values import BSLArray, BSLObject, HostFunction
+
+MAX_TABLES = 16
+MAX_ROWS = 10000
+MAX_CELLS = 100000
+MAX_TEXT = 8000000
+
+
+@dataclass(frozen=True, slots=True)
+class _Table:
+    columns: tuple
+    rows: tuple
+
+
+def _cost(columns, rows):
+    return len(columns) * len(rows), sum(len(v) for row in rows for v in row if type(v) is str)
+
+
+def _check_tables(tables):
+    if len(tables) > MAX_TABLES:
+        raise ValueError('Temporary table count limit exceeded')
+    cells = text = 0
+    for table in tables.values():
+        if len(table.rows) > MAX_ROWS:
+            raise ValueError('Temporary table row limit exceeded')
+        c, t = _cost(table.columns, table.rows)
+        cells += c; text += t
+        if cells > MAX_CELLS or text > MAX_TEXT:
+            raise ValueError('Temporary table resource limit exceeded')
+
+
+class BSLTempTablesManager(BSLObject):
+    """Explicitly owned table lifetime; a closed manager cannot be reopened."""
+    def __init__(self, owner=None):
+        self._tables = {}
+        self._owner = owner
+        self._closed = False
+        self._lock = Lock()
+
+    def __str__(self):
+        return 'Менеджер временных таблиц'
+
+    def get_member(self, name):
+        if name.casefold() in ('close', 'закрыть'):
+            return HostFunction(name, self.close, returns_value=False)
+        return super().get_member(name)
+
+    def close(self):
+        if not self._lock.acquire(blocking=False):
+            raise ValueError('Temporary table manager is busy')
+        try:
+            self._tables = {}
+            self._closed = True
+        finally:
+            self._lock.release()
+
+
+def execute_package(statements, catalogs, parameters, manager=None):
+    from .queries import BSLQueryResult, _Column
+    from .relational_queries import _Plan
+    if manager is None: manager = BSLTempTablesManager()
+    if type(manager) is not BSLTempTablesManager:
+        raise TypeError('Query package requires TempTablesManager')
+    if not manager._lock.acquire(blocking=False):
+        raise ValueError('Temporary table manager is busy')
+    view = None
+    try:
+        if manager._closed:
+            raise ValueError('Temporary table manager is closed')
+        owner = catalogs._metadata
+        if manager._owner is not None and manager._owner is not owner:
+            raise ValueError('Temporary table manager belongs to another metadata snapshot')
+        tables = dict(manager._tables)
+        result = BSLArray()
+        budget = [0, 0]
+        result_cells = result_text = 0
+        for statement in statements:
+            if type(statement) is syntax.Destroy:
+                key = statement.name.casefold()
+                if key not in tables: raise ValueError('Unknown temporary table')
+                del tables[key]
+                output = BSLQueryResult((), ())
+            else:
+                if statement.into is not None and statement.into.casefold() in tables:
+                    raise ValueError('Temporary table already exists')
+                plan = _Plan(statement, catalogs, parameters, tables)
+                source_manager = next((m for m in plan.managers if m is not None), None)
+                if view is None and source_manager is not None:
+                    view = source_manager._view()
+                output = plan.execute(view=view, budget=budget)
+                if statement.into is not None:
+                    tables[statement.into.casefold()] = _Table(output._columns, output._rows)
+                    _check_tables(tables)
+                    # Explicit host statement result; not native parity evidence.
+                    output = BSLQueryResult((_Column('Count', None, 'number', (38, 0, 'Any'), explicit_alias=True),),
+                                            ((Decimal(len(output._rows)),),))
+            cells, text = _cost(output._columns, output._rows)
+            result_cells += cells; result_text += text
+            if result_cells > MAX_CELLS or result_text > MAX_TEXT:
+                raise ValueError('Query package result resource limit exceeded')
+            result.items.append(output)
+        # Closing is part of success: a port close failure must not publish temps.
+        if view is not None:
+            closing, view = view, None
+            closing.close()
+        manager._tables = tables
+        manager._owner = owner
+        return result
+    finally:
+        try:
+            if view is not None: view.close()
+        finally:
+            manager._lock.release()

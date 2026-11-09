@@ -1,5 +1,6 @@
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
+from .query_packages import BSLTempTablesManager
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
@@ -68,6 +69,7 @@ _VALUE_TYPES = (
     (BSLOSCertificationAuthorityCertificates, BSLType.OS_CA_CERTIFICATES, "OSCertificationAuthorityCertificates"),
     (BSLInternetProxy, BSLType.INTERNET_PROXY, "InternetProxy"),
     (BSLUserMessage, BSLType.USER_MESSAGE, "UserMessage"),
+    (BSLTempTablesManager, BSLType.TEMP_TABLES_MANAGER, "TempTablesManager"),
     (BSLQuery, BSLType.QUERY, "Query"),
     (BSLQueryResult, BSLType.QUERY_RESULT, "QueryResult"),
     (BSLQueryResultSelection, BSLType.QUERY_RESULT_SELECTION, "QueryResultSelection"),
