@@ -281,9 +281,11 @@ def read_json_events(reader, read_to_map=False, date_properties=None, date_forma
     def consume(depth, name=None):
         nonlocal remaining
         remaining -= 1
-        if depth > maximum or remaining < 0:
+        if depth > MAX_DEPTH or remaining < 0:
             raise ValueError("JSON: превышен предел глубины или числа значений Yadinassi")
         kind, value = reader._current
+        if kind in (T.START_OBJECT, T.START_ARRAY) and depth + 1 > maximum:
+            raise ValueError("JSON: превышена максимальная вложенность контейнеров")
         if kind is T.START_OBJECT:
             value = BSLMap() if read_to_map else BSLStructure()
             while reader.read() and reader._current[0] is not T.END_OBJECT:
