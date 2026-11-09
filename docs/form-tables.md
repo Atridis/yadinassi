@@ -133,8 +133,12 @@ The private replica protocol is `yadinassi-form/1`; the renderer protocol is
 revision and a tagged scalar; selection carries an owned row ID or null. The
 browser cannot choose database paths, table schemas, row structure, routines or
 endpoints. A table's readOnly flag and each column's readOnly flag are enforced
-by the host, alongside visible/enabled state. Date, Null and Undefined values
-remain display-only in the initial renderer.
+by the host for cell edits, alongside visible/enabled state. View-only row
+selection remains available on an enabled read-only table; it invokes no handler
+and does not change cells. Busy, disabled and uncertain states block selection. Date, Null and Undefined values
+remain display-only in the initial renderer. Private table state preserves exact
+Date ticks, including default and fractional values; ordinary Invocation
+arguments/results retain their narrower Date admission.
 
 Explicit host budgets are 4 tables per session, 8 columns and 32 live rows per
 table, 256 total live cells and 4096 monotonically allocated row identities per
@@ -163,6 +167,14 @@ locking, a fault after a real SQLite commit, and loss after a separate-process
 save. Its end-to-end flow starts the real FormProcess, edits multiple lines,
 deletes a selected line, saves, closes the child, independently reopens SQLite
 and verifies the exact header, row order, quantities, prices and amounts.
+The fourth scenario in `tests/browser_ui/form_browser_qa.mjs` adds actual
+browser edits, immediate command flushing, identity-based selection/deletion,
+invalid-draft refusal, a narrow screenshot, save locking and independent durable
+readback. It runs only through the existing reviewed form-browser branch and
+preserves the one sandboxed Chromium launch, loopback-only routing and fixed
+resource/cleanup limits. Its screenshot is `order-table-narrow.png`; review the
+actual image and source-bound report before claiming browser acceptance.
+
 Core/replication tests and `frontend/form/test` cover their respective identity,
 budget, packet and draft boundaries. Test results must be reported against the
 actual candidate; this guide does not claim that tests or native acquisition ran.

@@ -76,3 +76,6 @@ integration run.
   Clear selection sends a null row. Editing a cell asks the host to select its
   row before the table handler. Add, Delete, Calculate and Save are normal BSL
   commands with no special browser operations or persistence behavior.
+
+Read-only tables still permit view-only row selection and clearing. Cell edits
+remain blocked; disabled, busy and uncertain states also block selection.

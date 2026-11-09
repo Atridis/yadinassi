@@ -15,10 +15,10 @@ const totalDeadline=startedAt+180000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['estimate.png','product-narrow.png'];
+const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',
-  'sqlite_save_close_and_durable_readback'];
+  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen'];
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -227,6 +227,75 @@ async function main(){
     const readback=runPython(['-m','yadinassi','--f',database,'-c','Message(Catalogs.Products.FindByCode("B001").Amount);']);
     assert.equal(readback.trim(),'18,75');report.durable={reopenedAfterHostClose:true,exactAmount:'18.75'};
   });
+  await scenario(scenarioNames[3],async()=>{
+    const database=path.join(owned,'orders.sqlite');
+    runPython(['-m','yadinassi','--create-db',database,'--import-xml',path.join(repo,'examples/forms/order-intake/configuration')]);
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    await startHost('order-intake',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Create an order',exact:true}).waitFor();
+    for(const [name,value] of [['Order code','B002'],['Description','Browser-owned order']]){
+      await field(name).fill(value);await field(name).press('Enter');await idle();
+    }
+    for(const [id,description,quantity,price] of [[1,'Cable','1.25','2.30'],[2,'Remove me','9','9'],[3,'Service','2','3.10']]){
+      // Every Add after the first must flush the preceding row's price draft.
+      await button('Add line').click();await idle();
+      assert.equal(await button('Selected row '+id+' in Order lines').getAttribute('aria-pressed'),'true');
+      for(const [column,value] of [['Description',description],['Quantity',quantity]]){
+        await field(column+', row '+id).fill(value);await field(column+', row '+id).press('Enter');await idle();
+      }
+      await field('Price, row '+id).fill(price);
+    }
+    // Selection flushes the last draft before setting the requested owned identity.
+    await button('Select row 2 in Order lines').click();await idle();
+    assert.equal(await field('Price, row 3').inputValue(),'3.10');
+    assert.equal(await button('Selected row 2 in Order lines').getAttribute('aria-pressed'),'true');
+    await button('Delete selected line').click();await idle();
+    assert.equal(await field('Description, row 2').count(),0);
+    assert.equal(await field('Description, row 1').inputValue(),'Cable');
+    assert.equal(await field('Description, row 3').inputValue(),'Service');
+    assert.equal(await page.getByRole('region',{name:'Order lines',exact:true}).locator('tbody tr').count(),2);
+    await button('Recalculate').click();await idle();
+    assert.equal(await field('Total').inputValue(),'9.08');
+    assert.equal(await field('Amount, row 1').inputValue(),'2.88');
+    assert.equal(await field('Amount, row 3').inputValue(),'6.20');
+    // Invalid drafts stop commands and selection before either may emit an RPC.
+    await field('Price, row 1').fill('not-a-number');
+    const beforeInvalid=rpc;
+    await button('Recalculate').click();await idle();
+    assert.equal(await page.getByRole('alert').isVisible(),true);
+    assert.equal(rpc,beforeInvalid,'invalid_command_draft_sent');
+    await button('Select row 3 in Order lines').click();await idle();
+    assert.equal(rpc,beforeInvalid,'invalid_selection_draft_sent');
+    // The final price is intentionally not submitted with Enter or blur first.
+    await field('Price, row 1').fill('2.35');
+    await button('Save order').click();await idle();
+    assert.equal(await field('Status').inputValue(),'Order saved');
+    assert.equal(await field('Total').inputValue(),'9.14');
+    assert.equal(await field('Amount, row 1').inputValue(),'2.94');
+    assert.equal(await field('Amount, row 3').inputValue(),'6.20');
+    for(const name of ['Add line','Delete selected line','Recalculate','Save order'])
+      assert.equal(await button(name).isDisabled(),true);
+    for(const name of ['Order code','Description','Description, row 1','Quantity, row 1','Price, row 3'])
+      assert.equal(await field(name).isEditable(),false);
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole('heading',{name:'Order lines',exact:true}).scrollIntoViewIfNeeded();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_page_overflow');
+    await screenshot('order-table-narrow.png');
+    await button('Close form').click();
+    await page.getByText('This form is closed. You can close this tab.',{exact:true}).waitFor();
+    await stopHost();
+    // A new CLI process verifies the whole owner and both stored rows after close.
+    const readback=runPython(['-m','yadinassi','--f',database,'-c',
+      'O=Catalogs.Orders.FindByCode("B002").GetObject(); '+
+      'If O.Code<>"B002" Or O.Description<>"Browser-owned order" Or O.Total<>9.14 Or O.Lines.Count()<>2 Then Raise "order readback"; EndIf; '+
+      'A=O.Lines.Get(0); B=O.Lines.Get(1); '+
+      'If A.ItemDescription<>"Cable" Or A.Quantity<>1.25 Or A.Price<>2.35 Or A.Amount<>2.94 Then Raise "first row readback"; EndIf; '+
+      'If B.ItemDescription<>"Service" Or B.Quantity<>2 Or B.Price<>3.10 Or B.Amount<>6.20 Then Raise "second row readback"; EndIf; '+
+      'N=0; S=Catalogs.Orders.Select(); While S.Next() Do N=N+1; EndDo; '+
+      'If N<>1 Then Raise "record count"; EndIf; Message("ORDER_READBACK_OK");']);
+    assert.equal(readback.trim(),'ORDER_READBACK_OK');
+    report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']};
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -279,5 +348,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:3,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

@@ -225,7 +225,7 @@ export class FormClient {
       if (!keys(values, event === 'cell' ? ['control', 'row', 'column', 'value'] : ['control', 'row']))
         throw new FormError('invalid_input');
       const item = this.snapshot.items.find(candidate => candidate.name === values.control);
-      if (item?.kind !== 'table' || !item.visible || !item.enabled || item.readOnly) throw new FormError('unavailable');
+      if (item?.kind !== 'table' || !item.visible || !item.enabled || event === 'cell' && item.readOnly) throw new FormError('unavailable');
       if (values.row !== null && (!integer(values.row) || !values.row || !item.rows.some(row => row.id === values.row)))
         throw new FormError('invalid_input');
       params.control = item.name; params.row = values.row;

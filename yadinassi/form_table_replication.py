@@ -2,6 +2,8 @@
 
 Rows are form-owned identities, never catalog references or ordinary invocation
 values. Client deltas can edit existing cells and selection, not schema/order.
+Table Dates use exact bounded ticks, including defaults/fractions; this private
+state codec does not widen Invocation argument/result admission.
 """
 from decimal import Decimal
 
@@ -9,7 +11,7 @@ from .form_tables import (FormTableColumn, FormTableSchema, BSLFormDataCollectio
     MAX_TABLES, MAX_TABLE_COLUMNS as MAX_COLUMNS, MAX_TABLE_ROWS as MAX_ROWS,
     MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data)
 from .form_model import BSLFormTable, name, text, scalar
-from .invocation import _encode_scalar, _decode_scalar
+from .ui.protocol import encode_value, decode_value
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
@@ -69,7 +71,7 @@ def pack_tables(form):
         result.append({'id': table._identity, 'name': table.schema.name,
             'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
             'allocated': snapshot.allocated,
-            'rows': [[identity, [_encode_scalar(value) for value in values]]
+            'rows': [[identity, [encode_value(value) for value in values]]
                      for identity, values in snapshot.rows]})
     return result
 
@@ -106,9 +108,9 @@ def unpack_tables(packet, candidate, session):
                 raise ValueError('removed row identity reused')
             seen.add(identity)
             _row(encoded, len(columns))
-            decoded = tuple(scalar(_decode_scalar(value)) for value in encoded)
+            decoded = tuple(scalar(decode_value(value)) for value in encoded)
             for column, value, raw in zip(columns, decoded, encoded):
-                if _encode_scalar(column.value_type.adjust_value(value)) != raw:
+                if encode_value(column.value_type.adjust_value(value)) != raw:
                     raise ValueError('table value outside schema')
             rows.append((identity, decoded))
         table = BSLFormDataCollection(candidate, schema, record['id'])
@@ -195,8 +197,8 @@ def admit_table_delta(form, cells, selections, scalar_data):
             raise ValueError('duplicate or removed table cell')
         seen.add(identity)
         column = table.schema.columns[column_index]
-        value = scalar(_decode_scalar(encoded))
-        if _encode_scalar(column.value_type.adjust_value(value)) != encoded:
+        value = scalar(decode_value(encoded))
+        if encode_value(column.value_type.adjust_value(value)) != encoded:
             raise ValueError('table delta outside schema')
         key = table.schema.name.casefold()
         if key not in replacements:

@@ -366,7 +366,8 @@ class ReplicatedFormServer:
             database_context=database_context)
         for binding in handlers:
             key = binding.name.casefold()
-            if key in self.session.reserved_names or key in self.session.form._attributes:
+            if (key in self.session.reserved_names or key in self.session.form._attributes
+                    or key in self.session.form._tables):
                 raise ValueError('form handler name already bound')
             _stub(self.session.interpreter, binding, side='client')
             self.session.reserved_names.add(key)

@@ -227,7 +227,7 @@ class FormClient {
       if (!keys(values, event === 'cell' ? ['control', 'row', 'column', 'value'] : ['control', 'row']))
         throw new FormError('invalid_input');
       const item = this.snapshot.items.find(candidate => candidate.name === values.control);
-      if (item?.kind !== 'table' || !item.visible || !item.enabled || item.readOnly) throw new FormError('unavailable');
+      if (item?.kind !== 'table' || !item.visible || !item.enabled || event === 'cell' && item.readOnly) throw new FormError('unavailable');
       if (values.row !== null && (!integer(values.row) || !values.row || !item.rows.some(row => row.id === values.row)))
         throw new FormError('invalid_input');
       params.control = item.name; params.row = values.row;
@@ -444,7 +444,7 @@ function createFormView(document, root, handlers) {
     control.scroll.setAttribute('aria-label', item.title || item.name);
     control.summary.textContent = item.rows.length + (item.rows.length === 1 ? ' row' : ' rows') +
       (item.currentRow === null ? ' · No row selected' : ' · Selected row ' + item.currentRow);
-    control.clear.disabled = disabled || item.readOnly || item.currentRow === null;
+    control.clear.disabled = disabled || item.currentRow === null;
     control.clear.setAttribute('aria-label', 'Clear selection in ' + (item.title || item.name));
     control.empty.hidden = item.rows.length > 0;
     const columns = new Set(item.columns.map(column => column.name));
@@ -473,7 +473,7 @@ function createFormView(document, root, handlers) {
       row.select.textContent = (selected ? 'Selected ' : 'Select ') + data.id;
       row.select.setAttribute('aria-label', (selected ? 'Selected row ' : 'Select row ') + data.id + ' in ' + (item.title || item.name));
       row.select.setAttribute('aria-pressed', selected ? 'true' : 'false');
-      row.select.disabled = disabled || item.readOnly;
+      row.select.disabled = disabled;
       for (const [name, cell] of row.cells) if (!columns.has(name)) { cell.cell.remove(); row.cells.delete(name); }
       item.columns.forEach((column, index) => {
         const value = data.values[index]; let cell = row.cells.get(column.name);

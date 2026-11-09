@@ -121,7 +121,7 @@ test('invalid cell and select events are blocked before any request', async () =
 test('table visibility, enabled, read-only and column locks reject edits', async () => {
   for (const patch of [{visible: false}, {enabled: false}, {readOnly: true}]) {
     const client = new FormClient(async request => reply(request, tableState(0, table(patch)))); await client.hello();
-    assert.throws(() => client.event('select', {control: 'Lines', row: 1}), {code: 'unavailable'});
+    if (!patch.readOnly) assert.throws(() => client.event('select', {control: 'Lines', row: 1}), {code: 'unavailable'});
     assert.throws(() => client.event('cell', {control: 'Lines', row: 1, column: 'Description', value: {type: 'String', value: 'X'}}), {code: 'unavailable'});
   }
   const item = table({columns: table().columns.map(column => ({...column, readOnly: true}))});
@@ -208,12 +208,13 @@ test('table dates and empty scalars remain exact display-only values', () => {
   assert.ok(cell(document, 1, 'When').title.includes('no timezone conversion'));
 });
 
-test('table locks disable selection and checkboxes and drop unavailable drafts', () => {
+test('read-only table blocks cells but session locks also disable selection', () => {
   const {view, document} = create(); view.render(model(tableState())); edit(cell(document), 'Pending');
   view.render(model(tableState(1, table({readOnly: true}))));
   assert.equal(view.hasDrafts(), false); assert.equal(cell(document).readOnly, true); assert.equal(cell(document, 1, 'Active').disabled, true);
-  assert.ok(buttons(document).filter(node => node.dataset.formAction === 'select').every(node => node.disabled));
+  assert.equal(select(document, 2).disabled, false);
   view.render(model(tableState(2), {locked: true, outcomeUnknown: true}));
+  assert.ok(buttons(document).filter(node => node.dataset.formAction === 'select').every(node => node.disabled));
   assert.ok(all(document.root).filter(node => node.tagName === 'INPUT').every(node => node.disabled));
 });
 
@@ -351,4 +352,17 @@ test('independent tables with equal row IDs preserve separate drafts and flush l
   view.render(model(state(1, {items: [other]})));
   assert.equal(view.changes().length, 1); assert.equal(view.changes()[0].control, 'Other');
   assert.equal(cell(document), inputs[1]); assert.equal(inputs[1].value, 'Second table');
+});
+
+
+test('read-only table supports view-only selection and clearing without cell mutation', async () => {
+  const {app, env, requests} = host(tableState(0, table({readOnly: true})));
+  await app.ready;
+  assert.equal(select(env.document, 2).disabled, false);
+  await app.run('select', 'Lines', 2);
+  assert.equal(app.client.snapshot.items[0].currentRow, 2);
+  await app.run('select', 'Lines', null);
+  assert.equal(app.client.snapshot.items[0].currentRow, null);
+  assert.deepEqual(requests.slice(1).map(request => request.params.event), ['select', 'select']);
+  assert.throws(() => app.client.event('cell', {control: 'Lines', row: 1, column: 'Description', value: {type: 'String', value: 'X'}}), {code: 'unavailable'});
 });

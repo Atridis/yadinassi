@@ -16,7 +16,7 @@ from ..form_replication import ReplicatedFormServer, ReplicatedFormSession
 from ..invocation import InvocationError, _decode_scalar
 from .form_package import load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
-from .protocol import encode_line, encode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
+from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
 
 PROTOCOL = 'yadinassi-form-ui/1'
 
@@ -175,7 +175,8 @@ class FormController:
                     if (row is not None and (type(row) is not int or not 1 <= row <= 4096)
                             or event == 'cell' and (row is None or type(params['column']) is not str)):
                         raise ValueError('invalid table event')
-                value = _decode_scalar(params['value']) if event in ('change', 'cell') else None
+                value = (decode_value(params['value']) if event == 'cell' else
+                         _decode_scalar(params['value']) if event == 'change' else None)
                 if self.session.uncertain:
                     error = 'outcome_unknown'
                 elif params['revision'] != self.session.revision:
