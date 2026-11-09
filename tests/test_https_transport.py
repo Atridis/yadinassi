@@ -6,6 +6,7 @@ credentials are shipped, no public network is used, and no trust store changes.
 import base64
 from http import client as native_client, server as native_server
 from pathlib import Path
+import os
 import select
 import shutil
 import socket
@@ -101,13 +102,32 @@ class HTTPSTransportTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(); cls.addClassCleanup(cls.temp.cleanup)
         cls.root = Path(cls.temp.name)
+        # Do not inherit host OpenSSL/LibreSSL request extensions or defaults.
+        config = cls.root / 'openssl.cnf'
+        config.write_text('''[req]
+distinguished_name = dn
+[dn]
+[ca]
+basicConstraints = critical,CA:TRUE
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+[server]
+subjectAltName = DNS:localhost
+basicConstraints = critical,CA:FALSE
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+''', encoding='ascii')
         def openssl(*args):
-            result = subprocess.run([shutil.which('openssl'), *args], cwd=cls.root, capture_output=True, timeout=30)
-            if result.returncode: raise AssertionError('TLS fixture certificate generation failed')
-        openssl('req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'ca.key', '-out', 'ca.pem', '-days', '2', '-subj', '/CN=Yadinassi Ephemeral Test CA', '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign')
-        openssl('req', '-newkey', 'rsa:2048', '-nodes', '-keyout', 'server.key', '-out', 'server.csr', '-subj', '/CN=localhost')
-        (cls.root / 'extensions').write_text('subjectAltName=DNS:localhost\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n')
-        openssl('x509', '-req', '-in', 'server.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key', '-CAcreateserial', '-out', 'server.pem', '-days', '2', '-extfile', 'extensions')
+            result = subprocess.run([shutil.which('openssl'), *args], cwd=cls.root,
+                                    env=dict(os.environ, OPENSSL_CONF=str(config)),
+                                    capture_output=True, timeout=30)
+            if result.returncode: raise AssertionError('TLS fixture certificate generation or verification failed')
+        openssl('req', '-config', str(config), '-x509', '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', 'ca.key', '-out', 'ca.pem', '-days', '2', '-subj', '/CN=Yadinassi Ephemeral Test CA', '-extensions', 'ca')
+        openssl('req', '-config', str(config), '-newkey', 'rsa:2048', '-sha256', '-nodes', '-keyout', 'server.key', '-out', 'server.csr', '-subj', '/CN=localhost')
+        openssl('x509', '-req', '-sha256', '-in', 'server.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key', '-CAcreateserial', '-out', 'server.pem', '-days', '2', '-extfile', str(config), '-extensions', 'server')
+        openssl('verify', '-CAfile', 'ca.pem', '-purpose', 'sslserver', 'server.pem')
         cls.ca = security.BSLFileCertificationAuthorityCertificates(str(cls.root / 'ca.pem'))
         cls.tls = security.BSLOpenSSLSecureConnection(None, cls.ca)
         cls.origin = native_server.ThreadingHTTPServer(('127.0.0.1', 0), Origin); cls.origin.records = []
