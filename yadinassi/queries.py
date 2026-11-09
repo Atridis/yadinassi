@@ -1,7 +1,9 @@
 """Bounded single-catalog Query over the logical read port, never SQL text.
 
 !todo General regional string collation and other query profiles. Native
-Query24 calibrates cursor boundaries, Code label and nullable scalar metadata. No joins, aggregates, data modification or implicit casts.
+Query24 calibrates cursor boundaries, Code label and nullable scalar metadata.
+Relational joins/aggregates use the separate backend-independent executor.
+No data modification or implicit casts.
 Dynamic-reference projections are available in cursors; Unload refuses them
 until truthful dynamic column TypeDescription support exists.
 """
@@ -241,6 +243,9 @@ class BSLQuery(BSLObject):
 
     def execute(self):
         query = syntax.parse_query(self._text)
+        from . import relational_queries
+        if relational_queries.required(query):
+            return relational_queries.execute(query, self._catalogs, dict(self._parameters))
         manager = self._catalogs.get_index(query.catalog)
         section = None
         if query.section is not None:

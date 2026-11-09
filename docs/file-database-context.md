@@ -68,8 +68,9 @@ this is not authentication or a connection to a running 1C session.
 
 The current backend is a bounded catalog slice: schemas, standard fields,
 primitive attributes and fixed catalog references, catalog objects and
-transactional create/update. It is not a port of Documents, tabular sections,
-InformationRegisters, queries, posting or every configuration callback. Unsupported
+transactional create/update. Admitted catalog tabular sections and [bounded relational queries](relational-catalog-queries.md)
+are also supported. It is not a port of Documents, InformationRegisters, posting
+or every configuration callback. Unsupported
 semantics must not silently bypass validation or business logic. See the
 [runtime catalog contract](bsl-catalog-read-scenario.md) and
 [headless UI protocol](ui-protocol-v0.md) for their exact public surfaces.
