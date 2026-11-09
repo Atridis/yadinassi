@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" version="2.20">
+<Configuration uuid="dfa468a6-36f8-5678-a1b6-771bb731d7c3"><Properties><Name>ReferenceOrdersExample</Name></Properties><ChildObjects><Catalog>Customers</Catalog><Catalog>Products</Catalog><Catalog>Orders</Catalog></ChildObjects></Configuration>
+</MetaDataObject>

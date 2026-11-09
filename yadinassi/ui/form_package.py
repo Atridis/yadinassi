@@ -103,7 +103,8 @@ def load_server(directory):
     if protocol not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL, OBJECT_PACKAGE_PROTOCOL) or type(manifest['lifecycle']) is not dict:
         raise ValueError('invalid form package version or lifecycle')
     application = manifest.get('application')
-    if protocol == OBJECT_PACKAGE_PROTOCOL and application != 'orders-workbench/1':
+    if protocol == OBJECT_PACKAGE_PROTOCOL and application not in (
+            'orders-workbench/1', 'reference-orders/1', 'catalog-choice/1'):
         raise ValueError('unknown trusted form application')
     source = _read(directory, 'server.bsl', MAX_SOURCE).decode('utf-8')
     endpoints = {}

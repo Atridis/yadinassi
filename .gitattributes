@@ -137,3 +137,11 @@ tests/fixtures/demo_cf/source/** -text
 # Deterministic replicated form renderer manifests must hash the same on every OS.
 frontend/form/** text eol=lf
 yadinassi/ui/assets/form/* text eol=lf
+
+# Retained workspace manifests are byte-bound on every checkout OS.
+frontend/workspace/** text eol=lf
+yadinassi/ui/assets/workspace/* text eol=lf
+
+# Reference-choice workspace uses the same byte-exact renderer contract.
+frontend/reference-workspace/** text eol=lf
+yadinassi/ui/assets/reference-workspace/* text eol=lf

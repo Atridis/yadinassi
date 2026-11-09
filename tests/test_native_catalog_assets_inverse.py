@@ -63,6 +63,7 @@ class FormAssetsInverseTests(unittest.TestCase):
 class WorkspaceAssetsInverseTests(unittest.TestCase):
     def test_exact_workspace_layer_restores_unchanged_form_source(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_reference_workspace_assets_provenance(source)
         restored = history.without_workspace_assets_provenance(source)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
                          '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
@@ -80,6 +81,7 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
 
     def test_workspace_layer_rejects_unknown_missing_duplicate_and_modified_hunks(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_reference_workspace_assets_provenance(source)
         hunk = '              for renderer in ("catalog", "form", "workspace") for name in\n'
         self.assertEqual(source.count(hunk), 1)
         self.assertIn('CASE_SECONDS = 10', source)
@@ -87,6 +89,38 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
                         source.replace('"workspace"', '"unlisted"', 1),
                         source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
             for inverse in (history.without_workspace_assets_provenance,
+                            history.without_form_assets_provenance,
+                            history.without_catalog_assets_provenance):
+                with self.subTest(inverse=inverse.__name__), self.assertRaises(AssertionError):
+                    inverse(changed)
+
+
+class ReferenceWorkspaceAssetsInverseTests(unittest.TestCase):
+    def test_exact_layer_restores_unchanged_workspace_source(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        restored = history.without_reference_workspace_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(restored, source.replace('("catalog", "form", "workspace", "reference-workspace")',
+                                                  '("catalog", "form", "workspace")', 1))
+        self.assertEqual(history.without_reference_workspace_assets_provenance(restored), restored)
+        for inverse in (history.without_workspace_assets_provenance,
+                        history.without_form_assets_provenance,
+                        history.without_catalog_assets_provenance,
+                        history.without_sqlite_host_context,
+                        history.without_collections_measurement_budget):
+            with self.subTest(inverse=inverse.__name__):
+                self.assertEqual(inverse(source), inverse(restored))
+
+    def test_unknown_missing_duplicate_and_modified_hunks_are_rejected(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        hunk = '              for renderer in ("catalog", "form", "workspace", "reference-workspace") for name in\n'
+        self.assertEqual(source.count(hunk), 1)
+        for changed in (source + '# drift\n', source.replace(hunk, '', 1), source + hunk,
+                        source.replace('"reference-workspace"', '"unlisted"', 1),
+                        source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
+            for inverse in (history.without_reference_workspace_assets_provenance,
+                            history.without_workspace_assets_provenance,
                             history.without_form_assets_provenance,
                             history.without_catalog_assets_provenance):
                 with self.subTest(inverse=inverse.__name__), self.assertRaises(AssertionError):

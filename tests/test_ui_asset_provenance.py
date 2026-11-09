@@ -52,8 +52,15 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
         with mock.patch.object(Path, 'rglob', extra):
             with self.assertRaisesRegex(full.FullError, 'unexpected_interpreter_source'): source_provenance()
 
+    def test_every_closed_renderer_pins_checkout_newlines(self):
+        attributes = (ROOT / '.gitattributes').read_text().splitlines()
+        for renderer in ('catalog', 'form', 'workspace', 'reference-workspace'):
+            with self.subTest(renderer=renderer):
+                self.assertIn(f'frontend/{renderer}/** text eol=lf', attributes)
+                self.assertIn(f'yadinassi/ui/assets/{renderer}/* text eol=lf', attributes)
+
     def test_build_manifest_matches_sources_and_generated_output(self):
-        for renderer in ('catalog', 'form', 'workspace'):
+        for renderer in ('catalog', 'form', 'workspace', 'reference-workspace'):
             directory = ROOT / 'yadinassi/ui/assets' / renderer
             manifest = json.loads((directory / 'build-manifest.json').read_text())
             self.assertEqual(manifest['schema'], 'yadinassi-' + renderer + '-assets/0')
@@ -64,7 +71,7 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
                 self.assertEqual(hashlib.sha256((ROOT / 'frontend' / renderer / name).read_bytes()).hexdigest(), digest, name)
 
     def test_runtime_resource_loader_finds_nonempty_exact_assets(self):
-        for renderer in ('catalog', 'form', 'workspace'):
+        for renderer in ('catalog', 'form', 'workspace', 'reference-workspace'):
             for name in ASSETS:
                 self.assertTrue(files('yadinassi.ui').joinpath('assets', renderer, name).read_bytes())
 
