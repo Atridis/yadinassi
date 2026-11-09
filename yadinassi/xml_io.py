@@ -150,6 +150,7 @@ class BSLXMLReader(_FileMethods):
     _methods = _methods(
         ('set_string', False, 'SetString УстановитьСтроку'),
         ('open_file', False, 'OpenFile ОткрытьФайл'), ('close', False, 'Close Закрыть'),
+        ('open_stream', False, 'OpenStream ОткрытьПоток'),
         ('read', True, 'Read Прочитать'), ('skip', False, 'Skip Пропустить'),
         ('move_to_content', True, 'MoveToContent ПерейтиКСодержимому'),
         ('read_attribute', True, 'ReadAttribute ПрочитатьАтрибут NextAttribute СледующийАтрибут'),
@@ -195,6 +196,19 @@ class BSLXMLReader(_FileMethods):
         source = data if encoding in (None, '') else _decode(data, encoding, 'utf-8')
         self._set_source(source, settings, schemas)
         self._input_encoding = encoding or ''
+    def open_stream(self, stream, settings=None, schemas=None, encoding=None):
+        from .file_io import _encoding
+        from .text_streams import read_snapshot
+        # Prepare settings before consuming bytes or replacing a current source.
+        candidate = BSLXMLReader()
+        candidate._set_source(b'', settings, schemas)
+        automatic = encoding is None or encoding == ''
+        codec = None if automatic else _encoding(encoding)
+        source = read_snapshot(stream, lambda data: data if automatic else _decode(data, encoding, 'utf-8'),
+                               max_bytes=MAX_XML_BYTES)
+        candidate._source = source
+        candidate._input_encoding = '' if automatic else codec
+        self.__dict__.update(candidate.__dict__)
     def _parse(self):
         parser = expat.ParserCreate(namespace_separator='|')
         parser.namespace_prefixes = True
