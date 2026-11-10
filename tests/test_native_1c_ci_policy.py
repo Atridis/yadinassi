@@ -463,6 +463,15 @@ class WorkflowTests(unittest.TestCase):
           - profile: format-dates-v1
             artifact: format-dates
             case: format_dates
+          - profile: format-date-names-v1
+            artifact: format-date-names
+            case: format_date_names
+          - profile: format-date-tokens-v1
+            artifact: format-date-tokens
+            case: format_date_tokens
+          - profile: property-transfer-v1
+            artifact: property-transfer
+            case: property_transfer
           - profile: json-family-v1
             artifact: json-family
             case: json_family
