@@ -208,11 +208,14 @@ def _description(column):
 
 
 class BSLQuery(BSLObject):
-    def __init__(self, catalogs, text='', documents=None):
+    def __init__(self, catalogs, text='', documents=None, information_registers=None):
         if documents is not None and documents._catalogs is not catalogs:
+            raise ValueError('Query sources require one interpreter metadata snapshot')
+        if information_registers is not None and information_registers._catalogs is not catalogs:
             raise ValueError('Query sources require one interpreter metadata snapshot')
         self._catalogs = catalogs
         self._documents = documents
+        self._information_registers = information_registers
         self._parameters = {}
         self._temp_tables_manager = None
         self.set_member('Text', text)
@@ -263,7 +266,7 @@ class BSLQuery(BSLObject):
     def execute_batch(self):
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
-                               dict(self._parameters), self._temp_tables_manager, self._documents)
+                               dict(self._parameters), self._temp_tables_manager, self._documents, self._information_registers)
 
     def execute(self):
         statements = syntax.parse_package(self._text)
@@ -274,10 +277,10 @@ class BSLQuery(BSLObject):
                 or self._temp_tables_manager is not None):
             from .query_packages import execute_package
             return execute_package(statements, self._catalogs, dict(self._parameters),
-                                   self._temp_tables_manager, self._documents).items[-1]
+                                   self._temp_tables_manager, self._documents, self._information_registers).items[-1]
         from . import relational_queries
         if relational_queries.required(query):
-            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents)
+            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents, self._information_registers)
         manager = self._catalogs.get_index(query.catalog)
         section = None
         if query.section is not None:

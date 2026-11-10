@@ -232,6 +232,8 @@ class Capabilities:
     document_create: bool = False
     document_update: bool = False
     document_tabular_sections: bool = False
+    register_read: bool = False
+    register_write: bool = False
 
 
 class CatalogReadView(Protocol):

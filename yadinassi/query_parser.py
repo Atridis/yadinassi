@@ -284,13 +284,17 @@ class _Parser:
         if self.peek() != '.':
             alias = self.take('name') if self.accept('as') else family
             return Source(family, alias, temporary=True)
-        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ'):
+        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ', 'informationregister', 'регистрсведений'):
             raise ValueError('Unsupported query source family')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
+        source_family = ('document' if family.casefold() in ('document', 'документ') else
+                         'information_register' if family.casefold() in ('informationregister', 'регистрсведений') else 'catalog')
+        if source_family == 'information_register' and section is not None:
+            raise ValueError('Information-register virtual tables are unsupported')
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section, family=('document' if family.casefold() in ('document', 'документ') else 'catalog'))
+        return Source(catalog, alias, section, family=source_family)
 
     def scalar(self):
         if self.accept('&'):
