@@ -25,7 +25,7 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
 from .information_registers import (BSLInformationRegisters, BSLInformationRegisterType,
-    BSLInformationRegisterManager, BSLInformationRegisterSelection)
+    BSLInformationRegisterManager, BSLInformationRegisterSelection, BSLInformationRegisterRecordManager, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord)
 from .document_types import BSLDocumentReference, BSLDocumentType
 from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogReference, BSLCatalogType
@@ -253,6 +253,12 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return BSLType.TYPE
     if type(value) is BSLInformationRegisterManager:
         return value._manager_type
+    if type(value) is BSLInformationRegisterRecordSet:
+        return value._set_type
+    if type(value) is BSLInformationRegisterRecord:
+        return value._row_type
+    if type(value) is BSLInformationRegisterRecordManager:
+        return value._record_type
     if type(value) is BSLInformationRegisterSelection:
         return value._selection_type
     if (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType):

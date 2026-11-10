@@ -46,7 +46,7 @@ from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
 from .documents import BSLDocuments
-from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
+from .information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
 from .document_types import BSLDocumentType
 from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogType
@@ -82,11 +82,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLInformationRegisterRecordSet, BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLInformationRegisterRecordSet, BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -458,7 +458,7 @@ class Interpreter:
         return self._information_registers.type_by_name(name)
 
     def _new_query(self, text=""):
-        return BSLQuery(self._catalogs, text)
+        return BSLQuery(self._catalogs, text, self._documents, self._information_registers)
 
     def _new_temp_tables_manager(self):
         return BSLTempTablesManager(self._catalogs._metadata)

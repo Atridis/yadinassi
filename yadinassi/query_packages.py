@@ -66,10 +66,11 @@ class BSLTempTablesManager(BSLObject):
             self._lock.release()
 
 
-def execute_package(statements, catalogs, parameters, manager=None):
+def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None):
     from .queries import BSLQueryResult, _Column
-    from .relational_queries import _Plan
+    from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan, snapshot_sources
+    parameters = snapshot_parameters(parameters)
     if manager is None: manager = BSLTempTablesManager()
     if type(manager) is not BSLTempTablesManager:
         raise TypeError('Query package requires TempTablesManager')
@@ -77,6 +78,23 @@ def execute_package(statements, catalogs, parameters, manager=None):
         raise ValueError('Temporary table manager is busy')
     view = None
     try:
+        from .document_queries import needs_documents
+        from .register_queries import needs_registers
+        documents_needed = needs_documents(statements)
+        registers_needed = needs_registers(statements)
+        composite = documents_needed or registers_needed
+        # Metadata initialization opens its own view. Finish it before the
+        # single package transaction, including catalog-first packages. Do not
+        # require document metadata for a register-only database.
+        if documents_needed:
+            if documents is None:
+                raise ValueError('Document query sources require document context')
+            documents._metadata._snapshot()
+        if registers_needed:
+            if information_registers is None:
+                raise ValueError('Information-register query sources require register context')
+            information_registers._metadata._snapshot()
+        if composite: catalogs._metadata._snapshot()
         if manager._closed:
             raise ValueError('Temporary table manager is closed')
         owner = catalogs._metadata
@@ -97,10 +115,11 @@ def execute_package(statements, catalogs, parameters, manager=None):
                 if statement.into is not None and statement.into.casefold() in tables:
                     raise ValueError('Temporary table already exists')
                 plan_type = _UnionPlan if type(statement) is syntax.Union else _Plan
-                plan = plan_type(statement, catalogs, parameters, tables, external)
-                source_manager = next((m for m in plan.managers if m is not None), None)
+                plan = plan_type(statement, catalogs, parameters, tables, external, documents=documents,
+                                 information_registers=information_registers)
+                source_manager = next((m for m in plan.all_managers if m is not None), None)
                 if view is None and source_manager is not None:
-                    view = source_manager._view()
+                    view = (catalogs._context.backend.begin_query_read() if composite else source_manager._view())
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)

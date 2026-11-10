@@ -68,7 +68,7 @@ Scalar-only results support the existing typed `Unload` ValueTable, including
 Null from LEFT JOIN or empty aggregates. Dynamic-reference projections retain
 cursor support; their `Unload` remains explicitly unsupported. No query writes,
 implicit casts, SQL passthrough, arbitrary functions,
-nested aggregates, subqueries, RIGHT/FULL/CROSS JOIN or
+nested aggregates, correlated/scalar subqueries, CROSS JOIN or
 native regional collation are added. Section line numbers and owner dereferencing
 remain outside the profile; joining the owner is the explicit supported route.
 
@@ -116,3 +116,9 @@ materializing and reusing intermediate report results.
 
 [UNION and typed external ValueTable sources](query-unions-external-sources.md)
 combine these reports with caller-provided scalar data and temporary stages.
+
+The later [membership-filter block](query-membership-filters.md) adds NOT,
+BETWEEN and IN, including bounded uncorrelated membership SELECTs with three-valued predicates.
+
+RIGHT/FULL JOIN and typed derived FROM/JOIN sources now compose with this
+profile under the [derived-source contract](derived-query-sources.md).

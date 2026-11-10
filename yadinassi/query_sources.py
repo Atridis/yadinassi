@@ -131,16 +131,13 @@ def _snapshot(value, budget):
 def snapshot_sources(statements, parameters):
     """Capture each referenced parameter once, before any statement/database read."""
     result, budget = {}, [0, 0]
-    for statement in statements:
-        if type(statement) is syntax.Destroy: continue
-        arms = statement.arms if type(statement) is syntax.Union else (statement,)
-        for arm in arms:
-            names = ([arm.catalog] if arm.external else []) + [j.source.catalog for j in arm.joins if j.source.external]
-            for name in names:
-                key = name.casefold()
-                if key in result: continue
-                if key not in parameters: raise ValueError('External query parameter is not set')
-                result[key] = _snapshot(parameters[key], budget)
+    for arm in syntax.selects(statements):
+        names = ([arm.catalog] if arm.external else []) + [j.source.catalog for j in arm.joins if j.source.external]
+        for name in names:
+            key = name.casefold()
+            if key in result: continue
+            if key not in parameters: raise ValueError('External query parameter is not set')
+            result[key] = _snapshot(parameters[key], budget)
     return result
 
 
@@ -163,23 +160,25 @@ def _union_column(columns):
         qualifiers = ((length, 'Fixed') if all(c.qualifiers == (length, 'Fixed') for c in typed) else (length,))
     elif kind == 'datetime':
         if any(c.qualifiers != qualifiers for c in typed): qualifiers = ('DateTime',)
-    elif kind == 'catalog_ref':
+    elif kind in ('catalog_ref', 'document_ref'):
         if any(c.reference_identity[0] is not identity[0] or c.reference_identity[1] != identity[1] for c in typed):
             raise TypeError('UNION references require same database and catalog')
     return replace(first, kind=kind, qualifiers=qualifiers, custom=None, reference_identity=identity)
 
 
 class _UnionPlan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None):
         from .relational_queries import _Plan
         self.query = query
-        self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True)
+        self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True, documents=documents,
+                                 information_registers=information_registers)
                           for arm in query.arms)
         width = len(self.arms[0].columns)
         if any(len(arm.columns) != width for arm in self.arms):
             raise ValueError('UNION column counts must match')
         self.columns = tuple(_union_column(columns) for columns in zip(*(arm.columns for arm in self.arms)))
-        self.managers = tuple(manager for arm in self.arms for manager in arm.managers)
+        self.managers = tuple(manager for arm in self.arms for manager in arm.all_managers)
+        self.all_managers = self.managers
         aliases = {p.alias.casefold(): i for i, p in enumerate(query.arms[0].projections)}
         aliases.update({c.name.casefold(): i for i, c in enumerate(self.columns)})
         self.orders = []

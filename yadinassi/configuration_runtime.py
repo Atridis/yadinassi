@@ -58,6 +58,13 @@ class ConfigurationApplication:
                         raise ValueError('configuration document schema does not match the database')
                 finally:
                     view.close()
+            if configuration.information_registers:
+                view = database_context.backend.begin_register_read()
+                try:
+                    if {x.identity: x for x in view.registers()} != {x.identity: x for x in configuration.information_registers}:
+                        raise ValueError('configuration information-register schema does not match the database')
+                finally:
+                    view.close()
         self.configuration = configuration
         self.state = 'prepared'
         self.last_exit_warning = ''

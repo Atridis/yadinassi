@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from .catalog_backend import FieldSchema, TabularSectionSchema, TabularSectionRows
+from .catalog_backend import (FieldSchema, TabularSectionSchema, TabularSectionRows,
+                              CatalogSchema, CatalogScanRequest, CatalogValuePage, CatalogSectionPage)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,32 @@ class DocumentSelection:
     limit: int = 1000
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentScanRequest:
+    """Bounded report scan; continuation belongs to one live read snapshot."""
+    page_size: int = 1000
+    continuation: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentPage:
+    rows: tuple[DocumentCard, ...]
+    continuation: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentValueRow:
+    key: DocumentKey
+    values: tuple
+    line_number: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentValuePage:
+    rows: tuple[DocumentValueRow, ...]
+    continuation: str | None
+
+
 class DocumentReadView(Protocol):
     database_id: UUID
     configuration_generation: int
@@ -81,7 +108,15 @@ class DocumentReadView(Protocol):
     def read_document(self, key: DocumentKey) -> DocumentCard | None: ...
     def find_document_number(self, document_id: UUID, number: str) -> DocumentKey | None: ...
     def select_documents(self, document_id: UUID, request: DocumentSelection) -> tuple[DocumentCard, ...]: ...
+    def scan_documents(self, document_id: UUID, request: DocumentScanRequest) -> DocumentPage: ...
     def close(self) -> None: ...
+
+
+class QueryReadView(DocumentReadView, Protocol):
+    """Catalog and document sources sharing one pinned query snapshot."""
+    def catalog_schema(self, catalog_id: UUID) -> CatalogSchema: ...
+    def scan_catalog_values(self, catalog_id: UUID, request: CatalogScanRequest, fields: tuple[str | UUID, ...]) -> CatalogValuePage: ...
+    def scan_catalog_section(self, catalog_id: UUID, section_id: UUID, request: CatalogScanRequest) -> CatalogSectionPage: ...
 
 
 class DocumentWriteView(DocumentReadView, Protocol):

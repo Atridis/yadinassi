@@ -55,8 +55,18 @@ Yadinassi использует собственный файл SQLite для к�
 доступен [ограниченный цикл непроводимых документов](docs/sqlite-document-lifecycle.md):
 CreateDocument, Write, GetObject, FindByNumber, Select, Number/Date/DeletionMark,
 скалярные реквизиты, ссылки на справочники и табличные части. Это локальный
-контракт без заявления полного native-паритета. Регистры, проведение, запросы
-к документам, иерархия и произвольные обработчики не поддержаны.
+контракт без заявления полного native-паритета. [Запросы к документам](docs/document-queries.md)
+и их табличным частям поддерживают JOIN, агрегаты, UNION и временные таблицы.
+Новые базы v8 поддерживают [независимые непериодические регистры сведений](docs/sqlite-information-registers.md):
+CreateRecordManager, Read/Write/Delete, Get/Select, наборы записей с фильтрами
+и атомарным замещением. [Источники запросов регистров](docs/information-register-queries.md)
+используют общий снимок со справочниками и документами. Явный новый формат v9
+добавляет [периодические регистры](docs/periodic-information-registers.md): Period,
+GetFirst/GetLast, SliceFirst/SliceLast и Query-срезы с датой-параметром.
+Иерархические справочники доступны в явном профиле `groups_v1` (SQLite v10):
+группы/элементы, `Parent`, `IsFolder`, перемещения и `IN HIERARCHY`.
+См. [контракт и ограничения](docs/catalog-hierarchy.md).
+Подчинённые регистры, проведение и произвольные обработчики не поддержаны.
 Сравнения обычного BSL с реальной 1С продолжаются через официальный XML/BSL,
 без чтения внутреннего формата базы. [Граница SQLite](docs/file-database-context.md).
 
@@ -1115,3 +1125,15 @@ host callback, либо Текст выводится существующим �
 BinaryData потоки, кодировки/BOM, текущая позиция, обычные настройки и сквозное
 использование существующих JSON callbacks и XML parser/writer. Поток заимствован;
 чтение использует ограниченный снимок. [Точный контракт](docs/text-json-xml-streams.md).
+
+## Типизированные фильтры Query
+
+Поддержаны NOT/НЕ, BETWEEN/МЕЖДУ, IN/В со списками, снимками Array/FixedArray
+и одноколоночными некоррелированными SELECT на общем read snapshot. Null сохраняет
+трёхзначную логику предикатов. [Контракт и ограничения](docs/query-membership-filters.md).
+
+## Производные источники Query
+
+Поддержаны `FROM/JOIN (SELECT ... / UNION ...) AS Alias`, вложенные отчёты
+на общем snapshot и `RIGHT/FULL [OUTER] JOIN` с корректными Null-строками.
+Типы, алиасы, бюджеты и явные границы описаны в [контракте](docs/derived-query-sources.md).
