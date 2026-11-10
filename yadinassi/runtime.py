@@ -721,6 +721,8 @@ class Interpreter:
         except BSLError:
             raise
         except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
+            if error is self._scheduler.active_context.host_failure:
+                raise
             message = str(error) or type(error).__name__
             if isinstance(error, RecursionError) and self._eval_depth[0]:
                 message = "Вычислить: превышен предел глубины выражения Yadinassi"

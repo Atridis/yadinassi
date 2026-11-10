@@ -7,7 +7,7 @@ import unittest
 import weakref
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.async_runtime import Promise
+from yadinassi.async_runtime import Promise, AwaitRequest
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
@@ -70,6 +70,32 @@ class AsyncRuntimeTests(unittest.TestCase):
         self.assertEqual(self.vm.variables['q'].state, 'failed')
         self.assertFalse(self.vm.pending_promises)
         self.assertFalse(self.vm._scheduler._tasks)
+
+    def test_await_preserves_raw_host_failed_value_errors_without_leaking_delivery_state(self):
+        for kind in (ValueError, TypeError, ArithmeticError, IndexError, RecursionError):
+            with self.subTest(kind=kind):
+                error = kind('host-originated failure')
+                def source():
+                    yield AwaitRequest(None)
+                    raise error
+                promise = self.vm._scheduler.start(source())
+                with self.assertRaises(kind): self.vm._scheduler.run_until_idle()
+                self.vm.variables['input'] = promise
+                with self.assertRaises(kind) as caught:
+                    self.run_code('''Async Function Work(Val P)
+                        Try Return Await P; Except Return 7; EndTry;
+                    EndFunction Q=Work(Input);''')
+                self.assertIs(caught.exception, error)
+                self.assertEqual(self.vm.variables['q'].state, 'failed')
+                self.assertIs(self.vm.variables['q'].result, error)
+                self.assertFalse(self.vm.pending_promises)
+                self.assertIsNone(self.vm._scheduler.active_context.host_failure)
+                # The same object raised by an ordinary later builtin still
+                # receives normal BSL conversion, not a sticky host exemption.
+                def crash_again(): raise error
+                self.vm.register_function('CrashAgain', crash_again)
+                self.vm.execute('Try CrashAgain(); Except Message("ordinary BSL error"); EndTry;')
+                self.assertEqual(self.output[-1], 'ordinary BSL error')
 
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''

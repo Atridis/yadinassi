@@ -20,6 +20,7 @@ class ExecutionContext:
     context_stack: list[str] = field(default_factory=lambda: ['client'])
     module_context_stack: list[bool] = field(default_factory=lambda: [True])
     state: dict[object, dict] = field(default_factory=dict)
+    host_failure: BaseException | None = None
 
 
 @dataclass(frozen=True)
@@ -221,8 +222,15 @@ class Scheduler:
                         error.__context__ = None
                         error.__cause__ = None
                 elif error is not None:
-                    # Raw host failures keep their original type and cause.
-                    request = task.generator.throw(error)
+                    # Distinguish an already-terminal host fault from ordinary
+                    # ValueError/TypeError raised by a BSL builtin. The VM must
+                    # not convert this delivery into a catchable BSL rejection.
+                    previous = task.context.host_failure
+                    task.context.host_failure = error
+                    try:
+                        request = task.generator.throw(error)
+                    finally:
+                        task.context.host_failure = previous
                 else:
                     request = task.generator.send(value)
             except StopIteration as stop:
