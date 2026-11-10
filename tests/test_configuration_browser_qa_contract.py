@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,3 +164,16 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
         self.assertNotIn('sqlite3', fixture)
         self.assertIn("timeout:remaining(10000),maxBuffer:4096", self.source)
         self.assertIn("path.join(owned,'catalogs.sqlite')", self.source)
+
+    def test_catalog_selectors_follow_declared_accessible_titles_not_control_names(self):
+        tail = self.source.split('await scenario(scenarioNames[3]', 1)[1]
+        for catalog, names in (('Products', ('CodeInput', 'DescriptionInput', 'PriceInput', 'ActiveInput', 'AvailableDateInput', 'StatusLabel')),
+                               ('Categories', ('CodeInput', 'DescriptionInput', 'StatusLabel'))):
+            form = ET.parse(ROOT / 'examples/configuration-catalog-forms/Catalogs' / catalog / 'Forms/Card/Ext/Form.xml').getroot()
+            ns = {'f': 'http://v8.1c.ru/8.3/xcf/logform'}
+            controls = {item.attrib['name']: item for item in form.find('f:ChildItems', ns)}
+            for name in names:
+                title = controls[name].findtext('f:Title', namespaces=ns)
+                self.assertTrue(title)
+                self.assertRegex(tail, r"(?:field|value)\('" + re.escape(title) + r"'")
+                self.assertNotRegex(tail, r"(?:field|value)\('" + re.escape(name) + r"'")
