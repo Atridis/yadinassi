@@ -15,10 +15,11 @@ const totalDeadline=startedAt+180000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png'];
+const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png','orders-workspace-narrow.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',
-  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen'];
+  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',
+  'existing_order_edit_discard_save_reopen','workspace_retained_forms_create_edit_reopen'];
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -82,7 +83,8 @@ async function stopHost(){
 }
 async function startHost(example,database){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  const args=['-m','yadinassi.ui.form_app',path.join(repo,'examples/forms',example)];
+  const args=example==='workspace' ? ['-m','yadinassi.ui.orders_workspace',path.join(repo,'examples/forms')] :
+    ['-m','yadinassi.ui.form_app',path.join(repo,'examples/forms',example)];
   if(database)args.push('--f',database);
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=launchOutputReader();let settled=false;
@@ -110,7 +112,7 @@ async function screenshot(name){
   await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
 }
 async function sourceBinding(){
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','examples/forms','tests/browser_ui',
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/workspace','examples/forms','tests/browser_ui',
     'tests/test_ui_browser_qa_contract.py','tests/test_form_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   return {commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}'),source};
@@ -298,6 +300,139 @@ async function main(){
     assert.equal(readback.trim(),'ORDER_READBACK_OK');
     report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']};
   });
+  await scenario(scenarioNames[4],async()=>{
+    const database=path.join(owned,'orders.sqlite');
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    await startHost('order-editor',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Edit existing orders',exact:true}).waitFor();
+    await button('Select row 1 in Existing orders').click();await idle();
+    await button('Open selected order').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser-owned order');
+    assert.equal(await field('Price, row 1').inputValue(),'2.35');
+    // An explicitly bound discard abandons even an invalid unsubmitted decimal.
+    await field('Price, row 1').fill('invalid decimal');
+    const beforeDiscard=rpc;
+    await button('Discard / Reload').click();await idle();
+    assert.equal(rpc,beforeDiscard+1,'discard_flushed_invalid_draft');
+    assert.equal(await field('Price, row 3').inputValue(),'2.35');
+    assert.equal(await field('Price, row 1').count(),0,'discard_reused_row_identity');
+    await field('Description').fill('Browser edited existing');
+    await field('Description').press('Enter');await idle();
+    await button('Close form').click();await idle();
+    assert.equal(await page.getByText('This form is closed. You can close this tab.',{exact:true}).count(),0);
+    await field('Price, row 3').fill('2.40');
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Total').inputValue(),'9.20');
+    assert.equal(await button('Save changes').isEnabled(),true);
+    assert.equal(await field('Price, row 5').isEditable(),true);
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Status').inputValue(),'No changes; nothing was written');
+    await field('Description').fill('Browser edited again');
+    await button('Save changes').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser edited again');
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_editor_overflow');
+    await screenshot('order-editor-narrow.png');
+    await button('Close form').click();
+    await page.getByText('This form is closed. You can close this tab.',{exact:true}).waitFor();
+    await stopHost();
+    const readback=runPython(['-m','yadinassi','--f',database,'-c',
+      'O=Catalogs.Orders.FindByCode("B002").GetObject(); '+
+      'If O.Description<>"Browser edited again" Or O.Total<>9.20 Or O.Lines.Count()<>2 Then Raise "edited order readback"; EndIf; '+
+      'If O.Lines.Get(0).ItemDescription<>"Cable" Or O.Lines.Get(0).Price<>2.40 Or O.Lines.Get(0).Amount<>3 Then Raise "edited line readback"; EndIf; '+
+      'N=0; S=Catalogs.Orders.Select(); While S.Next() Do N=N+1; EndDo; '+
+      'If N<>1 Then Raise "edited record count"; EndIf; Message("ORDER_EDITOR_READBACK_OK");']);
+    assert.equal(readback.trim(),'ORDER_EDITOR_READBACK_OK');
+    // A second independent form process opens the durable record, not a client snapshot.
+    await page.close();page=await context.newPage();await startHost('order-editor',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Edit existing orders',exact:true}).waitFor();
+    await button('Select row 1 in Existing orders').click();await idle();
+    await button('Open selected order').click();await idle();
+    assert.equal(await field('Description').inputValue(),'Browser edited again');
+    assert.equal(await field('Price, row 1').inputValue(),'2.40');
+    await button('Close form').click();
+    await page.getByText('This form is closed. You can close this tab.',{exact:true}).waitFor();
+    await stopHost();
+    report.editorDurable={reopenedAfterHostClose:true,independentFormReopen:true,records:1,rows:2,exactTotal:'9.20'};
+  });
+  await scenario(scenarioNames[5],async()=>{
+    const database=path.join(owned,'orders.sqlite');
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1100,height:850});
+    phase='workspace_launch';
+    await startHost('workspace',database);await page.goto(url);
+    await page.getByRole('heading',{name:'Orders workspace',exact:true}).waitFor();
+    const workspaceIdle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].filter(node=>node.checkVisibility()).every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
+    const visibleField=name=>field(name).filter({visible:true});
+    const visibleButton=name=>button(name).filter({visible:true});
+    const toolbar=page.locator('.orders-workspace > nav').first();
+    phase='workspace_create_intake';
+    await toolbar.getByRole('button',{name:'New order',exact:true}).click();
+    phase='workspace_intake_visible';
+    await visibleField('Order code').waitFor();await workspaceIdle();
+    phase='workspace_intake_header';
+    for(const [name,value] of [['Order code','B003'],['Description','Workspace created order']]){
+      phase=name==='Order code'?'workspace_intake_fill_code':'workspace_intake_fill_description';
+      await visibleField(name).fill(value);await visibleField(name).press('Enter');await workspaceIdle();
+    }
+    phase='workspace_intake_add_line';
+    await visibleButton('Add line').click();await workspaceIdle();
+    phase='workspace_intake_line_values';
+    await visibleField('Description, row 1').fill('Workspace line');
+    await visibleField('Description, row 1').press('Enter');await workspaceIdle();
+    phase='workspace_intake_fill_price';
+    await visibleField('Price, row 1').fill('3.25');
+    phase='workspace_intake_save';
+    await visibleButton('Save order').click();await workspaceIdle();
+    phase='workspace_intake_assert_saved';
+    assert.equal(await visibleField('Status').inputValue(),'Order saved','workspace_intake_not_saved');
+    assert.equal(await visibleField('Total').inputValue(),'3.25','workspace_intake_total');
+    assert.equal(await visibleButton('Save order').isDisabled(),true,'workspace_intake_save_not_locked');
+    phase='workspace_intake_close';
+    await visibleButton('Close form').click();
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
+    await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
+    phase='workspace_refresh_list';
+    await button('Find / Refresh orders').click();
+    await page.getByText('B003 · Workspace created order · 3.25 ',{exact:true}).waitFor();
+    phase='workspace_retain_hidden_draft';
+    const first=page.locator('.orders-workspace section p').filter({hasText:'B002 ·'});
+    await first.getByRole('button',{name:'Open order',exact:true}).click();
+    await visibleField('Price, row 1').waitFor();await workspaceIdle();
+    await visibleField('Price, row 1').fill('invalid hidden decimal');
+    const beforeSwitch=rpc;
+    await toolbar.getByRole('button',{name:'Orders',exact:true}).click();
+    assert.equal(rpc,beforeSwitch,'navigation_flushed_hidden_draft');
+    phase='workspace_edit_second_order';
+    await page.locator('.orders-workspace section p').filter({hasText:'B003 ·'}).getByRole('button',{name:'Open order',exact:true}).click();
+    await visibleField('Description').waitFor();await workspaceIdle();
+    await visibleField('Description').fill('Workspace edited order');
+    await visibleButton('Save changes').click();await workspaceIdle();
+    phase='workspace_guard_hidden_draft';
+    await button('Close workspace').click();
+    assert.equal(await page.getByText('Save or discard every form, including hidden tabs, and wait for pending requests before closing.',{exact:true}).isVisible(),true);
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
+    assert.equal(await visibleField('Price, row 1').inputValue(),'invalid hidden decimal');
+    await visibleButton('Discard / Reload').click();await workspaceIdle();
+    phase='workspace_narrow_screenshot';
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_workspace_overflow');
+    await screenshot('orders-workspace-narrow.png');
+    phase='workspace_close_editors';
+    await visibleButton('Close form').click();
+    await page.waitForFunction(()=>document.querySelectorAll('nav[aria-label="Open forms"] button').length===1);
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').first().click();
+    await visibleButton('Close form').click();
+    await page.getByRole('navigation',{name:'Open forms'}).getByRole('button').waitFor({state:'detached'});
+    await button('Close workspace').click();await stopHost();
+    phase='workspace_independent_readback';
+    const readback=runPython(['-m','yadinassi','--f',database,'-c',
+      'O=Catalogs.Orders.FindByCode("B003").GetObject(); '+
+      'If O.Description<>"Workspace edited order" Or O.Total<>3.25 Or O.Lines.Count()<>1 Then Raise "workspace readback"; EndIf; '+
+      'A=Catalogs.Orders.FindByCode("B002").GetObject(); If A.Description<>"Browser edited again" Then Raise "hidden edit leaked"; EndIf; '+
+      'Message("WORKSPACE_READBACK_OK");']);
+    assert.equal(readback.trim(),'WORKSPACE_READBACK_OK');
+    report.workspaceDurable={reopenedAfterHostClose:true,hiddenDraftRetained:true,independentEditors:true,exactTotal:'3.25'};
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -309,6 +444,22 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 try{await main();check();}
 catch(error){
   failed=true;report.status='FAIL';
+  // Fixed, bounded flags/counts only. Never record DOM text, field contents,
+  // response bodies, exception strings, database identifiers or capability URLs.
+  if(phase.startsWith('workspace_')&&page&&!page.isClosed()){
+    try{
+      report.workspaceCheckpoint=await bounded(page.evaluate(()=>{
+        const count=selector=>Math.min(32,document.querySelectorAll(selector).length);
+        const visible=selector=>[...document.querySelectorAll(selector)].filter(node=>node.checkVisibility()).slice(0,32);
+        return {available:true,openTabs:count('nav[aria-label="Open forms"] button'),
+          visibleForms:visible('[aria-label="Form"]').length,busyForms:count('[aria-busy="true"]'),
+          visibleAlerts:visible('[role="alert"]').length,visibleInputs:visible('input').length,
+          editableInputs:visible('input').filter(node=>!node.disabled&&!node.readOnly).length,
+          visibleRows:visible('tbody tr').length};
+      }),cleanupRemaining(1000),'workspace_diagnostics_timeout');
+    }catch{report.workspaceCheckpoint={available:false};}
+    report.rpcRequests=rpc;
+  }
   report.failure={phase,reason:aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
@@ -350,5 +501,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:6,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

@@ -358,11 +358,37 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_workspace_assets_provenance(source):
+    """Exact test-only inverse of the third closed renderer inventory.
+
+    The inner hash is the unchanged two-renderer source used by the historical
+    form inverse. Only the verified one-line workspace admission is removed.
+    """
+    base = '3b0f228a5195de776313c33e33460ffb00a6013102d2a490f2d5082e097d1e79'
+    candidate = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('workspace assets outer source identity')
+    old = '              for renderer in ("catalog", "form") for name in\n'
+    new = '              for renderer in ("catalog", "form", "workspace") for name in\n'
+    if source.count(new) != 1:
+        raise AssertionError('workspace assets inverse unique hunk')
+    restored = source.replace(new, old, 1)
+    if hashlib.sha256(restored.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('workspace assets inner source identity')
+    return restored
+
+
 def without_form_assets_provenance(source):
     """Exact test-only inverse of the second closed renderer inventory."""
     base = 'e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4'
     candidate = '3b0f228a5195de776313c33e33460ffb00a6013102d2a490f2d5082e097d1e79'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (base, candidate):
+        source = without_workspace_assets_provenance(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == base:
         return source
     if digest != candidate:

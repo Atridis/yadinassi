@@ -79,3 +79,13 @@ integration run.
 
 Read-only tables still permit view-only row selection and clearing. Cell edits
 remain blocked; disabled, busy and uncertain states also block selection.
+
+## Explicit draft discard
+
+Trusted v2 packages may expose `discardCommands` and a `dirty` flag in snapshots.
+Only a listed live button can bypass draft validation/flush. An authoritative
+response clears the abandoned raw drafts, including recoverable handler errors;
+transport failure retains them and locks the session. No button name implies
+discard semantics. Browser exit is guarded by raw drafts, authoritative Dirty or
+a pending request. The [Orders workbench](../../docs/order-workbench.md) uses this
+for Discard / Reload. Existing v0/v1 packages behave as before.

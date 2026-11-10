@@ -78,18 +78,20 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
         self._descriptors = {}
         self.temporary_tables = temporary_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary),
+        self.external_tables = external_tables or {}
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external),
                         *(join.source for join in query.joins))
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
         for source in self.sources:
-            if source.temporary:
-                if source.catalog.casefold() not in self.temporary_tables:
+            if source.temporary or source.external:
+                tables = self.external_tables if source.external else self.temporary_tables
+                if source.catalog.casefold() not in tables:
                     raise ValueError('Unknown temporary query source')
                 self.managers.append(None)
                 self.sections.append(None)
@@ -134,7 +136,7 @@ class _Plan:
                                  column.custom, projection.explicit_alias)
             else:
                 descriptor = self.describe(expression)
-                if descriptor.kind == 'null':
+                if descriptor.kind == 'null' and not allow_null:
                     raise TypeError('A NULL-only projection requires a typed expression')
                 column = _Column(projection.alias, None, descriptor.kind, descriptor.qualifiers,
                                  descriptor.custom, True)
@@ -145,17 +147,18 @@ class _Plan:
         self.columns = tuple(columns)
         # COUNT(*) still scans Ref so rows and source identity can be validated.
         for i, fields in enumerate(self.fields):
-            if not fields and not self.sources[i].temporary:
+            if not fields and not (self.sources[i].temporary or self.sources[i].external):
                 fields.append(_field(self.managers[i], syntax.Field(('Ref',)), self.sources[i].alias, self.sections[i]))
 
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
-        if not source.temporary:
+        if not (source.temporary or source.external):
             return _field(self.managers[index], expression, source.alias, self.sections[index])
         if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
             raise ValueError('Unknown temporary source qualifier')
-        table = self.temporary_tables[source.catalog.casefold()]
+        tables = self.external_tables if source.external else self.temporary_tables
+        table = tables[source.catalog.casefold()]
         matches = [(i, column) for i, column in enumerate(table.columns)
                    if column.name.casefold() == expression.parts[-1].casefold()]
         if len(matches) != 1: raise ValueError('Unknown temporary table column')
@@ -299,7 +302,9 @@ class _Plan:
                 if kind == 'number':
                     scale = max(c.qualifiers[1] for _, c in typed)
                     return column(kind, (38, scale, 'Any'))
-                if kind == 'string': return column(kind, (max(c.qualifiers[0] for _, c in typed),))
+                if kind == 'string':
+                    lengths = [c.qualifiers[0] for _, c in typed]
+                    return column(kind, (0 if 0 in lengths else max(lengths),))
                 if kind == 'datetime': return column(kind, ('DateTime',))
                 if kind == 'catalog_ref':
                     identities = [self.reference_identity(e) for e, _ in typed]
@@ -402,8 +407,9 @@ class _Plan:
     def load(self, index, view, budget):
         from .queries import _logical, _section_row, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
         manager, section, columns = self.managers[index], self.sections[index], self.fields[index]
-        if self.sources[index].temporary:
-            table = self.temporary_tables[self.sources[index].catalog.casefold()]
+        if self.sources[index].temporary or self.sources[index].external:
+            tables = self.external_tables if self.sources[index].external else self.temporary_tables
+            table = tables[self.sources[index].catalog.casefold()]
             rows = [tuple(row[column.field] for column in columns) for row in table.rows]
             budget[0] += len(rows) * len(columns)
             budget[1] += sum(len(v) for row in rows for v in row if type(v) is str)

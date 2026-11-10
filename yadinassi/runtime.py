@@ -1186,22 +1186,22 @@ class Interpreter:
             if key in {"writeint16", "записатьцелое16", "writeint32", "записатьцелое32", "writeint64", "записатьцелое64", "writechars", "записатьсимволы"}: return frozenset({1})
             if key in {"writeline", "записатьстроку"}: return frozenset({1, 2})
         if type(receiver) is BSLXMLReader:
-            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2, 3})
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}: return frozenset({1, 2, 3})
             if key in {"setstring", "установитьстроку"}: return frozenset({1, 2})
             if key in {"movetocontent", "перейтиксодержимому"}: return frozenset({0})
         if type(receiver) is BSLXMLWriter:
-            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2})
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}: return frozenset({1, 2})
             if key in {"setstring", "установитьстроку"}: return frozenset({0})
         if type(receiver) in (BSLTextReader, BSLTextWriter):
             if key in {"open", "открыть"}: return frozenset({1, 2, 3, 4})
             if key in {"read", "прочитать", "readline", "прочитатьстроку"}: return frozenset({0})
             if key in {"writeline", "записатьстроку"}: return frozenset({1})
         if type(receiver) is BSLJSONWriter:
-            if key in {"openfile", "открытьфайл"}:
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}:
                 return frozenset({1, 2, 3})
             if key in {"setstring", "установитьстроку"}:
                 return frozenset({0})
-        if type(receiver) is BSLJSONReader and key in {"openfile", "открытьфайл"}:
+        if type(receiver) is BSLJSONReader and key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}:
             return frozenset({1})
         if type(receiver) is BSLValueList:
             if key in {"add", "добавить"}:

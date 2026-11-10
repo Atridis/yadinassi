@@ -2,7 +2,7 @@ import {FormClient, FormError, createTransport, takeSessionCapability} from './c
 import {createFormView} from './view.mjs';
 
 /** Serialize UI intents before the first await, including blur followed by a command. */
-export function mountForm(environment, root) {
+export function mountForm(environment, root, options = {}) {
   let client = null, token = null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
@@ -12,7 +12,7 @@ export function mountForm(environment, root) {
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
   const showError = caught => { error = caught instanceof FormError ? caught.message : new FormError('transport').message; };
   const finish = () => {
-    busy = false; paint();
+    busy = false; paint(); options.onChange?.();
     if (queuedToken) { const next = queuedToken; queuedToken = null; connect(next); }
   };
   async function connect(incoming) {
@@ -20,7 +20,7 @@ export function mountForm(environment, root) {
     busy = true; error = '';
     if (incoming !== token || !client) {
       token = incoming; view.clearDrafts();
-      client = new FormClient(createTransport(environment.fetch.bind(environment), token));
+      client = new FormClient(options.transport || createTransport(environment.fetch.bind(environment), token));
     }
     paint();
     try { await client.hello(); view.clearDrafts(); }
@@ -37,7 +37,21 @@ export function mountForm(environment, root) {
     }
   }
   async function run(event, name, row) {
+    if (event === 'change' && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
+    // Only an explicit host policy may discard unvalidated local drafts. Keep
+    // them until an authoritative response, including a recoverable handler error.
+    if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
+      busy = true; error = ''; paint();
+      const before = client.snapshot;
+      try { await client.event('command', {control: name}); }
+      catch (caught) { showError(caught); }
+      finally {
+        if (client.snapshot !== before && !client.transportFailed && !client.outcomeUnknown && !client.snapshot.uncertain) view.clearDrafts();
+        finish();
+      }
+      return;
+    }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try { changes = view.changes(event === 'change' ? name : undefined); }
@@ -60,7 +74,7 @@ export function mountForm(environment, root) {
     finally { finish(); }
   }
   async function refresh() {
-    if (busy || !client) return;
+    if (busy || !client || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -73,12 +87,14 @@ export function mountForm(environment, root) {
       if (!token) { error = new FormError('session_missing').message; paint(); }
     } catch { error = new FormError('session_missing').message; paint(); }
   };
-  environment.addEventListener('hashchange', reattach);
-  environment.addEventListener('beforeunload', event => {
-    if (busy || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
+  if (!options.transport) environment.addEventListener('hashchange', reattach);
+  if (!options.transport) environment.addEventListener('beforeunload', event => {
+    if (hasPending()) { event.preventDefault(); event.returnValue = ''; }
   });
-  paint(); const ready = reattach();
-  return {ready, refresh, run, reattach, get client() { return client; }, view};
+  const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
+  const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
+  paint(); const ready = options.transport ? connect('embedded') : reattach();
+  return {ready, refresh, run, reattach, hasPending, lock, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

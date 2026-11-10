@@ -1,7 +1,12 @@
 import {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
 
+// DOM identity belongs to a retained view, never to a host control or table ID.
+// BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
+let viewSerial = 0n;
+
 /** Keyed, text-only DOM renderer. The host can name controls but cannot supply HTML. */
 export function createFormView(document, root, handlers) {
+  const idPrefix = 'form-view-' + ++viewSerial + '-';
   const element = (tag, className = '', text = '') => {
     const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
   };
@@ -63,7 +68,7 @@ export function createFormView(document, root, handlers) {
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
-    const id = 'form-control-' + ++serial;
+    const id = idPrefix + 'control-' + ++serial;
     input.id = id;
     if (item.kind === 'button') {
       input.type = 'button'; input.dataset.formAction = 'command'; input.className = 'primary';
@@ -110,7 +115,7 @@ export function createFormView(document, root, handlers) {
     clear.addEventListener('click', () => handlers.select(item.name, null));
     toolbar.append(heading, summary, clear);
     const help = element('p', 'table-help', 'Edit cells, then use a form command. Selecting a row first applies all pending edits.');
-    help.id = 'form-table-help-' + ++serial;
+    help.id = idPrefix + 'table-help-' + ++serial;
     const scroll = element('div', 'table-scroll'); scroll.tabIndex = 0;
     scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', item.title || item.name);
     const table = element('table', 'data-table'), caption = element('caption', 'sr-only');
@@ -125,7 +130,7 @@ export function createFormView(document, root, handlers) {
   }
   function makeCell(control, rowId, column) {
     const cell = element('td'), input = element('input', 'cell-input'); cell.append(input);
-    input.id = 'form-cell-' + ++serial; input.autocomplete = 'off'; input.spellcheck = false;
+    input.id = idPrefix + 'cell-' + ++serial; input.autocomplete = 'off'; input.spellcheck = false;
     const name = control.item.name, controlId = control.item.controlId, tableId = control.item.tableId;
     const locator = {control: name, row: rowId, column: column.name};
     const key = cellKey(name, controlId, tableId, rowId, column.name);

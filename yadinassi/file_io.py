@@ -1,6 +1,6 @@
 """Ordinary local file/text/binary workflows, with bounded regular-file I/O.
 
-No network URLs, devices, streams, permission changes or implicit recursive
+No network URLs, devices, arbitrary host streams, permission changes or recursive
 cleanup. Native calibration of ordinary defaults is a separate evidence gate.
 """
 import base64
@@ -263,9 +263,11 @@ def string_from_binary(value, encoding=None):
 
 class BSLTextReader(_FileMethods):
     def __init__(self, filename=None, encoding=None, splitter=None, convertible=None, exclusive=None):
-        self._text = None; self._position = 0
+        self._text = None; self._position = 0; self._close_noop = False
         if filename is not None:
             self.open(filename, encoding, splitter, convertible, exclusive)
+            from .text_streams import is_stream
+            self._close_noop = is_stream(filename)
     def __str__(self): return 'ЧтениеТекста'
     @_file_errors
     def open(self, filename, encoding=None, splitter=None, convertible=None, exclusive=None):
@@ -274,14 +276,24 @@ class BSLTextReader(_FileMethods):
         convertible = '\r\n' if convertible is None else _text(convertible)
         if not splitter:
             raise ValueError("ЧтениеТекста: пустой разделитель")
-        text = _decode(_read_bytes(filename), encoding)
-        if convertible:
-            text = text.replace(convertible, '\n')
+        from .text_streams import is_stream, read_snapshot
+        def decode(data):
+            text = _decode(data, encoding)
+            return text.replace(convertible, '\n') if convertible else text
+        if is_stream(filename):
+            if exclusive is not None:
+                raise TypeError('ЧтениеТекста: параметр монопольного доступа только для файла')
+            text = read_snapshot(filename, decode, max_bytes=MAX_BYTES)
+        else:
+            text = decode(_read_bytes(filename))
         self._text, self._position, self._splitter = text, 0, splitter
+        self._close_noop = False
         # !todo OS-specific sharing/exclusive locks and live concurrently edited
-        # streams. This bounded reader snapshots a regular file and closes it.
+        # streams. This bounded reader snapshots files or borrowed streams.
     @_file_errors
-    def close(self): self._text = None; self._position = 0
+    def close(self):
+        if not self._close_noop:
+            self._text = None; self._position = 0
     def _require_open(self):
         if self._text is None: raise ValueError("ЧтениеТекста: файл не открыт")
     def read(self, size=None):
@@ -315,8 +327,22 @@ class BSLTextWriter(_FileMethods):
     def __str__(self): return 'ЗаписьТекста'
     @_file_errors
     def open(self, filename, encoding=None, splitter=None, append=None, convertible=None):
+        from .text_streams import is_stream, BinaryStreamSink
         enc = _encoding(encoding)
         splitter = '\n' if splitter is None else _text(splitter)
+        if is_stream(filename):
+            # Stream overload: fourth argument is ConvertibleSplitter, fifth
+            # is WriteBOM. File overload retains AppendWriting in slot four.
+            mark = _encode('', enc, _bool(convertible))
+            converted = '\r\n' if append is None else _text(append)
+            filename._write_check(len(mark))
+            stream = BinaryStreamSink(filename)
+            self.close()
+            if mark:
+                stream.write(mark)
+            self._stream, self._encoding, self._size = stream, enc, len(mark)
+            self._splitter, self._convertible = splitter, converted
+            return
         convertible = '\r\n' if convertible is None else _text(convertible)
         append = _bool(append)
         _encode('', enc)  # validate before opening/truncating
@@ -339,8 +365,12 @@ class BSLTextWriter(_FileMethods):
         stream, self._stream = self._stream, None
         if stream is not None: stream.close()
     def __del__(self):
-        if getattr(self, '_stream', None) is not None:
-            self._stream.close()
+        try:
+            if getattr(self, '_stream', None) is not None:
+                self.close()
+        except (OSError, ValueError):
+            # Borrowed streams may already have been closed by their owner.
+            pass
     @_file_errors
     def write(self, value):
         if self._stream is None: raise ValueError("ЗаписьТекста: файл не открыт")
@@ -363,7 +393,7 @@ class BSLTextWriter(_FileMethods):
         if len(value) + len(splitter) > MAX_BYTES:
             raise ValueError("ЗаписьТекста: превышен предел ресурсов Yadinassi")
         self.write(value + splitter)
-    # !todo Stream overload/WriteBOM, cross-process sharing locks, exact
+    # !todo Native stream ownership/buffering, cross-process sharing locks, exact
     # malformed-surrogate handling and append-to-incompatible-encoding files.
     _methods = _methods(('open', False, 'Open Открыть'), ('close', False, 'Close Закрыть'),
                         ('write', False, 'Write Записать'), ('write_line', False, 'WriteLine ЗаписатьСтроку'))

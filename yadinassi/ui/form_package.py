@@ -15,6 +15,7 @@ from .protocol import decode_document, MAX_LINE_BYTES, bounded_text
 
 PACKAGE_PROTOCOL = 'yadinassi-form-app/0'
 TABLE_PACKAGE_PROTOCOL = 'yadinassi-form-app/1'
+OBJECT_PACKAGE_PROTOCOL = 'yadinassi-form-app/2'
 
 
 def _keys(value, keys):
@@ -57,6 +58,8 @@ class ClientPackage:
     source: str
     handlers: tuple
     bindings: tuple
+    discard_commands: tuple = ()
+    dirty_attribute: str = ''
 
 
 @dataclass(frozen=True)
@@ -68,24 +71,40 @@ class ServerPackage:
     attributes: tuple
     initial_values: dict
     tables: tuple = ()
+    application: str | None = None
 
 
 def load_client(directory):
     manifest = decode_document(_read(directory, 'client.json', MAX_LINE_BYTES))
-    _keys(manifest, 'protocol handlers bindings')
-    if manifest['protocol'] not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL):
+    protocol = manifest.get('protocol') if type(manifest) is dict else None
+    _keys(manifest, 'protocol handlers bindings' + (' discardCommands dirtyAttribute' if protocol == OBJECT_PACKAGE_PROTOCOL else ''))
+    if protocol not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL, OBJECT_PACKAGE_PROTOCOL):
         raise ValueError('invalid form package version')
     source = _read(directory, 'client.bsl', MAX_SOURCE).decode('utf-8')
-    return ClientPackage(source, _bindings(manifest['handlers'], handler=True), _bindings(manifest['bindings']))
+    handlers = _bindings(manifest['handlers'], handler=True)
+    policies = []
+    for row in _list(manifest.get('discardCommands', []), 64):
+        _keys(row, 'command handler')
+        command, handler = name(row['command']), name(row['handler'])
+        if command.casefold() in {c.casefold() for c, _ in policies} or not any(
+                h.name.casefold() == handler.casefold() and len(h.parameters) == 1 for h in handlers):
+            raise ValueError('invalid discard command binding')
+        policies.append((command, handler))
+    dirty = name(manifest['dirtyAttribute']) if protocol == OBJECT_PACKAGE_PROTOCOL else ''
+    return ClientPackage(source, handlers, _bindings(manifest['bindings']), tuple(policies), dirty)
 
 
 def load_server(directory):
     manifest = decode_document(_read(directory, 'server.json', MAX_LINE_BYTES))
     protocol = manifest.get('protocol') if type(manifest) is dict else None
     _keys(manifest, 'protocol handlers endpoints lifecycle attributes' +
-          (' tables' if protocol == TABLE_PACKAGE_PROTOCOL else ''))
-    if protocol not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL) or type(manifest['lifecycle']) is not dict:
+          (' tables' if protocol in (TABLE_PACKAGE_PROTOCOL, OBJECT_PACKAGE_PROTOCOL) else '') +
+          (' application' if protocol == OBJECT_PACKAGE_PROTOCOL else ''))
+    if protocol not in (PACKAGE_PROTOCOL, TABLE_PACKAGE_PROTOCOL, OBJECT_PACKAGE_PROTOCOL) or type(manifest['lifecycle']) is not dict:
         raise ValueError('invalid form package version or lifecycle')
+    application = manifest.get('application')
+    if protocol == OBJECT_PACKAGE_PROTOCOL and application != 'orders-workbench/1':
+        raise ValueError('unknown trusted form application')
     source = _read(directory, 'server.bsl', MAX_SOURCE).decode('utf-8')
     endpoints = {}
     for row in _list(manifest['endpoints'], 64):
@@ -120,4 +139,4 @@ def load_server(directory):
                 bounded_text(column['title'], 1024), column['readOnly']))
         tables.append(FormTableSchema(key, tuple(columns), bounded_text(row['title'], 1024)))
     return ServerPackage(source, _bindings(manifest['handlers'], handler=True), endpoints,
-        dict(manifest['lifecycle']), tuple(attributes), initial, tuple(tables))
+        dict(manifest['lifecycle']), tuple(attributes), initial, tuple(tables), application)

@@ -3,7 +3,7 @@ const __client = (() => {
 /** Bounded form-only renderer protocol. No runtime, BSL or storage dependency. */
 const PROTOCOL = 'yadinassi-form-ui/1';
 const LIMITS = Object.freeze({bytes: 131072, text: 8192, controls: 128, messages: 64,
-  counter: 2147483647, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
+  counter: 2147483647, discardCommands: 64, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
 const ERROR_MESSAGES = Object.freeze({
   invalid_request: 'The host rejected this request. The displayed state is authoritative.',
   stale_revision: 'The form changed elsewhere. Review the latest state before another action.',
@@ -80,13 +80,22 @@ function validateScalar(value) {
   throw new FormError('transport');
 }
 function validateSnapshot(state) {
-  if (!keys(state, ['kind', 'revision', 'lifecycle', 'title', 'uncertain', 'items', 'messages']) ||
+  const shape = ['kind', 'revision', 'lifecycle', 'title', 'uncertain', 'items', 'messages'];
+  for (const optional of ['discardCommands', 'dirty']) {
+    if (record(state) && Object.hasOwn(state, optional)) shape.push(optional);
+  }
+  if (!keys(state, shape) ||
       !['form', 'closed'].includes(state.kind) || !integer(state.revision) ||
       !['open', 'cancelled', 'closed', 'failed'].includes(state.lifecycle) ||
       !validText(state.title) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.items) || state.items.length > LIMITS.controls ||
       !Array.isArray(state.messages) || state.messages.length > LIMITS.messages ||
       state.messages.some(message => !validText(message))) throw new FormError('transport');
+  if (Object.hasOwn(state, 'dirty') && typeof state.dirty !== 'boolean') throw new FormError('transport');
+  if (Object.hasOwn(state, 'discardCommands') && (!Array.isArray(state.discardCommands) ||
+      state.discardCommands.length > LIMITS.discardCommands ||
+      state.discardCommands.some(name => !validText(name) || !name.length) ||
+      new Set(state.discardCommands).size !== state.discardCommands.length)) throw new FormError('transport');
   const names = new Set(), tables = new Map(), controlIds = new Set(); let cells = 0;
   for (const item of state.items) {
     const table = item?.kind === 'table';
@@ -131,6 +140,8 @@ function validateSnapshot(state) {
       }
     }
   }
+  if ((state.discardCommands || []).some(name => !state.items.some(item => item.name === name && item.kind === 'button')))
+    throw new FormError('transport');
   if (new TextEncoder().encode(JSON.stringify(state)).length > LIMITS.bytes) throw new FormError('transport');
   return state;
 }
@@ -287,8 +298,13 @@ return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar
 const __view = (() => {
 const {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} = __client;
 
+// DOM identity belongs to a retained view, never to a host control or table ID.
+// BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
+let viewSerial = 0n;
+
 /** Keyed, text-only DOM renderer. The host can name controls but cannot supply HTML. */
 function createFormView(document, root, handlers) {
+  const idPrefix = 'form-view-' + ++viewSerial + '-';
   const element = (tag, className = '', text = '') => {
     const node = document.createElement(tag); node.className = className; node.textContent = text; return node;
   };
@@ -350,7 +366,7 @@ function createFormView(document, root, handlers) {
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
-    const id = 'form-control-' + ++serial;
+    const id = idPrefix + 'control-' + ++serial;
     input.id = id;
     if (item.kind === 'button') {
       input.type = 'button'; input.dataset.formAction = 'command'; input.className = 'primary';
@@ -397,7 +413,7 @@ function createFormView(document, root, handlers) {
     clear.addEventListener('click', () => handlers.select(item.name, null));
     toolbar.append(heading, summary, clear);
     const help = element('p', 'table-help', 'Edit cells, then use a form command. Selecting a row first applies all pending edits.');
-    help.id = 'form-table-help-' + ++serial;
+    help.id = idPrefix + 'table-help-' + ++serial;
     const scroll = element('div', 'table-scroll'); scroll.tabIndex = 0;
     scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', item.title || item.name);
     const table = element('table', 'data-table'), caption = element('caption', 'sr-only');
@@ -412,7 +428,7 @@ function createFormView(document, root, handlers) {
   }
   function makeCell(control, rowId, column) {
     const cell = element('td'), input = element('input', 'cell-input'); cell.append(input);
-    input.id = 'form-cell-' + ++serial; input.autocomplete = 'off'; input.spellcheck = false;
+    input.id = idPrefix + 'cell-' + ++serial; input.autocomplete = 'off'; input.spellcheck = false;
     const name = control.item.name, controlId = control.item.controlId, tableId = control.item.tableId;
     const locator = {control: name, row: rowId, column: column.name};
     const key = cellKey(name, controlId, tableId, rowId, column.name);
@@ -622,7 +638,7 @@ const {FormClient, FormError, createTransport, takeSessionCapability} = __client
 const {createFormView} = __view;
 
 /** Serialize UI intents before the first await, including blur followed by a command. */
-function mountForm(environment, root) {
+function mountForm(environment, root, options = {}) {
   let client = null, token = null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
@@ -632,7 +648,7 @@ function mountForm(environment, root) {
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
   const showError = caught => { error = caught instanceof FormError ? caught.message : new FormError('transport').message; };
   const finish = () => {
-    busy = false; paint();
+    busy = false; paint(); options.onChange?.();
     if (queuedToken) { const next = queuedToken; queuedToken = null; connect(next); }
   };
   async function connect(incoming) {
@@ -640,7 +656,7 @@ function mountForm(environment, root) {
     busy = true; error = '';
     if (incoming !== token || !client) {
       token = incoming; view.clearDrafts();
-      client = new FormClient(createTransport(environment.fetch.bind(environment), token));
+      client = new FormClient(options.transport || createTransport(environment.fetch.bind(environment), token));
     }
     paint();
     try { await client.hello(); view.clearDrafts(); }
@@ -657,7 +673,21 @@ function mountForm(environment, root) {
     }
   }
   async function run(event, name, row) {
+    if (event === 'change' && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
+    // Only an explicit host policy may discard unvalidated local drafts. Keep
+    // them until an authoritative response, including a recoverable handler error.
+    if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
+      busy = true; error = ''; paint();
+      const before = client.snapshot;
+      try { await client.event('command', {control: name}); }
+      catch (caught) { showError(caught); }
+      finally {
+        if (client.snapshot !== before && !client.transportFailed && !client.outcomeUnknown && !client.snapshot.uncertain) view.clearDrafts();
+        finish();
+      }
+      return;
+    }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try { changes = view.changes(event === 'change' ? name : undefined); }
@@ -680,7 +710,7 @@ function mountForm(environment, root) {
     finally { finish(); }
   }
   async function refresh() {
-    if (busy || !client) return;
+    if (busy || !client || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -693,12 +723,14 @@ function mountForm(environment, root) {
       if (!token) { error = new FormError('session_missing').message; paint(); }
     } catch { error = new FormError('session_missing').message; paint(); }
   };
-  environment.addEventListener('hashchange', reattach);
-  environment.addEventListener('beforeunload', event => {
-    if (busy || view.hasDrafts()) { event.preventDefault(); event.returnValue = ''; }
+  if (!options.transport) environment.addEventListener('hashchange', reattach);
+  if (!options.transport) environment.addEventListener('beforeunload', event => {
+    if (hasPending()) { event.preventDefault(); event.returnValue = ''; }
   });
-  paint(); const ready = reattach();
-  return {ready, refresh, run, reattach, get client() { return client; }, view};
+  const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
+  const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
+  paint(); const ready = options.transport ? connect('embedded') : reattach();
+  return {ready, refresh, run, reattach, hasPending, lock, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
