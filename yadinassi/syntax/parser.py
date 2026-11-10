@@ -433,7 +433,9 @@ class Parser:
                 token = self.expect(".")
                 # Execute and the documented JSONValueType.Null are member
                 # names after a dot, without changing their standalone tokens.
-                member = self.accept("EXECUTE") or self.accept("NULL") or self.expect("IDENT")
+                # Stream.Seek is named Перейти in Russian, also a statement
+                # keyword. After a dot it is an ordinary member, not a jump.
+                member = self.accept("EXECUTE") or self.accept("NULL") or self.accept("GOTO") or self.expect("IDENT")
                 value = ast.Attribute(token, value, member.value)
             elif token := self.accept("["):
                 index = self.expression()

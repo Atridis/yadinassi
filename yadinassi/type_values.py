@@ -27,7 +27,7 @@ from .documents import BSLDocuments
 from .information_registers import (BSLInformationRegisters, BSLInformationRegisterType,
     BSLInformationRegisterManager, BSLInformationRegisterSelection)
 from .document_types import BSLDocumentReference, BSLDocumentType
-from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine
+from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogReference, BSLCatalogType
 
 from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTextEncoding
@@ -253,11 +253,11 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return value._manager_type
     if type(value) is BSLInformationRegisterSelection:
         return value._selection_type
-    if type(value) is BSLDocumentLinesType:
+    if (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType):
         return BSLType.TYPE
     if type(value) is BSLDocumentLines or type(value) is BSLDocumentLine:
         descriptor = value._value_type if type(value) is BSLDocumentLines else value._section._row_type
-        if type(descriptor) is not BSLDocumentLinesType:
+        if (type(descriptor) is not BSLDocumentLinesType and type(descriptor) is not BSLDocumentSectionType):
             raise TypeError('document line type is unavailable')
         return descriptor
     if (type(value) is BSLCatalogReference or type(value) is BSLDocumentReference):
@@ -274,7 +274,9 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return value._manager_type
     if type(value) is BSLCatalogSelection:
         return value._selection_type
-    from .documents import BSLDocumentManager, BSLDocumentSelection
+    from .documents import BSLDocumentManager, BSLDocumentSelection, BSLDocumentObject
+    if type(value) is BSLDocumentObject:
+        return value._object_type
     if type(value) is BSLDocumentManager:
         return value._manager_type
     if type(value) is BSLDocumentSelection:
