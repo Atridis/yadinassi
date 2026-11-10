@@ -206,7 +206,7 @@ class Scheduler:
             return
         with self._scope(task):
             try:
-                if error is not None:
+                if isinstance(error, BSLRuntimeError):
                     # A promise can be awaited repeatedly. Python appends a
                     # new delivery traceback to the same exception otherwise.
                     error.__traceback__ = None
@@ -220,6 +220,9 @@ class Scheduler:
                         error.__traceback__ = None
                         error.__context__ = None
                         error.__cause__ = None
+                elif error is not None:
+                    # Raw host failures keep their original type and cause.
+                    request = task.generator.throw(error)
                 else:
                     request = task.generator.send(value)
             except StopIteration as stop:
@@ -230,8 +233,22 @@ class Scheduler:
                 self._tasks.discard(task)
                 self.reject(task.promise, failure)
                 return
+            except BaseException as failure:
+                # A generator that escaped is closed, not suspended. Retain a
+                # terminal outcome for awaiters without disguising host faults
+                # as catchable BSL rejections or losing the original exception.
+                self._fail_task(task, failure)
+                raise
         if not isinstance(request, AwaitRequest):
-            raise RuntimeError('Async task yielded an unsupported request')
+            failure = RuntimeError('Async task yielded an unsupported request')
+            try:
+                with self._scope(task):
+                    task.generator.close()
+            except BaseException as close_failure:
+                self._fail_task(task, close_failure)
+                raise
+            self._fail_task(task, failure)
+            raise failure
         awaited = request.value
         if isinstance(awaited, Promise):
             if awaited.scheduler is not self:
@@ -241,9 +258,14 @@ class Scheduler:
             else:
                 self._listen(awaited, lambda source: self._ready.append(
                     (task, source.result if source.state == 'fulfilled' else None,
-                     source.result if source.state == 'rejected' else None)))
+                     source.result if source.state in ('rejected', 'failed') else None)))
         else:
             self._ready.append((task, awaited, None))
+
+    def _fail_task(self, task, failure):
+        self._tasks.discard(task)
+        task.promise._claimed = True
+        self._settle(task.promise, 'failed', failure)
 
     def run_inline(self, generator):
         """Execute a synchronous root without pumping or switching task context."""

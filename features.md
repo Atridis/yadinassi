@@ -5944,6 +5944,15 @@ MemoryStream/FileStream/Stream, без новых парсеров и проме
 позицию при ошибке создания снимка. [Контракт и границы](docs/text-json-xml-streams.md).
 
 
+## ValueStorage: typed snapshots and Deflation
+
+Added the official Deflation/СжатиеДанных settings and bounded compressed string/binary
+payloads in ValueStorage, plus supported typed ValueTable schemas, qualifiers, column
+metadata and rebuilt index definitions. The same snapshot traversal preserves independent
+Get results and resource/admission rules. This is a local cache profile, not the physical
+1C storage format. Official signatures, native27 evidence and precise limits:
+[contract](docs/value-storage-typed-compression.md).
+
 ## ЗаполнитьЗначенияСвойств: объекты и строки
 
 Добавлен цельный bounded host-профиль shallow-переноса свойств между Structure /

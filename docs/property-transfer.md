@@ -164,3 +164,20 @@ The local implementation does not infer unmeasured parser corners, object or
 Windows failure order from those examples. Focused host tests are in
 `tests/test_property_transfer.py`; existing structure checkpoint fixtures are
 kept unchanged.
+
+## Context-owned helpers and asynchronous host failures
+
+Imported helpers, common modules and logical server activations construct `Type`,
+`Query` and `TempTablesManager` against their own metadata/catalog snapshot.
+Inherited RU/EN aliases are rebound by exact core implementation identity; explicit
+host overrides and their parameter contract are preserved. `FillPropertyValues`
+continues to use ordinary setters. A reference from another snapshot is still
+rejected, including another interpreter connected to the same SQLite database.
+No cross-database reference conversion or implicit persistence is introduced.
+
+A raw host exception after `Await` terminates that task instead of leaving a
+closed generator registered as pending. Its promise records an internal `failed`
+outcome and awaiting/adopting it cannot silently succeed with `Undefined`.
+The original exception escapes to the host, not the BSL procedure-error channel;
+unrelated ready/pending work remains available to a later pump. This is an
+embedding correctness guarantee, not a new claim of native platform behavior.

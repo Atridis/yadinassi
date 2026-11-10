@@ -63,7 +63,7 @@ an invalid overwritten entry is not silently accepted. Malformed quoting,
 missing assignments, unsupported locale and out-of-subset parameter values
 raise an error rather than a plausible default.
 
-Unknown ASCII/Russian letter-only names use a generic no-op rule; no expression/fixture-name dispatch exists. Recognized but unimplemented DLF/ДЛФ explicitly fails. New numeric and
+Unknown ASCII/Russian letter-only names use a generic no-op rule; no expression/fixture-name dispatch exists. DLF/ДЛФ is handled by the separately bounded Russian date profile. New numeric and
 Boolean parameters are bounded as described below. This is not complete native
 numeric, Date, Boolean or locale formatting support. The NF/ЧФ family is
 specified in the [official localization guidelines](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_Development_Standards/Localization_requirements/Localization_guidelines_____Dates__numbers__and_Boolean/?language=en)

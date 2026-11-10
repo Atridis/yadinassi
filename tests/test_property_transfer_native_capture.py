@@ -37,6 +37,8 @@ def records():
 
 class PropertyTransferNativeCaptureTests(unittest.TestCase):
     def test_immutable_source_capture_and_input_checkpoint(self):
+        self.assertIn('scripts/native_1c_property_transfer_contract.py text eol=lf',
+                      (ROOT / '.gitattributes').read_text(encoding='utf-8').splitlines())
         source = (FIXTURE / 'original48.bsl').read_bytes()
         mapping_raw = (FIXTURE / 'original48-mapping.json').read_bytes()
         raw = (FIXTURE / 'original48-linux.out').read_bytes()

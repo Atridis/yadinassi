@@ -6,6 +6,7 @@ used. This is not the complete native date/Boolean/numeric format language.
 from decimal import Decimal
 
 from .dates import BSLDate, _parts as date_parts
+from .date_formatting import date_tokens as _date_tokens, local_date_tokens, render_date_tokens
 from .values import NULL, to_string
 
 _MAX_TEXT = 4096
@@ -20,7 +21,7 @@ _ALIASES = {"NFD": "NFD", "ЧДЦ": "NFD", "NDS": "NDS", "ЧРД": "NDS",
             "BT": "BT", "БИ": "BT"}
 
 # Recognized native families outside this bounded slice must not become no-ops.
-_UNIMPLEMENTED = frozenset(("DLF", "ДЛФ"))
+_UNIMPLEMENTED = frozenset()
 _EXTENDED = frozenset(("ND", "NLZ", "NN", "NS", "NF", "BF", "BT"))
 
 def _unsupported():
@@ -57,7 +58,7 @@ def _parameters(text):
         if folded in _UNIMPLEMENTED:
             _unsupported()
         # Numeric/locale names are exact-case; Date aliases are case-insensitive.
-        date_key = folded if folded in {"DF", "ДФ", "DE", "ДП"} else None
+        date_key = folded if folded in {"DF", "ДФ", "DE", "ДП", "DLF", "ДЛФ"} else None
         key = _ALIASES.get(raw_name)
         i += 1
         while i < len(text) and text[i] in " \t":
@@ -127,11 +128,13 @@ def _parameters(text):
             extended_names[key] = raw_name
         if date_key is not None:
             if date_key in {"DF", "ДФ"}:
-                if not value:
+                if not value and quote is None:
                     _unsupported()
                 tokens = _date_tokens(value)
                 # Native bare multiword Date masks fall back to the default.
                 value = None if quote is None and any(c in " \t" for c in value) else tokens
+            elif date_key in {"DLF", "ДЛФ"}:
+                value = local_date_tokens(value)
             date_entries.setdefault(date_key, value)
         elif key in {"BF", "BT"}:
             result.setdefault(key, value)
@@ -145,7 +148,7 @@ def _parameters(text):
         if i < len(text):
             i += 1
     # First duplicate within an alias; Russian alias precedes English alias.
-    for canonical, russian in (("DF", "ДФ"), ("DE", "ДП")):
+    for canonical, russian in (("DF", "ДФ"), ("DE", "ДП"), ("DLF", "ДЛФ")):
         if russian in date_entries:
             result[canonical] = date_entries[russian]
         elif canonical in date_entries:
@@ -187,33 +190,6 @@ def _number_mask(mask):
     return "".join(before), "".join(after)
 
 
-def _date_tokens(mask):
-    """Bounded numeric date tokens and quoted literals; not strftime grammar."""
-    tokens = []
-    allowed = {"d", "dd", "M", "MM", "yy", "yyyy", "H", "HH", "m", "mm", "s", "ss"}
-    i = 0
-    while i < len(mask):
-        if mask[i] == "'":
-            end = mask.find("'", i + 1)
-            if end < 0:
-                _unsupported()
-            tokens.append((False, mask[i + 1:end]))
-            i = end + 1
-        elif mask[i].isalpha():
-            end = i + 1
-            while end < len(mask) and mask[end] == mask[i]:
-                end += 1
-            token = mask[i:end]
-            if token not in allowed:
-                _unsupported()
-            tokens.append((True, token))
-            i = end
-        else:
-            tokens.append((False, mask[i]))
-            i += 1
-    return tuple(tokens)
-
-
 def _format_date(value, parameters):
     parts = date_parts(value)  # Validates known state, including empty-date boundary.
     if value.ticks == 0:
@@ -221,26 +197,10 @@ def _format_date(value, parameters):
             return ""
         if parameters["DE"]:
             return parameters["DE"]
-    tokens = parameters.get("DF")
+    tokens = parameters.get("DF", parameters.get("DLF"))
     if tokens is None:
         return str(value)
-    components = {"d": parts.day, "M": parts.month, "y": parts.year,
-                  "H": parts.hour, "m": parts.minute, "s": parts.second}
-    output = []
-    size = 0
-    for numeric, token in tokens:
-        if numeric:
-            number = components[token[0]]
-            if token == "yy":
-                number %= 100
-            text = str(number).zfill(len(token))
-        else:
-            text = token
-        size += len(text) + sum(ord(c) > 0xffff for c in text)
-        if size > _MAX_TEXT:
-            raise ValueError("Формат: превышен предел текста Yadinassi")
-        output.append(text)
-    return "".join(output)
+    return render_date_tokens(parts, tokens)
 
 
 def _grouping(value):

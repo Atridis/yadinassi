@@ -20,6 +20,57 @@ class AsyncRuntimeTests(unittest.TestCase):
     def run_code(self, code):
         return self.vm.execute(code, 'async-test.bsl')
 
+    def test_raw_host_fault_after_await_is_terminal_and_not_caught_by_bsl_try(self):
+        error = RuntimeError('host failure')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_code('''Async Function Work()
+                Await 0; Try Crash(); Except Message("must not catch"); EndTry;
+            EndFunction
+            P=Work();''')
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.variables['p'].state, 'failed')
+        self.assertIs(self.vm.variables['p'].result, error)
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+        self.assertIsNone(self.vm.locals)
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.vm.ensure_complete()
+        self.assertEqual(self.vm.execute('6*7'), Decimal(42))
+
+    def test_raw_host_fault_from_imported_nocontext_after_await_restores_owner(self):
+        error = RuntimeError('detached host fault')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / 'Helper.bsl'
+            helper.write_text('&AtServerNoContext\nProcedure Fail() Export Crash(); EndProcedure', encoding='utf-8')
+            source = '// #Import Helper.bsl\nAsync Function Work() Await 0; Helper.Fail(); EndFunction\nP=Work();'
+            with self.assertRaises(RuntimeError) as caught:
+                self.vm.execute(source, str(Path(directory) / 'main.bsl'))
+        self.assertIs(caught.exception, error)
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
+        self.assertIsNone(self.vm.locals)
+        self.assertEqual(self.vm.variables['p'].state, 'failed')
+
+    def test_awaiting_host_failed_promise_cannot_become_successful_undefined(self):
+        error = RuntimeError('first host fault')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with self.assertRaises(RuntimeError):
+            self.run_code('Async Function First() Await 0; Crash(); EndFunction P=First();')
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_code('Async Function Second(Val Input) Return Await Input; EndFunction Q=Second(P);')
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.vm.variables['q'].state, 'failed')
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''
         Async Function Leaf() Message("leaf"); Return 7; EndFunction

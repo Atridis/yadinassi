@@ -12,7 +12,7 @@ from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
 from decimal import Decimal, localcontext
-from types import GeneratorType
+from types import GeneratorType, MethodType
 
 from . import file_io
 from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
@@ -24,6 +24,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage, UserMessageContext
 from .value_storage import BSLValueStorage
+from .data_compression import BSLDeflation
 from . import json_processing
 from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
                          read_json_date, write_json_date)
@@ -238,7 +239,7 @@ class Interpreter:
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", self._information_registers.type_by_name, "Type")
+        self.register_function("Тип", self._type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
@@ -295,6 +296,7 @@ class Interpreter:
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
         self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
         self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
+        self.register_type("СжатиеДанных", BSLDeflation, "Deflation")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
@@ -303,8 +305,8 @@ class Interpreter:
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
-        self.register_type("МенеджерВременныхТаблиц", lambda: BSLTempTablesManager(self._catalogs._metadata), "TempTablesManager")
-        self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text), "Query")
+        self.register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
+        self.register_type("Запрос", self._new_query, "Query")
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
         self.register_type("СписокЗначений", BSLValueList, "ValueList")
@@ -451,6 +453,49 @@ class Interpreter:
         wrapper = HostFunction(name, factory)
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
+
+    def _type_by_name(self, name):
+        return self._information_registers.type_by_name(name)
+
+    def _new_query(self, text=""):
+        return BSLQuery(self._catalogs, text)
+
+    def _new_temp_tables_manager(self):
+        return BSLTempTablesManager(self._catalogs._metadata)
+
+    def _inherit_host_bindings(self, parent):
+        """Copy host registrations, rebinding only exact VM-owned core helpers.
+
+        Each activation owns its metadata/catalog snapshot. Copying a parent's
+        bound Type or Query factory crosses that boundary even with the same DB.
+        Explicit host overrides remain untouched; names alone grant no rebinding.
+        """
+        core_helpers = (Interpreter._message, Interpreter._error_description,
+                        Interpreter._error_info, Interpreter._type_by_name,
+                        Interpreter._new_query, Interpreter._new_temp_tables_manager,
+                        Interpreter._new_user_message)
+        wrappers = {}
+
+        def copy_registry(registry):
+            result = {}
+            for name, wrapper in registry.items():
+                identity = id(wrapper)
+                if identity not in wrappers:
+                    callback = wrapper.function
+                    if type(callback) is MethodType:
+                        for helper in core_helpers:
+                            if callback.__func__ is helper:
+                                callback = helper.__get__(self, type(self))
+                                break
+                    wrappers[identity] = (wrapper if callback is wrapper.function else HostFunction(
+                        wrapper.name, callback,
+                        reference_parameters=wrapper.reference_parameters,
+                        returns_value=wrapper.returns_value))
+                result[name] = wrappers[identity]
+            return result
+
+        self.functions = copy_registry(parent.functions)
+        self.types = copy_registry(parent.types)
 
     def _new_user_message(self):
         return BSLUserMessage(self.user_messages)
@@ -1472,21 +1517,7 @@ class Interpreter:
         server.server_initializers = self.server_initializers.copy() if module_context else []
         server._client_routine_names = set(self.routines)
         server._dual_routine_names = self._dual_routine_names.copy()
-        # Keep server-bound core helpers. Copy registered host functions while
-        # rebinding this interpreter's methods, never retaining client frames.
-        for name, function in self.functions.items():
-            callback = function.function
-            # Imports may carry core callbacks bound to an ancestor module.
-            # Match exact implementation identities, not the current owner or
-            # a user callback's name, so client diagnostic frames never leak.
-            core_helpers = {Interpreter._message, Interpreter._error_description,
-                            Interpreter._error_info}
-            if getattr(callback, "__func__", None) in core_helpers:
-                callback = getattr(server, callback.__name__)
-            server.functions[name] = HostFunction(function.name, callback,
-                                                  reference_parameters=function.reference_parameters,
-                                                  returns_value=function.returns_value)
-        server.types = self.types.copy()
+        server._inherit_host_bindings(self)
         # Imports and the public module receiver remain unsupported server-side.
         # Side-local variables above never alias client storage.
         server._self_module.ready = False
@@ -1578,6 +1609,7 @@ class Interpreter:
                                     or factory.function is BSLXMLReaderSettings
                                     or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
+                                    or factory.function is BSLValueStorage
                                     or factory.function is BSLTextReader
                                     or factory.function is BSLTextWriter
                                     or factory.function is BSLDataReader
@@ -1586,7 +1618,8 @@ class Interpreter:
                                     or factory.function is BSLFileCertificationAuthorityCertificates
                                     or factory.function is BSLHTTPConnection
                                     or factory.function is BSLHTTPRequest):
-            if (factory.function is BSLTextReader or factory.function is BSLTextWriter
+            if (factory.function is BSLValueStorage
+                    or factory.function is BSLTextReader or factory.function is BSLTextWriter
                     or factory.function is BSLDataReader or factory.function is BSLDataWriter
                     or factory.function is BSLFileCertificationAuthorityCertificates
                     or factory.function is BSLHTTPConnection or factory.function is BSLHTTPRequest):
@@ -1751,8 +1784,7 @@ class Interpreter:
             if self._configuration_runtime is not None:
                 self._configuration_runtime.bind_interpreter(child)
             child._diagnostic_owner = self._diagnostic_owner
-            child.functions = self.functions.copy()
-            child.types = self.types.copy()
+            child._inherit_host_bindings(self)
             child._context_stack = self._context_stack
             child._module_cache = self._module_cache
             child._loading = self._loading
