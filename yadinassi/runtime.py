@@ -40,7 +40,7 @@ from .numeric import bits, elementary, numbers
 from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
-from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection
+from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
@@ -897,7 +897,8 @@ class Interpreter:
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
         if (type(value) is BSLCommonModuleMetadataCollection
-                or type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments)):
+                or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
+                or is_metadata_collection(value)):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1553,6 +1554,12 @@ class Interpreter:
                 owner.get_member(node.name)
                 return _Reference(lambda: owner.get_member(node.name),
                                   lambda value: owner.set_member(node.name, value))
+            if is_metadata_object(owner):
+                # Reading a metadata lvalue through an ordinary BSL parameter
+                # is allowed; mutation still reaches its read-only setter.
+                owner.get_member(node.name)
+                return _Reference(lambda: owner.get_member(node.name),
+                                  lambda value: owner.set_member(node.name, value))
             if type(owner) is BSLValueListItem:
                 # Native PR74: a field is live storage, not a copy-out temporary.
                 # Resolve the item once; its existing setters retain conversion,
@@ -1570,7 +1577,7 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
-            if type(owner) in (BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+            if is_metadata_collection(owner) or type(owner) is BSLCatalogs or type(owner) is BSLDocuments:
                 index = (yield from self._visit(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
@@ -1676,7 +1683,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments)):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):

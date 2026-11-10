@@ -233,15 +233,11 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
         if self._items is None:
             if self._context is None: require_database_context()
             if self._root is not None and self._family != 'Catalog': self._root._catalogs._snapshot()
-            view = getattr(self._context.backend, self._reader)()
+            reader = ('begin_query_read' if self._family != 'Catalog' and type(self._context) is SQLiteDBContext else self._reader)
+            view = getattr(self._context.backend, reader)()
             try:
                 entries = getattr(view,self._entries)()
                 database, generation = view.database_id, view.configuration_generation
-                info = None
-                # Third-party logical ports may omit source ordering. Never
-                # guess native numeric order from their SQL/dict enumeration.
-                if self._family == 'Catalog' and type(self._context) is SQLiteDBContext:
-                    info = view.metadata_configuration()
                 items = {}
                 for entry in entries:
                     key = entry.name.casefold()
@@ -250,17 +246,24 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
                     item._schema, item._root = entry,self._root
                     items[key] = item
                 if self._root is not None:
-                    self._root._accept_snapshot(database,generation,info)
-                    order = self._root._orders.get(self._family)
-                    if order is not None:
-                        keys = tuple(name.casefold() for name in order)
-                        if len(keys) != len(items) or set(keys) != set(items): raise BackendError('schema_changed')
-                        items = {key:items[key] for key in keys}
-                        self._order_known = True
+                    self._root._accept_snapshot(database,generation)
             finally: view.close()
             self._database_id,self._generation = database,generation
             self._items = items
         return self._items
+
+    def _ordered(self):
+        items = self._snapshot()
+        if len(items) <= 1: return tuple(items.values())
+        if self._root is None or type(self._context) is not SQLiteDBContext:
+            return super()._ordered()
+        # Logical schema-only hosts remain valid for Count/Find/row operations.
+        # Only an operation requiring source order loads the source-tree port.
+        self._root._ensure_source_info()
+        order = self._root._orders.get(self._family)
+        keys = tuple(name.casefold() for name in order) if order is not None else ()
+        if len(keys) != len(items) or set(keys) != set(items): raise BackendError('schema_changed')
+        return tuple(items[key] for key in keys)
 
 
 class BSLDocumentMetadata(BSLCatalogMetadata):
@@ -311,6 +314,17 @@ class BSLMetadata(_MetadataObject):
             self._orders = dict(orders)
         self._identity = database,generation
 
+    def _ensure_source_info(self):
+        if self._orders: return
+        context = self._catalogs._context
+        if context is None: require_database_context()
+        if type(context) is not SQLiteDBContext: raise ValueError('configuration source metadata unavailable')
+        view = context.backend.begin_read()
+        try:
+            info = view.metadata_configuration()
+            self._accept_snapshot(view.database_id,view.configuration_generation,info)
+        finally: view.close()
+
     def find_by_type(self, kind):
         from .catalog_types import BSLCatalogType
         from .document_types import BSLDocumentType
@@ -355,7 +369,7 @@ class BSLMetadata(_MetadataObject):
 
     def get_member(self, name: str) -> object:
         if name.casefold() in ('name','имя','synonym','синоним','comment','комментарий'):
-            if self._configuration_name is None: self._catalogs._snapshot()
+            if self._configuration_name is None: self._ensure_source_info()
             if self._configuration_name is None: raise ValueError('configuration metadata unavailable')
             return self._configuration_name if name.casefold() in ('name','имя') else ''
         if name.casefold() in ('commonmodules', 'общиемодули') and self._common_modules is not None:
@@ -449,3 +463,9 @@ def _standard_attributes(owner):
 def is_metadata_collection(value):
     return any(type(value) is cls for cls in (BSLCatalogMetadataCollection,BSLDocumentMetadataCollection,
         BSLInformationRegisterMetadataCollection,BSLCommonModuleMetadataCollection,_DeclaredMetadataCollection,StandardAttributeDescriptions))
+
+
+def is_metadata_object(value):
+    return is_metadata_collection(value) or any(type(value) is cls for cls in (
+        BSLMetadata,BSLCatalogMetadata,BSLDocumentMetadata,BSLInformationRegisterMetadata,
+        BSLCommonModuleMetadata,BSLAttributeMetadata,BSLTabularSectionMetadata,StandardAttributeDescription))

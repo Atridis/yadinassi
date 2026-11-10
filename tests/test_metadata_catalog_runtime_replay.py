@@ -15,14 +15,18 @@ import metadata_catalog_probe_contract as wire
 CAPTURE = ROOT / 'tests/fixtures/metadata_catalog_runtime/native_observations.json'
 
 
-def create_database(directory):
+def create_database(directory, *, payload_length=32):
     from yadinassi.configuration_xml import import_configuration
     from yadinassi.database_context import SQLiteDBContext
-    prefix = '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20">'
+    prefix = '<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20">'
     files = {
         'Configuration.xml': (prefix + '<Configuration uuid="20000000-0000-4000-8000-000000000001"><Properties><Name>ReferenceReplay</Name></Properties><ChildObjects><Catalog>NativeOracleItems</Catalog></ChildObjects></Configuration></MetaDataObject>').encode(),
         'Catalogs/NativeOracleItems.xml': (prefix + '<Catalog uuid="20000000-0000-4000-8000-000000000002"><Properties><Name>NativeOracleItems</Name><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>32</DescriptionLength><Autonumbering>false</Autonumbering><CheckUnique>true</CheckUnique></Properties><ChildObjects/></Catalog></MetaDataObject>').encode(),
     }
+    attribute = ('<ChildObjects><Attribute uuid="20000000-0000-4000-8000-000000000003"><Properties><Name>Payload</Name>'
+        '<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>' + str(payload_length) +
+        '</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></Attribute></ChildObjects>')
+    files['Catalogs/NativeOracleItems.xml'] = files['Catalogs/NativeOracleItems.xml'].replace(b'<ChildObjects/>',attribute.encode())
     path = directory / 'application.sqlite'
     with SQLiteDBContext.create(path, import_configuration(files)):
         pass
@@ -46,29 +50,27 @@ def native_wire(rows):
 
 
 class MetadataRuntimeReplayTests(unittest.TestCase):
-    def test_source_bound_all_six_native_captures_supported24_exact(self):
+    def test_source_bound_all_six_native_captures_supported26_exact(self):
         raw = CAPTURE.read_bytes()
         self.assertEqual(hashlib.sha256(raw).hexdigest(),
                          'e7a54e3ed988c32ecf897710c32e7c6c32a46b906009c846a34970b3f497b124')
         captures = json.loads(raw)
         self.assertEqual([(c['snapshot'], c['context']) for c in captures],
                          [(s, c) for s in ('updated', 'loaded', 'applied') for c in ('client', 'server')])
-        self.assertEqual(subject.SUPPORTED_IDS, tuple(i for i in range(1, 27) if i not in (7, 8)))
+        self.assertEqual(subject.SUPPORTED_IDS, tuple(range(1, 27)))
         for capture in captures:
             with self.subTest(snapshot=capture['snapshot'], context=capture['context']):
                 # Authored configuration is independent of the captured result.
                 from yadinassi.database_context import SQLiteDBContext
                 with tempfile.TemporaryDirectory() as directory:
-                    path = create_database(Path(directory))
+                    path = create_database(Path(directory), payload_length=64 if capture['snapshot']=='applied' else 32)
                     with SQLiteDBContext(path) as context:
                         actual = subject._execute(context)
                 comparison = subject.compare_readback(actual, native_wire(capture['rows']))
                 self.assertTrue(comparison['supported_match'])
-                self.assertEqual(len(comparison['matched_ids']), 24)
+                self.assertEqual(len(comparison['matched_ids']), 26)
                 self.assertEqual(comparison['mismatched_ids'], [])
-                self.assertEqual([c['runtime_status'] for c in comparison['excluded_controls']],
-                                 ['action-error', 'action-error'])
-                self.assertEqual([c['native_status'] for c in comparison['excluded_controls']], ['ok', 'ok'])
+                self.assertEqual(comparison['excluded_controls'], [])
 
     def test_supported_mismatch_cannot_be_hidden_as_exclusion(self):
         rows = json.loads(CAPTURE.read_bytes())[0]['rows']
@@ -86,7 +88,7 @@ class MetadataRuntimeReplayTests(unittest.TestCase):
             result = subject.readback(path, native_wire=native_wire(rows))
             self.assertEqual(path.read_bytes(), original)
             self.assertTrue(result['comparison']['supported_match'])
-            self.assertEqual(len(result['comparison']['matched_ids']), 24)
+            self.assertEqual(len(result['comparison']['matched_ids']), 26)
 
     def test_probe_source_change_rejected(self):
         with mock.patch.object(subject, 'PROBE_SHA256', '0' * 64):
