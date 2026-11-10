@@ -742,27 +742,43 @@ return {mountForm};
 const __configurationClient = (() => {
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
-const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/1';
+const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/2';
 const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max;
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
-const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open'];
+const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
+const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
+  'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required'];
 function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
-      !keys(state,['kind','title','entries','sessions','active','uncertain']) || !['application','closed'].includes(state.kind) ||
+      !keys(state,['kind','title','entries','sessions','active','uncertain','catalog']) || !['application','closed'].includes(state.kind) ||
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.entries) || !state.entries.length || state.entries.length > 64 ||
       !Array.isArray(state.sessions) || state.sessions.length > 8) throw new FormError('transport');
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
-    if (!keys(entry,['id','title']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024)) throw new FormError('transport');
+    if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
+        !['form','catalog-object'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
+  if (state.catalog !== null) {
+    const catalog = state.catalog;
+    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && e.kind === 'catalog-object') ||
+        !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
+        !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
+    const seen = new Set();
+    for (const row of catalog.rows) {
+      if (!keys(row,['key','code','description','deletionMark']) || !recordKey(row.key) || seen.has(row.key) ||
+          !text(row.code,1024) || !text(row.description,1024) || typeof row.deletionMark !== 'boolean') throw new FormError('transport');
+      seen.add(row.key);
+    }
+    if (previous?.catalog?.entry === catalog.entry && catalog.version < previous.catalog.version) throw new FormError('transport');
+  }
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title']) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
@@ -774,7 +790,7 @@ function validateApplicationReply(reply, request, previous) {
   if (request.method === 'application.form' && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.hello'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
@@ -782,13 +798,13 @@ function validateApplicationReply(reply, request, previous) {
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
   } else if (request.method === 'application.form' && result.error === null) throw new FormError('transport');
-  if (request.method === 'application.open' && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
+  if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
 class ApplicationClient {
   constructor(exchange, changed = () => {}, failed = () => {}) {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
-    this.formRevisions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
+    this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
@@ -799,6 +815,11 @@ class ApplicationClient {
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
         result = validateApplicationReply(await this.exchange(request),request,this.state);
+        if (result.state.catalog) {
+          const {entry,version} = result.state.catalog;
+          if (version < (this.catalogVersions.get(entry) ?? 0)) throw new FormError('transport');
+          this.catalogVersions.set(entry,version);
+        }
         for (const session of result.state.sessions) if (this.retired.has(session.id)) throw new FormError('transport');
         for (const session of this.state?.sessions || []) if (!result.state.sessions.some(value => value.id === session.id)) this.retired.add(session.id);
         if (result.form !== null) {
@@ -834,10 +855,13 @@ function mountApplication(environment, root, exchange = null) {
   const document = environment.document;
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
+  const workarea = el('div'), catalogPanel = el('section'); workarea.className = 'configuration-workarea';
+  catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const notice = el('p'); notice.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
+  let selectedEntry = null; const selectedRecords = new Set();
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -854,6 +878,71 @@ function mountApplication(environment, root, exchange = null) {
     }
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
+    workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+  }
+  function reconcileSelection() {
+    const catalog = client.state?.catalog;
+    if (!catalog || selectedEntry !== catalog.entry) selectedRecords.clear();
+    selectedEntry = catalog?.entry ?? null;
+    const keys = new Set(catalog?.rows.map(row => row.key) || []);
+    for (const key of selectedRecords) if (!keys.has(key)) selectedRecords.delete(key);
+  }
+  function drawCatalog() {
+    reconcileSelection(); catalogPanel.replaceChildren();
+    const catalog = client.state?.catalog;
+    catalogPanel.hidden = !catalog;
+    workarea.className = active && catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+    if (!catalog) return;
+    const entry = client.state.entries.find(entry => entry.id === catalog.entry);
+    const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
+    const unavailable = () => client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
+    const create = button('New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
+    const openSelected = () => {
+      // Resolve from the live set and latest projection, never a captured row
+      // index or a previous render's single selection.
+      reconcileSelection();
+      const current = client.state?.catalog, key = [...selectedRecords][0];
+      if (!unavailable() && selectedRecords.size === 1 && current?.rows.some(row => row.key === key)) openForm(current.entry,key);
+    };
+    const open = button('Open selected',actions,openSelected);
+    const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
+    const table = el('table'), head = el('thead'), headings = el('tr');
+    for (const title of ['Select','Code','Description','Deletion mark']) headings.append(el('th',title));
+    head.append(headings);table.append(head);const body = el('tbody'); table.append(body);
+    const rows = [];
+    function paintSelection() {
+      for (const {row,check,key} of rows) { const checked = selectedRecords.has(key); check.checked = checked; check.disabled = unavailable(); row.setAttribute('aria-selected',String(checked)); }
+      count.textContent = `${selectedRecords.size} selected`;
+      open.disabled = unavailable() || selectedRecords.size !== 1; create.disabled = refresh.disabled = unavailable();
+    }
+    function select(key, multiple) {
+      if (unavailable()) return;
+      if (multiple) { if (selectedRecords.has(key)) selectedRecords.delete(key); else selectedRecords.add(key); }
+      else { selectedRecords.clear(); selectedRecords.add(key); }
+      paintSelection();
+    }
+    for (const record of catalog.rows) {
+      const row = el('tr'), selectCell = el('td'), check = el('input'); check.type = 'checkbox'; row.tabIndex = 0;
+      row.dataset.recordKey = record.key;check.setAttribute('aria-label',`Select ${record.code} ${record.description}`);
+      check.addEventListener('click',event => { event.stopPropagation?.(); select(record.key,true); });
+      row.addEventListener('click',event => select(record.key,Boolean(event.ctrlKey || event.metaKey)));
+      row.addEventListener('keydown',event => {
+        if (event.target && event.target !== row) return;
+        if (event.key === ' ') { event.preventDefault();select(record.key,Boolean(event.ctrlKey || event.metaKey)); }
+        if (event.key === 'Enter') { event.preventDefault();if (selectedRecords.size === 1 && selectedRecords.has(record.key)) openSelected(); }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault(); const index = rows.findIndex(item => item.row === row);
+          rows[index+(event.key === 'ArrowDown'?1:-1)]?.row.focus();
+        }
+      });
+      selectCell.append(check);row.append(selectCell,el('td',record.code),el('td',record.description),el('td',record.deletionMark?'Marked':''));
+      rows.push({row,check,key:record.key});body.append(row);
+    }
+    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
+    paintSelection();
+    workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';
   }
   function paint() {
     title.textContent = client.state?.title || 'Configuration forms';
@@ -861,10 +950,14 @@ function mountApplication(environment, root, exchange = null) {
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
-      const node = button(entry.title || `Form ${entry.id}`,entries,() => openForm(entry.id));
-      node.disabled = disabled || client.state.sessions.length >= 8;
+      const node = button(entry.title || `Form ${entry.id}`,entries,() => {
+        if (entry.kind === 'catalog-object') { show(null);perform('application.catalog',{entry:entry.id}); }
+        else openForm(entry.id);
+      });
+      node.disabled = disabled || entry.kind !== 'catalog-object' && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    drawCatalog();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -880,7 +973,7 @@ function mountApplication(environment, root, exchange = null) {
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
     }
-    const generation = request?.method === 'application.open' ? intents.get(request.params.request) : undefined;
+    const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);
     else if (removedActive) show(client.state.active,false);
     paint();
@@ -888,18 +981,21 @@ function mountApplication(environment, root, exchange = null) {
   async function perform(method,params) {
     try { return await client.request(method,params); }
     catch { status = 'Application connection failed.'; paint(); }
+    finally { paint(); }
   }
-  function openForm(entry) {
-    if (openings.has(entry)) return openings.get(entry);
+  function openForm(entry, record = null) {
+    const key = `${entry}:${record ?? ''}`;
+    if (openings.has(key)) return openings.get(key);
     const token = `open-${++openToken}`; intents.set(token,navigation);
-    const opening = perform('application.open',{entry,request:token}).finally(() => { openings.delete(entry); intents.delete(token); });
-    openings.set(entry,opening); return opening;
+    const params = {entry,request:token}; if (record !== null) params.record = record;
+    const opening = perform(record === null?'application.open':'application.openRecord',params).finally(() => { openings.delete(key); intents.delete(token);paint(); });
+    openings.set(key,opening); return opening;
   }
   const close = button('Close application',toolbar,async () => {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  shell.append(title,toolbar,entries,tabs,notice,panels); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,entries,tabs,notice,workarea); root.replaceChildren(shell);
   if (!exchange) {
     try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
     catch { exchange = async () => { throw Error('Missing session'); }; }

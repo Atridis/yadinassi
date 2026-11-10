@@ -1011,6 +1011,11 @@ def import_demo_products_configuration(files):
 
 
 def _demo_configuration(files, profile):
+    # The version-6 source-bound layout also serves explicitly opted-in generic
+    # forms. This dispatch does not extend any historical demo hash grant.
+    from .configuration_catalog_profile import CATALOG_FORMS_PROFILE, catalog_forms_configuration
+    if profile == CATALOG_FORMS_PROFILE:
+        return catalog_forms_configuration(files)
     if profile == DEMO_PRODUCTS_PROFILE:
         return _demo_products_configuration(files)
     if profile == DEMO_KINDS_PROFILE:
@@ -1018,3 +1023,9 @@ def _demo_configuration(files, profile):
     if profile == DEMO_DIRECTORIES_PROFILE:
         return _demo_directories_configuration(files)
     _fail('unsupported demo source profile')
+
+
+def import_catalog_forms_configuration(files):
+    """Explicit scalar catalog object-form profile; ordinary import stays inert."""
+    from .configuration_catalog_profile import catalog_forms_configuration
+    return catalog_forms_configuration(files)[0]
