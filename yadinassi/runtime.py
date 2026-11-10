@@ -24,6 +24,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage, UserMessageContext
 from .value_storage import BSLValueStorage
+from .data_compression import BSLDeflation
 from . import json_processing
 from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
                          read_json_date, write_json_date)
@@ -295,6 +296,7 @@ class Interpreter:
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
         self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
         self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
+        self.register_type("СжатиеДанных", BSLDeflation, "Deflation")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
@@ -1578,6 +1580,7 @@ class Interpreter:
                                     or factory.function is BSLXMLReaderSettings
                                     or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
+                                    or factory.function is BSLValueStorage
                                     or factory.function is BSLTextReader
                                     or factory.function is BSLTextWriter
                                     or factory.function is BSLDataReader
@@ -1586,7 +1589,8 @@ class Interpreter:
                                     or factory.function is BSLFileCertificationAuthorityCertificates
                                     or factory.function is BSLHTTPConnection
                                     or factory.function is BSLHTTPRequest):
-            if (factory.function is BSLTextReader or factory.function is BSLTextWriter
+            if (factory.function is BSLValueStorage
+                    or factory.function is BSLTextReader or factory.function is BSLTextWriter
                     or factory.function is BSLDataReader or factory.function is BSLDataWriter
                     or factory.function is BSLFileCertificationAuthorityCertificates
                     or factory.function is BSLHTTPConnection or factory.function is BSLHTTPRequest):
