@@ -1,4 +1,4 @@
-"""Bounded built-in property transfer: local policy, not native parity evidence."""
+"""Bounded property transfer and targeted Linux ordinary-row regression checks."""
 from decimal import Decimal
 from pathlib import Path
 import tempfile
@@ -13,6 +13,7 @@ from yadinassi.configuration_xml import import_configuration
 from yadinassi.database_context import SQLiteDBContext
 from yadinassi.dates import date
 from yadinassi.documents import BSLDocumentObject
+from yadinassi.native_targets import LINUX_8_3_27_1508, WINDOWS_8_3_27_2342, target_context
 from yadinassi.structures import BSLStructure, BSLFixedStructure, fill_property_values
 from yadinassi.type_descriptions import BSLTypeDescription
 from yadinassi.type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedLength
@@ -246,6 +247,167 @@ class PropertyTransferSelectionTests(unittest.TestCase):
         self.assertEqual(target.get(D(0)), 1)
         target.table.columns.items[0].name += 'a'
         with self.assertRaises(ValueError): fill_property_values(target, source)
+
+
+class PropertyTransferLinuxRowTests(unittest.TestCase):
+    """Focused assertions for the acquired ordinary-row Linux profile only."""
+    def setUp(self):
+        self.enterContext(target_context(LINUX_8_3_27_1508))
+
+    def fixture(self, family):
+        target = row(family, ('First', 'Last', 'Keep'), (D(1), 'old', D(3)))
+        source = BSLStructure('First,Last,Extra', D(10), 'new', D(30))
+        return target, source
+
+    def test_missing_include_retains_rightmost_assignment_before_error(self):
+        for family in ('table', 'tree'):
+            for missing in ('Keep', 'Extra'):
+                with self.subTest(family=family, missing=missing):
+                    target, source = self.fixture(family)
+                    owner = target.owner()
+                    with self.assertRaises(ValueError):
+                        fill_property_values(target, source, 'First,' + missing + ',Last')
+                    self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'new'))
+                    self.assertEqual(target.get_member('Keep'), D(3))
+                    self.assertIs(target.owner(), owner)
+                    self.assertEqual(source.get('First'), D(10))
+
+    def test_tree_readonly_include_retains_last_but_never_replaces_owners(self):
+        for name in ('Parent', 'Rows', 'Родитель', 'Строки'):
+            target, source = self.fixture('tree')
+            source.insert('Parent', target.parent); source.insert('Rows', target.rows)
+            before = (target.owner(), target.parent, target.rows)
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                fill_property_values(target, source, 'First,' + name + ',Last')
+            self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'new'))
+            for actual, expected in zip((target.owner(), target.parent, target.rows), before):
+                self.assertIs(actual, expected)
+
+    def test_empty_include_is_successful_noop_for_both_row_families(self):
+        for family in ('table', 'tree'):
+            target, source = self.fixture(family)
+            self.assertIsNone(fill_property_values(target, source, ''))
+            self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'old'))
+            fill_property_values(target, source, '', 'Missing')
+            self.assertEqual(target.get_member('Last'), 'old')
+
+    def test_exclude_argument_type_is_checked_even_with_include(self):
+        class Hostile:
+            def __str__(self): raise AssertionError('string hook')
+            def __eq__(self, other): raise AssertionError('equality hook')
+        class StringSubclass(str):
+            def split(self, *args): raise AssertionError('split hook')
+        for family in ('table', 'tree'):
+            for excluded in (D(7), True, Hostile(), StringSubclass('First')):
+                for include in ('First', ''):
+                    target, source = self.fixture(family)
+                    with self.assertRaises(TypeError):
+                        fill_property_values(target, source, include, excluded)
+                    self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'old'))
+
+    def test_valid_exclude_string_is_ignored_when_include_is_supplied(self):
+        for family in ('table', 'tree'):
+            for excluded in ('First', 'Missing', ',bad,'):
+                target, source = self.fixture(family)
+                fill_property_values(target, source, 'First', excluded)
+                self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(10), 'old'))
+
+    def test_single_source_only_exclusion_fails_after_preceding_source_fields(self):
+        for family in ('table', 'tree'):
+            target, source = self.fixture(family)
+            if family == 'table': target.table.indexes.add('First')
+            with self.assertRaises(ValueError): fill_property_values(target, source, None, 'Extra')
+            self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(10), 'new'))
+            self.assertEqual(target.get_member('Keep'), D(3))
+            if family == 'table':
+                self.assertIs(target.table.find(D(10), 'First'), target)
+                self.assertIsNone(target.table.find(D(1), 'First'))
+                self.assertEqual(target.table.find_rows(BSLStructure('First', D(10))).items, [target])
+
+    def test_exclusion_missing_from_source_still_fails_before_assignments(self):
+        for family in ('table', 'tree'):
+            target, source = self.fixture(family)
+            with self.assertRaises(ValueError): fill_property_values(target, source, None, 'Keep')
+            self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'old'))
+
+    def test_unmeasured_multi_missing_exclusions_remain_guarded(self):
+        for family in ('table', 'tree'):
+            target, source = self.fixture(family)
+            source.insert('Other', D(40))
+            for excluded in ('Extra', 'Extra,Other'):
+                with self.assertRaises(ValueError): fill_property_values(target, source, None, excluded)
+                self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'old'))
+            fixed = BSLFixedStructure('First,Last,Extra', D(10), 'new', D(30))
+            with self.assertRaises(ValueError): fill_property_values(target, fixed, None, 'Extra')
+            self.assertEqual(target.get_member('Last'), 'old')
+
+    def test_tree_source_parent_and_rows_are_shallow_readable_references(self):
+        parent = row('tree', ('First', 'Last'), (D(7), 'hold'))
+        source = parent.rows.add(); source.set_member('First', D(10)); source.set_member('Last', 'new')
+        for include in (None, 'First,Parent,Rows,Last', 'First,Родитель,Строки,Last'):
+            target = BSLStructure('First,Last,Parent,Rows', D(1), 'old', None, None)
+            fill_property_values(target, source, include)
+            self.assertEqual((target.get('First'), target.get('Last')), (D(10), 'new'))
+            self.assertIs(target.get('Parent'), parent)
+            self.assertIs(target.get('Rows'), source.rows)
+            self.assertIs(source.rows.parent, source)
+            self.assertIs(source.owner(), parent.owner())
+        child = source.rows.add()
+        self.assertIs(target.get('Rows').items[-1], child)
+
+    def test_linux_typed_setters_and_index_updates_are_unchanged(self):
+        for family in ('table', 'tree'):
+            target, source = self.fixture(family)
+            columns = target.owner().columns.items
+            columns[0].value_type = BSLTypeDescription('Number', BSLNumberQualifiers(D(2), D(0)))
+            columns[1].value_type = BSLTypeDescription('String', None, BSLStringQualifiers(D(3)))
+            if family == 'table': target.table.indexes.add('First')
+            source.set('First', D('8.6')); source.set('Last', 'ABCD')
+            fill_property_values(target, source, 'First,Last')
+            self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(9), 'ABC'))
+            if family == 'table':
+                self.assertIs(target.table.find(D(9), 'First'), target)
+                self.assertIsNone(target.table.find(D(1), 'First'))
+
+    def test_reverse_include_setter_failure_keeps_prior_success(self):
+        for family in ('table', 'tree'):
+            target = row(family, typed=True)
+            with self.assertRaises(ValueError):
+                fill_property_values(target, BSLStructure('Text,Amount', 'new', BSLArray()), 'Amount,Text')
+            self.assertEqual((target.get_member('Text'), target.get_member('Amount')), ('new', D(0)))
+
+    def test_schema_alias_and_list_guards_still_precede_linux_assignments(self):
+        target, source = self.fixture('tree')
+        source.insert('Parent', None); source.insert('Родитель', None)
+        with self.assertRaises(ValueError): fill_property_values(target, source, 'First,Last')
+        self.assertEqual(target.get_member('Last'), 'old')
+        target, source = self.fixture('table')
+        with mock.patch.object(policy, 'MAX_LIST_NAMES', 1), self.assertRaises(ValueError):
+            fill_property_values(target, source, 'First,Last')
+        with mock.patch.object(policy, 'MAX_FIELDS', 1), self.assertRaises(ValueError):
+            fill_property_values(target, source, '')
+        self.assertEqual(target.get_member('Last'), 'old')
+
+    def test_windows_and_default_profile_is_not_reinterpreted_as_linux(self):
+        with target_context(WINDOWS_8_3_27_2342):
+            target, source = self.fixture('table')
+            with self.assertRaises(ValueError): fill_property_values(target, source, 'First,Extra,Last')
+            self.assertEqual(target.get_member('Last'), 'old')
+            with self.assertRaises(ValueError): fill_property_values(target, source, '')
+            # The unmeasured host policy still ignores Exclude completely.
+            fill_property_values(target, source, 'First', D(7))
+            self.assertEqual(target.get_member('First'), D(10))
+
+    def test_interpreter_linux_target_selects_measured_order_without_new_dispatch(self):
+        vm = Interpreter(native_target=LINUX_8_3_27_1508)
+        vm.execute('T=New ValueTable;T.Columns.Add("First");T.Columns.Add("Last");'
+                   'R=T.Add();R.First=1;R.Last="old";S=New Structure("First,Last",10,"new");'
+                   'Try ЗаполнитьЗначенияСвойств(R,S,"First,Missing,Last");Except Caught=True;EndTry;')
+        self.assertTrue(vm.variables['caught'])
+        target = vm.variables['r']
+        self.assertEqual((target.get_member('First'), target.get_member('Last')), (D(1), 'new'))
+        self.assertIs(vm.functions['fillpropertyvalues'].function, fill_property_values)
+        self.assertIs(vm.functions['заполнитьзначениясвойств'].function, fill_property_values)
 
 
 class PropertyTransferHostSafetyTests(unittest.TestCase):
@@ -493,6 +655,16 @@ class PropertyTransferObjectTests(unittest.TestCase):
         output = row(names=('НомерСтроки',), values=(D(0),))
         fill_property_values(output, line, 'LineNumber')
         self.assertEqual(output.get(D(0)), D(1))
+
+    def test_linux_target_does_not_imply_measured_object_selection(self):
+        with target_context(LINUX_8_3_27_1508):
+            source = BSLStructure('Text,Amount', 'new', D(4))
+            with self.assertRaises(ValueError):
+                fill_property_values(self.catalog, source, 'Missing,Text')
+            self.assertEqual(self.catalog.get_member('Text'), '')
+            fill_property_values(self.catalog, source, 'Text', D(7))
+            self.assertEqual(self.catalog.get_member('Text'), 'new')
+            with self.assertRaises(ValueError): fill_property_values(self.catalog, source, '')
 
     def test_references_and_managers_are_not_new_endpoints(self):
         for value in (self.catalog.get_member('Ref'), self.document.get_member('Ref'),

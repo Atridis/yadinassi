@@ -1,7 +1,8 @@
 """Bounded shallow FillPropertyValues adapters for built-in object/row endpoints.
 
-The historical Structure-to-Structure path remains in structures.py. Ordering,
-preflight and failure behavior below are a local host policy, not native parity.
+The historical Structure-to-Structure path remains in structures.py. Ordinary
+row selection follows the acquired Linux profile only in that explicit target.
+Other endpoint/target combinations retain the bounded local host policy.
 Only existing member setters mutate buffers; no persistence or handlers run here.
 """
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from .catalogs import BSLCatalogManager, BSLCatalogObject
 from .document_backend import DocumentSchema
 from .document_lines import BSLDocumentLine, BSLDocumentLines
 from .documents import BSLDocumentManager, BSLDocumentObject
+from .native_targets import LINUX_8_3_27_1508, current_native_target
 from .structures import BSLFixedStructure, BSLStructure, _key
 from .type_descriptions import BSLTypeDescription, _canonical, _query_nullable_description
 from .type_qualifiers import (BSLAllowedLength, BSLAllowedSign, BSLBinaryDataQualifiers,
@@ -205,7 +207,7 @@ def _descriptor(description):
             _invalid('несогласованное nullable описание колонки')
 
 
-def _row_endpoint(row, budget, target):
+def _row_endpoint(row, budget, target, readable_rows=False):
     tree_row = type(row) is BSLValueTreeRow
     row_type = BSLValueTreeRow if tree_row else BSLValueTableRow
     _instance(row, row_type)
@@ -260,7 +262,7 @@ def _row_endpoint(row, budget, target):
                                     or id(c) not in ids for c in cells):
         _invalid('состав ячеек не соответствует колонкам')
     if tree_row:
-        fields.extend(_Field(name, budget.name(name), True, name == 'parent', False)
+        fields.extend(_Field(name, budget.name(name), True, name == 'parent' or readable_rows, False)
                       for name in ('parent', 'rows'))
     elif target:
         indexes = owner.indexes
@@ -358,7 +360,7 @@ def _section_endpoint(row, budget, target):
     return _Endpoint(row, tuple(fields), cls.get_member, cls.set_member)
 
 
-def _endpoint(value, budget, target=False):
+def _endpoint(value, budget, target=False, readable_rows=False):
     kind = type(value)
     if kind is BSLStructure or kind is BSLFixedStructure:
         _instance(value, kind)
@@ -375,7 +377,7 @@ def _endpoint(value, budget, target=False):
             fields.append(_Field(pair[0], key))
         return _Endpoint(value, tuple(fields), kind.get_member, kind.set_member)
     if kind is BSLValueTableRow or kind is BSLValueTreeRow:
-        return _row_endpoint(value, budget, target)
+        return _row_endpoint(value, budget, target, readable_rows)
     if kind is BSLCatalogObject or kind is BSLDocumentObject:
         return _object_schema(value, budget, target)
     if kind is BSLCatalogSectionRow or kind is BSLDocumentLine:
@@ -383,12 +385,15 @@ def _endpoint(value, budget, target=False):
     raise TypeError('ЗаполнитьЗначенияСвойств: неподдерживаемый тип объекта')
 
 
-def _names(value, budget):
+def _names(value, budget, empty_include=False):
     if type(value) is not str:
         raise TypeError('ЗаполнитьЗначенияСвойств: список свойств должен быть строкой')
     if (len(value) > MAX_LIST_UNITS or value.count(',') + 1 > MAX_LIST_NAMES
             or len(value) + sum(ord(c) > 0xffff for c in value) > MAX_LIST_UNITS):
         _invalid('превышен предел списка свойств')
+    if empty_include and value == '':
+        return []
+    # !todo Measure row-list empty tokens, quoted names and Unicode whitespace.
     # No empty tokens, quoted names, tabs or Unicode trimming is inferred from
     # the simple comma-separated contract. Repeated valid names retain order.
     return [budget.name(name.strip(' ')) for name in value.split(',')]
@@ -404,40 +409,85 @@ def _mapped(endpoint, aliases):
     return result
 
 
-def fill_property_values(target, source, properties=None, exclude=None):
-    """Copy a bounded set of fields using existing shallow member operations.
+def _ordinary_linux_transfer(target, source):
+    # !todo Acquire Windows row and catalog/document/tabular-row ordering before
+    # extending these measurements beyond ordinary Linux row combinations.
+    kinds = (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTreeRow)
+    return (current_native_target() == LINUX_8_3_27_1508
+            and all(any(type(value) is kind for kind in kinds) for value in (target, source)))
 
-    All names/presence/readonly restrictions are checked before assignments.
-    Setter failures are deliberately non-atomic, preserving earlier writes.
-    An explicit include list takes precedence: exclude is not inspected at all.
+
+def fill_property_values(target, source, properties=None, exclude=None):
+    """Copy with existing setters; Linux ordinary rows retain measured errors.
+
+    Schema, alias and bounded list syntax checks always precede assignments.
+    Linux ordinary-row INCLUDE checks presence/readonly lazily, right to left.
+    Other endpoint/target combinations retain the original preflight policy.
     """
+    linux_rows = _ordinary_linux_transfer(target, source)
     budget = _Budget()
     try:
         destination = _endpoint(target, budget, True)
-        origin = _endpoint(source, budget)
+        origin = _endpoint(source, budget, readable_rows=linux_rows)
     except (AttributeError, KeyError):
         _invalid('неполное внутреннее состояние объекта')
+    if linux_rows:
+        # Include overrides a valid Exclude list, not its argument type.
+        for value in (properties, exclude):
+            if value is not None and type(value) is not str:
+                raise TypeError('ЗаполнитьЗначенияСвойств: список свойств должен быть строкой')
     standards = {field.key for endpoint in (destination, origin) for field in endpoint.fields if field.standard}
     aliases = {name: key for key in standards for name in _ALIASES[key]}
     targets, sources = _mapped(destination, aliases), _mapped(origin, aliases)
+
+    def check_selected(key):
+        if key not in targets or key not in sources:
+            _invalid('включенное свойство отсутствует в одном из объектов')
+        if not targets[key].writable or not sources[key].readable:
+            _invalid('включенное свойство доступно только для чтения или является коллекцией')
+
+    def assign(key):
+        value = origin.getter(origin.value, sources[key].name)
+        destination.setter(destination.value, targets[key].name, value)
+
     if properties is not None:
-        selected = [aliases.get(name, name) for name in _names(properties, budget)]
+        selected = [aliases.get(name, name) for name in
+                    _names(properties, budget, empty_include=linux_rows)]
+        if linux_rows:
+            for key in reversed(selected):
+                check_selected(key)
+                assign(key)
+            return
         for key in selected:
-            if key not in targets or key not in sources:
-                _invalid('включенное свойство отсутствует в одном из объектов')
-            if not targets[key].writable or not sources[key].readable:
-                _invalid('включенное свойство доступно только для чтения или является коллекцией')
+            check_selected(key)
     else:
-        excluded = set()
+        excluded, deferred = set(), None
         if exclude is not None:
             for name in _names(exclude, budget):
                 key = aliases.get(name, name)
-                if key not in targets or key not in sources:
+                if key not in sources:
                     _invalid('исключаемое свойство отсутствует в одном из объектов')
+                if key not in targets:
+                    # PV-21/31: one mutable Structure source-only field errors
+                    # when reached in source order, after preceding assignments.
+                    # !todo Measure multiple/mixed missing exclusions and other
+                    # source kinds; do not extrapolate the partial-write rule.
+                    if not linux_rows or type(source) is not BSLStructure or deferred is not None:
+                        _invalid('исключаемое свойство отсутствует в одном из объектов')
+                    deferred = key
                 excluded.add(key)
+        if deferred is not None:
+            if sources.keys() - targets.keys() != {deferred}:
+                _invalid('исключаемое свойство отсутствует в одном из объектов')
+            for key in sources:
+                if key == deferred:
+                    _invalid('исключаемое свойство отсутствует в одном из объектов')
+                if (key in targets and key not in excluded
+                        and targets[key].writable and sources[key].readable):
+                    assign(key)
+            return
         selected = [key for key, field in targets.items()
                     if key in sources and key not in excluded
                     and field.writable and sources[key].readable]
     for key in selected:
-        value = origin.getter(origin.value, sources[key].name)
-        destination.setter(destination.value, targets[key].name, value)
+        assign(key)

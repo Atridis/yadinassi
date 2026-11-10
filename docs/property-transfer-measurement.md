@@ -56,6 +56,45 @@ The ordinary host distinction remains `native_measurement_accepted` versus
 the job still requires exact runtime parity for success. There is no
 acquisition-only bypass or new host-report field.
 
+## First Linux acquisition
+
+[Run 42814632887](https://github.com/Atridis/yadinassi/actions/runs/42814632887)
+on PR #261 measured this unchanged source on Linux 1C 8.3.27.1508, configured
+UTC. Its merge checkout was `a10240123e1c65284ffd4c0b0b9b64e63ac0a7d6`, tree
+`0439b7d8de7d55b4d8acef44706b7ef5efaff3ce`. The client and server emitted
+identical 6903-byte captures: 36 successful operations, 12 operation errors,
+and no observer errors. Native measurement and cleanup were accepted;
+**initial runtime parity was false**.
+
+`tests/fixtures/property_transfer/original48-linux.out` and
+`original48-linux-provenance.json` preserve the exact native artifact bytes.
+The separate `original48-linux-receipt.json` binds their hashes, the verified
+artifact archive digests, source, merge parents, and initial runtime identity
+(165 source files). The input source, mapping, contract and profile are unchanged.
+The mapping's original `not_acquired` attribution remains an input checkpoint,
+not the status of this later run.
+
+One replay of the acquisition tree reproduced the CI interpreter digest and
+14 differing records. The native observations show:
+
+- 17/18/27/28/42/43: `Last` is copied before an INCLUDE missing-property or
+  read-only-property error; `First` remains unchanged. These forms are consistent
+  with right-to-left Linux traversal, not atomic preflight validation.
+- 19/29: empty INCLUDE succeeds without assignment.
+- 21/31: excluding source-only `Extra` fails after copying `First` and `Last`.
+  In contrast, 22/32 exclude source-missing `Keep` without changing the receiver.
+- 24/34: a non-string EXCLUDE raises before writes even with INCLUDE present.
+  Valid INCLUDE/EXCLUDE overlap in 23/33 still copies the included `First`.
+- 45/46: a tree row's `Parent` and `Rows` can both be copied by reference into
+  existing Structure properties, with default or explicit selection.
+
+The other 34 records already matched, including cross-row transfers, typed
+setter adjustments/defaults, index maintenance and shared-array mutation.
+The dedicated capture tests pin these observations and require a complete,
+explicit-Linux replay with no projection or replacement of native records.
+Later local replay or a later CI run is separate evidence: neither rewrites
+the immutable first run's rejected runtime comparison.
+
 ## Evidence limits
 
 The official RU/EN contract comes from archive SHA256

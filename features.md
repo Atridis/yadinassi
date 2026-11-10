@@ -5954,6 +5954,10 @@ FixedStructure sources, ValueTableRow, ValueTreeRow, объектами спра
 
 В новом профиле Include перекрывает Exclude, поддержаны обычные ASCII-пробелы
 в comma-separated списках, стандартные RU/EN aliases разрешаются без угадывания
-при неоднозначности. Порядок и non-atomic setter failures явно являются локальной
-политикой. Старые измеренные Structure↔Structure ветки сохранены без изменений.
+при неоднозначности. Для обычных строк в явном Linux 8.3.27.1508 учтены полученные
+48 наблюдений: Include справа налево с partial errors, пустой Include как no-op,
+проверка типа Exclude и shallow-чтение Parent/Rows в записываемые свойства.
+Один source-only Exclude сохраняет предшествующие записи по порядку источника.
+Windows/default и metadata-backed объекты остаются отдельной локальной политикой,
+без заявления native-паритета. Старые Structure↔Structure ветки не изменены.
 Подробности, пределы и примеры: [property-transfer.md](docs/property-transfer.md).

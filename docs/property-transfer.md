@@ -49,36 +49,70 @@ synonyms. Multiple source or target properties matching the same active alias
 group are an error, even if their values happen to be equal. No spelling gets
 implicit precedence.
 
-`Ref`, `Posted`, `LineNumber` and tree `Parent` cannot be changed on their
+`Ref`, `Posted`, `LineNumber` and tree `Parent`/`Rows` cannot be changed on
 readonly owning endpoints. They can occur in Exclude when present on both
-endpoints, and Include rejects a readonly target property. Reading these scalar
-or reference values from a source into an ordinary writable Structure property
-or row column is supported, both by default and with Include. Tree `Rows` and
-whole tabular sections remain excluded in both directions; Include rejects these
-aggregate properties. User properties with these spellings are ordinary
-properties when neither endpoint exposes the corresponding built-in standard
-property.
+endpoints, and Include rejects a readonly target property. Reading readonly
+scalar/reference properties into an ordinary writable Structure property or row
+column is supported. Whole tabular sections are never transferred. User fields
+with these spellings remain ordinary properties when neither endpoint exposes
+the corresponding built-in standard property.
 
-An explicit Include list controls assignment order and must name properties
-present in **both** endpoints. Repeated valid names cause repeated assignments.
-When Include is supplied, Exclude is ignored completely, without parsing or
-validating it. Without Include, every Exclude name must also be present in both
-endpoints. Unknown names are errors, not silently ignored.
+### Acquired Linux ordinary-row profile
 
-The new profile admits comma-separated identifiers with surrounding ASCII
-spaces. Empty strings/tokens, leading/trailing or repeated commas, quoted names,
-tabs, newlines and Unicode whitespace trimming are not supported. Optional
-omitted arguments and `Undefined` both mean the corresponding list is absent.
+With explicit `native_target="linux-8.3.27.1508"`, combinations of ordinary
+ValueTableRow/ValueTreeRow and Structure/FixedStructure sources use the measured
+Linux selection rules below. A FixedStructure target remains refused. The
+48-input acquisition covers ordinary rows, not catalog/document objects or
+metadata-backed tabular rows; see [the measurement record](property-transfer-measurement.md).
 
-Schema validation, alias ambiguity, list syntax, presence and readonly checks
-finish before assignments begin. **Setter failures are non-atomic:** an error
-from a later typed setter leaves prior successful assignments intact. Values are
-read and assigned one at a time; there is no separate deep copy or rollback.
+- Include traverses right to left, checking presence in both endpoints and target
+  writability immediately before each assignment. Earlier successful writes are
+  retained on error. For `"First,Missing,Last"`, `Last` is copied before the error;
+  `First` is not. The same applies to a readonly tree `Parent` or `Rows` target.
+- An exactly empty Include string is a successful no-op. It is not the same as an
+  omitted/Undefined Include, which performs the default copy.
+- Include overrides the *contents* of Exclude, but a supplied non-string Exclude
+  is rejected before any assignment, even with empty Include.
+- An exclusion absent from the source fails before assignment. The measured
+  single mutable-Structure source-only exclusion is checked at its position in
+  source schema order: preceding common nonexcluded fields are already copied
+  when the missing target property causes an error. Admission is restricted to
+  one source-only property and one occurrence of that missing exclusion. Other
+  missing/mixed/fixed-source forms stay guarded before writes pending evidence.
+- A tree source's `Parent` **and `Rows`** may fill writable Structure properties,
+  by default or explicitly. Both remain shallow references to the original
+  parent and child collection; no ancestry, owner, children or collection is
+  cloned or replaced. Readonly tree targets still cannot be assigned.
 
-These traversal, preflight, readonly and failure rules are an explicit bounded
-**local host policy**, not an assertion of native 1C equivalence. Existing
-member setters retain their current type adjustment, errors, index maintenance
-and tabular-buffer dirty/size bookkeeping.
+These changes retain existing typed setters, index updates and owner checks.
+They do not imply Windows parity or native equivalence for metadata-backed
+objects. No native result is inferred from a successful host test; the unchanged
+native source and separate capture/replay retain the evidence boundary.
+
+### Remaining bounded host policy
+
+Default execution and `windows-8.3.27.2342`, plus any combination involving a
+catalog/document object or its tabular row even under Linux, keep the original
+explicit local policy: Include follows list order and preflights all selected
+properties; Exclude is ignored completely when Include is supplied. Missing
+exclusions fail before writes. Tree `Rows` remains closed for these combinations.
+This is not a measured Windows or object-transfer behavior claim.
+
+For all new combinations, default traversal uses target schema order as described
+above, except the bounded Linux source-only exclusion error path. Repeated valid
+Include names cause repeated assignments in the selected traversal order.
+Comma-separated identifiers may have surrounding ASCII spaces. Apart from the
+exactly empty Linux Include, empty strings/tokens, leading/trailing or repeated
+commas, quoted names, tabs, newlines and Unicode whitespace trimming remain
+unsupported. Optional omitted arguments and `Undefined` mean the list is absent.
+
+Schema validation, alias ambiguity, resource bounds and admitted list syntax
+are checked before assignments begin. **Setter failures are non-atomic:** a
+later setter failure leaves earlier writes intact. Values are read and assigned
+one at a time through existing member setters, with their current type adjustment,
+errors, index maintenance and tabular-buffer dirty/size bookkeeping. There is no
+deep copy or rollback. Ordering outside the acquired rows and further parser or
+mixed-exclusion corners remain explicitly deferred, not guessed from the capture.
 
 ## Examples
 
@@ -126,7 +160,7 @@ document copying without whole tabular sections and explicit loops over rows:
 - [Development example: filling object properties](https://its.1c.ru/db/content/metod8dev/src/developers/platform/metod/other/i8102322.htm)
 - [Standard: copying properties between rows and objects](https://its.1c.ru/db/content/v8std/src/400/300/i8100448.htm)
 
-The local implementation does not infer unmeasured parser corners or native
-failure order from those examples. Focused host tests are in
+The local implementation does not infer unmeasured parser corners, object or
+Windows failure order from those examples. Focused host tests are in
 `tests/test_property_transfer.py`; existing structure checkpoint fixtures are
 kept unchanged.
