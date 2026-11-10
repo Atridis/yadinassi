@@ -367,7 +367,7 @@ Message(A[2].IsEmpty());M.Close();''')
 
     def test_simple_catalog_select_retains_original_fast_path(self):
         with patch('yadinassi.query_packages.execute_package',side_effect=AssertionError('not a package')):
-            with patch('yadinassi.relational_queries._Plan',side_effect=AssertionError('not relational')):
+            with patch('yadinassi.relational_queries._Plan.execute',side_effect=AssertionError('not relational execution')):
                 self.assertEqual(self.rows('SELECT TOP 1 Amount FROM Catalog.Products ORDER BY Amount'), ((Decimal(10),),))
 
 

@@ -191,10 +191,12 @@ class Transaction:
         from .sqlite_catalog import _View, _close_document_scan
         transaction = self
         class Lease(_View):
+            def _cache_validation_allowed(self): return False
             def close(self):
                 if not self._closed:
                     self._scan_cursor = None
                     _close_document_scan(self)
+                    self._validated_sources.clear()
                     self._closed = True
                     transaction.leases -= 1
             def _require(self, write=False, mutate=False):

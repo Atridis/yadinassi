@@ -320,7 +320,7 @@ Message(Q.Execute().Unload()[0].Total);''')
             card = page.rows[0]
             values = ('bad',) + card.values[1:]
             return replace(page, rows=(replace(card, deletion_mark=1, values=values),))
-        with patch.object(DocumentView, 'scan_documents', corrupt), self.assertRaises(BackendError):
+        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
         def corrupt_section(view, identity, request):
@@ -330,7 +330,7 @@ Message(Q.Execute().Unload()[0].Total);''')
             line = section.rows[0]
             bad = replace(line, values=(1,) + line.values[1:])
             return replace(page, rows=(replace(card, tabular_sections=(replace(section, rows=(bad,) + section.rows[1:]),)),))
-        with patch.object(DocumentView, 'scan_documents', corrupt_section), self.assertRaises(BackendError):
+        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', corrupt_section), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 
@@ -350,13 +350,13 @@ Message(Q.Execute().Unload()[0].Total);''')
             page = original(view, identity, request)
             if not first: first.extend(page.rows)
             return replace(page, rows=tuple(first))
-        with patch.object(DocumentView, 'scan_documents', duplicate), self.assertRaises(BackendError):
+        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', duplicate), self.assertRaises(BackendError):
             self.rows('SELECT Number FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
         def oversized(view, identity, request):
             page = original(view, identity, request)
             return replace(page, rows=page.rows*2)
-        with patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
+        with patch('yadinassi.document_queries._owned_projection_view', return_value=False), patch.object(DocumentView, 'scan_documents', oversized), self.assertRaises(BackendError):
             self.rows('SELECT COUNT(*) AS N FROM Document.Orders')
         self.assertIsNone(self.context.backend._active)
 

@@ -1,0 +1,402 @@
+{
+  "schema": "property-transfer-inputs-v1",
+  "profile": "property-transfer-v1",
+  "source": "integrational_tests/measurements/property_transfer.bsl",
+  "source_sha256": "25abcace2821e4d03da731e4cf96a97a33348f21a58ee291399232c51ad5e7c8",
+  "evidence_status": "not_acquired",
+  "native_measurement_accepted": false,
+  "runtime_parity_accepted": false,
+  "documentation": {
+    "archive_sha256": "a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642",
+    "members": [
+      "nl/ru/html/SyntaxHelperContext/objects/Global_context/methods/catalog1762/FillPropertyValues2304.html",
+      "nl/en/html/SyntaxHelperContext/objects/Global_context/methods/catalog1762/FillPropertyValues2304.html"
+    ]
+  },
+  "cases": [
+    {
+      "case": 1,
+      "topic": "control.table-setter",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 2,
+      "topic": "control.tree-setter",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 3,
+      "topic": "control.fill-en",
+      "target": "Structure",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 4,
+      "topic": "control.fill-ru",
+      "target": "Structure",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 5,
+      "topic": "transfer.Structure-to-ValueTableRow",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 6,
+      "topic": "transfer.FixedStructure-to-ValueTableRow",
+      "target": "ValueTableRow",
+      "source": "FixedStructure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 7,
+      "topic": "transfer.ValueTableRow-to-Structure",
+      "target": "Structure",
+      "source": "ValueTableRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 8,
+      "topic": "transfer.ValueTableRow-to-ValueTableRow",
+      "target": "ValueTableRow",
+      "source": "ValueTableRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 9,
+      "topic": "transfer.Structure-to-ValueTreeRow",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 10,
+      "topic": "transfer.FixedStructure-to-ValueTreeRow",
+      "target": "ValueTreeRow",
+      "source": "FixedStructure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 11,
+      "topic": "transfer.ValueTreeRow-to-Structure",
+      "target": "Structure",
+      "source": "ValueTreeRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 12,
+      "topic": "transfer.ValueTreeRow-to-ValueTreeRow",
+      "target": "ValueTreeRow",
+      "source": "ValueTreeRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 13,
+      "topic": "transfer.ValueTableRow-to-ValueTreeRow",
+      "target": "ValueTreeRow",
+      "source": "ValueTableRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 14,
+      "topic": "transfer.ValueTreeRow-to-ValueTableRow",
+      "target": "ValueTableRow",
+      "source": "ValueTreeRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 15,
+      "topic": "list.default-undefined",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 16,
+      "topic": "list.include-order-case-duplicate",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "last,FIRST,First",
+      "exclude": null
+    },
+    {
+      "case": 17,
+      "topic": "list.include-missing-source",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "First,Keep,Last",
+      "exclude": null
+    },
+    {
+      "case": 18,
+      "topic": "list.include-missing-target",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "First,Extra,Last",
+      "exclude": null
+    },
+    {
+      "case": 19,
+      "topic": "list.include-empty",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "",
+      "exclude": null
+    },
+    {
+      "case": 20,
+      "topic": "list.exclude-valid",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "First"
+    },
+    {
+      "case": 21,
+      "topic": "list.exclude-missing-target",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "Extra"
+    },
+    {
+      "case": 22,
+      "topic": "list.exclude-missing-source",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "Keep"
+    },
+    {
+      "case": 23,
+      "topic": "list.include-exclude-conflict",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "First",
+      "exclude": "First"
+    },
+    {
+      "case": 24,
+      "topic": "list.include-exclude-wrong-type",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": "First",
+      "exclude": 7
+    },
+    {
+      "case": 25,
+      "topic": "list.default-undefined",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 26,
+      "topic": "list.include-order-case-duplicate",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "last,FIRST,First",
+      "exclude": null
+    },
+    {
+      "case": 27,
+      "topic": "list.include-missing-source",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First,Keep,Last",
+      "exclude": null
+    },
+    {
+      "case": 28,
+      "topic": "list.include-missing-target",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First,Extra,Last",
+      "exclude": null
+    },
+    {
+      "case": 29,
+      "topic": "list.include-empty",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "",
+      "exclude": null
+    },
+    {
+      "case": 30,
+      "topic": "list.exclude-valid",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "First"
+    },
+    {
+      "case": 31,
+      "topic": "list.exclude-missing-target",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "Extra"
+    },
+    {
+      "case": 32,
+      "topic": "list.exclude-missing-source",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "Keep"
+    },
+    {
+      "case": 33,
+      "topic": "list.include-exclude-conflict",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First",
+      "exclude": "First"
+    },
+    {
+      "case": 34,
+      "topic": "list.include-exclude-wrong-type",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First",
+      "exclude": 7
+    },
+    {
+      "case": 35,
+      "topic": "typed.qualifier-adjustment",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 36,
+      "topic": "typed.undefined-default",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 37,
+      "topic": "typed.invalid-number",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 38,
+      "topic": "typed.qualifier-adjustment",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 39,
+      "topic": "typed.undefined-default",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 40,
+      "topic": "typed.invalid-number",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 41,
+      "topic": "readonly.default",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 42,
+      "topic": "readonly.include-parent",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First,Parent,Last",
+      "exclude": null
+    },
+    {
+      "case": 43,
+      "topic": "readonly.include-rows",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": "First,Rows,Last",
+      "exclude": null
+    },
+    {
+      "case": 44,
+      "topic": "readonly.exclude-readonly",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": "Parent,Rows"
+    },
+    {
+      "case": 45,
+      "topic": "readonly.source-default",
+      "target": "Structure",
+      "source": "ValueTreeRow",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 46,
+      "topic": "readonly.source-include",
+      "target": "Structure",
+      "source": "ValueTreeRow",
+      "selection": "First,Parent,Rows,Last",
+      "exclude": null
+    },
+    {
+      "case": 47,
+      "topic": "reference.table-shallow",
+      "target": "ValueTableRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    },
+    {
+      "case": 48,
+      "topic": "reference.tree-shallow",
+      "target": "ValueTreeRow",
+      "source": "Structure",
+      "selection": null,
+      "exclude": null
+    }
+  ]
+}

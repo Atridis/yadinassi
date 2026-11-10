@@ -286,26 +286,15 @@ class BSLQuery(BSLObject):
         from . import relational_queries
         if relational_queries.required(query):
             return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents, self._information_registers)
-        manager = self._catalogs.get_index(query.catalog)
-        section = None
-        if query.section is not None:
-            matches = [item for item in manager._schema.tabular_sections
-                       if item.name.casefold() == query.section.casefold()]
-            if len(matches) != 1:
-                raise ValueError('Unknown query tabular section')
-            section = matches[0]
-        columns = []
-        for projection in query.projections:
-            column = _field(manager, projection.field, query.source_alias, section)
-            name = ('Код' if not projection.explicit_alias and column.field == 'code'
-                    else projection.alias)
-            columns.append(_Column(name, column.field, column.kind,
-                                   column.qualifiers, column.custom, projection.explicit_alias))
-        if len({column.name.casefold() for column in columns}) != len(columns):
-            raise ValueError('Duplicate localized query output column')
-        predicate = _predicate(manager, query.predicate, query.source_alias, dict(self._parameters), section)
-        order = tuple(CatalogOrder(_field(manager, item.field, query.source_alias, section).field, item.descending)
-                      for item in query.order)
+        # The fast scan and relational/package paths share the exact same binder.
+        plan = relational_queries._Plan(query, self._catalogs, dict(self._parameters))
+        manager, section = plan.managers[0], plan.sections[0]
+        columns = plan.columns
+        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
+        if plan.predicate is not None and predicate is None:
+            return plan.execute()
+        order = tuple(CatalogOrder(expression.column.field, descending)
+                      for expression, descending in plan.orders)
         rows = []
         text_units = 0
         continuation = None
