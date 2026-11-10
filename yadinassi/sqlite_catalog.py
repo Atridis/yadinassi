@@ -23,6 +23,8 @@ from .sqlite_registers import (REGISTER_DDL, schema_data as register_schema_data
 from .sqlite_documents import DOCUMENT_DDL, schema_data as document_schema_data, load_schemas as load_document_schemas, DocumentView
 from . import sqlite_hierarchy as hierarchy_storage
 from .sqlite_hierarchy import HIERARCHY_DDL
+from . import sqlite_transaction_profile as transaction_profile
+from .sqlite_query_indexes import register_query_collations
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
@@ -380,7 +382,8 @@ class SQLiteCatalogBackend:
             connection.execute('BEGIN')  # Pin schema, registry and metadata to one snapshot.
             if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID:
                 raise BackendError('unsupported')
-            self.storage_version = connection.execute('PRAGMA user_version').fetchone()[0]
+            self.format_version = connection.execute('PRAGMA user_version').fetchone()[0]
+            self.storage_version = (transaction_profile.base_version(connection) if self.format_version == 11 else self.format_version)
             if self.storage_version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10): raise BackendError('unsupported')
             statements = list(_DDL)
             if self.storage_version >= 2:
@@ -438,13 +441,19 @@ class SQLiteCatalogBackend:
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in REGISTER_DDL})
             if self.storage_version == 10:
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in HIERARCHY_DDL})
+            if self.format_version == 11:
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in transaction_profile.PROFILE_DDL})
             # Bound all schema text before fetching it, including unexpected objects.
             if connection.execute("SELECT 1 FROM sqlite_master WHERE length(CAST(name AS BLOB))>1024 OR length(CAST(COALESCE(sql,'') AS BLOB))>262144 LIMIT 1").fetchone(): raise BackendError('unsupported')
             objects, schema_bytes = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(name AS BLOB))+length(CAST(COALESCE(sql,'') AS BLOB))),0) FROM sqlite_master").fetchone()
             if objects > 4096 or schema_bytes > 64 * 1024 * 1024: raise BackendError('unsupported')
             actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
-            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone() or (self.storage_version >= 2 and connection.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND sql IS NOT NULL LIMIT 1").fetchone()):
+            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
+            actual_indexes = tuple(row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"))
+            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version == 11 else ()
+            if self.storage_version >= 2 and actual_indexes != expected_indexes: raise BackendError('unsupported')
+            if self.format_version == 11: transaction_profile.validate_marker(connection)
             if self.storage_version == 10:
                 if connection.execute('SELECT COUNT(*) FROM catalog_hierarchy').fetchone()[0] > _MAX_ROWS * len(schemas): raise BackendError('unsupported')
                 valid_ids = {str(s.identity) for s in schemas if s.hierarchy != 'none'}
@@ -506,6 +515,7 @@ class SQLiteCatalogBackend:
         try:
             connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
             if _owner is not None: _owner._connection=connection
+            register_query_collations(connection)
             if self.read_only: connection.execute('PRAGMA query_only=ON')
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA trusted_schema=OFF')
@@ -623,6 +633,7 @@ class SQLiteCatalogBackend:
         except OSError: raise BackendError('storage_error') from None
         try:
             connection = sqlite3.connect(absolute, isolation_level=None, detect_types=0)
+            register_query_collations(connection)
             connection.execute('PRAGMA foreign_keys=ON'); connection.execute('PRAGMA journal_mode=DELETE'); connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
             for statement in _DDL:
@@ -919,6 +930,21 @@ class SQLiteCatalogBackend:
         return self._begin(operation_id)
 
     @_boundary
+    def begin_unit_of_work(self, operation_id):
+        from .sqlite_transactions import UnitOfWork
+        if self.format_version != 11: raise BackendError('unsupported')
+        view = self.begin_write(operation_id)
+        try: return UnitOfWork(view)
+        except BaseException:
+            view.close(); raise
+
+    @_boundary
+    def resolve_unit_of_work(self, operation_id, requests):
+        from .sqlite_transactions import resolve
+        if self.format_version != 11: raise BackendError('unsupported')
+        return resolve(self, operation_id, requests)
+
+    @_boundary
     def begin_query_read(self):
         # Catalog-first packages must pin the same transaction later used by
         # their document/register sources. Older layouts expose empty sets.
@@ -994,9 +1020,10 @@ class SQLiteCatalogBackend:
             connection = self._connect(_owner=pending)
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
-                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.storage_version or
+                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
                     connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
                     raise BackendError('schema_changed')
+                if self.format_version == 11 and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
                 if self.storage_version >= 2:
                     if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
                     for identity, name, definition in self._schema_snapshot:
@@ -1209,6 +1236,7 @@ class _View:
         self._section_write_rows = 0
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
+        if operation_id is not None and backend.format_version == 11 and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
         if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
             raise BackendError('conflict')
         if operation_id is not None and backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
@@ -1495,13 +1523,6 @@ class _View:
         if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
         # Python-defined comparisons preserve the existing versioned semantics;
         # SQLite never coerces Decimal to float or substitutes ASCII NOCASE.
-        def compare(a, b): return (a > b) - (a < b)
-        self._connection.create_collation('yadinassi_casefold_v1',
-            lambda a, b: compare(a.casefold(), b.casefold()))
-        self._connection.create_collation('yadinassi_decimal_v1',
-            lambda a, b: compare(decimal.Decimal(a), decimal.Decimal(b)))
-        self._connection.create_collation('yadinassi_uuid_v1',
-            lambda a, b: compare(UUID(a).int, UUID(b).int))
 
         def field_sql(field):
             kind, _ = self._scan_field(schema, field)
