@@ -11,12 +11,8 @@ from .register_backend import RegisterKey, RegisterRevision, RegisterRecord, Reg
 
 
 def needs_registers(statements):
-    for statement in statements:
-        if type(statement) is syntax.Destroy: continue
-        for arm in statement.arms if type(statement) is syntax.Union else (statement,):
-            if arm.family == 'information_register' or any(j.source.family == 'information_register' for j in arm.joins):
-                return True
-    return False
+    return any(arm.family == 'information_register' or any(j.source.family == 'information_register' for j in arm.joins)
+               for arm in syntax.selects(statements))
 
 
 def register_field(manager, field, source_alias):

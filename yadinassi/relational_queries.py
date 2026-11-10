@@ -20,6 +20,7 @@ from .values import NULL
 
 MAX_JOIN_PAIRS = 1000000
 MAX_INTERMEDIATE_ROWS = 10000
+MAX_MEMBERSHIP_WORK = 1000000
 
 
 @dataclass(frozen=True)
@@ -35,10 +36,45 @@ class _BoundAggregate:
     distinct: bool
 
 
+@dataclass(frozen=True)
+class _ParameterList:
+    values: tuple
+
+
+@dataclass(frozen=True)
+class _BoundMembership:
+    field: object
+    values: tuple
+    plan: object = None
+    constant: bool = False
+
+
+def snapshot_parameters(parameters):
+    """Freeze admitted list buffers before any package source is opened."""
+    from .values import BSLArray, BSLFixedArray
+    from .queries import _parameter_value, _MAX_CELLS, _MAX_RESULT_TEXT
+    result, cells, text = dict(parameters), 0, 0
+    for name, value in parameters.items():
+        if type(value) is not BSLArray and type(value) is not BSLFixedArray: continue
+        items = value.items
+        if (type(items) is not list and type(items) is not tuple) or len(items) > syntax.MAX_ROWS:
+            raise ValueError('Query parameter list limit exceeded')
+        frozen = tuple(items)
+        cells += len(frozen)
+        for item in frozen:
+            if item is not NULL: _parameter_value(item)
+            text += len(item) if type(item) is str else 0
+        if cells > _MAX_CELLS or text > _MAX_RESULT_TEXT:
+            raise ValueError('Query parameter list resource limit exceeded')
+        result[name] = _ParameterList(frozen)
+    return result
+
+
 def required(query):
     def extended(node):
+        if type(node) is syntax.Membership: return True
         if type(node) is syntax.Predicate:
-            return any(extended(term) for term in node.terms)
+            return node.kind == 'not' or any(extended(term) for term in node.terms)
         return (type(node) is syntax.Comparison and
                 (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
                  type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
@@ -62,7 +98,7 @@ def _key(value):
 
 def _compare(left, right, operator):
     # SQL NULL comparisons are unknown, hence not selected by ON/WHERE/HAVING.
-    if left is NULL or right is NULL: return False
+    if left is NULL or right is NULL: return None
     a, b = _key(left), _key(right)
     if a[0] != b[0]: raise TypeError('Query comparison requires exact field type')
     if a[0] in ('catalog_ref', 'document_ref') and a[1:3] != b[1:3]:
@@ -86,6 +122,8 @@ class _Plan:
         self.catalogs, self.documents = catalogs, documents
         self.information_registers = information_registers
         self._descriptors = {}
+        self.memberships = []
+        self._membership_sets = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
         self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary),
@@ -172,6 +210,10 @@ class _Plan:
                         if self.sources[i].family == 'information_register' else 'Ref')
                 fields.append(self.resolve_field(i, syntax.Field((name,))))
 
+        self.all_managers = tuple(self.managers) + tuple(
+            manager for member in self.memberships if member.plan is not None
+            for manager in member.plan.all_managers)
+
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
@@ -235,6 +277,8 @@ class _Plan:
         if node is None: return None
         if type(node) is syntax.Predicate:
             return syntax.Predicate(node.kind, tuple(self.condition(t, aggregates=aggregates, source_limit=source_limit) for t in node.terms))
+        if type(node) is syntax.Membership:
+            return self.membership(node, aggregates=aggregates, source_limit=source_limit)
         left = self.bind(node.field, aggregates=aggregates, source_limit=source_limit)
         right = self.bind(node.value, aggregates=aggregates, source_limit=source_limit)
         if type(right) is syntax.Parameter:
@@ -254,10 +298,76 @@ class _Plan:
                 raise TypeError('Query references require same database and catalog')
         return syntax.Comparison(left, node.operator, right)
 
+    def membership(self, node, *, aggregates, source_limit):
+        from .query_sources import _UnionPlan
+        left = self.bind(node.field, aggregates=aggregates, source_limit=source_limit)
+        plan, constant = None, False
+        if type(node.values) is syntax.Select or type(node.values) is syntax.Union:
+            plan_type = _UnionPlan if type(node.values) is syntax.Union else _Plan
+            options = {'allow_null': True} if plan_type is _Plan else {}
+            plan = plan_type(node.values, self.catalogs, self.parameters, self.temporary_tables,
+                             self.external_tables, documents=self.documents,
+                             information_registers=self.information_registers, **options)
+            if len(plan.columns) != 1: raise ValueError('IN subquery requires exactly one column')
+            values = ()
+            right = plan.columns[0]
+            self.check_membership_type(self.describe(left), right,
+                self.reference_identity(left) if self.describe(left).kind in ('catalog_ref', 'document_ref') else None,
+                right.reference_identity)
+            constant = True
+        elif type(node.values) is syntax.Parameter:
+            value = self.bind(node.values)
+            if type(value) is not _ParameterList:
+                raise TypeError('IN parameter requires Array or FixedArray')
+            values, constant = value.values, True
+        else:
+            values = tuple(self.bind(e, aggregates=aggregates, source_limit=source_limit) for e in node.values)
+            constant = all(type(e) is not _BoundField and type(e) is not _BoundAggregate
+                           and type(e) is not syntax.Expression for e in values)
+        first_typed = next((value for value in values if self.describe(value).kind != 'null'), None)
+        for value in values:
+            a, b = self.describe(left), self.describe(value)
+            if first_typed is not None:
+                first = self.describe(first_typed)
+                self.check_membership_type(first, b,
+                    self.reference_identity(first_typed) if first.kind in ('catalog_ref','document_ref') else None,
+                    self.reference_identity(value) if b.kind in ('catalog_ref','document_ref') else None)
+            self.check_membership_type(a, b,
+                self.reference_identity(left) if a.kind in ('catalog_ref','document_ref') else None,
+                self.reference_identity(value) if b.kind in ('catalog_ref','document_ref') else None)
+        bound = _BoundMembership(left, values, plan, constant)
+        self.memberships.append(bound)
+        return bound
+
+    @staticmethod
+    def check_membership_type(left, right, left_identity, right_identity):
+        if left.kind != right.kind and 'null' not in (left.kind, right.kind):
+            raise TypeError('IN requires exact operand types')
+        if left.kind == right.kind and left.kind in ('catalog_ref','document_ref'):
+            if left_identity[0] is not right_identity[0] or left_identity[1] != right_identity[1]:
+                raise TypeError('IN references require the same metadata snapshot and target')
+
+    def prepare_memberships(self, view, budget):
+        self._membership_sets = {}
+        for member in self.memberships:
+            if member.plan is not None:
+                values = tuple(row[0] for row in member.plan.execute(view=view, budget=budget)._rows)
+            elif member.constant:
+                values = member.values
+            else: continue
+            from .queries import _MAX_CELLS, _MAX_RESULT_TEXT
+            budget[0] += len(values)
+            budget[1] += sum(len(v) for v in values if type(v) is str)
+            if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query membership resource limit exceeded')
+            self._membership_sets[id(member)] = (frozenset(_key(v) for v in values if v is not NULL),
+                                                any(v is NULL for v in values), bool(values))
+
     def condition_expressions(self, node):
         if node is None: return ()
         if type(node) is syntax.Predicate:
             return tuple(e for term in node.terms for e in self.condition_expressions(term))
+        if type(node) is _BoundMembership: return (node.field, *node.values)
         return (node.field, node.value)
 
     def children(self, expression):
@@ -376,7 +486,7 @@ class _Plan:
                 if op == 'case':
                     branches, otherwise = args
                     for condition, branch in branches:
-                        if self.test(condition, row, group): return branch_value(branch)
+                        if self.test(condition, row, group) is True: return branch_value(branch)
                     return branch_value(otherwise)
                 first = branch_value(args[0])
                 return branch_value(args[1]) if first is NULL else first
@@ -425,8 +535,35 @@ class _Plan:
     def test(self, node, row, group=None):
         if node is None: return True
         if type(node) is syntax.Predicate:
-            values = (self.test(t, row, group) for t in node.terms)
-            return all(values) if node.kind == 'and' else any(values)
+            if node.kind == 'not':
+                value = self.test(node.terms[0], row, group)
+                return None if value is None else not value
+            unknown = False
+            for term in node.terms:
+                value = self.test(term, row, group)
+                if node.kind == 'and' and value is False: return False
+                if node.kind == 'or' and value is True: return True
+                unknown |= value is None
+            return None if unknown else node.kind == 'and'
+        if type(node) is _BoundMembership:
+            left = self.value(node.field, row, group)
+            cached = self._membership_sets.get(id(node))
+            if cached is not None:
+                self._budget[2] += 1
+                if self._budget[2] > MAX_MEMBERSHIP_WORK: raise ValueError('Query membership work limit exceeded')
+                keys, null, nonempty = cached
+                if not nonempty: return False
+                if left is NULL: return None
+                if _key(left) in keys: return True
+                return None if null else False
+            unknown = False
+            for expression in node.values:
+                self._budget[2] += 1
+                if self._budget[2] > MAX_MEMBERSHIP_WORK: raise ValueError('Query membership work limit exceeded')
+                result = _compare(left, self.value(expression, row, group), 'eq')
+                if result is True: return True
+                unknown |= result is None
+            return None if unknown else False
         if node.operator in ('is_null', 'is_not_null'):
             result = self.value(node.field, row, group) is NULL
             return not result if node.operator == 'is_not_null' else result
@@ -501,7 +638,7 @@ class _Plan:
                         found = equality(term)
                         if found: return found
                 return None
-            if (node.operator == 'eq' and type(node.field) is _BoundField and type(node.value) is _BoundField):
+            if (type(node) is syntax.Comparison and node.operator == 'eq' and type(node.field) is _BoundField and type(node.value) is _BoundField):
                 a, b = node.field, node.value
                 if a.source < index and b.source == index: return a, b
                 if b.source < index and a.source == index: return b, a
@@ -520,7 +657,7 @@ class _Plan:
                 examined += 1
                 if examined > MAX_JOIN_PAIRS: raise ValueError('Query join work limit exceeded')
                 row = left + (item,)
-                if self.test(condition, row):
+                if self.test(condition, row) is True:
                     result.append(row); found = True
                     if len(result) > MAX_INTERMEDIATE_ROWS: raise ValueError('Query intermediate row limit exceeded')
             if not found and kind == 'left': result.append(left + (None,))
@@ -531,22 +668,25 @@ class _Plan:
         from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
         owner = False
         if view is None:
-            manager = next((m for m in self.managers if m is not None), None)
+            manager = next((m for m in self.all_managers if m is not None), None)
             if manager is not None:
-                if any(source.family in ('document', 'information_register') for source in self.sources):
+                if any(arm.family in ('document', 'information_register') or any(j.source.family in ('document', 'information_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
                     view = self.catalogs._context.backend.begin_query_read()
                 else:
                     view = manager._view()
                 owner = True
         try:
             if budget is None: budget = [0, 0]
+            if len(budget) == 2: budget.append(0)
+            self._budget = budget
+            self.prepare_memberships(view, budget)
             sources = [self.load(i, view, budget) for i in range(len(self.sources))]
         finally:
             if owner: view.close()
         rows = [(row,) for row in sources[0]]
         for index, join in enumerate(self.query.joins, 1):
             rows = self.join(rows, sources[index], index, self.joins[index - 1], join.kind)
-        rows = [row for row in rows if self.test(self.predicate, row)]
+        rows = [row for row in rows if self.test(self.predicate, row) is True]
         if self.grouped:
             groups = {}
             for row in rows:
@@ -557,7 +697,7 @@ class _Plan:
         else: batches = [(row, None) for row in rows]
         projected, unique, text_units = [], set(), 0
         for row, group in batches:
-            if not self.test(self.having, row, group): continue
+            if self.test(self.having, row, group) is not True: continue
             values = tuple(self.value(expression, row, group) for expression in self.projections)
             if self.query.distinct:
                 key = tuple(_key(v) for v in values)

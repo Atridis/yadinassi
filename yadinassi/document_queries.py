@@ -22,12 +22,8 @@ _STANDARD = {'ref': 'ref', 'ссылка': 'ref', 'number': 'number', 'номе�
 
 
 def needs_documents(statements):
-    for statement in statements:
-        if type(statement) is syntax.Destroy: continue
-        for arm in statement.arms if type(statement) is syntax.Union else (statement,):
-            if arm.family == 'document' or any(j.source.family == 'document' for j in arm.joins):
-                return True
-    return False
+    return any(arm.family == 'document' or any(j.source.family == 'document' for j in arm.joins)
+               for arm in syntax.selects(statements))
 
 
 def document_field(manager, field, source_alias, section=None):

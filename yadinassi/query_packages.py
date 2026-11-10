@@ -68,8 +68,9 @@ class BSLTempTablesManager(BSLObject):
 
 def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None):
     from .queries import BSLQueryResult, _Column
-    from .relational_queries import _Plan
+    from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan, snapshot_sources
+    parameters = snapshot_parameters(parameters)
     if manager is None: manager = BSLTempTablesManager()
     if type(manager) is not BSLTempTablesManager:
         raise TypeError('Query package requires TempTablesManager')
@@ -116,7 +117,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 plan_type = _UnionPlan if type(statement) is syntax.Union else _Plan
                 plan = plan_type(statement, catalogs, parameters, tables, external, documents=documents,
                                  information_registers=information_registers)
-                source_manager = next((m for m in plan.managers if m is not None), None)
+                source_manager = next((m for m in plan.all_managers if m is not None), None)
                 if view is None and source_manager is not None:
                     view = (catalogs._context.backend.begin_query_read() if composite else source_manager._view())
                 output = plan.execute(view=view, budget=budget)

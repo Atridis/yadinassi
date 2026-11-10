@@ -131,16 +131,13 @@ def _snapshot(value, budget):
 def snapshot_sources(statements, parameters):
     """Capture each referenced parameter once, before any statement/database read."""
     result, budget = {}, [0, 0]
-    for statement in statements:
-        if type(statement) is syntax.Destroy: continue
-        arms = statement.arms if type(statement) is syntax.Union else (statement,)
-        for arm in arms:
-            names = ([arm.catalog] if arm.external else []) + [j.source.catalog for j in arm.joins if j.source.external]
-            for name in names:
-                key = name.casefold()
-                if key in result: continue
-                if key not in parameters: raise ValueError('External query parameter is not set')
-                result[key] = _snapshot(parameters[key], budget)
+    for arm in syntax.selects(statements):
+        names = ([arm.catalog] if arm.external else []) + [j.source.catalog for j in arm.joins if j.source.external]
+        for name in names:
+            key = name.casefold()
+            if key in result: continue
+            if key not in parameters: raise ValueError('External query parameter is not set')
+            result[key] = _snapshot(parameters[key], budget)
     return result
 
 
@@ -180,7 +177,8 @@ class _UnionPlan:
         if any(len(arm.columns) != width for arm in self.arms):
             raise ValueError('UNION column counts must match')
         self.columns = tuple(_union_column(columns) for columns in zip(*(arm.columns for arm in self.arms)))
-        self.managers = tuple(manager for arm in self.arms for manager in arm.managers)
+        self.managers = tuple(manager for arm in self.arms for manager in arm.all_managers)
+        self.all_managers = self.managers
         aliases = {p.alias.casefold(): i for i, p in enumerate(query.arms[0].projections)}
         aliases.update({c.name.casefold(): i for i, c in enumerate(self.columns)})
         self.orders = []

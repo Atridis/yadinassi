@@ -20,7 +20,7 @@ from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
 from .document_types import BSLDocumentReference
 from .dates import BSLDate
-from .values import BSLObject, HostFunction
+from .values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from .value_tables import BSLValueTable
 from .type_descriptions import BSLTypeDescription, _query_nullable_description
 from .type_qualifiers import (BSLStringQualifiers, BSLNumberQualifiers,
@@ -261,7 +261,7 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key not in self._parameters and len(self._parameters) >= _MAX_PARAMETERS:
             raise ValueError('Query parameter count limit exceeded')
-        self._parameters[key] = value if type(value) is BSLValueTable else _parameter_value(value)
+        self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
 
     def execute_batch(self):
         from .query_packages import execute_package
@@ -272,6 +272,7 @@ class BSLQuery(BSLObject):
         statements = syntax.parse_package(self._text)
         query = statements[0]
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
+                or syntax.extended_filters(query)
                 or query.temporary or query.external
                 or any(join.source.temporary or join.source.external for join in query.joins)
                 or self._temp_tables_manager is not None):
