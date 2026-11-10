@@ -188,7 +188,7 @@ class RelationalParserTests(unittest.TestCase):
             'SELECT * FROM Catalog.Products', 'SELECT SUM(*) FROM Catalog.Products',
             'SELECT COUNT(DISTINCT *) FROM Catalog.Products', 'SELECT SUM(AVG(Amount)) FROM Catalog.Products',
             'SELECT P.Code FROM Catalog.Products AS P CROSS JOIN Catalog.Products AS Q',
-            'SELECT P.Code FROM Catalog.Products AS P RIGHT JOIN Catalog.Products AS Q ON P.Ref=Q.Ref',
+            'SELECT P.Code FROM Catalog.Products AS P RIGHT JOIN Catalog.Products AS Q',
             'SELECT P.Code FROM Catalog.Products AS P JOIN Catalog.Products AS P ON P.Ref=P.Ref',
             'SELECT Code+Amount FROM Catalog.Products','SELECT Code FROM Catalog.Products; DELETE FROM catalog_records',
         ):

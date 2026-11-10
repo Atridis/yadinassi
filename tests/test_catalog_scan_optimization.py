@@ -272,7 +272,8 @@ class ScanOptimizationTests(unittest.TestCase):
         second = view.scan_catalog_values(self.product.identity,
             replace(request, continuation=first.continuation), ('code',))
         self.assertEqual(second.rows[0].values, ('0001',))
-        self.assertTrue(any('LIMIT 2 OFFSET 1' in query for query in sql), sql)
+        self.assertTrue(any('LIMIT 2' in query and ' > ' in query for query in sql), sql)
+        self.assertFalse(any(' OFFSET ' in query for query in sql), sql)
         last = view.scan_catalog_values(self.product.identity,
             replace(request, continuation=second.continuation), ('code',))
         self.assertEqual(last.rows[0].values, ('0002',))

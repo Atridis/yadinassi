@@ -1,0 +1,299 @@
+{
+  "schema": "format-date-acquisition-inputs-v1",
+  "profile": "format-date-tokens-v1",
+  "source": "integrational_tests/measurements/format_date_tokens.bsl",
+  "source_sha256": "f9483d0a8b7f63907320d0599b9cf5022247f3fef06e0efd41c59234a0ec163e",
+  "locale": "ru",
+  "evidence_status": "not_acquired",
+  "native_measurement_accepted": false,
+  "runtime_parity_accepted": false,
+  "documentation": {
+    "archive_sha256": "a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642",
+    "members": [
+      "nl/ru/html/SyntaxHelperContext/objects/Global_context/methods/catalog20/Format971.html",
+      "nl/en/html/SyntaxHelperContext/objects/Global_context/methods/catalog20/Format971.html"
+    ]
+  },
+  "cases": [
+    {
+      "case": 1,
+      "expression": "Format('20261030123456', \"L=ru;DF='yyyy-MM-dd HH:mm:ss'\")",
+      "topic": "control.en"
+    },
+    {
+      "case": 2,
+      "expression": "Формат('20260102030405', \"Л=ru;ДФ='дд.ММ.гггг ЧЧ:мм:сс'\")",
+      "topic": "control.ru"
+    },
+    {
+      "case": 3,
+      "expression": "Format('20240229235959', \"L=ru;DF=yyyy-MM-dd\")",
+      "topic": "control.leap"
+    },
+    {
+      "case": 4,
+      "expression": "Format('00010101000000', \"L=ru;DE='EMPTY'\")",
+      "topic": "control.empty"
+    },
+    {
+      "case": 5,
+      "expression": "Format('20260105153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.1"
+    },
+    {
+      "case": 6,
+      "expression": "Format('20260106153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.2"
+    },
+    {
+      "case": 7,
+      "expression": "Format('20260107153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.3"
+    },
+    {
+      "case": 8,
+      "expression": "Format('20260108153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.4"
+    },
+    {
+      "case": 9,
+      "expression": "Format('20260109153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.5"
+    },
+    {
+      "case": 10,
+      "expression": "Format('20260110153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.6"
+    },
+    {
+      "case": 11,
+      "expression": "Format('20260111153456', \"L=ru;DF=ddd|dddd\")",
+      "topic": "weekday.en.7"
+    },
+    {
+      "case": 12,
+      "expression": "Format('20260105153456', \"L=ru;DF=ддд|дддд\")",
+      "topic": "weekday.ru.1"
+    },
+    {
+      "case": 13,
+      "expression": "Format('20260106153456', \"L=ru;DF='MMMM dd'\")",
+      "topic": "context.reverse-day"
+    },
+    {
+      "case": 14,
+      "expression": "Format('20260107153456', \"L=ru;DF=\"\"'d' MMMM\"\"\")",
+      "topic": "context.literal-day-before"
+    },
+    {
+      "case": 15,
+      "expression": "Format('20260108153456', \"L=ru;DF='dddd MMMM'\")",
+      "topic": "context.weekday"
+    },
+    {
+      "case": 16,
+      "expression": "Format('20260109153456', \"L=ru;DF=\"\"MMMM 'd'\"\"\")",
+      "topic": "context.literal-day-after"
+    },
+    {
+      "case": 17,
+      "expression": "Format('20260110153456', \"L=ru;DF=ддд|дддд\")",
+      "topic": "weekday.ru.6"
+    },
+    {
+      "case": 18,
+      "expression": "Format('20260111153456', \"L=ru;DF=ддд|дддд\")",
+      "topic": "weekday.ru.7"
+    },
+    {
+      "case": 19,
+      "expression": "Формат('20260102153456', \"Л=ru;ДФ=МММ\")",
+      "topic": "ru.short"
+    },
+    {
+      "case": 20,
+      "expression": "Формат('20260102153456', \"Л=ru;ДФ=ММММ\")",
+      "topic": "ru.long"
+    },
+    {
+      "case": 21,
+      "expression": "Формат('20260102153456', \"Л=ru;ДФ='д МММ'\")",
+      "topic": "ru.short-day"
+    },
+    {
+      "case": 22,
+      "expression": "Формат('20260102153456', \"Л=ru;ДФ='д ММММ'\")",
+      "topic": "ru.long-day"
+    },
+    {
+      "case": 23,
+      "expression": "Формат('20260102153456', \"Л=ru;ДФ=д|дд|М|ММ|г|гг|гггг|к\")",
+      "topic": "ru.numeric"
+    },
+    {
+      "case": 24,
+      "expression": "Format('20000102153456', \"L=ru;DF=y|yy|yyyy|q\")",
+      "topic": "year-quarter.200001"
+    },
+    {
+      "case": 25,
+      "expression": "Format('20010402153456', \"L=ru;DF=y|yy|yyyy|q\")",
+      "topic": "year-quarter.200104"
+    },
+    {
+      "case": 26,
+      "expression": "Format('20090702153456', \"L=ru;DF=y|yy|yyyy|q\")",
+      "topic": "year-quarter.200907"
+    },
+    {
+      "case": 27,
+      "expression": "Format('20991002153456', \"L=ru;DF=y|yy|yyyy|q\")",
+      "topic": "year-quarter.209910"
+    },
+    {
+      "case": 28,
+      "expression": "Format('20261030003456', \"L=ru;DF=h|hh|H|HH|tt\")",
+      "topic": "hour.en.00"
+    },
+    {
+      "case": 29,
+      "expression": "Format('20261030033456', \"L=ru;DF=h|hh|H|HH|tt\")",
+      "topic": "hour.en.03"
+    },
+    {
+      "case": 30,
+      "expression": "Format('20261030123456', \"L=ru;DF=h|hh|H|HH|tt\")",
+      "topic": "hour.en.12"
+    },
+    {
+      "case": 31,
+      "expression": "Format('20261030153456', \"L=ru;DF=h|hh|H|HH|tt\")",
+      "topic": "hour.en.15"
+    },
+    {
+      "case": 32,
+      "expression": "Format('20261030233456', \"L=ru;DF=h|hh|H|HH|tt\")",
+      "topic": "hour.en.23"
+    },
+    {
+      "case": 33,
+      "expression": "Format('20261030003456', \"L=ru;DF=ч|чч|Ч|ЧЧ|вв\")",
+      "topic": "hour.ru.00"
+    },
+    {
+      "case": 34,
+      "expression": "Format('20261030033456', \"L=ru;DF=ч|чч|Ч|ЧЧ|вв\")",
+      "topic": "hour.ru.03"
+    },
+    {
+      "case": 35,
+      "expression": "Format('20261030123456', \"L=ru;DF=ч|чч|Ч|ЧЧ|вв\")",
+      "topic": "hour.ru.12"
+    },
+    {
+      "case": 36,
+      "expression": "Format('20261030153456', \"L=ru;DF=ч|чч|Ч|ЧЧ|вв\")",
+      "topic": "hour.ru.15"
+    },
+    {
+      "case": 37,
+      "expression": "Format('20261030233456', \"L=ru;DF=ч|чч|Ч|ЧЧ|вв\")",
+      "topic": "hour.ru.23"
+    },
+    {
+      "case": 38,
+      "expression": "Format('20261030123456', \"L=ru;DLF=D\")",
+      "topic": "local.en.1"
+    },
+    {
+      "case": 39,
+      "expression": "Format('20261030123456', \"L=ru;DLF=DD\")",
+      "topic": "local.en.2"
+    },
+    {
+      "case": 40,
+      "expression": "Format('20261030123456', \"L=ru;DLF=T\")",
+      "topic": "local.en.3"
+    },
+    {
+      "case": 41,
+      "expression": "Format('20261030123456', \"L=ru;DLF=DT\")",
+      "topic": "local.en.4"
+    },
+    {
+      "case": 42,
+      "expression": "Format('20261030123456', \"L=ru;DLF=DDT\")",
+      "topic": "local.en.5"
+    },
+    {
+      "case": 43,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=Д\")",
+      "topic": "local.ru.1"
+    },
+    {
+      "case": 44,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=ДД\")",
+      "topic": "local.ru.2"
+    },
+    {
+      "case": 45,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=В\")",
+      "topic": "local.ru.3"
+    },
+    {
+      "case": 46,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=ДВ\")",
+      "topic": "local.ru.4"
+    },
+    {
+      "case": 47,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=ДДВ\")",
+      "topic": "local.ru.5"
+    },
+    {
+      "case": 48,
+      "expression": "Format('20261030123456', \"L=ru;DLF=DD;DF=yyyy\")",
+      "topic": "precedence.1"
+    },
+    {
+      "case": 49,
+      "expression": "Format('20261030123456', \"L=ru;DF=yyyy;DLF=DD\")",
+      "topic": "precedence.2"
+    },
+    {
+      "case": 50,
+      "expression": "Format('20261030123456', \"L=ru;DLF=D;DLF=T\")",
+      "topic": "precedence.3"
+    },
+    {
+      "case": 51,
+      "expression": "Format('20261030123456', \"L=ru;ДЛФ=ДД;DLF=D\")",
+      "topic": "precedence.4"
+    },
+    {
+      "case": 52,
+      "expression": "Format('20261030123456', \"L=ru;DF='';DLF=DD\")",
+      "topic": "precedence.5"
+    },
+    {
+      "case": 53,
+      "expression": "Format('00010101000000', \"L=ru;DF=yyyy;DLF=DD;DE='EMPTY'\")",
+      "topic": "precedence.6"
+    },
+    {
+      "case": 54,
+      "expression": "Format('00010101000000', \"L=ru;DLF=DD;DF=yyyy;DE='EMPTY'\")",
+      "topic": "precedence.7"
+    },
+    {
+      "case": 55,
+      "expression": "Format('00010101000000', \"L=ru;DLF=DD\")",
+      "topic": "precedence.8"
+    },
+    {
+      "case": 56,
+      "expression": "Format('20261030123456', \"L=ru;DLF=DD;DE='EMPTY'\")",
+      "topic": "precedence.9"
+    }
+  ]
+}

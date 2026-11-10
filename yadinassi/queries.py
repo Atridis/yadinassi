@@ -18,8 +18,9 @@ from .catalog_backend import (CatalogComparison, CatalogPredicate, CatalogOrder,
                               CatalogKey, CatalogSectionPage, CatalogSectionRecord, TabularRow, BackendError)
 from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
+from .document_types import BSLDocumentReference
 from .dates import BSLDate
-from .values import BSLObject, HostFunction
+from .values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from .value_tables import BSLValueTable
 from .type_descriptions import BSLTypeDescription, _query_nullable_description
 from .type_qualifiers import (BSLStringQualifiers, BSLNumberQualifiers,
@@ -30,6 +31,7 @@ _MAX_CELLS = 100000
 _MAX_RESULT_TEXT = 8000000
 _STANDARD = {'ref':'ref', 'ссылка':'ref', 'code':'code', 'код':'code',
              'description':'description', 'наименование':'description',
+             'parent':'parent','родитель':'parent','isfolder':'is_folder','этогруппа':'is_folder',
              'deletionmark':'deletion_mark', 'пометкаудаления':'deletion_mark'}
 
 
@@ -49,13 +51,14 @@ def _field(manager, field, source_alias, section=None):
         raise ValueError('Unknown query source qualifier')
     name = field.parts[-1].casefold()
     standard = _STANDARD.get(name)
+    if standard in ("parent","is_folder") and manager._schema.hierarchy=="none": standard=None
     if section is not None and name in ('linenumber', 'номерстроки'):
         raise ValueError('Query section line numbers are unsupported')
     if section is not None and standard not in (None, 'ref'):
         raise ValueError('Query section does not inherit owner fields')
     if standard is not None:
         kind = {'ref':'catalog_ref', 'code':'string', 'description':'string',
-                'deletion_mark':'boolean'}[standard]
+                'deletion_mark':'boolean','parent':'catalog_ref','is_folder':'boolean'}[standard]
         qualifiers = ((manager._schema.code_length,) if standard == 'code' else
                       (manager._schema.description_length,) if standard == 'description' else ())
         return _Column('', standard, kind, qualifiers)
@@ -80,7 +83,7 @@ def _parameter_value(value):
             raise ValueError('Query parameter number limit exceeded')
     elif kind is BSLDate:
         value.require_known()
-    elif kind is not bool and kind is not BSLCatalogReference:
+    elif kind is not bool and kind is not BSLCatalogReference and kind is not BSLDocumentReference:
         raise TypeError('Unsupported query parameter type')
     return value
 
@@ -89,13 +92,13 @@ def _stored(manager, column, value):
     _parameter_value(value)
     if column.custom is not None:
         return manager._stored(column.custom, value)
-    if column.field == 'ref':
+    if column.field in ('ref','parent'):
         if (type(value) is not BSLCatalogReference
                 or value.value_type.snapshot is not manager._catalogs._metadata
                 or value.value_type.metadata_uuid != manager._schema.identity):
             raise TypeError('Query reference requires same database and catalog')
         return manager._key(value.reference_uuid)
-    expected = bool if column.field == 'deletion_mark' else str
+    expected = bool if column.field in ('deletion_mark','is_folder') else str
     if type(value) is not expected:
         raise TypeError('Query comparison requires exact field type')
     return value
@@ -120,7 +123,7 @@ def _predicate(manager, node, alias, parameters, section=None):
 def _logical(manager, column, value):
     if column.custom is not None:
         return manager._logical(column.custom, value)
-    if column.field == 'ref':
+    if column.field in ('ref','parent'):
         if (type(value) is not CatalogKey
                 or any(type(item) is not UUID for item in (value.database_id,value.catalog_id,value.record_id))
                 or value.database_id != manager._key(UUID(int=0)).database_id
@@ -207,8 +210,14 @@ def _description(column):
 
 
 class BSLQuery(BSLObject):
-    def __init__(self, catalogs, text=''):
+    def __init__(self, catalogs, text='', documents=None, information_registers=None):
+        if documents is not None and documents._catalogs is not catalogs:
+            raise ValueError('Query sources require one interpreter metadata snapshot')
+        if information_registers is not None and information_registers._catalogs is not catalogs:
+            raise ValueError('Query sources require one interpreter metadata snapshot')
         self._catalogs = catalogs
+        self._documents = documents
+        self._information_registers = information_registers
         self._parameters = {}
         self._temp_tables_manager = None
         self.set_member('Text', text)
@@ -254,46 +263,36 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key not in self._parameters and len(self._parameters) >= _MAX_PARAMETERS:
             raise ValueError('Query parameter count limit exceeded')
-        self._parameters[key] = value if type(value) is BSLValueTable else _parameter_value(value)
+        self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
 
     def execute_batch(self):
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
-                               dict(self._parameters), self._temp_tables_manager)
+                               dict(self._parameters), self._temp_tables_manager, self._documents, self._information_registers)
 
     def execute(self):
         statements = syntax.parse_package(self._text)
         query = statements[0]
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
+                or syntax.extended_filters(query)
                 or query.temporary or query.external
                 or any(join.source.temporary or join.source.external for join in query.joins)
                 or self._temp_tables_manager is not None):
             from .query_packages import execute_package
             return execute_package(statements, self._catalogs, dict(self._parameters),
-                                   self._temp_tables_manager).items[-1]
+                                   self._temp_tables_manager, self._documents, self._information_registers).items[-1]
         from . import relational_queries
         if relational_queries.required(query):
-            return relational_queries.execute(query, self._catalogs, dict(self._parameters))
-        manager = self._catalogs.get_index(query.catalog)
-        section = None
-        if query.section is not None:
-            matches = [item for item in manager._schema.tabular_sections
-                       if item.name.casefold() == query.section.casefold()]
-            if len(matches) != 1:
-                raise ValueError('Unknown query tabular section')
-            section = matches[0]
-        columns = []
-        for projection in query.projections:
-            column = _field(manager, projection.field, query.source_alias, section)
-            name = ('Код' if not projection.explicit_alias and column.field == 'code'
-                    else projection.alias)
-            columns.append(_Column(name, column.field, column.kind,
-                                   column.qualifiers, column.custom, projection.explicit_alias))
-        if len({column.name.casefold() for column in columns}) != len(columns):
-            raise ValueError('Duplicate localized query output column')
-        predicate = _predicate(manager, query.predicate, query.source_alias, dict(self._parameters), section)
-        order = tuple(CatalogOrder(_field(manager, item.field, query.source_alias, section).field, item.descending)
-                      for item in query.order)
+            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents, self._information_registers)
+        # The fast scan and relational/package paths share the exact same binder.
+        plan = relational_queries._Plan(query, self._catalogs, dict(self._parameters))
+        manager, section = plan.managers[0], plan.sections[0]
+        columns = plan.columns
+        predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
+        if plan.predicate is not None and predicate is None:
+            return plan.execute()
+        order = tuple(CatalogOrder(expression.column.field, descending)
+                      for expression, descending in plan.orders)
         rows = []
         text_units = 0
         continuation = None

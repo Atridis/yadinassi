@@ -1,0 +1,125 @@
+{
+  "schema": "property-transfer-native-acquisition-v1",
+  "profile": "property-transfer-v1",
+  "native_target": "linux-8.3.27.1508",
+  "native_measurement_accepted": true,
+  "runtime_parity_accepted": false,
+  "run": {
+    "id": 42814632887,
+    "attempt": 1,
+    "url": "https://github.com/Atridis/yadinassi/actions/runs/42814632887",
+    "pull_request": 261,
+    "head": "201b6d9c824e2980932a389e96a3d3bc8dc8d4f9",
+    "checkout": "a10240123e1c65284ffd4c0b0b9b64e63ac0a7d6",
+    "tree": "0439b7d8de7d55b4d8acef44706b7ef5efaff3ce",
+    "merge_parents": [
+      "397319766c6251f8247c454ebc3f2b20e88ece3c",
+      "201b6d9c824e2980932a389e96a3d3bc8dc8d4f9"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": 13764188665,
+      "name": "native-1c-property-transfer-outputs",
+      "sha256": "6e9f3afb6f9278677e2d5eef8b28aff79a2e86c2eeb2a5e8401be61f236c3054"
+    },
+    {
+      "id": 13763189052,
+      "name": "native-1c-property-transfer-summary",
+      "sha256": "dabe81b58e8287a5bacead5109bf4d0c461a03b8d52c119e6d9812625a1d2429"
+    }
+  ],
+  "files": {
+    "source": {
+      "path": "tests/fixtures/property_transfer/original48.bsl",
+      "sha256": "25abcace2821e4d03da731e4cf96a97a33348f21a58ee291399232c51ad5e7c8",
+      "bytes": 15795
+    },
+    "input_mapping": {
+      "path": "tests/fixtures/property_transfer/original48-mapping.json",
+      "sha256": "63c0aca76891fe56b03d4e53636443c8c3c64c81e0def4d6289f20c07dd75470",
+      "bytes": 9776
+    },
+    "native_output": {
+      "path": "tests/fixtures/property_transfer/original48-linux.out",
+      "sha256": "054ace35dbeff0fd2a5d627e731166acb9f8fb37939070b566518bfb37e42174",
+      "bytes": 6903
+    },
+    "native_provenance": {
+      "path": "tests/fixtures/property_transfer/original48-linux-provenance.json",
+      "sha256": "af5465c3b6ded725a1e4ca8a7db6ce99c7246e6cb1b4b14068fd3ee79d5b5329",
+      "bytes": 11100
+    }
+  },
+  "observation_counts": {
+    "cases": 48,
+    "calibrations": 2,
+    "successes": 36,
+    "action_errors": 12,
+    "observer_errors": 0,
+    "bytes": 6903
+  },
+  "initial_comparison": {
+    "acceptance_status": "rejected",
+    "interpreter_sha256": "078b7bca6bfaf4a5c9d103380e278799edd90b2d9530fd97f3cda33de05c50fe",
+    "interpreter_size": 6903,
+    "native_property_transfer_available": true,
+    "native_sha256": "054ace35dbeff0fd2a5d627e731166acb9f8fb37939070b566518bfb37e42174",
+    "native_size": 6903,
+    "profile": "property-transfer-v1",
+    "schema": "native-1c-tree-comparison-v1",
+    "status": "mismatched"
+  },
+  "initial_interpreter": {
+    "comparison_driver_sha256": "23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a",
+    "dependencies": {
+      "prompt-toolkit": "3.0.53",
+      "pyuca": "1.2",
+      "tzdata": "2026.5",
+      "wcwidth": "0.8.2"
+    },
+    "map_contract_sha256": "8542e32eab844451bba6dd9569cf375f53ec5ba65a275dff039b380bd2eb2d69",
+    "python_version": "3.12.10",
+    "source_file_count": 165,
+    "source_sha256": "2ce835fad43e70241e95f734b35d5a7ff45ebbb53865514d1b13f758103d58f3"
+  },
+  "initial_local_replay": {
+    "commit": "a296e12349266e9f2fefeeb9acd48922e18e9836",
+    "tree": "0439b7d8de7d55b4d8acef44706b7ef5efaff3ce",
+    "interpreter_sha256": "078b7bca6bfaf4a5c9d103380e278799edd90b2d9530fd97f3cda33de05c50fe",
+    "bytes": 6903,
+    "matches_ci_interpreter_digest": true,
+    "differing_cases": [
+      17,
+      18,
+      19,
+      21,
+      24,
+      27,
+      28,
+      29,
+      31,
+      34,
+      42,
+      43,
+      45,
+      46
+    ]
+  },
+  "verification": {
+    "artifact_archive_digests_checked": true,
+    "api_merge_commit_binding_checked": true,
+    "source_and_generated_module_bindings_checked": true,
+    "staged_source_count": 22,
+    "host_source_count": 9,
+    "initial_runtime_source_count": 165,
+    "client_server_equal": true,
+    "container_cleanup_verified": true
+  },
+  "limits": [
+    "The raw Linux 1C 8.3.27.1508 capture and provenance are unchanged acquisition artifacts.",
+    "Initial native measurement was accepted; initial runtime parity was false. Later local replay cannot rewrite that result.",
+    "The original input mapping remains not_acquired as an immutable pre-acquisition checkpoint.",
+    "No Windows, catalog/document metadata, persistence, or unmeasured property-list behavior is established by this package."
+  ]
+}

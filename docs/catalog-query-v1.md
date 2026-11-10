@@ -34,8 +34,9 @@ an inactive configuration archive or bypass catalog/schema admission.
 
 The [relational query block](relational-catalog-queries.md) extends this initial
 single-source profile with joins, grouping, aggregates, HAVING, DISTINCT and Null
-predicates. General expressions/functions, subqueries, packages, temporary tables,
-unary `NOT`, query writes and arbitrary SQL remain unsupported.
+predicates. This page describes the original profile. Later computed expressions, packages,
+temporary tables and [membership filters](query-membership-filters.md) extend it.
+Query writes and arbitrary SQL remain unsupported.
 `Result.Columns` is currently unsupported. The observed cursor starts with Undefined field values; after exhaustion it
 retains the last selected row while subsequent `Next` calls stay false. An empty
 selection has no last row and continues to expose Undefined.

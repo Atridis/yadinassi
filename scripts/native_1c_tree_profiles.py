@@ -86,6 +86,17 @@ FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1
     'format_dates', '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb',
     58, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
 
+FORMAT_DATE_NAMES = Profile('format-date-names-v1', 'native-1c-format-date-names-v1', 'native-1c-format-date-names-stage-v1',
+    'format_date_names', '8e8de30a26b0b146232ca3e66adcc9ea333b6d94af66d5844df84e9c7d79db60',
+    54, 'native_1c_format_date_names_contract', '\nСообщить("FN-C1: [" + FNEncode("") + "]");\n', 5, 'format-date-names')
+
+FORMAT_DATE_TOKENS = Profile('format-date-tokens-v1', 'native-1c-format-date-tokens-v1', 'native-1c-format-date-tokens-stage-v1',
+    'format_date_tokens', 'f9483d0a8b7f63907320d0599b9cf5022247f3fef06e0efd41c59234a0ec163e',
+    58, 'native_1c_format_date_tokens_contract', '\nСообщить("FT-C1: [" + FTEncode("") + "]");\n', 5, 'format-date-tokens')
+PROPERTY_TRANSFER = Profile('property-transfer-v1', 'native-1c-property-transfer-v1', 'native-1c-property-transfer-stage-v1',
+    'property_transfer', '25abcace2821e4d03da731e4cf96a97a33348f21a58ee291399232c51ad5e7c8',
+    50, 'native_1c_property_transfer_contract', '\nСообщить("PV-C1: [wire-v1]");\n', 3, 'property-transfer')
+
 JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-json-family-stage-v1',
     'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',
     33, 'native_1c_json_family_contract', '\nСообщить("JF-C1: [" + JFEncode("") + "]");\n', 5, 'json-family')
@@ -171,6 +182,12 @@ def select(name='tree-v1'):
         return COLUMNS_DELETE
     if name == COLUMNS_DELETE_STRING.name:
         return COLUMNS_DELETE_STRING
+    if name == FORMAT_DATE_NAMES.name:
+        return FORMAT_DATE_NAMES
+    if name == FORMAT_DATE_TOKENS.name:
+        return FORMAT_DATE_TOKENS
+    if name == PROPERTY_TRANSFER.name:
+        return PROPERTY_TRANSFER
     if name == FORMAT_DATES.name:
         return FORMAT_DATES
     if name == VALUE_STORAGE.name:

@@ -25,7 +25,7 @@ from .xml_writer import BSLXMLWriter, BSLXMLWriterSettings
 from .catalogs import BSLCatalogs
 from .documents import BSLDocuments
 from .information_registers import (BSLInformationRegisters, BSLInformationRegisterType,
-    BSLInformationRegisterManager, BSLInformationRegisterSelection)
+    BSLInformationRegisterManager, BSLInformationRegisterSelection, BSLInformationRegisterRecordManager, BSLInformationRegisterRecordSet, BSLInformationRegisterRecord)
 from .document_types import BSLDocumentReference, BSLDocumentType
 from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogReference, BSLCatalogType
@@ -34,6 +34,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTe
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage
 from .value_storage import BSLValueStorage
+from .data_compression import BSLDeflation
 from .json_dates import BSLJSONSerializerSettings, BSLJSONDateFormat, BSLJSONDateWritingVariant
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
@@ -172,6 +173,7 @@ _VALUE_TYPES = (
     (BSLJSONValueType, BSLType.JSON_VALUE_TYPE, "JSONValueType"),
     (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
     (BSLValueStorage, BSLType.VALUE_STORAGE, "ValueStorage"),
+    (BSLDeflation, BSLType.DEFLATION, "Deflation"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
     (BSLCallbackDescription, BSLType.CALLBACK_DESCRIPTION, "CallbackDescription"),
@@ -251,6 +253,12 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return BSLType.TYPE
     if type(value) is BSLInformationRegisterManager:
         return value._manager_type
+    if type(value) is BSLInformationRegisterRecordSet:
+        return value._set_type
+    if type(value) is BSLInformationRegisterRecord:
+        return value._row_type
+    if type(value) is BSLInformationRegisterRecordManager:
+        return value._record_type
     if type(value) is BSLInformationRegisterSelection:
         return value._selection_type
     if (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType):
