@@ -234,6 +234,9 @@ class Interpreter:
         # Bind only immutable startup data, never the interpreter's client frame.
         connection_string = (database_context.connection_string if database_context is not None
                              else require_database_context)
+        self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
+        self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
+        self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
         self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
@@ -542,6 +545,24 @@ class Interpreter:
             self.locals = previous
             self._execute_depth[0] -= 1
 
+    def _transaction_backend(self):
+        return None if self.database_context is None else self.database_context.backend
+
+    def _begin_transaction(self):
+        from .database_transactions import begin
+        if (not getattr(self, '_transaction_activation_allowed', True)
+                or self._scheduler._active_task is not None or self._scheduler.pending):
+            raise ValueError('Transactions require synchronous execution without pending tasks')
+        begin(self._transaction_backend())
+
+    def _commit_transaction(self):
+        from .database_transactions import commit
+        commit(self._transaction_backend())
+
+    def _rollback_transaction(self):
+        from .database_transactions import rollback
+        rollback(self._transaction_backend())
+
     def execute(self, text: str, source: str = "<строка>") -> object:
         return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
 
@@ -549,7 +570,9 @@ class Interpreter:
         """Execute already-compiled AST; this does not select source branches."""
         outermost = not self._scheduler.is_active
         try:
-            return self._execute_program_boundary(program, outermost)
+            from .database_transactions import execution
+            with execution(self._transaction_backend()):
+                return self._execute_program_boundary(program, outermost)
         finally:
             if outermost:
                 # A synchronous root failure can bypass the pump altogether.
@@ -579,6 +602,8 @@ class Interpreter:
             # keep the same receiver, storage and public availability.
             self._self_module.ready = True
             if outermost:
+                from .database_transactions import forbid_transfer
+                forbid_transfer(self._transaction_backend())
                 self.run_until_idle()
             return result
 
@@ -949,6 +974,8 @@ class Interpreter:
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         if function.function is run_callback_marker:
+            from .database_transactions import forbid_transfer
+            forbid_transfer(self._transaction_backend())
             return (yield from self._run_callback(node))
         if function.function is read_json or function.function is write_json:
             if require_value and not function.returns_value:
@@ -1333,6 +1360,9 @@ class Interpreter:
                     raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
                 late_inputs[name] = value
             bindings[name] = value
+        if crossing or function.is_async:
+            from .database_transactions import forbid_transfer
+            forbid_transfer(self._transaction_backend())
         if crossing:
             # Native 8.3.27.1508: names remain storage, expression results remain
             # values/handles. Clone the complete packet only after actual effects.
@@ -1400,6 +1430,8 @@ class Interpreter:
             self.locals = previous
 
     def visit_Await(self, node: ast.Await):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._transaction_backend())
         value = yield from self._visit(node.operand)
         # Even settled promises suspend in the measured client profile.
         # Scalar operands also resume as themselves; no synchronous unwrap.
@@ -1461,6 +1493,7 @@ class Interpreter:
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = self._activation_interpreter()
+        server._transaction_activation_allowed = False
         server.user_messages = self.user_messages
         server._scheduler = self._scheduler
         if self._configuration_runtime is not None:
@@ -1482,7 +1515,8 @@ class Interpreter:
             # Match exact implementation identities, not the current owner or
             # a user callback's name, so client diagnostic frames never leak.
             core_helpers = {Interpreter._message, Interpreter._error_description,
-                            Interpreter._error_info}
+                            Interpreter._error_info, Interpreter._begin_transaction,
+                            Interpreter._commit_transaction, Interpreter._rollback_transaction}
             if getattr(callback, "__func__", None) in core_helpers:
                 callback = getattr(server, callback.__name__)
             server.functions[name] = HostFunction(function.name, callback,

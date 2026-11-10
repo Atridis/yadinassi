@@ -1118,3 +1118,11 @@ BinaryData потоки, кодировки/BOM, текущая позиция, 
 Поддержаны `FROM/JOIN (SELECT ... / UNION ...) AS Alias`, вложенные отчёты
 на общем snapshot и `RIGHT/FULL [OUTER] JOIN` с корректными Null-строками.
 Типы, алиасы, бюджеты и явные границы описаны в [контракте](docs/derived-query-sources.md).
+
+## Explicit local transactions (v11)
+
+The opt-in migrated v11 SQLite profile supports synchronous `BeginTransaction`,
+`CommitTransaction`, `RollbackTransaction` and Russian aliases, with one ordered
+catalog/document/register journal and Query read-your-writes leases. This is an
+owned bounded contract, not measured native parity. See
+[transaction limits and recovery](docs/bsl-transactions.md).
