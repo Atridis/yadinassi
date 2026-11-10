@@ -7,6 +7,7 @@ implemented. Loading a snapshot reads only the logical backend schema.
 from decimal import Decimal
 
 from .database_context import SQLiteDBContext, require_database_context
+from .catalog_backend import CatalogSchema
 from .values import BSLObject, HostFunction, to_string
 
 
@@ -22,6 +23,8 @@ class BSLCatalogMetadata(_MetadataObject):
 
     def get_member(self, name: str) -> object:
         key = name.casefold()
+        if key in ('hierarchical','иерархический') and type(getattr(self,'_schema',None)) is CatalogSchema:
+            return getattr(self._schema,'hierarchy','none')!='none'
         if key in ('имя', 'name'):
             return self._name
         if key in ('полноеимя', 'fullname'):

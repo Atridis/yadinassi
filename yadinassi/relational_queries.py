@@ -49,6 +49,13 @@ class _BoundMembership:
     constant: bool = False
 
 
+@dataclass(frozen=True)
+class _BoundHierarchy:
+    field: object
+    root: object
+    manager: object
+
+
 def snapshot_parameters(parameters):
     """Freeze admitted list buffers before any package source is opened."""
     from .values import BSLArray, BSLFixedArray
@@ -72,7 +79,7 @@ def snapshot_parameters(parameters):
 
 def required(query):
     def extended(node):
-        if type(node) is syntax.Membership: return True
+        if type(node) is syntax.Membership or type(node) is syntax.Hierarchy: return True
         if type(node) is syntax.Predicate:
             return node.kind == 'not' or any(extended(term) for term in node.terms)
         return (type(node) is syntax.Comparison and
@@ -123,6 +130,8 @@ class _Plan:
         self.information_registers = information_registers
         self._descriptors = {}
         self.memberships = []
+        self.hierarchies = []
+        self.hierarchy_maps = {}
         self._membership_sets = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
@@ -226,7 +235,7 @@ class _Plan:
         self.all_managers = tuple(self.managers) + tuple(
             manager for plan in self.derived_plans.values() for manager in plan.all_managers) + tuple(
             manager for member in self.memberships if member.plan is not None
-            for manager in member.plan.all_managers)
+            for manager in member.plan.all_managers) + tuple(node.manager for node in self.hierarchies)
 
     def resolve_field(self, index, expression):
         from .queries import _field
@@ -299,6 +308,17 @@ class _Plan:
         if node is None: return None
         if type(node) is syntax.Predicate:
             return syntax.Predicate(node.kind, tuple(self.condition(t, aggregates=aggregates, source_limit=source_limit) for t in node.terms))
+        if type(node) is syntax.Hierarchy:
+            left=self.bind(node.field,aggregates=aggregates,source_limit=source_limit)
+            right=self.bind(node.root,aggregates=aggregates,source_limit=source_limit)
+            if self.describe(left).kind!='catalog_ref' or self.describe(right).kind!='catalog_ref':
+                raise TypeError('IN HIERARCHY requires catalog references')
+            a,b=self.reference_identity(left),self.reference_identity(right)
+            if a[0] is not b[0] or a[1]!=b[1]: raise TypeError('IN HIERARCHY requires the same catalog')
+            manager=self.catalogs._manager_by_metadata_uuid(a[1])
+            if manager._schema.hierarchy!='groups_v1': raise ValueError('IN HIERARCHY requires hierarchical catalog')
+            result=_BoundHierarchy(left,right,manager);self.hierarchies.append(result)
+            return result
         if type(node) is syntax.Membership:
             return self.membership(node, aggregates=aggregates, source_limit=source_limit)
         left = self.bind(node.field, aggregates=aggregates, source_limit=source_limit)
@@ -389,6 +409,7 @@ class _Plan:
         if node is None: return ()
         if type(node) is syntax.Predicate:
             return tuple(e for term in node.terms for e in self.condition_expressions(term))
+        if type(node) is _BoundHierarchy: return (node.field,node.root)
         if type(node) is _BoundMembership: return (node.field, *node.values)
         return (node.field, node.value)
 
@@ -415,7 +436,7 @@ class _Plan:
             if expression.column.reference_identity is not None:
                 return expression.column.reference_identity
             manager = self.managers[expression.source]
-            target = (manager._schema.identity if expression.column.field == 'ref'
+            target = (manager._schema.identity if expression.column.field in ('ref','parent')
                       else expression.column.custom.target_catalog_id)
             return manager._catalogs._metadata, target
         if type(expression) is syntax.Expression:
@@ -586,10 +607,51 @@ class _Plan:
                 if result is True: return True
                 unknown |= result is None
             return None if unknown else False
+        if type(node) is _BoundHierarchy:
+            value,root=self.value(node.field,row,group),self.value(node.root,row,group)
+            if value is NULL or root is NULL: return None
+            current=value.reference_uuid;target=root.reference_uuid
+            parents=self.hierarchy_maps[node.manager._schema.identity]
+            if not current.int: return False
+            if current not in parents: return False
+            seen=set()
+            for _ in range(33):
+                if current==target or not target.int: return True
+                if not current.int: return False
+                if current in seen or current not in parents: raise BackendError('integrity')
+                seen.add(current);current=parents[current]
+            raise BackendError('integrity')
         if node.operator in ('is_null', 'is_not_null'):
             result = self.value(node.field, row, group) is NULL
             return not result if node.operator == 'is_not_null' else result
         return _compare(self.value(node.field, row, group), self.value(node.value, row, group), node.operator)
+
+    def prepare_hierarchies(self,view,budget):
+        from .queries import _MAX_CELLS,_MAX_RESULT_TEXT
+        from .catalog_backend import CatalogScanRequest, CatalogValuePage, CatalogValueRow, CatalogKey
+        from uuid import UUID
+        self.hierarchy_maps={}
+        for node in self.hierarchies:
+            identity=node.manager._schema.identity
+            if identity in self.hierarchy_maps: continue
+            parents={};continuation=None;tokens=set()
+            while True:
+                page=view.scan_catalog_values(identity,CatalogScanRequest(page_size=256,continuation=continuation),('ref','parent'))
+                if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows)>256: raise BackendError('integrity')
+                for row in page.rows:
+                    if type(row) is not CatalogValueRow or type(row.values) is not tuple or len(row.values)!=2: raise BackendError('integrity')
+                    ref,parent=row.values
+                    if (type(ref) is not CatalogKey or type(parent) is not CatalogKey or ref!=row.key
+                            or type(ref.record_id) is not UUID or not ref.record_id.int or type(parent.record_id) is not UUID
+                            or ref.database_id!=view.database_id or parent.database_id!=view.database_id
+                            or ref.catalog_id!=identity or parent.catalog_id!=identity or ref.record_id in parents): raise BackendError('integrity')
+                    parents[ref.record_id]=parent.record_id
+                    budget[0]+=2;budget[1]+=72
+                    if len(parents)>syntax.MAX_ROWS or budget[0]>_MAX_CELLS or budget[1]>_MAX_RESULT_TEXT: raise ValueError('Query hierarchy resource limit exceeded')
+                if page.continuation is None: break
+                if type(page.continuation) is not str or page.continuation in tokens or not page.rows: raise BackendError('integrity')
+                tokens.add(page.continuation);continuation=page.continuation
+            self.hierarchy_maps[identity]=parents
 
     def load(self, index, view, budget):
         from .queries import _logical, _section_row, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
@@ -716,6 +778,7 @@ class _Plan:
             while len(budget) < 4: budget.append(0)
             self._budget = budget
             self.prepare_memberships(view, budget)
+            self.prepare_hierarchies(view, budget)
             sources = [self.load(i, view, budget) for i in range(len(self.sources))]
         finally:
             if owner: view.close()

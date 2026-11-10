@@ -74,14 +74,14 @@ def parse_schema(raw):
     return result
 
 
-def load_schemas(connection, catalogs, documents=()):
+def load_schemas(connection, catalogs, documents=(), *, allow_empty=False):
     malformed=connection.execute("SELECT 1 FROM information_register_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>262144 LIMIT 1").fetchone()
     count,size=connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(definition AS BLOB))),0) FROM information_register_schema').fetchone()
-    if malformed or not 1<=count<=512 or size>MAX_TOTAL: raise BackendError('integrity')
+    if malformed or not (0 if allow_empty else 1)<=count<=512 or size>MAX_TOTAL: raise BackendError('integrity')
     rows=tuple(connection.execute('SELECT identity,name,definition FROM information_register_schema ORDER BY identity'))
     schemas=tuple(parse_schema(row[2]) for row in rows)
     if any(row[:2]!=(str(s.identity),s.name) for row,s in zip(rows,schemas)): raise BackendError('integrity')
-    validate_configuration(schemas,catalogs,documents,error='integrity')
+    if schemas: validate_configuration(schemas,catalogs,documents,error='integrity')
     if connection.execute('SELECT COUNT(*) FROM information_register_sequence').fetchone()[0]!=len(schemas): raise BackendError('integrity')
     sequence=tuple(connection.execute('SELECT register_id,next_value FROM information_register_sequence'))
     if (len(sequence)!=len(schemas) or {r[0] for r in sequence}!={str(s.identity) for s in schemas}

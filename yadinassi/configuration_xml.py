@@ -640,14 +640,18 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                      and not (obj.tail or '').strip(_XML_WHITESPACE) else None)
         if generated is None:
             _envelope_issues(root,obj,issues,cname)
-            _activation_properties(obj,{'Name','Synonym','Comment','Hierarchical','CodeType','CodeLength','DescriptionLength','Autonumbering','CheckUnique','CodeSeries','Owners'},issues,cname)
+            _activation_properties(obj,{'Name','Synonym','Comment','Hierarchical','HierarchyType','CodeType','CodeLength','DescriptionLength','Autonumbering','CheckUnique','CodeSeries','Owners'},issues,cname)
         else:
             if generated & used:_fail('duplicate generated metadata UUID')
             used.update(generated)
         auto_numbering = _text(p, 'Autonumbering', 'false')
         if auto_numbering not in ('false', 'true') or (auto_numbering == 'true' and numbering_policy != 'decimal_v1'):
             _fail('unsupported catalog semantics')
-        if (_text(p,'Hierarchical','false')!='false' or _text(p,'CodeType','String')!='String'
+        hierarchical = _text(p,'Hierarchical','false')
+        if hierarchical not in ('false','true') or (hierarchical=='true' and _text(p,'HierarchyType')!='HierarchyFoldersAndItems'):
+            _fail('unsupported catalog hierarchy')
+        hierarchy = 'groups_v1' if hierarchical=='true' else 'none'
+        if (_text(p,'CodeType','String')!='String'
                 or _text(p,'CheckUnique','true')!='true'
                 or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
         owners=p.get('{'+MD+'}Owners')
@@ -656,7 +660,9 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
             local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip(_XML_WHITESPACE)
             if local=='FillChecking' and text not in ('','DontCheck'):issues.append('required field validation unsupported:'+cname)
             if local in ('FillFromFillingValue','DataHistory','RegisterRecords') and text not in ('','false','DontUse'):issues.append('automatic metadata behavior unsupported:'+cname)
-        fields=[];sections=[];names=set(_RESERVED);child=obj.find('{'+MD+'}ChildObjects')
+        fields=[];sections=[];names=set(_RESERVED)
+        if hierarchy != 'none': names.update(('parent','родитель','isfolder','этогруппа','createfolder','создатьгруппу'))
+        child=obj.find('{'+MD+'}ChildObjects')
         def field_schema(field, field_names, owner, row=False):
             if field.tag!='{'+MD+'}Attribute':_fail('child object unsupported')
             if row:
@@ -698,7 +704,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         if len(fields)>64:_fail('field count')
         numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
         code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
-        catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering))
+        catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering,hierarchy))
     documents=[]
     for dname in document_names:
         path='Documents/'+dname+'.xml'

@@ -78,6 +78,12 @@ class Membership:
 
 
 @dataclass(frozen=True, slots=True)
+class Hierarchy:
+    field: object
+    root: object
+
+
+@dataclass(frozen=True, slots=True)
 class Predicate:
     kind: str
     terms: tuple
@@ -135,7 +141,7 @@ _KEYWORDS = {
     'from':'from', 'из':'from', 'as':'as', 'как':'as',
     'where':'where', 'где':'where', 'order':'order', 'упорядочить':'order',
     'by':'by', 'по':'by', 'asc':'asc', 'возр':'asc', 'desc':'desc', 'убыв':'desc',
-    'in':'in', 'в':'in', 'between':'between', 'между':'between',
+    'in':'in', 'в':'in', 'hierarchy':'hierarchy', 'иерархии':'hierarchy', 'between':'between', 'между':'between',
     'and':'and', 'и':'and', 'or':'or', 'или':'or',
     'distinct':'distinct', 'различные':'distinct',
     'inner':'inner', 'внутреннее':'inner', 'left':'left', 'левое':'left',
@@ -227,6 +233,7 @@ class _Parser:
             if type(node) is Aggregate: return 1 + height(node.field)
             if type(node) is Comparison: return max(height(node.field), height(node.value))
             if type(node) is Membership: return height(node.field)
+            if type(node) is Hierarchy: return max(height(node.field),height(node.root))
             if type(node) is Predicate: return max(map(height, node.terms), default=0)
             if type(node) is tuple: return max(map(height, node), default=0)
             return 0
@@ -390,6 +397,10 @@ class _Parser:
             if operator == 'between':
                 lower = self.expression(); self.take('and'); upper = self.expression()
                 result = Predicate('and', (Comparison(field, 'ge', lower), Comparison(field, 'le', upper)))
+            elif self.accept('hierarchy'):
+                self.take('('); root=self.expression(); self.take(')')
+                result=Hierarchy(field,root)
+                return Predicate('not',(result,)) if negate else result
             else:
                 if self.peek() == '&':
                     self.take('&'); values = Parameter(self.take('name'))
@@ -543,7 +554,7 @@ def walk_nodes(value):
     """Walk only closed grammar nodes, including nested membership sources."""
     from dataclasses import fields
     node_types = (Field, Aggregate, NullLiteral, Expression, Source, Destroy, Join,
-                  Parameter, Comparison, Membership, Predicate, Projection, Order, Select, Union)
+                  Parameter, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
     if type(value) is tuple:
         for item in value: yield from walk_nodes(item)
     elif type(value) in node_types:

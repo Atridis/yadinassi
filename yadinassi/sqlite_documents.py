@@ -103,7 +103,7 @@ class DocumentView:
         self.configuration_generation = view.configuration_generation
         self._outcome = None; self._hash = None
         self._register_read_view = None
-        if view._backend.storage_version not in (7, 8, 9):
+        if view._backend.storage_version not in (7, 8, 9, 10):
             self._schemas = ()
         else:
             self._schemas = view._backend._document_schemas

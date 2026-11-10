@@ -31,6 +31,7 @@ _MAX_CELLS = 100000
 _MAX_RESULT_TEXT = 8000000
 _STANDARD = {'ref':'ref', 'ссылка':'ref', 'code':'code', 'код':'code',
              'description':'description', 'наименование':'description',
+             'parent':'parent','родитель':'parent','isfolder':'is_folder','этогруппа':'is_folder',
              'deletionmark':'deletion_mark', 'пометкаудаления':'deletion_mark'}
 
 
@@ -50,13 +51,14 @@ def _field(manager, field, source_alias, section=None):
         raise ValueError('Unknown query source qualifier')
     name = field.parts[-1].casefold()
     standard = _STANDARD.get(name)
+    if standard in ("parent","is_folder") and manager._schema.hierarchy=="none": standard=None
     if section is not None and name in ('linenumber', 'номерстроки'):
         raise ValueError('Query section line numbers are unsupported')
     if section is not None and standard not in (None, 'ref'):
         raise ValueError('Query section does not inherit owner fields')
     if standard is not None:
         kind = {'ref':'catalog_ref', 'code':'string', 'description':'string',
-                'deletion_mark':'boolean'}[standard]
+                'deletion_mark':'boolean','parent':'catalog_ref','is_folder':'boolean'}[standard]
         qualifiers = ((manager._schema.code_length,) if standard == 'code' else
                       (manager._schema.description_length,) if standard == 'description' else ())
         return _Column('', standard, kind, qualifiers)
@@ -90,13 +92,13 @@ def _stored(manager, column, value):
     _parameter_value(value)
     if column.custom is not None:
         return manager._stored(column.custom, value)
-    if column.field == 'ref':
+    if column.field in ('ref','parent'):
         if (type(value) is not BSLCatalogReference
                 or value.value_type.snapshot is not manager._catalogs._metadata
                 or value.value_type.metadata_uuid != manager._schema.identity):
             raise TypeError('Query reference requires same database and catalog')
         return manager._key(value.reference_uuid)
-    expected = bool if column.field == 'deletion_mark' else str
+    expected = bool if column.field in ('deletion_mark','is_folder') else str
     if type(value) is not expected:
         raise TypeError('Query comparison requires exact field type')
     return value
@@ -121,7 +123,7 @@ def _predicate(manager, node, alias, parameters, section=None):
 def _logical(manager, column, value):
     if column.custom is not None:
         return manager._logical(column.custom, value)
-    if column.field == 'ref':
+    if column.field in ('ref','parent'):
         if (type(value) is not CatalogKey
                 or any(type(item) is not UUID for item in (value.database_id,value.catalog_id,value.record_id))
                 or value.database_id != manager._key(UUID(int=0)).database_id
