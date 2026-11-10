@@ -25,7 +25,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertIn('permissions:\n  contents: read', source)
         self.assertIn('runs-on: ubuntu-22.04\n    timeout-minutes: 10', source)
-        self.assertEqual(source.count('timeout-minutes: 5'), 5)
+        self.assertEqual(source.count('timeout-minutes: 5'), 4)
 
     def test_exact_reference_artifact_allowlist_and_pinned_actions(self):
         source = self.workflow()

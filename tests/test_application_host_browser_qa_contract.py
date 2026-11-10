@@ -30,8 +30,8 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         for forbidden in ['--no-sandbox','chromiumSandbox:false','executablePath:','sudo ','sysctl ']:self.assertNotIn(forbidden,self.source)
 
     def test_real_lifetime_and_no_timer_mock(self):
-        for text in ['startedAt+220000','startedAt+240000','setTimeout(resolve,31500)',
-                     "Date.now()-before>=30000", "host.exitCode,0,'ordinary_clean_host_exit'",
+        for text in ['startedAt+420000','startedAt+440000','setTimeout(resolve,122000)',
+                     "Date.now()-before>=120000", "host.exitCode,0,'ordinary_clean_host_exit'",
                      "host.signalCode,null,'no_forced_clean_shutdown'", "'refused_exit_retained'", "'open_pending_host_retained'"]:
             self.assertIn(text,self.source)
         for forbidden in ['clock.install','clock.fastForward','grace_seconds=','lease_seconds=','mock.patch','fakeTimers']:
@@ -50,9 +50,9 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         self.assertIn("report.routeFailure=routeFailure",self.source)
         self.assertIn("'application_close_exchange':'rpc_exchange'",self.source)
 
-        for text in ["detachReceipts.set(key,{attachment,accept})", "'detach_http_accepted'", "'detach_attachment'",
-                     "'detach_released_writer'", "'detach_generation'", "await bounded(received,remaining(10000),'detach_receipt_timeout')",
-                     "lifetimeStage='detach_server_receipt'", "await p.goto('about:blank')"]:
+        for text in ["detachReceipts.set(key,{attachment})", "'detach_http_accepted'", "'detach_attachment'",
+                     "'detach_released_writer'", "'detach_generation'", "'no_attachment_renewal_during_absence'",
+                     "'all_application_pages_closed'", "await p.goto('about:blank')"]:
             self.assertIn(text,self.source)
         self.assertNotIn('const confirmed=p.waitForResponse',self.source)
         self.assertIn('return Reflect.apply(original,this,arguments)',self.source)
@@ -88,7 +88,7 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         self.assertIn('codex/application-host-browser-reviewed]',source)
         acquisition=source.split('      - name: Acquire five application host lifetime flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         self.assertIn("if: github.ref == 'refs/heads/codex/application-host-browser-reviewed'",acquisition)
-        self.assertIn('timeout-minutes: 5',acquisition)
+        self.assertIn('timeout-minutes: 8',acquisition)
         self.assertIn('QA_SOURCE_SHA: ${{ github.sha }}',acquisition)
         self.assertIn('run: node tests/browser_ui/application_host_browser_qa.mjs',acquisition)
         upload=source.split('      - name: Publish only application host screenshots and redacted source-bound report\n',1)[1].split('\n      - ',1)[0]

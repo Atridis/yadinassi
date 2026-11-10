@@ -10,8 +10,8 @@ import {launchOutputReader,allowedRequest,childEnvironment,ownBrowserPid,
   commandLineArgs,sandboxCommand,sandboxStatus,sha256,launchURL} from './support.mjs';
 
 const startedAt=Date.now();
-const workDeadline=startedAt+220000;
-const totalDeadline=startedAt+240000;
+const workDeadline=startedAt+420000;
+const totalDeadline=startedAt+440000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
@@ -331,11 +331,12 @@ async function main(){
       return Reflect.apply(original,this,arguments);
     };
   });
+  let renewals=0;
   context.on('request',request=>{
     if(new URL(request.url()).pathname!=='/attachment')return;
-    try{if(request.postDataJSON()?.action==='detach')detachDiagnostics.request++;}catch{}
+    try{const action=request.postDataJSON()?.action;if(action==='detach')detachDiagnostics.request++;else if(['attach','heartbeat','status','takeover'].includes(action))renewals++;}catch{}
   });
-  const replies=new WeakMap(),headers=new WeakMap(),detachReceipts=new Map();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
+  const replies=new WeakMap(),headers=new WeakMap(),detachReceipts=new Map(),applicationPages=new Set();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
   await context.route('**/*',async route=>{
     const request=route.request(),target=request.url();
     let routeStage='request_admission';
@@ -362,7 +363,7 @@ async function main(){
           assert.equal(value.attachment,expected.attachment,'detach_attachment');
           assert.equal(value.role,'observer','detach_released_writer');
           assert.ok(Number.isSafeInteger(value.generation)&&value.generation>=body.generation,'detach_generation');
-          detachDiagnostics.matched++;expected.accept();detachReceipts.delete(key);
+          detachDiagnostics.matched++;detachReceipts.delete(key);
         }
       }
       return route.fulfill({response});
@@ -383,7 +384,7 @@ async function main(){
     return await route.continue();
     }catch{if(host&&host.exitCode===null&&!aborted){routeFailure??=routeStage;wireFailure=true;abort();}return route.abort().catch(()=>{});}
   });
-  const newPage=async()=>{const p=await context.newPage();p.on('dialog',dialog=>dialog.accept());
+  const newPage=async()=>{const p=await context.newPage();applicationPages.add(p);p.on('dialog',dialog=>dialog.accept());
     p.on('console',message=>{if(message.type()!=='debug')return;
       if(message.text()==='ya-qa-pagehide')detachDiagnostics.pagehide++;
       else if(message.text()==='ya-qa-detach-fetch')detachDiagnostics.fetch++;
@@ -394,16 +395,24 @@ async function main(){
   const detach=async p=>{
     const sent=headers.get(p),key=sent?.['x-yadinassi-session'],attachment=sent?.['x-yadinassi-attachment'];
     assert.ok(key&&attachment,'detach_known_attachment');
-    let accept;const received=new Promise(resolve=>{accept=resolve;});
-    detachReceipts.set(key,{attachment,accept});
-    try{
-      lifetimeStage='detach_navigation';await p.goto('about:blank');
-      lifetimeStage='detach_server_receipt';
-      await bounded(received,remaining(10000),'detach_receipt_timeout');
-      lifetimeStage='detach_page_close';await p.close();lifetimeStage=null;
-    }finally{detachReceipts.delete(key);}
+    detachReceipts.set(key,{attachment});
+    lifetimeStage='detach_navigation';await p.goto('about:blank');
+    lifetimeStage='detach_page_close';await p.close();
+    assert.equal(p.isClosed(),true,'actual_page_closed');lifetimeStage=null;
   };
-  const realGrace=async()=>{const before=Date.now();await bounded(new Promise(resolve=>setTimeout(resolve,31500)),remaining(33000),'real_grace_timeout');assert.ok(Date.now()-before>=30000,'real_grace_not_elapsed');};
+  const realGrace=async()=>{
+    assert.ok([...applicationPages].every(p=>p.isClosed()),'all_application_pages_closed');
+    assert.equal(context.pages().length,0,'no_live_browser_pages');
+    const before=Date.now(),renewalsBefore=renewals;
+    lifetimeStage='real_lease_and_grace';
+    // Advisory unload may never leave Chromium. Observe the documented 90s lease
+    // plus 30s grace without probes, synthetic detach, renewal or clock changes.
+    await bounded(new Promise(resolve=>setTimeout(resolve,122000)),remaining(124000),'real_lease_grace_timeout');
+    assert.ok(Date.now()-before>=120000,'real_lease_grace_not_elapsed');
+    assert.equal(renewals,renewalsBefore,'no_attachment_renewal_during_absence');
+    assert.ok([...applicationPages].every(p=>p.isClosed()),'pages_remain_closed');
+    detachReceipts.clear();lifetimeStage=null;
+  };
   await scenario(scenarioNames[0],async()=>{
     await openShipped();await value('GreetingLabel','Hello from the configuration application');
     assert.deepEqual(state(page).messages,['Calculated in the owned server process','8'],'startup_servercall');
@@ -479,7 +488,7 @@ async function main(){
   assert.equal(wireFailure,false,'wire_contract');
   report.acceptance={shippedApplication:true,realServerCall:true,writerFencing:true,rawDraftRetained:true,
     resumeWithoutStartupReplay:true,genuineDroppedReply:true,noAutomaticRetry:true,
-    realGraceSeconds:30,refusedExitRetained:true,cleanOrdinaryExit:true,nativeParity:false};
+    realLeaseSeconds:90,realGraceSeconds:30,absenceWaitSeconds:122,refusedExitRetained:true,cleanOrdinaryExit:true,nativeParity:false};
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
