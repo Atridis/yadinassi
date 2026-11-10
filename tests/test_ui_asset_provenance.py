@@ -19,7 +19,7 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 185)
+        self.assertEqual(result['source_file_count'], 186)
         # All added runtime modules are hashed, as well as packaged renderer assets.
         original = full.read_regular
         for changed_name in ('property_transfer.py', 'data_compression.py', 'app.js', 'http_security.py', 'relational_queries.py', 'form_replication.py', 'callbacks.py', 'form_app.py', 'form_package.py', 'json_dates.py', 'query_packages.py', 'form_tables.py', 'form_table_replication.py', 'order_workbench.py', 'query_sources.py', 'text_streams.py', 'orders_workspace.py', 'configuration_forms.py', 'form_program.py', 'configuration_app.py', 'date_formatting.py', 'reference_orders.py', 'reference_orders_workspace.py', 'document_backend.py', 'sqlite_documents.py', 'configuration_modules.py', 'configuration_runtime.py'):

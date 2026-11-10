@@ -923,7 +923,10 @@ class SQLiteCatalogBackend:
                             register_write=active and self.storage_version in (8, 9, 10) and not self.read_only)
 
     @_boundary
-    def begin_read(self): return self._begin(None)
+    def begin_read(self):
+        from .database_transactions import current
+        transaction = current(self)
+        return transaction.read_lease() if transaction is not None else self._begin(None)
     @_boundary
     def begin_write(self, operation_id):
         if self.read_only: raise BackendError('unsupported')
@@ -963,7 +966,7 @@ class SQLiteCatalogBackend:
         return self._document_view(operation_id)
 
     def _document_view(self, operation_id):
-        view = self._begin(operation_id)
+        view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return DocumentView(view)
         except BaseException as error:
             try: view.close()
@@ -990,7 +993,7 @@ class SQLiteCatalogBackend:
         return self._register_view(operation_id)
 
     def _register_view(self, operation_id):
-        view = self._begin(operation_id)
+        view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return RegisterView(view)
         except BaseException as error:
             try: view.close()
@@ -1487,10 +1490,13 @@ class _View:
         if op == 'gt': return left > right
         return left >= right
 
+    def _cache_validation_allowed(self):
+        return self._operation_id is None
+
     def _validate_scan_scalars(self, catalog_id, schema, *, retain_owners=False):
         self._require()
         cache_key = ('catalog-scalars', catalog_id, schema, retain_owners)
-        if self._operation_id is None and cache_key in self._validated_sources:
+        if self._cache_validation_allowed() and cache_key in self._validated_sources:
             return set(self._validated_sources[cache_key])
         # Filtering must not hide corrupted owner values. This pass retains no
         # payload or card; coarse bounds run before the first payload fetch.
@@ -1521,7 +1527,7 @@ class _View:
             if retain_owners: owners.add(str(scalar.key.record_id))
             seen += 1
         if seen != count: raise BackendError('integrity')
-        if self._operation_id is None:
+        if self._cache_validation_allowed():
             self._validated_sources[cache_key] = frozenset(owners)
         return owners
 

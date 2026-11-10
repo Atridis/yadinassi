@@ -6,6 +6,8 @@ Input/intermediate bounds fail explicitly, never return partial aggregate totals
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
 """
+from .database_transactions import query_view as _transaction_query_view
+
 from dataclasses import dataclass, replace
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from uuid import UUID
@@ -821,7 +823,7 @@ class _Plan:
                 if any(arm.family in ('document', 'information_register') or any(j.source.family in ('document', 'information_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
                     view = self.catalogs._context.backend.begin_query_read()
                 else:
-                    view = manager._view()
+                    view = _transaction_query_view(manager)
                 owner = True
         try:
             if budget is None: budget = [0, 0]
