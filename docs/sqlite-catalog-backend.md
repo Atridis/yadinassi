@@ -19,7 +19,7 @@ python -m yadinassi --f application.sqlite -c 'O=Catalogs.Products.CreateItem();
 python -m yadinassi --f application.sqlite -c 'Message(Catalogs.Products.FindByCode("10").Description);'
 ```
 
-Use names/required field values from your admitted configuration. Unsupported configurations fail rather than promise arbitrary application compatibility. Initially supported: flat string-code catalogs, explicit codes, Description, and bounded String/Number/Boolean/DateTime/fixed catalog-reference attributes. Nonempty required application/object modules and unsupported metadata behaviors prevent activation. Their source may be archived with `--inactive`. General configured-module execution, arbitrary data import, and Documents/register adapters are not claimed by this storage increment.
+Use names/required field values from your admitted configuration. Unsupported configurations fail rather than promise arbitrary application compatibility. Initially supported: flat string-code catalogs, explicit codes, Description, and bounded String/Number/Boolean/DateTime/fixed catalog-reference attributes. Nonempty required application/object modules and unsupported metadata behaviors prevent activation. Their source may be archived with `--inactive`. General configured-module execution, arbitrary data import and register adapters are not claimed. New configurations may also use the separate [v7 non-posting document lifecycle](sqlite-document-lifecycle.md).
 
 ## Persisted application
 

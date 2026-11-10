@@ -69,8 +69,10 @@ this is not authentication or a connection to a running 1C session.
 The current backend is a bounded catalog slice: schemas, standard fields,
 primitive attributes and fixed catalog references, catalog objects and
 transactional create/update. Admitted catalog tabular sections and [bounded relational queries](relational-catalog-queries.md)
-are also supported. It is not a port of Documents, InformationRegisters, posting
-or every configuration callback. Unsupported
+are also supported. New document-bearing databases additionally support the
+[bounded v7 non-posting document lifecycle](sqlite-document-lifecycle.md), with
+separate document tables, metadata and identities. InformationRegisters, posting
+and general configuration callbacks remain unsupported. Unsupported
 semantics must not silently bypass validation or business logic. See the
 [runtime catalog contract](bsl-catalog-read-scenario.md) and
 [headless UI protocol](ui-protocol-v0.md) for their exact public surfaces.
