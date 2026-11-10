@@ -368,16 +368,150 @@ class SchedulerTests(unittest.TestCase):
         self.assertIs(promises[1].result, second)
         self.assertIsNone(self.scheduler.take_procedure_error())
 
-    def test_host_exceptions_are_not_bsl_rejections(self):
+    def test_host_exceptions_are_terminal_but_not_bsl_rejections(self):
+        error = ValueError('host bug')
         def task():
             yield AwaitRequest(None)
-            raise ValueError('host bug')
-        promise = self.scheduler.start(task())
-        with self.assertRaisesRegex(ValueError, 'host bug'):
+            raise error
+        promise = self.scheduler.start(task(), procedure=True)
+        with self.assertRaisesRegex(ValueError, 'host bug') as caught:
             self.scheduler.run_until_idle()
-        self.assertEqual(promise.state, 'pending')
+        self.assertIs(caught.exception, error)
+        self.assertEqual(promise.state, 'failed')
+        self.assertIs(promise.result, error)
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
         self.assertFalse(self.scheduler.is_active)
-        self.scheduler.reset()
+        self.assertIsNone(self.scheduler.take_procedure_error())
+        self.scheduler.run_until_idle()
+        self.assertEqual(promise.state, 'failed')
+
+    def test_eager_host_failure_releases_task_and_restores_context(self):
+        root = self.scheduler.active_context
+        def task():
+            if False: yield
+            raise RuntimeError('eager fault')
+        with self.assertRaisesRegex(RuntimeError, 'eager fault'):
+            self.scheduler.start(task(), procedure=True)
+        self.assertIs(self.scheduler.active_context, root)
+        self.assertFalse(self.scheduler.is_active)
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
+        self.assertIsNone(self.scheduler.take_procedure_error())
+
+    def test_baseexception_escape_is_terminal_and_preserves_identity(self):
+        class HostStop(BaseException): pass
+        error = HostStop('stop')
+        root = self.scheduler.active_context
+        def task():
+            yield AwaitRequest(None)
+            raise error
+        promise = self.scheduler.start(task())
+        with self.assertRaises(HostStop) as caught: self.scheduler.run_until_idle()
+        self.assertIs(caught.exception, error)
+        self.assertEqual((promise.state, promise.result), ('failed', error))
+        self.assertIs(self.scheduler.active_context, root)
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
+
+    def test_failed_promise_adoption_and_await_never_fulfill_with_undefined(self):
+        error = RuntimeError('source fault')
+        def source():
+            yield AwaitRequest(None)
+            raise error
+        origin = self.scheduler.start(source())
+        adopted = self.scheduler.new_pending()
+        self.scheduler.resolve(adopted, origin)
+        def consumer():
+            return (yield AwaitRequest(adopted))
+        waiting = self.scheduler.start(consumer())
+        with self.assertRaises(RuntimeError): self.scheduler.run_until_idle()
+        self.assertEqual(origin.state, 'failed')
+        self.assertEqual(adopted.state, 'failed')
+        self.assertEqual(waiting.state, 'pending')
+        with self.assertRaises(RuntimeError) as caught: self.scheduler.run_until_idle()
+        self.assertIs(caught.exception, error)
+        self.assertEqual(waiting.state, 'failed')
+        self.assertIs(waiting.result, error)
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
+
+    def test_host_consumer_can_catch_failed_promise_without_losing_cause(self):
+        cause = KeyError('original cause')
+        error = RuntimeError('host fault')
+        def source():
+            yield AwaitRequest(None)
+            raise error from cause
+        origin = self.scheduler.start(source())
+        with self.assertRaises(RuntimeError): self.scheduler.run_until_idle()
+        seen = []
+        def consumer():
+            try:
+                yield AwaitRequest(origin)
+            except RuntimeError as caught:
+                seen.append((caught, caught.__cause__))
+                return 42
+        for _ in range(2):
+            result = self.scheduler.start(consumer())
+            self.scheduler.run_until_idle()
+            self.assertEqual((result.state, result.result), ('fulfilled', 42))
+        self.assertEqual(seen, [(error, cause), (error, cause)])
+        self.assertFalse(self.scheduler.pending)
+
+    def test_host_fault_does_not_discard_sibling_ready_or_pending_work(self):
+        gate = self.scheduler.new_pending()
+        def broken():
+            yield AwaitRequest(None)
+            raise RuntimeError('fault')
+        def sibling(): return (yield AwaitRequest(7))
+        def blocked(): return (yield AwaitRequest(gate))
+        broken_result = self.scheduler.start(broken())
+        sibling_result = self.scheduler.start(sibling())
+        blocked_result = self.scheduler.start(blocked())
+        with self.assertRaises(RuntimeError): self.scheduler.run_until_idle()
+        self.assertNotIn(broken_result, self.scheduler.pending)
+        self.assertEqual(len(self.scheduler._tasks), 2)
+        self.scheduler.run_until_idle()
+        self.assertEqual((sibling_result.state, sibling_result.result), ('fulfilled', 7))
+        self.assertEqual(blocked_result.state, 'pending')
+        self.scheduler.resolve(gate, 9)
+        self.scheduler.run_until_idle()
+        self.assertEqual((blocked_result.state, blocked_result.result), ('fulfilled', 9))
+        self.assertFalse(self.scheduler.pending)
+
+    def test_unsupported_yield_closes_task_in_its_context_and_settles(self):
+        contexts = []
+        def task():
+            try:
+                yield AwaitRequest(None)
+                yield 'unsupported'
+            finally:
+                contexts.append(self.scheduler.active_context)
+        promise = self.scheduler.start(task())
+        context = next(iter(self.scheduler._tasks)).context
+        with self.assertRaisesRegex(RuntimeError, 'unsupported request'):
+            self.scheduler.run_until_idle()
+        self.assertEqual(contexts, [context])
+        self.assertEqual(promise.state, 'failed')
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
+
+    def test_unsupported_yield_cleanup_fault_matches_terminal_exception(self):
+        error = RuntimeError('cleanup fault')
+        def task():
+            try:
+                yield AwaitRequest(None)
+                yield 'unsupported'
+            finally:
+                raise error
+        promise = self.scheduler.start(task())
+        with self.assertRaisesRegex(RuntimeError, 'cleanup fault') as caught:
+            self.scheduler.run_until_idle()
+        self.assertIs(caught.exception, error)
+        self.assertIs(promise.result, error)
+        self.assertEqual(promise.state, 'failed')
+        self.assertFalse(self.scheduler.pending)
+        self.assertFalse(self.scheduler._tasks)
 
     def test_context_isolated_and_nested_start_restores_parent(self):
         root = self.scheduler.active_context

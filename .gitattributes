@@ -150,3 +150,10 @@ examples/configuration-forms/** text eol=lf
 # Independent RU date acquisition sources retain source identity.
 integrational_tests/measurements/format_date_names.bsl text eol=lf
 integrational_tests/measurements/format_date_tokens.bsl text eol=lf
+# Fixed property-transfer inputs and future captures are byte-bound.
+scripts/native_1c_property_transfer_contract.py text eol=lf
+integrational_tests/measurements/property_transfer.bsl text eol=lf
+tests/fixtures/property_transfer/*.bsl text eol=lf
+tests/fixtures/property_transfer/*.out -text
+tests/fixtures/property_transfer/*mapping.json -text
+tests/fixtures/property_transfer/*provenance.json -text

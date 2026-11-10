@@ -7,7 +7,7 @@ import unittest
 import weakref
 
 from yadinassi import Interpreter, BSLError
-from yadinassi.async_runtime import Promise
+from yadinassi.async_runtime import Promise, AwaitRequest
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
@@ -19,6 +19,83 @@ class AsyncRuntimeTests(unittest.TestCase):
 
     def run_code(self, code):
         return self.vm.execute(code, 'async-test.bsl')
+
+    def test_raw_host_fault_after_await_is_terminal_and_not_caught_by_bsl_try(self):
+        error = RuntimeError('host failure')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_code('''Async Function Work()
+                Await 0; Try Crash(); Except Message("must not catch"); EndTry;
+            EndFunction
+            P=Work();''')
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.output, [])
+        self.assertEqual(self.vm.variables['p'].state, 'failed')
+        self.assertIs(self.vm.variables['p'].result, error)
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+        self.assertIsNone(self.vm.locals)
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.vm.ensure_complete()
+        self.assertEqual(self.vm.execute('6*7'), Decimal(42))
+
+    def test_raw_host_fault_from_imported_nocontext_after_await_restores_owner(self):
+        error = RuntimeError('detached host fault')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with tempfile.TemporaryDirectory() as directory:
+            helper = Path(directory) / 'Helper.bsl'
+            helper.write_text('&AtServerNoContext\nProcedure Fail() Export Crash(); EndProcedure', encoding='utf-8')
+            source = '// #Import Helper.bsl\nAsync Function Work() Await 0; Helper.Fail(); EndFunction\nP=Work();'
+            with self.assertRaises(RuntimeError) as caught:
+                self.vm.execute(source, str(Path(directory) / 'main.bsl'))
+        self.assertIs(caught.exception, error)
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+        self.assertEqual(self.vm._context_stack, ['client'])
+        self.assertEqual(self.vm._module_context_stack, [True])
+        self.assertIsNone(self.vm.locals)
+        self.assertEqual(self.vm.variables['p'].state, 'failed')
+
+    def test_awaiting_host_failed_promise_cannot_become_successful_undefined(self):
+        error = RuntimeError('first host fault')
+        def crash(): raise error
+        self.vm.register_function('Crash', crash)
+        with self.assertRaises(RuntimeError):
+            self.run_code('Async Function First() Await 0; Crash(); EndFunction P=First();')
+        with self.assertRaises(RuntimeError) as caught:
+            self.run_code('Async Function Second(Val Input) Return Await Input; EndFunction Q=Second(P);')
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.vm.variables['q'].state, 'failed')
+        self.assertFalse(self.vm.pending_promises)
+        self.assertFalse(self.vm._scheduler._tasks)
+
+    def test_await_preserves_raw_host_failed_value_errors_without_leaking_delivery_state(self):
+        for kind in (ValueError, TypeError, ArithmeticError, IndexError, RecursionError):
+            with self.subTest(kind=kind):
+                error = kind('host-originated failure')
+                def source():
+                    yield AwaitRequest(None)
+                    raise error
+                promise = self.vm._scheduler.start(source())
+                with self.assertRaises(kind): self.vm._scheduler.run_until_idle()
+                self.vm.variables['input'] = promise
+                with self.assertRaises(kind) as caught:
+                    self.run_code('''Async Function Work(Val P)
+                        Try Return Await P; Except Return 7; EndTry;
+                    EndFunction Q=Work(Input);''')
+                self.assertIs(caught.exception, error)
+                self.assertEqual(self.vm.variables['q'].state, 'failed')
+                self.assertIs(self.vm.variables['q'].result, error)
+                self.assertFalse(self.vm.pending_promises)
+                self.assertIsNone(self.vm._scheduler.active_context.host_failure)
+                # The same object raised by an ordinary later builtin still
+                # receives normal BSL conversion, not a sticky host exemption.
+                def crash_again(): raise error
+                self.vm.register_function('CrashAgain', crash_again)
+                self.vm.execute('Try CrashAgain(); Except Message("ordinary BSL error"); EndTry;')
+                self.assertEqual(self.output[-1], 'ordinary BSL error')
 
     def test_eager_call_and_yield_even_settled(self):
         self.run_code('''

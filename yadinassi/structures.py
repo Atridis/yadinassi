@@ -162,11 +162,20 @@ class BSLFixedStructure(_StructureBase, BSLFixedCollection):
 
 def fill_property_values(target: object, source: object,
                          properties: object = None, exclude: object = None) -> None:
-    """Bounded structure copy, including native-probed ordered selection lists."""
+    """Native-probed structure path, with separate bounded object/row adapters."""
+    if not ((type(target) is BSLStructure or type(target) is BSLFixedStructure)
+            and (type(source) is BSLStructure or type(source) is BSLFixedStructure)):
+        # Keep function identity and runtime omission dispatch unchanged. All
+        # historical structure-only quirks remain in the code below.
+        from .property_transfer import fill_property_values as transfer, _is_extended_endpoint
+        if _is_extended_endpoint(target) or _is_extended_endpoint(source):
+            return transfer(target, source, properties, exclude)
+        # With no newly admitted endpoint, retain the historical target-first
+        # validation and its exact diagnostics, including invalid scalar calls.
     # Exact built-in types keep extension hooks out of this bounded helper.
-    if type(target) not in (BSLStructure, BSLFixedStructure):
+    if not (type(target) is BSLStructure or type(target) is BSLFixedStructure):
         raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть структурой")
-    if type(source) not in (BSLStructure, BSLFixedStructure):
+    if not (type(source) is BSLStructure or type(source) is BSLFixedStructure):
         raise TypeError("ЗаполнитьЗначенияСвойств: источник должен быть структурой")
     for value in (properties, exclude):
         if value is not None and type(value) is not str:

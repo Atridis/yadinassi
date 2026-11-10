@@ -143,8 +143,7 @@ class ConfigurationApplication:
             child._scheduler = root._scheduler
             child._diagnostic_owner = root._diagnostic_owner
             child.user_messages = root.user_messages
-            child.functions = root.functions.copy()
-            child.types = root.types.copy()
+            child._inherit_host_bindings(root)
             child._handled_errors = root._handled_errors
             child._error_info_boundaries = root._error_info_boundaries
             child._execute_depth = root._execute_depth

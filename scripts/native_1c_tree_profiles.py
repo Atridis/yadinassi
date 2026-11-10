@@ -93,6 +93,9 @@ FORMAT_DATE_NAMES = Profile('format-date-names-v1', 'native-1c-format-date-names
 FORMAT_DATE_TOKENS = Profile('format-date-tokens-v1', 'native-1c-format-date-tokens-v1', 'native-1c-format-date-tokens-stage-v1',
     'format_date_tokens', 'f9483d0a8b7f63907320d0599b9cf5022247f3fef06e0efd41c59234a0ec163e',
     58, 'native_1c_format_date_tokens_contract', '\nСообщить("FT-C1: [" + FTEncode("") + "]");\n', 5, 'format-date-tokens')
+PROPERTY_TRANSFER = Profile('property-transfer-v1', 'native-1c-property-transfer-v1', 'native-1c-property-transfer-stage-v1',
+    'property_transfer', '25abcace2821e4d03da731e4cf96a97a33348f21a58ee291399232c51ad5e7c8',
+    50, 'native_1c_property_transfer_contract', '\nСообщить("PV-C1: [wire-v1]");\n', 3, 'property-transfer')
 
 JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-json-family-stage-v1',
     'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',
@@ -183,6 +186,8 @@ def select(name='tree-v1'):
         return FORMAT_DATE_NAMES
     if name == FORMAT_DATE_TOKENS.name:
         return FORMAT_DATE_TOKENS
+    if name == PROPERTY_TRANSFER.name:
+        return PROPERTY_TRANSFER
     if name == FORMAT_DATES.name:
         return FORMAT_DATES
     if name == VALUE_STORAGE.name:
