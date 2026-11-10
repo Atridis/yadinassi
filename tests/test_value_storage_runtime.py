@@ -133,9 +133,9 @@ class ValueStorageRuntimeTests(unittest.TestCase):
         self.assertEqual(provenance['comparison']['acceptance_status'], 'rejected')
         lines = raw.decode('ascii').splitlines()
         self.assertEqual(len(lines), 28)
-        # Explicit unsupported local policies, never edits to the raw capture.
+        # Replay the complete unchanged capture, including Deflation(0).
         self.assertEqual(lines[17], 'VS-17: [ok|ABCA]')  # One untyped table cell.
-        lines[18] = 'VS-18: [setup-error]'      # DataCompression deferred.
+        self.assertEqual(lines[18], 'VS-18: [ok|A]')
         output = []
         vm = Interpreter(output.append)
         vm.execute(source.decode('utf-8'))

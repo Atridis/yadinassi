@@ -40,6 +40,24 @@ class CatalogEditorProtocolTests(unittest.TestCase):
             self.assertIn('error', self.request(method, **params))
         self.assertEqual(self.session.revision, 0)
 
+    def test_postcommit_list_refresh_error_has_no_success_ack_and_recovers(self):
+        self.open_new()
+        self.event('change', control='InputData0', value=encode_value('20'))
+        with mock.patch.object(self.app, '_load', side_effect=OSError('/private/read-failure')):
+            failed = self.event('command', control='SaveButton')
+        self.assertNotIn('result', failed)
+        self.assertEqual(failed['error']['data']['reason'], 'refresh_required')
+        state = failed['error']['data']['snapshot']['state']
+        self.assertIsNone(state['list'])
+        self.assertEqual(state['editor']['saveState'], 'committed')
+        self.assertTrue(state['editor']['editingLocked'])
+        self.assertNotIn('/private/', json.dumps(failed))
+        from yadinassi.sqlite_catalog import _View
+        with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not replay write')):
+            recovered = self.event('command', control='SaveButton')['result']
+        self.assertEqual(recovered['state']['list']['total'], 2)
+        self.assertEqual(recovered['state']['editor']['saveState'], 'saved')
+
     def test_complete_wire_create_save_and_authoritative_error_snapshot(self):
         self.open_new()
         self.event('change', control='InputData0', value=encode_value('10'))

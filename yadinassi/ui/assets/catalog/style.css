@@ -77,9 +77,6 @@ th:first-child { width: 24%; }
 th:last-child { width: 90px; }
 td:last-child { text-align: right; }
 td button { padding: 7px 9px; }
-.list-check-table th:last-child { width: 180px; }
-.list-check-table td:last-child button { max-width: 100%; white-space: normal; }
-.list-check-table td:last-child button + button { margin-top: 4px; }
 .code { font-variant-numeric: tabular-nums; color: var(--muted); }
 .current-record { background: var(--selected); }
 .current-record .code { color: var(--accent); }
@@ -140,7 +137,6 @@ td button { padding: 7px 9px; }
   .fields { grid-template-columns: minmax(0, 1fr); }
   .editor .section-head { flex-direction: column; }
   th, td { padding: 11px 10px; }
-  .list-check-table th:last-child { width: 112px; }
   .pagination { padding: 12px; gap: 8px; }
   .references > div { flex-wrap: wrap; }
   .theme-control > span { display: none; }
@@ -149,3 +145,18 @@ td button { padding: 7px 9px; }
 }
 
 .deletion-mark { display: block; width: fit-content; max-width: 100%; margin-top: 6px; white-space: normal; background: var(--dirty); color: var(--dirty-text); }
+
+/* Compact list rows; commands act on an explicit UUID-backed selection above. */
+.list-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 18px 12px; }
+.selection-count { color: var(--muted); font-size: 11px; margin-left: auto; }
+.record-list th.selection-column, .record-list td.selection-column { width: 34px; padding: 6px 8px; text-align: center; }
+.record-list .selection-column input { width: 15px; height: 15px; margin: 0; padding: 0; vertical-align: middle; }
+.record-list th:nth-child(2) { width: 24%; }
+.record-list th:last-child { width: auto; }
+.record-list td { padding-top: 7px; padding-bottom: 7px; }
+.record-list td:last-child { text-align: left; }
+.record-list tbody tr { cursor: pointer; }
+.record-list tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.selected-record { background: var(--selected); }
+.selected-record .code { color: var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
