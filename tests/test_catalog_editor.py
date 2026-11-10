@@ -316,3 +316,78 @@ class CatalogEditorTests(unittest.TestCase):
         with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not duplicate')): self.save()
         self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
         self.app.event('closeCard'); self.assertEqual(len(self.app.view.cards), 2)
+
+
+class CatalogListRefreshTests(unittest.TestCase):
+    setUp = CatalogEditorTests.setUp
+    select = CatalogEditorTests.select
+    open_existing = CatalogEditorTests.open_existing
+    change = CatalogEditorTests.change
+    save = CatalogEditorTests.save
+    row = CatalogEditorTests.row
+
+    def test_create_updates_list_behind_open_editor(self):
+        self.select('category'); self.app.event('create')
+        editor = self.app.editor
+        self.change('Code', '20'); self.change('Description', 'Created without Back')
+        self.save()
+        state = self.app.snapshot()['state']
+        self.assertIs(self.app.editor, editor)
+        self.assertEqual(state['kind'], 'editor')
+        self.assertEqual(state['list']['total'], 2)
+        self.assertIn(state['editor']['reference'], [row['reference'] for row in state['list']['rows']])
+        self.assertIn('Created without Back', [row['description']['value'] for row in state['list']['rows']])
+
+    def test_rename_updates_authoritative_list_without_close(self):
+        self.open_existing(); self.change('Description', 'New persisted name'); self.save()
+        state = self.app.snapshot()['state']
+        row = next(row for row in state['list']['rows'] if row['reference'] == state['editor']['reference'])
+        self.assertEqual(row['description']['value'], 'New persisted name')
+        self.assertEqual(state['editor']['saveState'], 'saved')
+
+    def test_deletion_mark_updates_authoritative_list_without_close(self):
+        self.open_existing(); self.change('DeletionMark', True); self.save()
+        state = self.app.snapshot()['state']
+        row = next(row for row in state['list']['rows'] if row['reference'] == state['editor']['reference'])
+        self.assertEqual(row['deletionMark'], {'type':'Boolean','value':True})
+
+    def test_rejected_save_does_not_refresh_or_invent_row(self):
+        self.select('category'); before = self.app.view
+        self.app.event('create'); self.change('Code','10')
+        with mock.patch.object(self.app, '_load', side_effect=AssertionError('rejected save must not refresh')):
+            self.save()
+        self.assertIs(self.app.view, before)
+        self.assertEqual(self.app.snapshot()['state']['list']['total'], 1)
+        self.assertEqual(self.app.editor.error, 'duplicate_code')
+
+    def test_postcommit_list_failure_locks_and_retry_never_rewrites(self):
+        self.select('category'); self.app.event('create'); self.change('Code','20')
+        with mock.patch.object(self.app, '_load', side_effect=BackendError('storage_error')):
+            self.save()
+        state = self.app.snapshot()['state']
+        self.assertIsNone(state['list'])
+        self.assertEqual(state['editor']['saveState'], 'committed')
+        self.assertTrue(state['editor']['editingLocked'])
+        self.assertEqual(state['editor']['error'], 'refresh_required')
+        with mock.patch.object(_View, 'commit', side_effect=AssertionError('must not repeat Write')):
+            self.save()
+        state = self.app.snapshot()['state']
+        self.assertEqual(state['editor']['saveState'], 'saved')
+        self.assertFalse(state['editor']['editingLocked'])
+        self.assertEqual(state['list']['total'], 2)
+
+    def test_created_record_is_visible_on_refreshed_page(self):
+        self.select('category'); self.app.event('page',offset=0,limit=1)
+        self.app.event('create'); self.change('Code','20'); self.save()
+        state = self.app.snapshot()['state']
+        self.assertEqual(state['list']['limit'], 1)
+        self.assertEqual(state['list']['rows'][0]['reference'], state['editor']['reference'])
+
+    def test_uncertain_save_does_not_publish_fabricated_list(self):
+        self.select('category'); before = self.app.view
+        self.app.event('create'); self.change('Code','20')
+        with mock.patch.object(_View, 'commit', side_effect=BackendError('uncertain_commit')):
+            self.save()
+        self.assertIs(self.app.view, before)
+        self.assertEqual(self.app.editor.save_state, 'uncertain')
+        self.assertEqual(self.app.snapshot()['state']['list']['total'], 1)

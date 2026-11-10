@@ -20,18 +20,19 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_closed_push_routes_select_exact_harnesses(self):
         workflow = self.workflow()
         trigger = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed]')
         catalog = self.step('Acquire eight original-demo kind flows with Chromium sandbox enabled')
         form = self.step('Acquire five form flows with Chromium sandbox enabled')
+        configuration = self.step('Acquire three configuration form flows with Chromium sandbox enabled')
         reference = self.step('Acquire three reference order flows with Chromium sandbox enabled')
-        for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form'),
-                                    (reference, 'reference', 'reference')):
+        for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form'), (configuration, 'configuration', 'configuration'), (reference, 'reference', 'reference')):
             self.assertIn(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             self.assertIn(f'run: node tests/browser_ui/{script}_browser_qa.mjs', step)
             self.assertIn('QA_SOURCE_SHA: ${{ github.sha }}', step)
             self.assertIn('timeout-minutes: 5', step)
         self.assertEqual(workflow.count('run: node tests/browser_ui/demo_kind_browser_qa.mjs'), 1)
         self.assertEqual(workflow.count('run: node tests/browser_ui/form_browser_qa.mjs'), 1)
+        self.assertEqual(workflow.count('run: node tests/browser_ui/configuration_browser_qa.mjs'), 1)
         self.assertEqual(workflow.count('run: node tests/browser_ui/reference_browser_qa.mjs'), 1)
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'push:\n    branches: [main]'):
             self.assertNotIn(forbidden, workflow)
@@ -40,7 +41,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         workflow = self.workflow()
         self.assertEqual(workflow.split('\npermissions:\n', 1)[1].split('\nconcurrency:', 1)[0].strip(), 'contents: read')
         self.assertIn("if: github.repository == 'Atridis/yadinassi'", workflow)
-        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || 'reference-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
+        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || 'configuration-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
         self.assertIn('runs-on: ubuntu-22.04\n    timeout-minutes: 10', workflow)
         self.assertIn('ref: ${{ github.sha }}\n          persist-credentials: false', workflow)
         self.assertIn('python -m pip install -e . wcwidth==0.8.2', workflow)
@@ -51,6 +52,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+            'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'])
         for forbidden in ('sudo ', 'sysctl ', 'container:', 'secrets.', 'write', '--with-deps', 'QA_CHROMIUM'):
             self.assertNotIn(forbidden, workflow)
@@ -58,9 +60,13 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_route_specific_uploads_have_exact_fixed_files(self):
         catalog = self.step('Publish only catalog screenshots and redacted source-bound report')
         form = self.step('Publish only form screenshots and redacted source-bound report')
+        configuration = self.step('Publish only configuration screenshots and redacted source-bound report')
+        reference = self.step('Publish only reference screenshots and redacted source-bound report')
         for step, branch, prefix, files in (
                 (catalog, 'ui', 'yadinassi-browser-artifacts', ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png']),
-                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png', 'orders-workspace-narrow.png'])):
+                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png', 'orders-workspace-narrow.png']),
+                (configuration, 'configuration', 'yadinassi-configuration-browser-artifacts', ['result.json', 'manifest.json', 'configuration-parameters.png', 'configuration-independent.png', 'configuration-draft-narrow.png']),
+                (reference, 'reference', 'yadinassi-reference-browser-artifacts', ['result.json', 'manifest.json', 'reference-created.png', 'reference-choice-narrow.png', 'reference-reopened.png'])):
             self.assertIn(f"if: always() && github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             paths = step.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in paths.splitlines()],
@@ -68,6 +74,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
             self.assertIn('if-no-files-found: error\n          retention-days: 14', step)
         self.assertIn('name: catalog-browser-${{ github.sha }}-${{ github.run_attempt }}', catalog)
         self.assertIn('name: form-browser-${{ github.sha }}-${{ github.run_attempt }}', form)
+        self.assertIn('name: configuration-browser-${{ github.sha }}-${{ github.run_attempt }}', configuration)
 
     def test_one_nonroot_sandboxed_browser_without_executable_override(self):
         source = self.source()

@@ -348,3 +348,9 @@ and optimistic-conflict feedback. The separate [reference Orders workspace](docs
 adds an owned customer/product choice, then saves and reopens exact typed catalog
 references. It uses a new opt-in configuration, not a migration or generic
 reference wire codec. Plain BSL execution is unchanged.
+
+### Конфигурационные управляемые формы
+
+Явный opt-in launcher выполняет объявленные XML-формы с единым Module.bsl,
+разделением клиента/сервера, OpenForm и несколькими удерживаемыми вкладками.
+[Границы профиля и два разных примера](docs/configuration-forms.md).

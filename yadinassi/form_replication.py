@@ -61,8 +61,8 @@ def _booleans(values):
 
 
 def _source(source, side):
-    text(source, MAX_SOURCE)
-    program = parse(source, '<replicated-form>')
+    from .form_program import admitted_program
+    program = admitted_program(source, side=side, label='<replicated-form>')
     if any(not isinstance(node, (ast.Routine, ast.Var)) or
            node.execution_context != side or
            isinstance(node, ast.Routine) and (node.is_async or node.is_dual)
@@ -492,13 +492,13 @@ class ReplicatedFormSession(FormSession):
     Form event revision, server revision, client sequence and request ID are
     separate counters. Unknown outcomes lock the channel; nothing is replayed.
     """
-    def __init__(self, source, exchange, *, handlers, bindings=(), output=None):
+    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None):
         _source(source, 'client')
         if not callable(exchange):
             raise TypeError('byte exchange required')
         self._handlers, _ = _bindings(handlers, handlers=True)
         _bindings(bindings)
-        super().__init__(source, output=output)
+        super().__init__(source, output=output, parameters=parameters)
         for binding in handlers:
             routine = self._bind(binding.name, 'client', len(binding.parameters))
             if tuple(parameter.name.casefold() for parameter in routine.parameters) != tuple(value.casefold() for value in binding.parameters):

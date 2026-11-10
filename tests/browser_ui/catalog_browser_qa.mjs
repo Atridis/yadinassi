@@ -124,7 +124,7 @@ async function save(){
     button=>button.textContent==='Save changes'&&!button.disabled));
 }
 const row=text=>page.getByRole('row').filter({hasText:text});
-const open=async text=>row(text).getByRole('button',{name:'Open →',exact:true}).click();
+const open=async text=>{await row(text).click();await page.getByRole('button',{name:'Open selected',exact:true}).click();};
 async function step(index,callback){
   phase=SCENARIOS[index];const started=Date.now();
   await bounded(callback(),45000,'scenario_timeout');
@@ -221,7 +221,7 @@ try{
     await input('Text').fill('Discard me');
     assert.equal(await page.getByRole('status').count(),0,'stale_save_status_with_dirty_draft');
     await desktopWorkspace();await lockedNavigation();
-    await page.getByText('List preview · refreshed when you return',{exact:true}).waitFor();
+    await page.getByText('Last confirmed records · updated after Save',{exact:true}).waitFor();
     await screenshot('editor.png'); // Populated dark split-view and a retained dirty draft.
     for(const [preference,resolved] of [['Light','light'],['Dark','dark'],['System','light']]){
       await themePreference(preference,resolved);
@@ -252,7 +252,7 @@ try{
     assert.equal(await input('Category').locator('option:checked').textContent(),'10 · Owned category');
     assert.equal(await input('Category').evaluate(node=>node.tagName),'SELECT');
     await themePreference('Dark','dark');await desktopWorkspace();
-    await page.getByText('Return to records to refresh the list.',{exact:true}).waitFor();
+    await page.getByText('Last confirmed records · updated after Save',{exact:true}).waitFor();
     await page.setViewportSize({width:960,height:900});
     const mediumNavigation=await page.locator('aside').boundingBox();
     const mediumEditor=await page.locator('.editor').boundingBox();
