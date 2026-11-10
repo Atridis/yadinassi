@@ -186,6 +186,7 @@ async function commitInput(name,text){
 }
 const wireEvents=[];
 let wireFailure=false;
+let routeFailure=null;
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
 function checkRequest(request){
   const raw=request.postData();assert.ok(raw&&Buffer.byteLength(raw)<=65536,'wire_budget');
@@ -320,33 +321,37 @@ async function main(){
   const replies=new WeakMap(),headers=new WeakMap();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
   await context.route('**/*',async route=>{
     const request=route.request(),target=request.url();
+    let routeStage='request_admission';
     try{
     if(aborted||!applicationAllowedRequest(target))return route.abort();
     const pathname=new URL(target).pathname;
     if(pathname==='/attachment'){
+      routeStage='attachment_validation';
       assert.ok(++attachmentRequests<=96,'attachment_request_budget');
       const body=request.postDataJSON();
       if(body.action==='attach'){exactKeys(body,'action instance');assert.match(body.instance,/^[0-9a-f]{32}$/);}
       else{exactKeys(body,'action generation pending');assert.ok(['status','heartbeat','detach','takeover'].includes(body.action));assert.ok(Number.isSafeInteger(body.generation)&&body.generation>=0);assert.equal(typeof body.pending,'boolean');}
       // Credentials are retained only for in-memory stale-writer proof, never artifacts.
+      routeStage='attachment_exchange';
       const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0}),bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');const value=JSON.parse(bytes.toString('utf8'));
       if(value.credential)tokens.push(value.credential);if(value.resume)tokens.push(value.resume);
       return route.fulfill({response});
     }
     if(pathname==='/rpc'){
       if(rpc>=100){abort();return route.abort().catch(()=>{});}rpc++;
-      let packet;
-      try{packet=checkRequest(request);}catch{wireFailure=true;abort();return route.abort().catch(()=>{});}
+      let packet;routeStage='rpc_validation';
+      try{packet=checkRequest(request);}catch{routeFailure??=routeStage;wireFailure=true;abort();return route.abort().catch(()=>{});}
       const owner=request.frame().page();headers.set(owner,request.headers());
       const command=packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event==='command';
       if(command)commandRequests++;
+      routeStage=packet.method==='application.close'?'application_close_exchange':'rpc_exchange';
       const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0}),bytes=await response.body();assert.ok(bytes.length<=131072,'rpc_reply_budget');const reply=JSON.parse(bytes.toString('utf8'));
       if(response.status()===200)replies.set(owner,reply);
       if(dropReply&&command){dropReply=false;dropped++;return route.abort('failed');}
       return route.fulfill({response});
     }
     return await route.continue();
-    }catch{if(host&&host.exitCode===null&&!aborted){wireFailure=true;abort();}return route.abort().catch(()=>{});}
+    }catch{if(host&&host.exitCode===null&&!aborted){routeFailure??=routeStage;wireFailure=true;abort();}return route.abort().catch(()=>{});}
   });
   const newPage=async()=>{const p=await context.newPage();p.on('dialog',dialog=>dialog.accept());return p;};
   const ownership=(p,role)=>p.waitForFunction(expected=>document.querySelector('.browser-ownership')?.dataset.role===expected,role,{timeout:remaining(10000)});
@@ -367,7 +372,10 @@ async function main(){
     assert.equal(state(page).sessions.length,2,'commonmodule_openform');
     await screenshot(screenshots[0]);
     await action('Close form').click();await countPanels(1);await action('Close form').click();await countPanels(0);
-    await button('Close application').click();await stopHost();await page.close();
+    const closedReply=page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.request().postDataJSON()?.method==='application.close'&&response.status()===200,{timeout:remaining(10000)});
+    await button('Close application').click();await closedReply;await idle();
+    assert.equal(state(page).lifecycle,'closed','explicit_application_close_completed');
+    await stopHost();await page.close();
   });
   await scenario(scenarioNames[1],async()=>{
     await openShipped('editable');const original=page;
@@ -446,7 +454,8 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
-  report.failure={phase,reason:aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
+  if(routeFailure)report.routeFailure=routeFailure;
+  report.failure={phase,reason:routeFailure?'route_failed':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
 finally{

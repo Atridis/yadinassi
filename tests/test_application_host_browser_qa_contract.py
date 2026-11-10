@@ -45,6 +45,11 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         self.assertEqual(self.source.count("state(page).messages,['Calculated in the owned server process','8']"),2)
         self.assertIn("if(await page.locator('.browser-ownership').getAttribute('data-role')==='observer')",self.source)
 
+        self.assertIn("await closedReply;await idle()",self.source)
+        self.assertIn("'explicit_application_close_completed'",self.source)
+        self.assertIn("report.routeFailure=routeFailure",self.source)
+        self.assertIn("'application_close_exchange':'rpc_exchange'",self.source)
+
     def test_closed_attachment_and_business_wire(self):
         for text in ["exactKeys(body,'action instance')", "exactKeys(body,'action generation pending')",
                      "parsed.pathname==='/attachment'", '!parsed.search', 'launchURL(match[0].slice(0,-13))',
