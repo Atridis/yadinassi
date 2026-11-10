@@ -191,7 +191,6 @@ class RelationalParserTests(unittest.TestCase):
             'SELECT P.Code FROM Catalog.Products AS P RIGHT JOIN Catalog.Products AS Q ON P.Ref=Q.Ref',
             'SELECT P.Code FROM Catalog.Products AS P JOIN Catalog.Products AS P ON P.Ref=P.Ref',
             'SELECT Code+Amount FROM Catalog.Products','SELECT Code FROM Catalog.Products; DELETE FROM catalog_records',
-            'SELECT Code FROM Catalog.Products UNION SELECT Code FROM Catalog.Products',
         ):
             with self.subTest(text=text),self.assertRaises(ValueError): syntax.parse_query(text)
 

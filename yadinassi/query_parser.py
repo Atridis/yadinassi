@@ -1,9 +1,9 @@
-"""Closed catalog SELECT grammar; this AST is never database SQL.
+"""Closed application SELECT grammar; this AST is never database SQL.
 
 Field projections, bounded joins, grouping, aggregates and ordering are admitted. Bounds are implementation limits, not native platform limits.
-!todo general functions, UNION and subqueries.
+!todo general functions and subqueries.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 import re
 
@@ -41,6 +41,8 @@ class Source:
     alias: str
     section: str | None = None
     temporary: bool = False
+    external: bool = False
+    family: str = 'catalog'
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,12 +103,23 @@ class Select:
     distinct: bool = False
     temporary: bool = False
     into: str | None = None
+    external: bool = False
+    family: str = 'catalog'
+
+
+@dataclass(frozen=True, slots=True)
+class Union:
+    arms: tuple[Select, ...]
+    all: tuple[bool, ...]
+    order: tuple[Order, ...]
+    into: str | None = None
 
 
 _AGGREGATES = {'count':'count', 'количество':'count', 'sum':'sum', 'сумма':'sum',
                'avg':'avg', 'среднее':'avg', 'min':'min', 'минимум':'min',
                'max':'max', 'максимум':'max'}
 _KEYWORDS = {
+    'union':'union', 'объединить':'union', 'all':'all', 'все':'all',
     'into':'into', 'поместить':'into', 'destroy':'destroy', 'уничтожить':'destroy',
     'select':'select', 'выбрать':'select', 'top':'top', 'первые':'top',
     'from':'from', 'из':'from', 'as':'as', 'как':'as',
@@ -263,17 +276,21 @@ class _Parser:
             self.expression_depth -= 1
 
     def source(self):
+        if self.accept('&'):
+            name = self.take('name')
+            alias = self.take('name') if self.accept('as') else name
+            return Source(name, alias, external=True)
         family = self.take('name')
         if self.peek() != '.':
             alias = self.take('name') if self.accept('as') else family
             return Source(family, alias, temporary=True)
-        if family.casefold() not in ('catalog', 'справочник'):
-            raise ValueError('Only catalog or temporary sources are supported')
+        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ'):
+            raise ValueError('Unsupported query source family')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section)
+        return Source(catalog, alias, section, family=('document' if family.casefold() in ('document', 'документ') else 'catalog'))
 
     def scalar(self):
         if self.accept('&'):
@@ -403,14 +420,38 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family)
+
+
+    def statement(self):
+        first = self.parse(complete=False)
+        if self.peek() != 'union': return first
+        arms, modes = [first], []
+        while self.accept('union'):
+            if arms[-1].order:
+                raise ValueError('UNION admits only one final output ORDER BY')
+            modes.append(self.accept('all'))
+            arm = self.parse(complete=False)
+            if arm.into is not None:
+                raise ValueError('UNION INTO belongs only to the first SELECT')
+            arms.append(arm)
+            if len(arms) > MAX_UNION_ARMS:
+                raise ValueError('Query UNION arm limit exceeded')
+        order = arms[-1].order
+        arms[-1] = replace(arms[-1], order=())
+        arms[0] = replace(arms[0], into=None)
+        return Union(tuple(arms), tuple(modes), order, first.into)
 
 
 def parse_query(text):
-    return _Parser(text).parse()
+    parser = _Parser(text)
+    result = parser.statement()
+    parser.take('end')
+    return result
 
 
 MAX_STATEMENTS = 32
+MAX_UNION_ARMS = 16
 
 
 def parse_package(text):
@@ -421,7 +462,7 @@ def parse_package(text):
         if parser.accept('destroy'):
             statement = Destroy(parser.take('name'))
         else:
-            statement = parser.parse(complete=False)
+            statement = parser.statement()
         statements.append(statement)
         if len(statements) > MAX_STATEMENTS:
             raise ValueError('Query package statement limit exceeded')

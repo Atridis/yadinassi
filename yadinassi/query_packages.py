@@ -66,9 +66,10 @@ class BSLTempTablesManager(BSLObject):
             self._lock.release()
 
 
-def execute_package(statements, catalogs, parameters, manager=None):
+def execute_package(statements, catalogs, parameters, manager=None, documents=None):
     from .queries import BSLQueryResult, _Column
     from .relational_queries import _Plan
+    from .query_sources import _UnionPlan, snapshot_sources
     if manager is None: manager = BSLTempTablesManager()
     if type(manager) is not BSLTempTablesManager:
         raise TypeError('Query package requires TempTablesManager')
@@ -76,11 +77,21 @@ def execute_package(statements, catalogs, parameters, manager=None):
         raise ValueError('Temporary table manager is busy')
     view = None
     try:
+        from .document_queries import needs_documents
+        composite = needs_documents(statements)
+        if composite:
+            if documents is None:
+                raise ValueError('Document query sources require document context')
+            # Metadata initialization opens its own view. Finish it before the
+            # single package transaction, including catalog-first packages.
+            documents._metadata._snapshot()
+            catalogs._metadata._snapshot()
         if manager._closed:
             raise ValueError('Temporary table manager is closed')
         owner = catalogs._metadata
         if manager._owner is not None and manager._owner is not owner:
             raise ValueError('Temporary table manager belongs to another metadata snapshot')
+        external = snapshot_sources(statements, parameters)
         tables = dict(manager._tables)
         result = BSLArray()
         budget = [0, 0]
@@ -94,10 +105,11 @@ def execute_package(statements, catalogs, parameters, manager=None):
             else:
                 if statement.into is not None and statement.into.casefold() in tables:
                     raise ValueError('Temporary table already exists')
-                plan = _Plan(statement, catalogs, parameters, tables)
+                plan_type = _UnionPlan if type(statement) is syntax.Union else _Plan
+                plan = plan_type(statement, catalogs, parameters, tables, external, documents=documents)
                 source_manager = next((m for m in plan.managers if m is not None), None)
                 if view is None and source_manager is not None:
-                    view = source_manager._view()
+                    view = (documents._context.backend.begin_query_read() if composite else source_manager._view())
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)

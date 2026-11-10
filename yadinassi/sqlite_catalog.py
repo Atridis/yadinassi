@@ -54,6 +54,15 @@ def _interruption(error):
     return not isinstance(error, Exception) or isinstance(error, MemoryError)
 
 
+def _close_document_scan(owner):
+    stream = getattr(owner, '_document_scan_stream', None)
+    owner._document_scan_stream = None
+    owner._document_scan_lookahead = None
+    if stream is not None:
+        owner._scan_cursor = None
+        stream.close()
+
+
 def _close_owned_connection(owner):
     if owner._connection is not None:
         # A failed close makes the owner unusable but does not prove that
@@ -61,9 +70,14 @@ def _close_owned_connection(owner):
         owner._closed=True; owner._scan_cursor=None
         rollback_error=None
         try:
-            if owner._connection.in_transaction: owner._connection.execute('ROLLBACK')
+            _close_document_scan(owner)
         except BaseException as error:
             rollback_error=error
+        try:
+            if owner._connection.in_transaction: owner._connection.execute('ROLLBACK')
+        except BaseException as error:
+            if rollback_error is None or not _interruption(rollback_error):
+                rollback_error=error
         try:
             owner._connection.close()
         except BaseException as close_error:
@@ -846,6 +860,12 @@ class SQLiteCatalogBackend:
         return self._begin(operation_id)
 
     @_boundary
+    def begin_query_read(self):
+        # Catalog-first packages must pin the same transaction later used by
+        # their document sources. Older layouts expose an empty document set.
+        return self._document_view(None)
+
+    @_boundary
     def begin_document_read(self):
         if self.storage_version != 7: raise BackendError('unsupported')
         return self._document_view(None)
@@ -1088,6 +1108,8 @@ class _View:
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
+        self._document_scan_stream = None
+        self._document_scan_lookahead = None
         self._outcomes = []
         self._section_write_bytes = 0
         self._section_write_rows = 0
@@ -1541,6 +1563,7 @@ class _View:
 
     def _scan_catalog(self, catalog_id, request, fields):
         self._require()
+        _close_document_scan(self)
         if self._operation_id is not None: raise BackendError('unsupported')
         schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000 or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
@@ -1704,6 +1727,7 @@ class _View:
     def scan_catalog_section(self, catalog_id, section_id, request):
         """Read-only typed section scan in the same pinned read-view contract."""
         self._require()
+        _close_document_scan(self)
         if self._operation_id is not None or self._backend.storage_version not in (3, 4, 6, 7):
             raise BackendError('unsupported')
         schema = self.catalog_schema(catalog_id)
@@ -1999,5 +2023,5 @@ class _View:
         _close_owned_connection(self)
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('documents','document_schema','read_document','select_documents','find_document_number','create','update','commit','resolve'):
+for _document_method in ('documents','document_schema','read_document','select_documents','scan_documents','find_document_number','create','update','commit','resolve'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))

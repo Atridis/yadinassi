@@ -5,12 +5,13 @@ The closed tagged scalar codec is shared, never exposed as a native codec.
 """
 from hashlib import sha256
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .catalog_backend import BackendError, CatalogSchema, FieldSchema, CatalogKey, TabularRow, TabularSectionRows
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string
 from .document_backend import (DocumentSchema, DocumentKey, DocumentRevision, DocumentCard,
-                               DocumentDraft, DocumentWriteOutcome, DocumentSelection)
+                               DocumentDraft, DocumentWriteOutcome, DocumentSelection,
+                               DocumentScanRequest, DocumentPage)
 
 DOCUMENT_DDL = (
     'CREATE TABLE document_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
@@ -113,6 +114,11 @@ class DocumentView:
     def _connection(self): return self._view._connection
     def close(self): self._view.close()
     def rollback(self): self._view.rollback()
+    def catalog_schema(self, identity): return self._view.catalog_schema(identity)
+    def scan_catalog_values(self, identity, request, fields):
+        return self._view.scan_catalog_values(identity, request, fields)
+    def scan_catalog_section(self, identity, section_id, request):
+        return self._view.scan_catalog_section(identity, section_id, request)
     def documents(self): self._view._require(); return self._schemas
     def document_schema(self, identity):
         self._view._require(); _storage()._uuid(identity)
@@ -216,6 +222,66 @@ class DocumentView:
                 cards.append(card)
                 if len(cards) > request.limit: raise BackendError('unsupported')
         return tuple(cards)
+
+    def scan_documents(self, identity, request):
+        """Page complete cards without weakening the ordinary selection limit.
+
+        A shared cursor makes tokens single-use and invalidates them when a new
+        catalog or document scan begins. SQL and offsets never leave this port.
+        """
+        self._view._require()
+        if self._view._operation_id is not None: raise BackendError('unsupported')
+        schema = self.document_schema(identity)
+        if (type(request) is not DocumentScanRequest or type(request.page_size) is not int
+                or not 1 <= request.page_size <= 1000):
+            raise BackendError('invalid_input')
+        binding = ('document', identity, request.page_size)
+        if request.continuation is not None:
+            if type(request.continuation) is not str or len(request.continuation) != 32:
+                raise BackendError('invalid_input')
+            cursor = self._view._scan_cursor
+            if cursor is None or cursor[0] != request.continuation or cursor[1] != binding:
+                raise BackendError('invalid_input')
+            if self._view._document_scan_stream is None: raise BackendError('invalid_input')
+        else:
+            _storage()._close_document_scan(self._view)
+            self._view._scan_cursor = None
+            self._preflight(schema)
+            # Validate the complete bounded source before exposing a first page.
+            # Stream decoded cards here rather than retaining another full copy.
+            validation = self._connection.execute(
+                'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
+                'FROM document_record WHERE document_id=?', (str(identity),))
+            try:
+                for row in validation: self._card(schema, row)
+            finally:
+                validation.close()
+        try:
+            if request.continuation is None:
+                # Keep one SQLite stream, not an OFFSET sort per page. The
+                # connection owns its lifetime, including backend-level close.
+                self._view._document_scan_stream = self._connection.execute(
+                    'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
+                    'FROM document_record WHERE document_id=? ORDER BY date,number,record_id',
+                    (str(identity),))
+            stream = self._view._document_scan_stream
+            pending = self._view._document_scan_lookahead
+            rows = ([] if pending is None else [pending])
+            rows.extend(stream.fetchmany(request.page_size + 1 - len(rows)))
+            more = len(rows) > request.page_size
+            cards = tuple(self._card(schema, row) for row in rows[:request.page_size])
+            token = uuid4().hex if more else None
+            if more:
+                self._view._document_scan_lookahead = rows[-1]
+                self._view._scan_cursor = (token, binding)
+            else:
+                _storage()._close_document_scan(self._view)
+            return DocumentPage(cards, token)
+        except BaseException as error:
+            try: _storage()._close_document_scan(self._view)
+            except BaseException as cleanup:
+                if _storage()._interruption(cleanup) and not _storage()._interruption(error): raise
+            raise
 
     def find_document_number(self, identity, number):
         schema = self.document_schema(identity); validate_string(number,schema.number_length)

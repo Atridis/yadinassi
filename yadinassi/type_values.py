@@ -34,6 +34,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, BSLTe
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage
 from .value_storage import BSLValueStorage
+from .data_compression import BSLDeflation
 from .json_dates import BSLJSONSerializerSettings, BSLJSONDateFormat, BSLJSONDateWritingVariant
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONValueType, BSLJSONWriterSettings, BSLJSONLineBreak
 from .unique_identifiers import BSLUUID
@@ -172,6 +173,7 @@ _VALUE_TYPES = (
     (BSLJSONValueType, BSLType.JSON_VALUE_TYPE, "JSONValueType"),
     (BSLTextDocument, BSLType.TEXT_DOCUMENT, "TextDocument"),
     (BSLValueStorage, BSLType.VALUE_STORAGE, "ValueStorage"),
+    (BSLDeflation, BSLType.DEFLATION, "Deflation"),
     (BSLUUID, BSLType.UUID, "UUID"),
     (Promise, BSLType.PROMISE, "Promise"),
     (BSLCallbackDescription, BSLType.CALLBACK_DESCRIPTION, "CallbackDescription"),

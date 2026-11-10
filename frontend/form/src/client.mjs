@@ -1,7 +1,7 @@
 /** Bounded form-only renderer protocol. No runtime, BSL or storage dependency. */
 export const PROTOCOL = 'yadinassi-form-ui/1';
 export const LIMITS = Object.freeze({bytes: 131072, text: 8192, controls: 128, messages: 64,
-  counter: 2147483647, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
+  counter: 2147483647, discardCommands: 64, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
 export const ERROR_MESSAGES = Object.freeze({
   invalid_request: 'The host rejected this request. The displayed state is authoritative.',
   stale_revision: 'The form changed elsewhere. Review the latest state before another action.',
@@ -78,13 +78,22 @@ export function validateScalar(value) {
   throw new FormError('transport');
 }
 export function validateSnapshot(state) {
-  if (!keys(state, ['kind', 'revision', 'lifecycle', 'title', 'uncertain', 'items', 'messages']) ||
+  const shape = ['kind', 'revision', 'lifecycle', 'title', 'uncertain', 'items', 'messages'];
+  for (const optional of ['discardCommands', 'dirty']) {
+    if (record(state) && Object.hasOwn(state, optional)) shape.push(optional);
+  }
+  if (!keys(state, shape) ||
       !['form', 'closed'].includes(state.kind) || !integer(state.revision) ||
       !['open', 'cancelled', 'closed', 'failed'].includes(state.lifecycle) ||
       !validText(state.title) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.items) || state.items.length > LIMITS.controls ||
       !Array.isArray(state.messages) || state.messages.length > LIMITS.messages ||
       state.messages.some(message => !validText(message))) throw new FormError('transport');
+  if (Object.hasOwn(state, 'dirty') && typeof state.dirty !== 'boolean') throw new FormError('transport');
+  if (Object.hasOwn(state, 'discardCommands') && (!Array.isArray(state.discardCommands) ||
+      state.discardCommands.length > LIMITS.discardCommands ||
+      state.discardCommands.some(name => !validText(name) || !name.length) ||
+      new Set(state.discardCommands).size !== state.discardCommands.length)) throw new FormError('transport');
   const names = new Set(), tables = new Map(), controlIds = new Set(); let cells = 0;
   for (const item of state.items) {
     const table = item?.kind === 'table';
@@ -129,6 +138,8 @@ export function validateSnapshot(state) {
       }
     }
   }
+  if ((state.discardCommands || []).some(name => !state.items.some(item => item.name === name && item.kind === 'button')))
+    throw new FormError('transport');
   if (new TextEncoder().encode(JSON.stringify(state)).length > LIMITS.bytes) throw new FormError('transport');
   return state;
 }
