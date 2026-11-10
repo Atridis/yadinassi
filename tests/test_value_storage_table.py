@@ -1,4 +1,4 @@
-"""Local policy tests for draft table hooks; only case17 is native evidence."""
+"""Local table snapshot policy tests; only case17 is native evidence."""
 from decimal import Decimal
 import unittest
 from unittest import mock
@@ -137,19 +137,23 @@ class TableSnapshotDraftTests(unittest.TestCase):
         cyclic = make_table(); cyclic.rows[0].set(D(0), cyclic)
         with self.assertRaises(ValueError): MiniCodec().take(cyclic)
 
-    def test_indexed_table_is_rejected(self):
+    def test_indexed_table_definitions_restore_locally(self):
         table = make_table(); table.indexes.add('x')
-        with self.assertRaises(table_hook.TableSnapshotError): MiniCodec().take(table)
+        result = MiniCodec.restore(MiniCodec().take(table))
+        self.assertEqual(tuple(result.indexes.items[0]), ('x',))
+        self.assertIs(result.indexes.items[0].table, result)
         self.assertEqual(table.rows[0].get(D(0)), D(1))
 
-    def test_typed_and_nondefault_column_metadata_rejected(self):
+    def test_typed_and_nondefault_column_metadata_restore_locally(self):
         for change in ('type','title','width'):
             table = make_table(); column = table.columns.items[0]
             if change == 'type': column.value_type = BSLTypeDescription('Number')
             elif change == 'title': column.title = 'Title'
             else: column.width = D(3)
-            with self.subTest(change=change), self.assertRaises(table_hook.TableSnapshotError):
-                MiniCodec().take(table)
+            with self.subTest(change=change):
+                result = MiniCodec.restore(MiniCodec().take(table)).columns.items[0]
+                self.assertEqual(result.value_type, column.value_type)
+                self.assertEqual((result.title, result.width), (column.title, column.width))
 
     def test_noncanonical_zero_metadata_rejected(self):
         for width in (D('-0'), D('0.0'), D('NaN')):
