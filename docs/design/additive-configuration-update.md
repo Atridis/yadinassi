@@ -1,7 +1,10 @@
 # Additive configuration update: candidate design
 
-Status: canonical delta implementation only. Storage apply, recovery and CLI are
-not implemented by this checkpoint. No existing database is changed on open.
+Status: candidate host implementation. Canonical delta, explicit profile apply,
+receipt history, durable JSON plans and recovery are implemented; broad validation
+is pending. No CLI or implicit update is provided. No existing database changes
+on open. The initial physical transition is v11 to v12, retaining the base profile;
+further configuration updates from v12 are explicitly refused in this increment.
 
 ## Closed input
 
@@ -52,7 +55,7 @@ and writes use only the latest canonical schema and generation. Altering a retai
 request must remain a conflict. Historical schema selection must never be guessed
 from tuple length, revision token, catalog name or a successful hash collision.
 
-The exact storage API and admission table schema are still under review. Tests
+The storage API and admission table schema are under review. Tests
 must cover committed/uncertain old writes and mixed units across an update, changed
 requests, interrupted DDL/COMMIT, metadata/marker tampering, stale objects, unchanged
 non-catalog rows and byte-for-byte source export. No recovery support is claimed
