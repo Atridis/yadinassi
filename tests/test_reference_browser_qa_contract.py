@@ -66,7 +66,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
     def test_launch_checkpoints_identify_the_last_safe_stage_without_raw_data(self):
         source = self.source()
         stages = re.findall(r"report\.launch\.stage='([^']+)'", source)
-        self.assertEqual(stages, ['chromium_launch', 'children_after', 'process_identity',
+        self.assertEqual(stages, ['socket_path_budget', 'chromium_launch', 'children_after', 'process_identity',
             'executable_identity', 'browser_command', 'browser_profile', 'browser_ready',
             'cdp_session', 'cdp_process_identity', 'cdp_detach', 'browser_context',
             'sandbox_page', 'sandbox_status', 'sandbox_probe_close', 'verified'])
@@ -97,6 +97,35 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
                           'JSON.stringify', 'console.', 'writeFile', 'process.env'):
             self.assertNotIn(forbidden, classifier)
 
+    def test_owned_temp_prefix_fits_pinned_chromium_linux_socket_path(self):
+        source = self.source()
+        prefix = re.search(r"owned=await mkdtemp\(path.join\(temporary,'([^']+)'\)\)", source).group(1)
+        self.assertEqual(prefix, 'ya-ref-')
+        runner_temp = '/home/runner/work/_temp'
+        suffix = '/org.chromium.Chromium.XXXXXX/SingletonSocket'
+        fixed = f'{runner_temp}/{prefix}XXXXXX/home{suffix}'
+        previous = f'{runner_temp}/yadinassi-reference-browser-XXXXXX/home{suffix}'
+        working_form = f'{runner_temp}/yadinassi-form-browser-XXXXXX/home{suffix}'
+        self.assertEqual(len(previous.encode('utf-8')), 108)
+        self.assertEqual(len(working_form.encode('utf-8')), 103)
+        self.assertEqual(len(fixed.encode('utf-8')), 87)
+        self.assertLess(len(fixed.encode('utf-8')), 108)
+        self.assertIn("home=path.join(owned,'home');await mkdir(home)", source)
+        self.assertNotIn("mkdtemp('/tmp/", source)
+
+    def test_socket_path_budget_fails_closed_before_chromium_launch(self):
+        source = self.source()
+        guard = "assert.ok(Buffer.byteLength(path.join(home,'org.chromium.Chromium.XXXXXX','SingletonSocket'))<108,'browser_socket_path_too_long');"
+        self.assertEqual(source.count(guard), 1)
+        self.assertLess(source.index(guard), source.index('browser=await chromium.launch('))
+        self.assertIn("'browser_socket_path_too_long','browser_process_missing'", source)
+        # Buffer.byteLength is intentional: non-ASCII runner paths consume bytes,
+        # and the final NUL must also fit Linux's 108-byte sockaddr_un.sun_path.
+        self.assertEqual(len(('a' * 107).encode('utf-8')), 107)
+        self.assertGreaterEqual(len(('é' * 54).encode('utf-8')), 108)
+        self.assertNotIn('report.launch.socketPath=', source)
+        self.assertNotIn('report.launch.home=', source)
+
     def test_browser_identity_group_profile_and_environment_are_owned(self):
         source = self.source()
         for required in ('priorChildren.has(pid)', 'process_not_direct_child', 'process_uid_mismatch',
@@ -104,7 +133,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
                          "readlinkSync('/proc/'+browserGroup.pid+'/exe'),chromium.executablePath()",
                          "readFileSync('/proc/'+browserGroup.pid+'/cmdline')", 'bytes.length<=16384',
                          "cdp.send('SystemInfo.getProcessInfo')", 'ownBrowserPid(info.processInfo),browserGroup.pid',
-                         "mkdtemp(path.join(temporary,'yadinassi-reference-browser-'))",
+                         "mkdtemp(path.join(temporary,'ya-ref-'))",
                          'env=childEnvironment(process.env,home);env.PYTHONPATH=repo',
                          'process.env.TMPDIR=home', 'delete process.env.TMPDIR', 'process.env.TMPDIR=previousTmp',
                          'browser_profile_not_owned', 'cwd:repo,env,detached:true', "stdio:['ignore','pipe','ignore']"):

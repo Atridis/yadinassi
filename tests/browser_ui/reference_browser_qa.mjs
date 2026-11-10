@@ -42,7 +42,7 @@ function launchFailureCode(error){
     'process_group_not_owned','unexpected_launch_children','browser_executable_mismatch',
     'browser_command_budget','browser_command_invalid','sandbox_command_missing','sandbox_disabled',
     'unexpected_browser_transport','browser_profile_missing','browser_profile_not_owned',
-    'browser_process_missing','cdp_setup_timeout','cdp_process_timeout','browser_pid_invalid',
+    'browser_socket_path_too_long','browser_process_missing','cdp_setup_timeout','cdp_process_timeout','browser_pid_invalid',
     'browser_pid_mismatch','cdp_detach_timeout','context_timeout','sandbox_status_invalid','sandbox_not_confirmed'];
   for(const code of fixed)if(message===code||message.startsWith(code+'\n'))return code;
   if(/Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(message))return 'sandbox_start_denied';
@@ -237,7 +237,7 @@ async function main(){
   report.binding=await sourceBinding();
   report.versions={node:process.version,playwright:JSON.parse(await readFile(new URL('./node_modules/playwright/package.json',import.meta.url),'utf8')).version};
   assert.equal(report.versions.playwright,'1.64.1','playwright_version_mismatch');
-  owned=await mkdtemp(path.join(temporary,'yadinassi-reference-browser-'));
+  owned=await mkdtemp(path.join(temporary,'ya-ref-'));
   home=path.join(owned,'home');await mkdir(home);
   env=childEnvironment(process.env,home);env.PYTHONPATH=repo;
   phase='sandbox_launch';
@@ -249,6 +249,11 @@ async function main(){
   try{
     // Playwright creates its profile from the parent's temp directory, not launch env.
     process.env.TMPDIR=home;
+    // Chromium 156 creates TMPDIR/org.chromium.Chromium.XXXXXX/SingletonSocket.
+    // Linux sun_path includes the NUL byte: 108 or more path bytes abort launch.
+    // Keep the same owned runner directory, with a short prefix and no fallback.
+    report.launch.stage='socket_path_budget';
+    assert.ok(Buffer.byteLength(path.join(home,'org.chromium.Chromium.XXXXXX','SingletonSocket'))<108,'browser_socket_path_too_long');
     report.launch.stage='chromium_launch';
     browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,env,timeout:remaining(20000)});
     report.launch.returned=true;
