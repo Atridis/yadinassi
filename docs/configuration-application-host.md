@@ -36,6 +36,12 @@ application's other forms or shared scheduler. Close every form, then choose
   are not silently enabled. An existing database must carry the matching source
   and profile; startup does not create or migrate it.
 
+The application host does not turn a form dispatch or a remote CommonModule
+call into a transaction root. Independently dispatched form/NoContext VMs deny
+`BeginTransaction`, including indirect calls through shared CommonModules.
+The separate synchronous headless application transaction contract remains
+unchanged; a live transaction cannot cross a browser or server boundary.
+
 A successful transport response is not a general business transaction. Existing
 catalog write/receipt rules still apply. After an uncertain response the host
 locks instead of claiming rollback or retrying a write.

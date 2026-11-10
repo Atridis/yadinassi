@@ -278,6 +278,9 @@ class ConfigurationApplication:
         self.require_open()
         child = Interpreter(output, native_target=self.interpreter.native_target,
                             family_owner=self.interpreter, **kwargs)
+        # Independently dispatched form/NoContext VMs are not transaction roots.
+        # Dynamic admission carries this denial through reused common owners.
+        child._transaction_activation_allowed = False
         child.functions.update(self._host_services)
         if self.side == 'server': child._logical_side = 'server'
         self.bind_interpreter(child)
@@ -288,6 +291,9 @@ class ConfigurationApplication:
         self.require_open()
         child = _FormInterpreter(session, output, native_target=self.interpreter.native_target,
                                  family_owner=self.interpreter, **kwargs)
+        # Independently dispatched form/NoContext VMs are not transaction roots.
+        # Dynamic admission carries this denial through reused common owners.
+        child._transaction_activation_allowed = False
         child.functions.update(self._host_services)
         if self.side == 'server': child._logical_side = 'server'
         self.bind_interpreter(child)
