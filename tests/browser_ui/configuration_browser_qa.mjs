@@ -145,6 +145,13 @@ async function value(name,expected){
     .some(input=>input.getAttribute('aria-label')===name&&input.value===expected),{name,expected},{timeout:remaining(10000)});
   assert.equal(await field(name).inputValue(),expected);
 }
+// Text inputs commit on blur or Enter. Explicit Enter waits for the supported
+// busy lifecycle instead of assuming Playwright's instantaneous focus/fill is a
+// human pause between two asynchronously committing fields. Leave the final
+// Price draft uncommitted where the scenario deliberately tests checkbox/tab.
+async function commitInput(name,text){
+  await field(name).fill(text);await field(name).press('Enter');await idle();
+}
 const wireEvents=[];
 let wireFailure=false;
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
@@ -373,9 +380,9 @@ async function main(){
     phase='declared_product_card_open';
     await catalog().getByRole('button',{name:'New record',exact:true}).click();await countPanels(1);
     phase='declared_product_code_input';
-    await field('Product code').fill('P1');
+    await commitInput('Product code','P1');
     phase='declared_product_description_input';
-    await field('Product title').fill('Form reject');
+    await commitInput('Product title','Form reject');
     phase='declared_product_price_input';
     await field('Unit price').fill('10');
     phase='declared_product_checkbox_after_dirty_price';
@@ -402,12 +409,20 @@ async function main(){
   await scenario(scenarioNames[4],async()=>{
     phase='independent_dirty_object_buffers';
     await catalog().getByRole('button',{name:'New record',exact:true}).click();await countPanels(2);
-    await field('Product code').fill('P2');await field('Product title').fill('Independent draft');await field('Unit price').fill('5');
+    phase='second_card_explicit_field_commits';
+    await commitInput('Product code','P2');await commitInput('Product title','Independent draft');
+    phase='second_card_retained_price_draft';
+    await field('Unit price').fill('5');await value('Unit price','5');
+    phase='first_card_rename_without_sibling_flush';
     await tabs().getByRole('button',{name:'Product pricing card',exact:true}).nth(0).click();
     await field('Product title').fill('Renamed QA product');await action('Save record').click();await value('Save status','saved');await idle();
     await catalog().getByRole('cell',{name:'Renamed QA product',exact:true}).waitFor();
+    phase='second_card_retained_description';
     await tabs().getByRole('button',{name:'Product pricing card',exact:true}).nth(1).click();
-    await value('Product title','Independent draft');await value('Unit price','5');
+    await value('Product title','Independent draft');
+    phase='second_card_retained_price';
+    await value('Unit price','5');
+    phase='second_card_confirmed_save';
     await action('Save record').click();await value('Save status','saved');await idle();
     assert.equal(await catalog().locator('tbody tr').count(),2);
     phase='single_multi_selection_and_exact_opaque_target';
@@ -426,7 +441,7 @@ async function main(){
   await scenario(scenarioNames[5],async()=>{
     phase='bsl_opens_different_declared_catalog_form';
     await action('Create category').click();await countPanels(3);
-    await field('Category code').fill('C1');await field('Category name').fill('  QA category  ');
+    await commitInput('Category code','C1');await field('Category name').fill('  QA category  ');
     await action('Normalize category name').click();await value('Category name','QA category');
     await action('Save record').click();await value('Save status','saved');await idle();
     await entries().getByRole('button',{name:'Category details',exact:true}).click();

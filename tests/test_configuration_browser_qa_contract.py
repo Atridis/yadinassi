@@ -175,5 +175,13 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
             for name in names:
                 title = controls[name].findtext('f:Title', namespaces=ns)
                 self.assertTrue(title)
-                self.assertRegex(tail, r"(?:field|value)\('" + re.escape(title) + r"'")
-                self.assertNotRegex(tail, r"(?:field|value)\('" + re.escape(name) + r"'")
+                self.assertRegex(tail, r"(?:field|value|commitInput)\('" + re.escape(title) + r"'")
+                self.assertNotRegex(tail, r"(?:field|value|commitInput)\('" + re.escape(name) + r"'")
+
+    def test_async_text_commits_use_enter_and_busy_state_but_keep_final_draft(self):
+        helper = self.source.split('async function commitInput(name,text){',1)[1].split('\n}',1)[0]
+        self.assertIn("await field(name).fill(text);await field(name).press('Enter');await idle()",helper)
+        self.assertIn("await field('Unit price').fill('5');await value('Unit price','5')",self.source)
+        self.assertIn("phase='declared_product_checkbox_after_dirty_price'",self.source)
+        self.assertIn("phase='second_card_retained_price'",self.source)
+        self.assertNotIn('waitForTimeout', self.source)
