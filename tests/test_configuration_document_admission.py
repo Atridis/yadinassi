@@ -71,3 +71,34 @@ class DocumentAdmissionBoundaryTests(unittest.TestCase):
         with closing(sqlite3.connect(self.path)) as db:
             db.execute('ALTER TABLE document_record ADD COLUMN injected TEXT');db.commit()
         with self.assertRaises(BackendError):self.backend.export_configuration()
+
+    def test_regular_create_does_not_authorize_document_grant(self):
+        from yadinassi.configuration_document_profile import import_document_forms_configuration
+        target=self.path.with_name('not-authorized.sqlite')
+        with self.assertRaises(BackendError):
+            SQLiteCatalogBackend.create(target,import_document_forms_configuration(self.files))
+        self.assertFalse(target.exists())
+
+    def test_updated_file_hash_does_not_authorize_source_replacement(self):
+        path='Documents/Orders/Forms/Card/Ext/Form/Module.bsl'
+        content=self.files[path]+b'\n// altered after admission\n'
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute('UPDATE configuration_file SET content=?,sha256=? WHERE path=?',
+                (content,hashlib.sha256(content).hexdigest(),path));db.commit()
+        with self.assertRaises(BackendError):self.backend.export_configuration()
+        with self.assertRaises(BackendError):self.backend.begin_document_read()
+        with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
+
+    def test_forged_grant_digest_cannot_authorize_reopen(self):
+        from yadinassi.configuration_document_profile import DOCUMENT_FORMS_SOURCE_ISSUE
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute('UPDATE database_info SET activation_issues=?',
+                (json.dumps([DOCUMENT_FORMS_SOURCE_ISSUE+':'+('0'*64)]),));db.commit()
+        with self.assertRaises(BackendError):self.backend.export_configuration()
+        with self.assertRaises(BackendError):SQLiteCatalogBackend(self.path)
+
+    def test_unknown_source_is_rejected_before_database_creation(self):
+        files=dict(self.files);files['Ext/SessionModule.bsl']=b'// no implicit privileged runtime'
+        target=self.path.with_name('not-created.sqlite')
+        with self.assertRaises(ValueError):SQLiteCatalogBackend.create_document_forms(target,files)
+        self.assertFalse(target.exists())

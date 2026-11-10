@@ -88,7 +88,7 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
 
     def test_exact_opt_in_workflow_and_closed_artifacts(self):
         source=self.workflow
-        self.assertIn('codex/application-host-browser-reviewed]',source)
+        self.assertIn('codex/application-host-browser-reviewed, codex/document-form-browser-reviewed]',source)
         acquisition=source.split('      - name: Acquire five application host lifetime flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         self.assertIn("if: github.ref == 'refs/heads/codex/application-host-browser-reviewed'",acquisition)
         self.assertIn('timeout-minutes: 8',acquisition)

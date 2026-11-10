@@ -54,6 +54,20 @@ python -m yadinassi.ui.configuration_app examples/configuration-document-forms -
 Create the
 fresh database explicitly with `SQLiteCatalogBackend.create_document_forms(path,
 files)`, where `files` is the relative-name to bytes mapping of the example.
+For example, from the repository root, create a new database once:
+
+```sh
+python - <<'PYTHON'
+from pathlib import Path
+from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+root = Path('examples/configuration-document-forms')
+files = {p.relative_to(root).as_posix(): p.read_bytes()
+         for p in root.rglob('*') if p.is_file()}
+SQLiteCatalogBackend.create_document_forms('orders.sqlite', files).close()
+PYTHON
+python -m yadinassi.ui.configuration_app examples/configuration-document-forms --document-objects --f orders.sqlite --open-browser
+```
+
 Creation must fail if the destination already exists. Do not use this source
 with `--application-host` or a catalog source grant. This document-only example
 has no ObjectModule, posting mode, CommonModule or external service.
@@ -62,3 +76,17 @@ The fresh grant uses the existing non-posting v7 storage layout. Explicit v11
 migration refuses this source profile before opening its writer. Reopen, every
 transaction and configuration export revalidate the exact source and persisted
 schemas; a source or schema change is not an implicit configuration upgrade.
+
+The document list uses opaque per-launch record keys, not database/record UUIDs.
+Commands sit above the list and operate on the current selection. Open selected
+requires exactly one selected row; selecting several never silently performs a
+batch. A successful write refreshes the authoritative list immediately while
+retaining independent sibling drafts. The host shows a refusal rather than
+truncating a list beyond 256 records.
+
+The launcher uses the single-writer browser attachment model. A second browser
+tab is an observer until an explicit takeover. Closing a browser tab is not a
+save, discard, or rollback command; open/dirty/uncertain forms retain the owned
+process for safe recovery. Use Close form, then Close application for an explicit
+clean exit. See the [application lifetime rules](configuration-application-host.md)
+for the advisory-detach and real lease-expiry boundaries.
