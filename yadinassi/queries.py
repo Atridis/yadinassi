@@ -23,7 +23,7 @@ from .values import BSLObject, HostFunction
 from .value_tables import BSLValueTable
 from .type_descriptions import BSLTypeDescription, _query_nullable_description
 from .type_qualifiers import (BSLStringQualifiers, BSLNumberQualifiers,
-                              BSLDateQualifiers, BSLAllowedSign)
+                              BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
 
 _MAX_PARAMETERS = 128
 _MAX_CELLS = 100000
@@ -191,7 +191,8 @@ def _description(column):
     if not column.explicit_alias and column.field in ('description', 'deletion_mark'):
         raise ValueError('Query unaliased standard column label is not yet supported by Unload')
     if column.kind == 'string':
-        return BSLTypeDescription('String', None, BSLStringQualifiers(Decimal(column.qualifiers[0])))
+        allowed = BSLAllowedLength.FIXED if column.qualifiers[1:] == ('Fixed',) else BSLAllowedLength.VARIABLE
+        return BSLTypeDescription('String', None, BSLStringQualifiers(Decimal(column.qualifiers[0]), allowed))
     if column.kind == 'number':
         digits, scale, sign = column.qualifiers
         allowed = BSLAllowedSign.NONNEGATIVE if sign == 'Nonnegative' else BSLAllowedSign.ANY
@@ -199,7 +200,9 @@ def _description(column):
     if column.kind == 'boolean':
         return BSLTypeDescription('Boolean')
     if column.kind == 'datetime':
-        return BSLTypeDescription('Date', None, None, BSLDateQualifiers())
+        fraction = {'Date': BSLDateFractions.DATE, 'Time': BSLDateFractions.TIME,
+                    'DateTime': BSLDateFractions.DATE_TIME}[column.qualifiers[0]]
+        return BSLTypeDescription('Date', None, None, BSLDateQualifiers(fraction))
     raise ValueError('Query Unload dynamic reference column metadata is not supported')
 
 
@@ -251,7 +254,7 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key not in self._parameters and len(self._parameters) >= _MAX_PARAMETERS:
             raise ValueError('Query parameter count limit exceeded')
-        self._parameters[key] = _parameter_value(value)
+        self._parameters[key] = value if type(value) is BSLValueTable else _parameter_value(value)
 
     def execute_batch(self):
         from .query_packages import execute_package
@@ -262,7 +265,8 @@ class BSLQuery(BSLObject):
         statements = syntax.parse_package(self._text)
         query = statements[0]
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
-                or query.temporary or any(join.source.temporary for join in query.joins)
+                or query.temporary or query.external
+                or any(join.source.temporary or join.source.external for join in query.joins)
                 or self._temp_tables_manager is not None):
             from .query_packages import execute_package
             return execute_package(statements, self._catalogs, dict(self._parameters),

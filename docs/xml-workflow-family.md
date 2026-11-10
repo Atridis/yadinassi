@@ -77,3 +77,10 @@ and `Close` returns the string target or an empty string for a file target.
 See [the single 33-case measurement contract](xml-workflow-family-measurement.md).
 The archived acquisition passed 50 source/provenance/capture/cleanup checks;
 see the measurement document for identities and remaining evidence limits.
+
+
+### Stream-backed text/JSON/XML extension
+
+The ordinary stream-overload exclusions above are superseded only by the
+[bounded text/JSON/XML stream profile](text-json-xml-streams.md). Existing native
+evidence remains scoped to its recorded scenarios, not these new overloads.

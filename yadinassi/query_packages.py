@@ -69,6 +69,7 @@ class BSLTempTablesManager(BSLObject):
 def execute_package(statements, catalogs, parameters, manager=None):
     from .queries import BSLQueryResult, _Column
     from .relational_queries import _Plan
+    from .query_sources import _UnionPlan, snapshot_sources
     if manager is None: manager = BSLTempTablesManager()
     if type(manager) is not BSLTempTablesManager:
         raise TypeError('Query package requires TempTablesManager')
@@ -81,6 +82,7 @@ def execute_package(statements, catalogs, parameters, manager=None):
         owner = catalogs._metadata
         if manager._owner is not None and manager._owner is not owner:
             raise ValueError('Temporary table manager belongs to another metadata snapshot')
+        external = snapshot_sources(statements, parameters)
         tables = dict(manager._tables)
         result = BSLArray()
         budget = [0, 0]
@@ -94,7 +96,8 @@ def execute_package(statements, catalogs, parameters, manager=None):
             else:
                 if statement.into is not None and statement.into.casefold() in tables:
                     raise ValueError('Temporary table already exists')
-                plan = _Plan(statement, catalogs, parameters, tables)
+                plan_type = _UnionPlan if type(statement) is syntax.Union else _Plan
+                plan = plan_type(statement, catalogs, parameters, tables, external)
                 source_manager = next((m for m in plan.managers if m is not None), None)
                 if view is None and source_manager is not None:
                     view = source_manager._view()
