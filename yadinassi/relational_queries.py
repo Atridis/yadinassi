@@ -78,7 +78,7 @@ def required(query):
         return (type(node) is syntax.Comparison and
                 (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
                  type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
-    return (query.family in ('document', 'information_register') or query.joins or query.groups or query.having is not None or query.distinct
+    return (query.derived is not None or query.family in ('document', 'information_register') or query.joins or query.groups or query.having is not None or query.distinct
             or any(type(p.field) is not syntax.Field for p in query.projections)
             or any(type(o.field) is not syntax.Field for o in query.order)
             or extended(query.predicate))
@@ -126,10 +126,23 @@ class _Plan:
         self._membership_sets = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary),
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived),
                         *(join.source for join in query.joins))
+        self.derived_plans = {}
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
-        for source in self.sources:
+        for index, source in enumerate(self.sources):
+            if source.derived is not None:
+                from .query_sources import _UnionPlan
+                if type(source.derived) is not syntax.Select and type(source.derived) is not syntax.Union:
+                    raise TypeError('Invalid derived query source')
+                if source.derived.into is not None:
+                    raise ValueError('Derived source cannot create a temporary table')
+                plan_type = _UnionPlan if type(source.derived) is syntax.Union else _Plan
+                self.derived_plans[index] = plan_type(source.derived, catalogs, parameters,
+                    self.temporary_tables, self.external_tables, documents=documents,
+                    information_registers=information_registers)
+                self.managers.append(None); self.sections.append(None)
+                continue
             if source.temporary or source.external:
                 tables = self.external_tables if source.external else self.temporary_tables
                 if source.catalog.casefold() not in tables:
@@ -205,18 +218,27 @@ class _Plan:
         self.columns = tuple(columns)
         # COUNT(*) still binds a source field so rows and identity are validated.
         for i, fields in enumerate(self.fields):
-            if not fields and not (self.sources[i].temporary or self.sources[i].external):
+            if not fields and not (self.sources[i].temporary or self.sources[i].external or self.sources[i].derived is not None):
                 name = (self.managers[i]._schema.dimensions[0].name
                         if self.sources[i].family == 'information_register' else 'Ref')
                 fields.append(self.resolve_field(i, syntax.Field((name,))))
 
         self.all_managers = tuple(self.managers) + tuple(
+            manager for plan in self.derived_plans.values() for manager in plan.all_managers) + tuple(
             manager for member in self.memberships if member.plan is not None
             for manager in member.plan.all_managers)
 
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
+        if source.derived is not None:
+            if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
+                raise ValueError('Unknown derived source qualifier')
+            matches = [(i, column) for i, column in enumerate(self.derived_plans[index].columns)
+                       if column.name.casefold() == expression.parts[-1].casefold()]
+            if len(matches) != 1: raise ValueError('Unknown derived table column')
+            i, column = matches[0]
+            return replace(column, field=i, custom=None, explicit_alias=True)
         if source.family == 'information_register' and not (source.temporary or source.external):
             from .register_queries import register_field
             return register_field(self.managers[index], expression, source.alias)
@@ -572,6 +594,14 @@ class _Plan:
     def load(self, index, view, budget):
         from .queries import _logical, _section_row, _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
         manager, section, columns = self.managers[index], self.sections[index], self.fields[index]
+        if self.sources[index].derived is not None:
+            output = self.derived_plans[index].execute(view=view, budget=budget)
+            # Charge all materialized columns, not just those referenced outside.
+            budget[0] += len(output._rows) * len(output._columns)
+            budget[1] += sum(len(v) for row in output._rows for v in row if type(v) is str)
+            if len(output._rows) > syntax.MAX_ROWS or budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query derived source resource limit exceeded')
+            return [tuple(row[column.field] for column in columns) for row in output._rows]
         if self.sources[index].temporary or self.sources[index].external:
             tables = self.external_tables if self.sources[index].external else self.temporary_tables
             table = tables[self.sources[index].catalog.casefold()]
@@ -646,22 +676,28 @@ class _Plan:
         pair = equality(condition)
         lookup = {}
         if pair:
-            for item in right:
+            for position, item in enumerate(right):
                 key = _key(self.value(pair[1], (None,) * index + (item,)))
-                lookup.setdefault(key, []).append(item)
-        result, examined = [], 0
+                lookup.setdefault(key, []).append((position, item))
+        result, matched = [], set()
         for left in rows:
-            candidates = lookup.get(_key(self.value(pair[0], left)), ()) if pair else right
+            candidates = lookup.get(_key(self.value(pair[0], left)), ()) if pair else enumerate(right)
             found = False
-            for item in candidates:
-                examined += 1
-                if examined > MAX_JOIN_PAIRS: raise ValueError('Query join work limit exceeded')
+            for position, item in candidates:
+                self._budget[3] += 1
+                if self._budget[3] > MAX_JOIN_PAIRS: raise ValueError('Query join work limit exceeded')
                 row = left + (item,)
                 if self.test(condition, row) is True:
-                    result.append(row); found = True
+                    result.append(row); found = True; matched.add(position)
                     if len(result) > MAX_INTERMEDIATE_ROWS: raise ValueError('Query intermediate row limit exceeded')
-            if not found and kind == 'left': result.append(left + (None,))
+            if not found and kind in ('left', 'full'): result.append(left + (None,))
             if len(result) > MAX_INTERMEDIATE_ROWS: raise ValueError('Query intermediate row limit exceeded')
+        if kind in ('right', 'full'):
+            for position, item in enumerate(right):
+                if position not in matched:
+                    result.append((None,) * index + (item,))
+                    if len(result) > MAX_INTERMEDIATE_ROWS:
+                        raise ValueError('Query intermediate row limit exceeded')
         return result
 
     def execute(self, view=None, budget=None):
@@ -677,7 +713,7 @@ class _Plan:
                 owner = True
         try:
             if budget is None: budget = [0, 0]
-            if len(budget) == 2: budget.append(0)
+            while len(budget) < 4: budget.append(0)
             self._budget = budget
             self.prepare_memberships(view, budget)
             sources = [self.load(i, view, budget) for i in range(len(self.sources))]

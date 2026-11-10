@@ -44,6 +44,7 @@ class Source:
     external: bool = False
     family: str = 'catalog'
     period_boundary: object = None
+    derived: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +114,7 @@ class Select:
     external: bool = False
     family: str = 'catalog'
     period_boundary: object = None
+    derived: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +139,7 @@ _KEYWORDS = {
     'and':'and', 'и':'and', 'or':'or', 'или':'or',
     'distinct':'distinct', 'различные':'distinct',
     'inner':'inner', 'внутреннее':'inner', 'left':'left', 'левое':'left',
+    'right':'right', 'правое':'right', 'full':'full', 'полное':'full',
     'outer':'outer', 'внешнее':'outer', 'join':'join', 'соединение':'join',
     'on':'on', 'group':'group', 'сгруппировать':'group',
     'having':'having', 'имеющие':'having',
@@ -288,6 +291,17 @@ class _Parser:
             self.expression_depth -= 1
 
     def source(self):
+        if self.accept('('):
+            self.subquery_depth += 1; self.subquery_count += 1
+            if self.subquery_depth > 8 or self.subquery_count > 16:
+                raise ValueError('Query subquery budget exceeded')
+            try: derived = self.statement()
+            finally: self.subquery_depth -= 1
+            if derived.into is not None:
+                raise ValueError('Derived source cannot create a temporary table')
+            self.take(')'); self.take('as')
+            alias = self.take('name')
+            return Source(alias, alias, derived=derived)
         if self.accept('&'):
             name = self.take('name')
             alias = self.take('name') if self.accept('as') else name
@@ -438,9 +452,9 @@ class _Parser:
         self.take('from')
         source = self.source()
         joins = []
-        while self.peek() in ('inner', 'left', 'join'):
-            kind = 'left' if self.accept('left') else 'inner'
-            if kind == 'left': self.accept('outer')
+        while self.peek() in ('inner', 'left', 'right', 'full', 'join'):
+            kind = self.peek() if self.peek() in ('left', 'right', 'full') else 'inner'
+            if kind != 'inner': self.take(kind); self.accept('outer')
             else: self.accept('inner')
             self.take('join')
             other = self.source()
@@ -473,7 +487,7 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary, source.derived)
 
 
     def statement(self):
@@ -542,5 +556,7 @@ def selects(statements):
 
 
 def extended_filters(statement):
-    return any(type(node) is Membership or (type(node) is Predicate and node.kind == 'not')
+    return any(type(node) is Membership or (type(node) is Source and node.derived is not None)
+               or (type(node) is Select and node.derived is not None)
+               or (type(node) is Predicate and node.kind == 'not')
                for node in walk_nodes(statement))
