@@ -194,8 +194,8 @@ class DateAcquisitionProfileTests(unittest.TestCase):
             self.assertEqual(error.exception.code, 2)
             run.assert_not_called()
 
-    def test_acquisition_exit_is_independent_of_parity_only_for_new_lanes(self):
-        selections = [(profile(kind), True) for kind in KINDS] + [('format-dates-v1', False), ('tree-v1', False)]
+    def test_fixed_date_lanes_require_runtime_parity_after_acquisition(self):
+        selections = [(profile(kind), False) for kind in KINDS] + [('format-dates-v1', False), ('tree-v1', False)]
         for selected, acquisition in selections:
             for acquired, parity in [(True, False), (True, True), (False, False)]:
                 report = {'native_measurement_accepted': acquired, 'runtime_parity_accepted': parity,

@@ -128,18 +128,13 @@ def _parameters(text):
             extended_names[key] = raw_name
         if date_key is not None:
             if date_key in {"DF", "ДФ"}:
-                if not value:
+                if not value and quote is None:
                     _unsupported()
                 tokens = _date_tokens(value)
                 # Native bare multiword Date masks fall back to the default.
                 value = None if quote is None and any(c in " \t" for c in value) else tokens
             elif date_key in {"DLF", "ДЛФ"}:
                 value = local_date_tokens(value)
-                # DLF duplicate/alias priority has no native witness yet.
-                # Equal normalized values are harmless; conflicts fail closed.
-                for previous in (date_entries.get("DLF"), date_entries.get("ДЛФ")):
-                    if previous is not None and previous != value:
-                        _unsupported()
             date_entries.setdefault(date_key, value)
         elif key in {"BF", "BT"}:
             result.setdefault(key, value)
@@ -158,9 +153,6 @@ def _parameters(text):
             result[canonical] = date_entries[russian]
         elif canonical in date_entries:
             result[canonical] = date_entries[canonical]
-    if "DF" in result and "DLF" in result:
-        # Do not guess an unmeasured precedence between competing date styles.
-        _unsupported()
     return result
 
 
@@ -205,7 +197,7 @@ def _format_date(value, parameters):
             return ""
         if parameters["DE"]:
             return parameters["DE"]
-    tokens = parameters.get("DLF", parameters.get("DF"))
+    tokens = parameters.get("DF", parameters.get("DLF"))
     if tokens is None:
         return str(value)
     return render_date_tokens(parts, tokens)

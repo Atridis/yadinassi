@@ -13,8 +13,8 @@ from yadinassi.values import to_string
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / 'tests/fixtures/format_dates'
 ARCHIVES = {
-    'original40': ('5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa', '186c4441a7ce4c3fb70ccd9f4304be7af1bef5d5cb2797eb91b17500881658b8', {36}),
-    'supplement56': ('7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb', 'fe558102e1e7f6cf879243b10ec377906d908a784fe2ed497c19826a4359fa8f', {36}),
+    'original40': ('5482cefd7c689ab05e04410ea3a701391f350a659dfe8767e118b3c771b678aa', '186c4441a7ce4c3fb70ccd9f4304be7af1bef5d5cb2797eb91b17500881658b8', set()),
+    'supplement56': ('7290d1cd2cb6b9f3c77679d8e62a920b87c91417a8569502afe314abb09fa4fb', 'fe558102e1e7f6cf879243b10ec377906d908a784fe2ed497c19826a4359fa8f', set()),
     'parser28': ('606d4932ec82cc57b2465d4a3d344a8dfec776cbc0b5c2ca34e3a1e50a4ef9a9', '565011c01ba0bd70060d2307ce62e3c179886557802551aea35641f988db7b4a', {27}),
 }
 
@@ -91,7 +91,7 @@ class FormatDatesRuntimeTests(unittest.TestCase):
 
     def test_unsupported_families_and_malformed_masks_stay_explicit(self):
         value=date('20260102030405')
-        for mask in ('DF=ddd','DF=hh tt',"DF='hh tt'",'DF=yyy','DF=',
+        for mask in ('DF=ddddd',"DF='hhh tt'",'DF=yyy','DF=',
                      'DLF=TD','L=en',"DF=\"yyyy 'bad\""):
             with self.subTest(mask=mask),self.assertRaises(ValueError):format_value(value,mask)
         self.assertEqual(format_value(Decimal('1234.5'),'NFD=1;NG=0;l=en'),'1234,5')

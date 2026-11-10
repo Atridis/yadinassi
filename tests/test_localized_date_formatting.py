@@ -20,17 +20,17 @@ class LocalizedDateFormattingTests(unittest.TestCase):
         self.assertEqual(format_value(self.value, 'ДФ="дд/ММ-гггг"'), '20/08-2002')
 
     def test_official_local_date_examples(self):
-        for style, expected in (('ДД', '20 августа 2002 г.'), ('Д', '20.08.2002'), ('В', '15:33:09')):
+        for style, expected in (('ДД', '20 августа 2002\u00a0г.'), ('Д', '20.08.2002'), ('В', '15:33:09')):
             with self.subTest(style=style):
                 self.assertEqual(format_value(self.value, 'ДЛФ='+style), expected)
         self.assertEqual(format_value(date('20051120140323'), 'ДЛФ=ДДВ'),
-                         '20 ноября 2005 г. 14:03:23')
+                         '20 ноября 2005\u00a0г. 14:03:23')
 
     def test_all_local_style_aliases(self):
         for english, russian, expected in (
-            ('D', 'Д', '20.08.2002'), ('DD', 'ДД', '20 августа 2002 г.'),
+            ('D', 'Д', '20.08.2002'), ('DD', 'ДД', '20 августа 2002\u00a0г.'),
             ('T', 'В', '15:33:09'), ('DT', 'ДВ', '20.08.2002 15:33:09'),
-            ('DDT', 'ДДВ', '20 августа 2002 г. 15:33:09')):
+            ('DDT', 'ДДВ', '20 августа 2002\u00a0г. 15:33:09')):
             for name in ('DLF','ДЛФ','dlf','длф'):
                 for style in (english,russian):
                     with self.subTest(name=name,style=style):
@@ -38,7 +38,7 @@ class LocalizedDateFormattingTests(unittest.TestCase):
 
     def test_russian_numeric_tokens_are_exact_case_sensitive_aliases(self):
         for russian, english in (('д','d'),('дд','dd'),('М','M'),('ММ','MM'),
-            ('г','y'),('гг','yy'),('гггг','yyyy'),('к','q'),('ч','H'),('чч','HH'),
+            ('г','y'),('гг','yy'),('гггг','yyyy'),('к','q'),('ч','h'),('чч','hh'),
             ('Ч','H'),('ЧЧ','HH'),('м','m'),('мм','mm'),('с','s'),('сс','ss')):
             with self.subTest(token=russian):
                 self.assertEqual(format_value(self.value,'ДФ='+russian),format_value(self.value,'DF='+english))
@@ -74,7 +74,7 @@ class LocalizedDateFormattingTests(unittest.TestCase):
 
     def test_explicit_russian_locale_is_host_independent(self):
         with patch('locale.setlocale',side_effect=AssertionError('host locale forbidden')):
-            self.assertEqual(format_value(self.value,'L=ru;DLF=DD'),'20 августа 2002 г.')
+            self.assertEqual(format_value(self.value,'L=ru;DLF=DD'),'20 августа 2002\u00a0г.')
         for locale in ('en','ru_RU','RU','ru-RU',''):
             with self.subTest(locale=locale),self.assertRaises(ValueError):
                 format_value(self.value,'L='+locale+';DLF=D')
@@ -82,9 +82,9 @@ class LocalizedDateFormattingTests(unittest.TestCase):
     def test_empty_date_precedence_and_first_second(self):
         self.assertEqual(format_value(BSLDate(0),'DLF=DDT'),'')
         self.assertEqual(format_value(BSLDate(0),"DE='empty';DLF=DDT"),'empty')
-        self.assertEqual(format_value(BSLDate(0),"DE='';DLF=DDT"),'1 января 0001 г. 00:00:00')
+        self.assertEqual(format_value(BSLDate(0),"DE='';DLF=DDT"),'1 января 0001\u00a0г. 00:00:00')
         self.assertEqual(format_value(BSLDate(10000),"DE='empty';DLF=T"),'00:00:01')
-        self.assertEqual(format_value(date('99991231235959'),'DLF=DDT'),'31 декабря 9999 г. 23:59:59')
+        self.assertEqual(format_value(date('99991231235959'),'DLF=DDT'),'31 декабря 9999\u00a0г. 23:59:59')
 
     def test_fractional_ticks_preserve_existing_whole_second_policy(self):
         a=self.value
@@ -96,17 +96,20 @@ class LocalizedDateFormattingTests(unittest.TestCase):
         self.assertEqual(format_value(self.value,'DF=к;DF=yyyy'),'3')
         self.assertEqual(format_value(BSLDate(0),"DE='a';ДП='b';DLF=D"),'b')
 
-    def test_equivalent_local_styles_can_repeat_but_conflicts_fail_closed(self):
+    def test_native_local_style_and_mask_precedence(self):
         self.assertEqual(format_value(self.value,'DLF=D;ДЛФ=Д'),'20.08.2002')
-        for spec in ('DLF=D;DLF=T','DLF=D;ДЛФ=В','DF=yyyy;DLF=D','DLF=D;ДФ=yyyy'):
-            with self.subTest(spec=spec),self.assertRaises(ValueError):format_value(self.value,spec)
+        self.assertEqual(format_value(self.value,'DLF=D;DLF=T'),'20.08.2002')
+        self.assertEqual(format_value(self.value,'DLF=D;ДЛФ=В'),'15:33:09')
+        self.assertEqual(format_value(self.value,'DF=yyyy;DLF=D'),'2002')
+        self.assertEqual(format_value(self.value,'DLF=D;ДФ=yyyy'),'2002')
+        self.assertEqual(format_value(self.value,"DF='';DLF=DD"),'')
 
     def test_invalid_local_order_and_noncanonical_forms_fail_closed(self):
         for style in ('TD','TDD','ВД','ВДД','DDD','DTT','d','dd','dt','DD T','D/T',''):
             with self.subTest(style=style),self.assertRaises(ValueError):format_value(self.value,'DLF='+style)
 
     def test_invalid_or_not_yet_calibrated_tokens_fail_closed(self):
-        for token in ('yyy','yyyа','qq','кк','ггг','DD','YYYY','MMMMM','МММММ','h','hh','tt','вв','ddd','dddd','MMM'):
+        for token in ('yyy','yyyа','qq','кк','ггг','DD','YYYY','MMMMM','МММММ','hhh','ttt','в','ddddd','MMMMM'):
             with self.subTest(token=token),self.assertRaises(ValueError):format_value(self.value,'DF='+token)
         with self.assertRaises(ValueError):format_value(self.value,'DF="yyyy \'broken"')
 
@@ -126,7 +129,7 @@ class LocalizedDateFormattingTests(unittest.TestCase):
             context.prec=1
             for flag in context.traps:context.traps[flag]=True
             context.clear_flags();before=dict(context.flags)
-            self.assertEqual(format_value(self.value,'DLF=DD'),'20 августа 2002 г.')
+            self.assertEqual(format_value(self.value,'DLF=DD'),'20 августа 2002\u00a0г.')
             self.assertEqual(dict(context.flags),before)
 
     def test_bsl_aliases_eval_and_catchable_errors(self):
@@ -134,7 +137,7 @@ class LocalizedDateFormattingTests(unittest.TestCase):
         try:
             vm.execute('D=Date(2002,8,20,15,33,9); A=Формат(D,"ДЛФ=ДД"); '
                        'B=Eval("Format(D, ""DLF=DD"")");')
-            self.assertEqual(vm.variables['a'],'20 августа 2002 г.')
+            self.assertEqual(vm.variables['a'],'20 августа 2002\u00a0г.')
             self.assertEqual(vm.variables['a'],vm.variables['b'])
             with self.assertRaises(BSLError):vm.execute('Format(D,"DLF=TD");')
         finally:vm.close()

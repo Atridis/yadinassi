@@ -120,8 +120,8 @@ class DateAcquisitionObserverTests(unittest.TestCase):
                 self.assertEqual(raw[-1], raw[0], format_string)
                 mask = raw[1:-1]
                 composites.append(format_string)
-                # The token witness isolates parameter selection, including MMM
-                # spellings not yet admitted by the runtime. No native answer.
+                # The token witness isolates parameter selection, including textual
+                # spellings, without supplying a synthetic native answer.
                 with mock.patch.object(formatting, '_date_tokens', return_value=sentinel) as scanner:
                     self.assertEqual(formatting._parameters(format_string)['DF'], sentinel)
                     scanner.assert_called_once_with(mask)

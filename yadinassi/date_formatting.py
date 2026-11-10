@@ -10,17 +10,23 @@ _MONTHS = ('Январь', 'Февраль', 'Март', 'Апрель', 'Май
            'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь')
 _MONTHS_GENITIVE = ('января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
                     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря')
-# Short month and weekday spellings await independent native acquisition.
-_ALIASES = {'д': 'd', 'М': 'M', 'г': 'y', 'к': 'q', 'ч': 'H', 'Ч': 'H',
+# Exact Russian spellings measured on native 8.3.27.1508, names52/tokens56.
+_MONTHS_SHORT = ('янв.', 'февр.', 'март', 'апр.', 'май', 'июнь',
+                 'июль', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.')
+_MONTHS_SHORT_GENITIVE = ('янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня',
+                         'июля', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.')
+_WEEKDAYS = ('понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье')
+_WEEKDAYS_SHORT = ('Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс')
+_ALIASES = {'д': 'd', 'М': 'M', 'г': 'y', 'к': 'q', 'ч': 'h', 'Ч': 'H', 'в': 't',
             'м': 'm', 'с': 's'}
-_ALLOWED = frozenset(('d', 'dd', 'M', 'MM', 'MMMM', 'y', 'yy', 'yyyy',
-                      'q', 'H', 'HH', 'm', 'mm', 's', 'ss'))
+_ALLOWED = frozenset(('d', 'dd', 'ddd', 'dddd', 'M', 'MM', 'MMM', 'MMMM', 'y', 'yy', 'yyyy',
+                      'q', 'h', 'hh', 'H', 'HH', 'tt', 'm', 'mm', 's', 'ss'))
 _LOCAL = {
     'D': 'dd.MM.yyyy', 'Д': 'dd.MM.yyyy',
-    'DD': "d MMMM yyyy 'г.'", 'ДД': "d MMMM yyyy 'г.'",
+    'DD': "d MMMM yyyy\u00a0'г.'", 'ДД': "d MMMM yyyy\u00a0'г.'",
     'T': 'HH:mm:ss', 'В': 'HH:mm:ss',
     'DT': 'dd.MM.yyyy HH:mm:ss', 'ДВ': 'dd.MM.yyyy HH:mm:ss',
-    'DDT': "d MMMM yyyy 'г.' HH:mm:ss", 'ДДВ': "d MMMM yyyy 'г.' HH:mm:ss",
+    'DDT': "d MMMM yyyy\u00a0'г.' HH:mm:ss", 'ДДВ': "d MMMM yyyy\u00a0'г.' HH:mm:ss",
 }
 
 
@@ -74,7 +80,7 @@ def render_date_tokens(parts, tokens):
     # witnessed as nominative. Literal letters never affect this selection.
     day_present = any(kind and token in ('d', 'dd') for kind, token in tokens)
     components = {'d': parts.day, 'M': parts.month, 'y': parts.year % 100,
-                  'H': parts.hour, 'm': parts.minute, 's': parts.second,
+                  'h': parts.hour % 12 or 12, 'H': parts.hour, 'm': parts.minute, 's': parts.second,
                   'q': (parts.month - 1) // 3 + 1}
     output = []
     size = 0
@@ -83,6 +89,12 @@ def render_date_tokens(parts, tokens):
             text = token
         elif token == 'MMMM':
             text = (_MONTHS_GENITIVE if day_present else _MONTHS)[parts.month - 1]
+        elif token == 'MMM':
+            text = (_MONTHS_SHORT_GENITIVE if day_present else _MONTHS_SHORT)[parts.month - 1]
+        elif token in ('ddd', 'dddd'):
+            text = (_WEEKDAYS_SHORT if token == 'ddd' else _WEEKDAYS)[parts.weekday()]
+        elif token == 'tt':
+            text = 'AM' if parts.hour < 12 else 'PM'
         elif token == 'yyyy':
             text = str(parts.year).zfill(4)
         else:

@@ -5,6 +5,8 @@ This document records the original numeric-mask checkpoint. The current
 its immutable native sources or captures. Boolean and numeric-template families
 are already implemented separately in [numeric Format](format-numbers-runtime.md);
 statements below about their initial exclusion are historical, not current limits.
+The same applies to textual dates, 12-hour time and DLF: their independent native
+acquisition and current required comparison are documented in the linked block.
 
 `Format` / `Формат` now admits explicit numeric Date masks `DF/ДФ` and empty-date
 presentation `DE/ДП`. This does not alter `String(date)` or numeric arithmetic.
@@ -32,10 +34,10 @@ The mandatory parity validator is unchanged. Full archived offline replay
 also includes supported cases outside this required probe, including standalone
 lowercase `nfd`. Original numeric48 remains the required numeric lane unchanged.
 
-Explicit excluded policy controls: original40/supplement56 cases35 (MMMM) and36
-(hh tt), and parser28 case27 (L=en). Tests require local rejection separately
-from matching every supported archived observation; they do not rewrite the
-stored captures or call the complete historical probes runtime parity.
+At the initial checkpoint, original40/supplement56 cases35 (MMMM) and36
+(bare hh tt) were excluded policy controls. They now replay unchanged under
+the localized-date block. Parser28 case27 (L=en) remains an explicit local
+rejection. Original captures and the required supported56 source are unchanged.
 
 ## Parameter families
 

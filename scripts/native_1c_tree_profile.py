@@ -869,16 +869,10 @@ def main():
     if report.get('native_artifact_sha256') and os.environ.get('GITHUB_OUTPUT'):
         with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
             stream.write('tree_outputs_ready=true\n')
-    # Only these independently admitted profiles acquire new evidence. Existing
-    # lanes still require runtime parity; there is no generic bypass flag.
-    acquisition_only = args.profile in ('format-date-names-v1', 'format-date-tokens-v1')
-    accepted = report['native_measurement_accepted'] if acquisition_only else report['runtime_parity_accepted']
-    if acquisition_only:
-        comparison_status = report.get('comparison', {}).get('status', 'not_compared')
-        print('Native date acquisition ' + ('accepted' if accepted else 'failed')
-              + '; runtime comparison: ' + comparison_status + '.')
-    else:
-        print('Native tree measurement accepted.' if accepted else 'Native tree profile failed or differs.')
+    # Fixed date acquisitions are now captured and renderer-aligned. Every lane
+    # requires actual runtime parity; no measurement-only success bypass remains.
+    accepted = report['runtime_parity_accepted']
+    print('Native tree measurement accepted.' if accepted else 'Native tree profile failed or differs.')
     return 0 if accepted else 1
 
 
