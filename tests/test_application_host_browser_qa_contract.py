@@ -55,6 +55,9 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
                      "lifetimeStage='detach_server_receipt'", "await p.goto('about:blank')"]:
             self.assertIn(text,self.source)
         self.assertNotIn('const confirmed=p.waitForResponse',self.source)
+        self.assertIn('return Reflect.apply(original,this,arguments)',self.source)
+        self.assertIn('detachDiagnostics={pagehide:0,fetch:0,request:0,route:0,receipt:0,matched:0}',self.source)
+        self.assertIn("message.text()==='ya-qa-detach-fetch'",self.source)
 
     def test_closed_attachment_and_business_wire(self):
         for text in ["exactKeys(body,'action instance')", "exactKeys(body,'action generation pending')",

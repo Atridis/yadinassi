@@ -188,6 +188,7 @@ const wireEvents=[];
 let wireFailure=false;
 let routeFailure=null;
 let lifetimeStage=null;
+const detachDiagnostics={pagehide:0,fetch:0,request:0,route:0,receipt:0,matched:0};
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
 function checkRequest(request){
   const raw=request.postData();assert.ok(raw&&Buffer.byteLength(raw)<=65536,'wire_budget');
@@ -319,6 +320,21 @@ async function main(){
   report.sandbox={requested:true,commandVerified:true,...sandboxStatus(await probe.locator('body').innerText())};
   report.launch.stage='sandbox_probe_close';
   await probe.close();report.launch.stage='verified';
+  // Diagnostic observation only: call the original fetch unchanged and never dispatch lifecycle events.
+  await context.addInitScript(()=>{
+    addEventListener('pagehide',()=>console.debug('ya-qa-pagehide'));
+    const original=globalThis.fetch;
+    globalThis.fetch=function(input,options){
+      if(input==='/attachment'&&typeof options?.body==='string'){
+        try{if(JSON.parse(options.body).action==='detach')console.debug('ya-qa-detach-fetch');}catch{}
+      }
+      return Reflect.apply(original,this,arguments);
+    };
+  });
+  context.on('request',request=>{
+    if(new URL(request.url()).pathname!=='/attachment')return;
+    try{if(request.postDataJSON()?.action==='detach')detachDiagnostics.request++;}catch{}
+  });
   const replies=new WeakMap(),headers=new WeakMap(),detachReceipts=new Map();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
   await context.route('**/*',async route=>{
     const request=route.request(),target=request.url();
@@ -330,6 +346,7 @@ async function main(){
       routeStage='attachment_validation';
       assert.ok(++attachmentRequests<=96,'attachment_request_budget');
       const body=request.postDataJSON();
+      if(body.action==='detach')detachDiagnostics.route++;
       if(body.action==='attach'){exactKeys(body,'action instance');assert.match(body.instance,/^[0-9a-f]{32}$/);}
       else{exactKeys(body,'action generation pending');assert.ok(['status','heartbeat','detach','takeover'].includes(body.action));assert.ok(Number.isSafeInteger(body.generation)&&body.generation>=0);assert.equal(typeof body.pending,'boolean');}
       // Credentials are retained only for in-memory stale-writer proof, never artifacts.
@@ -337,6 +354,7 @@ async function main(){
       const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0}),bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');const value=JSON.parse(bytes.toString('utf8'));
       if(value.credential)tokens.push(value.credential);if(value.resume)tokens.push(value.resume);
       if(body.action==='detach'){
+        detachDiagnostics.receipt++;
         const sent=request.headers(),key=sent['x-yadinassi-session'],expected=detachReceipts.get(key);
         if(expected){
           assert.equal(response.status(),200,'detach_http_accepted');
@@ -344,7 +362,7 @@ async function main(){
           assert.equal(value.attachment,expected.attachment,'detach_attachment');
           assert.equal(value.role,'observer','detach_released_writer');
           assert.ok(Number.isSafeInteger(value.generation)&&value.generation>=body.generation,'detach_generation');
-          expected.accept();detachReceipts.delete(key);
+          detachDiagnostics.matched++;expected.accept();detachReceipts.delete(key);
         }
       }
       return route.fulfill({response});
@@ -365,7 +383,11 @@ async function main(){
     return await route.continue();
     }catch{if(host&&host.exitCode===null&&!aborted){routeFailure??=routeStage;wireFailure=true;abort();}return route.abort().catch(()=>{});}
   });
-  const newPage=async()=>{const p=await context.newPage();p.on('dialog',dialog=>dialog.accept());return p;};
+  const newPage=async()=>{const p=await context.newPage();p.on('dialog',dialog=>dialog.accept());
+    p.on('console',message=>{if(message.type()!=='debug')return;
+      if(message.text()==='ya-qa-pagehide')detachDiagnostics.pagehide++;
+      else if(message.text()==='ya-qa-detach-fetch')detachDiagnostics.fetch++;
+    });return p;};
   const ownership=(p,role)=>p.waitForFunction(expected=>document.querySelector('.browser-ownership')?.dataset.role===expected,role,{timeout:remaining(10000)});
   const state=p=>replies.get(p)?.result?.state;
   const openShipped=async(kind='shipped')=>{await startHost(kind);page=await newPage();await page.goto(url);await ownership(page,'writer');await countPanels(1);await idle();};
@@ -463,6 +485,7 @@ async function main(){
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
   assert.equal(wireFailure,false,'wire_contract_failed');
   report.status='PASS';report.rpcRequests=rpc;
+  report.detachDiagnostics={...detachDiagnostics};
 }
 // Hard work limit plus a separate 20-second cleanup reserve. No security changes.
 const deadline=setTimeout(abort,Math.max(0,workDeadline-Date.now()));
@@ -473,6 +496,7 @@ catch(error){
   // Fixed, bounded flags/counts only. Never record DOM text, field contents,
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
+  report.detachDiagnostics={...detachDiagnostics};
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   if(routeFailure)report.routeFailure=routeFailure;
   if(lifetimeStage)report.lifetimeStage=lifetimeStage;
