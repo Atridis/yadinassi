@@ -143,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--import-xml", metavar="DIRECTORY", help="каталог штатной XML-выгрузки конфигурации")
     parser.add_argument("--numbering-policy", choices=("explicit", "decimal_v1"),
                         help="локальная политика нумерации при импорте; не гарантия совместимости с 1С")
+    parser.add_argument("--module-runtime", choices=("managed-client-server-v1",),
+                        help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
@@ -155,15 +157,16 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--create-db или --create-demo-db требуется вместе с --import-xml")
         if args.f is not None or args.file is not None or args.command is not None:
             parser.error("импорт конфигурации не совмещается с исполнением или --f")
-        if demo and (args.inactive or args.numbering_policy is not None):
+        if demo and (args.inactive or args.numbering_policy is not None or args.module_runtime is not None):
             parser.error("--create-demo-db не совмещается с --inactive или --numbering-policy")
         from .configuration_import import load_configuration_directory, read_configuration_directory
         try:
             if demo:
                 configuration = read_configuration_directory(args.import_xml)
             else:
-                configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit')
-        except (BackendError, ValueError, OSError):
+                configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit',
+                                                             module_runtime=args.module_runtime)
+        except (BackendError, BSLError, ValueError, OSError):
             print("yadinassi: configuration import refused", file=sys.stderr)
             return 1
         try:
@@ -191,6 +194,10 @@ def main(argv: list[str] | None = None) -> int:
             for issue in configuration.activation_issues:
                 print("Activation issue: " + issue)
         return 0
+    if args.module_runtime is not None and args.f is None:
+        parser.error("--module-runtime при исполнении требует --f")
+    if args.module_runtime is not None and args.preprocessor_profile != "standalone":
+        parser.error("--module-runtime использует собственный закрытый контекст компиляции")
     if args.file is not None and args.command is not None:
         parser.error("файл и -c нельзя использовать одновременно")
     try:
@@ -198,15 +205,28 @@ def main(argv: list[str] | None = None) -> int:
     except BackendError as error:
         print(f"yadinassi: database {error.code}", file=sys.stderr)
         return 1
+    application = None
     try:
-        interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
-                                  compilation_profile=args.preprocessor_profile)
+        if args.module_runtime is not None:
+            from .configuration_runtime import ConfigurationApplication
+            application = ConfigurationApplication.from_database(database_context)
+            interpreter = application.interpreter
+        else:
+            interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
+                                      compilation_profile=args.preprocessor_profile)
+    except (BSLError, ValueError, TypeError):
+        if database_context is not None:
+            database_context.close()
+        print("yadinassi: configuration runtime refused", file=sys.stderr)
+        return 1
     except BackendError as error:
         if database_context is not None:
             database_context.close()
         print(f"yadinassi: database {error.code}", file=sys.stderr)
         return 1
     try:
+        if application is not None and not application.start():
+            return 0
         if args.command is not None:
             interpreter.execute(args.command, "<команда>")
         elif args.file is not None:
@@ -222,12 +242,18 @@ def main(argv: list[str] | None = None) -> int:
             if result:
                 return result
             interpreter.ensure_complete()
+            if application is not None and not application.close():
+                print("yadinassi: application shutdown cancelled", file=sys.stderr)
+                return 1
             return result
         interpreter.ensure_complete()
+        if application is not None and not application.close():
+            print("yadinassi: application shutdown cancelled", file=sys.stderr)
+            return 1
     except BSLError as error:
         print(error, file=sys.stderr)
         return 1
-    except (OSError, UnicodeError, LookupError) as error:
+    except (OSError, UnicodeError, LookupError, ValueError, TypeError) as error:
         print(f"yadinassi: {error}", file=sys.stderr)
         return 1
     except RecursionError:
