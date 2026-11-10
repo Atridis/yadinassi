@@ -372,9 +372,15 @@ async function main(){
     await catalog().getByText('No records yet.',{exact:true}).waitFor();
     phase='declared_product_card_open';
     await catalog().getByRole('button',{name:'New record',exact:true}).click();await countPanels(1);
-    phase='declared_product_accessible_fields';
-    await field('Product code').fill('P1');await field('Product title').fill('Form reject');
-    await field('Unit price').fill('10');await field('Available for sale').check();
+    phase='declared_product_code_input';
+    await field('Product code').fill('P1');
+    phase='declared_product_description_input';
+    await field('Product title').fill('Form reject');
+    phase='declared_product_price_input';
+    await field('Unit price').fill('10');
+    phase='declared_product_checkbox_after_dirty_price';
+    await field('Available for sale').check();
+    phase='declared_product_empty_date_readonly';
     assert.equal(await field('Available since').inputValue(),'0');
     assert.equal(await field('Available since').getAttribute('readonly'),'');
     phase='form_refusal_does_not_persist';

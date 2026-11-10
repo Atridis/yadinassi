@@ -29,6 +29,10 @@ integration run.
 - String, Boolean and Decimal fields dispatch tagged values. Decimal coefficient
   text never goes through JavaScript floating-point conversion. The small bounded
   exponent is used only to produce the codec's canonical Decimal spelling.
+- Checkbox activation, including a click on its label or a table-cell checkbox,
+  owns the preceding text blur. It validates every pending draft, applies earlier
+  edits in sequence, then applies the checkbox at the latest revision. A failure
+  stops that sequence; no pending toggle is automatically replayed.
 - Text changes apply on blur or Enter. Moving to a command or Close suppresses the
   racing blur request. The action validates all drafts, flushes changes in order,
   then dispatches its command at the returned revision. Explicit row selection uses

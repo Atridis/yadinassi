@@ -375,6 +375,9 @@ function createFormView(document, root, handlers) {
     } else {
       row.htmlFor = id; hint.id = id + '-hint'; input.setAttribute('aria-describedby', hint.id);
       input.type = item.value.type === 'Boolean' ? 'checkbox' : 'text';
+      // A checkbox activation, including its label, owns the preceding blur.
+      // Its change intent flushes all pending fields before applying the toggle.
+      if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
@@ -384,10 +387,10 @@ function createFormView(document, root, handlers) {
         else drafts.set(item.name, {type: active.value.type, value});
       });
       input.addEventListener('change', () => {
-        if (input.type === 'checkbox' && !isBusy) handlers.change(item.name);
+        if (input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
       });
       input.addEventListener('blur', event => {
-        // Clicking or tabbing to a command belongs to its serialized flush path.
+        // Commands and checkbox activations own their serialized flush path.
         if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
             !event.relatedTarget?.closest('[data-form-action]')) handlers.change(item.name);
       });
@@ -440,7 +443,9 @@ function createFormView(document, root, handlers) {
       if (sameValue(active, value)) cellDrafts.delete(key);
       else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
     });
-    input.addEventListener('change', () => { if (input.type === 'checkbox' && !isBusy) handlers.change(locator); });
+    input.addEventListener('change', () => {
+      if (input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
+    });
     input.addEventListener('blur', event => {
       if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
           !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
@@ -500,6 +505,8 @@ function createFormView(document, root, handlers) {
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
+        if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
+        else delete input.dataset.formAction;
         input.className = 'cell-input' + (value.type === 'Number' ? ' decimal-cell' : '');
         input.disabled = disabled || input.type === 'checkbox' && readOnly; input.readOnly = readOnly;
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
@@ -673,7 +680,7 @@ function mountForm(environment, root, options = {}) {
     }
   }
   async function run(event, name, row) {
-    if (event === 'change' && options.isActive && !options.isActive()) return;
+    if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
@@ -690,9 +697,19 @@ function mountForm(environment, root, options = {}) {
     }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
-    try { changes = view.changes(event === 'change' ? name : undefined); }
+    try {
+      changes = view.changes(event === 'change' ? name : undefined);
+      if (event === 'toggle') {
+        // Validate every draft first, then apply the newly activated checkbox
+        // last, even when declaration order puts it before the field just left.
+        const target = change => typeof name === 'string'
+          ? !Object.hasOwn(change, 'row') && change.control === name
+          : change.control === name.control && change.row === name.row && change.column === name.column;
+        changes = [...changes.filter(change => !target(change)), ...changes.filter(target)];
+      }
+    }
     catch (caught) { showError(caught); paint(); return; }
-    if (event === 'change' && !changes.length) return;
+    if (['change', 'toggle'].includes(event) && !changes.length) return;
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {

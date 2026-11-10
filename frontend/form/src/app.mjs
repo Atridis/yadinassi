@@ -37,7 +37,7 @@ export function mountForm(environment, root, options = {}) {
     }
   }
   async function run(event, name, row) {
-    if (event === 'change' && options.isActive && !options.isActive()) return;
+    if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
@@ -54,9 +54,19 @@ export function mountForm(environment, root, options = {}) {
     }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
-    try { changes = view.changes(event === 'change' ? name : undefined); }
+    try {
+      changes = view.changes(event === 'change' ? name : undefined);
+      if (event === 'toggle') {
+        // Validate every draft first, then apply the newly activated checkbox
+        // last, even when declaration order puts it before the field just left.
+        const target = change => typeof name === 'string'
+          ? !Object.hasOwn(change, 'row') && change.control === name
+          : change.control === name.control && change.row === name.row && change.column === name.column;
+        changes = [...changes.filter(change => !target(change)), ...changes.filter(target)];
+      }
+    }
     catch (caught) { showError(caught); paint(); return; }
-    if (event === 'change' && !changes.length) return;
+    if (['change', 'toggle'].includes(event) && !changes.length) return;
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {

@@ -77,6 +77,9 @@ export function createFormView(document, root, handlers) {
     } else {
       row.htmlFor = id; hint.id = id + '-hint'; input.setAttribute('aria-describedby', hint.id);
       input.type = item.value.type === 'Boolean' ? 'checkbox' : 'text';
+      // A checkbox activation, including its label, owns the preceding blur.
+      // Its change intent flushes all pending fields before applying the toggle.
+      if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
@@ -86,10 +89,10 @@ export function createFormView(document, root, handlers) {
         else drafts.set(item.name, {type: active.value.type, value});
       });
       input.addEventListener('change', () => {
-        if (input.type === 'checkbox' && !isBusy) handlers.change(item.name);
+        if (input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
       });
       input.addEventListener('blur', event => {
-        // Clicking or tabbing to a command belongs to its serialized flush path.
+        // Commands and checkbox activations own their serialized flush path.
         if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
             !event.relatedTarget?.closest('[data-form-action]')) handlers.change(item.name);
       });
@@ -142,7 +145,9 @@ export function createFormView(document, root, handlers) {
       if (sameValue(active, value)) cellDrafts.delete(key);
       else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
     });
-    input.addEventListener('change', () => { if (input.type === 'checkbox' && !isBusy) handlers.change(locator); });
+    input.addEventListener('change', () => {
+      if (input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
+    });
     input.addEventListener('blur', event => {
       if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
           !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
@@ -202,6 +207,8 @@ export function createFormView(document, root, handlers) {
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
+        if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
+        else delete input.dataset.formAction;
         input.className = 'cell-input' + (value.type === 'Number' ? ' decimal-cell' : '');
         input.disabled = disabled || input.type === 'checkbox' && readOnly; input.readOnly = readOnly;
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
