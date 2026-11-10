@@ -1,0 +1,108 @@
+{
+  "protocol": "yadinassi-form-app/2",
+  "handlers": [
+    {
+      "name": "SearchCommand",
+      "endpoint": 1,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "ChooseCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "CancelCommand",
+      "endpoint": 3,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 4,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    }
+  ],
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "routine": "SearchChoices"
+    },
+    {
+      "endpoint": 2,
+      "routine": "Choose"
+    },
+    {
+      "endpoint": 3,
+      "routine": "CancelChoice"
+    }
+  ],
+  "lifecycle": {
+    "OnCreateAtServer": "Create",
+    "BeforeClose": "BeforeClose"
+  },
+  "attributes": [
+    {
+      "name": "SearchCode",
+      "type": "String",
+      "title": "Find exact code (empty shows first 32)",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Status",
+      "type": "String",
+      "title": "Status",
+      "value": {
+        "type": "String",
+        "value": ""
+      }
+    },
+    {
+      "name": "Dirty",
+      "type": "Boolean",
+      "title": "Dirty",
+      "value": {
+        "type": "Boolean",
+        "value": false
+      }
+    }
+  ],
+  "tables": [
+    {
+      "name": "Choices",
+      "title": "Available records",
+      "columns": [
+        {
+          "name": "Code",
+          "type": "String",
+          "title": "Code",
+          "readOnly": true
+        },
+        {
+          "name": "Description",
+          "type": "String",
+          "title": "Description",
+          "readOnly": true
+        }
+      ]
+    }
+  ],
+  "application": "catalog-choice/1"
+}

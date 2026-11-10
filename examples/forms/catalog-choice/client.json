@@ -1,0 +1,62 @@
+{
+  "protocol": "yadinassi-form-app/2",
+  "handlers": [
+    {
+      "name": "SearchCommand",
+      "endpoint": 1,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "ChooseCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "CancelCommand",
+      "endpoint": 3,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 4,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    }
+  ],
+  "bindings": [
+    {
+      "name": "RemoteSearch",
+      "endpoint": 1,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteChoose",
+      "endpoint": 2,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteCancel",
+      "endpoint": 3,
+      "parameters": [],
+      "isFunction": false
+    }
+  ],
+  "discardCommands": [],
+  "dirtyAttribute": "Dirty"
+}
