@@ -42,7 +42,7 @@ def required(query):
         return (type(node) is syntax.Comparison and
                 (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
                  type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
-    return (query.family == 'document' or query.joins or query.groups or query.having is not None or query.distinct
+    return (query.family in ('document', 'information_register') or query.joins or query.groups or query.having is not None or query.distinct
             or any(type(p.field) is not syntax.Field for p in query.projections)
             or any(type(o.field) is not syntax.Field for o in query.order)
             or extended(query.predicate))
@@ -79,11 +79,12 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None, information_registers=None):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
         self.catalogs, self.documents = catalogs, documents
+        self.information_registers = information_registers
         self._descriptors = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
@@ -101,11 +102,17 @@ class _Plan:
             if source.family == 'document':
                 if documents is None: raise ValueError('Document query sources require document context')
                 manager = documents.get_index(source.catalog)
+            elif source.family == 'information_register':
+                if information_registers is None:
+                    raise ValueError('Information-register query sources require register context')
+                manager = information_registers.get_index(source.catalog)
             else:
                 manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
             section = None
             if source.section is not None:
+                if source.family == 'information_register':
+                    raise ValueError('Information-register virtual tables are unsupported')
                 matches = [item for item in manager._schema.tabular_sections
                            if item.name.casefold() == source.section.casefold()]
                 if len(matches) != 1: raise ValueError('Unknown query tabular section')
@@ -151,14 +158,19 @@ class _Plan:
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)
-        # COUNT(*) still scans Ref so rows and source identity can be validated.
+        # COUNT(*) still binds a source field so rows and identity are validated.
         for i, fields in enumerate(self.fields):
             if not fields and not (self.sources[i].temporary or self.sources[i].external):
-                fields.append(self.resolve_field(i, syntax.Field(('Ref',))))
+                name = (self.managers[i]._schema.dimensions[0].name
+                        if self.sources[i].family == 'information_register' else 'Ref')
+                fields.append(self.resolve_field(i, syntax.Field((name,))))
 
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
+        if source.family == 'information_register' and not (source.temporary or source.external):
+            from .register_queries import register_field
+            return register_field(self.managers[index], expression, source.alias)
         if source.family == 'document' and not (source.temporary or source.external):
             from .document_queries import document_field
             return document_field(self.managers[index], expression, source.alias, self.sections[index])
@@ -425,6 +437,9 @@ class _Plan:
             if len(rows) > syntax.MAX_ROWS or budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
                 raise ValueError('Query input resource limit exceeded')
             return rows
+        if self.sources[index].family == 'information_register':
+            from .register_queries import load_register
+            return load_register(manager, columns, view, budget)
         if self.sources[index].family == 'document':
             from .document_queries import load_documents
             return load_documents(manager, section, columns, view, budget)
@@ -511,8 +526,8 @@ class _Plan:
         if view is None:
             manager = next((m for m in self.managers if m is not None), None)
             if manager is not None:
-                if any(source.family == 'document' for source in self.sources):
-                    view = self.documents._context.backend.begin_query_read()
+                if any(source.family in ('document', 'information_register') for source in self.sources):
+                    view = self.catalogs._context.backend.begin_query_read()
                 else:
                     view = manager._view()
                 owner = True
@@ -552,5 +567,6 @@ class _Plan:
         return BSLQueryResult(self.columns, tuple(values for values, _ in projected[:self.query.limit]))
 
 
-def execute(query, catalogs, parameters, documents=None):
-    return _Plan(query, catalogs, parameters, documents=documents).execute()
+def execute(query, catalogs, parameters, documents=None, information_registers=None):
+    return _Plan(query, catalogs, parameters, documents=documents,
+                 information_registers=information_registers).execute()

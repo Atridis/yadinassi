@@ -62,10 +62,10 @@ def parse_schema(raw):
     return schema
 
 
-def load_schemas(connection, catalogs):
+def load_schemas(connection, catalogs, *, allow_empty=False):
     invalid = connection.execute("SELECT 1 FROM document_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>262144 LIMIT 1").fetchone()
     count, size = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(definition AS BLOB))),0) FROM document_schema').fetchone()
-    if invalid or not 1 <= count <= 512 or size > _MAX_TOTAL: raise BackendError('integrity')
+    if invalid or not (0 if allow_empty else 1) <= count <= 512 or size > _MAX_TOTAL: raise BackendError('integrity')
     rows = tuple(connection.execute('SELECT identity,name,definition FROM document_schema ORDER BY identity'))
     schemas = tuple(parse_schema(row[2]) for row in rows)
     if any(row[:2] != (str(s.identity),s.name) for row,s in zip(rows,schemas)):
@@ -102,7 +102,8 @@ class DocumentView:
         self.database_id = view.database_id
         self.configuration_generation = view.configuration_generation
         self._outcome = None; self._hash = None
-        if view._backend.storage_version != 7:
+        self._register_read_view = None
+        if view._backend.storage_version not in (7, 8):
             self._schemas = ()
         else:
             self._schemas = view._backend._document_schemas
@@ -119,6 +120,16 @@ class DocumentView:
         return self._view.scan_catalog_values(identity, request, fields)
     def scan_catalog_section(self, identity, section_id, request):
         return self._view.scan_catalog_section(identity, section_id, request)
+    def _register_reader(self):
+        self._view._require()
+        if self._register_read_view is None:
+            from .sqlite_registers import RegisterView
+            self._register_read_view = RegisterView(self._view)
+        return self._register_read_view
+    def registers(self): return self._register_reader().registers()
+    def register_schema(self, identity): return self._register_reader().register_schema(identity)
+    def scan_register(self, identity, request):
+        return self._register_reader().scan_register(identity, request)
     def documents(self): self._view._require(); return self._schemas
     def document_schema(self, identity):
         self._view._require(); _storage()._uuid(identity)

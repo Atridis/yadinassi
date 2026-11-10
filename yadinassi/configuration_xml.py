@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 
 from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
 from .document_backend import DocumentSchema
+from .register_backend import InformationRegisterSchema
 
 MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
@@ -59,6 +60,7 @@ class ConfigurationImport:
     documents: tuple[DocumentSchema, ...] = ()
     common_modules: tuple = ()
     module_runtime: str | None = None
+    information_registers: tuple[InformationRegisterSchema, ...] = ()
 
 
 def _fail(reason):
@@ -389,10 +391,10 @@ def _activation_properties(obj, allowed, issues, owner):
             issues.append('unsupported presentation metadata:'+owner+':'+tag)
     for container in obj.findall('{'+MD+'}ChildObjects'):
         for node in container:
-            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' or (obj.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document') and node.tag == '{'+MD+'}TabularSection') else set()
+            permitted = {'uuid'} if node.tag in ('{'+MD+'}Attribute', '{'+MD+'}Dimension', '{'+MD+'}Resource') or (obj.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document') and node.tag == '{'+MD+'}TabularSection') else set()
             if (set(node.attrib) != permitted or (node.tail or '').strip(_XML_WHITESPACE)
                     or (len(node) and (node.text or '').strip(_XML_WHITESPACE))
-                    or (node.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document') and obj.tag == '{'+MD+'}Configuration' and len(node))):
+                    or (node.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document', '{'+MD+'}InformationRegister') and obj.tag == '{'+MD+'}Configuration' and len(node))):
                 issues.append('unsupported child metadata envelope:'+owner)
 
 
@@ -548,6 +550,44 @@ def _document_schema(raw, name, targets, used, issues):
                           'decimal_v1' if auto == 'true' else 'explicit')
 
 
+_REGISTER_RESERVED = _RESERVED | frozenset((
+    'read', 'прочитать', 'delete', 'удалить', 'selected', 'выбран',
+    'next', 'следующий', 'period', 'период', 'recorder', 'регистратор',
+    'active', 'активность', 'linenumber', 'номерстроки'))
+
+
+def _register_schema(raw, name, targets, used, issues):
+    obj, ns, root = _object(raw, 'InformationRegister', include_root=True)
+    props = _props(obj)
+    identity = _uuid(obj.get('uuid'))
+    if identity in used: _fail('duplicate metadata UUID')
+    used.add(identity)
+    if _text(props, 'Name') != name: _fail('register filename/name mismatch')
+    _envelope_issues(root, obj, issues, name)
+    _activation_properties(obj, {'Name', 'Synonym', 'Comment',
+        'InformationRegisterPeriodicity', 'WriteMode'}, issues, name)
+    if (_text(props, 'InformationRegisterPeriodicity') != 'Nonperiodical'
+            or _text(props, 'WriteMode') != 'Independent'):
+        _fail('unsupported register semantics')
+    groups = {'Dimension': [], 'Resource': [], 'Attribute': []}
+    names = set(_REGISTER_RESERVED)
+    children = obj.find('{'+MD+'}ChildObjects')
+    for item in (() if children is None else children):
+        kind = item.tag.removeprefix('{'+MD+'}')
+        if item.tag != '{'+MD+'}'+kind or kind not in groups:
+            _fail('register child object unsupported')
+        _activation_properties(item, {'Name', 'Synonym', 'Comment', 'Type'}, issues, name)
+        fp = _props(item); fn = _name(_text(fp, 'Name')); fid = _uuid(item.get('uuid'))
+        if fn.casefold() in names or fid in used: _fail('field identity/name collision')
+        names.add(fn.casefold()); used.add(fid)
+        value_kind, qualifiers, target = _type(fp, ns, targets)
+        groups[kind].append(FieldSchema(fid, fn, value_kind, qualifiers, target))
+    if not 1 <= len(groups['Dimension']) <= 16: _fail('register dimension count')
+    if not groups['Resource'] or sum(map(len, groups.values())) > 64: _fail('register field count')
+    return InformationRegisterSchema(identity, name, tuple(groups['Dimension']),
+        tuple(groups['Resource']), tuple(groups['Attribute']))
+
+
 def import_configuration(files, *, numbering_policy='explicit', module_runtime=None):
     """Import closed XML; decimal_v1 is an explicit local numbering choice.
 
@@ -566,19 +606,22 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
     children=config.find('{'+MD+'}ChildObjects')
     if children is None:_fail('missing configuration ChildObjects')
-    catalog_names=[];document_names=[];common_names=[]
+    catalog_names=[];document_names=[];common_names=[];register_names=[]
     for node in children:
         if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
             common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+        if node.tag=='{'+MD+'}InformationRegister':
+            register_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if node.tag=='{'+MD+'}Document':
             document_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if node.tag!='{'+MD+'}Catalog':
             issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
         catalog_names.append(_name((node.text or '').strip(_XML_WHITESPACE)))
     minimum = 0 if module_runtime is not None else 1
-    if not minimum<=len(catalog_names)+len(document_names)<=512:_fail('metadata inventory')
+    if not minimum<=len(catalog_names)+len(document_names)+len(register_names)<=512:_fail('metadata inventory')
     if len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
     if len({x.casefold() for x in document_names})!=len(document_names):_fail('document inventory')
+    if len({x.casefold() for x in register_names})!=len(register_names):_fail('register inventory')
     for cname in catalog_names:
         path='Catalogs/'+cname+'.xml'
         if path not in files:_fail('missing catalog XML')
@@ -667,10 +710,17 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         section_count+=len(document.tabular_sections)
         if section_count>512:_fail('tabular section count')
         documents.append(document)
+    registers=[]
+    for rname in register_names:
+        path='InformationRegisters/'+rname+'.xml'
+        if path not in files:
+            issues.append('missing information register XML:'+rname);continue
+        registers.append(_register_schema(files[path],rname,targets,used,issues))
     common_modules = read_common_modules(files, common_names, used, issues) if module_runtime else ()
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
                         *(f'Documents/{n}.xml' for n in document_names),
-                        *(f'CommonModules/{n}.xml' for n in common_names)}
+                        *(f'CommonModules/{n}.xml' for n in common_names),
+                        *(f'InformationRegisters/{n}.xml' for n in register_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
     # invent a Configuration owner for a file whose metadata owner is unknown.
@@ -714,7 +764,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
             if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
         elif entry.path == 'ConfigDumpInfo.xml':
             versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
-            if document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
+            if register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
                 issues.append('unsupported configuration file:'+entry.path)
         elif entry.path not in expected:
             _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
@@ -723,7 +773,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                       ' (individual paths retained in configuration files)')
     else:
         issues.extend(unknown_module_issues)
-    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime)
+    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers))
     if module_runtime is not None:
         validate_module_sources(result)
     return result

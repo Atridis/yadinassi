@@ -33,7 +33,7 @@ class QueryParserTests(unittest.TestCase):
     def test_unsupported_language_is_never_partially_accepted(self):
         variants = [
             'SELECT * FROM Catalog.Products',
-            'SELECT Code FROM InformationRegister.Balances',
+            'SELECT Code FROM AccountingRegister.Balances',
             'SELECT Code FROM Catalog.Products, Catalog.Categories',
             'SELECT Code FROM Catalog.Products; SELECT Code FROM Catalog.Products',
             'DELETE FROM Catalog.Products',
@@ -69,6 +69,13 @@ class QueryParserTests(unittest.TestCase):
         for source in ('Document.Orders.Lines.Extra', 'Document.Orders()'):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 parse_query('SELECT Ref FROM ' + source)
+
+    def test_information_register_family_rejects_virtual_tables(self):
+        for family in ('InformationRegister', 'РегистрСведений'):
+            query = parse_query('SELECT Key FROM '+family+'.Rates')
+            self.assertEqual(query.family, 'information_register')
+            self.assertIsNone(query.section)
+            with self.assertRaises(ValueError): parse_query('SELECT Key FROM '+family+'.Rates.SliceLast')
 
     def test_duplicate_projection_and_invalid_top(self):
         for text in ('SELECT Code, Code FROM Catalog.Products',
