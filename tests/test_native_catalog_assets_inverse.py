@@ -62,7 +62,7 @@ class FormAssetsInverseTests(unittest.TestCase):
 
 class WorkspaceAssetsInverseTests(unittest.TestCase):
     def test_exact_workspace_layer_restores_unchanged_form_source(self):
-        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        source = history.without_reference_workspace_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
         restored = history.without_workspace_assets_provenance(source)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
                          '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
@@ -79,7 +79,7 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
                 self.assertEqual(inverse(source), inverse(restored))
 
     def test_workspace_layer_rejects_unknown_missing_duplicate_and_modified_hunks(self):
-        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        source = history.without_reference_workspace_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
         hunk = '              for renderer in ("catalog", "form", "workspace") for name in\n'
         self.assertEqual(source.count(hunk), 1)
         self.assertIn('CASE_SECONDS = 10', source)
@@ -95,6 +95,8 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
 class ConfigurationAssetsInverseTests(unittest.TestCase):
     def test_exact_configuration_layer(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = source.replace(', \"reference-workspace\"', '', 1)
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a')
         restored = history.without_configuration_assets_provenance(source)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
         self.assertEqual(restored, source.replace('("catalog", "form", "workspace", "configuration")', '("catalog", "form", "workspace")', 1))
@@ -104,7 +106,62 @@ class ConfigurationAssetsInverseTests(unittest.TestCase):
 
     def test_configuration_layer_rejects_source_drift(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = source.replace(', \"reference-workspace\"', '', 1)
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a')
         hunk = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
         for changed in (source+'# drift\n', source.replace(hunk, '', 1), source+hunk, source.replace('"configuration"', '"unlisted"', 1)):
             for inverse in (history.without_configuration_assets_provenance, history.without_workspace_assets_provenance, history.without_catalog_assets_provenance):
+                with self.assertRaises(AssertionError): inverse(changed)
+
+
+class ReferenceWorkspaceAssetsInverseTests(unittest.TestCase):
+    def test_exact_layer_restores_unchanged_workspace_source(self):
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        restored = history.without_reference_workspace_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(restored, source.replace('("catalog", "form", "workspace", "reference-workspace")',
+                                                  '("catalog", "form", "workspace")', 1))
+        self.assertEqual(history.without_reference_workspace_assets_provenance(restored), restored)
+        for inverse in (history.without_workspace_assets_provenance,
+                        history.without_form_assets_provenance,
+                        history.without_catalog_assets_provenance,
+                        history.without_sqlite_host_context,
+                        history.without_collections_measurement_budget):
+            with self.subTest(inverse=inverse.__name__):
+                self.assertEqual(inverse(source), inverse(restored))
+
+    def test_unknown_missing_duplicate_and_modified_hunks_are_rejected(self):
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        hunk = '              for renderer in ("catalog", "form", "workspace", "reference-workspace") for name in\n'
+        self.assertEqual(source.count(hunk), 1)
+        for changed in (source + '# drift\n', source.replace(hunk, '', 1), source + hunk,
+                        source.replace('"reference-workspace"', '"unlisted"', 1),
+                        source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
+            for inverse in (history.without_reference_workspace_assets_provenance,
+                            history.without_workspace_assets_provenance,
+                            history.without_form_assets_provenance,
+                            history.without_catalog_assets_provenance):
+                with self.subTest(inverse=inverse.__name__), self.assertRaises(AssertionError):
+                    inverse(changed)
+
+
+class CombinedConfigurationReferenceAssetsInverseTests(unittest.TestCase):
+    def test_exact_union_restores_both_historical_sources(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133')
+        reference = history.without_configuration_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(reference.encode()).hexdigest(), '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568')
+        workspace = history.without_reference_workspace_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(workspace.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(history.without_reference_workspace_assets_provenance(reference), workspace)
+        for inverse in (history.without_workspace_assets_provenance, history.without_form_assets_provenance, history.without_catalog_assets_provenance):
+            self.assertEqual(inverse(source), inverse(workspace))
+
+    def test_combined_inverse_rejects_unknown_or_modified_union(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        hunk = '              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in\n'
+        self.assertEqual(source.count(hunk), 1)
+        for changed in (source+'# drift\n', source+hunk, source.replace(hunk, '', 1), source.replace('"configuration"','"unlisted"',1), source.replace('CASE_SECONDS = 10','CASE_SECONDS = 11',1)):
+            for inverse in (history.without_configuration_assets_provenance, history.without_reference_workspace_assets_provenance, history.without_workspace_assets_provenance, history.without_catalog_assets_provenance):
                 with self.assertRaises(AssertionError): inverse(changed)

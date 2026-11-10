@@ -10,6 +10,22 @@ from .transaction_backend import TransactionRequest
 
 _execution = ContextVar('database_execution', default=None)
 _execution_backend = ContextVar('database_execution_backend', default=None)
+_admission_allowed = ContextVar('database_transaction_admission', default=True)
+
+
+@contextmanager
+def admission(allowed):
+    """A nested callee cannot widen its synchronous caller's admission.
+
+    Bind this to the dynamic call boundary, not to the routine's persistent VM:
+    configured common-module owners are reused on both allowed and denied paths.
+    """
+    token = _admission_allowed.set(_admission_allowed.get() and allowed)
+    try:
+        yield
+    finally:
+        _admission_allowed.reset(token)
+
 
 
 def _registered(backend):
@@ -77,7 +93,8 @@ def execution(backend):
 
 def begin(backend):
     from .sqlite_catalog import SQLiteCatalogBackend
-    if type(backend) is not SQLiteCatalogBackend or _execution.get() is None or backend is not _execution_backend.get():
+    if (not _admission_allowed.get() or type(backend) is not SQLiteCatalogBackend
+            or _execution.get() is None or backend is not _execution_backend.get()):
         raise BackendError('unsupported')
     if current(backend) is not None: raise BackendError('unsupported')
     # Reserve the owner slot before acquiring a write connection.

@@ -112,7 +112,7 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
     def test_workflow_route_is_only_the_explicit_configuration_branch(self):
         workflow = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
         self.assertEqual(workflow.split('\non:\n',1)[1].split('\npermissions:',1)[0].strip(),
-            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/configuration-browser-reviewed]')
+            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed]')
         step = workflow.split('      - name: Acquire three configuration form flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         self.assertIn("if: github.ref == 'refs/heads/codex/configuration-browser-reviewed'", step)
         self.assertIn('timeout-minutes: 5', step)

@@ -614,8 +614,8 @@ class Interpreter:
         """Execute already-compiled AST; this does not select source branches."""
         outermost = not self._scheduler.is_active
         try:
-            from .database_transactions import execution
-            with execution(self._transaction_backend()):
+            from .database_transactions import admission, execution
+            with admission(getattr(self, "_transaction_activation_allowed", True)), execution(self._transaction_backend()):
                 return self._execute_program_boundary(program, outermost)
         finally:
             if outermost:
@@ -1431,33 +1431,35 @@ class Interpreter:
         owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
         owner._module_context_stack.append(function.module_context)
-        try:
-            if crossing:
-                for initializer in owner.server_initializers:
-                    yield from owner.block(initializer.body)
-                owner.locals = bindings
-            result = None
+        from .database_transactions import admission
+        with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                (yield from owner.block(function.body))
-            except _Return as returned:
-                result = returned.value
-            if crossing:
-                # Validate the entire outgoing packet before touching caller
-                # storage. Escaping errors never reach this normal-return path.
-                packet = self._copy_context_packet(
-                    [result] + [bindings[name] for name, _ in copyback])
-                result = packet[0]
-                # Every output/result gets an independent per-occurrence copy.
-                # Publish only after the whole packet validates and allocates.
-                for (_, reference), value in zip(copyback, packet[1:]):
-                    reference.set(value)
-            return result
-        finally:
-            owner._module_context_stack.pop()
-            owner._context_stack.pop()
-            owner.locals = previous
-            if crossing:
-                self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
+                if crossing:
+                    for initializer in owner.server_initializers:
+                        yield from owner.block(initializer.body)
+                    owner.locals = bindings
+                result = None
+                try:
+                    (yield from owner.block(function.body))
+                except _Return as returned:
+                    result = returned.value
+                if crossing:
+                    # Validate the entire outgoing packet before touching caller
+                    # storage. Escaping errors never reach this normal-return path.
+                    packet = self._copy_context_packet(
+                        [result] + [bindings[name] for name, _ in copyback])
+                    result = packet[0]
+                    # Every output/result gets an independent per-occurrence copy.
+                    # Publish only after the whole packet validates and allocates.
+                    for (_, reference), value in zip(copyback, packet[1:]):
+                        reference.set(value)
+                return result
+            finally:
+                owner._module_context_stack.pop()
+                owner._context_stack.pop()
+                owner.locals = previous
+                if crossing:
+                    self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
 
     def _async_body(self, function: ast.Routine, bindings: dict):
         previous = self.locals

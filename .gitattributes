@@ -157,3 +157,7 @@ tests/fixtures/property_transfer/*.bsl text eol=lf
 tests/fixtures/property_transfer/*.out -text
 tests/fixtures/property_transfer/*mapping.json -text
 tests/fixtures/property_transfer/*provenance.json -text
+
+# Reference-choice workspace uses the same byte-exact renderer contract.
+frontend/reference-workspace/** text eol=lf
+yadinassi/ui/assets/reference-workspace/* text eol=lf

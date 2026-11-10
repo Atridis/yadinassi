@@ -35,3 +35,9 @@ Await, callback dispatch and transfer to a new server activation. An unfinished
 transaction is rolled back when execution ends; an unresolved durable outcome
 keeps participant buffers locked until receipt resolution. Catalog object-form
 preparation handlers are not yet admitted to the explicit batch writer.
+
+Admission is bound to the synchronous call origin, not to the interpreter that
+owns a common-module routine. A new server activation cannot begin a transaction,
+including indirectly through named/global common modules or aliases. Nested
+same-execution calls cannot widen that restriction; returning or raising restores
+the caller's admission. Ordinary supported client/root calls remain admitted.

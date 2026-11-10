@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" version="2.20">
+<Catalog uuid="06e9c406-7eea-5cab-adc9-9dbad946b080"><Properties><Name>Customers</Name><Hierarchical>false</Hierarchical><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>64</DescriptionLength><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering></Properties><ChildObjects>
+</ChildObjects></Catalog>
+</MetaDataObject>
