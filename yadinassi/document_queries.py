@@ -105,8 +105,73 @@ def _card_values(manager, card, view, seen, budget):
     return values, sections
 
 
-def load_documents(manager, section, columns, view, budget):
+def _load_sqlite_values(manager, section, columns, view, budget, predicate=()):
+    """Use the owned SQLite port only; arbitrary backends keep full-card checks."""
+    from .queries import _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
+    from .document_backend import DocumentValuePage, DocumentValueRow
+    schema = manager._schema
+    count, cells, text = view._validate_query_source(schema)
+    budget[0] += cells
+    budget[1] += text
+    if count > syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+    if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+        raise ValueError('Query input resource limit exceeded')
+    continuation = None
+    rows, cursors, seen = [], set(), set()
+    while True:
+        page = view.scan_document_values(schema.identity, DocumentScanRequest(1, continuation),
+            tuple(c.field for c in columns), None if section is None else section.identity, predicate)
+        if type(page) is not DocumentValuePage or type(page.rows) is not tuple or len(page.rows) > 1000:
+            raise BackendError('integrity')
+        for row in page.rows:
+            if (type(row) is not DocumentValueRow or type(row.key) is not DocumentKey or
+                    row.key.database_id != view.database_id or row.key.document_id != schema.identity or
+                    type(row.key.record_id) is not UUID or not row.key.record_id.int or
+                    type(row.values) is not tuple or len(row.values) != len(columns) or
+                    type(row.line_number) is not int or
+                    not (row.line_number == 0 if section is None else 1 <= row.line_number <= 1000) or
+                    (row.key.record_id, row.line_number) in seen):
+                raise BackendError('integrity')
+            seen.add((row.key.record_id, row.line_number))
+            values = []
+            for column, value in zip(columns, row.values):
+                if column.custom is not None: value = _section_value(manager, column.custom, value)
+                elif column.field == 'ref':
+                    if type(value) is not DocumentKey or value != row.key: raise BackendError('integrity')
+                    value = manager._ref(value.record_id)
+                elif column.field == 'date':
+                    if type(value) is not datetime or value.tzinfo is not None or value.microsecond:
+                        raise BackendError('integrity')
+                    value = _date_from_datetime(value)
+                elif column.field == 'number':
+                    try: validate_string(value, schema.number_length)
+                    except (TypeError, ValueError): raise BackendError('integrity') from None
+                    if not value: raise BackendError('integrity')
+                elif column.field in ('posted','deletion_mark'):
+                    if type(value) is not bool: raise BackendError('integrity')
+                elif column.field == 'line_number':
+                    if type(value) is not Decimal or value != row.line_number: raise BackendError('integrity')
+                values.append(value)
+            rows.append(tuple(values))
+            if len(rows) > syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+        if page.continuation is None: return rows
+        if type(page.continuation) is not str or len(page.continuation) != 32 or page.continuation in cursors:
+            raise BackendError('integrity')
+        # Empty sections may legitimately produce an empty page for an owner.
+        continuation = page.continuation
+        cursors.add(continuation)
+        if len(cursors) > syntax.MAX_ROWS: raise BackendError('integrity')
+
+
+def _owned_projection_view(view):
+    from .sqlite_documents import DocumentView
+    return type(view) is DocumentView and view._view._operation_id is None
+
+
+def load_documents(manager, section, columns, view, budget, *, predicate=()):
     manager._check_view(view)
+    if _owned_projection_view(view):
+        return _load_sqlite_values(manager, section, columns, view, budget, predicate)
     rows, seen, cursors = [], set(), set()
     continuation = None
     while True:

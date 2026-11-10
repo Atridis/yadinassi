@@ -74,6 +74,7 @@ def _close_owned_connection(owner):
         # A failed close makes the owner unusable but does not prove that
         # SQLite released its locks. Retain ownership until close succeeds.
         owner._closed=True; owner._scan_cursor=None
+        if hasattr(owner, '_validated_sources'): owner._validated_sources.clear()
         rollback_error=None
         try:
             _close_document_scan(owner)
@@ -1229,6 +1230,7 @@ class _View:
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
+        self._validated_sources = {}
         self._document_scan_stream = None
         self._document_scan_lookahead = None
         self._outcomes = []
@@ -1486,6 +1488,10 @@ class _View:
         return left >= right
 
     def _validate_scan_scalars(self, catalog_id, schema, *, retain_owners=False):
+        self._require()
+        cache_key = ('catalog-scalars', catalog_id, schema, retain_owners)
+        if self._operation_id is None and cache_key in self._validated_sources:
+            return set(self._validated_sources[cache_key])
         # Filtering must not hide corrupted owner values. This pass retains no
         # payload or card; coarse bounds run before the first payload fetch.
         if self._backend.storage_version >= 2:
@@ -1515,6 +1521,8 @@ class _View:
             if retain_owners: owners.add(str(scalar.key.record_id))
             seen += 1
         if seen != count: raise BackendError('integrity')
+        if self._operation_id is None:
+            self._validated_sources[cache_key] = frozenset(owners)
         return owners
 
     def _scan_sql(self, schema, request):
@@ -1571,7 +1579,8 @@ class _View:
         # Preserve stable source order even for parseable noncanonical UUID
         # aliases, which the historical reader accepts as the same UUID value.
         order.append('rowid ASC')
-        return predicate[0], predicate[1], ','.join(order)
+        return predicate[0], predicate[1], ','.join(order), tuple(
+            (term.rsplit(' ', 1)[0], term.endswith(' DESC')) for term in order)
 
     def _section_scan(self, schema, owners, *, materialize=False, selected=None, verified=False):
         """Validate in bounded batches, then stream or load only a result page.
@@ -1739,8 +1748,24 @@ class _View:
         if plan is None:
             rows = [item[0] for item in fallback[offset:offset+request.page_size+1]]
         else:
-            rows = self._connection.execute('SELECT %s FROM %s WHERE (%s) AND (%s) ORDER BY %s LIMIT ? OFFSET ?' %
-                (projection_columns or columns,table,source_where,plan[0],plan[2]),source_args+plan[1]+(request.page_size+1,offset)).fetchall()
+            # The continuation stores the last physical sort key, not an offset.
+            # Include rowid after logical UUID to preserve accepted UUID aliases.
+            key_columns = tuple(column for column, descending in plan[3])
+            seek, seek_args = '1', ()
+            if type(offset) is tuple:
+                clauses, arguments = [], []
+                for i, (column, descending) in enumerate(plan[3]):
+                    clauses.append('(' + ' AND '.join(
+                        [key_columns[j] + ' = ?' for j in range(i)] +
+                        [column + (' < ?' if descending else ' > ?')]) + ')')
+                    arguments.extend(offset[:i + 1])
+                seek, seek_args = '(' + ' OR '.join(clauses) + ')', tuple(arguments)
+            rows = self._connection.execute(
+                'SELECT %s,%s FROM %s WHERE (%s) AND (%s) AND (%s) ORDER BY %s LIMIT ?' %
+                (projection_columns or columns, ','.join(key_columns), table, source_where, plan[0], seek, plan[2]),
+                source_args + plan[1] + seek_args + (request.page_size + 1,)).fetchall()
+            next_key = tuple(rows[min(len(rows), request.page_size) - 1][-len(key_columns):]) if rows else None
+            rows = [row[:-len(key_columns)] for row in rows]
         more = len(rows) > request.page_size
         rows = rows[:request.page_size]
         if fields is None:
@@ -1756,7 +1781,7 @@ class _View:
                     items.append(CatalogValueRow(scalar.key,tuple(self._scan_value(schema,scalar,field) for field in fields)))
             items = tuple(items)
         token = uuid4().hex if more else None
-        self._scan_cursor = None if token is None else (token,binding,offset+len(rows),fallback)
+        self._scan_cursor = None if token is None else (token,binding,(offset+len(rows) if plan is None else next_key),fallback)
         return CatalogPage(items,token) if fields is None else CatalogValuePage(items,token)
 
     def _preflight_section_scan(self, schema, section):
@@ -2148,7 +2173,7 @@ class _View:
         _close_owned_connection(self)
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('documents','document_schema','read_document','select_documents','scan_documents','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

@@ -4,6 +4,7 @@ Distinct document tables/keys; catalog layouts and receipt bytes are unchanged.
 The closed tagged scalar codec is shared, never exposed as a native codec.
 """
 from hashlib import sha256
+from decimal import Decimal
 import json
 from uuid import UUID, uuid4
 
@@ -237,6 +238,122 @@ class DocumentView:
                 if len(cards) > request.limit: raise BackendError('unsupported')
         return tuple(cards)
 
+    def _validate_query_source(self, schema):
+        """Validate all logical data once; retain only bounded aggregate costs."""
+        self._view._require()
+        key = ('document-full', schema.identity, schema)
+        if self._view._operation_id is None and key in self._view._validated_sources:
+            return self._view._validated_sources[key]
+        self._preflight(schema)
+        count = cells = text = 0
+        validation = self._connection.execute(
+            'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
+            'FROM document_record WHERE document_id=?', (str(schema.identity),))
+        try:
+            for row in validation:
+                card = self._card(schema, row)
+                count += 1
+                cells += 5 + len(card.values)
+                text += len(card.number) + sum(len(v) for v in card.values if type(v) is str)
+                for section in card.tabular_sections:
+                    for line in section.rows:
+                        cells += 2 + len(line.values)
+                        text += sum(len(v) for v in line.values if type(v) is str)
+        finally:
+            validation.close()
+        result = (count, cells, text)
+        if self._view._operation_id is None:
+            self._view._validated_sources[key] = result
+        return result
+
+    def scan_document_values(self, identity, request, fields, section_id=None, predicate=()):
+        """Closed SQLite projection port, never a partial DocumentCard.
+
+        The first pass validates ALL fields/sections, including excluded data.
+        Subsequent materialization reads only the requested header or section.
+        """
+        from .document_backend import DocumentValueRow, DocumentValuePage
+        self._view._require()
+        if self._view._operation_id is not None: raise BackendError('unsupported')
+        schema = self.document_schema(identity)
+        section = None
+        if section_id is not None:
+            section = next((s for s in schema.tabular_sections if s.identity == section_id), None)
+            if section is None: raise BackendError('invalid_input')
+        definitions = schema.fields if section is None else section.fields
+        standard = ('ref','number','date','deletion_mark','posted') if section is None else ('ref','line_number')
+        if (type(fields) is not tuple or not 1 <= len(fields) <= 128 or
+                any((type(f) is not str and type(f) is not UUID) or (f not in standard and not any(f == d.identity for d in definitions)) for f in fields)):
+            raise BackendError('invalid_input')
+        if type(request) is not DocumentScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000:
+            raise BackendError('invalid_input')
+        from .catalog_backend import CatalogComparison
+        from datetime import datetime
+        if type(predicate) is not tuple or len(predicate) > 128: raise BackendError('invalid_input')
+        where, args = [], []
+        for term in predicate:
+            if type(term) is not CatalogComparison or type(term.field) is not str or type(term.operator) is not str:
+                raise BackendError('invalid_input')
+            if term.operator not in ('eq','ne','lt','le','gt','ge'): raise BackendError('invalid_input')
+            field, value = term.field, term.value
+            if field == 'number' and type(value) is str:
+                validate_string(value, schema.number_length)
+                column = 'number COLLATE yadinassi_casefold_v1'
+            elif field == 'date' and type(value) is datetime:
+                value = _storage()._encode(value, _DATE_FIELD, self.database_id)[1]
+                column = 'date'
+            elif field == 'deletion_mark' and type(value) is bool and term.operator in ('eq','ne'):
+                value, column = int(value), 'deletion_mark'
+            else: raise BackendError('invalid_input')
+            where.append(column + ' ' + {'eq':'=','ne':'!=','lt':'<','le':'<=','gt':'>','ge':'>='}[term.operator] + ' ?')
+            args.append(value)
+        binding = ('document-values', identity, request.page_size, fields, section_id, predicate)
+        if request.continuation is not None:
+            cursor = self._view._scan_cursor
+            if (type(request.continuation) is not str or len(request.continuation) != 32 or cursor is None
+                    or cursor[:2] != (request.continuation, binding) or self._view._document_scan_stream is None):
+                raise BackendError('invalid_input')
+        else:
+            _storage()._close_document_scan(self._view)
+            self._view._scan_cursor = None
+            self._validate_query_source(schema)
+        try:
+            if request.continuation is None:
+                payload = ('values_json' if any(type(f) is UUID for f in fields) else 'NULL') if section is None else 'sections_json'
+                self._view._document_scan_stream = self._connection.execute(
+                    'SELECT record_id,number,date,deletion_mark,' + payload +
+                    ' FROM document_record WHERE document_id=?' + ((' AND ' + ' AND '.join(where)) if where else '') +
+                    ' ORDER BY date,number,record_id', (str(identity), *args))
+            stream = self._view._document_scan_stream
+            pending = self._view._document_scan_lookahead
+            rows = [] if pending is None else [pending]
+            rows.extend(stream.fetchmany(request.page_size + 1 - len(rows)))
+            more = len(rows) > request.page_size
+            output = []
+            for record, number, date, mark, payload in rows[:request.page_size]:
+                key = DocumentKey(self.database_id, identity, UUID(record))
+                if section is None:
+                    values = (dict(zip((d.identity for d in definitions), self._values(definitions, json.loads(payload))))
+                              if payload is not None else {})
+                    values.update(ref=key, number=number, date=_storage()._decode(['d', date], _DATE_FIELD, self.database_id),
+                                  deletion_mark=bool(mark), posted=False)
+                    output.append(DocumentValueRow(key, tuple(values[f] for f in fields)))
+                else:
+                    contents = next(item[1] for item in json.loads(payload) if item[0] == str(section_id))
+                    for n, (_, line) in enumerate(contents, 1):
+                        values = dict(zip((d.identity for d in definitions), self._values(definitions, line)))
+                        values.update(ref=key, line_number=Decimal(n))
+                        output.append(DocumentValueRow(key, tuple(values[f] for f in fields), n))
+            token = uuid4().hex if more else None
+            if more:
+                self._view._document_scan_lookahead = rows[-1]
+                self._view._scan_cursor = (token, binding)
+            else: _storage()._close_document_scan(self._view)
+            return DocumentValuePage(tuple(output), token)
+        except BaseException:
+            _storage()._close_document_scan(self._view)
+            raise
+
     def scan_documents(self, identity, request):
         """Page complete cards without weakening the ordinary selection limit.
 
@@ -260,16 +377,7 @@ class DocumentView:
         else:
             _storage()._close_document_scan(self._view)
             self._view._scan_cursor = None
-            self._preflight(schema)
-            # Validate the complete bounded source before exposing a first page.
-            # Stream decoded cards here rather than retaining another full copy.
-            validation = self._connection.execute(
-                'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
-                'FROM document_record WHERE document_id=?', (str(identity),))
-            try:
-                for row in validation: self._card(schema, row)
-            finally:
-                validation.close()
+            self._validate_query_source(schema)
         try:
             if request.continuation is None:
                 # Keep one SQLite stream, not an OFFSET sort per page. The

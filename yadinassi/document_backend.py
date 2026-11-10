@@ -87,6 +87,19 @@ class DocumentPage:
     continuation: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentValueRow:
+    key: DocumentKey
+    values: tuple
+    line_number: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentValuePage:
+    rows: tuple[DocumentValueRow, ...]
+    continuation: str | None
+
+
 class DocumentReadView(Protocol):
     database_id: UUID
     configuration_generation: int

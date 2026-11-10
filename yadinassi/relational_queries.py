@@ -340,6 +340,52 @@ class _Plan:
                 raise TypeError('Query references require same database and catalog')
         return syntax.Comparison(left, node.operator, right)
 
+    def storage_predicate(self, node, source, *, allow_or=False):
+        """Translate only closed, non-throwing bound field/constant predicates.
+
+        Return None for the entire predicate on any unsupported term. Partial
+        pushdown could hide an error in a residual expression on excluded rows.
+        """
+        from .catalog_backend import CatalogComparison, CatalogPredicate
+        from .queries import _stored
+        if node is None: return None
+        if type(node) is syntax.Predicate:
+            if node.kind not in (('and', 'or') if allow_or else ('and',)):
+                return None
+            terms = tuple(self.storage_predicate(term, source, allow_or=allow_or)
+                          for term in node.terms)
+            if any(term is None for term in terms): return None
+            return CatalogPredicate(node.kind, terms)
+        if (type(node) is not syntax.Comparison or type(node.field) is not _BoundField
+                or node.field.source != source or node.operator not in ('eq','ne','lt','le','gt','ge')):
+            return None
+        if type(node.value) not in (str, bool, Decimal, BSLDate, BSLCatalogReference):
+            return None
+        try: stored = _stored(self.managers[source], node.field.column, node.value)
+        except (TypeError, ValueError): return None
+        return CatalogComparison(node.field.column.field, node.operator, stored)
+
+    def document_storage_predicate(self, node, source):
+        from .catalog_backend import CatalogComparison
+        from .dates import _parts
+        if node is None: return ()
+        if type(node) is syntax.Predicate:
+            if node.kind != 'and': return None
+            parts = tuple(self.document_storage_predicate(term, source) for term in node.terms)
+            return None if any(p is None for p in parts) else tuple(t for p in parts for t in p)
+        if (type(node) is not syntax.Comparison or type(node.field) is not _BoundField
+                or node.field.source != source or node.operator not in ('eq','ne','lt','le','gt','ge')):
+            return None
+        field, value = node.field.column.field, node.value
+        if field == 'number' and type(value) is str:
+            from .catalog_qualifiers import validate_string
+            try: validate_string(value, self.managers[source]._schema.number_length)
+            except (TypeError, ValueError): return None
+        elif field == 'date' and type(value) is BSLDate: value = _parts(value)
+        elif field == 'deletion_mark' and type(value) is bool: pass
+        else: return None
+        return (CatalogComparison(field, node.operator, value),)
+
     def membership(self, node, *, aggregates, source_limit):
         from .query_sources import _UnionPlan
         left = self.bind(node.field, aggregates=aggregates, source_limit=source_limit)
@@ -678,7 +724,9 @@ class _Plan:
             return load_register(manager, columns, view, budget, source=self.sources[index], parameters=self.parameters)
         if self.sources[index].family == 'document':
             from .document_queries import load_documents
-            return load_documents(manager, section, columns, view, budget)
+            return load_documents(manager, section, columns, view, budget,
+                predicate=(self.document_storage_predicate(self.predicate, index) or ())
+                if len(self.sources) == 1 and section is None else ())
         metadata = manager._catalogs._metadata
         if ((view.database_id, view.configuration_generation) != (metadata._database_id, metadata._generation)
                 or view.catalog_schema(manager._schema.identity) != manager._schema):
@@ -686,7 +734,9 @@ class _Plan:
         rows, seen, cursors = [], set(), set()
         continuation = None
         while True:
-            request = CatalogScanRequest(page_size=1000, continuation=continuation, string_comparison='casefold_v1')
+            predicate = (self.storage_predicate(self.predicate, index)
+                         if len(self.sources) == 1 and section is None else None)
+            request = CatalogScanRequest(predicate=predicate, page_size=1000, continuation=continuation, string_comparison='casefold_v1')
             if section is None:
                 page = view.scan_catalog_values(manager._schema.identity, request, tuple(c.field for c in columns))
                 if type(page) is not CatalogValuePage: raise BackendError('integrity')
