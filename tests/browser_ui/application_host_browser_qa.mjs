@@ -471,11 +471,17 @@ async function main(){
   });
   await scenario(scenarioNames[3],async()=>{
     await openShipped('refusal');await action('Close form').click();await countPanels(0);await idle();
-    await button('Close application').click();await idle();
+    lifetimeStage='refused_exit_request';
+    const refusedReply=page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.request().postDataJSON()?.method==='application.close'&&response.status()===200,{timeout:remaining(10000)});
+    await button('Close application').click();await refusedReply;await idle();
+    lifetimeStage='refused_exit_state';
     assert.equal(state(page).lifecycle,'running');assert.equal(state(page).exitWarning,'Close refused by application');
     await detach(page);await realGrace();assert.equal(host.exitCode,null,'refused_exit_retained');
+    lifetimeStage='refused_exit_reopen';
     page=await newPage();await page.goto(url);await ownership(page,'writer');await countPanels(0);await idle();
+    lifetimeStage='refused_exit_reopen_state';
     assert.equal(state(page).exitWarning,'Close refused by application');await screenshot(screenshots[3]);
+    lifetimeStage=null;
     await stopHost();await page.close();
   });
   await scenario(scenarioNames[4],async()=>{

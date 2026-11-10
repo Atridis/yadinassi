@@ -46,6 +46,9 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         self.assertIn("if(await page.locator('.browser-ownership').getAttribute('data-role')==='observer')",self.source)
 
         self.assertIn("await closedReply;await idle()",self.source)
+        self.assertIn("await refusedReply;await idle()",self.source)
+        for stage in ['refused_exit_request','refused_exit_state','refused_exit_reopen','refused_exit_reopen_state']:
+            self.assertIn("lifetimeStage='"+stage+"'",self.source)
         self.assertIn("'explicit_application_close_completed'",self.source)
         self.assertIn("report.routeFailure=routeFailure",self.source)
         self.assertIn("'application_close_exchange':'rpc_exchange'",self.source)
