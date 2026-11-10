@@ -2,7 +2,8 @@
 
 Shared children are copied per occurrence within local budgets; cycles fail
 closed. Only two shared-array shapes were measured on 8.3.27.1508. No database
-or compression support is implied.
+support is implied. Optional Deflation compresses bounded string/binary leaves
+without introducing a platform format or weakening logical snapshot budgets.
 """
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -14,6 +15,7 @@ except ImportError:
     _CDecimal = None
 
 from .dates import BSLDate
+from .data_compression import compression_degree, compress_payload, expand_payload
 from .file_io import BSLBinaryData
 from .maps import BSLFixedMap, BSLMap, _key as map_key
 from .structures import BSLFixedStructure, BSLStructure, _key as structure_key
@@ -32,6 +34,8 @@ MAX_NUMBER_DIGITS = 4096
 MAX_TOTAL_NUMBER_DIGITS = 16_384
 # Bound allocation in Decimal.as_tuple() before inspecting its coefficient.
 MAX_DECIMAL_OBJECT_BYTES = 8192
+# Conservative aggregate framing/deflate overhead on top of admitted payloads.
+MAX_COMPRESSED_BYTES = MAX_BINARY_BYTES + 3 * MAX_TEXT_UNITS + 64 * MAX_NODES
 
 
 class SnapshotError(ValueError):
@@ -67,11 +71,13 @@ class Snapshot:
 
 
 class _Capture:
-    def __init__(self, root):
+    def __init__(self, root, degree=0):
         self.nodes = 0
         self.text_units = 0
         self.binary_bytes = 0
         self.digits = 0
+        self.degree = degree
+        self.compressed_bytes = 0
         # Active recursion path detects cycles; sibling aliases are copied.
         self.active = set()
 
@@ -97,6 +103,16 @@ class _Capture:
         if identity in self.active:
             raise SnapshotError("cyclic values are not supported")
         self.active.add(identity)
+
+    def compressed(self, tag, data):
+        packed = compress_payload(data, self.degree)
+        self.charge_compressed(packed)
+        return (tag, packed, len(data))
+
+    def charge_compressed(self, data):
+        if type(data) is not bytes or len(data) > MAX_COMPRESSED_BYTES - self.compressed_bytes:
+            raise SnapshotError('compressed snapshot byte budget exceeded')
+        self.compressed_bytes += len(data)
 
     def take(self, value, depth=0):
         kind = type(value)
@@ -131,7 +147,9 @@ class _Capture:
                 raise SnapshotError("snapshot number budget exceeded")
             return ("number", value)
         if kind is str:
-            return ("string", self.charge_text(value))
+            text = self.charge_text(value)
+            return (self.compressed('string_zlib', text.encode('utf-8', errors='surrogatepass'))
+                    if self.degree else ('string', text))
         if kind is BSLDate:
             ticks = _required_field(value, "ticks")
             boundary = _required_field(value, "boundary")
@@ -152,7 +170,7 @@ class _Capture:
             self.binary_bytes += len(data)
             if self.binary_bytes > MAX_BINARY_BYTES:
                 raise SnapshotError("snapshot binary budget exceeded")
-            return ("binary", data)
+            return self.compressed('binary_zlib', data) if self.degree else ('binary', data)
         if kind is BSLValueStorage:
             # Count the nested payload in this capture's existing budgets.
             return ("storage", self.take(BSLValueStorage.get(value), depth + 1))
@@ -212,9 +230,9 @@ class _Capture:
         raise SnapshotError("unsupported snapshot type")
 
 
-def capture(value):
+def capture(value, *, compression=None):
     """Build a bounded immutable snapshot, or fail without publishing one."""
-    return Snapshot(_Capture(value).take(value))
+    return Snapshot(_Capture(value, compression_degree(compression)).take(value))
 
 
 class _Restore:
@@ -243,6 +261,18 @@ class _Restore:
             return node[1]
         if tag == "string" and len(node) == 2:
             return budget.charge_text(node[1])
+        if tag in ('string_zlib', 'binary_zlib') and len(node) == 3:
+            budget.charge_compressed(node[1])
+            limit = (3 * (MAX_TEXT_UNITS - budget.text_units) if tag == 'string_zlib'
+                     else MAX_BINARY_BYTES - budget.binary_bytes)
+            try:
+                data = expand_payload(node[1], node[2], limit)
+                if tag == 'string_zlib':
+                    return budget.charge_text(data.decode('utf-8', errors='surrogatepass'))
+            except (ValueError, UnicodeError):
+                raise SnapshotError('invalid compressed snapshot payload') from None
+            budget.binary_bytes += len(data)
+            return BSLBinaryData.from_bytes(data)
         if tag == "date" and len(node) == 3:
             return BSLDate(node[1], node[2])
         if tag == "uuid" and len(node) == 2:
@@ -314,11 +344,11 @@ def restore(snapshot):
 
 
 class BSLValueStorage(BSLObject):
-    """Immutable private snapshot; constructors do not accept compression yet."""
+    """Immutable private snapshot, optionally compressing leaf payloads."""
     __slots__ = ("_snapshot",)
 
-    def __init__(self, value):
-        self._snapshot = capture(value)
+    def __init__(self, value, compression=None):
+        self._snapshot = capture(value, compression=compression)
 
     @classmethod
     def _from_snapshot(cls, snapshot):
