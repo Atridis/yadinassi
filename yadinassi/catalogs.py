@@ -67,6 +67,8 @@ class BSLCatalogManager(BSLObject):
     @property
     def _backend(self):return self._catalogs._context.backend
     def _view(self):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._backend)
         view=self._backend.begin_read()
         try:
             if (view.database_id!=self._catalogs._metadata._database_id
@@ -275,6 +277,9 @@ class BSLCatalogObject(BSLObject):
     def _write(self, *, preparation=None):
         """Shared host writer. Preparation is never an exposed BSL argument."""
         m=self._manager;caps=m._backend.capabilities()
+        from .database_transactions import current
+        active = current(m._backend)
+        if active is not None and self._pending_write is not None: raise BackendError('unsupported')
         if m._schema.tabular_sections and not caps.catalog_tabular_sections:raise BackendError('unsupported')
         if not caps.atomic_transactions or not (caps.catalog_create if self.is_new() else caps.catalog_update):raise BackendError('unsupported')
         outcomes=caps.catalog_write_outcomes
@@ -309,6 +314,13 @@ class BSLCatalogObject(BSLObject):
             draft=self._write_draft(complete_sections=preparation is not None)
             expected=self._revision
             operation=self._operation_id
+        from .database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None:
+            if preparation is not None: raise BackendError('unsupported')
+            transaction.stage(self, 'catalog_create' if expected is None else 'catalog_update',
+                              draft, expected, (draft,expected,operation))
+            return ()
         tx=m._backend.begin_write(operation)
         committing=False
         messages=()

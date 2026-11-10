@@ -4,6 +4,8 @@ These are explicit host semantics, not native temporary-table storage or measure
 native statement-result parity. Persistent database access is read-only through
 one CatalogReadView per package. No table rows escape as mutable buffers.
 """
+from .database_transactions import query_view as _transaction_query_view
+
 from dataclasses import dataclass
 from decimal import Decimal
 from threading import Lock
@@ -119,7 +121,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                                  information_registers=information_registers)
                 source_manager = next((m for m in plan.all_managers if m is not None), None)
                 if view is None and source_manager is not None:
-                    view = (catalogs._context.backend.begin_query_read() if composite else source_manager._view())
+                    view = (catalogs._context.backend.begin_query_read() if composite else _transaction_query_view(source_manager))
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)

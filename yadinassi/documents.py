@@ -93,6 +93,8 @@ class BSLDocumentManager(BSLObject):
         caps = self._backend.capabilities()
         return caps.atomic_transactions and caps.document_create and caps.document_update
     def _view(self):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._backend)
         view = self._backend.begin_document_read()
         try: self._check_view(view)
         except BaseException as error:
@@ -192,6 +194,9 @@ class BSLDocumentObject(BSLObject):
         self._pending_write = None
     def write(self):
         m = self._manager
+        from .database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None and self._pending_write is not None: raise BackendError('unsupported')
         if not m._writable(): raise BackendError('unsupported')
         if self._pending_write is not None:
             draft,expected,operation = self._pending_write
@@ -203,6 +208,10 @@ class BSLDocumentObject(BSLObject):
                 tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
                 self.is_new() and m._schema.numbering == 'decimal_v1' and self._values['number'] == '')
             expected,operation = self._revision,self._operation_id
+        if transaction is not None:
+            transaction.stage(self, 'document_create' if expected is None else 'document_update',
+                              draft, expected, (draft,expected,operation))
+            return None
         tx = m._backend.begin_document_write(operation); committing = False
         try:
             m._check_view(tx)

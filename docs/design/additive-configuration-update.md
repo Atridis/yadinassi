@@ -1,8 +1,9 @@
 # Additive configuration update: candidate design
 
 Status: candidate host implementation. Canonical delta, explicit profile apply,
-receipt history, durable JSON plans and recovery are implemented; broad validation
-is pending. No CLI or implicit update is provided. No existing database changes
+receipt history, durable JSON plans and recovery are implemented. Standalone
+regression passed 2339 tests in normal and optimized Python; the final combined
+BSL/UI candidate passed 2833 tests in each mode. No CLI or implicit update is provided. No existing database changes
 on open. The initial physical transition is v11 to v12, retaining the base profile;
 further configuration updates from v12 are explicitly refused in this increment.
 
@@ -19,9 +20,9 @@ catalogs with explicit numbering and append-only scalar attributes are admitted.
 New attributes have closed qualified defaults: empty string, zero, false, or
 DateTime's empty date. New reference fields are not part of the first profile.
 
-## Planned storage transition
+## Implemented storage transition
 
-The update needs an explicit successor physical profile, not extra tables silently
+The update uses an explicit successor physical profile, not extra tables silently
 admitted in v11. Preserve the v11 retained base version and exact canonical
 indexes; retain all existing UUID-to-physical-name mappings. Dry-run binds a
 bounded complete source fingerprint, target canonical source package, deterministic
@@ -45,7 +46,7 @@ unresolvable. Catalog request hashes were calculated with the old ordered field
 schema; revisions and mixed-unit hashes also bind the old generation. Merely
 keeping receipt SQL rows or accepting the current schema is insufficient.
 
-The successor profile therefore needs bounded immutable generation metadata and
+The successor profile retains bounded immutable generation metadata and
 receipt-to-generation bindings for existing catalog/document/register/unit receipts.
 Resolution must select one retained generation using the exact operation identity,
 validate its source/schema, and compare the original request and child outcomes
@@ -55,8 +56,10 @@ and writes use only the latest canonical schema and generation. Altering a retai
 request must remain a conflict. Historical schema selection must never be guessed
 from tuple length, revision token, catalog name or a successful hash collision.
 
-The storage API and admission table schema are under review. Tests
-must cover committed/uncertain old writes and mixed units across an update, changed
-requests, interrupted DDL/COMMIT, metadata/marker tampering, stale objects, unchanged
-non-catalog rows and byte-for-byte source export. No recovery support is claimed
-until those paths are implemented and verified.
+Regression tests cover committed/uncertain old writes and mixed units across an
+update, changed requests, interrupted DDL/COMMIT, metadata/marker tampering, stale
+objects, unchanged non-catalog rows and byte-for-byte source export. Target scalar
+budgets and physical page limits are checked before COMMIT; rejected updates leave
+the original database recoverable. Historical receipt resolution and repeated
+resolution are verified, including BSL batches across the update. Fresh CI remains
+a separate publication gate; these local results are not native-platform parity.

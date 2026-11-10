@@ -7,6 +7,8 @@ No data modification or implicit casts.
 Dynamic-reference projections are available in cursors; Unload refuses them
 until truthful dynamic column TypeDescription support exists.
 """
+from .database_transactions import query_view as _transaction_query_view
+
 from dataclasses import dataclass
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from uuid import UUID
@@ -299,7 +301,7 @@ class BSLQuery(BSLObject):
         seen = set()
         seen_continuations = set()
         size = min(1000, query.limit)
-        view = manager._view()
+        view = _transaction_query_view(manager)
         try:
             while len(rows) < query.limit:
                 request = CatalogScanRequest(predicate, order, size, continuation,

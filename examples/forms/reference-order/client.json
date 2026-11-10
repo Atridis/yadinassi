@@ -1,0 +1,145 @@
+{
+  "protocol": "yadinassi-form-app/2",
+  "handlers": [
+    {
+      "name": "Changed",
+      "endpoint": 1,
+      "parameters": [
+        "Element"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "AddCommand",
+      "endpoint": 2,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "DeleteCommand",
+      "endpoint": 3,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "RecalculateCommand",
+      "endpoint": 4,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "SaveCommand",
+      "endpoint": 5,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "BeforeClose",
+      "endpoint": 6,
+      "parameters": [
+        "Cancel",
+        "Exit",
+        "MessageText",
+        "StandardProcessing"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "DiscardCommand",
+      "endpoint": 9,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "ResolveCommand",
+      "endpoint": 10,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "ChooseCustomerCommand",
+      "endpoint": 11,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    },
+    {
+      "name": "ChooseProductCommand",
+      "endpoint": 12,
+      "parameters": [
+        "Command"
+      ],
+      "isFunction": false
+    }
+  ],
+  "bindings": [
+    {
+      "name": "RemoteAdd",
+      "endpoint": 1,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteDelete",
+      "endpoint": 2,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteRecalculate",
+      "endpoint": 3,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteSave",
+      "endpoint": 4,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteDiscard",
+      "endpoint": 7,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteResolve",
+      "endpoint": 8,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteChooseCustomer",
+      "endpoint": 5,
+      "parameters": [],
+      "isFunction": false
+    },
+    {
+      "name": "RemoteChooseProduct",
+      "endpoint": 6,
+      "parameters": [],
+      "isFunction": false
+    }
+  ],
+  "discardCommands": [
+    {
+      "command": "Discard",
+      "handler": "DiscardCommand"
+    }
+  ],
+  "dirtyAttribute": "Dirty"
+}

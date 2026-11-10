@@ -242,7 +242,7 @@ class DocumentView:
         """Validate all logical data once; retain only bounded aggregate costs."""
         self._view._require()
         key = ('document-full', schema.identity, schema)
-        if self._view._operation_id is None and key in self._view._validated_sources:
+        if self._view._cache_validation_allowed() and key in self._view._validated_sources:
             return self._view._validated_sources[key]
         self._preflight(schema)
         count = cells = text = 0
@@ -262,7 +262,7 @@ class DocumentView:
         finally:
             validation.close()
         result = (count, cells, text)
-        if self._view._operation_id is None:
+        if self._view._cache_validation_allowed():
             self._view._validated_sources[key] = result
         return result
 
