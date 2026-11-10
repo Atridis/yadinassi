@@ -119,7 +119,7 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
     def test_workflow_route_is_only_the_explicit_configuration_branch(self):
         workflow = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
         self.assertEqual(workflow.split('\non:\n',1)[1].split('\npermissions:',1)[0].strip(),
-            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed]')
+            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed]')
         step = workflow.split('      - name: Acquire six configuration and catalog form flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         self.assertIn("if: github.ref == 'refs/heads/codex/configuration-browser-reviewed'", step)
         self.assertIn('timeout-minutes: 5', step)
@@ -153,7 +153,7 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
             self.assertIn(required, self.source)
         self.assertIn("exactKeys(packet.params,'entry record request')", self.source)
         self.assertIn("/^record-[1-9][0-9]{0,8}$/", self.source)
-        self.assertIn("'yadinassi-configuration-app/2'", self.source)
+        self.assertIn("'yadinassi-configuration-app/3'", self.source)
 
     def test_owned_fixture_uses_explicit_profile_and_independent_read_only_audit(self):
         fixture = (ROOT / 'tests/browser_ui/configuration_catalog_fixture.py').read_text()

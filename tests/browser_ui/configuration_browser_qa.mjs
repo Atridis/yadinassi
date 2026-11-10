@@ -160,15 +160,15 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/2');
+    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
   }else if(packet.method==='application.catalog'){
     exactKeys(packet.params,'entry');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
   }else if(packet.method==='application.openRecord'){
     exactKeys(packet.params,'entry record request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
-    assert.match(packet.params.record,/^record-[1-9][0-9]{0,8}$/);assert.match(packet.params.request,/^open-[1-9][0-9]*$/);
+    assert.match(packet.params.record,/^record-[1-9][0-9]{0,8}$/);assert.match(packet.params.request,/^open-[0-9a-f]{32}-[1-9][0-9]*$/);
   }else if(packet.method==='application.open'){
     exactKeys(packet.params,'entry request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
-    assert.match(packet.params.request,/^open-[1-9][0-9]*$/);
+    assert.match(packet.params.request,/^open-[0-9a-f]{32}-[1-9][0-9]*$/);
   }else if(packet.method==='application.snapshot'||packet.method==='application.close')exactKeys(packet.params,'');
   else{
     assert.equal(packet.method,'application.form');exactKeys(packet.params,'session request');

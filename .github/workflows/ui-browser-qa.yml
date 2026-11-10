@@ -4,13 +4,13 @@ name: Reviewed browser acceptance
 # No ordinary PR, main push, schedule, native job or user browser is dispatched.
 on:
   push:
-    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed]
+    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || 'configuration-browser-reviewed' }}
+  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || 'configuration-browser-reviewed' }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +38,13 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
+      - name: Acquire five application host lifetime flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/application-host-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/application_host_browser_qa.mjs
       - name: Acquire eight original-demo kind flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/ui-browser-reviewed'
         timeout-minutes: 5
@@ -108,6 +115,21 @@ jobs:
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-saved.png
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-selection.png
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-narrow.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only application host screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/application-host-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: application-host-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/application-startup.png
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/application-takeover-draft.png
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/application-resumed.png
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/application-exit-refused.png
+            ${{ runner.temp }}/yadinassi-application-host-browser-artifacts/application-clean.png
           if-no-files-found: error
           retention-days: 14
       - name: Publish only reference screenshots and redacted source-bound report
