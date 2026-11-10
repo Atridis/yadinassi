@@ -57,7 +57,7 @@ class FormProgram:
 
 
 
-def _object_projection(node, mapping, *, context='server'):
+def _object_projection(node, mapping, *, context='server', sections=()):
     """Lower checked Object.member paths to private scalar form attributes.
 
     This is compiler admission, not source substitution or a second evaluator.
@@ -70,7 +70,7 @@ def _object_projection(node, mapping, *, context='server'):
         raise ValueError('WriteObject requires a context server and no arguments')
     if isinstance(node, (ast.Attribute, ast.Index)) and isinstance(node.object, ast.Attribute):
         base = node.object.object
-        if isinstance(base, ast.Name) and base.name.casefold() in roots:
+        if isinstance(base, ast.Name) and base.name.casefold() in roots and node.object.name.casefold() not in sections:
             raise ValueError('nested object form expressions unsupported')
     if isinstance(node, ast.Attribute) and isinstance(node.object, ast.Name) and node.object.name.casefold() in roots:
         target = mapping.get(node.name.casefold())
@@ -87,22 +87,22 @@ def _object_projection(node, mapping, *, context='server'):
         if any(n.casefold() in roots or n.casefold().startswith('objectfield') for n in node.names):
             raise ValueError('reserved object form variable')
     if isinstance(node, list):
-        return [_object_projection(value, mapping, context=context) for value in node]
+        return [_object_projection(value, mapping, context=context, sections=sections) for value in node]
     if isinstance(node, tuple):
-        return tuple(_object_projection(value, mapping, context=context) for value in node)
+        return tuple(_object_projection(value, mapping, context=context, sections=sections) for value in node)
     if isinstance(node, ast.Node):
         for field in fields(node):
             if field.name == 'token':
                 continue
             value = getattr(node, field.name)
             if isinstance(value, ast.Node):
-                setattr(node, field.name, _object_projection(value, mapping, context=context))
+                setattr(node, field.name, _object_projection(value, mapping, context=context, sections=sections))
             elif isinstance(value, (list, tuple)):
-                setattr(node, field.name, _object_projection(value, mapping, context=context))
+                setattr(node, field.name, _object_projection(value, mapping, context=context, sections=sections))
     return node
 
 
-def compile_form_module(source, *, object_fields=()):
+def compile_form_module(source, *, object_fields=(), object_sections=()):
     text(source, 65536)
     if type(object_fields) is not tuple or len(object_fields) > 128:
         raise ValueError('bounded object field inventory required')
@@ -112,6 +112,8 @@ def compile_form_module(source, *, object_fields=()):
                 or member.casefold() in projection):
             raise ValueError('invalid object field inventory')
         projection[member.casefold()] = 'ObjectField' + str(index)
+    if type(object_sections) is not tuple or any(s.casefold() not in projection for s in object_sections):
+        raise ValueError('declared object sections required')
     nodes = parse(source, '<configuration-form>')
     if len(nodes) > 256:
         raise ValueError('form declaration limit')
@@ -146,7 +148,7 @@ def compile_form_module(source, *, object_fields=()):
         if side not in sides:
             raise ValueError('unsupported form execution context')
         if projection:
-            node = _object_projection(node, projection, context=side)
+            node = _object_projection(node, projection, context=side, sections=tuple(s.casefold() for s in object_sections))
         sides[side].append(node)
         if side == 'nocontext':
             # Same-server calls use the ordinary interpreter NoContext route;

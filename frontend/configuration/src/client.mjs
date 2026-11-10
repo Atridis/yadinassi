@@ -23,19 +23,21 @@ export function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object'].includes(entry.kind)) throw new FormError('transport');
+        !['form','catalog-object','document-object'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && e.kind === 'catalog-object') ||
+    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
-    const seen = new Set();
+    const seen = new Set(), document = state.entries.find(entry => entry.id === catalog.entry).kind === 'document-object';
     for (const row of catalog.rows) {
-      if (!keys(row,['key','code','description','deletionMark']) || !recordKey(row.key) || seen.has(row.key) ||
-          !text(row.code,1024) || !text(row.description,1024) || typeof row.deletionMark !== 'boolean') throw new FormError('transport');
+      const fields = document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
+      if (!keys(row,fields) || !recordKey(row.key) || seen.has(row.key) || typeof row.deletionMark !== 'boolean' ||
+          (document ? !text(row.number,9) || typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.date)
+                    : !text(row.code,1024) || !text(row.description,1024))) throw new FormError('transport');
       seen.add(row.key);
     }
     if (previous?.catalog?.entry === catalog.entry && catalog.version < previous.catalog.version) throw new FormError('transport');

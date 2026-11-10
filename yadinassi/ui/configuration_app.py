@@ -52,7 +52,9 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False, application_host=False):
+def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False):
+    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects)) > 1:
+        raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
     if application_host:
         if catalog_objects:
@@ -60,6 +62,10 @@ def load_application(root, *, catalog_objects=False, application_host=False):
         from ..configuration_application_profile import import_application_configuration
         imported = import_application_configuration(files)
         return load_configuration_forms(files, catalog_schemas=imported.catalogs)
+    if document_objects:
+        from ..configuration_document_profile import import_document_forms_configuration
+        imported = import_document_forms_configuration(files)
+        return load_configuration_forms(files, document_schemas=imported.documents)
     if catalog_objects:
         from ..configuration_xml import import_catalog_forms_configuration
         imported = import_catalog_forms_configuration(files)
@@ -112,7 +118,7 @@ class ConfigurationBroker:
 
     def _catalog(self, entry):
         definition = self.definitions.get(entry) if type(entry) is int else None
-        if definition is None or definition.catalog_schema is None or self.database is None:
+        if definition is None or (definition.catalog_schema is None and definition.document_schema is None) or self.database is None:
             raise ValueError('declared object form and active database required')
         if self.record_context is None:
             self.record_context = SQLiteDBContext(self.database)
@@ -120,34 +126,43 @@ class ConfigurationBroker:
         context.require_active(tabular_sections=True)
         if context.backend.export_configuration() != dict(self.configuration.source_files):
             raise ValueError('configuration/database source mismatch')
-        view = context.backend.begin_read()
+        document = definition.document_schema
+        view = context.backend.begin_read() if document is None else context.backend.begin_document_read()
         try:
-            if definition.catalog_schema not in view.catalogs():
+            if (definition.catalog_schema not in view.catalogs() if document is None
+                    else document not in view.documents()):
                 raise ValueError('configuration/database schema mismatch')
         finally:
             view.close()
         return definition, context
 
     def _projection_preflight(self, entry, listing):
-        needed = {(entry, card.reference) for card in listing.cards} - self.record_keys.keys()
-        if len(listing.cards) > 256 or len(self.record_keys) + len(needed) > 4096:
+        document = self.definitions[entry].document_schema is not None
+        cards = listing if document else listing.cards
+        needed = {(entry, card.key if document else card.reference) for card in cards} - self.record_keys.keys()
+        if len(cards) > 256 or len(self.record_keys) + len(needed) > 4096:
             raise ValueError('catalog capability limit')
 
     def _records(self, entry):
         from .catalog_view import CatalogRepository
         definition, context = self._catalog(entry)
-        repository = CatalogRepository(context.backend, own_backend=False)
-        try:
-            listing = repository.load(str(definition.catalog_schema.identity))
-        finally:
-            repository.close()
+        document = definition.document_schema
+        if document is None:
+            repository = CatalogRepository(context.backend, own_backend=False)
+            try: listing = repository.load(str(definition.catalog_schema.identity))
+            finally: repository.close()
+        else:
+            from ..document_backend import DocumentSelection
+            view = context.backend.begin_document_read()
+            try: listing = view.select_documents(document.identity, DocumentSelection())
+            finally: view.close()
         try:
             self._projection_preflight(entry, listing)
         except ValueError:
             return {'error': 'catalog_limit'}
         rows = []
-        for card in listing.cards:
-            identity = (entry, card.reference)
+        for card in (listing if document is not None else listing.cards):
+            identity = (entry, card.key if document is not None else card.reference)
             key = self.record_keys.get(identity)
             if key is None:
                 if len(self.record_keys) >= 4096:
@@ -155,8 +170,12 @@ class ConfigurationBroker:
                 key = 'record-' + str(len(self.record_keys) + 1)
                 self.record_keys[identity] = key
                 self.records[key] = identity
-            rows.append({'key': key, 'code': card.values[0], 'description': card.values[1],
-                         'deletionMark': card.values[2]})
+            if document is None:
+                rows.append({'key': key, 'code': card.values[0], 'description': card.values[1],
+                             'deletionMark': card.values[2]})
+            else:
+                rows.append({'key': key, 'number': card.number, 'date': card.date.isoformat(sep=' '),
+                             'deletionMark': card.deletion_mark})
         previous = self.projections.get(entry)
         version = 1 if previous is None else previous['version'] + (previous['rows'] != rows)
         result = {'entry': entry, 'version': version, 'rows': rows}
@@ -212,9 +231,9 @@ class ConfigurationBroker:
                 if type(record) is not str or record not in self.records or self.records[record][0] != entry:
                     return {'error': 'invalid_record'}
                 reference = self.records[record][1]
-            if definition.catalog_schema is None and record is not None:
+            if definition.catalog_schema is None and definition.document_schema is None and record is not None:
                 return {'error': 'invalid_record'}
-            if definition.catalog_schema is not None:
+            if definition.catalog_schema is not None or definition.document_schema is not None:
                 self._catalog(entry)
             self.allocated += 1
             sid = 'form-' + str(self.allocated)
@@ -227,6 +246,11 @@ class ConfigurationBroker:
                     from ..configuration_catalog import CatalogObjectSession
                     owned = CatalogObjectSession(context, definition.catalog_schema,
                         dict(self.configuration.source_files), reference=reference)
+                elif definition.document_schema is not None:
+                    from ..configuration_document import DocumentObjectSession
+                    owned = DocumentObjectSession(context, definition.document_schema,
+                        dict(self.configuration.source_files), key=reference)
+                if owned is not None:
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned,
                     interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
@@ -318,7 +342,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -330,15 +354,17 @@ class ConfigurationProcess(FormProcess):
             command += ['--catalog-objects']
         if application_host:
             command += ['--application-host']
+        if document_objects:
+            command += ['--document-objects']
         self._start(command, environment)
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False):
+                  application_host=False, document_objects=False):
     broker = None
     try:
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host), database, application_host=application_host)
+            application_host=application_host, document_objects=document_objects), database, application_host=application_host)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -489,14 +515,22 @@ class ConfigurationController:
                             or type(result['rows']) is not list or len(result['rows']) > 256):
                         raise ValueError('invalid catalog projection')
                     seen = set()
+                    document = self.definitions[result['entry']].document_schema
                     for row in result['rows']:
-                        _keys(row, 'key code description deletionMark')
+                        _keys(row, 'key number date deletionMark' if document else 'key code description deletionMark')
                         key = row['key']
                         if (type(key) is not str or not key.startswith('record-') or not key[7:].isascii()
                                 or not key[7:].isdigit() or len(key) > 12 or key in seen
-                                or type(row['code']) is not str or len(row['code']) > 64
-                                or type(row['description']) is not str or len(row['description']) > 1024
                                 or type(row['deletionMark']) is not bool):
+                            raise ValueError('invalid object record')
+                        if document:
+                            from datetime import datetime
+                            if (type(row['number']) is not str or len(row['number']) > document.number_length
+                                    or type(row['date']) is not str or len(row['date']) != 19
+                                    or datetime.fromisoformat(row['date']).isoformat(sep=' ') != row['date']):
+                                raise ValueError('invalid document record')
+                        elif (type(row['code']) is not str or len(row['code']) > 64
+                                or type(row['description']) is not str or len(row['description']) > 1024):
                             raise ValueError('invalid catalog record')
                         seen.add(key)
                     self.catalog_versions[result['entry']] = result['version']
@@ -590,7 +624,8 @@ class ConfigurationController:
     def _state(self):
         return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
                 'entries': [{'id': entry, 'title': definition.title,
-                             'kind': 'form' if definition.catalog_schema is None else 'catalog-object'} for entry, definition in self.definitions.items()],
+                             'kind': ('document-object' if definition.document_schema is not None else
+                                      'form' if definition.catalog_schema is None else 'catalog-object')} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title}
                              for sid, (controller, entry) in self.sessions.items()],
                 'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
@@ -638,8 +673,8 @@ class ConfigurationController:
             elif method == 'application.catalog':
                 _keys(params, 'entry')
                 entry = params['entry']
-                if type(entry) is not int or entry not in self.definitions or self.definitions[entry].catalog_schema is None:
-                    raise ValueError('unknown catalog entry')
+                if type(entry) is not int or entry not in self.definitions or (self.definitions[entry].catalog_schema is None and self.definitions[entry].document_schema is None):
+                    raise ValueError('unknown record entry')
                 projected = self._call('catalog', payload={'entry': entry})
                 error = projected.get('error')
                 self.catalog = None if error else projected
@@ -678,7 +713,7 @@ class ConfigurationController:
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
                     blocked = (closing and ((self.application is not None
                                   and self.application.interpreter.pending_promises)
-                               or ((self.definitions[entry].catalog_schema is not None or self.application is not None)
+                               or ((self.definitions[entry].catalog_schema is not None or self.definitions[entry].document_schema is not None or self.application is not None)
                                   and not self._call('guardClose', sid)['allowed'])))
                     if blocked:
                         error = 'save_recovery_required'
@@ -751,19 +786,24 @@ def main(argv=None):
     parser.add_argument('--f', help='Existing SQLite database, server process only')
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
+    parser.add_argument('--document-objects', action='store_true', help='Explicit non-posting document Object forms with bounded sections')
     parser.add_argument('--application-host', action='store_true', help='Explicit application/CommonModules and declared forms profile')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if sum((args.catalog_objects, args.application_host, args.document_objects)) > 1:
+        parser.error('choose one explicit configuration source profile')
+    if args.document_objects and args.f is None:
+        parser.error('--document-objects requires --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
     process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host)
-        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
+        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
         controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
-            browser_session=args.browser_session or args.application_host, idle_close=controller.idle_close)
+            browser_session=args.browser_session or args.application_host or args.document_objects, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:
