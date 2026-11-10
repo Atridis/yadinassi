@@ -86,6 +86,10 @@ FORMAT_DATES = Profile('format-dates-v1', 'native-1c-format-dates-v1', 'native-1
     'format_dates', '7fbdcca1257bc6d754fd8a640f3ed4790196db12b8c61be2a8a88f93ee5adccb',
     58, 'native_1c_format_dates_contract', '\nСообщить("FD-C1: [" + FDEncode("") + "]");\n', 5, 'format-dates')
 
+PROPERTY_TRANSFER = Profile('property-transfer-v1', 'native-1c-property-transfer-v1', 'native-1c-property-transfer-stage-v1',
+    'property_transfer', '25abcace2821e4d03da731e4cf96a97a33348f21a58ee291399232c51ad5e7c8',
+    50, 'native_1c_property_transfer_contract', '\nСообщить("PV-C1: [wire-v1]");\n', 3, 'property-transfer')
+
 JSON_FAMILY = Profile('json-family-v1', 'native-1c-json-family-v1', 'native-1c-json-family-stage-v1',
     'json_family', 'ac6acd4a5af2b93c3d6b3b2e7ffdc95f8024e3fbd52482cd4c814b3f2020b00b',
     33, 'native_1c_json_family_contract', '\nСообщить("JF-C1: [" + JFEncode("") + "]");\n', 5, 'json-family')
@@ -171,6 +175,8 @@ def select(name='tree-v1'):
         return COLUMNS_DELETE
     if name == COLUMNS_DELETE_STRING.name:
         return COLUMNS_DELETE_STRING
+    if name == PROPERTY_TRANSFER.name:
+        return PROPERTY_TRANSFER
     if name == FORMAT_DATES.name:
         return FORMAT_DATES
     if name == VALUE_STORAGE.name:
