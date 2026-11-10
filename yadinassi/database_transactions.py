@@ -12,8 +12,21 @@ _execution = ContextVar('database_execution', default=None)
 _execution_backend = ContextVar('database_execution_backend', default=None)
 
 
+def _registered(backend):
+    # Logical/mock backends may synthesize arbitrary attributes in __getattr__.
+    # Only an explicitly stored, exact coordinator bound to this backend owns
+    # a transaction; merely asking for a missing attribute must have no effect.
+    if backend is None: return None
+    try: fields = object.__getattribute__(backend, '__dict__')
+    except AttributeError: return None
+    transaction = fields.get('_bsl_transaction')
+    if transaction is not None and (type(transaction) is not Transaction or transaction.backend is not backend):
+        raise BackendError('unsupported')
+    return transaction
+
+
 def current(backend):
-    transaction = getattr(backend, '_bsl_transaction', None)
+    transaction = _registered(backend)
     if transaction is not None and transaction.owner is not _execution.get():
         raise BackendError('unsupported')
     return transaction
@@ -28,7 +41,11 @@ def forbid_transfer(backend):
 def execution(backend):
     """Imports share the synchronous token; a later root execution never does."""
     if _execution.get() is not None:
-        if backend is not _execution_backend.get(): raise BackendError('unsupported')
+        if backend is not _execution_backend.get():
+            # Standalone object preparation uses a bounded no-DB interpreter.
+            # Preserve that path unless either execution owns an explicit tx.
+            if current(_execution_backend.get()) is not None or current(backend) is not None:
+                raise BackendError('unsupported')
         yield
         return
     if backend is None:
@@ -40,7 +57,7 @@ def execution(backend):
         try:
             yield
         except BaseException as error:
-            transaction = getattr(backend, '_bsl_transaction', None)
+            transaction = _registered(backend)
             if transaction is not None and transaction.owner is _execution.get():
                 try:
                     if transaction.unit.state in ('uncertain', 'committed'):
@@ -59,7 +76,8 @@ def execution(backend):
 
 
 def begin(backend):
-    if backend is None or _execution.get() is None or backend is not _execution_backend.get():
+    from .sqlite_catalog import SQLiteCatalogBackend
+    if type(backend) is not SQLiteCatalogBackend or _execution.get() is None or backend is not _execution_backend.get():
         raise BackendError('unsupported')
     if current(backend) is not None: raise BackendError('unsupported')
     # Reserve the owner slot before acquiring a write connection.
@@ -73,7 +91,7 @@ def begin(backend):
 
 def commit(backend):
     if backend is not _execution_backend.get(): raise BackendError('unsupported')
-    transaction = getattr(backend, '_bsl_transaction', None) if backend is not None else None
+    transaction = _registered(backend) if backend is not None else None
     if transaction is None: raise BackendError('unsupported')
     if transaction.owner is not _execution.get():
         if _execution.get() is None or transaction.unit.state not in ('uncertain', 'committed'):
