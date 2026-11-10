@@ -566,7 +566,7 @@ def _register_schema(raw, name, targets, used, issues):
     _envelope_issues(root, obj, issues, name)
     _activation_properties(obj, {'Name', 'Synonym', 'Comment',
         'InformationRegisterPeriodicity', 'WriteMode'}, issues, name)
-    if (_text(props, 'InformationRegisterPeriodicity') != 'Nonperiodical'
+    if (_text(props, 'InformationRegisterPeriodicity') not in ('Nonperiodical','WithinSecond','Day','Month','Quarter','Year')
             or _text(props, 'WriteMode') != 'Independent'):
         _fail('unsupported register semantics')
     groups = {'Dimension': [], 'Resource': [], 'Attribute': []}
@@ -585,7 +585,7 @@ def _register_schema(raw, name, targets, used, issues):
     if not 1 <= len(groups['Dimension']) <= 16: _fail('register dimension count')
     if not groups['Resource'] or sum(map(len, groups.values())) > 64: _fail('register field count')
     return InformationRegisterSchema(identity, name, tuple(groups['Dimension']),
-        tuple(groups['Resource']), tuple(groups['Attribute']))
+        tuple(groups['Resource']), tuple(groups['Attribute']), _text(props, 'InformationRegisterPeriodicity'))
 
 
 def import_configuration(files, *, numbering_policy='explicit', module_runtime=None):

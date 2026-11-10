@@ -2,7 +2,8 @@
 
 The owned SQLite v8 profile supports `InformationRegister.Name` /
 `РегистрСведений.Name` as a read-only Query source for independent, nonperiodic
-registers. This is a bounded host contract, not measured native 1C query parity.
+registers. Explicit v9 adds [periodic sources and edge tables](periodic-information-registers.md)
+without changing the v8 contract. This is a bounded host contract, not measured native 1C query parity.
 
 All declared dimensions, resources, and attributes are available with their
 exact scalar types and qualifiers. Catalog-reference fields keep their target

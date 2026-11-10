@@ -44,12 +44,15 @@ def schema_data(schema):
             or type(schema.resources) is not tuple or type(schema.attributes) is not tuple
             or not 1 <= len(schema.dimensions) <= 16 or not schema.resources):
         raise BackendError('invalid_input')
+    if type(schema.periodicity) is not str or schema.periodicity not in ('Nonperiodical','WithinSecond','Day','Month','Quarter','Year'): raise BackendError('invalid_input')
     s = _storage(); s._uuid(schema.identity)
     if type(schema.name) is not str or not schema.name or len(schema.name)>128: raise BackendError('invalid_input')
-    fields = s._fields_data(schema.fields)
-    if any(f.identity == schema.identity or f.name.casefold() in _RESERVED for f in schema.fields):
+    fields = s._fields_data(schema.declared_fields)
+    if any(f.identity == schema.identity or f.name.casefold() in _RESERVED for f in schema.declared_fields):
         raise BackendError('invalid_input')
     data = ['independent_register_v1',str(schema.identity),schema.name,len(schema.dimensions),len(schema.resources),fields]
+    if type(schema.periodicity) is not str or schema.periodicity not in ('Nonperiodical','WithinSecond','Day','Month','Quarter','Year'): raise BackendError('invalid_input')
+    if schema.periodic: data = ['periodic_register_v1', *data[1:], schema.periodicity]
     if len(s._json(data))>65536: raise BackendError('invalid_input')
     return data
 
@@ -57,7 +60,7 @@ def schema_data(schema):
 def parse_schema(raw):
     if type(raw) is not str or len(raw)>65536: raise BackendError('integrity')
     data=json.loads(raw)
-    if (type(data) is not list or len(data)!=6 or data[0]!='independent_register_v1'
+    if (type(data) is not list or not ((len(data)==6 and data[0]=='independent_register_v1') or (len(data)==7 and data[0]=='periodic_register_v1'))
             or type(data[3]) is not int or type(data[4]) is not int
             or type(data[5]) is not list or len(data[5])>64): raise BackendError('integrity')
     fields=[]
@@ -66,7 +69,7 @@ def parse_schema(raw):
         fields.append(FieldSchema(UUID(f[0]),f[1],f[2],tuple(f[3]),None if f[4] is None else UUID(f[4])))
     n,r=data[3:5]
     if not 1<=n<=16 or not 1<=r<=64 or n+r>len(fields): raise BackendError('integrity')
-    result=InformationRegisterSchema(UUID(data[1]),data[2],tuple(fields[:n]),tuple(fields[n:n+r]),tuple(fields[n+r:]))
+    result=InformationRegisterSchema(UUID(data[1]),data[2],tuple(fields[:n]),tuple(fields[n:n+r]),tuple(fields[n+r:]), 'Nonperiodical' if len(data)==6 else data[6])
     if schema_data(result)!=data: raise BackendError('integrity')
     return result
 
@@ -128,8 +131,11 @@ class RegisterView:
     def _key(self,key):
         if type(key) is not RegisterKey or type(key.database_id) is not UUID or key.database_id!=self.database_id: raise BackendError('invalid_input')
         schema=self.register_schema(key.register_id)
-        if type(key.dimensions) is not tuple or len(key.dimensions)!=len(schema.dimensions): raise BackendError('invalid_input')
-        encoded=[_dimension(v,f,self.database_id) for f,v in zip(schema.dimensions,key.dimensions)]
+        if type(key.dimensions) is not tuple or len(key.dimensions)!=len(schema.key_fields): raise BackendError('invalid_input')
+        if schema.periodic:
+            from .periodic_information_registers import storage_period
+            if storage_period(key.dimensions[0],schema.periodicity) != key.dimensions[0]: raise BackendError('invalid_input')
+        encoded=[_dimension(v,f,self.database_id) for f,v in zip(schema.key_fields,key.dimensions)]
         raw=_storage()._json(encoded)
         if len(raw)>MAX_ROW: raise BackendError('invalid_input')
         return schema,raw
@@ -143,11 +149,11 @@ class RegisterView:
     def _record(self,schema,row):
         raw,revision,values_raw=row
         dimensions=json.loads(raw);values=json.loads(values_raw)
-        if (type(dimensions) is not list or len(dimensions)!=len(schema.dimensions)
+        if (type(dimensions) is not list or len(dimensions)!=len(schema.key_fields)
                 or type(values) is not list or len(values)!=len(schema.resources)+len(schema.attributes)):
             raise BackendError('integrity')
         s=_storage()
-        key=RegisterKey(self.database_id,schema.identity,tuple(s._decode(v,f,self.database_id) for f,v in zip(schema.dimensions,dimensions)))
+        key=RegisterKey(self.database_id,schema.identity,tuple(s._decode(v,f,self.database_id) for f,v in zip(schema.key_fields,dimensions)))
         stored=tuple(s._decode(v,f,self.database_id) for f,v in zip((*schema.resources,*schema.attributes),values))
         if self._key(key)[1]!=raw or s._json(values)!=values_raw: raise BackendError('integrity')
         return RegisterRecord(key,RegisterRevision(self.database_id,self.configuration_generation,
@@ -159,11 +165,15 @@ class RegisterView:
     def select_records(self,identity,filters=(),limit=1000):
         schema=self.register_schema(identity)
         if type(filters) is not tuple or type(limit) is not int or not 1<=limit<=1000: raise BackendError('invalid_input')
-        admitted={f.identity:(i,f) for i,f in enumerate(schema.dimensions)};wanted={}
+        admitted={f.identity:(i,f) for i,f in enumerate(schema.key_fields)};wanted={}
         for pair in filters:
             if type(pair) is not tuple or len(pair)!=2 or type(pair[0]) is not UUID or pair[0] not in admitted or pair[0] in wanted:
                 raise BackendError('invalid_input')
-            _,f=admitted[pair[0]];wanted[pair[0]]=_dimension(pair[1],f,self.database_id)
+            _,f=admitted[pair[0]]
+            if schema.periodic and f.identity==schema.period_field.identity:
+                from .periodic_information_registers import storage_period
+                if storage_period(pair[1],schema.periodicity)!=pair[1]: raise BackendError('invalid_input')
+            wanted[pair[0]]=_dimension(pair[1],f,self.database_id)
         self._preflight(schema);result=[]
         # Validate the bounded entire source, even rows excluded by the filter.
         for row in self._connection.execute('SELECT key_json,revision,values_json FROM information_register_record WHERE register_id=? ORDER BY key_json',(str(identity),)):
@@ -196,13 +206,36 @@ class RegisterView:
             token=uuid4().hex;self._scan=(token,identity,rows[request.page_size-1][0])
         return RegisterPage(records,token)
 
+    def periodic_records(self, identity, filters=(), start=None, end=None, edge=None, limit=1000):
+        schema=self.register_schema(identity)
+        if not schema.periodic or type(limit) is not int or not 1<=limit<=10000: raise BackendError('invalid_input')
+        # Public edge/range filters are dimension-only; Period belongs to bounds.
+        if any(type(pair) is not tuple or len(pair)!=2 or pair[0]==schema.period_field.identity for pair in filters): raise BackendError('invalid_input')
+        from .periodic_information_registers import storage_moment,edge_records
+        if start is not None: storage_moment(start)
+        if end is not None: storage_moment(end)
+        if start is not None and end is not None and start>end: raise BackendError('invalid_input')
+        rows,_=self._scope(schema,filters)
+        if edge is not None:
+            if type(edge) is not tuple or len(edge)!=2 or type(edge[1]) is not bool: raise BackendError('invalid_input')
+            rows=edge_records(rows,schema,*edge)
+        else:
+            rows=tuple(r for r in rows if (start is None or r.key.dimensions[0]>=start)
+                       and (end is None or r.key.dimensions[0]<=end))
+        if len(rows)>limit: raise BackendError('unsupported')
+        return rows
+
     def _filter_values(self,schema,filters):
         if type(filters) is not tuple: raise BackendError('invalid_input')
-        admitted={f.identity:(i,f) for i,f in enumerate(schema.dimensions)};wanted={}
+        admitted={f.identity:(i,f) for i,f in enumerate(schema.key_fields)};wanted={}
         for pair in filters:
             if type(pair) is not tuple or len(pair)!=2 or type(pair[0]) is not UUID or pair[0] not in admitted or pair[0] in wanted:
                 raise BackendError('invalid_input')
-            _,f=admitted[pair[0]];wanted[pair[0]]=_dimension(pair[1],f,self.database_id)
+            _,f=admitted[pair[0]]
+            if schema.periodic and f.identity==schema.period_field.identity:
+                from .periodic_information_registers import storage_period
+                if storage_period(pair[1],schema.periodicity)!=pair[1]: raise BackendError('invalid_input')
+            wanted[pair[0]]=_dimension(pair[1],f,self.database_id)
         return admitted,wanted
 
     def _scope(self,schema,filters):
@@ -237,7 +270,7 @@ class RegisterView:
             seen.add(raw)
             if any(_dimension(record.key.dimensions[admitted[k][0]],admitted[k][1],self.database_id)!=v for k,v in wanted.items()): raise BackendError('invalid_input')
             rows.append((raw,values))
-        intent=['register_set_v1',str(schema.identity),[[str(f.identity),wanted[f.identity]] for f in schema.dimensions if f.identity in wanted],rows,draft.replace,draft.expected_snapshot]
+        intent=['register_set_v1',str(schema.identity),[[str(f.identity),wanted[f.identity]] for f in schema.key_fields if f.identity in wanted],rows,draft.replace,draft.expected_snapshot]
         raw=_storage()._json(intent)
         if len(raw)>MAX_TOTAL: raise BackendError('invalid_input')
         return schema,rows,sha256(raw.encode()).hexdigest()
@@ -359,5 +392,5 @@ class RegisterView:
 # Apply the same narrow error translation as the owning catalog application.
 # Installed by sqlite_catalog after its boundary helper has been defined.
 def install_boundaries(boundary):
-    for name in ('registers','register_schema','read_record','select_records','scan_register','read_set','write_set','resolve_set','write','delete','commit','resolve'):
+    for name in ('registers','register_schema','read_record','select_records','scan_register','periodic_records','read_set','write_set','resolve_set','write','delete','commit','resolve'):
         setattr(RegisterView,name,boundary(getattr(RegisterView,name)))

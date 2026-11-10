@@ -103,7 +103,7 @@ class DocumentView:
         self.configuration_generation = view.configuration_generation
         self._outcome = None; self._hash = None
         self._register_read_view = None
-        if view._backend.storage_version not in (7, 8):
+        if view._backend.storage_version not in (7, 8, 9):
             self._schemas = ()
         else:
             self._schemas = view._backend._document_schemas
@@ -130,6 +130,9 @@ class DocumentView:
     def register_schema(self, identity): return self._register_reader().register_schema(identity)
     def scan_register(self, identity, request):
         return self._register_reader().scan_register(identity, request)
+    def periodic_records(self, identity, filters=(), start=None, end=None, edge=None, limit=1000):
+        return self._register_reader().periodic_records(identity,filters,start,end,edge,limit)
+
     def documents(self): self._view._require(); return self._schemas
     def document_schema(self, identity):
         self._view._require(); _storage()._uuid(identity)

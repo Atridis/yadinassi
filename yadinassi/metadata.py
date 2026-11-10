@@ -137,6 +137,9 @@ class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
 
 
 class BSLInformationRegisterMetadata(BSLCatalogMetadata):
+    def get_member(self, name):
+        if name.casefold() in ('periodicity','периодичность'): return self._schema.periodicity
+        return super().get_member(name)
     def full_name(self):
         return 'РегистрСведений.' + self._name
 

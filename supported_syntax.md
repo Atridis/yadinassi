@@ -55,8 +55,10 @@ CreateDocument, Write, GetObject, FindByNumber, Select, Number/Date/DeletionMark
 Новые базы v8 поддерживают [независимые непериодические регистры сведений](docs/sqlite-information-registers.md):
 CreateRecordManager, Read/Write/Delete, Get/Select, наборы записей с фильтрами
 и атомарным замещением. [Источники запросов регистров](docs/information-register-queries.md)
-используют общий снимок со справочниками и документами. Периодические регистры,
-проведение, иерархия и произвольные обработчики не поддержаны.
+используют общий снимок со справочниками и документами. Явный новый формат v9
+добавляет [периодические регистры](docs/periodic-information-registers.md): Period,
+GetFirst/GetLast, SliceFirst/SliceLast и Query-срезы с датой-параметром.
+Подчинённые регистры, проведение, иерархия и произвольные обработчики не поддержаны.
 Сравнения обычного BSL с реальной 1С продолжаются через официальный XML/BSL,
 без чтения внутреннего формата базы. [Граница SQLite](docs/file-database-context.md).
 
