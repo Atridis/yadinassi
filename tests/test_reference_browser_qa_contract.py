@@ -63,6 +63,40 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
         for forbidden in ('QA_CHROMIUM', 'executablePath:', 'ignoreDefaultArgs', 'args:', '--no-sandbox', '--disable-setuid-sandbox', 'sudo ', 'sysctl '):
             self.assertNotIn(forbidden, source)
 
+    def test_launch_checkpoints_identify_the_last_safe_stage_without_raw_data(self):
+        source = self.source()
+        stages = re.findall(r"report\.launch\.stage='([^']+)'", source)
+        self.assertEqual(stages, ['chromium_launch', 'children_after', 'process_identity',
+            'executable_identity', 'browser_command', 'browser_profile', 'browser_ready',
+            'cdp_session', 'cdp_process_identity', 'cdp_detach', 'browser_context',
+            'sandbox_page', 'sandbox_status', 'sandbox_probe_close', 'verified'])
+        self.assertIn("report.launch={stage:'children_before',returned:false,children:null,groupVerified:false,", source)
+        self.assertIn('report.launch.children=Math.min(children.length,2)', source)
+        for flag in ['returned', 'groupVerified', 'executableVerified', 'commandVerified', 'profileVerified']:
+            self.assertEqual(source.count('report.launch.' + flag + '=true'), 1)
+        self.assertIn('report.launch.launchFailure=launchFailureCode(error);throw error', source)
+        self.assertIn("if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error)", source)
+        self.assertNotIn('report.launch.error=', source)
+        self.assertNotIn('report.launch.pid=', source)
+        self.assertNotIn('report.launch.path=', source)
+        self.assertNotIn('report.launch.args=', source)
+
+    def test_launch_error_diagnostics_are_an_explicit_fixed_allowlist(self):
+        source = self.source()
+        classifier = source.split('function launchFailureCode(error){', 1)[1].split('function processIdentity', 1)[0]
+        self.assertIn("message===code||message.startsWith(code+'\\n')", classifier)
+        self.assertIn("return 'unclassified_launch_failure'", classifier)
+        self.assertEqual(re.findall(r"return '([^']+)'", classifier), [
+            'sandbox_start_denied', 'browser_binary_missing', 'browser_dependency_missing',
+            'browser_operation_timeout', 'launch_file_missing', 'launch_access_denied',
+            'launch_process_gone', 'unclassified_launch_failure'])
+        self.assertIn("'process_uid_mismatch','process_not_direct_child'", classifier)
+        self.assertIn("'browser_executable_mismatch'", classifier)
+        self.assertIn("'browser_profile_not_owned'", classifier)
+        for forbidden in ('return message', 'return error', 'error.stack', 'error.actual', 'error.expected',
+                          'JSON.stringify', 'console.', 'writeFile', 'process.env'):
+            self.assertNotIn(forbidden, classifier)
+
     def test_browser_identity_group_profile_and_environment_are_owned(self):
         source = self.source()
         for required in ('priorChildren.has(pid)', 'process_not_direct_child', 'process_uid_mismatch',

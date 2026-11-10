@@ -34,6 +34,27 @@ const cleanupRemaining=max=>Math.max(1,Math.min(max,totalDeadline-Date.now()));
 const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',timeout:remaining(5000),maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']}).trim();
 const runPython=args=>execFileSync(python,args,{cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','pipe']});
 
+// Only fixed labels leave this process. Never export raw launch errors, paths,
+// command arguments, environment values, process IDs or assertion actual/expected.
+function launchFailureCode(error){
+  const message=typeof error?.message==='string'?error.message:'';
+  const fixed=['invalid_owned_pid','process_uid_mismatch','process_not_direct_child',
+    'process_group_not_owned','unexpected_launch_children','browser_executable_mismatch',
+    'browser_command_budget','browser_command_invalid','sandbox_command_missing','sandbox_disabled',
+    'unexpected_browser_transport','browser_profile_missing','browser_profile_not_owned',
+    'browser_process_missing','cdp_setup_timeout','cdp_process_timeout','browser_pid_invalid',
+    'browser_pid_mismatch','cdp_detach_timeout','context_timeout','sandbox_status_invalid','sandbox_not_confirmed'];
+  for(const code of fixed)if(message===code||message.startsWith(code+'\n'))return code;
+  if(/Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(message))return 'sandbox_start_denied';
+  if(/Executable doesn't exist/i.test(message))return 'browser_binary_missing';
+  if(/error while loading shared libraries|Host system is missing dependencies/i.test(message))return 'browser_dependency_missing';
+  if(error?.name==='TimeoutError')return 'browser_operation_timeout';
+  if(error?.code==='ENOENT')return 'launch_file_missing';
+  if(error?.code==='EACCES'||error?.code==='EPERM')return 'launch_access_denied';
+  if(error?.code==='ESRCH')return 'launch_process_gone';
+  return 'unclassified_launch_failure';
+}
+
 function processIdentity(pid){
   assert.ok(Number.isSafeInteger(pid)&&pid>0,'invalid_owned_pid');
   const root='/proc/'+pid,stat=readFileSync(root+'/stat','utf8');
@@ -220,40 +241,62 @@ async function main(){
   home=path.join(owned,'home');await mkdir(home);
   env=childEnvironment(process.env,home);env.PYTHONPATH=repo;
   phase='sandbox_launch';
+  report.launch={stage:'children_before',returned:false,children:null,groupVerified:false,
+    executableVerified:false,commandVerified:false,profileVerified:false};
   const childrenPath='/proc/'+process.pid+'/task/'+process.pid+'/children';
   const priorChildren=new Set(readFileSync(childrenPath,'utf8').trim().split(/\s+/).filter(Boolean));
   const previousTmp=process.env.TMPDIR;
   try{
     // Playwright creates its profile from the parent's temp directory, not launch env.
     process.env.TMPDIR=home;
+    report.launch.stage='chromium_launch';
     browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,env,timeout:remaining(20000)});
+    report.launch.returned=true;
+  }catch(error){
+    // Preserve the launch failure even if subsequent ownership observation fails.
+    report.launch.launchFailure=launchFailureCode(error);throw error;
   }finally{
     if(previousTmp===undefined)delete process.env.TMPDIR;else process.env.TMPDIR=previousTmp;
     // Capture the newly launched direct owned group even if CDP setup later fails.
+    report.launch.stage='children_after';
     const children=readFileSync(childrenPath,'utf8').trim().split(/\s+/).filter(pid=>pid&&!priorChildren.has(pid));
+    report.launch.children=Math.min(children.length,2);
     assert.ok(children.length<=1,'unexpected_launch_children');
     if(children.length){
-      browserGroup=processIdentity(Number(children[0]));
+      report.launch.stage='process_identity';
+      browserGroup=processIdentity(Number(children[0]));report.launch.groupVerified=true;
+      report.launch.stage='executable_identity';
       assert.equal(readlinkSync('/proc/'+browserGroup.pid+'/exe'),chromium.executablePath(),'browser_executable_mismatch');
+      report.launch.executableVerified=true;report.launch.stage='browser_command';
       const bytes=readFileSync('/proc/'+browserGroup.pid+'/cmdline');assert.ok(bytes.length<=16384,'browser_command_budget');
       const args=commandLineArgs(bytes);sandboxCommand(args);
+      report.launch.commandVerified=true;report.launch.stage='browser_profile';
       const profiles=args.filter(arg=>arg.startsWith('--user-data-dir='));
       assert.equal(profiles.length,1,'browser_profile_missing');
       const relative=path.relative(home,profiles[0].slice('--user-data-dir='.length));
       assert.ok(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative),'browser_profile_not_owned');
+      report.launch.profileVerified=true;
     }
   }
+  report.launch.stage='browser_ready';
   check();assert.ok(browserGroup,'browser_process_missing');report.browser=browser.version();
+  report.launch.stage='cdp_session';
   const cdp=await bounded(browser.newBrowserCDPSession(),remaining(5000),'cdp_setup_timeout');
+  report.launch.stage='cdp_process_identity';
   const info=await bounded(cdp.send('SystemInfo.getProcessInfo'),remaining(5000),'cdp_process_timeout');
   assert.equal(ownBrowserPid(info.processInfo),browserGroup.pid,'browser_pid_mismatch');
+  report.launch.stage='cdp_detach';
   await bounded(cdp.detach(),remaining(5000),'cdp_detach_timeout');
+  report.launch.stage='browser_context';
   context=await bounded(browser.newContext({viewport:{width:1100,height:850},locale:'en-US',timezoneId:'UTC',
     acceptDownloads:false,serviceWorkers:'block'}),remaining(10000),'context_timeout');
   context.setDefaultTimeout(10000);context.setDefaultNavigationTimeout(15000);
+  report.launch.stage='sandbox_page';
   const probe=await context.newPage();await probe.goto('chrome://sandbox');
+  report.launch.stage='sandbox_status';
   report.sandbox={requested:true,commandVerified:true,...sandboxStatus(await probe.locator('body').innerText())};
-  await probe.close();
+  report.launch.stage='sandbox_probe_close';
+  await probe.close();report.launch.stage='verified';
   await context.route('**/*',async route=>{
     const target=route.request().url();
     if(aborted||!allowedRequest(target,origin))return route.abort();
@@ -430,6 +473,7 @@ catch(error){
   // Fixed, bounded flags/counts only. Never record DOM text, field contents,
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
+  if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
