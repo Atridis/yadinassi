@@ -1,4 +1,5 @@
 """Explicit generic form activation and durable source pins, not native evidence."""
+from contextlib import closing
 from hashlib import sha256
 from pathlib import Path
 import sqlite3
@@ -105,12 +106,12 @@ class CatalogFormsProfileTests(unittest.TestCase):
     def test_source_replacement_rejected_on_reopen_even_with_updated_file_hash(self):
         self.create().close()
         content = catalog_form_sources()['Catalogs/Items/Forms/Card/Ext/Form.xml'].replace(b'<Title>Item</Title>', b'<Title>Changed</Title>')
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute('UPDATE configuration_file SET content=?,sha256=? WHERE path=?', (content, sha256(content).hexdigest(), 'Catalogs/Items/Forms/Card/Ext/Form.xml'))
         with self.assertRaises(BackendError): SQLiteCatalogBackend(self.path)
 
     def test_source_replacement_rejected_by_existing_backend(self):
         backend = self.create()
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute("UPDATE configuration_file SET content=? WHERE path='Catalogs/Items/Ext/ObjectModule.bsl'", (b'changed',))
         with self.assertRaises(BackendError): backend.begin_read()
