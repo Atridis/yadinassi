@@ -1104,3 +1104,9 @@ BinaryData потоки, кодировки/BOM, текущая позиция, 
 Поддержаны NOT/НЕ, BETWEEN/МЕЖДУ, IN/В со списками, снимками Array/FixedArray
 и одноколоночными некоррелированными SELECT на общем read snapshot. Null сохраняет
 трёхзначную логику предикатов. [Контракт и ограничения](docs/query-membership-filters.md).
+
+## Производные источники Query
+
+Поддержаны `FROM/JOIN (SELECT ... / UNION ...) AS Alias`, вложенные отчёты
+на общем snapshot и `RIGHT/FULL [OUTER] JOIN` с корректными Null-строками.
+Типы, алиасы, бюджеты и явные границы описаны в [контракте](docs/derived-query-sources.md).

@@ -28,8 +28,9 @@ as user SQL. Database layout and metadata admission are unchanged.
   tables, contain statement separators, or refer to an outer alias.
 
 These predicates compose in WHERE, ON, HAVING and CASE conditions. Correlated
-subqueries, scalar subquery expressions, EXISTS, LIKE, arbitrary table
-expressions in FROM and query writes remain unsupported.
+subqueries, scalar subquery expressions, EXISTS, LIKE and query writes remain
+unsupported. Typed uncorrelated FROM/JOIN sources are described in
+[derived query sources](derived-query-sources.md).
 
 ## Null is unknown, not false
 
