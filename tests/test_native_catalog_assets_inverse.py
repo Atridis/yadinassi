@@ -52,7 +52,59 @@ class FormAssetsInverseTests(unittest.TestCase):
 
     def test_new_layer_rejects_unknown_source_and_inventory_drift(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        # Exercise this historical layer itself, after the newer exact inverse.
+        source = history.without_workspace_assets_provenance(source)
         for changed in (source + '# drift\n', source.replace('("catalog", "form")', '("catalog", "other")'),
                         source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
             with self.subTest(changed=changed[-20:]), self.assertRaises(AssertionError):
                 history.without_form_assets_provenance(changed)
+
+
+class WorkspaceAssetsInverseTests(unittest.TestCase):
+    def test_exact_workspace_layer_restores_unchanged_form_source(self):
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        restored = history.without_workspace_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
+                         '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
+                         '3b0f228a5195de776313c33e33460ffb00a6013102d2a490f2d5082e097d1e79')
+        self.assertEqual(restored, source.replace('("catalog", "form", "workspace")',
+                                                  '("catalog", "form")', 1))
+        self.assertEqual(history.without_workspace_assets_provenance(restored), restored)
+        for inverse in (history.without_form_assets_provenance,
+                        history.without_catalog_assets_provenance,
+                        history.without_sqlite_host_context,
+                        history.without_collections_measurement_budget):
+            with self.subTest(inverse=inverse.__name__):
+                self.assertEqual(inverse(source), inverse(restored))
+
+    def test_workspace_layer_rejects_unknown_missing_duplicate_and_modified_hunks(self):
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
+        hunk = '              for renderer in ("catalog", "form", "workspace") for name in\n'
+        self.assertEqual(source.count(hunk), 1)
+        self.assertIn('CASE_SECONDS = 10', source)
+        for changed in (source + '# drift\n', source.replace(hunk, '', 1), source + hunk,
+                        source.replace('"workspace"', '"unlisted"', 1),
+                        source.replace('CASE_SECONDS = 10', 'CASE_SECONDS = 11', 1)):
+            for inverse in (history.without_workspace_assets_provenance,
+                            history.without_form_assets_provenance,
+                            history.without_catalog_assets_provenance):
+                with self.subTest(inverse=inverse.__name__), self.assertRaises(AssertionError):
+                    inverse(changed)
+
+class ConfigurationAssetsInverseTests(unittest.TestCase):
+    def test_exact_configuration_layer(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        restored = history.without_configuration_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(restored, source.replace('("catalog", "form", "workspace", "configuration")', '("catalog", "form", "workspace")', 1))
+        self.assertEqual(history.without_configuration_assets_provenance(restored), restored)
+        for inverse in (history.without_workspace_assets_provenance, history.without_form_assets_provenance, history.without_catalog_assets_provenance):
+            self.assertEqual(inverse(source), inverse(restored))
+
+    def test_configuration_layer_rejects_source_drift(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        hunk = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
+        for changed in (source+'# drift\n', source.replace(hunk, '', 1), source+hunk, source.replace('"configuration"', '"unlisted"', 1)):
+            for inverse in (history.without_configuration_assets_provenance, history.without_workspace_assets_provenance, history.without_catalog_assets_provenance):
+                with self.assertRaises(AssertionError): inverse(changed)

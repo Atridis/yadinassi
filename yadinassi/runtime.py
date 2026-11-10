@@ -40,7 +40,7 @@ from .numeric import bits, elementary, numbers
 from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
-from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
+from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
@@ -48,7 +48,7 @@ from .query_packages import BSLTempTablesManager
 from .documents import BSLDocuments
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
 from .document_types import BSLDocumentType
-from .document_lines import BSLDocumentLines, BSLDocumentLinesType
+from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogType
 from .database_context import SQLiteDBContext, require_database_context
 from .numeric.round_modes import BSLRoundModes, ROUND_MODES
@@ -82,11 +82,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -216,6 +216,7 @@ class Interpreter:
         self.user_messages = UserMessageContext(output, user_message_sink)
         self.encoding = encoding
         self.imports: dict[str, _Module | _Namespace] = {}
+        self._configuration_runtime = None
         self._module_cache: dict[Path, _Module] = {}
         self._loading: list[Path] = []
         # Imports share this dynamic handler stack, independent of variable frames.
@@ -457,6 +458,8 @@ class Interpreter:
         return BSLUserMessage(self.user_messages)
 
     def _message(self, value: object) -> None:
+        if self._configuration_runtime is not None and self._configuration_runtime.state == "exiting":
+            raise ValueError("Messages are unavailable during application OnExit")
         self.output(to_string(value))
 
     def _error_description(self) -> str:
@@ -555,6 +558,8 @@ class Interpreter:
 
     def _execute_program_boundary(self, program, outermost):
         with target_context(self.native_target):
+            if self._configuration_runtime is not None:
+                self._configuration_runtime.check_program(program)
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
                 result = self._scheduler.run_inline(self._execute_program(program))
@@ -692,6 +697,10 @@ class Interpreter:
             return value.get() if isinstance(value, _Reference) else value
         if self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
+        if self._configuration_runtime is not None:
+            module = self._configuration_runtime.resolve_module(name, self)
+            if module is not None:
+                return module
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
         if name in self.routines or name in self.server_routines or name in self._dual_routine_names:
@@ -840,7 +849,8 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+        if (type(value) is BSLCommonModuleMetadataCollection
+                or type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments)):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -883,6 +893,10 @@ class Interpreter:
                 and callee.name.casefold() in self._client_routine_names):
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         owner = self
+        if routine is None and isinstance(callee, ast.Name) and self._configuration_runtime is not None:
+            configured = self._configuration_runtime.resolve_global(callee.name, self)
+            if configured is not None:
+                routine, owner = configured
         has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
         known_receiver = None
         if isinstance(callee, ast.Attribute):
@@ -1079,6 +1093,8 @@ class Interpreter:
         if type(value) is str:
             parts = value.split(".")
             receiver = self.imports.get(parts[0].casefold())
+            if receiver is None and len(parts) == 1 and self._configuration_runtime is not None:
+                receiver = self._configuration_runtime.resolve_module(parts[0], self)
             for part in parts[1:]:
                 receiver = (receiver.members.get(part.casefold())
                             if type(receiver) is _Namespace else None)
@@ -1188,22 +1204,22 @@ class Interpreter:
             if key in {"writeint16", "записатьцелое16", "writeint32", "записатьцелое32", "writeint64", "записатьцелое64", "writechars", "записатьсимволы"}: return frozenset({1})
             if key in {"writeline", "записатьстроку"}: return frozenset({1, 2})
         if type(receiver) is BSLXMLReader:
-            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2, 3})
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}: return frozenset({1, 2, 3})
             if key in {"setstring", "установитьстроку"}: return frozenset({1, 2})
             if key in {"movetocontent", "перейтиксодержимому"}: return frozenset({0})
         if type(receiver) is BSLXMLWriter:
-            if key in {"openfile", "открытьфайл"}: return frozenset({1, 2})
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}: return frozenset({1, 2})
             if key in {"setstring", "установитьстроку"}: return frozenset({0})
         if type(receiver) in (BSLTextReader, BSLTextWriter):
             if key in {"open", "открыть"}: return frozenset({1, 2, 3, 4})
             if key in {"read", "прочитать", "readline", "прочитатьстроку"}: return frozenset({0})
             if key in {"writeline", "записатьстроку"}: return frozenset({1})
         if type(receiver) is BSLJSONWriter:
-            if key in {"openfile", "открытьфайл"}:
+            if key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}:
                 return frozenset({1, 2, 3})
             if key in {"setstring", "установитьстроку"}:
                 return frozenset({0})
-        if type(receiver) is BSLJSONReader and key in {"openfile", "открытьфайл"}:
+        if type(receiver) is BSLJSONReader and key in {"openfile", "открытьфайл", "openstream", "открытьпоток"}:
             return frozenset({1})
         if type(receiver) is BSLValueList:
             if key in {"add", "добавить"}:
@@ -1231,7 +1247,10 @@ class Interpreter:
             name = node.name.casefold()
             if self.locals is not None and name in self.locals:
                 return None
-            return self.imports.get(name)
+            imported = self.imports.get(name)
+            if imported is not None or self._configuration_runtime is None:
+                return imported
+            return self._configuration_runtime.resolve_module(name, self)
         if isinstance(node, ast.Attribute):
             parent = self.import_receiver(node.object)
             if parent is None:
@@ -1250,6 +1269,8 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
             raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
         if not self._valid_routine_context(function):
@@ -1259,7 +1280,9 @@ class Interpreter:
             raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {caller_side}: {function.name}")
         if caller_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        if not self._has_module_context and function.module_context:
+        if (not self._has_module_context and function.module_context
+                and not (self._configuration_runtime is not None
+                         and self._configuration_runtime.is_common_routine(function))):
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = caller_side == "client" and function.execution_context == "server"
         invocation = owner._invocation_bindings.get(function.name.casefold())
@@ -1440,6 +1463,8 @@ class Interpreter:
         server = self._activation_interpreter()
         server.user_messages = self.user_messages
         server._scheduler = self._scheduler
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.bind_interpreter(server)
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
@@ -1589,7 +1614,7 @@ class Interpreter:
         # EDT root_New explicitly says to ignore a non-array second value.
         value_type = (yield from self._visit(node.type_expression))
         parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
-        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or type(value_type) is BSLDocumentLinesType or type(value_type) is BSLInformationRegisterType):
+        if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or (type(value_type) is BSLDocumentLinesType or type(value_type) is BSLDocumentSectionType) or type(value_type) is BSLInformationRegisterType):
             raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
             name = value_type.value
@@ -1629,6 +1654,8 @@ class Interpreter:
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_assignment(name, self)
         if (name in ("thisobject", "этотобъект")
                 and not (self.locals is not None and name in self.locals)
                 and not (self._has_module_context and name in self.variables
@@ -1725,6 +1752,8 @@ class Interpreter:
                                 compilation_profile=self.compilation_profile)
             child.user_messages = self.user_messages
             child._scheduler = self._scheduler
+            if self._configuration_runtime is not None:
+                self._configuration_runtime.bind_interpreter(child)
             child._diagnostic_owner = self._diagnostic_owner
             child.functions = self.functions.copy()
             child.types = self.types.copy()

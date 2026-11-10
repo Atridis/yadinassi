@@ -13,6 +13,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
+from .document_backend import DocumentSchema
 
 MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
@@ -55,6 +56,9 @@ class ConfigurationImport:
     files: tuple[ConfigurationFile, ...]
     modules: tuple[ConfigurationModule, ...]
     activation_issues: tuple[str, ...]
+    documents: tuple[DocumentSchema, ...] = ()
+    common_modules: tuple = ()
+    module_runtime: str | None = None
 
 
 def _fail(reason):
@@ -385,10 +389,10 @@ def _activation_properties(obj, allowed, issues, owner):
             issues.append('unsupported presentation metadata:'+owner+':'+tag)
     for container in obj.findall('{'+MD+'}ChildObjects'):
         for node in container:
-            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' or (obj.tag == '{'+MD+'}Catalog' and node.tag == '{'+MD+'}TabularSection') else set()
+            permitted = {'uuid'} if node.tag == '{'+MD+'}Attribute' or (obj.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document') and node.tag == '{'+MD+'}TabularSection') else set()
             if (set(node.attrib) != permitted or (node.tail or '').strip(_XML_WHITESPACE)
                     or (len(node) and (node.text or '').strip(_XML_WHITESPACE))
-                    or (node.tag == '{'+MD+'}Catalog' and len(node))):
+                    or (node.tag in ('{'+MD+'}Catalog', '{'+MD+'}Document') and obj.tag == '{'+MD+'}Configuration' and len(node))):
                 issues.append('unsupported child metadata envelope:'+owner)
 
 
@@ -479,13 +483,81 @@ def _accept_source_files(files):
     return tuple(accepted)
 
 
-def import_configuration(files, *, numbering_policy='explicit'):
+
+_DOCUMENT_RESERVED = _RESERVED | frozenset((
+    'number', 'номер', 'date', 'дата', 'posted', 'проведен', 'проведён',
+    'setdeletionmark', 'установитьпометкуудаления', 'copy', 'скопировать',
+    'fill', 'заполнить', 'checkfill', 'проверитьзаполнение'))
+
+
+def _document_schema(raw, name, targets, used, issues):
+    """Authored XML-shaped document profile, not full Designer export parity.
+
+    Only unposted documents, whole-series unique strings and explicit or local
+    decimal numbering are admitted. Unknown behavior stays an activation issue.
+    """
+    obj, ns, root = _object(raw, 'Document', include_root=True)
+    props = _props(obj)
+    identity = _uuid(obj.get('uuid'))
+    if identity in used: _fail('duplicate metadata UUID')
+    used.add(identity)
+    if _text(props, 'Name') != name: _fail('document filename/name mismatch')
+    _envelope_issues(root, obj, issues, name)
+    _activation_properties(obj, {'Name', 'Synonym', 'Comment', 'NumberType',
+        'NumberLength', 'NumberPeriodicity', 'CheckUnique', 'Autonumbering',
+        'Posting'}, issues, name)
+    if any(_text(props, key) != value for key, value in (
+            ('NumberType', 'String'), ('NumberPeriodicity', 'Nonperiodical'),
+            ('CheckUnique', 'true'), ('Posting', 'Deny'))):
+        _fail('unsupported document semantics')
+    auto = _text(props, 'Autonumbering')
+    if auto not in ('false', 'true'): _fail('unsupported document numbering')
+    length = _int(props, 'NumberLength', 1, 9)
+    names = set(_DOCUMENT_RESERVED)
+    fields = []; sections = []
+
+    def field_schema(field, field_names, owner):
+        if field.tag != '{'+MD+'}Attribute': _fail('document child object unsupported')
+        _activation_properties(field, {'Name', 'Synonym', 'Comment', 'Type'}, issues, owner)
+        fp = _props(field); fn = _name(_text(fp, 'Name')); fid = _uuid(field.get('uuid'))
+        if fn.casefold() in field_names or fid in used: _fail('field identity/name collision')
+        field_names.add(fn.casefold()); used.add(fid)
+        kind, qualifiers, target = _type(fp, ns, targets)
+        return FieldSchema(fid, fn, kind, qualifiers, target)
+
+    children = obj.find('{'+MD+'}ChildObjects')
+    for item in (() if children is None else children):
+        if item.tag == '{'+MD+'}Attribute':
+            fields.append(field_schema(item, names, name))
+        elif item.tag == '{'+MD+'}TabularSection':
+            _activation_properties(item, {'Name', 'Synonym', 'Comment'}, issues, name)
+            sp = _props(item); sn = _name(_text(sp, 'Name')); sid = _uuid(item.get('uuid'))
+            if sn.casefold() in names or sid in used: _fail('section identity/name collision')
+            names.add(sn.casefold()); used.add(sid)
+            rows = item.find('{'+MD+'}ChildObjects')
+            row_names = set(_DOCUMENT_RESERVED) | {'linenumber', 'номерстроки'}
+            row_fields = tuple(field_schema(f, row_names, name+'.'+sn)
+                               for f in (() if rows is None else rows))
+            if len(row_fields) > 64: _fail('section field count')
+            sections.append(TabularSectionSchema(sid, sn, row_fields))
+            if len(sections) > 16: _fail('tabular section count')
+        else:
+            _fail('document child object unsupported')
+    if len(fields) > 64: _fail('field count')
+    return DocumentSchema(identity, name, length, tuple(fields), tuple(sections),
+                          'decimal_v1' if auto == 'true' else 'explicit')
+
+
+def import_configuration(files, *, numbering_policy='explicit', module_runtime=None):
     """Import closed XML; decimal_v1 is an explicit local numbering choice.
 
     It does not assert native numbering parity or waive other activation gates.
     """
     if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
         _fail('unsupported numbering policy')
+    from .configuration_modules import MODULE_RUNTIME, read_common_modules, validate_module_sources
+    if module_runtime is not None and (type(module_runtime) is not str or module_runtime != MODULE_RUNTIME):
+        _fail('unsupported module runtime profile')
     accepted = _accept_source_files(files)
     if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
     config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
@@ -494,12 +566,19 @@ def import_configuration(files, *, numbering_policy='explicit'):
     _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
     children=config.find('{'+MD+'}ChildObjects')
     if children is None:_fail('missing configuration ChildObjects')
-    catalog_names=[]
+    catalog_names=[];document_names=[];common_names=[]
     for node in children:
+        if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
+            common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+        if node.tag=='{'+MD+'}Document':
+            document_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if node.tag!='{'+MD+'}Catalog':
             issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
         catalog_names.append(_name((node.text or '').strip(_XML_WHITESPACE)))
-    if not 1<=len(catalog_names)<=512 or len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
+    minimum = 0 if module_runtime is not None else 1
+    if not minimum<=len(catalog_names)+len(document_names)<=512:_fail('metadata inventory')
+    if len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
+    if len({x.casefold() for x in document_names})!=len(document_names):_fail('document inventory')
     for cname in catalog_names:
         path='Catalogs/'+cname+'.xml'
         if path not in files:_fail('missing catalog XML')
@@ -577,7 +656,21 @@ def import_configuration(files, *, numbering_policy='explicit'):
         numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
         code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
         catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering))
-    modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names)}
+    documents=[]
+    for dname in document_names:
+        path='Documents/'+dname+'.xml'
+        if path not in files:
+            # Historical unsupported-family archives may declare a document
+            # without supplying its source. Preserve those archives as inactive.
+            issues.append('missing document XML:'+dname);continue
+        document=_document_schema(files[path],dname,targets,used,issues)
+        section_count+=len(document.tabular_sections)
+        if section_count>512:_fail('tabular section count')
+        documents.append(document)
+    common_modules = read_common_modules(files, common_names, used, issues) if module_runtime else ()
+    modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
+                        *(f'Documents/{n}.xml' for n in document_names),
+                        *(f'CommonModules/{n}.xml' for n in common_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
     # invent a Configuration owner for a file whose metadata owner is unknown.
@@ -586,6 +679,14 @@ def import_configuration(files, *, numbering_policy='explicit'):
     for cname in catalog_names:
         for kind in _CATALOG_MODULES:
             module_paths[f'Catalogs/{cname}/Ext/{kind}.bsl'] = (targets[cname.casefold()], kind)
+    for document in documents:
+        for kind in _CATALOG_MODULES:
+            module_paths[f'Documents/{document.name}/Ext/{kind}.bsl'] = (document.identity, kind)
+    for module in common_modules:
+        module_paths[module.path] = (module.identity, 'CommonModule')
+    runtime_paths = {module.path for module in common_modules}
+    if module_runtime is not None:
+        runtime_paths.add('Ext/ManagedApplicationModule.bsl')
     unknown_module_count = 0
     unknown_module_issues = []
     unknown_module_json_size = 2  # The enclosing JSON array brackets.
@@ -610,10 +711,10 @@ def import_configuration(files, *, numbering_policy='explicit'):
                 owner, kind = binding
                 modules.append(ConfigurationModule(owner,kind,entry.path))
             code='\n'.join(line.split('//',1)[0] for line in entry.content.decode('utf-8-sig').splitlines()).strip()
-            if code:issues.append('module execution unsupported:'+entry.path)
+            if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
         elif entry.path == 'ConfigDumpInfo.xml':
             versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
-            if not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
+            if document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
                 issues.append('unsupported configuration file:'+entry.path)
         elif entry.path not in expected:
             _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
@@ -622,7 +723,10 @@ def import_configuration(files, *, numbering_policy='explicit'):
                       ' (individual paths retained in configuration files)')
     else:
         issues.extend(unknown_module_issues)
-    return ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))))
+    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime)
+    if module_runtime is not None:
+        validate_module_sources(result)
+    return result
 
 
 # This marker selects a durable inert-only storage profile. It is never an

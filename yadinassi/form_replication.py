@@ -61,8 +61,8 @@ def _booleans(values):
 
 
 def _source(source, side):
-    text(source, MAX_SOURCE)
-    program = parse(source, '<replicated-form>')
+    from .form_program import admitted_program
+    program = admitted_program(source, side=side, label='<replicated-form>')
     if any(not isinstance(node, (ast.Routine, ast.Var)) or
            node.execution_context != side or
            isinstance(node, ast.Routine) and (node.is_async or node.is_dual)
@@ -346,7 +346,7 @@ def _apply_delta(form, admitted):
 class ReplicatedFormServer:
     """One server-owned form. Lifecycle and endpoints are trusted host setup."""
     def __init__(self, source, endpoints, *, handlers, attributes=(), tables=(), initial_values=None,
-                 bindings=None, database_context=None):
+                 bindings=None, database_context=None, server_bindings=()):
         _source(source, 'server')
         self._handlers, self._handler_names = _bindings(handlers, handlers=True)
         if type(endpoints) is not dict or len(endpoints) > MAX_ENDPOINTS:
@@ -363,7 +363,9 @@ class ReplicatedFormServer:
             normalized[event] = name(handler)
         self.session = FormSession(source, attributes=attributes, tables=tables, initial_values=initial_values,
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
-            database_context=database_context)
+            database_context=database_context, server_bindings=server_bindings)
+        self.session._replica_handler_names = self._handler_names
+        self.session._replica_handlers = self._handlers
         for binding in handlers:
             key = binding.name.casefold()
             if (key in self.session.reserved_names or key in self.session.form._attributes
@@ -490,13 +492,13 @@ class ReplicatedFormSession(FormSession):
     Form event revision, server revision, client sequence and request ID are
     separate counters. Unknown outcomes lock the channel; nothing is replayed.
     """
-    def __init__(self, source, exchange, *, handlers, bindings=(), output=None):
+    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None):
         _source(source, 'client')
         if not callable(exchange):
             raise TypeError('byte exchange required')
         self._handlers, _ = _bindings(handlers, handlers=True)
         _bindings(bindings)
-        super().__init__(source, output=output)
+        super().__init__(source, output=output, parameters=parameters)
         for binding in handlers:
             routine = self._bind(binding.name, 'client', len(binding.parameters))
             if tuple(parameter.name.casefold() for parameter in routine.parameters) != tuple(value.casefold() for value in binding.parameters):

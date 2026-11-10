@@ -117,7 +117,23 @@ class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
         self._config_snapshot = None
 
     def _snapshot(self):
-        raise ValueError('Documents are not supported by the SQLite catalog MVP')
+        if self._items is None:
+            if self._context is None: require_database_context()
+            view = self._context.backend.begin_document_read()
+            try:
+                entries = view.documents()
+                self._database_id = view.database_id
+                self._generation = view.configuration_generation
+            finally: view.close()
+            items = {}
+            for entry in entries:
+                key = entry.name.casefold()
+                if key in items: raise ValueError('ambiguous document metadata name')
+                item = BSLDocumentMetadata(entry.name,str(entry.identity))
+                item._schema = entry
+                items[key] = item
+            self._items = items
+        return self._items
 
 
 class BSLInformationRegisterMetadata(BSLCatalogMetadata):
@@ -136,8 +152,11 @@ class BSLMetadata(_MetadataObject):
         self._catalogs = BSLCatalogMetadataCollection(context)
         self._documents = BSLDocumentMetadataCollection(context, self._catalogs)
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs)
+        self._common_modules = None
 
     def get_member(self, name: str) -> object:
+        if name.casefold() in ('commonmodules', 'общиемодули') and self._common_modules is not None:
+            return self._common_modules
         if name.casefold() in ('catalogs', 'справочники'):
             return self._catalogs
         if name.casefold() in ('documents', 'документы'):
@@ -145,3 +164,45 @@ class BSLMetadata(_MetadataObject):
         if name.casefold() in ('informationregisters', 'регистрысведений'):
             return self._information_registers
         return super().get_member(name)
+
+
+class BSLCommonModuleMetadata(_MetadataObject):
+    def __init__(self, definition):
+        self._definition = definition
+
+    def get_member(self, name):
+        key = name.casefold()
+        d = self._definition
+        if key in ('name', 'имя'): return d.name
+        if key in ('global', 'глобальный'): return d.global_module
+        if key in ('clientmanagedapplication', 'клиентуправляемоеприложение'): return d.client
+        if key in ('server', 'сервер'): return d.server
+        if key in ('servercall', 'вызовсервера'): return d.server_call
+        if key in ('privileged', 'привилегированный'): return False
+        return super().get_member(name)
+
+
+class BSLCommonModuleMetadataCollection(_MetadataObject):
+    """The explicit application's immutable registry, not arbitrary reflection."""
+    def __init__(self, definitions):
+        self._items = {d.name.casefold(): BSLCommonModuleMetadata(d) for d in definitions}
+
+    def find(self, name):
+        if type(name) is not str: raise TypeError('common module name requires String')
+        return self._items.get(name.casefold())
+
+    def get_member(self, name):
+        value = self.find(name)
+        if value is None: return super().get_member(name)
+        return value
+
+    def get_method(self, name):
+        if name.casefold() in ('find', 'найти'): return HostFunction(name, self.find)
+        if name.casefold() in ('count', 'количество'):
+            return HostFunction(name, lambda: Decimal(len(self._items)))
+        return super().get_method(name)
+
+    def get_index(self, name):
+        value = self.find(name)
+        if value is None: raise ValueError('common module metadata not found')
+        return value

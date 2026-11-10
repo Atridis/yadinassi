@@ -1,0 +1,475 @@
+"""Explicit trusted XML configuration forms, with retained independent replicas.
+
+OpenForm is client BSL infrastructure, not a browser procedure-name endpoint.
+The browser receives opaque entry/session IDs and the existing closed form UI
+contract. A failed transport locks the entire application without replay.
+"""
+import argparse
+from collections import deque
+import os
+from pathlib import Path
+import sys
+from threading import Lock
+import webbrowser
+
+from ..configuration_forms import load_configuration_forms
+from ..configuration_import import read_configuration_directory
+from ..database_context import SQLiteDBContext
+from ..invocation import InvocationPort, InvocationServer, _decode_scalar, _encode_scalar
+from ..structures import BSLStructure, BSLFixedStructure
+from ..values import HostFunction
+from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
+from .local_app import LocalTransportError, LocalUIServer, _Handler
+from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER
+
+PROTOCOL = 'yadinassi-configuration-app/1'
+MAX_FORMS = 8
+MAX_SESSIONS = 256
+MAX_PARAMETERS = 32
+
+
+def _keys(value, fields):
+    if type(value) is not dict or set(value) != set(fields.split()):
+        raise ValueError('invalid application envelope')
+
+
+def _parameters(values):
+    """Snapshot a small scalar map; never admit a form/object/reference handle."""
+    if values is None:
+        values = {}
+    if type(values) in (BSLStructure, BSLFixedStructure):
+        values = {pair.key: pair.value for pair in values}
+    if type(values) is not dict or len(values) > MAX_PARAMETERS:
+        raise ValueError('scalar form parameters required')
+    seen = set(); result = {}
+    for key, value in values.items():
+        if type(key) is not str or not key.isidentifier() or len(key) > 128 or key.casefold() in seen:
+            raise ValueError('invalid form parameter')
+        seen.add(key.casefold())
+        result[key] = _decode_scalar(_encode_scalar(value))
+    encode_line({key: _encode_scalar(value) for key, value in result.items()})
+    return result
+
+
+def load_application(root):
+    return load_configuration_forms(read_configuration_directory(root))
+
+
+def _definitions(configuration):
+    return {index: definition for index, (_, definition) in
+            enumerate(sorted(configuration.forms.items()), 1)}
+
+
+class ConfigurationBroker:
+    """Server-process registry, bound to exactly one admitted configuration digest."""
+    def __init__(self, configuration, database=None, *, bind_interpreter=None):
+        self.configuration = configuration
+        self.definitions = _definitions(configuration)
+        self.database = database
+        self.bind_interpreter = bind_interpreter
+        self.sessions = {}
+        self.allocated = 0
+        self.ready = False
+
+    def exchange(self, request):
+        _keys(request, 'operation session payload')
+        operation, sid, payload = request['operation'], request['session'], request['payload']
+        if type(sid) is not str:
+            raise ValueError('invalid session')
+        if operation == 'hello':
+            _keys(payload, 'source')
+            if sid or payload['source'] != self.configuration.source_sha256:
+                raise ValueError('configuration source mismatch')
+            self.ready = True
+            return {'source': self.configuration.source_sha256}
+        if not self.ready:
+            raise ValueError('configuration handshake required')
+        if operation == 'create':
+            _keys(payload, 'entry parameters')
+            entry = payload['entry']
+            if sid or type(entry) is not int or entry not in self.definitions:
+                raise ValueError('unknown form entry')
+            if type(payload['parameters']) is not dict:
+                raise ValueError('invalid form parameters')
+            values = _parameters({key: _decode_scalar(value) for key, value in payload['parameters'].items()})
+            if len(self.sessions) >= MAX_FORMS or self.allocated >= MAX_SESSIONS:
+                return {'error': 'capacity'}
+            self.allocated += 1
+            sid = 'form-' + str(self.allocated)
+            context = None if self.database is None else SQLiteDBContext(self.database)
+            server = nocontext = None
+            try:
+                definition = self.definitions[entry]
+                server = definition.create_server(parameters=values, database_context=context)
+                program = definition.program
+                if program.nocontext_bindings:
+                    nocontext = InvocationServer(program.nocontext, program.nocontext_endpoints,
+                                                database_context=context)
+                if self.bind_interpreter is not None:
+                    self.bind_interpreter(server.session.interpreter)
+                    if nocontext is not None:
+                        self.bind_interpreter(nocontext._interpreter)
+                self.sessions[sid] = (server, nocontext, context)
+                return {'session': sid, 'entry': entry}
+            except BaseException:
+                for vm in (None if server is None else server.session.interpreter,
+                           None if nocontext is None else nocontext._interpreter):
+                    if vm is not None:
+                        vm.close()
+                if context is not None:
+                    context.close()
+                raise
+        if sid not in self.sessions:
+            raise ValueError('retired session')
+        server, nocontext, context = self.sessions[sid]
+        if operation == 'form':
+            return decode_line(server.exchange(encode_line(payload)))
+        if operation == 'invoke':
+            if nocontext is None:
+                raise ValueError('NoContext channel unavailable')
+            return decode_line(nocontext.exchange(encode_line(payload)))
+        if operation == 'retire':
+            if payload != {}:
+                raise ValueError('invalid retirement')
+            del self.sessions[sid]
+            try:
+                server.session.interpreter.close()
+            finally:
+                try:
+                    if nocontext is not None:
+                        nocontext._interpreter.close()
+                finally:
+                    if context is not None:
+                        context.close()
+            return {}
+        raise ValueError('unknown application operation')
+
+    def close(self):
+        failure = None
+        for sid in list(self.sessions):
+            try:
+                self.exchange({'operation': 'retire', 'session': sid, 'payload': {}})
+            except Exception as error:
+                failure = error
+        if failure is not None:
+            raise failure
+
+
+class ConfigurationProcess(FormProcess):
+    def __init__(self, root, database=None):
+        environment = dict(os.environ, PYTHONIOENCODING='utf-8')
+        environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
+        command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
+                   if getattr(sys, 'frozen', False) else
+                   [sys.executable, '-m', 'yadinassi.ui.configuration_app', str(Path(root).resolve()), '--runtime'])
+        if database is not None:
+            command += ['--f', str(Path(database).resolve())]
+        self._start(command, environment)
+
+
+def serve_runtime(root, database=None, *, input_stream=None, output_stream=None):
+    broker = None
+    try:
+        broker = ConfigurationBroker(load_application(root), database)
+        source = sys.stdin.buffer if input_stream is None else input_stream
+        target = sys.stdout.buffer if output_stream is None else output_stream
+        last_id = 0
+        while True:
+            raw = source.readline(MAX_LINE_BYTES + 1)
+            if not raw:
+                return 0
+            request = decode_line(raw)
+            _keys(request, 'id operation session payload')
+            if type(request['id']) is not int or not last_id < request['id'] <= MAX_COUNTER:
+                return 1
+            last_id = request['id']
+            try:
+                result = broker.exchange({key: request[key] for key in ('operation', 'session', 'payload')})
+                error = None
+            except Exception:
+                result, error = None, 'operation_failed'
+            target.write(encode_line({'id': request['id'], 'session': request['session'],
+                                      'result': result, 'error': error})); target.flush()
+    except Exception:
+        return 1
+    finally:
+        if broker is not None:
+            broker.close()
+
+
+class ConfigurationController:
+    """Several forms, one serialized application queue; no nested event dispatch."""
+    def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None):
+        self.configuration = configuration
+        self.definitions = _definitions(configuration)
+        self.names = {definition.name.casefold(): entry for entry, definition in self.definitions.items()}
+        self.initial_entry = None if initial_form is None else self._entry(initial_form)
+        self.transport = exchange
+        self.bind_interpreter = bind_interpreter
+        self.sessions = {}
+        self.issued = set()
+        self.operations = {}
+        self.pending = deque()
+        self.counter = 0
+        self.opened = self.closed = self.uncertain = False
+        self.active = None
+        self.gate = Lock()
+
+    def _entry(self, name):
+        if type(name) is not str or len(name) > 256 or name.casefold() not in self.names:
+            raise ValueError('unknown declared form')
+        return self.names[name.casefold()]
+
+    def _lock(self):
+        self.uncertain = True
+        self.pending.clear()
+        for controller, _ in self.sessions.values():
+            controller.session.uncertain = True
+
+    def _call(self, operation, sid='', payload=None):
+        if self.uncertain or self.counter >= MAX_COUNTER:
+            raise LocalTransportError('unavailable')
+        self.counter += 1
+        try:
+            response = decode_line(self.transport(encode_line({'id': self.counter, 'operation': operation,
+                'session': sid, 'payload': {} if payload is None else payload})))
+            _keys(response, 'id session result error')
+            if (type(response['id']) is not int or response['id'] != self.counter or response['session'] != sid
+                    or response['error'] not in (None, 'operation_failed')):
+                raise ValueError('mismatched application response')
+            if response['error'] is not None:
+                # Creation may already have allocated resources. Never retry an
+                # uncertain management operation or invent successful cleanup.
+                raise ValueError('application operation failed')
+            result = response['result']
+            if type(result) is not dict:
+                raise ValueError('invalid application result')
+            if operation == 'hello':
+                _keys(result, 'source')
+                if result['source'] != self.configuration.source_sha256:
+                    raise ValueError('configuration source mismatch')
+            elif operation == 'create':
+                if 'error' in result:
+                    _keys(result, 'error')
+                    if result['error'] != 'capacity':
+                        raise ValueError('invalid capacity refusal')
+                else:
+                    _keys(result, 'session entry')
+                    new = result['session']
+                    if (type(new) is not str or not new.startswith('form-') or not new[5:].isdigit()
+                            or len(new) > 12 or new in self.issued or type(result['entry']) is not int
+                            or result['entry'] != payload['entry']):
+                        raise ValueError('invalid new form identity')
+            elif operation == 'retire' and result != {}:
+                raise ValueError('invalid retirement')
+            return result
+        except BaseException:
+            self._lock()
+            raise LocalTransportError('unavailable') from None
+
+    def _bind(self, sid, interpreter):
+        def open_form(name, parameters=None):
+            controller = self.sessions.get(sid, (None, None))[0]
+            # The interpreter is bound before it opens, but the entry is retained
+            # before OnOpen. No server or idle host call can enqueue client work.
+            if (controller is None or not controller.session._busy or self.uncertain
+                    or not interpreter._context_stack or interpreter._context_stack[-1] != 'client'):
+                raise ValueError('OpenForm requires an active client form event')
+            entry, values = self._entry(name), _parameters(parameters)
+            if len(self.sessions) + len(self.pending) >= MAX_FORMS or len(self.issued) + len(self.pending) >= MAX_SESSIONS:
+                raise ValueError('form capacity exhausted')
+            self.pending.append((entry, values))
+        for alias in ('OpenForm', 'ОткрытьФорму'):
+            key = alias.casefold()
+            if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.functions:
+                raise ValueError('reserved OpenForm alias')
+            interpreter.functions[key] = HostFunction(alias, open_form, returns_value=False)
+        if self.bind_interpreter is not None:
+            self.bind_interpreter(interpreter)
+
+    def _open(self, entry, parameters):
+        if len(self.sessions) >= MAX_FORMS or len(self.issued) >= MAX_SESSIONS:
+            return None, None, 'capacity'
+        result = self._call('create', payload={'entry': entry,
+            'parameters': {key: _encode_scalar(value) for key, value in parameters.items()}})
+        if result.get('error'):
+            return None, None, result['error']
+        sid = result['session']; self.issued.add(sid)
+        definition = self.definitions[entry]
+        controller = None
+        queued_before = len(self.pending)
+        try:
+            def exchange(raw):
+                return encode_line(self._call('form', sid, decode_line(raw)))
+            controller = FormController(definition.client_package(), exchange, parameters=parameters,
+                                        bind_interpreter=lambda vm: self._bind(sid, vm))
+            self.sessions[sid] = (controller, entry)
+            if definition.program.nocontext_bindings:
+                port = InvocationPort(lambda raw: encode_line(self._call('invoke', sid, decode_line(raw))))
+                for binding in definition.program.nocontext_bindings:
+                    controller.session.bind_nocontext(port, binding)
+            form = controller.exchange({'jsonrpc': '2.0', 'id': 1, 'method': 'form.hello',
+                                        'params': {'protocol': FORM_PROTOCOL}})
+            if controller.session.uncertain:
+                self._lock()
+            if form['result']['error'] or controller.session.closed:
+                raise ValueError('form opening refused')
+            self.active = sid
+            return sid, form, None
+        except Exception:
+            while len(self.pending) > queued_before:
+                self.pending.pop()
+            if controller is not None and controller.session.uncertain:
+                self._lock()
+            if not self.uncertain:
+                self._call('retire', sid)
+                self.sessions.pop(sid, None)
+                if controller is not None:
+                    controller.session.interpreter.close()
+            return None, None, 'open_failed'
+
+    def _drain(self):
+        error = None
+        # Capacity bounds even OnOpen -> OpenForm recursion. Each admission has
+        # a fresh identity and completed lifecycle before another form opens.
+        while self.pending and not self.uncertain:
+            entry, values = self.pending.popleft()
+            _, _, failed = self._open(entry, values)
+            if failed:
+                error = failed
+        return error
+
+    def _state(self):
+        return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
+                'entries': [{'id': entry, 'title': definition.title} for entry, definition in self.definitions.items()],
+                'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title}
+                             for sid, (controller, entry) in self.sessions.items()],
+                'active': self.active, 'uncertain': self.uncertain}
+
+    def exchange(self, request):
+        if not self.gate.acquire(blocking=False):
+            raise LocalTransportError('busy')
+        try:
+            _keys(request, 'jsonrpc id method params')
+            if (request['jsonrpc'] != '2.0' or type(request['id']) is not int
+                    or not 1 <= request['id'] <= MAX_COUNTER or type(request['params']) is not dict):
+                raise ValueError('invalid renderer request')
+            method, params = request['method'], request['params']
+            error = None; sid = None; form = None
+            if self.closed:
+                error = 'closed'
+            elif self.uncertain:
+                error = 'outcome_unknown'
+            elif method == 'application.hello':
+                if params != {'protocol': PROTOCOL}:
+                    raise ValueError('invalid application handshake')
+                if not self.opened:
+                    self.opened = True
+                    self._call('hello', payload={'source': self.configuration.source_sha256})
+                    if self.initial_entry is not None:
+                        sid, form, error = self._open(self.initial_entry, {})
+            elif not self.opened:
+                raise ValueError('application handshake required')
+            elif method == 'application.open':
+                _keys(params, 'entry request')
+                entry, token = params['entry'], params['request']
+                if (type(entry) is not int or entry not in self.definitions or type(token) is not str
+                        or not 1 <= len(token) <= 64 or not token.isascii()):
+                    raise ValueError('invalid form open intent')
+                if token in self.operations:
+                    previous, sid, error = self.operations[token]
+                    if previous != entry:
+                        raise ValueError('open intent reused')
+                    if sid is not None and sid not in self.sessions:
+                        sid, error = None, 'retired_session'
+                elif len(self.operations) >= MAX_SESSIONS:
+                    error = 'capacity'
+                else:
+                    sid, form, error = self._open(entry, {})
+                    self.operations[token] = (entry, sid, error)
+            elif method == 'application.form':
+                _keys(params, 'session request')
+                sid = params['session']
+                if type(sid) is not str or sid not in self.sessions:
+                    error = 'retired_session'
+                else:
+                    controller, _ = self.sessions[sid]
+                    form = controller.exchange(params['request'])
+                    if controller.session.uncertain:
+                        self._lock()
+                    elif controller.session.closed:
+                        self._call('retire', sid)
+                        del self.sessions[sid]
+                        if self.active == sid:
+                            self.active = next(reversed(self.sessions), None)
+                        controller.session.interpreter.close()
+            elif method == 'application.snapshot':
+                if params:
+                    raise ValueError('invalid snapshot request')
+            elif method == 'application.close':
+                if params:
+                    raise ValueError('invalid shutdown request')
+                if self.sessions:
+                    error = 'forms_open'
+                else:
+                    self.closed = True
+            else:
+                raise ValueError('unknown application method')
+            queued_error = self._drain()
+            result = {'protocol': PROTOCOL, 'state': self._state(), 'error': error or queued_error,
+                      'session': sid, 'form': form}
+            response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
+            try:
+                encode_line(response)
+            except Exception:
+                self._lock()
+                raise LocalTransportError('unavailable') from None
+            return response
+        finally:
+            self.gate.release()
+
+
+class ConfigurationHandler(_Handler):
+    asset_directory = 'configuration'
+    methods = ('application.hello', 'application.snapshot', 'application.open',
+               'application.form', 'application.close')
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Run trusted configuration-declared managed forms.')
+    parser.add_argument('configuration', metavar='CONFIGURATION_DIRECTORY')
+    parser.add_argument('--form', help='Declared form name to open initially')
+    parser.add_argument('--f', help='Existing SQLite database, server process only')
+    parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
+    args = parser.parse_args(argv)
+    if args.runtime:
+        return serve_runtime(args.configuration, args.f)
+    process = server = None
+    try:
+        configuration = load_application(args.configuration)
+        process = ConfigurationProcess(args.configuration, args.f)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form)
+        server = LocalUIServer(controller, handler=ConfigurationHandler)
+        print('Trusted configuration forms. Open this private per-launch URL:')
+        print(server.launch_url, flush=True)
+        if args.open_browser:
+            webbrowser.open(server.launch_url)
+        server.serve_forever(poll_interval=0.1)
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    except Exception:
+        print('Configuration forms unavailable.', file=sys.stderr)
+        return 1
+    finally:
+        try:
+            if server is not None:
+                server.server_close()
+        finally:
+            if process is not None:
+                process.close()
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

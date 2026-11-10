@@ -48,6 +48,17 @@ class FormApplicationAction:
 
 
 @dataclass(frozen=True)
+class FormServerBinding:
+    """Host-owned, zero-argument callback retained across fresh server activations.
+
+    Only a scalar result can reach BSL. No callback or object is wire-selected.
+    The trusted callback receives the owning session, never a renderer object.
+    """
+    name: str
+    callback: object
+
+
+@dataclass(frozen=True)
 class FormSnapshot:
     revision: int
     state: str
@@ -92,6 +103,9 @@ class _FormInterpreter(Interpreter):
         key = node.name.casefold()
         if self.locals is not None and key in self.locals:
             return super().visit_Name(node)
+        if key in ('parameters', 'параметры') and hasattr(self._form_session, '_parameters'):
+            self._form_session.form._check()
+            return self._form_session._parameters
         if key in ('видполяформы','formfieldtype'):
             return FORM_FIELD_VIEWS
         form = self._form_session.form
@@ -164,8 +178,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=()):
-        text(source, MAX_SOURCE)
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None):
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
         if type(tables) is not tuple or len(tables) > MAX_TABLES or any(type(t) is not FormTableSchema for t in tables):
@@ -176,6 +189,10 @@ class FormSession:
         if type(initial_values) is not dict or len(initial_values)>MAX_ATTRIBUTES: raise ValueError('Форма: неверные начальные данные')
         if type(application_actions) is not tuple or len(application_actions) > 64:
             raise ValueError('Форма: неверные действия приложения')
+        if (type(server_bindings) is not tuple or len(server_bindings) > 16 or
+                any(type(binding) is not FormServerBinding or not callable(binding.callback)
+                    for binding in server_bindings)):
+            raise TypeError('trusted server bindings required')
         self._application_actions = {}
         attribute_names = {a.name.casefold() for a in attributes if type(a) is BSLFormAttribute}
         for action in application_actions:
@@ -198,15 +215,28 @@ class FormSession:
         self._gate = Lock(); self._allocated = 0
         self.form = BSLClientApplicationForm(self)
         self.interpreter = _FormInterpreter(self, self._record_message, database_context=database_context)
-        program = parse(source, '<form-module>', compilation_profile=self.interpreter.compilation_profile)
+        from .form_program import admitted_program
+        program = admitted_program(source, compilation_profile=self.interpreter.compilation_profile)
         if len(program)>MAX_HANDLERS*2 or any(not isinstance(node,(ast.Routine,ast.Var)) for node in program):
             raise ValueError('Форма: модуль допускает только объявления подпрограмм и переменных')
         if any(isinstance(n,ast.Routine) and n.is_async for n in program):
             raise ValueError('Форма: асинхронные обработчики пока не поддерживаются')
-        self.reserved_names = {'thisobject','этотобъект','items','элементы','commands','команды','title','заголовок'}
+        self.reserved_names = {'thisobject','этотобъект','items','элементы','commands','команды','title','заголовок','parameters','параметры','openform','открытьформу'}
         self.reserved_names.update(self.form._methods)
         self.reserved_names.update(n.name.casefold() for n in program if isinstance(n,ast.Routine))
         self.reserved_names.update(x.casefold() for n in program if isinstance(n,ast.Var) for x in n.names)
+        for binding in server_bindings:
+            key = name(binding.name).casefold()
+            if (key in self.reserved_names or key in attribute_names or key in self.interpreter.functions
+                    or key in {table.name.casefold() for table in tables}):
+                raise ValueError('server binding name already bound')
+            self.reserved_names.add(key)
+            def make_callback(owned):
+                def invoke():
+                    self.form._check(True)
+                    return scalar(owned.callback(self))
+                return invoke
+            self.interpreter.functions[key] = HostFunction(binding.name, make_callback(binding))
         self._busy = True
         try:
             self.interpreter.execute_program(program)
@@ -234,6 +264,9 @@ class FormSession:
                 if event not in self.form.EVENTS: raise ValueError('Форма: неизвестное событие')
                 self._bind(name(handler), *self.form.EVENTS[event]); self.form.actions[event] = handler
         finally: self._busy = False
+        if parameters is not None:
+            from .configuration_forms import bind_parameters
+            bind_parameters(self, parameters)
 
     def _record_message(self, message):
         text(message,4096)

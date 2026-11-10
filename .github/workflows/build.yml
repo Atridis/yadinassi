@@ -100,7 +100,7 @@ jobs:
           node-version: '22'
           package-manager-cache: false
       - name: Test existing client and browser support contracts
-        run: node --test frontend/catalog/test/client.test.mjs tests/browser_ui/support.test.mjs frontend/form/test/*.test.mjs
+        run: node --test frontend/catalog/test/client.test.mjs tests/browser_ui/support.test.mjs frontend/form/test/*.test.mjs frontend/workspace/test/*.test.mjs frontend/configuration/test/*.test.mjs
 
   light:
     name: Light tests (${{ matrix.target }})

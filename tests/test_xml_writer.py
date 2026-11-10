@@ -98,7 +98,7 @@ class XMLWriterTests(unittest.TestCase):
         for prefix,uri in [('xml','urn:bad'),('p','http://www.w3.org/XML/1998/namespace'),('xmlns','urn:x'),('p','')]:
             with self.assertRaises(ValueError):w.write_namespace_mapping(prefix,uri)
         with self.assertRaises(ValueError):w.write_attribute('xmlns:p','urn:x')
-        for method in ['WriteDocumentType','WriteEntityReference','OpenStream']:
+        for method in ['WriteDocumentType','WriteEntityReference']:
             with self.assertRaises(ValueError):w.get_method(method)
     def test_indent_property_applies_at_next_initialization(self):
         w=Writer();self.assertTrue(w.get_member('Indent'));w.set_string()

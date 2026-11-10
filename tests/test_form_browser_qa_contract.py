@@ -20,16 +20,18 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_closed_push_routes_select_exact_harnesses(self):
         workflow = self.workflow()
         trigger = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/configuration-browser-reviewed]')
         catalog = self.step('Acquire eight original-demo kind flows with Chromium sandbox enabled')
-        form = self.step('Acquire four form flows with Chromium sandbox enabled')
-        for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form')):
+        form = self.step('Acquire five form flows with Chromium sandbox enabled')
+        configuration = self.step('Acquire three configuration form flows with Chromium sandbox enabled')
+        for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form'), (configuration, 'configuration', 'configuration')):
             self.assertIn(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             self.assertIn(f'run: node tests/browser_ui/{script}_browser_qa.mjs', step)
             self.assertIn('QA_SOURCE_SHA: ${{ github.sha }}', step)
             self.assertIn('timeout-minutes: 5', step)
         self.assertEqual(workflow.count('run: node tests/browser_ui/demo_kind_browser_qa.mjs'), 1)
         self.assertEqual(workflow.count('run: node tests/browser_ui/form_browser_qa.mjs'), 1)
+        self.assertEqual(workflow.count('run: node tests/browser_ui/configuration_browser_qa.mjs'), 1)
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'push:\n    branches: [main]'):
             self.assertNotIn(forbidden, workflow)
 
@@ -37,7 +39,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         workflow = self.workflow()
         self.assertEqual(workflow.split('\npermissions:\n', 1)[1].split('\nconcurrency:', 1)[0].strip(), 'contents: read')
         self.assertIn("if: github.repository == 'Atridis/yadinassi'", workflow)
-        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || 'form-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
+        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || 'configuration-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
         self.assertIn('runs-on: ubuntu-22.04\n    timeout-minutes: 10', workflow)
         self.assertIn('ref: ${{ github.sha }}\n          persist-credentials: false', workflow)
         self.assertIn('python -m pip install -e . wcwidth==0.8.2', workflow)
@@ -47,6 +49,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+            'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'])
         for forbidden in ('sudo ', 'sysctl ', 'container:', 'secrets.', 'write', '--with-deps', 'QA_CHROMIUM'):
             self.assertNotIn(forbidden, workflow)
@@ -54,9 +57,11 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_route_specific_uploads_have_exact_fixed_files(self):
         catalog = self.step('Publish only catalog screenshots and redacted source-bound report')
         form = self.step('Publish only form screenshots and redacted source-bound report')
+        configuration = self.step('Publish only configuration screenshots and redacted source-bound report')
         for step, branch, prefix, files in (
                 (catalog, 'ui', 'yadinassi-browser-artifacts', ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png']),
-                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png'])):
+                (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png', 'orders-workspace-narrow.png']),
+                (configuration, 'configuration', 'yadinassi-configuration-browser-artifacts', ['result.json', 'manifest.json', 'configuration-parameters.png', 'configuration-independent.png', 'configuration-draft-narrow.png'])):
             self.assertIn(f"if: always() && github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             paths = step.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in paths.splitlines()],
@@ -64,6 +69,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
             self.assertIn('if-no-files-found: error\n          retention-days: 14', step)
         self.assertIn('name: catalog-browser-${{ github.sha }}-${{ github.run_attempt }}', catalog)
         self.assertIn('name: form-browser-${{ github.sha }}-${{ github.run_attempt }}', form)
+        self.assertIn('name: configuration-browser-${{ github.sha }}-${{ github.run_attempt }}', configuration)
 
     def test_one_nonroot_sandboxed_browser_without_executable_override(self):
         source = self.source()
@@ -142,10 +148,10 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertNotIn('build.mjs', source)
         self.assertNotIn('git checkout', source)
 
-    def test_four_scenarios_include_exact_decimal_repeated_click_cancel_and_reattach(self):
+    def test_five_scenarios_include_exact_decimal_repeated_click_cancel_and_reattach(self):
         source = self.source()
-        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2', '3'])
-        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen']", source)
+        self.assertEqual(re.findall(r'await scenario\(scenarioNames\[(\d)\]', source), ['0', '1', '2', '3', '4', '5'])
+        self.assertIn("const scenarioNames=['edit_then_command_exact_decimal','duplicate_click_close_cancel_and_reattach',\n  'sqlite_save_close_and_durable_readback','table_intake_edit_delete_save_reopen',\n  'existing_order_edit_discard_save_reopen','workspace_retained_forms_create_edit_reopen']", source)
         self.assertIn("page.getByLabel(name,{exact:true})", source)
         self.assertIn("await field('Unit price').fill('7.25');\n    await button('Calculate').click()", source)
         self.assertIn("assert.equal(await field('Total').inputValue(),'21.75')", source)
@@ -156,6 +162,18 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertIn("assert.equal(await field('Unit price').inputValue(),'9')", source)
         self.assertIn("assert.equal(await field('Total').inputValue(),'27')", source)
         self.assertIn('assert.deepEqual(results.map(row=>row.name),scenarioNames', source)
+        workspace = source.split('await scenario(scenarioNames[5]', 1)[1]
+        self.assertIn("visibleField('Order code').waitFor()", workspace)
+        self.assertIn("[['Order code','B003'],['Description','Workspace created order']]", workspace)
+        self.assertNotIn("visibleField('Code')", workspace)
+        self.assertIn("phase='workspace_independent_readback'", workspace)
+        self.assertIn("phase='workspace_intake_save'", workspace)
+        self.assertIn("phase='workspace_intake_close'", workspace)
+        self.assertIn("visibleField('Status').inputValue(),'Order saved'", workspace)
+        self.assertIn("visibleField('Total').inputValue(),'3.25'", workspace)
+        self.assertIn("visibleButton('Save order').isDisabled(),true", workspace)
+        self.assertIn("report.workspaceCheckpoint=await bounded", workspace)
+        self.assertIn("Math.min(32,document.querySelectorAll(selector).length)", workspace)
 
     def test_actual_product_is_saved_closed_then_reopened_for_exact_amount(self):
         source = self.source().split('await scenario(scenarioNames[2]', 1)[1]
@@ -204,12 +222,31 @@ class FormBrowserQAContractTests(unittest.TestCase):
                          "report.tableDurable={reopenedAfterHostClose:true,records:1,rows:2,exactTotal:'9.14',rowOrder:['Cable','Service']}"):
             self.assertIn(required, source)
         self.assertLess(source.index('await stopHost()'), source.index('const readback=runPython'))
-        self.assertIn('completed:results.length,total:4,', self.source())
+        self.assertIn('completed:results.length,total:6,', self.source())
+
+    def test_existing_order_edits_discard_invalid_draft_and_independently_reopens(self):
+        source = self.source().split('await scenario(scenarioNames[4]', 1)[1]
+        for required in ("await startHost('order-editor',database)",
+                         "await button('Open selected order').click()",
+                         "await field('Price, row 1').fill('invalid decimal')",
+                         "assert.equal(rpc,beforeDiscard+1,'discard_flushed_invalid_draft')",
+                         "await field('Price, row 1').count(),0,'discard_reused_row_identity'",
+                         "await field('Price, row 3').fill('2.40')",
+                         "await button('Save changes').isEnabled(),true",
+                         "await field('Price, row 5').isEditable(),true",
+                         'No changes; nothing was written',
+                         "await screenshot('order-editor-narrow.png')",
+                         "assert.equal(readback.trim(),'ORDER_EDITOR_READBACK_OK')",
+                         'independentFormReopen:true,records:1,rows:2,exactTotal:'):
+            self.assertIn(required, source)
+        self.assertEqual(source.count("await startHost('order-editor',database)"), 2)
+        self.assertLess(source.index('await stopHost()'), source.index('const readback=runPython'))
+        self.assertLess(source.index('const readback=runPython'), source.rindex("await startHost('order-editor',database)"))
 
     def test_only_bounded_source_bound_screenshots_and_fixed_verdicts_are_emitted(self):
         source = self.source()
         for required in ("output=path.join(temporary,'yadinassi-form-browser-artifacts')", 'await mkdir(output);',
-                         "const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png']",
+                         "const screenshots=['estimate.png','product-narrow.png','order-table-narrow.png','order-editor-narrow.png','orders-workspace-narrow.png']",
                          "const artifacts=['result.json','manifest.json',...screenshots]",
                          'stat.isFile()&&!stat.isSymbolicLink()&&stat.size>0&&stat.size<=4*1024*1024',
                          "'89504e470d0a1a0a'", 'Buffer.byteLength(raw)<=65536',

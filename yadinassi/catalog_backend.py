@@ -18,6 +18,7 @@ class BackendError(ValueError):
             'unsupported', 'invalid_input', 'not_found', 'conflict', 'busy',
             'closed', 'integrity', 'storage_error', 'uncertain_commit',
             'schema_changed', 'duplicate_code', 'duplicate_identity', 'code_exhausted',
+            'duplicate_number', 'number_exhausted',
         }:
             raise ValueError('invalid backend error')
         self.code = code
@@ -227,6 +228,10 @@ class Capabilities:
     catalog_tabular_sections: bool = False
     catalog_write_outcomes: bool = False
     catalog_batch_receipts: bool = False
+    document_read: bool = False
+    document_create: bool = False
+    document_update: bool = False
+    document_tabular_sections: bool = False
 
 
 class CatalogReadView(Protocol):

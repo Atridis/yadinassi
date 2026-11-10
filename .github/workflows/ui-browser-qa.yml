@@ -1,16 +1,16 @@
 name: Reviewed browser acceptance
 
-# Advancing either exact branch explicitly opts in its reviewed acquisition.
+# Advancing an exact reviewed branch explicitly opts in its acquisition.
 # No ordinary PR, main push, schedule, native job or user browser is dispatched.
 on:
   push:
-    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed]
+    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/configuration-browser-reviewed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || 'form-browser-reviewed' }}
+  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || 'configuration-browser-reviewed' }}
   cancel-in-progress: false
 
 jobs:
@@ -45,13 +45,20 @@ jobs:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/demo_kind_browser_qa.mjs
-      - name: Acquire four form flows with Chromium sandbox enabled
+      - name: Acquire five form flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/form-browser-reviewed'
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/form_browser_qa.mjs
+      - name: Acquire three configuration form flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/configuration-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/configuration_browser_qa.mjs
       - name: Publish only catalog screenshots and redacted source-bound report
         if: always() && github.ref == 'refs/heads/codex/ui-browser-reviewed'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -76,5 +83,20 @@ jobs:
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/estimate.png
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/product-narrow.png
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-table-narrow.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-editor-narrow.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/orders-workspace-narrow.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only configuration screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/configuration-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: configuration-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-parameters.png
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-independent.png
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-draft-narrow.png
           if-no-files-found: error
           retention-days: 14

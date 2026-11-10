@@ -71,3 +71,10 @@ Dates, serializer settings and synchronous BSL conversion/revival functions are
 now implemented in the [advanced conversion profile](json-value-conversion.md).
 That profile documents its separate local limits and documentation conflicts;
 the earlier native observations above do not establish new date/handler parity.
+
+
+### Stream-backed text/JSON/XML extension
+
+The ordinary stream-overload exclusions above are superseded only by the
+[bounded text/JSON/XML stream profile](text-json-xml-streams.md). Existing native
+evidence remains scoped to its recorded scenarios, not these new overloads.

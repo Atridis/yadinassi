@@ -72,7 +72,7 @@ yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 исполнению. Эта архивная база не открывает чтение/запись прикладных объектов.
 
 Чтение `.1CD`, CF/DT и внутренних CONFIG/PARAMS/DBNames удалено; прежние
-эксперименты доступны в истории Git. Документы и регистры ещё не портированы. Для справочников и их табличных
+эксперименты доступны в истории Git. Для новых баз доступен [ограниченный цикл непроводимых документов v7](docs/sqlite-document-lifecycle.md): создание, запись, чтение, нумерация и табличные части. Регистры и проведение не поддержаны. Для справочников и их табличных
 частей доступны [ограниченные запросы с соединениями и сводными итогами](docs/relational-catalog-queries.md),
 [вычисляемыми полями и условными отчётами](docs/computed-catalog-queries.md),
 [пакетами и временными таблицами](docs/query-packages-temporary-tables.md),
@@ -123,14 +123,18 @@ python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
 python -m yadinassi.ui.form_app examples/forms/estimate --open-browser
 python -m yadinassi --create-db orders.sqlite --import-xml examples/forms/order-intake/configuration
 python -m yadinassi.ui.form_app examples/forms/order-intake --f orders.sqlite --open-browser
+python -m yadinassi.ui.form_app examples/forms/order-editor --f orders.sqlite --open-browser
 ```
 
 Первый пример вычисляет итог, второй позволяет добавить и отредактировать строки,
 выбрать и удалить строку, пересчитать суммы и сохранить шапку с табличной частью
-справочника одним серверным `Write`. Браузер отображает форму; клиентский BSL
+справочника одним серверным `Write`. Третий открывает существующий заказ целиком,
+сохраняет ту же запись, позволяет продолжать редактирование и явно отменять правки.
+Браузер отображает форму; клиентский BSL
 исполняется локально, серверный BSL и SQLite работают в отдельном процессе.
 Старые скалярные пакеты совместимы. Это ограниченный host-API, не импорт форм 1С.
-[Запуск и границы](docs/form-app.md), [таблицы и сохранение заказа](docs/form-tables.md).
+[Запуск и границы](docs/form-app.md), [таблицы и создание заказа](docs/form-tables.md),
+[редактирование существующих заказов](docs/order-workbench.md).
 
 ## Разработка
 
@@ -334,4 +338,12 @@ MIT, см. [LICENSE](LICENSE).
 An opt-in browser form launcher runs client BSL locally and server BSL in a
 separate owned process, optionally with server-only SQLite access.
 See [run a replicated form application](docs/form-app.md) for a calculation
-example and a persisted product-intake form. Plain BSL execution is unchanged.
+example and a persisted product-intake form. The [existing order workbench](docs/order-workbench.md)
+loads full headers and lines, saves the same record, and supports explicit discard
+and optimistic-conflict feedback. Plain BSL execution is unchanged.
+
+### Конфигурационные управляемые формы
+
+Явный opt-in launcher выполняет объявленные XML-формы с единым Module.bsl,
+разделением клиента/сервера, OpenForm и несколькими удерживаемыми вкладками.
+[Границы профиля и два разных примера](docs/configuration-forms.md).

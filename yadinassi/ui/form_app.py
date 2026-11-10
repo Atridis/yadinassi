@@ -61,6 +61,20 @@ class FormProcess(RuntimeBridge):
             self.gate.release()
 
 
+def create_server(package, context=None):
+    """Closed host application factory. Nothing is imported from package data."""
+    application = None
+    if package.application == 'orders-workbench/1':
+        from .order_workbench import OrdersWorkbenchSession
+        application = OrdersWorkbenchSession(context)
+    server = ReplicatedFormServer(package.source, package.endpoints,
+        handlers=package.handlers, attributes=package.attributes, tables=package.tables,
+        initial_values=package.initial_values, bindings=package.lifecycle,
+        database_context=context,
+        server_bindings=() if application is None else application.bindings())
+    return server
+
+
 def serve_runtime(directory, database=None, *, input_stream=None, output_stream=None):
     """Host-owned stdio service. EOF closes the database, never creates one."""
     context = None
@@ -68,10 +82,7 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
         package = load_server(directory)
         if database is not None:
             context = SQLiteDBContext(database)
-        server = ReplicatedFormServer(package.source, package.endpoints,
-            handlers=package.handlers, attributes=package.attributes, tables=package.tables,
-            initial_values=package.initial_values, bindings=package.lifecycle,
-            database_context=context)
+        server = create_server(package, context)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         while True:
@@ -92,11 +103,15 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
-    def __init__(self, package, exchange):
+    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None):
         self.session = ReplicatedFormSession(package.source, exchange,
-            handlers=package.handlers, bindings=package.bindings)
+            handlers=package.handlers, bindings=package.bindings, parameters=parameters)
+        if bind_interpreter is not None:
+            bind_interpreter(self.session.interpreter)
         self._gate = Lock()
         self._opened = False
+        self._discard_commands = dict(package.discard_commands)
+        self._dirty_attribute = package.dirty_attribute
 
     def _snapshot(self):
         session = self.session
@@ -127,9 +142,24 @@ class FormController:
             value = None if kind == 'button' else encode_value(values.get(path.casefold()))
             items.append({'name': name, 'kind': kind, 'title': title, 'visible': visible,
                 'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value})
-        return {'kind': 'closed' if session.closed and not session.uncertain else 'form',
+        state = {'kind': 'closed' if session.closed and not session.uncertain else 'form',
             'revision': snapshot.revision, 'lifecycle': snapshot.state, 'title': snapshot.title,
             'uncertain': session.uncertain, 'items': items, 'messages': list(session.messages)}
+        if self._dirty_attribute:
+            dirty = values.get(self._dirty_attribute.casefold())
+            if type(dirty) is not bool:
+                raise ValueError('invalid trusted dirty attribute')
+            state['dirty'] = dirty
+            discard = []
+            for item in session.form.items._values.values():
+                if getattr(item, 'command_name', '') not in self._discard_commands:
+                    continue
+                command = session.form.commands._values.get(item.command_name.casefold())
+                if command is None or command.action.casefold() != self._discard_commands[item.command_name].casefold():
+                    raise ValueError('discard command binding changed')
+                discard.append(item.name)
+            state['discardCommands'] = discard
+        return state
 
     def exchange(self, request):
         if not self._gate.acquire(blocking=False):
