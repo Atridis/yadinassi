@@ -3,7 +3,7 @@
 import sys
 
 from yadinassi.cli import main as cli_main
-from yadinassi.ui import editor_stdio, local_app, form_app
+from yadinassi.ui import editor_stdio, local_app, form_app, configuration_app
 
 
 def main(argv=None):
@@ -21,6 +21,10 @@ def main(argv=None):
         return form_app.main(arguments[1:])
     if arguments and arguments[0] == '--form-ui-runtime':
         return form_app.main(['--runtime'] + arguments[1:])
+    if arguments and arguments[0] == '--configuration-ui':
+        return configuration_app.main(arguments[1:])
+    if arguments and arguments[0] == '--configuration-ui-runtime':
+        return configuration_app.main(['--runtime'] + arguments[1:])
     return cli_main(arguments)
 
 

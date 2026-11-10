@@ -141,3 +141,8 @@ yadinassi/ui/assets/form/* text eol=lf
 # Retained workspace manifests are byte-bound on every checkout OS.
 frontend/workspace/** text eol=lf
 yadinassi/ui/assets/workspace/* text eol=lf
+
+# Configuration form renderer provenance is byte-bound across hosts.
+frontend/configuration/** text eol=lf
+yadinassi/ui/assets/configuration/* text eol=lf
+examples/configuration-forms/** text eol=lf

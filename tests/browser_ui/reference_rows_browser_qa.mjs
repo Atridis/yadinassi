@@ -48,6 +48,7 @@ async function startHost(){
   }),15000,'host_start_timeout');
 }
 const button=name=>page.getByRole('button',{name,exact:true});
+const openSelectedRecord=async()=>{await page.locator('.records tbody tr').first().click();await button('Open selected').click();};
 const field=name=>page.getByLabel(name,{exact:true});
 const warehouseRow=()=>field(demoProducts?'Склады row 1: Склад':'Warehouses row 1: Warehouse');
 const ready=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(
@@ -166,8 +167,9 @@ async function main(){
     if(demoProductListCheck){
       phase='check_without_selected_product';
       await recordsReady();
-      assert.equal(await button('Проверить карточку').count(),1,'empty_list_check_missing');
-      await button('Проверить карточку').click();
+      assert.equal(await button('Проверить без выбора').count(),1,'empty_list_check_missing');
+      assert.equal(await button('Проверить карточку').isDisabled(),true,'zero_selection_target_check_enabled');
+      await button('Проверить без выбора').click();
       await page.getByRole('status',{name:'Результат проверки карточки',exact:true})
         .filter({hasText:'Выберите номенклатуру в списке.'}).waitFor();
       await recordsReady();
@@ -197,7 +199,7 @@ async function main(){
       const back=async()=>{await button('← Back to records').click();await recordsReady();};
       const openCatalog=async name=>{
         await page.getByRole('button',{name:new RegExp('^'+name+'\\s*›?$')}).click();
-        await recordsReady();await button('Open →').click();await ready();
+        await recordsReady();await openSelectedRecord();await ready();
       };
       const save=async expected=>{
         const response=page.waitForResponse(reply=>reply.url()===origin+'/rpc'&&
@@ -295,7 +297,9 @@ async function main(){
       const checkSaved=async()=>{
         await recordsReady();
         assert.equal(await page.locator('.records tbody tr').count(),1,'saved_product_count_mismatch');
-        assert.equal(await page.locator('.records tbody tr').getByRole('button',{name:'Проверить карточку',exact:true}).count(),1,'row_check_missing');
+        assert.equal(await page.locator('.records tbody tr button').count(),0,'per_row_command_present');
+        await page.locator('.records tbody tr').first().click();
+        assert.equal(await button('Проверить карточку').isEnabled(),true,'selected_check_disabled');
         // Observe this click's RPC so an old identical success message cannot
         // satisfy the repeated-check assertion before the request completes.
         const response=page.waitForResponse(reply=>reply.url()===origin+'/rpc'&&
@@ -317,7 +321,7 @@ async function main(){
       phase='repeat_saved_product_check';await checkSaved();
       await visibleList();await screenshot('list.png');
       phase='dirty_editor_cannot_check';
-      await button('Open →').click();await persistedRow();
+      await openSelectedRecord();await persistedRow();
       await button('Delete row 1 from Склады').click();
       await page.getByText('No rows. Add a row to select a reference.',{exact:true}).waitFor();
       await ready();
@@ -354,7 +358,7 @@ async function main(){
     phase='restart_runtime_and_reopen';
     await startHost();await page.goto(url);
     await page.getByRole('button',{name:demoProducts?/^Номенклатура\s*›?$/:/^Products\s*›?$/}).click();
-    await button('Open →').click();await persistedRow();
+    await openSelectedRecord();await persistedRow();
     assert.deepEqual(audit(),durableBefore,'restart_changed_persisted_identity');
     await screenshot('editor.png');
     phase='delete_then_discard';
@@ -375,7 +379,7 @@ async function main(){
     }
     await button('Discard & return').click();await recordsReady();
     phase='reopen_after_discard';
-    await button('Open →').click();await persistedRow();
+    await openSelectedRecord();await persistedRow();
     await page.setViewportSize({width:390,height:844});
     await screenshot('narrow.png');
     phase='close_and_audit_discard';await closeHostThroughUI();
