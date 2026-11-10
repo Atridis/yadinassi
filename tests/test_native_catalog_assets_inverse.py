@@ -62,7 +62,7 @@ class FormAssetsInverseTests(unittest.TestCase):
 
 class WorkspaceAssetsInverseTests(unittest.TestCase):
     def test_exact_workspace_layer_restores_unchanged_form_source(self):
-        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
         restored = history.without_workspace_assets_provenance(source)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(),
                          '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
@@ -79,7 +79,7 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
                 self.assertEqual(inverse(source), inverse(restored))
 
     def test_workspace_layer_rejects_unknown_missing_duplicate_and_modified_hunks(self):
-        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_configuration_assets_provenance((ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8'))
         hunk = '              for renderer in ("catalog", "form", "workspace") for name in\n'
         self.assertEqual(source.count(hunk), 1)
         self.assertIn('CASE_SECONDS = 10', source)
@@ -91,3 +91,20 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
                             history.without_catalog_assets_provenance):
                 with self.subTest(inverse=inverse.__name__), self.assertRaises(AssertionError):
                     inverse(changed)
+
+class ConfigurationAssetsInverseTests(unittest.TestCase):
+    def test_exact_configuration_layer(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        restored = history.without_configuration_assets_provenance(source)
+        self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238')
+        self.assertEqual(restored, source.replace('("catalog", "form", "workspace", "configuration")', '("catalog", "form", "workspace")', 1))
+        self.assertEqual(history.without_configuration_assets_provenance(restored), restored)
+        for inverse in (history.without_workspace_assets_provenance, history.without_form_assets_provenance, history.without_catalog_assets_provenance):
+            self.assertEqual(inverse(source), inverse(restored))
+
+    def test_configuration_layer_rejects_source_drift(self):
+        source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        hunk = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
+        for changed in (source+'# drift\n', source.replace(hunk, '', 1), source+hunk, source.replace('"configuration"', '"unlisted"', 1)):
+            for inverse in (history.without_configuration_assets_provenance, history.without_workspace_assets_provenance, history.without_catalog_assets_provenance):
+                with self.assertRaises(AssertionError): inverse(changed)

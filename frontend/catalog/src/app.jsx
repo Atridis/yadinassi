@@ -127,7 +127,7 @@ function App(){
       </aside>
       <section class="panel records" aria-label="Records">{list?<><div class="section-head"><div><h2>{list.catalogName}</h2><span class="muted">{list.total} records</span></div>
         <button class="primary" disabled={navigationLocked||!snapshot.capabilities.canCreate} onClick={()=>run('create')}>+ New record</button></div>
-        {editor&&<p class="preview-note">List preview · refreshed when you return</p>}
+        {editor&&<p class="preview-note">Last confirmed records · updated after Save</p>}
         {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
         </div>}
@@ -139,7 +139,7 @@ function App(){
         <footer class="pagination"><button disabled={navigationLocked||list.offset===0} onClick={()=>run('page',{offset:Math.max(0,list.offset-list.limit),limit:list.limit})}>← Previous</button>
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>
-      </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'Return to records to refresh the list.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
+      </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'List unavailable. Resolve the save outcome or return to records.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
     {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button data-editor-action="back" class="quiet back" disabled={busy||client.uncertain||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
       <h2>{editor.isNew?'New record':'Edit record'} <span class="muted">/ {editor.catalogName}</span></h2></div>
       <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.editingLocked?'Outcome pending':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>

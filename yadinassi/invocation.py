@@ -189,10 +189,10 @@ class InvocationServer:
     effects; only a finite diagnostic and explicit messages cross back.
     """
     def __init__(self, source, endpoints, *, database_context=None):
-        bounded_text(source, 65536)
         if type(endpoints) is not dict or not 1 <= len(endpoints) <= MAX_ENDPOINTS:
             raise ValueError('invalid endpoint inventory')
-        program = parse(source, '<invocation-server>')
+        from .form_program import admitted_program
+        program = admitted_program(source, side='nocontext', label='<invocation-server>')
         if not program or any(not isinstance(node, ast.Routine) or
                 node.execution_context != 'server' or node.module_context or node.is_async or node.is_dual
                 for node in program):

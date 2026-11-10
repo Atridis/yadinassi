@@ -32,16 +32,16 @@ test('blocked storage getter, read and write do not interrupt the editor',()=>{
 const catalogs=[{id:'one',name:'Products'},{id:'two',name:'Categories'}];
 const list={catalog:'one',rows:[{description:'Previously loaded'}]};
 const browsing={state:{kind:'list',catalogs,list}};
-const editing={state:{kind:'editor',catalogs:[],list:null,editor:{catalog:'one',catalogName:'Products',fields:[{inputText:'unsaved'}]}}};
+const editing={state:{kind:'editor',catalogs:[],list,editor:{catalog:'one',catalogName:'Products',fields:[{inputText:'unsaved'}]}}};
 test('browsing takes authoritative navigation and editor keeps only its matching preview',()=>{
   const preview=workspacePreview(null,browsing);
   assert.deepEqual(preview,{catalogs,list});
   assert.deepEqual(workspacePreview(preview,editing),preview);
   assert.equal(Object.hasOwn(workspacePreview(preview,editing),'editor'),false);
 });
-test('reattach in editor does not fabricate a record list or retain another catalog list',()=>{
+test('reattach uses authoritative editor list, never cached rows from another catalog',()=>{
   for(const previous of [null,{catalogs:[],list:{catalog:'two',rows:[{}]}}]){
-    assert.deepEqual(workspacePreview(previous,editing),{catalogs:[catalogs[0]],list:null});
+    assert.deepEqual(workspacePreview(previous,editing),{catalogs:[catalogs[0]],list});
   }
 });
 test('return refreshes preview and closing clears all retained navigation',()=>{
@@ -76,4 +76,18 @@ test('deletion badge requires a true typed Boolean, never a truthy wire value',(
     {type:'Boolean',value:'true'},{type:'Boolean',value:1},{type:'String',value:'true'},{}])
     assert.equal(isDeletionMarked({deletionMark}),false);
   assert.equal(isDeletionMarked(null),false);
+});
+
+test('saved card accepts the new authoritative list without closing the editor',()=>{
+  const refreshed={...list,total:2,rows:[{description:'Created record'}]};
+  const snapshot={state:{...editing.state,list:refreshed}};
+  assert.equal(workspacePreview({catalogs,list},snapshot).list,refreshed);
+});
+test('failed refresh clears stale list while preserving navigation',()=>{
+  const snapshot={state:{...editing.state,list:null}};
+  assert.deepEqual(workspacePreview({catalogs,list},snapshot),{catalogs,list:null});
+});
+test('editor preview never displays an authoritative list from another catalog',()=>{
+  const snapshot={state:{...editing.state,list:{catalog:'two',rows:[]}}};
+  assert.equal(workspacePreview({catalogs,list},snapshot).list,null);
 });

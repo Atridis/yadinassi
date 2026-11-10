@@ -13,7 +13,7 @@ export function rememberTheme(environment,preference){
   catch{/* A blocked preference store must not interrupt editing. */}
 }
 
-/** The host omits navigation while editing. Keep only a labelled, inert preview. */
+/** The host supplies a fresh retained list after Save; never patch it from a draft. */
 export function workspacePreview(previous,snapshot){
   const state=snapshot?.state;
   if(!state||state.kind==='closed')return {catalogs:[],list:null};
@@ -21,7 +21,7 @@ export function workspacePreview(previous,snapshot){
   const {catalog,catalogName}=state.editor;
   return {
     catalogs:previous?.catalogs?.some(item=>item.id===catalog)?previous.catalogs:[{id:catalog,name:catalogName}],
-    list:previous?.list?.catalog===catalog?previous.list:null,
+    list:state.list?.catalog===catalog?state.list:null,
   };
 }
 
