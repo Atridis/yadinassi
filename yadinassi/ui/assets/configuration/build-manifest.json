@@ -11,11 +11,11 @@
     "../form/src/client.mjs": "98007135df1c2ab7206feb0caa37efd967804efa47a2f491f4d3841555c1150d",
     "../form/src/view.mjs": "ed6ff3c399f58d034174b50ffef5c7b07da2f38e18ed6db01984a6c5cfa255b9",
     "../form/src/app.mjs": "2e520f26a31526d24f0ced510df5468ca86ec16a4110259ef7b8a2ccd5fb1999",
-    "src/client.mjs": "79568aaa85b08fcaa8651ca72b6c85cf861c4787c89f9c8994d2d4b09f355950",
-    "src/app.mjs": "8fd812e71ccda789f28a6e23c001256c17f2e9da3b0c98eda5502c1e31c2bebd"
+    "src/client.mjs": "a75dec10cc3c88766a718aaa741dec9a9133ebb8307c9b50bb958eb093f20bbb",
+    "src/app.mjs": "e6a1319e650e8aae8fb9f1189a46c112d3213823fb3e252d7dc3b8336f779ec1"
   },
   "outputs": {
-    "app.js": "4efd737e2d709ae2025c06600e9b1d5188ba5af74086823ce71b238a50d33308",
+    "app.js": "9455f6fb759a47dc0595aee064cc51b29925df78b042ab028665d8fadaba7813",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "style.css": "3313ff61b36b76a5f97b299a0a16963403c02e263fb1855584c4c607e4690bba",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

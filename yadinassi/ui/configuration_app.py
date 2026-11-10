@@ -159,8 +159,9 @@ class ConfigurationProcess(FormProcess):
     def __init__(self, root, database=None):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
-        command = [sys.executable, '-m', 'yadinassi.ui.configuration_app',
-                   str(Path(root).resolve()), '--runtime']
+        command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
+                   if getattr(sys, 'frozen', False) else
+                   [sys.executable, '-m', 'yadinassi.ui.configuration_app', str(Path(root).resolve()), '--runtime'])
         if database is not None:
             command += ['--f', str(Path(database).resolve())]
         self._start(command, environment)

@@ -115,11 +115,17 @@ async function main(){
     await input().fill('  Товары  ');await button('Save changes').click();
     await page.getByRole('status').filter({hasText:/^Saved$/}).waitFor();
     assert.equal(await input().inputValue(),'Товары');
+    await page.locator('.records tbody tr').filter({hasText:'Товары'}).waitFor();
+    assert.equal(await page.locator('.editor').count(),1,'save_closed_editor');
+    assert.equal(await page.locator('.records tbody tr').count(),1,'created_row_missing_behind_card');
+    assert.equal(await page.locator('.records tbody tr').first().getAttribute('aria-selected'),'true','saved_row_not_selected');
   });
   await scenario('valid_edit_number_and_durable_row',async()=>{
     const first=audit();assert.equal(first.length,1);assert.match(first[0].code,/^[0-9]{9}$/);
     await input().fill('  Материалы  ');await button('Save changes').click();await idle();
     await page.waitForFunction(()=>document.querySelector('input[aria-label="Description"]').value==='Материалы');
+    await page.locator('.records tbody tr').filter({hasText:'Материалы'}).waitFor();
+    assert.equal(await page.locator('.records tbody tr').count(),1,'rename_duplicated_row');
     const rows=audit();assert.equal(rows[0].description,'Материалы');assert.equal(rows[0].code,first[0].code);
     await page.screenshot({path:path.join(output,'editor.png')});
   });
@@ -146,7 +152,7 @@ async function main(){
     phase='restart_host';
     await stopHost();await startHost();await page.goto(url);
     phase='reopen_durable_record';
-    await page.getByRole('button',{name:/^ВидыНоменклатуры/}).click();await button('Open →').click();
+    await page.getByRole('button',{name:/^ВидыНоменклатуры/}).click();await page.locator('.records tbody tr').first().click();await button('Open selected').click();
     assert.equal(await input().inputValue(),'Материалы');assert.equal(audit().length,1);
   });
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');

@@ -98,3 +98,16 @@ test('configuration bundle source and output hashes remain exact', async () => {
   for(const [name,digest] of Object.entries(manifest.sources)) assert.equal(createHash('sha256').update(await readFile(new URL(name,root))).digest('hex'),digest,name);
   for(const [name,digest] of Object.entries(manifest.outputs)) assert.equal(createHash('sha256').update(await readFile(new URL(name,target))).digest('hex'),digest,name);
 });
+
+
+test('late open does not steal selection after newer tab navigation', async () => {
+  const gate=deferred(), env=environment();
+  const app=mountApplication(env,env.document.root,async request=>{
+    if(request.method==='application.hello')return response(request);
+    const value=snapshot({sessions:[{id:'form-1',entry:1,title:'Welcome'}],active:'form-1'});
+    if(request.method==='application.open'){await gate.promise;return response(request,value,{session:'form-1',form:reply({id:1})});}
+    return response(request,value,{session:'form-1',form:reply(request.params.request)});
+  });
+  await app.ready;const opening=app.openForm(1);app.show(null);gate.resolve();await opening;
+  await app.client.tail;assert.equal(app.mounts.get('form-1').panel.hidden,true);
+});

@@ -8,6 +8,10 @@ python -m yadinassi.ui.configuration_app examples/configuration-forms/welcome --
 python -m yadinassi.ui.configuration_app examples/configuration-forms/counter --form CommonForm.Counter
 ```
 
+The packaged executable selects the same launcher with
+`yadinassi --configuration-ui CONFIGURATION_DIRECTORY`. Ordinary BSL CLI arguments
+are unchanged; only the first argument selects this explicit mode.
+
 The first application opens a second declared form from a BSL command and passes
 a scalar Structure. The second calls a contextful server procedure which calls a
 NoContext helper and synchronizes the resulting counter. They use the same host
@@ -97,3 +101,22 @@ requests, NoContext and a real owned child process. JavaScript tests cover stric
 responses, retained drafts, child discovery, close, identity retirement and
 transport locking. Real-browser acceptance and the source-bound native regression
 are separate evidence; unit tests are not evidence of native 1C window parity.
+
+## Retained catalog list and command selection
+
+The existing catalog workspace now refreshes the authoritative list after a
+confirmed Save while keeping the editor open. It locates the saved identity in
+the refreshed ordering, including after create/rename/deletion-mark changes.
+If postcommit list projection fails, the card remains locked with a refresh
+obligation; recovery rereads instead of repeating Write. Rejected or uncertain
+saves never fabricate a list row from a draft.
+
+List commands sit above compact rows. Plain click/Space selects one row;
+checkboxes or Ctrl/Meta-click maintain an explicit visible-page UUID set. Open
+and the existing card check require exactly one selection, not a row index.
+Multiple selected rows do not trigger an implicit batch. The measured empty-ref
+check remains a separate explicit “Проверить без выбора” command with no
+selection. Selection is reconciled with catalog/page changes and authoritative
+save results. The command resolves its target from current selection and the
+latest snapshot before sending, even before the next render. Keyboard arrows
+move row focus; Enter opens the sole selected row.

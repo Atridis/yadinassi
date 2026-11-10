@@ -1,7 +1,10 @@
 """Configuration XML -> independent BSL -> OpenForm -> retained UI sessions."""
 from io import BytesIO
 from pathlib import Path
+import sys
 import unittest
+from unittest import mock
+from scripts import entrypoint
 
 from yadinassi.configuration_forms import load_configuration_forms
 from yadinassi.ui.configuration_app import (ConfigurationBroker, ConfigurationController,
@@ -173,3 +176,18 @@ class ConfigurationApplicationTests(unittest.TestCase):
         self.assertEqual(str(app.sessions[sid][0].session.form._data['count']), '1')
         self.event(app, sid, 'close')
         self.assertEqual(self.rpc(app, 'close')['state']['kind'], 'closed')
+
+    def test_frozen_configuration_route_is_explicit_and_first_argument_only(self):
+        with mock.patch.object(entrypoint.configuration_app, 'main', return_value=6) as app, mock.patch.object(entrypoint, 'cli_main', return_value=9):
+            self.assertEqual(entrypoint.main(['--configuration-ui', 'owned']), 6)
+            app.assert_called_with(['owned'])
+            self.assertEqual(entrypoint.main(['--configuration-ui-runtime', 'owned']), 6)
+            app.assert_called_with(['--runtime', 'owned'])
+            self.assertEqual(entrypoint.main(['-c', '--configuration-ui']), 9)
+
+    def test_frozen_child_reuses_executable_without_python_mode(self):
+        with mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
+            ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
+            command, env = start.call_args.args
+            self.assertEqual(command, [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())])
+            self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

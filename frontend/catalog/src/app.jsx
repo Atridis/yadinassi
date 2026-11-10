@@ -2,7 +2,7 @@ import {h,render,Fragment} from 'preact';
 import {useEffect,useRef,useState} from 'preact/hooks';
 import {EditorClient,typedInput,readBoundedJSON,takeSessionCapability,
   rowDraftKey,editorDraft,reconcileDraft,hasDraftChanges,flushDraft} from './client.mjs';
-import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation,isDeletionMarked} from './presentation.mjs';
+import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation,isDeletionMarked,selectedReference,createSelectionModel} from './presentation.mjs';
 
 let token=takeSessionCapability(location,history);
 // The capability is memory-only: never store it with the presentation preference.
@@ -22,8 +22,11 @@ function App(){
   const [snapshot,setSnapshot]=useState(null),[draft,setDraft]=useState(()=>editorDraft()),[busy,setBusy]=useState(false),
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
+  const [selection,setSelection]=useState({catalog:null,records:[]});
+  const selectionModel=useRef(null);
+  if(!selectionModel.current)selectionModel.current=createSelectionModel();
   const gate=useRef(false),actionPointer=useRef(false);
-  const apply=(preserveDraft=false,acceptedControl)=>{if(client.snapshot){setSnapshot(client.snapshot);setPreview(previous=>workspacePreview(previous,client.snapshot));
+  const apply=(preserveDraft=false,acceptedControl)=>{if(client.snapshot){setSnapshot(client.snapshot);setSelection(selectionModel.current.reconcile(client.snapshot));setPreview(previous=>workspacePreview(previous,client.snapshot));
     setDraft(previous=>preserveDraft?reconcileDraft(client.snapshot.state.editor,previous,acceptedControl):editorDraft(client.snapshot.state.editor));}};
   const changeField=(control,value)=>setDraft(previous=>({...previous,fields:{...previous.fields,[control]:value}}));
   const changeRow=(section,row,value)=>setDraft(previous=>({...previous,rows:{...previous.rows,[rowDraftKey(section,row)]:value}}));
@@ -104,6 +107,32 @@ function App(){
   const navigationLocked=busy||client.uncertain||Boolean(editor);
   const catalogs=editor?preview.catalogs:state?.catalogs||[];
   const list=editor?preview.list:state?.list;
+  const selected=selectedReference(selection,list);
+  const liveList=()=>!gate.current&&!client.uncertain&&client.snapshot?.state?.kind==='list'&&!client.snapshot.state.editor?client.snapshot.state.list:null;
+  const choose=(row,multiple=false)=>{
+    const current=liveList();if(!current)return;
+    setSelection(selectionModel.current.select(current,row.reference,multiple));
+  };
+  const openSelected=()=>{
+    const current=liveList();if(!current)return;
+    const target=selectionModel.current.target(current);
+    if(target)run('openCard',{reference:target});
+  };
+  const checkSelected=(empty=false)=>{
+    const current=liveList();if(!current||!listCheckPresentation(client.snapshot).available)return;
+    if(empty){if(selectionModel.current.empty(current))run('checkCard',{reference:null});return;}
+    const target=selectionModel.current.target(current);
+    if(target)run('checkCard',{reference:target});
+  };
+  const rowKey=(event,row)=>{
+    if(event.target!==event.currentTarget||navigationLocked)return;
+    if(event.key===' '){event.preventDefault();choose(row,event.ctrlKey||event.metaKey);}
+    else if(event.key==='Enter'){event.preventDefault();if(selectionModel.current.target(liveList())?.record===row.reference.record)openSelected();}
+    else if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+      event.preventDefault();const sibling=event.key==='ArrowDown'?event.currentTarget.nextElementSibling:event.currentTarget.previousElementSibling;
+      sibling?.focus();
+    }
+  };
   const visibleCatalogs=catalogs.filter(c=>c.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase()));
   return <main onPointerDownCapture={e=>{actionPointer.current=Boolean(e.target.closest?.('[data-editor-action]'));}}
     onPointerUpCapture={()=>{actionPointer.current=false;}} onPointerCancelCapture={()=>{actionPointer.current=false;}}>
@@ -127,15 +156,25 @@ function App(){
       </aside>
       <section class="panel records" aria-label="Records">{list?<><div class="section-head"><div><h2>{list.catalogName}</h2><span class="muted">{list.total} records</span></div>
         <button class="primary" disabled={navigationLocked||!snapshot.capabilities.canCreate} onClick={()=>run('create')}>+ New record</button></div>
+        <div class="list-toolbar" role="toolbar" aria-label="Record commands">
+          <button disabled={navigationLocked||!selected} onClick={openSelected}>Open selected</button>
+          {listCheck.available&&<><button disabled={navigationLocked||!selected} onClick={()=>checkSelected()}>Проверить карточку</button>
+          <button disabled={navigationLocked||selection.records.length!==0} onClick={()=>checkSelected(true)}>Проверить без выбора</button></>}
+          <span class="selection-count" aria-label="Selected record count" aria-live="polite">{selection.records.length} selected</span>
+        </div>
         {editor&&<p class="preview-note">Last confirmed records · updated after Save</p>}
         {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
         </div>}
-        <div class="table-scroll"><table class={listCheck.available?'list-check-table':undefined}><thead><tr><th>Code</th><th>Description</th><th></th></tr></thead><tbody>
-          {list.rows.map(row=><tr key={row.reference.record} class={editor?.reference?.record===row.reference.record?'current-record':undefined}><td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}{isDeletionMarked(row)&&<span class="badge deletion-mark">Помечен на удаление</span>}</td>
-            <td>{listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:row.reference})}>Проверить карточку</button>} <button disabled={navigationLocked} onClick={()=>run('openCard',{reference:row.reference})}>Open →</button></td></tr>)}</tbody></table></div>
-        {!list.rows.length&&<div class="empty">No records on this page.
-          {listCheck.available&&<button disabled={navigationLocked} onClick={()=>run('checkCard',{reference:null})}>Проверить карточку</button>}</div>}
+        <div class="table-scroll"><table class="record-list"><thead><tr><th class="selection-column"><span class="sr-only">Selection</span></th><th>Code</th><th>Description</th></tr></thead><tbody>
+          {list.rows.map(row=><tr key={row.reference.record} tabIndex={navigationLocked?-1:0} aria-selected={selection.records.includes(row.reference.record.toLowerCase())}
+            onClick={event=>{if(!event.target.closest('input'))choose(row,event.ctrlKey||event.metaKey);}} onKeyDown={event=>rowKey(event,row)}
+            class={selection.records.includes(row.reference.record.toLowerCase())?'selected-record':editor?.reference?.record===row.reference.record?'current-record':undefined}>
+            <td class="selection-column"><input type="checkbox" aria-label={'Select record '+text(row.code)} checked={selection.records.includes(row.reference.record.toLowerCase())}
+              disabled={navigationLocked} onChange={()=>choose(row,true)}/></td>
+            <td class="code">{text(row.code)}</td><td>{text(row.description)||<span class="muted">Untitled</span>}{isDeletionMarked(row)&&<span class="badge deletion-mark">Помечен на удаление</span>}</td>
+          </tr>)}</tbody></table></div>
+        {!list.rows.length&&<div class="empty">No records on this page.</div>}
         <footer class="pagination"><button disabled={navigationLocked||list.offset===0} onClick={()=>run('page',{offset:Math.max(0,list.offset-list.limit),limit:list.limit})}>← Previous</button>
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>
