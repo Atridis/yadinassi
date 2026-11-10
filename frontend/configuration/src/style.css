@@ -1,0 +1,5 @@
+.configuration-app { max-width: 1200px; margin: auto; padding: 24px; }
+.configuration-app > nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.configuration-app > section { padding: 20px; border: 1px solid #d8dde5; border-radius: 12px; }
+.configuration-app [aria-selected="true"] { outline: 2px solid #2368b3; }
+.configuration-app [hidden] { display: none !important; }

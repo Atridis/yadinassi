@@ -103,9 +103,11 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
-    def __init__(self, package, exchange):
+    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None):
         self.session = ReplicatedFormSession(package.source, exchange,
-            handlers=package.handlers, bindings=package.bindings)
+            handlers=package.handlers, bindings=package.bindings, parameters=parameters)
+        if bind_interpreter is not None:
+            bind_interpreter(self.session.interpreter)
         self._gate = Lock()
         self._opened = False
         self._discard_commands = dict(package.discard_commands)

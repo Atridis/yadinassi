@@ -341,3 +341,9 @@ See [run a replicated form application](docs/form-app.md) for a calculation
 example and a persisted product-intake form. The [existing order workbench](docs/order-workbench.md)
 loads full headers and lines, saves the same record, and supports explicit discard
 and optimistic-conflict feedback. Plain BSL execution is unchanged.
+
+### Конфигурационные управляемые формы
+
+Явный opt-in launcher выполняет объявленные XML-формы с единым Module.bsl,
+разделением клиента/сервера, OpenForm и несколькими удерживаемыми вкладками.
+[Границы профиля и два разных примера](docs/configuration-forms.md).

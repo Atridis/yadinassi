@@ -594,6 +594,40 @@ class CatalogEditorApplication:
         try: return repository.load(self.selected)
         finally: repository.close()
 
+    def _refresh_saved_list(self):
+        """Authoritative read after confirmed Save, never another Write.
+
+        Keep the selected card open and locate its persisted identity in the
+        newly read ordering. A failed projection retains a refresh obligation;
+        the next Save resolves that obligation without resubmitting the write.
+        """
+        editor = self.editor
+        if editor is None or editor.error or editor.save_state not in ('saved', 'unchanged'):
+            return
+        try:
+            candidate = self._load()
+            reference = editor._saved_reference()
+            position = next((i for i, card in enumerate(candidate.cards) if card.reference == reference), None)
+            if position is None:
+                raise BackendError('not_found')
+            limit = self.page[1]
+            page = ((position // limit) * limit, limit)
+            old_view, old_page = self.view, self.page
+            self.view, self.page = candidate, page
+            try:
+                # Include the deepest wire envelope before declaring both the
+                # editor and its retained list refreshed successfully.
+                encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
+            except BaseException:
+                self.view, self.page = old_view, old_page
+                raise
+        except Exception:
+            self.view = None
+            editor.pending_refresh = True
+            editor.save_state = 'committed'
+            editor.error = 'refresh_required'
+            editor.form.form._data['status'] = 'Saved; list refresh required'
+
     def select(self, identity):
         if self.editor is not None: raise UIError('busy')
         self._schema(identity)
@@ -656,7 +690,10 @@ class CatalogEditorApplication:
         elif event in ('change', 'command', 'closeCard', 'addRow', 'deleteRow', 'changeRow'):
             if self.editor is None: raise UIError('closed')
             if event == 'change': self.editor.change(values['control'], values['value'])
-            elif event == 'command': self.editor.command(values['control'])
+            elif event == 'command':
+                self.editor.command(values['control'])
+                if values['control'] == 'SaveButton':
+                    self._refresh_saved_list()
             elif event in ('addRow', 'deleteRow', 'changeRow'): self.editor.row_event(event, **values)
             else: self.editor.close()
             if self.editor.form.closed:
@@ -681,7 +718,7 @@ class CatalogEditorApplication:
         writable = not self.closed and capabilities.atomic_transactions and capabilities.catalog_create and capabilities.catalog_update
         state = {'kind': 'closed' if self.closed else 'editor' if self.editor else 'list' if self.view else 'catalogs',
                  'catalogs': [] if self.closed or self.editor is not None else [{'id': str(schema.identity), 'name': schema.name} for schema in self._inventory()],
-                 'list': self.view.page(*self.page) if self.view is not None and self.editor is None else None,
+                 'list': self.view.page(*self.page) if self.view is not None and not self.closed else None,
                  'editor': self.editor.snapshot() if self.editor is not None else None,
                  'listCheck': {'available': bool(not self.closed and self.editor is None and self.view is not None
                      and any(str(s.identity) == self.selected and s.identity in self._active_forms
