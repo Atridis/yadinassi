@@ -256,6 +256,17 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
         self.assertLess(source.index('await stopHost();\n  });\n  await scenario(scenarioNames[2]'), source.index('const readback=runPython'))
         self.assertLess(third.index('const audit=runPython'), third.index('await startHost(database)'))
 
+    def test_fresh_reopen_requires_exact_two_place_quantity_not_draft_text(self):
+        source = self.source()
+        fresh = source.split("phase='fresh_host_reopen';", 1)[1]
+        self.assertIn("ownerField('Quantity, row 1').inputValue(),'2.00','reopened_quantity_scale'", fresh)
+        self.assertNotIn("ownerField('Quantity, row 1').inputValue(),'2')", fresh)
+        self.assertIn("ownerField('Quantity, row 2').inputValue(),'2'", source)
+        self.assertNotIn('parseFloat(', fresh)
+        configuration = (ROOT / 'examples/forms/reference-order/configuration/Catalogs/Orders.xml').read_text(encoding='utf-8')
+        quantity = configuration.split('<Name>Quantity</Name>', 1)[1].split('</Attribute>', 1)[0]
+        self.assertIn('<v8:FractionDigits>2</v8:FractionDigits>', quantity)
+
     def test_small_fixed_artifacts_hashes_and_no_raw_diagnostics(self):
         source = self.source()
         for required in ("output=path.join(temporary,'yadinassi-reference-browser-artifacts')", 'await mkdir(output);',

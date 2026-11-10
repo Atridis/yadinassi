@@ -450,7 +450,7 @@ with SQLiteDBContext(sys.argv[1]) as context:
     assert.equal(await ownerField('Customer').inputValue(),'Shared display');
     assert.equal(await ownerField('Product, row 1').inputValue(),'Shared product');
     assert.equal(await ownerField('Price, row 1').inputValue(),'4.25');
-    assert.equal(await ownerField('Quantity, row 1').inputValue(),'2');
+    assert.equal(await ownerField('Quantity, row 1').inputValue(),'2.00','reopened_quantity_scale');
     assert.equal(await ownerField('Total').inputValue(),'8.50');
     await screenshot('reference-reopened.png');await closeOwner();
     await page.getByLabel('Find exact code',{exact:true}).fill('O001');await button('Find / Refresh orders').click();

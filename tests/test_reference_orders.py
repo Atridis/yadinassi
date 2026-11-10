@@ -443,6 +443,39 @@ class ReferenceOrdersTests(unittest.TestCase):
         self.assertEqual(app.object._key, record[0]); self.assertEqual(app.customer, self.refs['C002'])
         self.assertEqual(tuple(app.products.values()), (self.refs['P002'],))
 
+    def test_fresh_broker_reopen_preserves_qualified_decimal_wire_scale(self):
+        owner = self.open(row=None)['session']
+        self.change(owner, 'Code', 'NEW')
+        self.change(owner, 'Description', 'Fresh reference order')
+        self.select(self.choice(owner), 'C002')
+        self.command(owner, 'AddLine')
+        self.select(self.choice(owner, 'Product'), 'P002')
+        row = item(self.form(owner), 'LinesTable')['rows'][0]['id']
+        self.form(owner, 'cell', control='LinesTable', row=row, column='Quantity',
+            value={'type': 'Number', 'value': '2'})
+        saved = self.command(owner, 'SaveOrder')
+        self.assertFalse(saved['form']['result']['state']['dirty'])
+        self.assertEqual(item(saved, 'LinesTable')['rows'][0]['values'][2:], [
+            {'type': 'Number', 'value': '2.00'},
+            {'type': 'Number', 'value': '4.25'},
+            {'type': 'Number', 'value': '8.50'}])
+        self.form(owner, 'close')
+        self.rpc('close', {})
+        self.broker.close()
+
+        self.broker = ReferenceOrdersBroker(FORMS, self.path)
+        self.addCleanup(self.broker.close)
+        self.controller = ReferenceWorkspaceController(FORMS, self.pipe)
+        self.counter = 0
+        listing = self.rpc('hello', {'protocol': PROTOCOL})
+        row = next(order['id'] for order in listing['state']['orders'] if order['code'] == 'NEW')
+        reopened = self.open(row=row)
+        self.assertEqual(item(reopened, 'LinesTable')['rows'][0]['values'][2:], [
+            {'type': 'Number', 'value': '2.00'},
+            {'type': 'Number', 'value': '4.25'},
+            {'type': 'Number', 'value': '8.50'}])
+        self.assertEqual(item(reopened, 'FieldTotal')['value'], {'type': 'Number', 'value': '8.50'})
+
     def test_new_order_discard_has_no_write_and_can_close(self):
         owner = self.open(row=None)['session']; self.change(owner, 'Description', 'Draft')
         self.assertEqual(self.form(owner, 'close')['form']['result']['state']['kind'], 'form')
