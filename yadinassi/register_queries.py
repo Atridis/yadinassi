@@ -23,7 +23,8 @@ def register_field(manager, field, source_alias):
     from .queries import _Column
     if len(field.parts) == 2 and field.parts[0].casefold() != source_alias.casefold():
         raise ValueError('Unknown query source qualifier')
-    matches = [f for f in manager._schema.fields if f.name.casefold() == field.parts[-1].casefold()]
+    name = 'period' if manager._schema.periodic and field.parts[-1].casefold() == 'период' else field.parts[-1].casefold()
+    matches = [f for f in manager._schema.fields if f.name.casefold() == name]
     if len(matches) != 1: raise ValueError('Unknown information-register query field')
     item = matches[0]
     identity = (manager._catalogs._metadata, item.target_catalog_id) if item.kind == 'catalog_ref' else None
@@ -37,7 +38,7 @@ def _record_values(manager, record, view, seen, digests, budget):
     if (type(record) is not RegisterRecord or type(record.key) is not RegisterKey
             or type(record.key.database_id) is not UUID or type(record.key.register_id) is not UUID
             or record.key.database_id != view.database_id or record.key.register_id != schema.identity
-            or type(record.key.dimensions) is not tuple or len(record.key.dimensions) != len(schema.dimensions)
+            or type(record.key.dimensions) is not tuple or len(record.key.dimensions) != len(schema.key_fields)
             or type(record.values) is not tuple or len(record.values) != len(schema.resources) + len(schema.attributes)
             or type(record.revision) is not RegisterRevision
             or type(record.revision.database_id) is not UUID or type(record.revision.register_id) is not UUID
@@ -51,11 +52,14 @@ def _record_values(manager, record, view, seen, digests, budget):
             or not 1 <= int(record.revision.token) < 2**63
             or str(int(record.revision.token)) != record.revision.token):
         raise BackendError('integrity')
+    if schema.periodic:
+        from .periodic_information_registers import storage_period
+        if storage_period(record.key.dimensions[0],schema.periodicity)!=record.key.dimensions[0]: raise BackendError('integrity')
     values = tuple(_section_value(manager, f, v)
                    for f, v in zip(schema.fields, record.key.dimensions + record.values))
     # Storage key identity is exact, while query string comparisons still use
     # the existing casefold policy. Case-distinct dimension keys are valid rows.
-    key = tuple(('string', v) if type(v) is str else _key(v) for v in values[:len(schema.dimensions)])
+    key = tuple(('string', v) if type(v) is str else _key(v) for v in values[:len(schema.key_fields)])
     if key in seen or record.revision.key_digest in digests: raise BackendError('integrity')
     seen.add(key); digests.add(record.revision.key_digest)
     budget[0] += len(values)
@@ -65,9 +69,34 @@ def _record_values(manager, record, view, seen, digests, budget):
     return dict(zip((f.identity for f in schema.fields), values))
 
 
-def load_register(manager, columns, view, budget):
+def load_register(manager, columns, view, budget, *, source=None, parameters=None):
     manager._check_view(view)
     rows, seen, digests, cursors = [], set(), set(), set()
+    if source is not None and source.section is not None:
+        from .dates import _parts
+        from .periodic_information_registers import moment
+        boundary=moment(parameters[source.period_boundary.name.casefold()])
+        # Validate and charge the entire historical source before deriving the
+        # slice, so projection and edge reduction do not bypass query budgets.
+        records=[];continuation=None
+        while True:
+            page=view.scan_register(manager._schema.identity,RegisterScanRequest(1000,continuation))
+            if type(page) is not RegisterPage or type(page.rows) is not tuple or len(page.rows)>1000:
+                raise BackendError('integrity')
+            for record in page.rows:
+                _record_values(manager,record,view,seen,digests,budget);records.append(record)
+                if len(records)>syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+            if page.continuation is None: break
+            if not page.rows or type(page.continuation) is not str or len(page.continuation)!=32 or page.continuation in cursors: raise BackendError('integrity')
+            continuation=page.continuation;cursors.add(continuation)
+        from .periodic_information_registers import edge_records
+        records=edge_records(records,manager._schema,_parts(boundary),source.section=='first')
+        # Conversion was validated above; do not charge rows a second time.
+        from .queries import _section_value
+        for record in records:
+            values={f.identity:_section_value(manager,f,v) for f,v in zip(manager._schema.fields,record.key.dimensions+record.values)}
+            rows.append(tuple(values[c.field] for c in columns))
+        return rows
     continuation = None
     while True:
         page = view.scan_register(manager._schema.identity, RegisterScanRequest(1000, continuation))

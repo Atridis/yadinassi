@@ -1,8 +1,8 @@
 # Independent information registers
 
 This is an authored, bounded local application contract. It does not claim
-native method parity. Only independent, nonperiodic information registers are
-admitted. Registers use separate tables and typed composite dimension keys,
+native method parity. This page describes independent, nonperiodic information registers.
+[Periodic registers](periodic-information-registers.md) use a separate explicit v9 contract. Registers use separate tables and typed composite dimension keys,
 not catalog or document records.
 
 ## Configuration and storage
@@ -105,6 +105,7 @@ Malformed stored values, foreign keys, stale metadata and unsupported layouts
 fail closed. Native codecs, dynamic `New` and `TypeDescription` do not admit
 these database-bound dynamic objects.
 
-Periodicity, recorder-subordinate registers, posting/movements, virtual slices,
+Within this nonperiodic v8 profile, periodicity and virtual slices remain excluded;
+see the separate v9 contract above. Recorder-subordinate registers, posting/movements,
 indexes and distributed transactions are outside this block. Query support is
 documented with the query engine's supported source profile.

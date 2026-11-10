@@ -88,7 +88,7 @@ class _Plan:
         self._descriptors = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family),
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary),
                         *(join.source for join in query.joins))
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
         for source in self.sources:
@@ -112,7 +112,14 @@ class _Plan:
             section = None
             if source.section is not None:
                 if source.family == 'information_register':
-                    raise ValueError('Information-register virtual tables are unsupported')
+                    if not manager._schema.periodic or source.section not in ('first','last') or type(source.period_boundary) is not syntax.Parameter:
+                        raise ValueError('Invalid periodic register virtual source')
+                    from .periodic_information_registers import moment
+                    key=source.period_boundary.name.casefold()
+                    if key not in self.parameters: raise ValueError('Missing period parameter')
+                    moment(self.parameters[key])
+                    self.sections.append(None)
+                    continue
                 matches = [item for item in manager._schema.tabular_sections
                            if item.name.casefold() == source.section.casefold()]
                 if len(matches) != 1: raise ValueError('Unknown query tabular section')
@@ -439,7 +446,7 @@ class _Plan:
             return rows
         if self.sources[index].family == 'information_register':
             from .register_queries import load_register
-            return load_register(manager, columns, view, budget)
+            return load_register(manager, columns, view, budget, source=self.sources[index], parameters=self.parameters)
         if self.sources[index].family == 'document':
             from .document_queries import load_documents
             return load_documents(manager, section, columns, view, budget)

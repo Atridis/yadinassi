@@ -3,7 +3,7 @@
 The dimension tuple is a typed key, not a catalog or document identity.
 """
 from dataclasses import dataclass
-from uuid import UUID
+from uuid import UUID, uuid5
 from .catalog_backend import FieldSchema
 
 
@@ -14,9 +14,25 @@ class InformationRegisterSchema:
     dimensions: tuple[FieldSchema, ...]
     resources: tuple[FieldSchema, ...]
     attributes: tuple[FieldSchema, ...] = ()
+    periodicity: str = 'Nonperiodical'
 
     @property
-    def fields(self): return self.dimensions + self.resources + self.attributes
+    def periodic(self): return self.periodicity != 'Nonperiodical'
+
+    @property
+    def period_field(self):
+        return FieldSchema(uuid5(self.identity, 'independent-register-period-v1'),
+                           'Period', 'datetime', ('DateTime',))
+
+    @property
+    def key_fields(self):
+        return ((self.period_field,) if self.periodic else ()) + self.dimensions
+
+    @property
+    def declared_fields(self): return self.dimensions + self.resources + self.attributes
+
+    @property
+    def fields(self): return self.key_fields + self.resources + self.attributes
 
 
 @dataclass(frozen=True, slots=True)

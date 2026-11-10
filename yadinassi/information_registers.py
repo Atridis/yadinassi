@@ -89,9 +89,14 @@ class BSLInformationRegisterManager(BSLObject):
     def _key(self, unused):
         # Scalar reference conversion only needs the database identity.
         return CatalogKey(self._registers._metadata._database_id, self._schema.identity, UUID(int=0))
+    def _assigned(self, field, value):
+        if self._schema.periodic and field.identity==self._schema.period_field.identity:
+            from .periodic_information_registers import period
+            value=period(value,self._schema.periodicity)
+        return BSLCatalogManager._assigned(self,field,value)
     def _record_key(self, values):
         return RegisterKey(self._registers._metadata._database_id, self._schema.identity,
-            tuple(self._stored(f, values[f.name.casefold()]) for f in self._schema.dimensions))
+            tuple(self._stored(f, values[f.name.casefold()]) for f in self._schema.key_fields))
     def _check_view(self, view):
         m = self._registers._metadata
         if (view.database_id, view.configuration_generation, view.register_schema(self._schema.identity)) != (
@@ -116,7 +121,7 @@ class BSLInformationRegisterManager(BSLObject):
                 or record.key.database_id != self._registers._metadata._database_id
                 or record.key.register_id != self._schema.identity
                 or type(record.key.dimensions) is not tuple or type(record.values) is not tuple
-                or len(record.key.dimensions) != len(self._schema.dimensions)
+                or len(record.key.dimensions) != len(self._schema.key_fields)
                 or len(record.values) != len(self._schema.resources) + len(self._schema.attributes)):
             raise BackendError('integrity')
         return {f.name.casefold():self._logical(f,v)
@@ -132,9 +137,16 @@ class BSLInformationRegisterManager(BSLObject):
     def create_record_set(self): return BSLInformationRegisterRecordSet(self)
     def create_record_manager(self):
         return BSLInformationRegisterRecordManager(self)
-    def get(self, dimensions):
+    def get(self, *args):
+        if self._schema.periodic:
+            if len(args)!=2: raise TypeError('Get requires Period and dimensions')
+            from .periodic_information_registers import period
+            when=period(args[0],self._schema.periodicity);dimensions=args[1]
+        else:
+            if len(args)!=1: raise TypeError('Get requires dimensions')
+            dimensions=args[0]
         pairs = self._filter(dimensions, complete=True)
-        key = RegisterKey(self._registers._metadata._database_id,self._schema.identity,tuple(v for _,v in pairs))
+        key = RegisterKey(self._registers._metadata._database_id,self._schema.identity,((self._stored(self._schema.period_field,when),) if self._schema.periodic else ())+tuple(v for _,v in pairs))
         view = self._view()
         try: record = view.read_record(key)
         finally: view.close()
@@ -142,17 +154,57 @@ class BSLInformationRegisterManager(BSLObject):
         result = BSLStructure()
         for f in (*self._schema.resources,*self._schema.attributes): result.insert(f.name,values[f.name.casefold()])
         return result
-    def select(self, filter=None):
-        filters = self._filter(filter)
-        view = self._view()
-        try: rows = view.select_records(self._schema.identity,filters,1000)
-        finally: view.close()
+    def select(self, *args):
+        if not self._schema.periodic:
+            if len(args)>1: raise TypeError('Select accepts one dimension filter')
+            filters=self._filter(args[0] if args else None)
+            view=self._view()
+            try: rows=view.select_records(self._schema.identity,filters,1000)
+            finally: view.close()
+        else:
+            if not 2<=len(args)<=3: raise TypeError('Select requires start, end and optional dimensions')
+            from .periodic_information_registers import moment
+            from .dates import _parts
+            start,end=map(moment,args[:2])
+            if start.ticks>end.ticks: raise ValueError('reversed period range')
+            filters=self._filter(args[2] if len(args)==3 else None)
+            view=self._view()
+            try: rows=view.periodic_records(self._schema.identity,filters,_parts(start),_parts(end),None,1000)
+            finally: view.close()
         return BSLInformationRegisterSelection(self,rows)
+    def _edge(self, when, dimensions, first, complete=False):
+        if not self._schema.periodic: raise ValueError('periodic register required')
+        from .periodic_information_registers import moment
+        from .dates import _parts
+        when=moment(when);filters=self._filter(dimensions,complete=complete)
+        view=self._view()
+        try: rows=view.periodic_records(self._schema.identity,filters,None,None,(_parts(when),first),1000)
+        finally: view.close()
+        if complete:
+            values=self._defaults() if not rows else self._fields(rows[0])
+            result=BSLStructure()
+            for f in (*self._schema.resources,*self._schema.attributes): result.insert(f.name,values[f.name.casefold()])
+            return result
+        from .value_tables import BSLValueTable
+        result=BSLValueTable()
+        for f in self._schema.fields: result.columns.add(f.name)
+        for record in rows:
+            row=result.add()
+            for name,value in self._fields(record).items(): row.set_member(name,value)
+        return result
+    def slice_last(self, when, dimensions=None): return self._edge(when,dimensions,False)
+    def slice_first(self, when, dimensions=None): return self._edge(when,dimensions,True)
+    def get_last(self, when, dimensions): return self._edge(when,dimensions,False,True)
+    def get_first(self, when, dimensions): return self._edge(when,dimensions,True,True)
     def get_member(self, name):
         methods = {'createrecordset':self.create_record_set,'создатьнаборзаписей':self.create_record_set,
             'createrecordmanager':self.create_record_manager,'создатьменеджерзаписи':self.create_record_manager,
             'get':self.get,'получить':self.get,'select':self.select,'выбрать':self.select,
-            'metadata':lambda:self._metadata,'метаданные':lambda:self._metadata}
+            'metadata':lambda:self._metadata,'метаданные':lambda:self._metadata,
+            'slicelast':self.slice_last,'срезпоследних':self.slice_last,
+            'slicefirst':self.slice_first,'срезпервых':self.slice_first,
+            'getlast':self.get_last,'получитьпоследнее':self.get_last,
+            'getfirst':self.get_first,'получитьпервое':self.get_first}
         method = methods.get(name.casefold())
         return HostFunction(name,method) if method else super().get_member(name)
     def __str__(self): return str(self._manager_type)
@@ -175,7 +227,7 @@ class BSLInformationRegisterRecordManager(BSLObject):
         finally: view.close()
         values = m._defaults() if record is None else m._fields(record)
         if record is None:
-            for f in m._schema.dimensions: values[f.name.casefold()] = self._values[f.name.casefold()]
+            for f in m._schema.key_fields: values[f.name.casefold()] = self._values[f.name.casefold()]
         self._values, self._revision = values, None if record is None else record.revision
     def _accept(self, outcome):
         if type(outcome) is not RegisterOutcome or type(outcome.revision) is not RegisterRevision:
@@ -230,16 +282,16 @@ class BSLInformationRegisterRecordManager(BSLObject):
         method=methods.get(name.casefold())
         return HostFunction(name,method) if method else BSLObject.get_member(self,name)
     def get_member(self, name):
-        key=name.casefold()
+        key='period' if name.casefold()=='период' and self._manager._schema.periodic else name.casefold()
         if key not in self._values: return self.get_method(name)
         return self._values[key]
     def set_member(self, name, value):
         if self._pending is not None: raise BackendError('uncertain_commit')
-        key=name.casefold(); m=self._manager
+        key=('period' if name.casefold()=='период' and self._manager._schema.periodic else name.casefold()); m=self._manager
         field=next((f for f in m._schema.fields if f.name.casefold()==key),None)
         if field is None: raise ValueError('register field not found')
         value=m._assigned(field,value)
-        if self._revision is not None and field in m._schema.dimensions:
+        if self._revision is not None and field in m._schema.key_fields:
             raise ValueError('Clear before changing a selected record key')
         self._values[key]=value
     def __str__(self): raise ValueError('register record presentation unsupported')
@@ -292,7 +344,7 @@ class _RegisterFilterItem(BSLObject):
 
 
 class _RegisterFilter(BSLObject):
-    def __init__(self,owner): self._items={f.name.casefold():_RegisterFilterItem(owner,f) for f in owner._manager._schema.dimensions}
+    def __init__(self,owner): self._items={f.name.casefold():_RegisterFilterItem(owner,f) for f in owner._manager._schema.key_fields}
     def get_member(self,name):
         if name.casefold() not in self._items: raise ValueError('register dimension not found')
         return self._items[name.casefold()]
@@ -335,7 +387,7 @@ class BSLInformationRegisterRecordSet(BSLObject):
     def _filters(self):
         m=self._manager
         return tuple((f.identity,m._stored(f,self._filter._items[f.name.casefold()]._value))
-            for f in m._schema.dimensions if self._filter._items[f.name.casefold()]._used)
+            for f in m._schema.key_fields if self._filter._items[f.name.casefold()]._used)
     def add(self):
         self._editable()
         if len(self._rows)>=1000: raise ValueError('register record set limit exceeded')

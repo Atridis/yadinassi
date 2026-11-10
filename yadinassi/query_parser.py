@@ -43,6 +43,7 @@ class Source:
     temporary: bool = False
     external: bool = False
     family: str = 'catalog'
+    period_boundary: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +106,7 @@ class Select:
     into: str | None = None
     external: bool = False
     family: str = 'catalog'
+    period_boundary: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,10 +293,14 @@ class _Parser:
         section = self.take('name') if self.accept('.') else None
         source_family = ('document' if family.casefold() in ('document', 'документ') else
                          'information_register' if family.casefold() in ('informationregister', 'регистрсведений') else 'catalog')
+        boundary = None
         if source_family == 'information_register' and section is not None:
-            raise ValueError('Information-register virtual tables are unsupported')
+            names={'slicelast':'last','срезпоследних':'last','slicefirst':'first','срезпервых':'first'}
+            if section.casefold() not in names: raise ValueError('Unsupported information-register virtual source')
+            section=names[section.casefold()]
+            self.take('('); self.take('&'); boundary=Parameter(self.take('name')); self.take(')')
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section, family=source_family)
+        return Source(catalog, alias, section, family=source_family, period_boundary=boundary)
 
     def scalar(self):
         if self.accept('&'):
@@ -424,7 +430,7 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary)
 
 
     def statement(self):
