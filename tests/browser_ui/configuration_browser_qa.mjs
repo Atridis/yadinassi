@@ -15,10 +15,14 @@ const totalDeadline=startedAt+180000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['configuration-parameters.png','configuration-independent.png','configuration-draft-narrow.png'];
+const screenshots=['configuration-parameters.png','configuration-independent.png','configuration-draft-narrow.png',
+  'configuration-catalog-saved.png','configuration-catalog-selection.png','configuration-catalog-narrow.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['declared_welcome_bsl_openform_child_parameters_close',
-  'server_nocontext_repeated_commands_and_independent_forms','retained_hidden_invalid_draft_blocks_close'];
+  'server_nocontext_repeated_commands_and_independent_forms','retained_hidden_invalid_draft_blocks_close',
+  'declared_catalog_create_form_and_object_refusals_save',
+  'catalog_selection_and_independent_dirty_forms',
+  'bsl_declared_second_catalog_and_durable_reopen'];
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -102,8 +106,10 @@ async function stopHost(){
 }
 async function startHost(application){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  assert.ok(['welcome','counter'].includes(application),'unknown_owned_application');
-  const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-forms',application)];
+  assert.ok(['welcome','counter','catalog'].includes(application),'unknown_owned_application');
+  const args=application==='catalog'
+    ? ['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-catalog-forms'),'--catalog-objects','--f',path.join(owned,'catalogs.sqlite')]
+    : ['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-forms',application)];
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=launchOutputReader();let settled=false;
   url=await bounded(new Promise((resolve,reject)=>{
@@ -121,15 +127,21 @@ async function startHost(application){
 const button=name=>page.getByRole('button',{name,exact:true});
 const entries=()=>page.getByRole('navigation',{name:'Declared forms',exact:true});
 const tabs=()=>page.getByRole('navigation',{name:'Open forms',exact:true});
-const panels=()=>page.locator('.configuration-app > div > section');
-const active=()=>page.locator('.configuration-app > div > section:not([hidden])');
+const panels=()=>page.locator('.configuration-form-panels > section');
+const active=()=>page.locator('.configuration-form-panels > section:not([hidden])');
 const field=name=>active().getByLabel(name,{exact:true});
 const action=name=>active().getByRole('button',{name,exact:true});
+const catalog=()=>page.locator('.configuration-catalog');
+function catalogFixture(operation){
+  const raw=execFileSync(python,[path.join(repo,'tests/browser_ui/configuration_catalog_fixture.py'),operation,owned],
+    {cwd:repo,env,encoding:'utf8',timeout:remaining(10000),maxBuffer:4096,stdio:['ignore','pipe','ignore']});
+  return JSON.parse(raw);
+}
 const idle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
-const countPanels=count=>page.waitForFunction(expected=>document.querySelectorAll('.configuration-app > div > section').length===expected,count,{timeout:remaining(10000)});
+const countPanels=count=>page.waitForFunction(expected=>document.querySelectorAll('.configuration-form-panels > section').length===expected,count,{timeout:remaining(10000)});
 async function value(name,expected){
   await field(name).waitFor();
-  await page.waitForFunction(({name,expected})=>[...document.querySelectorAll('.configuration-app > div > section:not([hidden]) input')]
+  await page.waitForFunction(({name,expected})=>[...document.querySelectorAll('.configuration-form-panels > section:not([hidden]) input')]
     .some(input=>input.getAttribute('aria-label')===name&&input.value===expected),{name,expected},{timeout:remaining(10000)});
   assert.equal(await field(name).inputValue(),expected);
 }
@@ -141,7 +153,12 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/1');
+    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/2');
+  }else if(packet.method==='application.catalog'){
+    exactKeys(packet.params,'entry');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
+  }else if(packet.method==='application.openRecord'){
+    exactKeys(packet.params,'entry record request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
+    assert.match(packet.params.record,/^record-[1-9][0-9]{0,8}$/);assert.match(packet.params.request,/^open-[1-9][0-9]*$/);
   }else if(packet.method==='application.open'){
     exactKeys(packet.params,'entry request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
     assert.match(packet.params.request,/^open-[1-9][0-9]*$/);
@@ -178,8 +195,8 @@ async function screenshot(name){
   await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
 }
 async function sourceBinding(){
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-forms','tests/browser_ui',
-    'tests/test_configuration_forms.py','tests/test_configuration_app.py','tests/test_configuration_browser_qa_contract.py',
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-forms','examples/configuration-catalog-forms','tests/browser_ui',
+    'tests/test_configuration_forms.py','tests/test_configuration_catalog_forms.py','tests/test_configuration_catalog.py','tests/test_configuration_catalog_profile.py','tests/test_form_empty_date_state.py','tests/test_configuration_app.py','tests/test_configuration_browser_qa_contract.py',
     'tests/test_form_browser_qa_contract.py','tests/test_ui_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   return {commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}'),source};
@@ -344,6 +361,87 @@ async function main(){
     report.acceptance={configurationDeclared:true,bslOpenForm:true,scalarParameters:true,clientServerNoContext:true,
       independentForms:true,retainedHiddenDraft:true,invalidCloseBlocked:true,nativeWindowParity:false};
   });
+  await scenario(scenarioNames[3],async()=>{
+    phase='owned_catalog_profile_create';
+    assert.deepEqual(catalogFixture('create'),{created:true});
+    await page.close();page=await context.newPage();await page.setViewportSize({width:1280,height:900});
+    await startHost('catalog');await page.goto(url);
+    await page.getByRole('heading',{name:'CatalogFormsWorkshop',exact:true}).waitFor();
+    await entries().getByRole('button',{name:'Product pricing card',exact:true}).click();
+    await catalog().getByText('No records yet.',{exact:true}).waitFor();
+    await catalog().getByRole('button',{name:'New record',exact:true}).click();await countPanels(1);
+    await field('CodeInput').fill('P1');await field('DescriptionInput').fill('Form reject');
+    await field('PriceInput').fill('10');await field('ActiveInput').check();
+    assert.equal(await field('AvailableDateInput').inputValue(),'0');
+    assert.equal(await field('AvailableDateInput').getAttribute('readonly'),'');
+    phase='form_refusal_does_not_persist';
+    await action('Save record').click();await value('StatusLabel','rejected');await idle();
+    await catalog().getByText('No records yet.',{exact:true}).waitFor();
+    phase='mandatory_object_refusal_does_not_persist';
+    await field('DescriptionInput').fill('Object reject');await action('Save record').click();
+    await value('StatusLabel','rejected');await idle();
+    await catalog().getByText('No records yet.',{exact:true}).waitFor();
+    phase='confirmed_save_refreshes_retained_list';
+    await field('DescriptionInput').fill('  QA product  ');await action('Save record').click();
+    await value('StatusLabel','saved');await value('DescriptionInput','QA product');await idle();
+    await catalog().getByRole('cell',{name:'QA product',exact:true}).waitFor();
+    assert.equal(await panels().count(),1);
+    await repeatClick(action('Save record'));await idle();
+    assert.equal(await catalog().locator('tbody tr').count(),1,'repeat_save_duplicated_record');
+    await screenshot('configuration-catalog-saved.png');
+  });
+  await scenario(scenarioNames[4],async()=>{
+    phase='independent_dirty_object_buffers';
+    await catalog().getByRole('button',{name:'New record',exact:true}).click();await countPanels(2);
+    await field('CodeInput').fill('P2');await field('DescriptionInput').fill('Independent draft');await field('PriceInput').fill('5');
+    await tabs().getByRole('button',{name:'Product pricing card',exact:true}).nth(0).click();
+    await field('DescriptionInput').fill('Renamed QA product');await action('Save record').click();await value('StatusLabel','saved');await idle();
+    await catalog().getByRole('cell',{name:'Renamed QA product',exact:true}).waitFor();
+    await tabs().getByRole('button',{name:'Product pricing card',exact:true}).nth(1).click();
+    await value('DescriptionInput','Independent draft');await value('PriceInput','5');
+    await action('Save record').click();await value('StatusLabel','saved');await idle();
+    assert.equal(await catalog().locator('tbody tr').count(),2);
+    phase='single_multi_selection_and_exact_opaque_target';
+    await catalog().getByRole('checkbox',{name:'Select P1 Renamed QA product',exact:true}).check();
+    await catalog().getByRole('checkbox',{name:'Select P2 Independent draft',exact:true}).check();
+    assert.equal(await catalog().getByRole('button',{name:'Open selected',exact:true}).isDisabled(),true);
+    assert.equal(await catalog().locator('tbody tr button').count(),0,'per_row_commands_returned');
+    await catalog().getByRole('checkbox',{name:'Select P2 Independent draft',exact:true}).uncheck();
+    await catalog().getByRole('button',{name:'Open selected',exact:true}).click();await countPanels(3);
+    await value('CodeInput','P1');await value('PriceInput','10.00');
+    await action('Apply ten percent discount').click();await value('PriceInput','9.00');
+    await action('Save record').click();await value('StatusLabel','saved');await idle();
+    await screenshot('configuration-catalog-selection.png');
+    await action('Close form').click();await countPanels(2);
+  });
+  await scenario(scenarioNames[5],async()=>{
+    phase='bsl_opens_different_declared_catalog_form';
+    await action('Create category').click();await countPanels(3);
+    await field('CodeInput').fill('C1');await field('DescriptionInput').fill('  QA category  ');
+    await action('Normalize category name').click();await value('DescriptionInput','QA category');
+    await action('Save record').click();await value('StatusLabel','saved');await idle();
+    await entries().getByRole('button',{name:'Category details',exact:true}).click();
+    await catalog().getByRole('cell',{name:'QA category',exact:true}).waitFor();
+    phase='independent_backend_audit_and_fresh_host_reopen';
+    await stopHost();
+    const audited=catalogFixture('audit');
+    assert.deepEqual(audited,{durable:true,products:2,categories:1,decimalPreserved:true,emptyDatePreserved:true});
+    await page.close();page=await context.newPage();await startHost('catalog');await page.goto(url);
+    await entries().getByRole('button',{name:'Product pricing card',exact:true}).click();
+    await catalog().getByRole('checkbox',{name:'Select P1 Renamed QA product',exact:true}).check();
+    await catalog().getByRole('button',{name:'Open selected',exact:true}).click();await countPanels(1);
+    await value('CodeInput','P1');await value('PriceInput','9.00');await value('AvailableDateInput','0');
+    assert.equal(await field('ActiveInput').isChecked(),true);
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'catalog_narrow_page_overflow');
+    await screenshot('configuration-catalog-narrow.png');
+    await action('Close form').click();await countPanels(0);await idle();
+    await button('Close application').click();await stopHost();
+    report.acceptance={...report.acceptance,declaredObjectForms:true,mandatoryObjectWrite:true,
+      formAndObjectRefusals:true,authoritativeListRefresh:true,opaqueRecordSelection:true,
+      noImplicitBatch:true,independentDirtyObjects:true,durableReopen:true,emptyDatePreserved:true,
+      datePicker:false,nativeStandardFormWrite:false};
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -401,5 +499,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:3,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:6,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

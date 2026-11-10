@@ -39,3 +39,21 @@ hierarchical catalogs, documents, arbitrary nested paths and CommonModule
 OpenForm integration. Unsupported behavior fails admission rather than being
 silently ignored. Browser and native parity evidence must be stated separately
 from the existence of these examples and local tests.
+
+Source/schema corruption stops the application fail-closed, including normal
+receipt recovery calls. Pending intent is not cleared or replayed; repairing an
+archive or privileged reconciliation is outside this UI service. The receipt
+retry guarantee assumes the same valid source-bound database remains available.
+
+Date fields retain ordinary empty `Date(0)` in the local scalar form-state
+packet. This is not new native transfer evidence: generic InvocationPort
+arguments/results still reject that endpoint, as do fractional/overflow dates.
+The generic browser renderer currently displays dates as read-only ticks.
+Date changes through BSL and typed host form events are supported; a browser
+calendar/date editor is not provided by this block.
+
+The application wire contract is explicitly `/2`: entries distinguish ordinary
+forms and catalog object forms; one selected authoritative catalog projection
+contains at most 256 rows and opaque record capabilities. Overflow is refused,
+not represented as a complete list. Record capabilities are bounded to 4096
+per application and never grant access outside the owning declared entry.

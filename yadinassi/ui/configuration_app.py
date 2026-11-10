@@ -99,6 +99,11 @@ class ConfigurationBroker:
             view.close()
         return definition, context
 
+    def _projection_preflight(self, entry, listing):
+        needed = {(entry, card.reference) for card in listing.cards} - self.record_keys.keys()
+        if len(listing.cards) > 256 or len(self.record_keys) + len(needed) > 4096:
+            raise ValueError('catalog capability limit')
+
     def _records(self, entry):
         from .catalog_view import CatalogRepository
         definition, context = self._catalog(entry)
@@ -107,7 +112,9 @@ class ConfigurationBroker:
             listing = repository.load(str(definition.catalog_schema.identity))
         finally:
             repository.close()
-        if len(listing.cards) > 256:
+        try:
+            self._projection_preflight(entry, listing)
+        except ValueError:
             return {'error': 'catalog_limit'}
         rows = []
         for card in listing.cards:
@@ -181,6 +188,7 @@ class ConfigurationBroker:
                     from ..configuration_catalog import CatalogObjectSession
                     owned = CatalogObjectSession(context, definition.catalog_schema,
                         dict(self.configuration.source_files), reference=reference)
+                    owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned)
                 program = definition.program
                 if program.nocontext_bindings:

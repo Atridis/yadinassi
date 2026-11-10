@@ -198,7 +198,8 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         key='Catalogs/Products/Forms/Card/Ext/Form.xml'
         for old,new in ((b'cfg:CatalogObject.Products',b'cfg:CatalogObject.Categories'),
                         (b'Object.Price',b'Object.Price.Length'),
-                        (b'<MainAttribute>true</MainAttribute>',b'<MainAttribute>false</MainAttribute>')):
+                        (b'<MainAttribute>true</MainAttribute>',b'<MainAttribute>false</MainAttribute>'),
+                        (b'<Type><v8:Type>cfg:CatalogObject.Products',b'<Type>text<v8:Type>cfg:CatalogObject.Products')):
             files=catalog_form_sources();files[key]=files[key].replace(old,new)
             with self.subTest(new=new),self.assertRaises(ValueError): import_catalog_forms_configuration(files)
 
@@ -236,6 +237,16 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         self.assertIn(sid,broker.objects)
         self.assertIsNotNone(result['state']['catalog'])
         owned.pending_refresh = False
+        self.fill(app, sid)
+        broker.record_keys = {(999, index): 'reserved-'+str(index) for index in range(4096)}
+        self.save(app, sid)
+        self.assertTrue(owned.pending_refresh)
+        self.assertEqual(owned.save_state, 'committed')
+        self.assertEqual(self.data(app, sid)['status'], 'committed')
+        broker.record_keys.clear()
+        self.save(app, sid)
+        self.assertFalse(owned.pending_refresh)
+        self.assertEqual(owned.save_state, 'saved')
 
     def test_normal_form_reply_preserves_distinct_outer_id(self):
         _, app = self.setup_app()

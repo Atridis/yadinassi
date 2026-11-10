@@ -12,7 +12,7 @@ from yadinassi.catalogs import BSLCatalogObject
 from yadinassi.configuration_catalog import CatalogObjectSession
 from yadinassi.database_context import SQLiteDBContext
 from yadinassi.sqlite_catalog import _View
-from yadinassi.ui.protocol import CatalogRef
+from yadinassi.ui.protocol import CatalogRef, UIError
 
 
 class CatalogObjectPersistenceTests(unittest.TestCase):
@@ -147,9 +147,9 @@ class CatalogObjectPersistenceTests(unittest.TestCase):
 
     def test_wrong_empty_noncanonical_and_missing_reference(self):
         for reference in (str(uuid4()), CatalogRef(self.ids['product'], str(uuid4())),
-                          CatalogRef(self.ids['category'], str(UUID(int=0))),
-                          CatalogRef(self.ids['category'], '{'+str(uuid4())+'}')):
+                          CatalogRef(self.ids['category'], str(UUID(int=0)))):
             with self.subTest(reference=reference), self.assertRaises(ValueError): self.new(reference)
+        with self.assertRaises(UIError): CatalogRef(self.ids['category'], '{'+str(uuid4())+'}')
         with self.assertRaises(BackendError): self.new(CatalogRef(self.ids['category'], str(uuid4())))
 
     def test_input_shape_and_types_do_not_partially_mutate_writer(self):

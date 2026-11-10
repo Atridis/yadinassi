@@ -23,7 +23,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/configuration-browser-reviewed]')
         catalog = self.step('Acquire eight original-demo kind flows with Chromium sandbox enabled')
         form = self.step('Acquire five form flows with Chromium sandbox enabled')
-        configuration = self.step('Acquire three configuration form flows with Chromium sandbox enabled')
+        configuration = self.step('Acquire six configuration and catalog form flows with Chromium sandbox enabled')
         for step, branch, script in ((catalog, 'ui', 'demo_kind'), (form, 'form', 'form'), (configuration, 'configuration', 'configuration')):
             self.assertIn(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             self.assertIn(f'run: node tests/browser_ui/{script}_browser_qa.mjs', step)
@@ -61,7 +61,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         for step, branch, prefix, files in (
                 (catalog, 'ui', 'yadinassi-browser-artifacts', ['result.json', 'manifest.json', 'list.png', 'editor.png', 'narrow.png']),
                 (form, 'form', 'yadinassi-form-browser-artifacts', ['result.json', 'manifest.json', 'estimate.png', 'product-narrow.png', 'order-table-narrow.png', 'order-editor-narrow.png', 'orders-workspace-narrow.png']),
-                (configuration, 'configuration', 'yadinassi-configuration-browser-artifacts', ['result.json', 'manifest.json', 'configuration-parameters.png', 'configuration-independent.png', 'configuration-draft-narrow.png'])):
+                (configuration, 'configuration', 'yadinassi-configuration-browser-artifacts', ['result.json', 'manifest.json', 'configuration-parameters.png', 'configuration-independent.png', 'configuration-draft-narrow.png', 'configuration-catalog-saved.png', 'configuration-catalog-selection.png', 'configuration-catalog-narrow.png'])):
             self.assertIn(f"if: always() && github.ref == 'refs/heads/codex/{branch}-browser-reviewed'", step)
             paths = step.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
             self.assertEqual([line.strip() for line in paths.splitlines()],

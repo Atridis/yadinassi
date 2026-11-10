@@ -193,7 +193,10 @@ class FormDefinition:
                 if cancelled:
                     return None
             return values()
+        projected_values = {}
         def preflight(result):
+            if hasattr(owned, 'projection_preflight'):
+                owned.projection_preflight(result.listing)
             if len(result.listing.cards) > 256:
                 raise ValueError('catalog projection limit')
             # Validate the whole bounded authoritative list, not merely the
@@ -207,13 +210,15 @@ class FormDefinition:
                 for field, value in result.values:
                     session.form.set_member(dict(self.object_fields)[field], value)
                 encode_line(_pack_state(session, session._replica_handler_names))
+                projected_values.clear()
+                projected_values.update((slot.casefold(), session.form._data[slot.casefold()])
+                                        for _, slot in self.object_fields)
             finally:
                 session.form._data = previous
         result = owned.save(values(), before_write=prepare, validate_result=preflight)
         if result.state in ('saved', 'unchanged'):
             # Preflight already validated the complete scalar projection.
-            for field, value in result.values:
-                session.form._data[dict(self.object_fields)[field].casefold()] = value
+            session.form._data.update(projected_values)
         locked = owned.pending_commit or owned.pending_refresh
         slots = {slot.casefold() for _, slot in self.object_fields}
         original = {item[0].casefold(): item[-1] for item in self.items}
@@ -257,11 +262,11 @@ def _definition(public_name, identity, raw, module, catalog_schema=None):
                     or not _flag(values, 'MainAttribute', False)):
                 raise ValueError('one catalog Object main attribute required')
             type_node = values.get(L+'Type')
-            if type_node is None or type_node.attrib or len(type_node) != 1:
+            if type_node is None or type_node.attrib or len(type_node) != 1 or (type_node.text or '').strip():
                 raise ValueError('exact catalog object type required')
             child = type_node[0]
             target = (child.text or '').strip()
-            if (child.tag != '{'+V8+'}Type' or child.attrib or len(child)
+            if (child.tag != '{'+V8+'}Type' or child.attrib or len(child) or (child.tail or '').strip()
                     or ':' not in target):
                 raise ValueError('exact catalog object type required')
             prefix, local = target.split(':', 1)

@@ -52,7 +52,7 @@ jobs:
           QA_SOURCE_SHA: ${{ github.sha }}
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/form_browser_qa.mjs
-      - name: Acquire three configuration form flows with Chromium sandbox enabled
+      - name: Acquire six configuration and catalog form flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/configuration-browser-reviewed'
         timeout-minutes: 5
         env:
@@ -98,5 +98,8 @@ jobs:
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-parameters.png
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-independent.png
             ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-draft-narrow.png
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-saved.png
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-selection.png
+            ${{ runner.temp }}/yadinassi-configuration-browser-artifacts/configuration-catalog-narrow.png
           if-no-files-found: error
           retention-days: 14

@@ -856,6 +856,7 @@ function mountApplication(environment, root, exchange = null) {
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
   const workarea = el('div'), catalogPanel = el('section'); workarea.className = 'configuration-workarea';
+  panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const notice = el('p'); notice.setAttribute('role','status');
