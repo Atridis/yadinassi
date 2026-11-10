@@ -56,9 +56,9 @@ def _host_directory(directory):
     return os.path.realpath(path)
 
 
-def load_configuration_directory(directory, *, numbering_policy='explicit'):
+def load_configuration_directory(directory, *, numbering_policy='explicit', module_runtime=None):
     return import_configuration(read_configuration_directory(directory),
-                                numbering_policy=numbering_policy)
+                                numbering_policy=numbering_policy, module_runtime=module_runtime)
 
 
 def read_configuration_directory(directory):

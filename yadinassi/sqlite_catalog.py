@@ -515,6 +515,21 @@ class SQLiteCatalogBackend:
             raise BackendError('invalid_input')
         if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
             raise BackendError('invalid_input')
+        if configuration.module_runtime is not None:
+            from .configuration_modules import MODULE_RUNTIME
+            from .configuration_xml import import_configuration
+            from .errors import BSLError
+            if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
+                raise BackendError('unsupported')
+            if _source_profile is not None: raise BackendError('unsupported')
+            try:
+                canonical = import_configuration({f.path:f.content for f in configuration.files},
+                    numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
+            except (BSLError, ValueError, TypeError):
+                raise BackendError('unsupported') from None
+            if canonical != configuration: raise BackendError('unsupported')
+        elif configuration.common_modules:
+            raise BackendError('unsupported')
         documents = configuration.documents
         if type(documents) is not tuple: raise BackendError('invalid_input')
         document_definitions = [document_schema_data(s) for s in documents]
