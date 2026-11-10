@@ -50,6 +50,12 @@ class ApplicationHostBrowserContractTests(unittest.TestCase):
         self.assertIn("report.routeFailure=routeFailure",self.source)
         self.assertIn("'application_close_exchange':'rpc_exchange'",self.source)
 
+        for text in ["detachReceipts.set(key,{attachment,accept})", "'detach_http_accepted'", "'detach_attachment'",
+                     "'detach_released_writer'", "'detach_generation'", "await bounded(received,remaining(10000),'detach_receipt_timeout')",
+                     "lifetimeStage='detach_server_receipt'", "await p.goto('about:blank')"]:
+            self.assertIn(text,self.source)
+        self.assertNotIn('const confirmed=p.waitForResponse',self.source)
+
     def test_closed_attachment_and_business_wire(self):
         for text in ["exactKeys(body,'action instance')", "exactKeys(body,'action generation pending')",
                      "parsed.pathname==='/attachment'", '!parsed.search', 'launchURL(match[0].slice(0,-13))',

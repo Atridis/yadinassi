@@ -187,6 +187,7 @@ async function commitInput(name,text){
 const wireEvents=[];
 let wireFailure=false;
 let routeFailure=null;
+let lifetimeStage=null;
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
 function checkRequest(request){
   const raw=request.postData();assert.ok(raw&&Buffer.byteLength(raw)<=65536,'wire_budget');
@@ -318,7 +319,7 @@ async function main(){
   report.sandbox={requested:true,commandVerified:true,...sandboxStatus(await probe.locator('body').innerText())};
   report.launch.stage='sandbox_probe_close';
   await probe.close();report.launch.stage='verified';
-  const replies=new WeakMap(),headers=new WeakMap();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
+  const replies=new WeakMap(),headers=new WeakMap(),detachReceipts=new Map();let dropReply=false,dropped=0,commandRequests=0,attachmentRequests=0;
   await context.route('**/*',async route=>{
     const request=route.request(),target=request.url();
     let routeStage='request_admission';
@@ -335,6 +336,17 @@ async function main(){
       routeStage='attachment_exchange';
       const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0}),bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');const value=JSON.parse(bytes.toString('utf8'));
       if(value.credential)tokens.push(value.credential);if(value.resume)tokens.push(value.resume);
+      if(body.action==='detach'){
+        const sent=request.headers(),key=sent['x-yadinassi-session'],expected=detachReceipts.get(key);
+        if(expected){
+          assert.equal(response.status(),200,'detach_http_accepted');
+          assert.equal(value.protocol,'yadinassi-browser-attachment/1','detach_protocol');
+          assert.equal(value.attachment,expected.attachment,'detach_attachment');
+          assert.equal(value.role,'observer','detach_released_writer');
+          assert.ok(Number.isSafeInteger(value.generation)&&value.generation>=body.generation,'detach_generation');
+          expected.accept();detachReceipts.delete(key);
+        }
+      }
       return route.fulfill({response});
     }
     if(pathname==='/rpc'){
@@ -358,8 +370,16 @@ async function main(){
   const state=p=>replies.get(p)?.result?.state;
   const openShipped=async(kind='shipped')=>{await startHost(kind);page=await newPage();await page.goto(url);await ownership(page,'writer');await countPanels(1);await idle();};
   const detach=async p=>{
-    const confirmed=p.waitForResponse(response=>new URL(response.url()).pathname==='/attachment'&&response.request().postDataJSON()?.action==='detach'&&response.status()===200,{timeout:remaining(10000)});
-    await p.goto('about:blank');await confirmed;await p.close();
+    const sent=headers.get(p),key=sent?.['x-yadinassi-session'],attachment=sent?.['x-yadinassi-attachment'];
+    assert.ok(key&&attachment,'detach_known_attachment');
+    let accept;const received=new Promise(resolve=>{accept=resolve;});
+    detachReceipts.set(key,{attachment,accept});
+    try{
+      lifetimeStage='detach_navigation';await p.goto('about:blank');
+      lifetimeStage='detach_server_receipt';
+      await bounded(received,remaining(10000),'detach_receipt_timeout');
+      lifetimeStage='detach_page_close';await p.close();lifetimeStage=null;
+    }finally{detachReceipts.delete(key);}
   };
   const realGrace=async()=>{const before=Date.now();await bounded(new Promise(resolve=>setTimeout(resolve,31500)),remaining(33000),'real_grace_timeout');assert.ok(Date.now()-before>=30000,'real_grace_not_elapsed');};
   await scenario(scenarioNames[0],async()=>{
@@ -455,6 +475,7 @@ catch(error){
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   if(routeFailure)report.routeFailure=routeFailure;
+  if(lifetimeStage)report.lifetimeStage=lifetimeStage;
   report.failure={phase,reason:routeFailure?'route_failed':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
