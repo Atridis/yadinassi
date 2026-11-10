@@ -19,7 +19,7 @@ class BSLDocumentType(BSLObject):
     family: str = "ref"
 
     def __post_init__(self):
-        if type(self.family) is not str or self.family not in ("ref", "manager", "selection"):
+        if type(self.family) is not str or self.family not in ("ref", "manager", "selection", "object"):
             raise ValueError("unsupported document type family")
         if type(self.metadata_uuid) is not UUID:
             raise TypeError('document metadata identity requires UUID')
@@ -34,6 +34,8 @@ class BSLDocumentType(BSLObject):
         return hash((id(self.snapshot), self.metadata_uuid, self.family))
 
     def __str__(self):
+        # Object type presentation is outside the observed neutral identities.
+        if self.family == 'object': raise ValueError('document object type presentation is unsupported')
         # Native41256261065: presentation is not the Type lookup name.
         return {'ref': self.name, 'manager': 'Документ менеджер: ' + self.name,
                 'selection': 'Документ выборка: ' + self.name}[self.family]
@@ -46,7 +48,11 @@ class BSLDocumentReference(BSLObject):
     metadata: object = field(default=None, compare=False, hash=False, repr=False)
     read_member: object = field(default=None, compare=False, hash=False, repr=False)
 
+    get_object: object = field(default=None, compare=False, hash=False, repr=False)
+
     def __post_init__(self):
+        if self.get_object is not None and not callable(self.get_object):
+            raise TypeError('document object reader must be callable')
         if type(self.value_type) is not BSLDocumentType or type(self.reference_uuid) is not UUID:
             raise TypeError('document reference requires document type and record UUID')
         if self.value_type.family != 'ref':
@@ -73,6 +79,9 @@ class BSLDocumentReference(BSLObject):
             return HostFunction(name, self.is_empty)
         if key in ('uuid', 'уникальныйидентификатор'):
             return HostFunction(name, self.unique_identifier)
+        if key in ('getobject', 'получитьобъект'):
+            if self.get_object is None: raise ValueError('document object reader unavailable')
+            return HostFunction(name, lambda:self.get_object(self))
         if key in ('metadata', 'метаданные'):
             return HostFunction(name, self.get_metadata)
         if self.read_member is not None:

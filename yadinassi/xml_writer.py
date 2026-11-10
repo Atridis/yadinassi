@@ -1,4 +1,4 @@
-"""Bounded XML 1.0 writer; no DTD, entities, streams or external resources."""
+"""Bounded XML 1.0 writer; no DTD, entities or external resources."""
 from xml.parsers import expat
 from .values import BSLObject, HostFunction
 from . import file_io
@@ -100,13 +100,27 @@ class BSLXMLWriter(BSLObject):
         except BaseException:
             self._active = False
             raise
+    @file_io._file_errors
+    def open_stream(self, stream, settings=None, add_bom=None):
+        from .text_streams import BinaryStreamSink
+        settings = self._configure(settings)
+        add_bom = file_io._bool(add_bom, True)
+        encoding = file_io._encoding(settings.encoding or None)
+        mark = file_io._encode('', encoding, add_bom)
+        target = BinaryStreamSink(stream)
+        self._reset(settings)
+        self._stream, self._encoding, self._bom = target, encoding, mark
     def _dispose(self):
         stream, self._stream = self._stream, None
         self._active = False
         if stream is not None: stream.close()
     def __del__(self):
         stream = getattr(self, '_stream', None)
-        if stream is not None: stream.close()
+        if stream is not None:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
     def _charge(self, cost=0, nodes=0):
         if self._cost + cost > MAX_TEXT or self._nodes + nodes > MAX_NODES:
             raise ValueError('XML: превышен предел ресурсов Yadinassi')
@@ -356,6 +370,7 @@ class BSLXMLWriter(BSLObject):
         methods={
             'setstring':self.set_string,'установитьстроку':self.set_string,
             'openfile':self.open_file,'открытьфайл':self.open_file,
+            'openstream':self.open_stream,'открытьпоток':self.open_stream,
             'writexmldeclaration':self.write_xml_declaration,'записатьобъявлениеxml':self.write_xml_declaration,
             'writestartelement':self.write_start_element,'записатьначалоэлемента':self.write_start_element,
             'writeendelement':self.write_end_element,'записатьконецэлемента':self.write_end_element,

@@ -141,3 +141,10 @@ FileStream and immutable BinaryData stream capability checks are not changed.
 Child close leaves its parent usable; source-close/view lifetime remains !todo.
 All40 captured observations now replay locally; fresh exact-head native/CI gates
 remain required. The reconstructed-envelope evidence limit above still applies.
+
+
+### Stream-backed text/JSON/XML extension
+
+The ordinary stream-overload exclusions above are superseded only by the
+[bounded text/JSON/XML stream profile](text-json-xml-streams.md). Existing native
+evidence remains scoped to its recorded scenarios, not these new overloads.

@@ -1,5 +1,11 @@
 # Bounded numeric-mask Date Format and family-specific parameters
 
+This document records the original numeric-mask checkpoint. The current
+[localized date work](localized-date-formatting.md) extends it without changing
+its immutable native sources or captures. Boolean and numeric-template families
+are already implemented separately in [numeric Format](format-numbers-runtime.md);
+statements below about their initial exclusion are historical, not current limits.
+
 `Format` / `Формат` now admits explicit numeric Date masks `DF/ДФ` and empty-date
 presentation `DE/ДП`. This does not alter `String(date)` or numeric arithmetic.
 It is not full native date, Boolean, locale or numeric-template formatting.

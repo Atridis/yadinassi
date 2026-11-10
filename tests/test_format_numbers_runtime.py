@@ -131,7 +131,7 @@ class FormatNumbersRuntimeTests(unittest.TestCase):
 
     def test_unsupported_or_malformed_is_not_plausible_fallback(self):
         for mask in ('NLZ=', 'NN=5', 'ND=33', 'NS=325',
-                     'DLF=D', 'L=en', 'Л=ru_RU',
+                     'DLF=TD', 'L=en', 'Л=ru_RU',
                      'NFD=-1', 'NFD=1.5', 'NFD=325', 'NFD=9999999', 'NFD=²',
                      'NDS=', 'NG=0,3', 'NG=3,2,1', 'NG=33', 'NG=-1',
                      "NZ='unterminated", "NZ='valid'junk", 'NFD', 'NFD=2;bad',

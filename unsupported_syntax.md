@@ -9,6 +9,14 @@
 каталог платформы 1С. Наличие имени в документации 1С не делает его доступным
 в Yadinassi. Список не является планом выпуска и не обещает сроков реализации.
 
+## Границы потокового текстового обмена
+
+Обычные TextReader/TextWriter и JSON/XML stream-overloads поддержаны в
+[ограниченном профиле](docs/text-json-xml-streams.md). Точное нативное read-ahead,
+ownership/flush и BOM на произвольной позиции не заявлены; async/Begin и чужие
+host/nonseekable/network streams не поддержаны. Ниже исторические общие
+исключения для потоков не отменяют этот явно перечисленный срез.
+
 ## Границы расширенного JSON
 
 Даты и обычные функции преобразования/восстановления поддержаны в
@@ -156,17 +164,15 @@ XML-парсер, а внутренняя сериализация не пред
   переполнение этих функций не заявлено. Три функции системных часов работают в рамках автономного процесса
   и имеют явно ограниченную точность выборки; см. `supported_syntax.md`. Календарные периоды, сдвиги месяцев и нумерация дней/недель
   перечислены в `supported_syntax.md`; ISO-нумерация недель не предоставляется.
-- `Формат / Format` поддерживает только [ограниченные числовые параметры](docs/format-numbers-runtime.md)
-  и [числовые маски даты DF/ДФ с представлением пустой даты DE/ДП](docs/format-dates-runtime.md).
-  Полная локализация, произвольные локали, `DLF/ДЛФ`, имена месяцев/дней,
-  12-часовые токены и AM/PM, пользовательские форматы Boolean (`BF/BT`),
-  числовые шаблоны `NF/ЧФ` и другие не включённые в контракт числовые семейства
-  (`ND/ЧЦ`, `NS/ЧС`, `NLZ/ЧВН`, `NN/ЧО`) не поддержаны. Измерение нативного
-  результата этих контрольных случаев не означает их поддержку интерпретатором.
+- `Формат / Format` имеет [ограниченные числовые и Boolean параметры](docs/format-numbers-runtime.md)
+  и [расширяемый фиксированный русский профиль дат](docs/localized-date-formatting.md).
+  Произвольные локали, региональные настройки сеанса/базы, переполнение числовой
+  ширины и сложные шаблоны с несколькими заполнителями не поддержаны.
+  Текстовые названия и 12-часовые токены проходят отдельную калибровку;
+  ещё не подтверждённые случаи не выдаются за нативный паритет.
   Не заявлены неограниченная длина/точность, приведение произвольных объектов
-  или форматирование непроверенных граничных состояний Date. Точные ограничения
-  UTF-16, дробных разрядов и группировки перечислены в `supported_syntax.md`;
-  это локальная ресурсная политика, не пределы платформы.
+  или форматирование непроверенных граничных состояний Date. Ресурсные ограничения
+  UTF-16, дробных разрядов и группировки являются локальной политикой, не пределами 1С.
 - Непроверенные выходы `AddMonth` и `EndOfWeek` за диапазон Date отклоняются.
   Три точные граничные пробы допускают лишь скалярную внутреннюю запись и тип:
   их арифметика, сравнение, строка, заполненность, компоненты, календарные функции,
@@ -281,13 +287,13 @@ Rows.Sort имеет только bounded numeric implementation для явно
 ### JSON family remaining scope
 
 Advanced date conversion and revival callbacks, XDTO/application objects,
-Stream objects, advanced quote/escape settings, comments/non-standard input,
+advanced quote/escape settings, comments/non-standard input,
 reader CurrentLine/CurrentPosition and exact malformed-input diagnostics remain unsupported. The ordinary
 reader/writer and collection workflows are described in [JSON family](docs/json-family.md).
 
 ### File I/O remaining scope
 
-TextReader/TextWriter/JSON/XML stream overloads and async methods, sharing locks, recursive deletions,
+Async methods, sharing locks, recursive deletions,
 wildcard deletion, remote URL schemes, permission setters and exotic codecs
 remain unsupported; `!todo` marks deferred corners. TextReader currently takes
 a bounded file snapshot, not a live exclusive OS lock. Type codecs/transport
@@ -297,7 +303,7 @@ are not provided. [Full scope](docs/file-io-family.md).
 
 The broad legacy XML exclusion does not include the ordinary reader/writer subset
 listed in [docs/xml-workflow-family.md](docs/xml-workflow-family.md). DOM, XDTO,
-XSD/schema validation, DTD/entity declarations and external resolution, streams,
+XSD/schema validation, DTD/entity declarations and external resolution,
 XML 1.1, `XMLAttributeType`, full Unicode-name ranges and unchecked malformed
 WriteRaw fragments remain unsupported (`!todo`). Internal serialization is
 explicitly rejected. The ordinary subset has a source-bound native XML33 capture and exact corrected

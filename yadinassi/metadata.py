@@ -117,7 +117,23 @@ class BSLDocumentMetadataCollection(BSLCatalogMetadataCollection):
         self._config_snapshot = None
 
     def _snapshot(self):
-        raise ValueError('Documents are not supported by the SQLite catalog MVP')
+        if self._items is None:
+            if self._context is None: require_database_context()
+            view = self._context.backend.begin_document_read()
+            try:
+                entries = view.documents()
+                self._database_id = view.database_id
+                self._generation = view.configuration_generation
+            finally: view.close()
+            items = {}
+            for entry in entries:
+                key = entry.name.casefold()
+                if key in items: raise ValueError('ambiguous document metadata name')
+                item = BSLDocumentMetadata(entry.name,str(entry.identity))
+                item._schema = entry
+                items[key] = item
+            self._items = items
+        return self._items
 
 
 class BSLInformationRegisterMetadata(BSLCatalogMetadata):

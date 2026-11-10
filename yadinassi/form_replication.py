@@ -346,7 +346,7 @@ def _apply_delta(form, admitted):
 class ReplicatedFormServer:
     """One server-owned form. Lifecycle and endpoints are trusted host setup."""
     def __init__(self, source, endpoints, *, handlers, attributes=(), tables=(), initial_values=None,
-                 bindings=None, database_context=None):
+                 bindings=None, database_context=None, server_bindings=()):
         _source(source, 'server')
         self._handlers, self._handler_names = _bindings(handlers, handlers=True)
         if type(endpoints) is not dict or len(endpoints) > MAX_ENDPOINTS:
@@ -363,7 +363,9 @@ class ReplicatedFormServer:
             normalized[event] = name(handler)
         self.session = FormSession(source, attributes=attributes, tables=tables, initial_values=initial_values,
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
-            database_context=database_context)
+            database_context=database_context, server_bindings=server_bindings)
+        self.session._replica_handler_names = self._handler_names
+        self.session._replica_handlers = self._handlers
         for binding in handlers:
             key = binding.name.casefold()
             if (key in self.session.reserved_names or key in self.session.form._attributes
