@@ -23,6 +23,7 @@ _ALIASES={'код':'code','наименование':'description','ссылка
 def _field(fields,name):
     if type(name) is not str:raise TypeError('catalog field name requires String')
     key=_ALIASES.get(name.casefold(),name.casefold())
+    if 'parent' in fields: key={'родитель':'parent','этогруппа':'isfolder'}.get(key,key)
     if key not in fields:raise ValueError('catalog field not found: '+name)
     return fields[key]
 
@@ -115,11 +116,16 @@ class BSLCatalogManager(BSLObject):
         return normalize_field(value,field)
     def _defaults(self,ref=None):
         values={'code':'','description':'','deletionmark':False,'ref':ref}
+        if self._schema.hierarchy != 'none': values.update(parent=self.empty_ref(),isfolder=False)
         values.update((f.name.casefold(),self._field_default(f)) for f in self._schema.fields)
         return values
     def _fields(self,card):
         if card.key.database_id!=self._key(_ZERO).database_id or card.key.catalog_id!=self._schema.identity or len(card.values)!=len(self._schema.fields):raise BackendError('integrity')
         values={'code':card.code,'description':card.description,'deletionmark':card.deletion_mark,'ref':self._ref(card.key.record_id)}
+        if self._schema.hierarchy != 'none':
+            if type(card.is_folder) is not bool or (card.parent is not None and (type(card.parent) is not CatalogKey or card.parent.database_id!=card.key.database_id or card.parent.catalog_id!=card.key.catalog_id)):
+                raise BackendError('integrity')
+            values.update(parent=self._ref(_ZERO if card.parent is None else card.parent.record_id),isfolder=card.is_folder)
         values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
         return values
     def _read(self,record):
@@ -135,6 +141,10 @@ class BSLCatalogManager(BSLObject):
     def create_item(self):
         if not self._backend.capabilities().catalog_create:raise BackendError('unsupported')
         return BSLCatalogObject(self)
+    def create_folder(self):
+        if self._schema.hierarchy != "groups_v1": raise BackendError("unsupported")
+        result=self.create_item();result._values["isfolder"]=True
+        return result
     def select(self):
         view=self._view()
         try:rows=view.select_catalog(self._schema.identity,CatalogSelection())
@@ -172,7 +182,8 @@ class BSLCatalogManager(BSLObject):
         methods={'emptyref':self.empty_ref,'пустаяссылка':self.empty_ref,'getref':self.get_ref,'получитьссылку':self.get_ref,
                  'select':self.select,'выбрать':self.select,'findbycode':self.find_by_code,'найтипокоду':self.find_by_code,
                  'findbydescription':self.find_by_description,'найтипонаименованию':self.find_by_description,
-                 'createitem':self.create_item,'создатьэлемент':self.create_item}
+                 'createitem':self.create_item,'создатьэлемент':self.create_item,
+                 'createfolder':self.create_folder,'создатьгруппу':self.create_folder}
         method=methods.get(name.casefold())
         return HostFunction(name,method) if method else super().get_member(name)
     def __str__(self):return str(self._manager_type)
@@ -257,7 +268,9 @@ class BSLCatalogObject(BSLObject):
                   if complete_sections else self._section_draft())
         return CatalogDraft(self._key,self._values['code'],self._values['description'],self._values['deletionmark'],
                             tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
-                            auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='')
+                            auto_number=self.is_new() and m._schema.numbering=='decimal_v1' and self._values['code']=='',
+                            parent=(None if m._schema.hierarchy=='none' or self._values['parent'].is_empty() else m._key(self._values['parent'].reference_uuid)),
+                            is_folder=self._values['isfolder'] if m._schema.hierarchy!='none' else False)
 
     def _write(self, *, preparation=None):
         """Shared host writer. Preparation is never an exposed BSL argument."""
@@ -307,7 +320,7 @@ class BSLCatalogObject(BSLObject):
                     # Receipt absence is already proved. Validate the frozen
                     # submitted image, never a newly edited buffer or source.
                     card=CatalogCard(draft.key,expected,draft.code,draft.description,
-                                     draft.deletion_mark,draft.values,draft.tabular_sections)
+                                     draft.deletion_mark,draft.values,draft.tabular_sections,draft.parent,draft.is_folder)
                     candidate=BSLCatalogObject(m,card)
                     if expected is None:candidate._values['ref']=m.empty_ref()
                 else:
@@ -355,12 +368,15 @@ class BSLCatalogObject(BSLObject):
     def set_member(self,name,value):
         if self._pending_write is not None:raise BackendError('uncertain_commit')
         key=_ALIASES.get(name.casefold(),name.casefold())
+        if self._manager._schema.hierarchy!='none': key={'родитель':'parent','этогруппа':'isfolder'}.get(key,key)
         if key in self._sections:raise ValueError('tabular section replacement is unsupported')
-        if key=='ref':raise ValueError('Ref is read-only')
+        if key=='ref' or (key=='isfolder' and self._manager._schema.hierarchy!='none'):raise ValueError('Ref and IsFolder are read-only')
         if key not in self._values:raise ValueError('catalog field not found')
         if key in ('code','description'):
             length=self._manager._schema.code_length if key=='code' else self._manager._schema.description_length
             value=normalize_string(value,length)
+        elif key=='parent' and self._manager._schema.hierarchy!='none':
+            if type(value) is not BSLCatalogReference or value.value_type!=self._manager._value_type: raise TypeError('Parent requires same-catalog reference')
         elif key=='deletionmark':
             if type(value) is not bool:raise TypeError('DeletionMark requires Boolean')
         else:

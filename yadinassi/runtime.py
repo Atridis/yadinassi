@@ -12,7 +12,7 @@ from .zip_archives import BSLZipFileReader, BSLZipFileWriter, BSLZipFileEntries
 """Tree-walking interpreter with persistent state and injectable builtins."""
 
 from decimal import Decimal, localcontext
-from types import GeneratorType
+from types import GeneratorType, MethodType
 
 from . import file_io
 from .xml_io import (BSLXMLReader, BSLXMLReaderSettings, BSLXMLNodeType, BSLXMLSpace,
@@ -24,6 +24,7 @@ from .file_io import BSLFile, BSLTextReader, BSLTextWriter, BSLBinaryData, TEXT_
 from .text_documents import BSLTextDocument
 from .user_messages import BSLUserMessage, UserMessageContext
 from .value_storage import BSLValueStorage
+from .data_compression import BSLDeflation
 from . import json_processing
 from .json_dates import (BSLJSONSerializerSettings, JSON_DATE_FORMATS, JSON_DATE_WRITING_VARIANTS,
                          read_json_date, write_json_date)
@@ -39,13 +40,13 @@ from .numeric import bits, elementary, numbers
 from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
-from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
+from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
 from .documents import BSLDocuments
-from .information_registers import BSLInformationRegisters, BSLInformationRegisterType
+from .information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
 from .document_types import BSLDocumentType
 from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
 from .catalog_types import BSLCatalogType
@@ -81,11 +82,11 @@ from .values import (
 )
 
 
-_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
+_COLLECTIONS = (BSLInformationRegisterRecordSet, BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLXDTOList, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDocumentLines, BSLZipFileEntries, BSLBinaryDataBuffer, BSLArray, BSLFixedArray, BSLStructure, BSLFixedStructure,
                 BSLMap, BSLFixedMap, BSLValueTable, BSLValueTableColumnCollection,
                 BSLValueTableRow, BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                 BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
-_TABLE_COLLECTIONS = (BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
+_TABLE_COLLECTIONS = (BSLInformationRegisterRecordSet, BSLDocumentLine, BSLCatalogSection, BSLCatalogSectionRow, BSLDocumentLines, BSLValueTable, BSLValueTableColumnCollection, BSLValueTableRow,
                       BSLCollectionIndexes, BSLCollectionIndex, BSLValueList,
                       BSLValueTreeColumnCollection, BSLValueTreeRow, BSLValueTreeRowCollection)
 
@@ -178,7 +179,8 @@ class Interpreter:
                  native_target: str = WINDOWS_8_3_27_2342,
                  database_context: SQLiteDBContext | None = None,
                  compilation_profile: str = "standalone",
-                 user_message_sink: Callable | None = None):
+                 user_message_sink: Callable | None = None,
+                 family_owner: "Interpreter | None" = None):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
@@ -189,7 +191,19 @@ class Interpreter:
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
         self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
         self._xdto_factory = BSLXDTOFactory()
-        self._scheduler = Scheduler(self._native_target)
+        if family_owner is not None:
+            if not isinstance(family_owner, Interpreter) or family_owner.native_target != self._native_target:
+                raise ValueError('compatible interpreter family owner required')
+            if family_owner._family_owner is not family_owner:
+                raise ValueError('root interpreter family owner required')
+            if family_owner._family_closed:
+                raise ValueError('interpreter family is closed')
+        self._family_owner = self if family_owner is None else family_owner
+        self._family_closed = False
+        self._family_released = False
+        self._family_generation = 0 if family_owner is None else family_owner._family_generation
+        self._scheduler = (Scheduler(self._native_target) if family_owner is None
+                           else family_owner._scheduler)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
@@ -200,8 +214,9 @@ class Interpreter:
         self.server_module_names: set[str] = set()
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
-        self._context_stack = ["client"]
-        self._module_context_stack = [True]
+        if family_owner is None:
+            self._context_stack = ["client"]
+            self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
         # Family tombstones survive a missing side, including detached servers,
         # so an unavailable variant can never fall through to a host function.
@@ -215,6 +230,7 @@ class Interpreter:
         self.user_messages = UserMessageContext(output, user_message_sink)
         self.encoding = encoding
         self.imports: dict[str, _Module | _Namespace] = {}
+        self._configuration_runtime = None
         self._module_cache: dict[Path, _Module] = {}
         self._loading: list[Path] = []
         # Imports share this dynamic handler stack, independent of variable frames.
@@ -237,7 +253,7 @@ class Interpreter:
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
                                "FillPropertyValues", returns_value=False)
         self.register_function("ЗначениеЗаполнено", value_checks.value_is_filled, "ValueIsFilled")
-        self.register_function("Тип", self._information_registers.type_by_name, "Type")
+        self.register_function("Тип", self._type_by_name, "Type")
         self.register_function("ТипЗнч", type_values.type_of, "TypeOf")
         self.register_function("ЗначениеВСтрокуВнутр", serialization.value_to_string_internal,
                                "ValueToStringInternal")
@@ -294,6 +310,7 @@ class Interpreter:
         self.register_type("ТекстовыйДокумент", BSLTextDocument, "TextDocument")
         self.register_type("СообщениеПользователю", self._new_user_message, "UserMessage")
         self.register_type("ХранилищеЗначения", BSLValueStorage, "ValueStorage")
+        self.register_type("СжатиеДанных", BSLDeflation, "Deflation")
         self.register_type("УникальныйИдентификатор", BSLUUID, "UUID")
         self.register_type("Массив", BSLArray, "Array")
         self.register_type("Структура", BSLStructure, "Structure")
@@ -302,8 +319,8 @@ class Interpreter:
         self.register_type("ФиксированнаяСтруктура", BSLFixedStructure, "FixedStructure")
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
-        self.register_type("МенеджерВременныхТаблиц", lambda: BSLTempTablesManager(self._catalogs._metadata), "TempTablesManager")
-        self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text), "Query")
+        self.register_type("МенеджерВременныхТаблиц", self._new_temp_tables_manager, "TempTablesManager")
+        self.register_type("Запрос", self._new_query, "Query")
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
         self.register_type("СписокЗначений", BSLValueList, "ValueList")
@@ -415,7 +432,24 @@ class Interpreter:
 
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
-        self._scheduler.reset()
+        if self._family_owner is not self and self._scheduler.pending:
+            raise ValueError('cannot release a child while family tasks are pending')
+        if self._family_owner is not self:
+            self._family_released = True
+        if self._family_owner is self:
+            self._scheduler.reset()
+            self._family_closed = True
+            self._family_generation += 1
+
+    def _require_family(self):
+        if self._family_owner is self:
+            # A standalone embedding historically may execute again after reset.
+            # Its old children stay fenced by generation; application lifecycle
+            # remains independently guarded by ConfigurationApplication.
+            self._family_closed = False
+        elif (self._family_released or self._family_owner._family_closed
+                or self._family_generation != self._family_owner._family_generation):
+            raise ValueError("interpreter family member is closed")
 
     @property
     def pending_promises(self):
@@ -451,10 +485,55 @@ class Interpreter:
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
 
+    def _type_by_name(self, name):
+        return self._information_registers.type_by_name(name)
+
+    def _new_query(self, text=""):
+        return BSLQuery(self._catalogs, text, self._documents, self._information_registers)
+
+    def _new_temp_tables_manager(self):
+        return BSLTempTablesManager(self._catalogs._metadata)
+
+    def _inherit_host_bindings(self, parent):
+        """Copy host registrations, rebinding only exact VM-owned core helpers.
+
+        Each activation owns its metadata/catalog snapshot. Copying a parent's
+        bound Type or Query factory crosses that boundary even with the same DB.
+        Explicit host overrides remain untouched; names alone grant no rebinding.
+        """
+        core_helpers = (Interpreter._message, Interpreter._error_description,
+                        Interpreter._error_info, Interpreter._type_by_name,
+                        Interpreter._new_query, Interpreter._new_temp_tables_manager,
+                        Interpreter._new_user_message)
+        wrappers = {}
+
+        def copy_registry(registry):
+            result = {}
+            for name, wrapper in registry.items():
+                identity = id(wrapper)
+                if identity not in wrappers:
+                    callback = wrapper.function
+                    if type(callback) is MethodType:
+                        for helper in core_helpers:
+                            if callback.__func__ is helper:
+                                callback = helper.__get__(self, type(self))
+                                break
+                    wrappers[identity] = (wrapper if callback is wrapper.function else HostFunction(
+                        wrapper.name, callback,
+                        reference_parameters=wrapper.reference_parameters,
+                        returns_value=wrapper.returns_value))
+                result[name] = wrappers[identity]
+            return result
+
+        self.functions = copy_registry(parent.functions)
+        self.types = copy_registry(parent.types)
+
     def _new_user_message(self):
         return BSLUserMessage(self.user_messages)
 
     def _message(self, value: object) -> None:
+        if self._configuration_runtime is not None and self._configuration_runtime.state == "exiting":
+            raise ValueError("Messages are unavailable during application OnExit")
         self.output(to_string(value))
 
     def _error_description(self) -> str:
@@ -542,6 +621,7 @@ class Interpreter:
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Execute already-compiled AST; this does not select source branches."""
+        self._require_family()
         outermost = not self._scheduler.is_active
         try:
             return self._execute_program_boundary(program, outermost)
@@ -553,6 +633,8 @@ class Interpreter:
 
     def _execute_program_boundary(self, program, outermost):
         with target_context(self.native_target):
+            if self._configuration_runtime is not None:
+                self._configuration_runtime.check_program(program)
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
                 result = self._scheduler.run_inline(self._execute_program(program))
@@ -671,6 +753,8 @@ class Interpreter:
         except BSLError:
             raise
         except (ArithmeticError, ValueError, TypeError, IndexError, RecursionError) as error:
+            if error is self._scheduler.active_context.host_failure:
+                raise
             message = str(error) or type(error).__name__
             if isinstance(error, RecursionError) and self._eval_depth[0]:
                 message = "Вычислить: превышен предел глубины выражения Yadinassi"
@@ -690,6 +774,10 @@ class Interpreter:
             return value.get() if isinstance(value, _Reference) else value
         if self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
             return self.variables[name]
+        if self._configuration_runtime is not None:
+            module = self._configuration_runtime.resolve_module(name, self)
+            if module is not None:
+                return module
         if name in self.imports:
             raise TypeError(f"Имя модуля допустимо только при вызове его подпрограммы: {node.name}")
         if name in self.routines or name in self.server_routines or name in self._dual_routine_names:
@@ -838,7 +926,8 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+        if (type(value) is BSLCommonModuleMetadataCollection
+                or type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments)):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -881,6 +970,10 @@ class Interpreter:
                 and callee.name.casefold() in self._client_routine_names):
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         owner = self
+        if routine is None and isinstance(callee, ast.Name) and self._configuration_runtime is not None:
+            configured = self._configuration_runtime.resolve_global(callee.name, self)
+            if configured is not None:
+                routine, owner = configured
         has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
         known_receiver = None
         if isinstance(callee, ast.Attribute):
@@ -932,6 +1025,8 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
             return (yield from self._run_callback(node))
         if function.function is read_json or function.function is write_json:
@@ -1077,6 +1172,8 @@ class Interpreter:
         if type(value) is str:
             parts = value.split(".")
             receiver = self.imports.get(parts[0].casefold())
+            if receiver is None and len(parts) == 1 and self._configuration_runtime is not None:
+                receiver = self._configuration_runtime.resolve_module(parts[0], self)
             for part in parts[1:]:
                 receiver = (receiver.members.get(part.casefold())
                             if type(receiver) is _Namespace else None)
@@ -1229,7 +1326,10 @@ class Interpreter:
             name = node.name.casefold()
             if self.locals is not None and name in self.locals:
                 return None
-            return self.imports.get(name)
+            imported = self.imports.get(name)
+            if imported is not None or self._configuration_runtime is None:
+                return imported
+            return self._configuration_runtime.resolve_module(name, self)
         if isinstance(node, ast.Attribute):
             parent = self.import_receiver(node.object)
             if parent is None:
@@ -1248,6 +1348,10 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
+        self._require_family()
+        owner._require_family()
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
             raise ValueError("Асинхронные подпрограммы допустимы только на клиенте")
         if not self._valid_routine_context(function):
@@ -1257,7 +1361,9 @@ class Interpreter:
             raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {caller_side}: {function.name}")
         if caller_side == "server" and function.execution_context == "client":
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
-        if not self._has_module_context and function.module_context:
+        if (not self._has_module_context and function.module_context
+                and not (self._configuration_runtime is not None
+                         and self._configuration_runtime.is_common_routine(function))):
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = caller_side == "client" and function.execution_context == "server"
         invocation = owner._invocation_bindings.get(function.name.casefold())
@@ -1431,13 +1537,16 @@ class Interpreter:
         """Internal specialization seam; ordinary modules retain their behavior."""
         return Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
                            database_context=self.database_context,
-                           compilation_profile=self.compilation_profile)
+                           compilation_profile=self.compilation_profile,
+                           family_owner=self._family_owner)
 
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = self._activation_interpreter()
         server.user_messages = self.user_messages
         server._scheduler = self._scheduler
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.bind_interpreter(server)
         server._logical_side = "server"
         server._context_stack = self._context_stack
         server.routines = self.server_routines.copy()
@@ -1447,21 +1556,7 @@ class Interpreter:
         server.server_initializers = self.server_initializers.copy() if module_context else []
         server._client_routine_names = set(self.routines)
         server._dual_routine_names = self._dual_routine_names.copy()
-        # Keep server-bound core helpers. Copy registered host functions while
-        # rebinding this interpreter's methods, never retaining client frames.
-        for name, function in self.functions.items():
-            callback = function.function
-            # Imports may carry core callbacks bound to an ancestor module.
-            # Match exact implementation identities, not the current owner or
-            # a user callback's name, so client diagnostic frames never leak.
-            core_helpers = {Interpreter._message, Interpreter._error_description,
-                            Interpreter._error_info}
-            if getattr(callback, "__func__", None) in core_helpers:
-                callback = getattr(server, callback.__name__)
-            server.functions[name] = HostFunction(function.name, callback,
-                                                  reference_parameters=function.reference_parameters,
-                                                  returns_value=function.returns_value)
-        server.types = self.types.copy()
+        server._inherit_host_bindings(self)
         # Imports and the public module receiver remain unsupported server-side.
         # Side-local variables above never alias client storage.
         server._self_module.ready = False
@@ -1553,6 +1648,7 @@ class Interpreter:
                                     or factory.function is BSLXMLReaderSettings
                                     or factory.function is BSLXMLWriterSettings
                                     or factory.function is BSLJSONWriterSettings
+                                    or factory.function is BSLValueStorage
                                     or factory.function is BSLTextReader
                                     or factory.function is BSLTextWriter
                                     or factory.function is BSLDataReader
@@ -1561,7 +1657,8 @@ class Interpreter:
                                     or factory.function is BSLFileCertificationAuthorityCertificates
                                     or factory.function is BSLHTTPConnection
                                     or factory.function is BSLHTTPRequest):
-            if (factory.function is BSLTextReader or factory.function is BSLTextWriter
+            if (factory.function is BSLValueStorage
+                    or factory.function is BSLTextReader or factory.function is BSLTextWriter
                     or factory.function is BSLDataReader or factory.function is BSLDataWriter
                     or factory.function is BSLFileCertificationAuthorityCertificates
                     or factory.function is BSLHTTPConnection or factory.function is BSLHTTPRequest):
@@ -1625,6 +1722,8 @@ class Interpreter:
 
     def set_variable(self, name: str, value: object) -> None:
         name = name.casefold()
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_assignment(name, self)
         if (name in ("thisobject", "этотобъект")
                 and not (self.locals is not None and name in self.locals)
                 and not (self._has_module_context and name in self.variables
@@ -1718,12 +1817,14 @@ class Interpreter:
             child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target,
                                 database_context=self.database_context,
-                                compilation_profile=self.compilation_profile)
+                                compilation_profile=self.compilation_profile,
+                                family_owner=self._family_owner)
             child.user_messages = self.user_messages
             child._scheduler = self._scheduler
+            if self._configuration_runtime is not None:
+                self._configuration_runtime.bind_interpreter(child)
             child._diagnostic_owner = self._diagnostic_owner
-            child.functions = self.functions.copy()
-            child.types = self.types.copy()
+            child._inherit_host_bindings(self)
             child._context_stack = self._context_stack
             child._module_cache = self._module_cache
             child._loading = self._loading

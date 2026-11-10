@@ -1,7 +1,7 @@
-"""Closed catalog SELECT grammar; this AST is never database SQL.
+"""Closed application SELECT grammar; this AST is never database SQL.
 
 Field projections, bounded joins, grouping, aggregates and ordering are admitted. Bounds are implementation limits, not native platform limits.
-!todo general functions and subqueries.
+Nested membership SELECTs are bounded and uncorrelated.
 """
 from dataclasses import dataclass, replace
 from decimal import Decimal
@@ -42,6 +42,9 @@ class Source:
     section: str | None = None
     temporary: bool = False
     external: bool = False
+    family: str = 'catalog'
+    period_boundary: object = None
+    derived: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +69,18 @@ class Comparison:
     field: object
     operator: str
     value: object
+
+
+@dataclass(frozen=True, slots=True)
+class Membership:
+    field: object
+    values: object
+
+
+@dataclass(frozen=True, slots=True)
+class Hierarchy:
+    field: object
+    root: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +118,9 @@ class Select:
     temporary: bool = False
     into: str | None = None
     external: bool = False
+    family: str = 'catalog'
+    period_boundary: object = None
+    derived: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,9 +141,11 @@ _KEYWORDS = {
     'from':'from', 'из':'from', 'as':'as', 'как':'as',
     'where':'where', 'где':'where', 'order':'order', 'упорядочить':'order',
     'by':'by', 'по':'by', 'asc':'asc', 'возр':'asc', 'desc':'desc', 'убыв':'desc',
+    'in':'in', 'в':'in', 'hierarchy':'hierarchy', 'иерархии':'hierarchy', 'between':'between', 'между':'between',
     'and':'and', 'и':'and', 'or':'or', 'или':'or',
     'distinct':'distinct', 'различные':'distinct',
     'inner':'inner', 'внутреннее':'inner', 'left':'left', 'левое':'left',
+    'right':'right', 'правое':'right', 'full':'full', 'полное':'full',
     'outer':'outer', 'внешнее':'outer', 'join':'join', 'соединение':'join',
     'on':'on', 'group':'group', 'сгруппировать':'group',
     'having':'having', 'имеющие':'having',
@@ -181,6 +201,8 @@ class _Parser:
         self.position = 0
         self.comparisons = 0
         self.expression_depth = 0
+        self.subquery_depth = 0
+        self.subquery_count = 0
         self.expression_heights = {}
 
     def peek(self):
@@ -210,6 +232,8 @@ class _Parser:
             if type(node) is Expression: return self.expression_heights[id(node)][1]
             if type(node) is Aggregate: return 1 + height(node.field)
             if type(node) is Comparison: return max(height(node.field), height(node.value))
+            if type(node) is Membership: return height(node.field)
+            if type(node) is Hierarchy: return max(height(node.field),height(node.root))
             if type(node) is Predicate: return max(map(height, node.terms), default=0)
             if type(node) is tuple: return max(map(height, node), default=0)
             return 0
@@ -274,6 +298,17 @@ class _Parser:
             self.expression_depth -= 1
 
     def source(self):
+        if self.accept('('):
+            self.subquery_depth += 1; self.subquery_count += 1
+            if self.subquery_depth > 8 or self.subquery_count > 16:
+                raise ValueError('Query subquery budget exceeded')
+            try: derived = self.statement()
+            finally: self.subquery_depth -= 1
+            if derived.into is not None:
+                raise ValueError('Derived source cannot create a temporary table')
+            self.take(')'); self.take('as')
+            alias = self.take('name')
+            return Source(alias, alias, derived=derived)
         if self.accept('&'):
             name = self.take('name')
             alias = self.take('name') if self.accept('as') else name
@@ -282,13 +317,21 @@ class _Parser:
         if self.peek() != '.':
             alias = self.take('name') if self.accept('as') else family
             return Source(family, alias, temporary=True)
-        if family.casefold() not in ('catalog', 'справочник'):
-            raise ValueError('Only catalog or temporary sources are supported')
+        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ', 'informationregister', 'регистрсведений'):
+            raise ValueError('Unsupported query source family')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
+        source_family = ('document' if family.casefold() in ('document', 'документ') else
+                         'information_register' if family.casefold() in ('informationregister', 'регистрсведений') else 'catalog')
+        boundary = None
+        if source_family == 'information_register' and section is not None:
+            names={'slicelast':'last','срезпоследних':'last','slicefirst':'first','срезпервых':'first'}
+            if section.casefold() not in names: raise ValueError('Unsupported information-register virtual source')
+            section=names[section.casefold()]
+            self.take('('); self.take('&'); boundary=Parameter(self.take('name')); self.take(')')
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section)
+        return Source(catalog, alias, section, family=source_family, period_boundary=boundary)
 
     def scalar(self):
         if self.accept('&'):
@@ -319,6 +362,9 @@ class _Parser:
         return terms[0] if len(terms) == 1 else Predicate('and', tuple(terms))
 
     def atom(self, depth):
+        if depth > 32: raise ValueError('Query predicate nesting limit exceeded')
+        if self.accept('not'):
+            return Predicate('not', (self.atom(depth + 1),))
         if self.peek() == '(':
             # Decide from the matching close instead of recursively reparsing a
             # failed predicate as arithmetic. This bounds work for nested input.
@@ -333,7 +379,7 @@ class _Parser:
                         break
             if close is None: raise ValueError('Unclosed query parenthesis')
             follows = self.tokens[close + 1][0]
-            if follows not in ('=', '<>', '<', '<=', '>', '>=', 'is', '+', '-', '*', '/'):
+            if follows not in ('=', '<>', '<', '<=', '>', '>=', 'is', 'in', 'not', 'between', '+', '-', '*', '/'):
                 self.position += 1
                 result = self.condition(depth + 1)
                 self.take(')')
@@ -343,6 +389,40 @@ class _Parser:
             negate = self.accept('not')
             self.take('null')
             return Comparison(field, 'is_not_null' if negate else 'is_null', None)
+        negate = self.accept('not')
+        if self.peek() in ('in', 'between'):
+            operator = self.peek(); self.position += 1
+            self.comparisons += 1
+            if self.comparisons > 128: raise ValueError('Query predicate budget exceeded')
+            if operator == 'between':
+                lower = self.expression(); self.take('and'); upper = self.expression()
+                result = Predicate('and', (Comparison(field, 'ge', lower), Comparison(field, 'le', upper)))
+            elif self.accept('hierarchy'):
+                self.take('('); root=self.expression(); self.take(')')
+                result=Hierarchy(field,root)
+                return Predicate('not',(result,)) if negate else result
+            else:
+                if self.peek() == '&':
+                    self.take('&'); values = Parameter(self.take('name'))
+                else:
+                    self.take('(')
+                    if self.peek() == 'select':
+                        self.subquery_depth += 1; self.subquery_count += 1
+                        if self.subquery_depth > 8 or self.subquery_count > 16:
+                            raise ValueError('Query subquery budget exceeded')
+                        try: values = self.statement()
+                        finally: self.subquery_depth -= 1
+                        if values.into is not None: raise ValueError('Membership subquery cannot create a temporary table')
+                    else:
+                        items = [self.expression()]
+                        while self.accept(','):
+                            items.append(self.expression())
+                            if len(items) > 256: raise ValueError('Query IN list limit exceeded')
+                        values = tuple(items)
+                    self.take(')')
+                result = Membership(field, values)
+            return Predicate('not', (result,)) if negate else result
+        if negate: raise ValueError('NOT after an expression requires IN or BETWEEN')
         operators = {'=':'eq', '<>':'ne', '<':'lt', '<=':'le', '>':'gt', '>=':'ge'}
         if self.peek() not in operators:
             raise ValueError('Unsupported query comparison')
@@ -383,9 +463,9 @@ class _Parser:
         self.take('from')
         source = self.source()
         joins = []
-        while self.peek() in ('inner', 'left', 'join'):
-            kind = 'left' if self.accept('left') else 'inner'
-            if kind == 'left': self.accept('outer')
+        while self.peek() in ('inner', 'left', 'right', 'full', 'join'):
+            kind = self.peek() if self.peek() in ('left', 'right', 'full') else 'inner'
+            if kind != 'inner': self.take(kind); self.accept('outer')
             else: self.accept('inner')
             self.take('join')
             other = self.source()
@@ -418,7 +498,7 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary, source.derived)
 
 
     def statement(self):
@@ -468,3 +548,26 @@ def parse_package(text):
             break
     parser.take('end')
     return tuple(statements)
+
+
+def walk_nodes(value):
+    """Walk only closed grammar nodes, including nested membership sources."""
+    from dataclasses import fields
+    node_types = (Field, Aggregate, NullLiteral, Expression, Source, Destroy, Join,
+                  Parameter, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
+    if type(value) is tuple:
+        for item in value: yield from walk_nodes(item)
+    elif type(value) in node_types:
+        yield value
+        for field in fields(value): yield from walk_nodes(getattr(value, field.name))
+
+
+def selects(statements):
+    return (node for node in walk_nodes(statements) if type(node) is Select)
+
+
+def extended_filters(statement):
+    return any(type(node) is Membership or (type(node) is Source and node.derived is not None)
+               or (type(node) is Select and node.derived is not None)
+               or (type(node) is Predicate and node.kind == 'not')
+               for node in walk_nodes(statement))

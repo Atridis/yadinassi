@@ -50,6 +50,7 @@ class CatalogSchema:
     fields: tuple[FieldSchema, ...] = ()
     tabular_sections: tuple[TabularSectionSchema, ...] = ()
     numbering: str = 'explicit'
+    hierarchy: str = 'none'  # none or groups_v1; appended for flat-port compatibility.
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,8 @@ class CatalogCard:
     deletion_mark: bool
     values: tuple
     tabular_sections: tuple[TabularSectionRows, ...] = ()
+    parent: CatalogKey | None = None
+    is_folder: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +104,8 @@ class CatalogScalarRow:
     description: str
     deletion_mark: bool
     values: tuple
+    parent: CatalogKey | None = None
+    is_folder: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +131,8 @@ class CatalogDraft:
     # omitted sections, including all sections when (), become empty.
     tabular_sections: tuple[TabularSectionRows, ...] | None = None
     auto_number: bool = False
+    parent: CatalogKey | None = None
+    is_folder: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +239,8 @@ class Capabilities:
     document_create: bool = False
     document_update: bool = False
     document_tabular_sections: bool = False
+    register_read: bool = False
+    register_write: bool = False
 
 
 class CatalogReadView(Protocol):

@@ -1,8 +1,12 @@
 import {createTransport, takeSessionCapability} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
+import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs';
 import {APPLICATION_PROTOCOL, ApplicationClient} from './client.mjs';
 
 export function mountApplication(environment, root, exchange = null) {
+  const browserHost = exchange ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document;
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
@@ -11,6 +15,9 @@ export function mountApplication(environment, root, exchange = null) {
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const notice = el('p'); notice.setAttribute('role','status');
+  const applicationMessages = el('section'), exitWarning = el('p');
+  applicationMessages.setAttribute('aria-label','Application messages'); applicationMessages.setAttribute('aria-live','polite');
+  exitWarning.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
   let selectedEntry = null; const selectedRecords = new Set();
@@ -97,6 +104,10 @@ export function mountApplication(environment, root, exchange = null) {
     workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';
   }
   function paint() {
+    browserHost?.notify();
+    applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
+    applicationMessages.hidden = !client.state?.messages?.length;
+    exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
     title.textContent = client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
@@ -138,7 +149,7 @@ export function mountApplication(environment, root, exchange = null) {
   function openForm(entry, record = null) {
     const key = `${entry}:${record ?? ''}`;
     if (openings.has(key)) return openings.get(key);
-    const token = `open-${++openToken}`; intents.set(token,navigation);
+    const token = `open-${instance}-${++openToken}`; intents.set(token,navigation);
     const params = {entry,request:token}; if (record !== null) params.record = record;
     const opening = perform(record === null?'application.open':'application.openRecord',params).finally(() => { openings.delete(key); intents.delete(token);paint(); });
     openings.set(key,opening); return opening;
@@ -147,14 +158,22 @@ export function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,entries,tabs,notice,workarea); root.replaceChildren(shell);
-  if (!exchange) {
-    try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
-    catch { exchange = async () => { throw Error('Missing session'); }; }
-  }
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea); root.replaceChildren(shell);
+  if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
-  paint(); const ready = perform('application.hello',{protocol:APPLICATION_PROTOCOL});
-  return {ready,client,mounts,show,pending,openForm};
+  browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  const resume = async () => {
+    if (client.terminal) throw Error('Unknown previous outcome');
+    const retained = new Set(mounts.keys());
+    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL});
+    for (const [id,entry] of mounts) {
+      if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+      if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
+    }
+    return result;
+  };
+  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL});
+  return {ready,client,mounts,show,pending,openForm,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));

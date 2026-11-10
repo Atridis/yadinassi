@@ -1,0 +1,14 @@
+.reference-workspace { max-width: 1200px; margin: auto; padding: 24px; }
+.reference-workspace nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.reference-workspace [hidden] { display: none !important; }
+.reference-workspace .form-boundary { border: 0; margin: 0; padding: 0; min-inline-size: 0; }
+.reference-workspace .form-boundary:disabled { opacity: .65; }
+.reference-workspace [inert] { pointer-events: none; user-select: text; }
+.reference-workspace .choice-dialog { position: fixed; z-index: 10; inset: 4vh max(16px, calc((100vw - 1080px) / 2)); overflow: auto; padding: 20px; border: 2px solid #2368b3; border-radius: 12px; background: #fff; box-shadow: 0 0 0 100vmax #14263c99; }
+.reference-workspace .choice-dialog > h2 { margin: 0; }
+.reference-workspace .choice-dialog .workspace { padding: 16px 0; }
+.reference-workspace [role="status"] { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .reference-workspace { padding: 12px; }
+  .reference-workspace .choice-dialog { inset: 8px; padding: 12px; }
+}

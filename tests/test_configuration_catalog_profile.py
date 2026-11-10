@@ -49,6 +49,13 @@ class CatalogFormsProfileTests(unittest.TestCase):
         catalogs = BSLCatalogs(BSLCatalogMetadataCollection(context), context)
         return catalogs.get_index('Items').create_item()
 
+    def test_hierarchical_catalog_not_implicitly_activated(self):
+        files = catalog_form_sources()
+        files['Catalogs/Items.xml'] = files['Catalogs/Items.xml'].replace(
+            b'<CodeLength>', b'<Hierarchical>true</Hierarchical><HierarchyType>HierarchyFoldersAndItems</HierarchyType><CodeLength>')
+        with self.assertRaisesRegex(ValueError, 'scalar'):
+            import_catalog_forms_configuration(files)
+
     def test_explicit_profile_pins_original_files_and_schema(self):
         files = catalog_form_sources()
         files['Catalogs/Items.xml'] = files['Catalogs/Items.xml'].replace(

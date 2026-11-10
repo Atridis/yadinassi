@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" version="2.20">
+<Catalog uuid="82877065-f491-5a13-886f-fc892e9b4e31"><Properties><Name>Orders</Name><Hierarchical>false</Hierarchical><CodeType>String</CodeType><CodeLength>8</CodeLength><DescriptionLength>64</DescriptionLength><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering></Properties><ChildObjects>
+<Attribute uuid="d125a4c2-4614-50a7-a33d-35c67b02b6e8"><Properties><Name>Customer</Name><Type><v8:Type>cfg:CatalogRef.Customers</v8:Type></Type></Properties></Attribute>
+<Attribute uuid="1ae599a4-7ee6-54ee-bf97-601aaa42e6ae"><Properties><Name>Total</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+<TabularSection uuid="7ab2a56a-bb0c-5f4f-9682-d6c3c9896be2"><Properties><Name>Lines</Name></Properties><ChildObjects>
+<Attribute uuid="55ba966a-2c88-566e-811b-f438d75e97d8"><Properties><Name>Product</Name><Type><v8:Type>cfg:CatalogRef.Products</v8:Type></Type></Properties></Attribute>
+<Attribute uuid="3dd4ea6e-80e4-54d7-8be4-bb597aecab28"><Properties><Name>ItemDescription</Name><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>128</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></Attribute>
+<Attribute uuid="f0900e5d-a4bc-5db6-af7a-971d1897b0e3"><Properties><Name>Quantity</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+<Attribute uuid="c7251480-7142-595a-9e5e-39c91f94cb60"><Properties><Name>Price</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+<Attribute uuid="2dacd4f9-380d-5361-be77-57d49c1e11eb"><Properties><Name>Amount</Name><Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>18</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type></Properties></Attribute>
+</ChildObjects></TabularSection>
+</ChildObjects></Catalog>
+</MetaDataObject>

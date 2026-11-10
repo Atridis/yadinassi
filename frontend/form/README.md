@@ -48,7 +48,7 @@ integration run.
   locks are permanent for that attached session, even if a later snapshot clears
   its flag. Reattaching with a different launch key starts a different session.
 - A launch key is read from `#session=`, removed with `history.replaceState`, and
-  kept only in memory. No form data, drafts or keys enter browser storage. After
+  kept only in memory. No form data, drafts or launcher keys enter browser storage. Opt-in browser attachments may store only the narrow resume capability in sessionStorage. After
   page reload, reopen the complete launcher URL. Reattaching uses `form.hello`,
   which the persistent bridge maps to a read-only snapshot after first attach.
 - Date values show exact native 100-microsecond tick text and are read-only. There
@@ -93,3 +93,32 @@ transport failure retains them and locks the session. No button name implies
 discard semantics. Browser exit is guarded by raw drafts, authoritative Dirty or
 a pending request. The [Orders workbench](../../docs/order-workbench.md) uses this
 for Discard / Reload. Existing v0/v1 packages behave as before.
+
+## Optional browser attachment host
+
+A launcher URL ending in `&attachment=1` enables the shared attachment boundary.
+The full `#session=` launcher key is stripped immediately and never persisted.
+Only the server-issued narrow resume key may enter sessionStorage, allowing a
+new document to attach after refresh. Each document receives a fresh random
+32-hex instance ID; open intent IDs include it. Legacy launcher URLs and injected
+transport fixtures continue using their original protocols.
+
+The host admits one writer generation. Another tab starts with a visible
+read-only ownership notice and an explicit **Take control** action. A takeover or
+BFCache return first reads status and authoritative snapshots. It never replays
+a field change, command, Save, Discard or Close. Known pre-dispatch refusals pause
+the page without converting them into an irreversible transport failure. Lost
+or malformed business responses still lock the page with unknown outcome.
+
+Heartbeats run every 15 seconds. Pagehide sends only a best-effort, keepalive
+attachment detach with the conservative pending flag; it does not invoke form
+or application close handlers. The backend, not unload timing, decides whether
+last-tab grace can safely stop the host. Background timer throttling, process
+termination and a lost detach are not proof that a write failed.
+
+Raw drafts remain only in the live page. If reattachment changes a field or table
+identity, displaced input is shown as copy-only text and is not retargeted. Copy
+what is needed, then explicitly Refresh state or use an authorized Discard
+command. Destroying the page can still lose its raw invalid input: a resume key
+restores an attachment and host buffers, not those local drafts. No durable raw
+draft recovery is claimed.

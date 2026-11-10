@@ -127,7 +127,7 @@ class FormDefinition:
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
             bindings=self.program.server_bindings, discard_commands=(), dirty_attribute='')
 
-    def create_server(self, *, parameters=None, database_context=None, object_session=None):
+    def create_server(self, *, parameters=None, database_context=None, object_session=None, interpreter_factory=None):
         from .form_replication import ReplicatedFormServer
         initial = {}; server_bindings = ()
         if self.catalog_schema is not None:
@@ -145,7 +145,7 @@ class FormDefinition:
         server = ReplicatedFormServer(self.program.server, self.program.endpoints,
             handlers=self.program.handlers, attributes=self.attributes,
             bindings=dict(self.bindings), database_context=database_context,
-            initial_values=initial, server_bindings=server_bindings)
+            initial_values=initial, server_bindings=server_bindings, interpreter_factory=interpreter_factory)
         session = server.session; form = session.form
         if self.write_handler:
             routine = session._bind(self.write_handler, 'server', 1)

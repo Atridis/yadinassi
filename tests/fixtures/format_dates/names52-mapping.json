@@ -1,0 +1,279 @@
+{
+  "schema": "format-date-acquisition-inputs-v1",
+  "profile": "format-date-names-v1",
+  "source": "integrational_tests/measurements/format_date_names.bsl",
+  "source_sha256": "8e8de30a26b0b146232ca3e66adcc9ea333b6d94af66d5844df84e9c7d79db60",
+  "locale": "ru",
+  "evidence_status": "not_acquired",
+  "native_measurement_accepted": false,
+  "runtime_parity_accepted": false,
+  "documentation": {
+    "archive_sha256": "a8cf9c3cd5d7828958dcf69d8864cf6664180260e4d50cbff338921304c7e642",
+    "members": [
+      "nl/ru/html/SyntaxHelperContext/objects/Global_context/methods/catalog20/Format971.html",
+      "nl/en/html/SyntaxHelperContext/objects/Global_context/methods/catalog20/Format971.html"
+    ]
+  },
+  "cases": [
+    {
+      "case": 1,
+      "expression": "Format('20261030123456', \"L=ru;DF='yyyy-MM-dd HH:mm:ss'\")",
+      "topic": "control.en"
+    },
+    {
+      "case": 2,
+      "expression": "Формат('20260102030405', \"Л=ru;ДФ='дд.ММ.гггг ЧЧ:мм:сс'\")",
+      "topic": "control.ru"
+    },
+    {
+      "case": 3,
+      "expression": "Format('20240229235959', \"L=ru;DF=yyyy-MM-dd\")",
+      "topic": "control.leap"
+    },
+    {
+      "case": 4,
+      "expression": "Format('00010101000000', \"L=ru;DE='EMPTY'\")",
+      "topic": "control.empty"
+    },
+    {
+      "case": 5,
+      "expression": "Format('20260102153456', \"L=ru;DF=MMM\")",
+      "topic": "m01.short"
+    },
+    {
+      "case": 6,
+      "expression": "Format('20260102153456', \"L=ru;DF=MMMM\")",
+      "topic": "m01.long"
+    },
+    {
+      "case": 7,
+      "expression": "Format('20260102153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m01.short-day"
+    },
+    {
+      "case": 8,
+      "expression": "Format('20260102153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m01.long-day"
+    },
+    {
+      "case": 9,
+      "expression": "Format('20260202153456', \"L=ru;DF=MMM\")",
+      "topic": "m02.short"
+    },
+    {
+      "case": 10,
+      "expression": "Format('20260202153456', \"L=ru;DF=MMMM\")",
+      "topic": "m02.long"
+    },
+    {
+      "case": 11,
+      "expression": "Format('20260202153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m02.short-day"
+    },
+    {
+      "case": 12,
+      "expression": "Format('20260202153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m02.long-day"
+    },
+    {
+      "case": 13,
+      "expression": "Format('20260302153456', \"L=ru;DF=MMM\")",
+      "topic": "m03.short"
+    },
+    {
+      "case": 14,
+      "expression": "Format('20260302153456', \"L=ru;DF=MMMM\")",
+      "topic": "m03.long"
+    },
+    {
+      "case": 15,
+      "expression": "Format('20260302153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m03.short-day"
+    },
+    {
+      "case": 16,
+      "expression": "Format('20260302153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m03.long-day"
+    },
+    {
+      "case": 17,
+      "expression": "Format('20260402153456', \"L=ru;DF=MMM\")",
+      "topic": "m04.short"
+    },
+    {
+      "case": 18,
+      "expression": "Format('20260402153456', \"L=ru;DF=MMMM\")",
+      "topic": "m04.long"
+    },
+    {
+      "case": 19,
+      "expression": "Format('20260402153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m04.short-day"
+    },
+    {
+      "case": 20,
+      "expression": "Format('20260402153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m04.long-day"
+    },
+    {
+      "case": 21,
+      "expression": "Format('20260502153456', \"L=ru;DF=MMM\")",
+      "topic": "m05.short"
+    },
+    {
+      "case": 22,
+      "expression": "Format('20260502153456', \"L=ru;DF=MMMM\")",
+      "topic": "m05.long"
+    },
+    {
+      "case": 23,
+      "expression": "Format('20260502153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m05.short-day"
+    },
+    {
+      "case": 24,
+      "expression": "Format('20260502153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m05.long-day"
+    },
+    {
+      "case": 25,
+      "expression": "Format('20260602153456', \"L=ru;DF=MMM\")",
+      "topic": "m06.short"
+    },
+    {
+      "case": 26,
+      "expression": "Format('20260602153456', \"L=ru;DF=MMMM\")",
+      "topic": "m06.long"
+    },
+    {
+      "case": 27,
+      "expression": "Format('20260602153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m06.short-day"
+    },
+    {
+      "case": 28,
+      "expression": "Format('20260602153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m06.long-day"
+    },
+    {
+      "case": 29,
+      "expression": "Format('20260702153456', \"L=ru;DF=MMM\")",
+      "topic": "m07.short"
+    },
+    {
+      "case": 30,
+      "expression": "Format('20260702153456', \"L=ru;DF=MMMM\")",
+      "topic": "m07.long"
+    },
+    {
+      "case": 31,
+      "expression": "Format('20260702153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m07.short-day"
+    },
+    {
+      "case": 32,
+      "expression": "Format('20260702153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m07.long-day"
+    },
+    {
+      "case": 33,
+      "expression": "Format('20260802153456', \"L=ru;DF=MMM\")",
+      "topic": "m08.short"
+    },
+    {
+      "case": 34,
+      "expression": "Format('20260802153456', \"L=ru;DF=MMMM\")",
+      "topic": "m08.long"
+    },
+    {
+      "case": 35,
+      "expression": "Format('20260802153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m08.short-day"
+    },
+    {
+      "case": 36,
+      "expression": "Format('20260802153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m08.long-day"
+    },
+    {
+      "case": 37,
+      "expression": "Format('20260902153456', \"L=ru;DF=MMM\")",
+      "topic": "m09.short"
+    },
+    {
+      "case": 38,
+      "expression": "Format('20260902153456', \"L=ru;DF=MMMM\")",
+      "topic": "m09.long"
+    },
+    {
+      "case": 39,
+      "expression": "Format('20260902153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m09.short-day"
+    },
+    {
+      "case": 40,
+      "expression": "Format('20260902153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m09.long-day"
+    },
+    {
+      "case": 41,
+      "expression": "Format('20261002153456', \"L=ru;DF=MMM\")",
+      "topic": "m10.short"
+    },
+    {
+      "case": 42,
+      "expression": "Format('20261002153456', \"L=ru;DF=MMMM\")",
+      "topic": "m10.long"
+    },
+    {
+      "case": 43,
+      "expression": "Format('20261002153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m10.short-day"
+    },
+    {
+      "case": 44,
+      "expression": "Format('20261002153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m10.long-day"
+    },
+    {
+      "case": 45,
+      "expression": "Format('20261102153456', \"L=ru;DF=MMM\")",
+      "topic": "m11.short"
+    },
+    {
+      "case": 46,
+      "expression": "Format('20261102153456', \"L=ru;DF=MMMM\")",
+      "topic": "m11.long"
+    },
+    {
+      "case": 47,
+      "expression": "Format('20261102153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m11.short-day"
+    },
+    {
+      "case": 48,
+      "expression": "Format('20261102153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m11.long-day"
+    },
+    {
+      "case": 49,
+      "expression": "Format('20261202153456', \"L=ru;DF=MMM\")",
+      "topic": "m12.short"
+    },
+    {
+      "case": 50,
+      "expression": "Format('20261202153456', \"L=ru;DF=MMMM\")",
+      "topic": "m12.long"
+    },
+    {
+      "case": 51,
+      "expression": "Format('20261202153456', \"L=ru;DF='d MMM'\")",
+      "topic": "m12.short-day"
+    },
+    {
+      "case": 52,
+      "expression": "Format('20261202153456', \"L=ru;DF='d MMMM'\")",
+      "topic": "m12.long-day"
+    }
+  ]
+}

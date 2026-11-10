@@ -1,4 +1,4 @@
-import {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
+import {FormError, editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
 
 // DOM identity belongs to a retained view, never to a host control or table ID.
 // BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
@@ -36,11 +36,14 @@ export function createFormView(document, root, handlers) {
   const fields = element('div', 'fields');
   const messages = element('section', 'messages'); messages.setAttribute('aria-label', 'Form messages');
   messages.setAttribute('aria-live', 'polite'); messages.setAttribute('aria-atomic', 'true');
+  const recovered = element('section', 'notice warning'); recovered.setAttribute('aria-label', 'Unsubmitted inputs from earlier state'); recovered.hidden = true;
   const actions = element('div', 'form-actions');
   panel.append(panelHeader, empty, fields, messages, actions);
   const footer = element('footer', 'page-footer', 'Changes are handled by the host. Refresh reads state only and never repeats a command.');
-  main.append(header, error, lock, panel, footer); root.replaceChildren(main);
-  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map();
+  main.append(header, error, lock, recovered, panel, footer); root.replaceChildren(main);
+  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map(), recovery = new Map();
+  let ownershipRead = false;
+  const remember = (key, label, draft) => { if (ownershipRead && draft) recovery.set(key, {label, value: draft.value}); };
   let current = null, isBusy = false, focusMemory = null, actionPointer = false;
   let serial = 0;
   const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value) === input;
@@ -107,7 +110,7 @@ export function createFormView(document, root, handlers) {
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
   function discardTable(name) {
-    for (const [key, draft] of cellDrafts) if (draft.control === name) cellDrafts.delete(key);
+    for (const [key, draft] of cellDrafts) if (draft.control === name) { remember(key, name + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
   }
   function makeTable(item) {
     const row = element('section', 'form-table');
@@ -161,7 +164,7 @@ export function createFormView(document, root, handlers) {
   }
   function renderTable(control, model, active) {
     const item = control.item;
-    const disabled = model.busy || model.locked || !active || !item.enabled || !item.visible;
+    const disabled = recovery.size > 0 || model.busy || model.locked || !active || !item.enabled || !item.visible;
     control.heading.textContent = item.title || item.name;
     control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
     control.scroll.setAttribute('aria-label', item.title || item.name);
@@ -230,7 +233,7 @@ export function createFormView(document, root, handlers) {
       const item = current?.items.find(item => item.name === draft.control);
       const cell = tableCell(item, draft.row, draft.column);
       if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !editable(cell) || cell.value.type !== draft.type ||
-          !scalarEqual(cell.value, draft.base)) cellDrafts.delete(key);
+          !scalarEqual(cell.value, draft.base)) { remember(key, draft.control + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
     }
   }
   function render(model) {
@@ -247,7 +250,7 @@ export function createFormView(document, root, handlers) {
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
     refresh.disabled = model.busy || !model.connected || model.exhausted;
-    close.disabled = model.busy || model.locked || !active;
+    close.disabled = recovery.size > 0 || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
@@ -258,12 +261,12 @@ export function createFormView(document, root, handlers) {
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
       : current.kind === 'closed' ? 'This form is ' + current.lifecycle + '. You can close this tab.' : 'No visible controls.';
     const names = new Set((current?.items || []).map(item => item.name));
-    for (const [name, control] of controls) if (!names.has(name)) { control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
+    for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
     let fieldIndex = 0, actionIndex = 0;
     for (const item of current?.items || []) {
       let control = controls.get(item.name);
       if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
-        control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
+        remember('field:' + item.name, item.name, drafts.get(item.name)); control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
       }
       if (!control) { control = item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
       control.item = item;
@@ -274,8 +277,8 @@ export function createFormView(document, root, handlers) {
       row.hidden = !item.visible || current.kind === 'closed';
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
-      if (readOnly) drafts.delete(item.name);
-      input.disabled = model.busy || model.locked || !active || !item.enabled || !item.visible ||
+      if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
+      input.disabled = (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
         (item.kind === 'button' && item.readOnly) || (input.type === 'checkbox' && readOnly);
       input.readOnly = readOnly;
       if (item.kind === 'button') input.textContent = item.title || item.name;
@@ -296,6 +299,9 @@ export function createFormView(document, root, handlers) {
         hint.hidden = !hint.textContent;
       }
     }
+    recovered.hidden = recovery.size === 0;
+    recovered.replaceChildren(element('p', '', 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'),
+      ...Array.from(recovery.values(), draft => element('p', '', draft.label + ': ' + String(draft.value))));
     const nextMessages = current?.messages || [];
     // Rebuild only the bounded message list, never input nodes or host-supplied markup.
     messages.replaceChildren(...nextMessages.map(message => element('p', '', message)));
@@ -313,9 +319,12 @@ export function createFormView(document, root, handlers) {
         cellDrafts.delete(cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column));
       }
     },
-    clearDrafts() { drafts.clear(); cellDrafts.clear(); },
-    hasDrafts() { return drafts.size + cellDrafts.size > 0; },
+    beginOwnershipReconcile() { ownershipRead = true; },
+    endOwnershipReconcile() { ownershipRead = false; },
+    clearDrafts() { drafts.clear(); cellDrafts.clear(); recovery.clear(); },
+    hasDrafts() { return drafts.size + cellDrafts.size + recovery.size > 0; },
     changes(only) {
+      if (recovery.size) throw new FormError('draft_changed');
       const changes = [];
       for (const item of current?.items || []) {
         if (item.kind === 'table') {

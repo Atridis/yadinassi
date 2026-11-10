@@ -18,8 +18,15 @@ from .configuration_xml import (INERT_SOURCE_ISSUE, DEMO_KINDS_SOURCE_ISSUE, DEM
                                 DEMO_DIRECTORIES_SOURCE_ISSUE, DEMO_DIRECTORIES_PROFILE,
                                 DEMO_PRODUCTS_SOURCE_ISSUE, DEMO_PRODUCTS_PROFILE)
 from .configuration_catalog_profile import CATALOG_FORMS_PROFILE, CATALOG_FORMS_SOURCE_ISSUE
+from .configuration_application_profile import APPLICATION_PROFILE, APPLICATION_SOURCE_ISSUE
 from .catalog_backend import ConfigurationSourceIdentity, CatalogFormSource
+from .sqlite_registers import (REGISTER_DDL, schema_data as register_schema_data,
+    load_schemas as load_register_schemas, validate_configuration as validate_register_configuration, RegisterView, install_boundaries)
 from .sqlite_documents import DOCUMENT_DDL, schema_data as document_schema_data, load_schemas as load_document_schemas, DocumentView
+from . import sqlite_hierarchy as hierarchy_storage
+from .sqlite_hierarchy import HIERARCHY_DDL
+from . import sqlite_transaction_profile as transaction_profile
+from .sqlite_query_indexes import register_query_collations
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
@@ -58,10 +65,12 @@ def _source_profile_for_issues(issues):
     marker = issues[0]
     if type(marker) is not str:
         return None
-    prefix = CATALOG_FORMS_SOURCE_ISSUE + ':'
-    if marker.startswith(prefix):
-        digest = marker[len(prefix):]
-        return CATALOG_FORMS_PROFILE if len(digest) == 64 and all(c in '0123456789abcdef' for c in digest) else None
+    for profile, issue in ((CATALOG_FORMS_PROFILE, CATALOG_FORMS_SOURCE_ISSUE),
+                           (APPLICATION_PROFILE, APPLICATION_SOURCE_ISSUE)):
+        prefix = issue + ':'
+        if marker.startswith(prefix):
+            digest = marker[len(prefix):]
+            return profile if len(digest) == 64 and all(c in '0123456789abcdef' for c in digest) else None
     return next((profile for profile, issue in _DEMO_SOURCE_ISSUES.items() if marker == issue), None)
 
 
@@ -69,16 +78,31 @@ def _interruption(error):
     return not isinstance(error, Exception) or isinstance(error, MemoryError)
 
 
+def _close_document_scan(owner):
+    stream = getattr(owner, '_document_scan_stream', None)
+    owner._document_scan_stream = None
+    owner._document_scan_lookahead = None
+    if stream is not None:
+        owner._scan_cursor = None
+        stream.close()
+
+
 def _close_owned_connection(owner):
     if owner._connection is not None:
         # A failed close makes the owner unusable but does not prove that
         # SQLite released its locks. Retain ownership until close succeeds.
         owner._closed=True; owner._scan_cursor=None
+        if hasattr(owner, '_validated_sources'): owner._validated_sources.clear()
         rollback_error=None
+        try:
+            _close_document_scan(owner)
+        except BaseException as error:
+            rollback_error=error
         try:
             if owner._connection.in_transaction: owner._connection.execute('ROLLBACK')
         except BaseException as error:
-            rollback_error=error
+            if rollback_error is None or not _interruption(rollback_error):
+                rollback_error=error
         try:
             owner._connection.close()
         except BaseException as close_error:
@@ -195,10 +219,12 @@ def _schema_data(schema, *, enforce_serialized_limit=True):
         raise BackendError('invalid_input')
     if schema.numbering == 'decimal_v1' and not 1 <= schema.code_length <= 9:
         raise BackendError('invalid_input')
+    if type(schema.hierarchy) is not str or schema.hierarchy not in ('none','groups_v1'): raise BackendError('invalid_input')
     fields = _fields_data(schema.fields)
+    if schema.hierarchy != 'none' and any(f.name.casefold() in ('parent','isfolder','родитель','этогруппа') for f in schema.fields): raise BackendError('invalid_input')
     result = [str(schema.identity), schema.name, schema.code_length, schema.description_length, fields]
     if len(schema.tabular_sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
-    names = {'code', 'description', 'deletionmark', 'ref'} | {f.name.casefold() for f in schema.fields}
+    names = {'code', 'description', 'deletionmark', 'ref'} | ({'parent','isfolder','родитель','этогруппа'} if schema.hierarchy != 'none' else set()) | {f.name.casefold() for f in schema.fields}
     ids = {schema.identity} | {f.identity for f in schema.fields}
     sections = []
     for section in schema.tabular_sections:
@@ -210,16 +236,17 @@ def _schema_data(schema, *, enforce_serialized_limit=True):
         sections.append([identity, section.name, _fields_data(section.fields)])
     # Preserve the original five-element serialization for configurations without
     # sections, including existing stored definitions and migration fingerprints.
-    if sections or schema.numbering != 'explicit': result.append(sections)
-    if schema.numbering != 'explicit': result.append(['numbering_v1', schema.numbering])
+    if sections or schema.numbering != 'explicit' or schema.hierarchy != 'none': result.append(sections)
+    if schema.numbering != 'explicit' or schema.hierarchy != 'none': result.append(['numbering_v1', schema.numbering])
+    if schema.hierarchy != 'none': result.append(['hierarchy_v1',schema.hierarchy])
     if enforce_serialized_limit and len(_json(result)) > 65536: raise BackendError('invalid_input')
     return result
 
 
-def _schema(raw, *, allow_numbering=False):
+def _schema(raw, *, allow_numbering=False, allow_hierarchy=False):
     if type(raw) is not str or len(raw) > 65536: raise BackendError('integrity')
     data = json.loads(raw)
-    if type(data) is not list or len(data) not in (5, 6, 7): raise BackendError('integrity')
+    if type(data) is not list or len(data) not in (5, 6, 7, 8): raise BackendError('integrity')
     def identity(value):
         if type(value) is not str: raise BackendError('integrity')
         result = UUID(value)
@@ -231,15 +258,21 @@ def _schema(raw, *, allow_numbering=False):
         return tuple(FieldSchema(identity(f[0]), f[1], f[2], tuple(f[3]), identity(f[4]) if f[4] is not None else None) for f in items)
     sections = ()
     if len(data) >= 6:
-        if type(data[5]) is not list or not (0 if len(data) == 7 else 1) <= len(data[5]) <= _MAX_SECTIONS: raise BackendError('integrity')
+        if type(data[5]) is not list or not (0 if len(data) >= 7 else 1) <= len(data[5]) <= _MAX_SECTIONS: raise BackendError('integrity')
         if any(type(s) is not list or len(s) != 3 for s in data[5]): raise BackendError('integrity')
         sections = tuple(TabularSectionSchema(identity(s[0]), s[1], fields(s[2])) for s in data[5])
     numbering = 'explicit'
-    if len(data) == 7:
+    if len(data) >= 7:
         if not allow_numbering: raise BackendError('unsupported')
-        if data[6] != ['numbering_v1', 'decimal_v1']: raise BackendError('integrity')
-        numbering = 'decimal_v1'
-    result = CatalogSchema(identity(data[0]), data[1], data[2], data[3], fields(data[4]), sections, numbering)
+        allowed = ('explicit','decimal_v1') if len(data) == 8 else ('decimal_v1',)
+        if type(data[6]) is not list or len(data[6]) != 2 or data[6][0] != 'numbering_v1' or data[6][1] not in allowed: raise BackendError('integrity')
+        numbering = data[6][1]
+    hierarchy = 'none'
+    if len(data) == 8:
+        if not allow_hierarchy: raise BackendError('unsupported')
+        if data[7] != ['hierarchy_v1','groups_v1']: raise BackendError('integrity')
+        hierarchy = 'groups_v1'
+    result = CatalogSchema(identity(data[0]), data[1], data[2], data[3], fields(data[4]), sections, numbering, hierarchy)
     if _schema_data(result, enforce_serialized_limit=False) != data:
         raise BackendError('integrity')
     return result
@@ -249,13 +282,14 @@ def _all_fields(schema):
     return schema.fields + tuple(f for section in schema.tabular_sections for f in section.fields)
 
 
-def _intent(draft, revision, values, sections):
+def _intent(draft, revision, values, sections, *, hierarchy=False):
     result = [str(draft.key.catalog_id), str(draft.key.record_id), draft.code,
               draft.description, draft.deletion_mark, values, revision]
     # Legacy drafts MUST retain their exact historical receipt hash. Explicit
     # replacement is a distinct intent, including an explicitly empty tuple.
     if sections is not None: result.append(['tabular_sections_v1', sections])
     if draft.auto_number: result.append(['auto_number_v1', 'decimal_v1'])
+    if hierarchy: result.append(['hierarchy_v1',None if draft.parent is None else str(draft.parent.record_id),draft.is_folder])
     return result
 
 
@@ -367,63 +401,83 @@ class SQLiteCatalogBackend:
             connection.execute('BEGIN')  # Pin schema, registry and metadata to one snapshot.
             if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID:
                 raise BackendError('unsupported')
-            self.storage_version = connection.execute('PRAGMA user_version').fetchone()[0]
-            if self.storage_version not in (1, 2, 3, 4, 5, 6, 7): raise BackendError('unsupported')
+            self.format_version = connection.execute('PRAGMA user_version').fetchone()[0]
+            self.storage_version = (transaction_profile.base_version(connection) if self.format_version == 11 else self.format_version)
+            if self.storage_version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10): raise BackendError('unsupported')
             statements = list(_DDL)
             if self.storage_version >= 2:
                 statements = [x for x in statements if not x.startswith('CREATE TABLE catalog_record(')]
                 malformed = connection.execute("SELECT 1 FROM catalog_schema WHERE typeof(identity)!='text' OR typeof(name)!='text' OR typeof(definition)!='text' OR length(CAST(identity AS BLOB))>36 OR length(CAST(name AS BLOB))>512 OR length(CAST(definition AS BLOB))>262144 LIMIT 1").fetchone()
                 if malformed: raise BackendError('integrity')
                 count, total = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(identity AS BLOB))+length(CAST(name AS BLOB))+length(CAST(definition AS BLOB))),0) FROM catalog_schema").fetchone()
-                if not (0 if self.storage_version == 7 else 1) <= count <= 512 or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
+                if not (0 if self.storage_version in (7, 8, 9, 10) else 1) <= count <= 512 or total > _MAX_CONFIG_BYTES: raise BackendError('integrity')
                 rows = connection.execute('SELECT identity,name,definition FROM catalog_schema LIMIT 513').fetchall()
-                if not (0 if self.storage_version == 7 else 1) <= len(rows) <= 512: raise BackendError('integrity')
-                schemas = tuple(_schema(definition, allow_numbering=self.storage_version in (4, 6, 7)) for _,_,definition in rows)
+                if not (0 if self.storage_version in (7, 8, 9, 10) else 1) <= len(rows) <= 512: raise BackendError('integrity')
+                schemas = tuple(_schema(definition, allow_numbering=self.storage_version in (4, 6, 7, 8, 9, 10), allow_hierarchy=self.storage_version == 10) for _,_,definition in rows)
                 if any((identity,name) != (str(schema.identity),schema.name) for (identity,name,_),schema in zip(rows,schemas)):
                     raise BackendError('integrity')
                 if len({schema.identity for schema in schemas}) != len(schemas): raise BackendError('integrity')
                 section_count = sum(len(s.tabular_sections) for s in schemas)
                 if section_count > _MAX_DATABASE_SECTIONS or (self.storage_version in (2, 5) and section_count):
                     raise BackendError('unsupported')
-                if self.storage_version not in (4, 6, 7) and any(s.numbering != 'explicit' for s in schemas):
+                if self.storage_version not in (4, 6, 7, 8, 9, 10) and any(s.numbering != 'explicit' for s in schemas):
                     raise BackendError('unsupported')
                 ids = {schema.identity for schema in schemas}
                 if any(f.target_catalog_id not in ids for schema in schemas for f in _all_fields(schema) if f.kind == 'catalog_ref'): raise BackendError('integrity')
                 self._layout = load_layout(connection, schemas)
-                if self.storage_version in (4, 6, 7) and any(name.casefold() == 'catalog_sequence' for name in self._layout._tables.values()):
+                if self.storage_version in (4, 6, 7, 8, 9, 10) and any(name.casefold() == 'catalog_sequence' for name in self._layout._tables.values()):
                     raise BackendError('integrity')
                 self._schemas = schemas
                 self._schema_snapshot = tuple(rows)
                 statements.extend(REGISTRY_DDL)
                 statements.append(MIGRATION_MARKER_DDL)
                 statements.extend(catalog_ddl(schema, self._layout) for schema in schemas)
-                if self.storage_version in (3, 4, 6, 7):
+                if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
                     self._section_layout = load_section_layout(connection, schemas, self._layout)
             self._document_schemas = (); self._document_snapshot = ()
-            if self.storage_version == 7:
-                self._document_schemas, self._document_snapshot = load_document_schemas(connection, schemas)
+            if self.storage_version in (7, 8, 9, 10):
+                self._document_schemas, self._document_snapshot = load_document_schemas(connection, schemas, allow_empty=self.storage_version in (8, 9, 10))
                 if len(schemas) + len(self._document_schemas) > 512: raise BackendError('integrity')
+            self._register_schemas = (); self._register_snapshot = ()
+            if self.storage_version in (8, 9, 10):
+                self._register_schemas, self._register_snapshot = load_register_schemas(connection, schemas, self._document_schemas, allow_empty=self.storage_version == 10)
+                if self.storage_version != 10 and (self.storage_version == 9) != any(r.periodic for r in self._register_schemas): raise BackendError('integrity')
+            if self.storage_version == 10 and not any(s.hierarchy != 'none' for s in schemas): raise BackendError('integrity')
             expected = {statement.split('(')[0].split()[-1]: statement for statement in statements[:len(_DDL) - (1 if self.storage_version >= 2 else 0)]}
             if self.storage_version >= 2:
                 expected.update({statement.split('(')[0].split()[-1]: statement for statement in (*REGISTRY_DDL, MIGRATION_MARKER_DDL)})
                 expected.update({self._layout.table_name(schema.identity): catalog_ddl(schema, self._layout) for schema in schemas})
-                if self.storage_version in (3, 4, 6, 7):
+                if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
                     expected.update({statement.split('(')[0].split()[-1]: statement for statement in SECTION_REGISTRY_DDL})
                     expected.update({self._section_layout.table_name(schema.identity, section.identity):
                                      section_ddl(schema, section, self._layout, self._section_layout)
                                      for schema in schemas for section in schema.tabular_sections})
-            if self.storage_version in (4, 6, 7):
+            if self.storage_version in (4, 6, 7, 8, 9, 10):
                 expected['catalog_sequence'] = _SEQUENCE_DDL
-            if self.storage_version == 7:
+            if self.storage_version in (7, 8, 9, 10):
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in DOCUMENT_DDL})
+            if self.storage_version in (8, 9, 10):
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in REGISTER_DDL})
+            if self.storage_version == 10:
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in HIERARCHY_DDL})
+            if self.format_version == 11:
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in transaction_profile.PROFILE_DDL})
             # Bound all schema text before fetching it, including unexpected objects.
             if connection.execute("SELECT 1 FROM sqlite_master WHERE length(CAST(name AS BLOB))>1024 OR length(CAST(COALESCE(sql,'') AS BLOB))>262144 LIMIT 1").fetchone(): raise BackendError('unsupported')
             objects, schema_bytes = connection.execute("SELECT COUNT(*),COALESCE(SUM(length(CAST(name AS BLOB))+length(CAST(COALESCE(sql,'') AS BLOB))),0) FROM sqlite_master").fetchone()
             if objects > 4096 or schema_bytes > 64 * 1024 * 1024: raise BackendError('unsupported')
             actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
-            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone() or (self.storage_version >= 2 and connection.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND sql IS NOT NULL LIMIT 1").fetchone()):
+            if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
-            if self.storage_version in (4, 6, 7):
+            actual_indexes = tuple(row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"))
+            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version == 11 else ()
+            if self.storage_version >= 2 and actual_indexes != expected_indexes: raise BackendError('unsupported')
+            if self.format_version == 11: transaction_profile.validate_marker(connection)
+            if self.storage_version == 10:
+                if connection.execute('SELECT COUNT(*) FROM catalog_hierarchy').fetchone()[0] > _MAX_ROWS * len(schemas): raise BackendError('unsupported')
+                valid_ids = {str(s.identity) for s in schemas if s.hierarchy != 'none'}
+                if any(c not in valid_ids for c, in connection.execute('SELECT DISTINCT catalog_id FROM catalog_hierarchy')): raise BackendError('integrity')
+            if self.storage_version in (4, 6, 7, 8, 9, 10):
                 self._check_sequences(connection, schemas)
             row = connection.execute('SELECT database_uuid,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
             self.activated = row[2] == 1
@@ -480,6 +534,7 @@ class SQLiteCatalogBackend:
         try:
             connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
             if _owner is not None: _owner._connection=connection
+            register_query_collations(connection)
             if self.read_only: connection.execute('PRAGMA query_only=ON')
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA trusted_schema=OFF')
@@ -508,7 +563,7 @@ class SQLiteCatalogBackend:
         if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
             raise BackendError('invalid_input')
         if type(activate) is not bool: raise BackendError('invalid_input')
-        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE) or not activate): raise BackendError('unsupported')
+        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE) or not activate): raise BackendError('unsupported')
         if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
         if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
         if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
@@ -516,20 +571,43 @@ class SQLiteCatalogBackend:
             raise BackendError('invalid_input')
         if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
             raise BackendError('invalid_input')
+        if configuration.module_runtime is not None:
+            from .configuration_modules import MODULE_RUNTIME
+            from .configuration_xml import import_configuration
+            from .errors import BSLError
+            if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
+                raise BackendError('unsupported')
+            if _source_profile not in (None, APPLICATION_PROFILE): raise BackendError('unsupported')
+            try:
+                if _source_profile == APPLICATION_PROFILE:
+                    from .configuration_application_profile import import_application_configuration
+                    canonical = import_application_configuration({f.path:f.content for f in configuration.files})
+                else:
+                    canonical = import_configuration({f.path:f.content for f in configuration.files},
+                        numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
+            except (BSLError, ValueError, TypeError):
+                raise BackendError('unsupported') from None
+            if canonical != configuration: raise BackendError('unsupported')
+        elif configuration.common_modules:
+            raise BackendError('unsupported')
+        registers = configuration.information_registers
+        if type(registers) is not tuple: raise BackendError('invalid_input')
+        register_definitions = [register_schema_data(r) for r in registers]
         documents = configuration.documents
         if type(documents) is not tuple: raise BackendError('invalid_input')
         document_definitions = [document_schema_data(s) for s in documents]
-        if documents and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
+        if (documents or registers) and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
         schemas = tuple(configuration.catalogs)
-        if not 1 <= len(schemas) + len(documents) <= 512: raise BackendError('invalid_input')
+        if not 1 <= len(schemas) + len(documents) + len(registers) <= 512: raise BackendError('invalid_input')
         definitions = [_schema_data(s) for s in schemas]
         section_count = sum(len(s.tabular_sections) for s in schemas)
         if section_count > _MAX_DATABASE_SECTIONS or sum(len(_json(d)) for d in definitions) > _MAX_CONFIG_BYTES:
             raise BackendError('invalid_input')
-        storage_version = (7 if documents else 6 if _source_profile is not None else
+        storage_version = (10 if any(s.hierarchy != 'none' for s in schemas) else 9 if any(r.periodic for r in registers) else 8 if registers else 7 if documents else 6 if _source_profile is not None else
                            5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
                            4 if any(s.numbering != 'explicit' for s in schemas) else
                            3 if section_count else 2)
+        if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
         identities = {s.identity for s in schemas}
         if len(identities) != len(schemas): raise BackendError('invalid_input')
         if any(f.target_catalog_id not in identities for s in schemas for f in _all_fields(s) if f.kind == 'catalog_ref'):
@@ -546,6 +624,9 @@ class SQLiteCatalogBackend:
             if any(f.target_catalog_id not in identities for d in documents for f in _all_fields(d) if f.kind == 'catalog_ref'): raise BackendError('invalid_input')
             if section_count + sum(len(d.tabular_sections) for d in documents) > _MAX_DATABASE_SECTIONS: raise BackendError('invalid_input')
             if sum(len(_json(d)) for d in (*definitions,*document_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
+        if registers:
+            validate_register_configuration(registers, schemas, documents)
+            if sum(len(_json(d)) for d in (*definitions,*document_definitions,*register_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
         files = tuple(configuration.files)
         if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
             raise BackendError('invalid_input')
@@ -575,33 +656,42 @@ class SQLiteCatalogBackend:
         except OSError: raise BackendError('storage_error') from None
         try:
             connection = sqlite3.connect(absolute, isolation_level=None, detect_types=0)
+            register_query_collations(connection)
             connection.execute('PRAGMA foreign_keys=ON'); connection.execute('PRAGMA journal_mode=DELETE'); connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
             for statement in _DDL:
                 if not statement.startswith('CREATE TABLE catalog_record('): connection.execute(statement)
             for statement in (*REGISTRY_DDL, MIGRATION_MARKER_DDL): connection.execute(statement)
-            if storage_version in (3, 4, 6, 7):
+            if storage_version in (3, 4, 6, 7, 8, 9, 10):
                 for statement in SECTION_REGISTRY_DDL: connection.execute(statement)
-            if storage_version == 7:
+            if storage_version in (7, 8, 9, 10):
                 for statement in DOCUMENT_DDL: connection.execute(statement)
                 connection.executemany('INSERT INTO document_schema VALUES(?,?,?)', ((str(d.identity),d.name,_json(definition)) for d,definition in zip(documents,document_definitions)))
                 connection.executemany('INSERT INTO document_sequence VALUES(?,1)', ((str(d.identity),) for d in documents if d.numbering == 'decimal_v1'))
+            if storage_version in (8, 9, 10):
+                for statement in REGISTER_DDL: connection.execute(statement)
+                connection.executemany('INSERT INTO information_register_schema VALUES(?,?,?)', ((str(r.identity),r.name,_json(d)) for r,d in zip(registers,register_definitions)))
+                connection.executemany('INSERT INTO information_register_sequence VALUES(?,1)', ((str(r.identity),) for r in registers))
             connection.execute('INSERT INTO database_info VALUES(1,?,1,?,?,?,?)', (str(uuid4()), _uuid(configuration.config_uuid), configuration.name, int(activate), _json(configuration.activation_issues)))
             for definition in definitions:
                 connection.execute('INSERT INTO catalog_schema VALUES(?,?,?)', (definition[0], definition[1], _json(definition)))
-            if storage_version in (4, 6, 7):
+            if storage_version in (4, 6, 7, 8, 9, 10):
                 connection.execute(_SEQUENCE_DDL)
                 connection.executemany('INSERT INTO catalog_sequence VALUES(?,1)',
                     ((str(s.identity),) for s in schemas if s.numbering == 'decimal_v1'))
-            reserved_names = tuple(ddl.split('(')[0].split()[-1] for ddl in SECTION_REGISTRY_DDL) if storage_version in (3, 4, 6, 7) else ()
-            if storage_version in (4, 6, 7): reserved_names += ('catalog_sequence',)
-            if storage_version == 7: reserved_names += tuple(ddl.split('(')[0].split()[-1] for ddl in DOCUMENT_DDL)
+            if storage_version == 10:
+                for statement in HIERARCHY_DDL: connection.execute(statement)
+            reserved_names = tuple(ddl.split('(')[0].split()[-1] for ddl in SECTION_REGISTRY_DDL) if storage_version in (3, 4, 6, 7, 8, 9, 10) else ()
+            if storage_version in (4, 6, 7, 8, 9, 10): reserved_names += ('catalog_sequence',)
+            if storage_version in (7, 8, 9, 10): reserved_names += tuple(ddl.split('(')[0].split()[-1] for ddl in DOCUMENT_DDL)
+            if storage_version in (8, 9, 10): reserved_names += tuple(ddl.split('(')[0].split()[-1] for ddl in REGISTER_DDL)
+            if storage_version == 10: reserved_names += ('catalog_hierarchy',)
             layout = build_layout(schemas, reserved_names=reserved_names)
             save_layout(connection, layout)
             for schema in schemas:
                 connection.execute(catalog_ddl(schema, layout))
                 for statement in index_ddls(schema, layout): connection.execute(statement)
-            if storage_version in (3, 4, 6, 7):
+            if storage_version in (3, 4, 6, 7, 8, 9, 10):
                 sections_layout = build_section_layout(schemas, layout)
                 save_section_layout(connection, sections_layout)
                 for schema in schemas:
@@ -671,6 +761,14 @@ class SQLiteCatalogBackend:
         return cls.create(path, import_catalog_forms_configuration(files),
                           _source_profile=CATALOG_FORMS_PROFILE)
 
+    @classmethod
+    @_boundary
+    def create_application(cls, path, files):
+        """Explicit composed source grant; old/inert import paths remain closed."""
+        from .configuration_application_profile import import_application_configuration
+        return cls.create(path, import_application_configuration(files),
+                          _source_profile=APPLICATION_PROFILE)
+
     @_boundary
     def catalog_write_preparation(self, catalog_id, *, expected=None):
         """Exact product source capability, never arbitrary archive activation.
@@ -680,14 +778,14 @@ class SQLiteCatalogBackend:
         """
         _uuid(catalog_id)
         if self._closed: raise BackendError('closed')
-        if self.storage_version != 6 or self._demo_profile() not in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE):
+        if self.storage_version != 6 or self._demo_profile() not in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE):
             return None
         if self._active is not None: raise BackendError('busy')
         connection = self._connect()
         try:
             connection.execute('BEGIN')
             imported, catalogs, info, manifest = self._demo_source_snapshot(connection)
-            if self._demo_profile() == CATALOG_FORMS_PROFILE:
+            if self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE):
                 product = next((c for c in catalogs if c.identity == catalog_id), None)
                 if product is None: raise BackendError('not_found')
             else:
@@ -717,7 +815,7 @@ class SQLiteCatalogBackend:
         if self._closed: raise BackendError('closed')
         # This inventory authorizes only the historical imported-form adapter.
         # Generic object forms require the explicit configuration-form host.
-        if self.storage_version != 6 or self._demo_profile() == CATALOG_FORMS_PROFILE: return ()
+        if self.storage_version != 6 or self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE): return ()
         view = self.begin_read()
         try: return self._demo_form_catalog_ids
         finally: view.close()
@@ -752,7 +850,7 @@ class SQLiteCatalogBackend:
         if connection.execute("SELECT 1 FROM configuration_file WHERE typeof(path)!='text' OR length(CAST(path AS BLOB))>1024 OR typeof(kind)!='text' OR kind NOT IN ('xml','module') OR typeof(content)!='blob' OR length(content)>1048576 OR typeof(sha256)!='text' OR length(CAST(sha256 AS BLOB))!=64 LIMIT 1").fetchone():
             raise BackendError('integrity')
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
-        valid_count = (1 <= count <= _MAX_FILES if self._demo_profile() == CATALOG_FORMS_PROFILE else count == 19)
+        valid_count = (1 <= count <= _MAX_FILES if self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE) else count == 19)
         if not valid_count or total > _MAX_CONFIG_BYTES: raise BackendError('schema_changed')
         files = {}; entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
@@ -859,14 +957,16 @@ class SQLiteCatalogBackend:
     def capabilities(self):
         active = self.activated and self.storage_version != 5
         return Capabilities(active, active and not self.read_only, active and not self.read_only, active and not self.read_only,
-                            catalog_tabular_sections=active and (self.storage_version in (3, 4, 7)
-                                or (self.storage_version == 6 and self._demo_profile() in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE))),
-                            catalog_write_outcomes=active and self.storage_version in (4, 6, 7),
+                            catalog_tabular_sections=active and (self.storage_version in (3, 4, 7, 8, 9, 10)
+                                or (self.storage_version == 6 and self._demo_profile() in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE))),
+                            catalog_write_outcomes=active and self.storage_version in (4, 6, 7, 8, 9, 10),
                             catalog_batch_receipts=active,
-                            document_read=active and self.storage_version == 7,
-                            document_create=active and self.storage_version == 7 and not self.read_only,
-                            document_update=active and self.storage_version == 7 and not self.read_only,
-                            document_tabular_sections=active and self.storage_version == 7)
+                            document_read=active and self.storage_version in (7, 8, 9, 10),
+                            document_create=active and self.storage_version in (7, 8, 9, 10) and not self.read_only,
+                            document_update=active and self.storage_version in (7, 8, 9, 10) and not self.read_only,
+                            document_tabular_sections=active and self.storage_version in (7, 8, 9, 10),
+                            register_read=active and self.storage_version in (8, 9, 10),
+                            register_write=active and self.storage_version in (8, 9, 10) and not self.read_only)
 
     @_boundary
     def begin_read(self): return self._begin(None)
@@ -877,13 +977,34 @@ class SQLiteCatalogBackend:
         return self._begin(operation_id)
 
     @_boundary
+    def begin_unit_of_work(self, operation_id):
+        from .sqlite_transactions import UnitOfWork
+        if self.format_version != 11: raise BackendError('unsupported')
+        view = self.begin_write(operation_id)
+        try: return UnitOfWork(view)
+        except BaseException:
+            view.close(); raise
+
+    @_boundary
+    def resolve_unit_of_work(self, operation_id, requests):
+        from .sqlite_transactions import resolve
+        if self.format_version != 11: raise BackendError('unsupported')
+        return resolve(self, operation_id, requests)
+
+    @_boundary
+    def begin_query_read(self):
+        # Catalog-first packages must pin the same transaction later used by
+        # their document/register sources. Older layouts expose empty sets.
+        return self._document_view(None)
+
+    @_boundary
     def begin_document_read(self):
-        if self.storage_version != 7: raise BackendError('unsupported')
+        if self.storage_version not in (7, 8, 9, 10): raise BackendError('unsupported')
         return self._document_view(None)
 
     @_boundary
     def begin_document_write(self, operation_id):
-        if self.read_only or self.storage_version != 7: raise BackendError('unsupported')
+        if self.read_only or self.storage_version not in (7, 8, 9, 10): raise BackendError('unsupported')
         _uuid(operation_id)
         return self._document_view(operation_id)
 
@@ -898,9 +1019,41 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_document_write(self, operation_id, draft, expected_revision=None):
-        if self.storage_version != 7: raise BackendError('unsupported')
+        if self.storage_version not in (7, 8, 9, 10): raise BackendError('unsupported')
         view = self.begin_document_read()
         try: return view.resolve(operation_id, draft, expected_revision)
+        finally: view.close()
+
+    @_boundary
+    def begin_register_read(self):
+        if self.storage_version not in (8, 9, 10): raise BackendError('unsupported')
+        return self._register_view(None)
+
+    @_boundary
+    def begin_register_write(self, operation_id):
+        if self.read_only or self.storage_version not in (8, 9, 10): raise BackendError('unsupported')
+        _uuid(operation_id)
+        return self._register_view(operation_id)
+
+    def _register_view(self, operation_id):
+        view = self._begin(operation_id)
+        try: return RegisterView(view)
+        except BaseException as error:
+            try: view.close()
+            except BaseException as cleanup:
+                if _interruption(cleanup) and not _interruption(error): raise
+            raise
+
+    @_boundary
+    def resolve_register_write(self, operation_id, draft, expected=None, deleted=False):
+        view = self.begin_register_read()
+        try: return view.resolve(operation_id,draft,expected,deleted)
+        finally: view.close()
+
+    @_boundary
+    def resolve_register_set(self, operation_id, draft):
+        view = self.begin_register_read()
+        try: return view.resolve_set(operation_id, draft)
         finally: view.close()
 
     def _begin(self, operation_id, *, _receipt_only=False):
@@ -914,24 +1067,28 @@ class SQLiteCatalogBackend:
             connection = self._connect(_owner=pending)
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
-                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.storage_version or
+                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
                     connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
                     raise BackendError('schema_changed')
+                if self.format_version == 11 and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
                 if self.storage_version >= 2:
                     if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
                     for identity, name, definition in self._schema_snapshot:
                         if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
                     layout = load_layout(connection, self._schemas)
                     if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
-                    if self.storage_version in (3, 4, 6, 7):
+                    if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
                         section_layout = load_section_layout(connection, self._schemas, layout)
                         if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
                             raise BackendError('schema_changed')
-                if self.storage_version in (4, 6, 7):
+                if self.storage_version in (4, 6, 7, 8, 9, 10):
                     self._check_sequences(connection, self._schemas)
-                if self.storage_version == 7:
-                    documents, rows = load_document_schemas(connection, self._schemas)
+                if self.storage_version in (7, 8, 9, 10):
+                    documents, rows = load_document_schemas(connection, self._schemas, allow_empty=self.storage_version in (8, 9, 10))
                     if rows != self._document_snapshot or documents != self._document_schemas: raise BackendError('schema_changed')
+                if self.storage_version in (8, 9, 10):
+                    registers, rows = load_register_schemas(connection, self._schemas, self._document_schemas, allow_empty=self.storage_version == 10)
+                    if rows != self._register_snapshot or registers != self._register_schemas: raise BackendError('schema_changed')
                 if self.storage_version == 6:
                     if _receipt_only: self._demo_receipt_identity(connection)
                     else: self._demo_source_snapshot(connection)
@@ -963,7 +1120,7 @@ class SQLiteCatalogBackend:
         """Current metadata names alongside durable UUID-keyed SQLite names."""
         view = self.begin_read()
         try:
-            if self.storage_version not in (3, 4, 6, 7):
+            if self.storage_version not in (3, 4, 6, 7, 8, 9, 10):
                 view.catalogs()  # Reject section metadata in legacy storage.
                 return ()
             layout = self._section_layout
@@ -1001,7 +1158,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_write_outcome(self, operation_id, draft, expected_revision=None):
-        if self.storage_version not in (4, 6, 7): raise BackendError('unsupported')
+        if self.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
         return self._resolve_write_result(operation_id, draft, expected_revision)
 
     def _resolve_write_result(self, operation_id, draft, expected_revision):
@@ -1018,7 +1175,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def resolve_write_outcomes(self, operation_id, requests):
-        if self.storage_version not in (4, 6, 7): raise BackendError('unsupported')
+        if self.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
         return self._resolve_write_results(operation_id, requests)
 
     def _resolve_write_results(self, operation_id, requests):
@@ -1054,9 +1211,9 @@ class SQLiteCatalogBackend:
                             schema = view.catalog_schema(draft.key.catalog_id)
                             invalid_outcome |= (len(result.code) != schema.code_length or not result.code.isascii()
                                 or not result.code.isdecimal() or int(result.code) == 0)
-                    yield _intent(draft, revision, values, sections)
+                    yield _intent(draft, revision, values, sections, hierarchy=view.catalog_schema(draft.key.catalog_id).hierarchy != 'none')
 
-            digest = _receipt_digest(intents(), receipt[1] if self.storage_version in (4, 6, 7) else None)
+            digest = _receipt_digest(intents(), receipt[1] if self.storage_version in (4, 6, 7, 8, 9, 10) else None)
             if digest != receipt[0]: raise BackendError('conflict')
             if invalid_outcome: raise BackendError('integrity')
             return receipt[1]
@@ -1087,7 +1244,7 @@ class SQLiteCatalogBackend:
             if type(entries) is not list or len(entries) > _MAX_ROWS: raise BackendError('integrity')
             results = []
             for entry in entries:
-                if type(entry) is not list or len(entry) != (4 if self.storage_version in (4, 6, 7) else 3) or any(type(v) is not str for v in entry):
+                if type(entry) is not list or len(entry) != (4 if self.storage_version in (4, 6, 7, 8, 9, 10) else 3) or any(type(v) is not str for v in entry):
                     raise BackendError('integrity')
                 c, r, token = entry[:3]
                 if len(c) != 36 or len(r) != 36: raise BackendError('integrity')
@@ -1097,7 +1254,7 @@ class SQLiteCatalogBackend:
                 if (not 1 <= len(token) <= 19 or not token.isascii() or not token.isdecimal()
                         or token.startswith('0') or not 1 <= int(token) < 2**63): raise BackendError('integrity')
                 revision = Revision(self.database_id,self.configuration_generation,catalog,record,token)
-                if self.storage_version in (4, 6, 7):
+                if self.storage_version in (4, 6, 7, 8, 9, 10):
                     schema = next((s for s in self._schemas if s.identity == catalog), None)
                     if schema is None: raise BackendError('integrity')
                     try: validate_string(entry[3], schema.code_length)
@@ -1119,14 +1276,19 @@ class _View:
         self._backend, self._connection, self._operation_id = backend, connection, operation_id
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
+        self._validated_sources = {}
+        self._document_scan_stream = None
+        self._document_scan_lookahead = None
         self._outcomes = []
         self._section_write_bytes = 0
         self._section_write_rows = 0
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
+        if operation_id is not None and backend.format_version == 11 and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
         if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
             raise BackendError('conflict')
-        if operation_id is not None and backend.storage_version == 7 and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
+        if operation_id is not None and backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
+        if operation_id is not None and backend.storage_version in (8, 9, 10) and connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
         if self.database_id != backend.database_id or self.configuration_generation != backend.configuration_generation:
             raise BackendError('schema_changed')
 
@@ -1140,8 +1302,8 @@ class _View:
         self._require()
         rows = self._connection.execute('SELECT definition FROM catalog_schema ORDER BY name,identity').fetchall()
         if len(rows) > 512: raise BackendError('integrity')
-        schemas = tuple(_schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7)) for row in rows)
-        if self._backend.storage_version not in (3, 4, 6, 7) and any(s.tabular_sections for s in schemas):
+        schemas = tuple(_schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7, 8, 9, 10), allow_hierarchy=self._backend.storage_version == 10) for row in rows)
+        if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and any(s.tabular_sections for s in schemas):
             raise BackendError('unsupported')
         return schemas
 
@@ -1167,8 +1329,8 @@ class _View:
         self._require(); _uuid(catalog_id)
         row = self._connection.execute('SELECT definition FROM catalog_schema WHERE identity=?', (str(catalog_id),)).fetchone()
         if row is None: raise BackendError('not_found')
-        schema = _schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7))
-        if self._backend.storage_version not in (3, 4, 6, 7) and schema.tabular_sections: raise BackendError('unsupported')
+        schema = _schema(row[0], allow_numbering=self._backend.storage_version in (4, 6, 7, 8, 9, 10), allow_hierarchy=self._backend.storage_version == 10)
+        if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and schema.tabular_sections: raise BackendError('unsupported')
         return schema
 
     def _scalar(self, catalog_id, row, *, schema):
@@ -1187,15 +1349,16 @@ class _View:
         key = CatalogKey(self.database_id, catalog_id, UUID(row[0]))
         _uuid(key.record_id)
         revision = Revision(self.database_id,self.configuration_generation,catalog_id,key.record_id,str(row[1]))
+        parent, is_folder = hierarchy_storage.values(self,schema,key.record_id)
         return CatalogScalarRow(key,revision,row[2],row[3],bool(row[4]),
-                                tuple(_decode(v,f,self.database_id) for v,f in zip(encoded,schema.fields)))
+                                tuple(_decode(v,f,self.database_id) for v,f in zip(encoded,schema.fields)), parent, is_folder)
 
     def _card(self, catalog_id, row, section_budget=None, *, schema, sections=_UNLOADED):
         scalar = self._scalar(catalog_id, row, schema=schema)
         if sections is _UNLOADED:
             sections = self._read_sections(schema, scalar.key.record_id, section_budget)
         return CatalogCard(scalar.key, scalar.revision, scalar.code, scalar.description,
-                           scalar.deletion_mark, scalar.values, sections)
+                           scalar.deletion_mark, scalar.values, sections, scalar.parent, scalar.is_folder)
 
     def _section_source(self, schema, section):
         layout = self._backend._section_layout
@@ -1205,7 +1368,7 @@ class _View:
 
     def _read_sections(self, schema, record_id, budget=None):
         if not schema.tabular_sections: return ()
-        if self._backend.storage_version not in (3, 4, 6, 7): raise BackendError('unsupported')
+        if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
         if budget is None: budget = [0, 0]
         prepared = []; owner_count = owner_bytes = 0
         # Aggregate before materializing rows; a large selection must not turn
@@ -1302,8 +1465,9 @@ class _View:
             kinds = ({'ref': 'catalog_ref'} if owner_catalog_id is not None else
                      {'ref': 'catalog_ref', 'code': 'string',
                       'description': 'string', 'deletion_mark': 'boolean'})
+            if owner_catalog_id is None and schema.hierarchy != 'none': kinds.update(parent='catalog_ref',is_folder='boolean')
             if field not in kinds: raise BackendError('invalid_input')
-            return kinds[field], (owner_catalog_id or schema.identity) if field == 'ref' else None
+            return kinds[field], (owner_catalog_id or schema.identity) if field in ('ref','parent') else None
         if type(field) is UUID:
             for item in schema.fields:
                 if item.identity == field: return item.kind, item.target_catalog_id
@@ -1349,6 +1513,7 @@ class _View:
             if type(field) is str: return card.owner
             return card.row.values[next(i for i, item in enumerate(schema.fields) if item.identity == field)]
         if type(field) is str:
+            if field == 'parent': return card.parent or CatalogKey(card.key.database_id,card.key.catalog_id,UUID(int=0))
             return card.key if field == 'ref' else getattr(card, field)
         return card.values[next(i for i, item in enumerate(schema.fields) if item.identity == field)]
 
@@ -1369,6 +1534,10 @@ class _View:
         return left >= right
 
     def _validate_scan_scalars(self, catalog_id, schema, *, retain_owners=False):
+        self._require()
+        cache_key = ('catalog-scalars', catalog_id, schema, retain_owners)
+        if self._operation_id is None and cache_key in self._validated_sources:
+            return set(self._validated_sources[cache_key])
         # Filtering must not hide corrupted owner values. This pass retains no
         # payload or card; coarse bounds run before the first payload fetch.
         if self._backend.storage_version >= 2:
@@ -1398,21 +1567,16 @@ class _View:
             if retain_owners: owners.add(str(scalar.key.record_id))
             seen += 1
         if seen != count: raise BackendError('integrity')
+        if self._operation_id is None:
+            self._validated_sources[cache_key] = frozenset(owners)
         return owners
 
     def _scan_sql(self, schema, request):
         # Legacy index iteration can determine stable order for UUID aliases;
         # retain that complete historical path instead of mixing SQL sort rules.
-        if self._backend.storage_version == 1: return None
+        if self._backend.storage_version == 1 or schema.hierarchy != 'none': return None
         # Python-defined comparisons preserve the existing versioned semantics;
         # SQLite never coerces Decimal to float or substitutes ASCII NOCASE.
-        def compare(a, b): return (a > b) - (a < b)
-        self._connection.create_collation('yadinassi_casefold_v1',
-            lambda a, b: compare(a.casefold(), b.casefold()))
-        self._connection.create_collation('yadinassi_decimal_v1',
-            lambda a, b: compare(decimal.Decimal(a), decimal.Decimal(b)))
-        self._connection.create_collation('yadinassi_uuid_v1',
-            lambda a, b: compare(UUID(a).int, UUID(b).int))
 
         def field_sql(field):
             kind, _ = self._scan_field(schema, field)
@@ -1461,7 +1625,8 @@ class _View:
         # Preserve stable source order even for parseable noncanonical UUID
         # aliases, which the historical reader accepts as the same UUID value.
         order.append('rowid ASC')
-        return predicate[0], predicate[1], ','.join(order)
+        return predicate[0], predicate[1], ','.join(order), tuple(
+            (term.rsplit(' ', 1)[0], term.endswith(' DESC')) for term in order)
 
     def _section_scan(self, schema, owners, *, materialize=False, selected=None, verified=False):
         """Validate in bounded batches, then stream or load only a result page.
@@ -1572,6 +1737,7 @@ class _View:
 
     def _scan_catalog(self, catalog_id, request, fields):
         self._require()
+        _close_document_scan(self)
         if self._operation_id is not None: raise BackendError('unsupported')
         schema = self.catalog_schema(catalog_id)
         if type(request) is not CatalogScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000 or type(request.order) is not tuple or len(request.order) > 16: raise BackendError('invalid_input')
@@ -1628,8 +1794,24 @@ class _View:
         if plan is None:
             rows = [item[0] for item in fallback[offset:offset+request.page_size+1]]
         else:
-            rows = self._connection.execute('SELECT %s FROM %s WHERE (%s) AND (%s) ORDER BY %s LIMIT ? OFFSET ?' %
-                (projection_columns or columns,table,source_where,plan[0],plan[2]),source_args+plan[1]+(request.page_size+1,offset)).fetchall()
+            # The continuation stores the last physical sort key, not an offset.
+            # Include rowid after logical UUID to preserve accepted UUID aliases.
+            key_columns = tuple(column for column, descending in plan[3])
+            seek, seek_args = '1', ()
+            if type(offset) is tuple:
+                clauses, arguments = [], []
+                for i, (column, descending) in enumerate(plan[3]):
+                    clauses.append('(' + ' AND '.join(
+                        [key_columns[j] + ' = ?' for j in range(i)] +
+                        [column + (' < ?' if descending else ' > ?')]) + ')')
+                    arguments.extend(offset[:i + 1])
+                seek, seek_args = '(' + ' OR '.join(clauses) + ')', tuple(arguments)
+            rows = self._connection.execute(
+                'SELECT %s,%s FROM %s WHERE (%s) AND (%s) AND (%s) ORDER BY %s LIMIT ?' %
+                (projection_columns or columns, ','.join(key_columns), table, source_where, plan[0], seek, plan[2]),
+                source_args + plan[1] + seek_args + (request.page_size + 1,)).fetchall()
+            next_key = tuple(rows[min(len(rows), request.page_size) - 1][-len(key_columns):]) if rows else None
+            rows = [row[:-len(key_columns)] for row in rows]
         more = len(rows) > request.page_size
         rows = rows[:request.page_size]
         if fields is None:
@@ -1645,7 +1827,7 @@ class _View:
                     items.append(CatalogValueRow(scalar.key,tuple(self._scan_value(schema,scalar,field) for field in fields)))
             items = tuple(items)
         token = uuid4().hex if more else None
-        self._scan_cursor = None if token is None else (token,binding,offset+len(rows),fallback)
+        self._scan_cursor = None if token is None else (token,binding,(offset+len(rows) if plan is None else next_key),fallback)
         return CatalogPage(items,token) if fields is None else CatalogValuePage(items,token)
 
     def _preflight_section_scan(self, schema, section):
@@ -1735,7 +1917,8 @@ class _View:
     def scan_catalog_section(self, catalog_id, section_id, request):
         """Read-only typed section scan in the same pinned read-view contract."""
         self._require()
-        if self._operation_id is not None or self._backend.storage_version not in (3, 4, 6, 7):
+        _close_document_scan(self)
+        if self._operation_id is not None or self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10):
             raise BackendError('unsupported')
         schema = self.catalog_schema(catalog_id)
         _uuid(section_id)
@@ -1808,7 +1991,8 @@ class _View:
         if type(draft) is not CatalogDraft or type(draft.auto_number) is not bool or type(draft.code) is not str: raise BackendError('invalid_input')
         self._key(draft.key); _uuid(draft.key.record_id)
         schema = self.catalog_schema(draft.key.catalog_id)
-        if draft.auto_number and (schema.numbering != 'decimal_v1' or draft.code != '' or self._backend.storage_version not in (4, 6, 7)):
+        hierarchy_storage.check_draft(self,schema,draft)
+        if draft.auto_number and (schema.numbering != 'decimal_v1' or draft.code != '' or self._backend.storage_version not in (4, 6, 7, 8, 9, 10)):
             raise BackendError('invalid_input')
         if schema.numbering == 'decimal_v1' and not draft.auto_number and draft.code == '':
             raise BackendError('invalid_input')
@@ -1837,7 +2021,7 @@ class _View:
         if sections is None: return None
         if type(sections) is not tuple or len(sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
         schema = self.catalog_schema(draft.key.catalog_id)
-        if self._backend.storage_version not in (3, 4, 6, 7) and sections: raise BackendError('unsupported')
+        if self._backend.storage_version not in (3, 4, 6, 7, 8, 9, 10) and sections: raise BackendError('unsupported')
         by_id = {s.identity: s for s in schema.tabular_sections}
         supplied = {}; count = 0; size = 0; stored_size = 0
         for section in sections:
@@ -1900,6 +2084,7 @@ class _View:
         except BaseException:
             # An interrupted/failed restoration can never leave commit enabled.
             self._poisoned = True
+            hierarchy_storage.clear(self)
             self._changes, self._intents, self._section_write_bytes, self._section_write_rows, self._outcomes = before
             try:
                 self._connection.execute('ROLLBACK TO catalog_record_write')
@@ -1943,6 +2128,7 @@ class _View:
         if self._connection.execute('SELECT COUNT(*) FROM %s WHERE %s' % (table,where),args).fetchone()[0] >= _MAX_ROWS:
             raise BackendError('unsupported')
         with self._atomic_record():
+            hierarchy_storage.prepare(self,schema,draft,creating=True)
             intent_draft = draft
             if draft.auto_number:
                 draft = replace(draft, code=self._allocate_code(schema, table))
@@ -1954,6 +2140,7 @@ class _View:
                     self._connection.execute('INSERT INTO %s (%s) VALUES(%s)' % (table,columns,','.join('?' for _ in vals)),vals)
             except sqlite3.IntegrityError:
                 raise BackendError('duplicate_identity' if self._reference_exists(draft.key) else 'duplicate_code') from None
+            hierarchy_storage.store(self,schema,draft,creating=True)
             self._replace_sections(draft, schema, sections)
             self._record_change(draft,1,values,sections,intent_draft=intent_draft)
 
@@ -1969,6 +2156,7 @@ class _View:
         with self._atomic_record():
             try:
                 schema = self.catalog_schema(draft.key.catalog_id)
+                hierarchy_storage.prepare(self,schema,draft,creating=False)
                 table, columns, where, args = self._source(schema)
                 if self._backend.storage_version == 1:
                     cursor = self._connection.execute('UPDATE catalog_record SET revision=revision+1,code=?,description=?,deletion_mark=?,values_json=? WHERE catalog_id=? AND record_id=? AND revision=?',(draft.code,draft.description,int(draft.deletion_mark),values,str(draft.key.catalog_id),str(draft.key.record_id),revision))
@@ -1978,6 +2166,7 @@ class _View:
                     cursor = self._connection.execute('UPDATE %s SET %s WHERE %s AND record_id=? AND revision=?' % (table,','.join(sets),where), vals)
             except sqlite3.IntegrityError: raise BackendError('duplicate_code') from None
             if cursor.rowcount != 1: raise BackendError('conflict')
+            hierarchy_storage.store(self,schema,draft,creating=False)
             self._replace_sections(draft, schema, sections)
             self._record_change(draft,revision+1,values,sections)
 
@@ -1986,7 +2175,7 @@ class _View:
         # A later RELEASE failure can restore the old references without slicing
         # or copying a possibly half-appended journal under memory pressure.
         changes = [*self._changes, Revision(self.database_id,self.configuration_generation,draft.key.catalog_id,draft.key.record_id,str(revision))]
-        intents = [*self._intents, _intent(intent_draft or draft,revision,values,sections)]
+        intents = [*self._intents, _intent(intent_draft or draft,revision,values,sections,hierarchy=self.catalog_schema(draft.key.catalog_id).hierarchy != 'none')]
         outcomes = [*self._outcomes, CatalogWriteOutcome(changes[-1],draft.code)]
         size, rows = self._section_write_bytes, self._section_write_rows
         if sections is not None:
@@ -1997,7 +2186,7 @@ class _View:
 
     @_boundary
     def commit_outcomes(self):
-        if self._backend.storage_version not in (4, 6, 7): raise BackendError('unsupported')
+        if self._backend.storage_version not in (4, 6, 7, 8, 9, 10): raise BackendError('unsupported')
         outcomes = tuple(self._outcomes)
         self.commit()
         return outcomes
@@ -2006,9 +2195,9 @@ class _View:
     def commit(self):
         self._require(True)
         revisions = tuple(self._changes)
-        digest = _receipt_digest(self._intents, self._outcomes if self._backend.storage_version in (4, 6, 7) else None)
+        digest = _receipt_digest(self._intents, self._outcomes if self._backend.storage_version in (4, 6, 7, 8, 9, 10) else None)
         entries = [[str(r.catalog_id),str(r.record_id),r.token] for r in revisions]
-        if self._backend.storage_version in (4, 6, 7):
+        if self._backend.storage_version in (4, 6, 7, 8, 9, 10):
             entries = [entry + [outcome.code] for entry,outcome in zip(entries,self._outcomes)]
         encoded = _json(entries)
         if len(encoded) > _MAX_ROW_BYTES: raise BackendError('unsupported')
@@ -2030,5 +2219,7 @@ class _View:
         _close_owned_connection(self)
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('documents','document_schema','read_document','select_documents','find_document_number','create','update','commit','resolve'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
+
+install_boundaries(_boundary)

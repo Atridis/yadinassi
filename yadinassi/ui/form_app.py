@@ -104,9 +104,11 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
-    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None):
+    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None,
+                 interpreter_factory=None):
         self.session = ReplicatedFormSession(package.source, exchange,
-            handlers=package.handlers, bindings=package.bindings, parameters=parameters)
+            handlers=package.handlers, bindings=package.bindings, parameters=parameters,
+            interpreter_factory=interpreter_factory)
         if bind_interpreter is not None:
             bind_interpreter(self.session.interpreter)
         self._gate = Lock()
@@ -246,6 +248,7 @@ def main(argv=None):
     parser.add_argument('package', metavar='PACKAGE_DIRECTORY')
     parser.add_argument('--f', metavar='SQLITE_FILE', help='Existing SQLite database, opened only by the server process')
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--browser-session', action='store_true')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.runtime:
@@ -255,7 +258,7 @@ def main(argv=None):
         package = load_client(args.package)
         process = FormProcess(args.package, args.f)
         controller = FormController(package, process.exchange)
-        server = LocalUIServer(controller, handler=FormHandler)
+        server = LocalUIServer(controller, handler=FormHandler, browser_session=args.browser_session)
         print('Yadinassi replicated form — local client and separate server process.')
         print('Open this per-launch URL (do not share it):')
         print(server.launch_url, flush=True)

@@ -1,0 +1,62 @@
+{
+  "schema": "localized-date-native-evidence-v1",
+  "run_id": 42792967665,
+  "run_attempt": 1,
+  "head": "c71c3c9b9ec2b80aaba8bd5110ce3062064ca6d1",
+  "base": "5d559f79f2be1f0ce06a3d27a71af3478aba9364",
+  "commit": "3ceb0516377c11ab641d42996b5a2a8e3fd6d6e9",
+  "tree": "0078d689ee5f937bf686eba55d00a0388eb61631",
+  "runtime": "8.3.27.1508",
+  "target": "linux-8.3.27.1508",
+  "locale": "ru",
+  "source_file_count": 155,
+  "source_sha256": "767a2ccb20c138065626050bdbceb57eb8e8309cf11618296133fe14ebe51cf8",
+  "records": [
+    {
+      "profile": "format-date-names-v1",
+      "capture": "names52-native.out",
+      "case_count": 52,
+      "calibration_count": 2,
+      "source_sha256": "8e8de30a26b0b146232ca3e66adcc9ea333b6d94af66d5844df84e9c7d79db60",
+      "capture_sha256": "b6e3b20750b76369c301b9f4678c83b3da6b585786cb9391f76edaae17436cd1",
+      "capture_size": 2246,
+      "native_measurement_accepted": true,
+      "runtime_parity_accepted_at_acquisition": false,
+      "nonce": "9f9b52610ba9450f8a0bc2684a3e30b8",
+      "client_server_identical": true,
+      "private_payloads_removed": true,
+      "container_cleanup_verified": true,
+      "summary_artifact": {
+        "id": 13752677503,
+        "sha256": "f3c3c983f8f4e18153586df66be090a7dced7b833a3f9847e41049383bef8c80"
+      },
+      "outputs_artifact": {
+        "id": 13753471506,
+        "sha256": "d9629c9ec791b0b6d0db2b72e76851ced5998a8343d250167dcf7ed53c870f0b"
+      }
+    },
+    {
+      "profile": "format-date-tokens-v1",
+      "capture": "tokens56-native.out",
+      "case_count": 56,
+      "calibration_count": 2,
+      "source_sha256": "f9483d0a8b7f63907320d0599b9cf5022247f3fef06e0efd41c59234a0ec163e",
+      "capture_sha256": "29d45f0720f9ad74cc6383e6be53f25c9d747a82e746d0589d9f9f4e03588d26",
+      "capture_size": 3613,
+      "native_measurement_accepted": true,
+      "runtime_parity_accepted_at_acquisition": false,
+      "nonce": "f8c5393bcd3a4c6fa3ef0b89cd8036fe",
+      "client_server_identical": true,
+      "private_payloads_removed": true,
+      "container_cleanup_verified": true,
+      "summary_artifact": {
+        "id": 13752352035,
+        "sha256": "9a440878780112e8cae23262c7fc65cb7585cb56adbd462562fab2ad1d1707e6"
+      },
+      "outputs_artifact": {
+        "id": 13751942285,
+        "sha256": "c66fb78178f7b6b7ec18ec43c87f0629057555ea56c78cd93a31e4cb0cc8d855"
+      }
+    }
+  ]
+}

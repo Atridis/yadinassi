@@ -54,6 +54,7 @@ class UserMessageContext:
         self._output = output
         self._sink = sink
         self._paths = WeakKeyDictionary()
+        self._before_publish = None  # Optional application-owned lifecycle guard.
 
     def set_sink(self, sink):
         """Host-only delivery selection; None restores ordinary text output."""
@@ -82,6 +83,8 @@ class UserMessageContext:
         return _key(value.get_member('Ref')), self._paths.get(value, '')
 
     def publish(self, record):
+        if self._before_publish is not None:
+            self._before_publish()
         if self._sink is None:
             self._output(record.text)
         else:

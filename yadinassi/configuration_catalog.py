@@ -36,7 +36,7 @@ class CatalogObjectSession:
     occurs only after it accepts the refreshed record and authoritative list.
     """
     def __init__(self, context, schema, source_files, reference=None):
-        if (type(schema) is not CatalogSchema or schema.tabular_sections
+        if (type(schema) is not CatalogSchema or schema.hierarchy != 'none' or schema.tabular_sections
                 or any(f.kind not in ('string', 'number', 'boolean', 'datetime')
                        or f.target_catalog_id is not None for f in schema.fields)):
             raise ValueError('scalar catalog object form required')

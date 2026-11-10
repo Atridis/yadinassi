@@ -91,7 +91,7 @@ class _FormInterpreter(Interpreter):
     def _activation_interpreter(self):
         return _FormInterpreter(self._form_session, self.output, encoding=self.encoding,
                                 native_target=self.native_target, database_context=self.database_context,
-                                compilation_profile=self.compilation_profile)
+                                compilation_profile=self.compilation_profile, family_owner=self._family_owner)
 
     def _visit(self, node):
         session = self._form_session
@@ -178,7 +178,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None):
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
         if type(tables) is not tuple or len(tables) > MAX_TABLES or any(type(t) is not FormTableSchema for t in tables):
@@ -214,7 +214,10 @@ class FormSession:
         self._busy = False; self._steps = 0; self._events = 0
         self._gate = Lock(); self._allocated = 0
         self.form = BSLClientApplicationForm(self)
-        self.interpreter = _FormInterpreter(self, self._record_message, database_context=database_context)
+        factory = _FormInterpreter if interpreter_factory is None else interpreter_factory
+        self.interpreter = factory(self, self._record_message, database_context=database_context)
+        if not isinstance(self.interpreter, _FormInterpreter) or self.interpreter._form_session is not self:
+            raise TypeError("form interpreter factory returned an invalid interpreter")
         from .form_program import admitted_program
         program = admitted_program(source, compilation_profile=self.interpreter.compilation_profile)
         if len(program)>MAX_HANDLERS*2 or any(not isinstance(node,(ast.Routine,ast.Var)) for node in program):
@@ -223,6 +226,8 @@ class FormSession:
             raise ValueError('Форма: асинхронные обработчики пока не поддерживаются')
         self.reserved_names = {'thisobject','этотобъект','items','элементы','commands','команды','title','заголовок','parameters','параметры','openform','открытьформу'}
         self.reserved_names.update(self.form._methods)
+        if self.interpreter._configuration_runtime is not None:
+            self.reserved_names.update(self.interpreter._configuration_runtime.reserved_form_names)
         self.reserved_names.update(n.name.casefold() for n in program if isinstance(n,ast.Routine))
         self.reserved_names.update(x.casefold() for n in program if isinstance(n,ast.Var) for x in n.names)
         for binding in server_bindings:

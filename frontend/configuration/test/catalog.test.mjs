@@ -9,7 +9,7 @@ const rows = () => [
   {key:'record-1',code:'001',description:'First',deletionMark:false},
   {key:'record-2',code:'002',description:'Second',deletionMark:false},
 ];
-const snapshot = (extra = {}) => ({kind:'application',title:'Catalog app',
+const snapshot = (extra = {}) => ({kind:'application',lifecycle:'forms',messages:[],exitWarning:'',title:'Catalog app',
   entries:[{id:1,title:'Products',kind:'catalog-object'},{id:2,title:'Welcome',kind:'form'}],
   sessions:[],active:null,uncertain:false,catalog:{entry:1,version:1,rows:rows()},...extra});
 const response = (request, state = snapshot(), extra = {}) => ({jsonrpc:'2.0',id:request.id,

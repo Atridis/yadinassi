@@ -6,7 +6,7 @@ import {APPLICATION_PROTOCOL,ApplicationClient,validateApplicationReply} from '.
 import {mountApplication} from '../src/app.mjs';
 import {environment,all,buttons} from '../../form/test/fake-dom.mjs';
 import {state,reply,field,deferred} from '../../form/test/fixtures.mjs';
-const snapshot = (extra = {}) => ({kind:'application',title:'Configuration',entries:[{id:1,title:'Welcome',kind:'form'},{id:2,title:'Details',kind:'form'}],sessions:[],active:null,uncertain:false,catalog:null,...extra});
+const snapshot = (extra = {}) => ({kind:'application',lifecycle:'forms',messages:[],exitWarning:'',title:'Configuration',entries:[{id:1,title:'Welcome',kind:'form'},{id:2,title:'Details',kind:'form'}],sessions:[],active:null,uncertain:false,catalog:null,...extra});
 const response = (request, value = snapshot(), extra = {}) => ({jsonrpc:'2.0',id:request.id,result:{protocol:APPLICATION_PROTOCOL,state:value,error:null,session:null,form:null,...extra}});
 function host() {
   let value = snapshot(), next = 0;

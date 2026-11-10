@@ -1,18 +1,21 @@
 import {FormClient, FormError, createTransport, takeSessionCapability} from './client.mjs';
 import {createFormView} from './view.mjs';
+import {createBrowserHost, AttachmentRefusal} from './attachment.mjs';
 
 /** Serialize UI intents before the first await, including blur followed by a command. */
 export function mountForm(environment, root, options = {}) {
-  let client = null, token = null, queuedToken = null, busy = false, error = '';
+  const browserHost = options.transport ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  let client = null, token = browserHost?.launcher || null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
   const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
-  const showError = caught => { error = caught instanceof FormError ? caught.message : new FormError('transport').message; };
+  const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
   const finish = () => {
-    busy = false; paint(); options.onChange?.();
+    busy = false; paint(); options.onChange?.(); browserHost?.notify();
     if (queuedToken) { const next = queuedToken; queuedToken = null; connect(next); }
   };
   async function connect(incoming) {
@@ -83,6 +86,13 @@ export function mountForm(environment, root, options = {}) {
     } catch (caught) { showError(caught); }
     finally { finish(); }
   }
+  async function reconcileOwnership() {
+    if (busy) throw new AttachmentRefusal('busy');
+    if (!client || client.transportFailed || client.outcomeUnknown) throw new FormError('transport');
+    busy = true; view.beginOwnershipReconcile(); paint();
+    try { return await (client.snapshot ? client.resync() : client.hello()); }
+    finally { finish(); view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -97,14 +107,19 @@ export function mountForm(environment, root, options = {}) {
       if (!token) { error = new FormError('session_missing').message; paint(); }
     } catch { error = new FormError('session_missing').message; paint(); }
   };
-  if (!options.transport) environment.addEventListener('hashchange', reattach);
+  if (!options.transport && !browserHost?.enabled) environment.addEventListener('hashchange', reattach);
   if (!options.transport) environment.addEventListener('beforeunload', event => {
     if (hasPending()) { event.preventDefault(); event.returnValue = ''; }
   });
   const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
   const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
-  paint(); const ready = options.transport ? connect('embedded') : reattach();
-  return {ready, refresh, run, reattach, hasPending, lock, get client() { return client; }, view};
+  paint();
+  if (browserHost?.enabled) {
+    client = new FormClient(browserHost.transport); token = 'attached';
+    browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+  }
+  const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
+  return {ready, refresh, reconcileOwnership, run, reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

@@ -6,6 +6,7 @@ contract. A failed transport locks the entire application without replay.
 """
 import argparse
 from collections import deque
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import sys
@@ -22,7 +23,7 @@ from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .local_app import LocalTransportError, LocalUIServer, _Handler
 from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER
 
-PROTOCOL = 'yadinassi-configuration-app/2'
+PROTOCOL = 'yadinassi-configuration-app/3'
 MAX_FORMS = 8
 MAX_SESSIONS = 256
 MAX_PARAMETERS = 32
@@ -51,8 +52,14 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False):
+def load_application(root, *, catalog_objects=False, application_host=False):
     files = read_configuration_directory(root)
+    if application_host:
+        if catalog_objects:
+            raise ValueError('application host is a separate explicit profile')
+        from ..configuration_application_profile import import_application_configuration
+        imported = import_application_configuration(files)
+        return load_configuration_forms(files, catalog_schemas=imported.catalogs)
     if catalog_objects:
         from ..configuration_xml import import_catalog_forms_configuration
         imported = import_catalog_forms_configuration(files)
@@ -65,9 +72,16 @@ def _definitions(configuration):
             enumerate(sorted(configuration.forms.items()), 1)}
 
 
+def _runtime(configuration, side, **kwargs):
+    from ..configuration_application_profile import import_application_configuration
+    from ..configuration_runtime import ConfigurationApplication
+    return ConfigurationApplication(import_application_configuration(dict(configuration.source_files)),
+                                    side=side, **kwargs)
+
+
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False):
         self.configuration = configuration
         self.definitions = _definitions(configuration)
         self.database = database
@@ -80,6 +94,21 @@ class ConfigurationBroker:
         self.record_keys = {}
         self.projections = {}
         self.record_context = None
+        self.application = None
+        self.application_invocation = None
+        if application_host:
+            if bind_interpreter is not None:
+                raise ValueError('application owns its interpreter family')
+            context = None if database is None else SQLiteDBContext(database)
+            try:
+                self.application = _runtime(configuration, 'server', database_context=context, output=lambda value: None)
+                self.record_context = context
+                if self.application.server_endpoints:
+                    self.application_invocation = InvocationServer.from_handlers(
+                        self.application.server_endpoints, message_scope=self.application.event_messages)
+            except BaseException:
+                if context is not None: context.close()
+                raise
 
     def _catalog(self, entry):
         definition = self.definitions.get(entry) if type(entry) is int else None
@@ -144,10 +173,20 @@ class ConfigurationBroker:
             _keys(payload, 'source')
             if sid or payload['source'] != self.configuration.source_sha256:
                 raise ValueError('configuration source mismatch')
+            if not self.ready and self.application is not None:
+                self.application.start()
             self.ready = True
             return {'source': self.configuration.source_sha256}
         if not self.ready:
             raise ValueError('configuration handshake required')
+        if operation == 'applicationInvoke':
+            if sid or self.application_invocation is None:
+                raise ValueError('application invocation is unavailable')
+            return decode_line(self.application_invocation.exchange(encode_line(payload)))
+        if operation == 'applicationStop':
+            if sid or payload != {} or self.sessions or self.application is None:
+                raise ValueError('application cannot stop with open forms')
+            return {'closed': self.application.close()}
         if operation == 'catalog':
             _keys(payload, 'entry')
             if sid:
@@ -189,11 +228,13 @@ class ConfigurationBroker:
                     owned = CatalogObjectSession(context, definition.catalog_schema,
                         dict(self.configuration.source_files), reference=reference)
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
-                server = definition.create_server(parameters=values, database_context=context, object_session=owned)
+                server = definition.create_server(parameters=values, database_context=context, object_session=owned,
+                    interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
                 program = definition.program
                 if program.nocontext_bindings:
                     nocontext = InvocationServer(program.nocontext, program.nocontext_endpoints,
-                                                database_context=context)
+                        database_context=context,
+                        interpreter_factory=None if self.application is None else self.application.interpreter_factory)
                 if self.bind_interpreter is not None:
                     self.bind_interpreter(server.session.interpreter)
                     if nocontext is not None:
@@ -217,21 +258,33 @@ class ConfigurationBroker:
             if payload != {}:
                 raise ValueError('invalid close guard')
             owned = self.objects.get(sid)
-            return {'allowed': owned is None or not (owned.pending_commit or owned.pending_refresh)}
+            return {'allowed': (owned is None or not (owned.pending_commit or owned.pending_refresh))
+                    and (self.application is None or not self.application.interpreter.pending_promises)}
         if operation == 'form':
+            if (payload.get('operation') in ('close', 'dispose') and self.application is not None
+                    and self.application.interpreter.pending_promises):
+                raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
             if owned is not None:
                 owned.verify_source()
                 if payload.get('operation') in ('close', 'dispose'):
                     owned.require_discardable()
-            return decode_line(server.exchange(encode_line(payload)))
+            scope = (nullcontext() if self.application is None else
+                     self.application.event_messages(server.session._record_message))
+            with scope:
+                return decode_line(server.exchange(encode_line(payload)))
         if operation == 'invoke':
             if nocontext is None:
                 raise ValueError('NoContext channel unavailable')
-            return decode_line(nocontext.exchange(encode_line(payload)))
+            scope = (nullcontext() if self.application is None else
+                     self.application.event_messages(nocontext._message))
+            with scope:
+                return decode_line(nocontext.exchange(encode_line(payload)))
         if operation == 'retire':
             if payload != {}:
                 raise ValueError('invalid retirement')
+            if self.application is not None and self.application.interpreter.pending_promises:
+                raise ValueError('application tasks must finish before releasing a form')
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -248,6 +301,8 @@ class ConfigurationBroker:
 
     def close(self):
         failure = None
+        if self.application is not None:
+            self.application.close(force=True)
         for sid in list(self.sessions):
             try:
                 self.exchange({'operation': 'retire', 'session': sid, 'payload': {}})
@@ -256,12 +311,14 @@ class ConfigurationBroker:
         if self.record_context is not None:
             self.record_context.close()
             self.record_context = None
+        if self.application is not None:
+            self.application.close(force=True)
         if failure is not None:
             raise failure
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -271,13 +328,17 @@ class ConfigurationProcess(FormProcess):
             command += ['--f', str(Path(database).resolve())]
         if catalog_objects:
             command += ['--catalog-objects']
+        if application_host:
+            command += ['--application-host']
         self._start(command, environment)
 
 
-def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False):
+def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
+                  application_host=False):
     broker = None
     try:
-        broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects), database)
+        broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
+            application_host=application_host), database, application_host=application_host)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -306,7 +367,8 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
 
 class ConfigurationController:
     """Several forms, one serialized application queue; no nested event dispatch."""
-    def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None):
+    def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None,
+                 application_host=False):
         self.configuration = configuration
         self.definitions = _definitions(configuration)
         self.names = {definition.name.casefold(): entry for entry, definition in self.definitions.items()}
@@ -323,6 +385,51 @@ class ConfigurationController:
         self.catalog = None
         self.catalog_versions = {}
         self.gate = Lock()
+        self.application = None
+        self.application_messages = []
+        self._dispatch_active = False
+        if application_host:
+            if bind_interpreter is not None:
+                raise ValueError('application owns its interpreter family')
+            service = HostFunction('OpenForm', self._application_open_form, returns_value=False)
+            self.application = _runtime(configuration, 'client', output=self._application_message,
+                host_services={'OpenForm': service, 'ОткрытьФорму': service},
+                server_exchange=lambda raw: encode_line(self._call('applicationInvoke', payload=decode_line(raw))))
+
+    def _application_message(self, value):
+        if type(value) is not str or len(value) > 4096 or len(self.application_messages) >= 64:
+            raise ValueError('application message limit')
+        self.application_messages.append(value)
+
+    def _application_open_form(self, name, parameters=None):
+        if (not self._dispatch_active or self.uncertain or self.application is None
+                or self.application.state not in ('starting', 'running')):
+            raise ValueError('OpenForm requires an active application client event')
+        entry, values = self._entry(name), _parameters(parameters)
+        if len(self.sessions) + len(self.pending) >= MAX_FORMS or len(self.issued) + len(self.pending) >= MAX_SESSIONS:
+            raise ValueError('form capacity exhausted')
+        self.pending.append((entry, values))
+
+    def _form_exchange(self, controller, request):
+        queued_before = len(self.pending)
+        scope = (nullcontext() if self.application is None else
+                 self.application.event_messages(controller.session._record_message))
+        with scope:
+            response = controller.exchange(request)
+        if response['result']['error'] is not None:
+            while len(self.pending) > queued_before: self.pending.pop()
+        return response
+
+    def idle_close(self):
+        # Never discard an open form or retry an unknown request because its
+        # renderer disappeared. Ordinary BeforeExit can still refuse a clean app.
+        if not self.opened or self.sessions or self.uncertain or self.pending:
+            return False
+        return self.exchange({'jsonrpc':'2.0','id':1,'method':'application.close','params':{}})['result']['state']['kind'] == 'closed'
+
+    def close(self):
+        if self.application is not None:
+            self.application.close(force=True)
 
     def _entry(self, name):
         if type(name) is not str or len(name) > 256 or name.casefold() not in self.names:
@@ -405,6 +512,9 @@ class ConfigurationController:
             raise LocalTransportError('unavailable') from None
 
     def _bind(self, sid, interpreter):
+        if self.application is not None:
+            self.application.bind_interpreter(interpreter)
+            return
         def open_form(name, parameters=None):
             controller = self.sessions.get(sid, (None, None))[0]
             # The interpreter is bound before it opens, but the entry is retained
@@ -439,13 +549,14 @@ class ConfigurationController:
             def exchange(raw):
                 return encode_line(self._call('form', sid, decode_line(raw)))
             controller = FormController(definition.client_package(), exchange, parameters=parameters,
-                                        bind_interpreter=lambda vm: self._bind(sid, vm))
+                bind_interpreter=lambda vm: self._bind(sid, vm),
+                interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
             self.sessions[sid] = (controller, entry)
             if definition.program.nocontext_bindings:
                 port = InvocationPort(lambda raw: encode_line(self._call('invoke', sid, decode_line(raw))))
                 for binding in definition.program.nocontext_bindings:
                     controller.session.bind_nocontext(port, binding)
-            form = controller.exchange({'jsonrpc': '2.0', 'id': 1, 'method': 'form.hello',
+            form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.hello',
                                         'params': {'protocol': FORM_PROTOCOL}})
             if controller.session.uncertain:
                 self._lock()
@@ -482,11 +593,15 @@ class ConfigurationController:
                              'kind': 'form' if definition.catalog_schema is None else 'catalog-object'} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title}
                              for sid, (controller, entry) in self.sessions.items()],
-                'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog}
+                'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
+                'lifecycle': 'forms' if self.application is None else self.application.state,
+                'messages': list(self.application_messages),
+                'exitWarning': '' if self.application is None else self.application.last_exit_warning}
 
     def exchange(self, request):
         if not self.gate.acquire(blocking=False):
             raise LocalTransportError('busy')
+        self._dispatch_active = True
         try:
             _keys(request, 'jsonrpc id method params')
             if (request['jsonrpc'] != '2.0' or type(request['id']) is not int
@@ -504,7 +619,19 @@ class ConfigurationController:
                 if not self.opened:
                     self.opened = True
                     self._call('hello', payload={'source': self.configuration.source_sha256})
-                    if self.initial_entry is not None:
+                    if self.application is not None:
+                        self.application_messages.clear()
+                        try:
+                            with self.application.event_messages(self._application_message):
+                                started = self.application.start()
+                            if not started:
+                                self.pending.clear()
+                                self._call('applicationStop')
+                                self.closed = True
+                                error = 'startup_cancelled'
+                        except Exception:
+                            self.pending.clear(); self._lock(); error = 'startup_failed'
+                    if self.initial_entry is not None and not self.closed and not self.uncertain:
                         sid, form, error = self._open(self.initial_entry, {})
             elif not self.opened:
                 raise ValueError('application handshake required')
@@ -549,15 +676,17 @@ class ConfigurationController:
                     nested_request = params['request']
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
-                    blocked = (closing and self.definitions[entry].catalog_schema is not None
-                               and not self._call('guardClose', sid)['allowed'])
+                    blocked = (closing and ((self.application is not None
+                                  and self.application.interpreter.pending_promises)
+                               or ((self.definitions[entry].catalog_schema is not None or self.application is not None)
+                                  and not self._call('guardClose', sid)['allowed'])))
                     if blocked:
                         error = 'save_recovery_required'
-                        form = controller.exchange({'jsonrpc': '2.0', 'id': nested_request['id'],
+                        form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
                             'method': 'form.snapshot', 'params': {}})
                         form['result']['error'] = 'busy'
                     else:
-                        form = controller.exchange(nested_request)
+                        form = self._form_exchange(controller, nested_request)
                     if controller.session.uncertain:
                         self._lock()
                     elif self.catalog is not None:
@@ -580,7 +709,18 @@ class ConfigurationController:
                 if self.sessions:
                     error = 'forms_open'
                 else:
-                    self.closed = True
+                    if self.application is not None:
+                        self.application_messages.clear()
+                        with self.application.event_messages(self._application_message):
+                            accepted = self.application.close()
+                        if accepted:
+                            if self._call('applicationStop') != {'closed': True}:
+                                raise ValueError('server application did not stop')
+                            self.closed = True
+                        else:
+                            error = 'exit_cancelled'
+                    else:
+                        self.closed = True
             else:
                 raise ValueError('unknown application method')
             queued_error = self._drain()
@@ -594,6 +734,7 @@ class ConfigurationController:
                 raise LocalTransportError('unavailable') from None
             return response
         finally:
+            self._dispatch_active = False
             self.gate.release()
 
 
@@ -610,16 +751,19 @@ def main(argv=None):
     parser.add_argument('--f', help='Existing SQLite database, server process only')
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
+    parser.add_argument('--application-host', action='store_true', help='Explicit application/CommonModules and declared forms profile')
+    parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects)
-    process = server = None
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host)
+    process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects)
-        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects)
-        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form)
-        server = LocalUIServer(controller, handler=ConfigurationHandler)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host)
+        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host)
+        server = LocalUIServer(controller, handler=ConfigurationHandler,
+            browser_session=args.browser_session or args.application_host, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:
@@ -638,6 +782,8 @@ def main(argv=None):
         finally:
             if process is not None:
                 process.close()
+            if controller is not None:
+                controller.close()
 
 
 if __name__ == '__main__':

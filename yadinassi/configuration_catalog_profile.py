@@ -66,7 +66,7 @@ def catalog_forms_configuration(files):
     ordinary = import_configuration(projected, numbering_policy='decimal_v1')
     if ordinary.activation_issues or ordinary.documents:
         _fail('unsupported catalog object forms metadata semantics')
-    if any(s.tabular_sections or any(f.kind == 'catalog_ref' for f in s.fields)
+    if any(s.hierarchy != 'none' or s.tabular_sections or any(f.kind == 'catalog_ref' for f in s.fields)
            for s in ordinary.catalogs):
         _fail('scalar catalog object forms only')
     from .configuration_forms import load_configuration_forms
