@@ -14,6 +14,7 @@ from . import query_parser as syntax
 from .catalog_backend import (BackendError, CatalogKey, CatalogScanRequest,
     CatalogValuePage, CatalogValueRow, CatalogSectionPage)
 from .catalog_types import BSLCatalogReference
+from .document_types import BSLDocumentReference
 from .dates import BSLDate
 from .values import NULL
 
@@ -41,7 +42,7 @@ def required(query):
         return (type(node) is syntax.Comparison and
                 (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
                  type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
-    return (query.joins or query.groups or query.having is not None or query.distinct
+    return (query.family == 'document' or query.joins or query.groups or query.having is not None or query.distinct
             or any(type(p.field) is not syntax.Field for p in query.projections)
             or any(type(o.field) is not syntax.Field for o in query.order)
             or extended(query.predicate))
@@ -53,8 +54,8 @@ def _key(value):
     if type(value) is bool: return ('boolean', value)
     if type(value) is Decimal: return ('number', value)
     if type(value) is BSLDate: return ('datetime', value.ticks)
-    if type(value) is BSLCatalogReference:
-        return ('catalog_ref', id(value.value_type.snapshot),
+    if type(value) is BSLCatalogReference or type(value) is BSLDocumentReference:
+        return ('document_ref' if type(value) is BSLDocumentReference else 'catalog_ref', id(value.value_type.snapshot),
                 value.value_type.metadata_uuid.int, value.reference_uuid.int)
     raise TypeError('Unsupported relational query value')
 
@@ -64,9 +65,9 @@ def _compare(left, right, operator):
     if left is NULL or right is NULL: return False
     a, b = _key(left), _key(right)
     if a[0] != b[0]: raise TypeError('Query comparison requires exact field type')
-    if a[0] == 'catalog_ref' and a[1:3] != b[1:3]:
+    if a[0] in ('catalog_ref', 'document_ref') and a[1:3] != b[1:3]:
         raise TypeError('Query references require same database and catalog')
-    if a[0] in ('catalog_ref', 'boolean') and operator not in ('eq', 'ne'):
+    if a[0] in ('catalog_ref', 'document_ref', 'boolean') and operator not in ('eq', 'ne'):
         raise ValueError('Query value does not support ordering comparison')
     if operator == 'eq': return a == b
     if operator == 'ne': return a != b
@@ -78,14 +79,15 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
+        self.catalogs, self.documents = catalogs, documents
         self._descriptors = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external),
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family),
                         *(join.source for join in query.joins))
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
         for source in self.sources:
@@ -96,7 +98,11 @@ class _Plan:
                 self.managers.append(None)
                 self.sections.append(None)
                 continue
-            manager = catalogs.get_index(source.catalog)
+            if source.family == 'document':
+                if documents is None: raise ValueError('Document query sources require document context')
+                manager = documents.get_index(source.catalog)
+            else:
+                manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
             section = None
             if source.section is not None:
@@ -140,7 +146,7 @@ class _Plan:
                     raise TypeError('A NULL-only projection requires a typed expression')
                 column = _Column(projection.alias, None, descriptor.kind, descriptor.qualifiers,
                                  descriptor.custom, True)
-            if column.kind == 'catalog_ref':
+            if column.kind in ('catalog_ref', 'document_ref'):
                 column = replace(column, reference_identity=self.reference_identity(expression))
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
@@ -148,11 +154,14 @@ class _Plan:
         # COUNT(*) still scans Ref so rows and source identity can be validated.
         for i, fields in enumerate(self.fields):
             if not fields and not (self.sources[i].temporary or self.sources[i].external):
-                fields.append(_field(self.managers[i], syntax.Field(('Ref',)), self.sources[i].alias, self.sections[i]))
+                fields.append(self.resolve_field(i, syntax.Field(('Ref',))))
 
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
+        if source.family == 'document' and not (source.temporary or source.external):
+            from .document_queries import document_field
+            return document_field(self.managers[index], expression, source.alias, self.sections[index])
         if not (source.temporary or source.external):
             return _field(self.managers[index], expression, source.alias, self.sections[index])
         if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
@@ -188,7 +197,7 @@ class _Plan:
             if field is not None:
                 if expression.function in ('sum','avg') and self.describe(field).kind not in ('number', 'null'):
                     raise TypeError('SUM/AVG require a Number field')
-                if expression.function in ('min','max') and self.describe(field).kind in ('boolean','catalog_ref'):
+                if expression.function in ('min','max') and self.describe(field).kind in ('boolean','catalog_ref','document_ref'):
                     raise TypeError('MIN/MAX require String, Number or Date')
             return _BoundAggregate(expression.function, field, expression.distinct)
         if type(expression) is not syntax.Field: return expression
@@ -218,9 +227,9 @@ class _Plan:
         if node.operator in ('is_null', 'is_not_null'):
             return syntax.Comparison(left, node.operator, None)
         if kind(left) != kind(right) and 'null' not in (kind(left), kind(right)): raise TypeError('Query comparison requires exact field type')
-        if kind(left) in ('boolean','catalog_ref') and node.operator not in ('eq','ne'):
+        if kind(left) in ('boolean','catalog_ref','document_ref') and node.operator not in ('eq','ne'):
             raise ValueError('Query value does not support ordering comparison')
-        if kind(left) == kind(right) == 'catalog_ref':
+        if kind(left) == kind(right) and kind(left) in ('catalog_ref', 'document_ref'):
             a, b = self.reference_identity(left), self.reference_identity(right)
             if a[0] is not b[0] or a[1] != b[1]:
                 raise TypeError('Query references require same database and catalog')
@@ -263,7 +272,7 @@ class _Plan:
                 branches, otherwise = expression.arguments
                 candidates = [value for _, value in branches] + [otherwise]
             else: candidates = expression.arguments
-            return next(self.reference_identity(e) for e in candidates if self.describe(e).kind == 'catalog_ref')
+            return next(self.reference_identity(e) for e in candidates if self.describe(e).kind in ('catalog_ref', 'document_ref'))
         return expression.value_type.snapshot, expression.value_type.metadata_uuid
 
     def describe(self, expression):
@@ -306,7 +315,7 @@ class _Plan:
                     lengths = [c.qualifiers[0] for _, c in typed]
                     return column(kind, (0 if 0 in lengths else max(lengths),))
                 if kind == 'datetime': return column(kind, ('DateTime',))
-                if kind == 'catalog_ref':
+                if kind in ('catalog_ref', 'document_ref'):
                     identities = [self.reference_identity(e) for e, _ in typed]
                     if any(a[0] is not identities[0][0] or a[1] != identities[0][1] for a in identities):
                         raise TypeError('Query references require same database and catalog')
@@ -416,7 +425,13 @@ class _Plan:
             if len(rows) > syntax.MAX_ROWS or budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
                 raise ValueError('Query input resource limit exceeded')
             return rows
-        if view.catalog_schema(manager._schema.identity) != manager._schema: raise BackendError('schema_changed')
+        if self.sources[index].family == 'document':
+            from .document_queries import load_documents
+            return load_documents(manager, section, columns, view, budget)
+        metadata = manager._catalogs._metadata
+        if ((view.database_id, view.configuration_generation) != (metadata._database_id, metadata._generation)
+                or view.catalog_schema(manager._schema.identity) != manager._schema):
+            raise BackendError('schema_changed')
         rows, seen, cursors = [], set(), set()
         continuation = None
         while True:
@@ -496,7 +511,10 @@ class _Plan:
         if view is None:
             manager = next((m for m in self.managers if m is not None), None)
             if manager is not None:
-                view = manager._view()
+                if any(source.family == 'document' for source in self.sources):
+                    view = self.documents._context.backend.begin_query_read()
+                else:
+                    view = manager._view()
                 owner = True
         try:
             if budget is None: budget = [0, 0]
@@ -534,5 +552,5 @@ class _Plan:
         return BSLQueryResult(self.columns, tuple(values for values, _ in projected[:self.query.limit]))
 
 
-def execute(query, catalogs, parameters):
-    return _Plan(query, catalogs, parameters).execute()
+def execute(query, catalogs, parameters, documents=None):
+    return _Plan(query, catalogs, parameters, documents=documents).execute()

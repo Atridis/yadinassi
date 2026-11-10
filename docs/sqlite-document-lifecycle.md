@@ -132,8 +132,9 @@ presentation alone is empty text).
 Format 7 adds only the distinct `document_schema`, `document_record`,
 `document_sequence` and `document_commit_receipt` tables. Catalog schemas never
 contain shadow documents. Catalogs, catalog queries, catalog keys, catalog
-scans and catalog references cannot address document records. Document Query
-support is not part of this block.
+scans and catalog references cannot address document records. The separate
+[document query profile](document-queries.md) reads documents through an explicit
+source family and one composite logical read transaction; it does not alter v7 storage.
 
 Document Number, Date, DeletionMark and revision are dedicated columns. Custom
 fields and ordered sections use bounded tagged JSON in the document row. This

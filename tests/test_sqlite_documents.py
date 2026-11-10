@@ -97,7 +97,7 @@ Message(D.Metadata().FullName());Message(Metadata.Documents.Count());'''),['Да
                            'ValueToStringInternal(Type("DocumentTabularSectionRow.Orders.Lines"))','New("DocumentObject.Orders")'):
             with self.subTest(expression=expression),self.assertRaises(BSLRuntimeError): self.vm.execute(expression)
 
-    def test_catalog_document_namespace_isolation_and_query_refusal(self):
+    def test_catalog_document_namespace_isolation_and_document_query(self):
         view = self.context.backend.begin_read()
         try:
             self.assertNotIn(self.schema.identity,{s.identity for s in view.catalogs()})
@@ -108,8 +108,9 @@ Message(D.Metadata().FullName());Message(Metadata.Documents.Count());'''),['Да
                 with self.assertRaises(BackendError): call()
         finally: view.close()
         for code in ('Catalogs.Orders','Metadata.Catalogs.Orders','Type("CatalogRef.Orders")',
-                     'Q=New Query("SELECT Ref FROM Document.Orders");Q.Execute();'):
+                     'Q=New Query("SELECT Ref FROM Catalog.Orders");Q.Execute();'):
             with self.subTest(code=code),self.assertRaises(BSLRuntimeError): self.vm.execute(code)
+        self.assertEqual(self.vm.execute('Q=New Query("SELECT Ref FROM Document.Orders");Q.Execute().IsEmpty();'), True)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM catalog_schema')[0][0],2)
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_schema')[0][0],1)
 

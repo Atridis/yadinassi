@@ -163,17 +163,17 @@ def _union_column(columns):
         qualifiers = ((length, 'Fixed') if all(c.qualifiers == (length, 'Fixed') for c in typed) else (length,))
     elif kind == 'datetime':
         if any(c.qualifiers != qualifiers for c in typed): qualifiers = ('DateTime',)
-    elif kind == 'catalog_ref':
+    elif kind in ('catalog_ref', 'document_ref'):
         if any(c.reference_identity[0] is not identity[0] or c.reference_identity[1] != identity[1] for c in typed):
             raise TypeError('UNION references require same database and catalog')
     return replace(first, kind=kind, qualifiers=qualifiers, custom=None, reference_identity=identity)
 
 
 class _UnionPlan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None):
         from .relational_queries import _Plan
         self.query = query
-        self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True)
+        self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True, documents=documents)
                           for arm in query.arms)
         width = len(self.arms[0].columns)
         if any(len(arm.columns) != width for arm in self.arms):

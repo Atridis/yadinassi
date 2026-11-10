@@ -1,4 +1,4 @@
-"""Closed catalog SELECT grammar; this AST is never database SQL.
+"""Closed application SELECT grammar; this AST is never database SQL.
 
 Field projections, bounded joins, grouping, aggregates and ordering are admitted. Bounds are implementation limits, not native platform limits.
 !todo general functions and subqueries.
@@ -42,6 +42,7 @@ class Source:
     section: str | None = None
     temporary: bool = False
     external: bool = False
+    family: str = 'catalog'
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +104,7 @@ class Select:
     temporary: bool = False
     into: str | None = None
     external: bool = False
+    family: str = 'catalog'
 
 
 @dataclass(frozen=True, slots=True)
@@ -282,13 +284,13 @@ class _Parser:
         if self.peek() != '.':
             alias = self.take('name') if self.accept('as') else family
             return Source(family, alias, temporary=True)
-        if family.casefold() not in ('catalog', 'справочник'):
-            raise ValueError('Only catalog or temporary sources are supported')
+        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ'):
+            raise ValueError('Unsupported query source family')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section)
+        return Source(catalog, alias, section, family=('document' if family.casefold() in ('document', 'документ') else 'catalog'))
 
     def scalar(self):
         if self.accept('&'):
@@ -418,7 +420,7 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family)
 
 
     def statement(self):

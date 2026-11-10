@@ -303,7 +303,7 @@ class Interpreter:
         self.register_type("ФиксированноеСоответствие", BSLFixedMap, "FixedMap")
 
         self.register_type("МенеджерВременныхТаблиц", lambda: BSLTempTablesManager(self._catalogs._metadata), "TempTablesManager")
-        self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text), "Query")
+        self.register_type("Запрос", lambda text="": BSLQuery(self._catalogs, text, self._documents), "Query")
         self.register_type("ТаблицаЗначений", BSLValueTable, "ValueTable")
         self.register_type("ДеревоЗначений", BSLValueTree, "ValueTree")
         self.register_type("СписокЗначений", BSLValueList, "ValueList")

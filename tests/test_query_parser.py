@@ -33,7 +33,7 @@ class QueryParserTests(unittest.TestCase):
     def test_unsupported_language_is_never_partially_accepted(self):
         variants = [
             'SELECT * FROM Catalog.Products',
-            'SELECT Code FROM Document.Invoice',
+            'SELECT Code FROM InformationRegister.Balances',
             'SELECT Code FROM Catalog.Products, Catalog.Categories',
             'SELECT Code FROM Catalog.Products; SELECT Code FROM Catalog.Products',
             'DELETE FROM Catalog.Products',
@@ -59,6 +59,16 @@ class QueryParserTests(unittest.TestCase):
         self.assertEqual(grouped.groups, (Field(('Code',)),))
         compared = parse_query('SELECT Code FROM Catalog.Products WHERE Code=Code')
         self.assertEqual(compared.predicate.value, Field(('Code',)))
+
+    def test_document_family_and_section_remain_explicit(self):
+        query = parse_query('SELECT D.Number FROM Document.Orders AS D JOIN Catalog.Orders AS C ON D.Number=C.Code')
+        self.assertEqual((query.family, query.catalog), ('document', 'Orders'))
+        self.assertEqual(query.joins[0].source.family, 'catalog')
+        query = parse_query('ВЫБРАТЬ НомерСтроки ИЗ Документ.Orders.Lines')
+        self.assertEqual((query.family, query.catalog, query.section), ('document', 'Orders', 'Lines'))
+        for source in ('Document.Orders.Lines.Extra', 'Document.Orders()'):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                parse_query('SELECT Ref FROM ' + source)
 
     def test_duplicate_projection_and_invalid_top(self):
         for text in ('SELECT Code, Code FROM Catalog.Products',

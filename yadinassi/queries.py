@@ -18,6 +18,7 @@ from .catalog_backend import (CatalogComparison, CatalogPredicate, CatalogOrder,
                               CatalogKey, CatalogSectionPage, CatalogSectionRecord, TabularRow, BackendError)
 from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
+from .document_types import BSLDocumentReference
 from .dates import BSLDate
 from .values import BSLObject, HostFunction
 from .value_tables import BSLValueTable
@@ -80,7 +81,7 @@ def _parameter_value(value):
             raise ValueError('Query parameter number limit exceeded')
     elif kind is BSLDate:
         value.require_known()
-    elif kind is not bool and kind is not BSLCatalogReference:
+    elif kind is not bool and kind is not BSLCatalogReference and kind is not BSLDocumentReference:
         raise TypeError('Unsupported query parameter type')
     return value
 
@@ -207,8 +208,11 @@ def _description(column):
 
 
 class BSLQuery(BSLObject):
-    def __init__(self, catalogs, text=''):
+    def __init__(self, catalogs, text='', documents=None):
+        if documents is not None and documents._catalogs is not catalogs:
+            raise ValueError('Query sources require one interpreter metadata snapshot')
         self._catalogs = catalogs
+        self._documents = documents
         self._parameters = {}
         self._temp_tables_manager = None
         self.set_member('Text', text)
@@ -259,7 +263,7 @@ class BSLQuery(BSLObject):
     def execute_batch(self):
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
-                               dict(self._parameters), self._temp_tables_manager)
+                               dict(self._parameters), self._temp_tables_manager, self._documents)
 
     def execute(self):
         statements = syntax.parse_package(self._text)
@@ -270,10 +274,10 @@ class BSLQuery(BSLObject):
                 or self._temp_tables_manager is not None):
             from .query_packages import execute_package
             return execute_package(statements, self._catalogs, dict(self._parameters),
-                                   self._temp_tables_manager).items[-1]
+                                   self._temp_tables_manager, self._documents).items[-1]
         from . import relational_queries
         if relational_queries.required(query):
-            return relational_queries.execute(query, self._catalogs, dict(self._parameters))
+            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents)
         manager = self._catalogs.get_index(query.catalog)
         section = None
         if query.section is not None:
