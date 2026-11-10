@@ -19,10 +19,10 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
 
     def test_actual_inventory_includes_all_assets_and_modules(self):
         result = source_provenance()
-        self.assertEqual(result['source_file_count'], 146)
+        self.assertEqual(result['source_file_count'], 152)
         # All added runtime modules are hashed, as well as packaged renderer assets.
         original = full.read_regular
-        for changed_name in ('app.js', 'http_security.py', 'relational_queries.py', 'form_replication.py', 'callbacks.py', 'form_app.py', 'form_package.py', 'json_dates.py', 'query_packages.py', 'form_tables.py', 'form_table_replication.py', 'order_workbench.py', 'query_sources.py', 'text_streams.py'):
+        for changed_name in ('app.js', 'http_security.py', 'relational_queries.py', 'form_replication.py', 'callbacks.py', 'form_app.py', 'form_package.py', 'json_dates.py', 'query_packages.py', 'form_tables.py', 'form_table_replication.py', 'order_workbench.py', 'query_sources.py', 'text_streams.py', 'orders_workspace.py'):
             def changed(path, *args, **kwargs):
                 data = original(path, *args, **kwargs)
                 return data + b'\n' if path.name == changed_name else data
@@ -52,8 +52,15 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
         with mock.patch.object(Path, 'rglob', extra):
             with self.assertRaisesRegex(full.FullError, 'unexpected_interpreter_source'): source_provenance()
 
+    def test_every_closed_renderer_pins_checkout_newlines(self):
+        attributes = (ROOT / '.gitattributes').read_text().splitlines()
+        for renderer in ('catalog', 'form', 'workspace'):
+            with self.subTest(renderer=renderer):
+                self.assertIn(f'frontend/{renderer}/** text eol=lf', attributes)
+                self.assertIn(f'yadinassi/ui/assets/{renderer}/* text eol=lf', attributes)
+
     def test_build_manifest_matches_sources_and_generated_output(self):
-        for renderer in ('catalog', 'form'):
+        for renderer in ('catalog', 'form', 'workspace'):
             directory = ROOT / 'yadinassi/ui/assets' / renderer
             manifest = json.loads((directory / 'build-manifest.json').read_text())
             self.assertEqual(manifest['schema'], 'yadinassi-' + renderer + '-assets/0')
@@ -64,7 +71,7 @@ class UIAssetProvenanceTests(SyntheticFilesystemCase):
                 self.assertEqual(hashlib.sha256((ROOT / 'frontend' / renderer / name).read_bytes()).hexdigest(), digest, name)
 
     def test_runtime_resource_loader_finds_nonempty_exact_assets(self):
-        for renderer in ('catalog', 'form'):
+        for renderer in ('catalog', 'form', 'workspace'):
             for name in ASSETS:
                 self.assertTrue(files('yadinassi.ui').joinpath('assets', renderer, name).read_bytes())
 

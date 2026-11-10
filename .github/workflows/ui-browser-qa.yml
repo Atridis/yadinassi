@@ -77,5 +77,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/product-narrow.png
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-table-narrow.png
             ${{ runner.temp }}/yadinassi-form-browser-artifacts/order-editor-narrow.png
+            ${{ runner.temp }}/yadinassi-form-browser-artifacts/orders-workspace-narrow.png
           if-no-files-found: error
           retention-days: 14
