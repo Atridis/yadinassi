@@ -40,7 +40,7 @@ from .numeric import bits, elementary, numbers
 from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
-from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
+from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
@@ -189,6 +189,8 @@ class Interpreter:
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
         self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
+        self._metadata._catalog_managers = self._catalogs
+        self._metadata._document_managers = self._documents
         self._xdto_factory = BSLXDTOFactory()
         self._scheduler = Scheduler(self._native_target)
         self._diagnostic_owner = self
@@ -1923,7 +1925,8 @@ class Interpreter:
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections
-                and type(collection) is not BSLSortDirections):
+                and type(collection) is not BSLSortDirections
+                and not is_metadata_collection(collection)):
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)
