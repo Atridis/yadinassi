@@ -182,6 +182,16 @@ class BSLJSONReader(BSLObject):
             text = text[1:]
         self.set_string(text)
 
+    def open_stream(self, stream, encoding=None):
+        from . import file_io
+        from .text_streams import read_snapshot
+        encoding = "UTF-8" if encoding is None or encoding == "" else encoding
+        # Stream attachment starts a new document. Read-ahead is deliberately a
+        # bounded snapshot, not a promise about the native parser's byte cursor.
+        text = read_snapshot(stream, lambda data: _text(file_io._decode(data, encoding, 'utf-8')))
+        self.close()
+        self.set_string(text)
+
     def close(self):
         self._source = None
         self._tokens = None
@@ -226,6 +236,7 @@ class BSLJSONReader(BSLObject):
         methods = {"пропустить": (self.skip, True), "skip": (self.skip, True),
                    "установитьстроку": (self.set_string, False), "setstring": (self.set_string, False),
                    "открытьфайл": (self.open_file, False), "openfile": (self.open_file, False),
+                   "открытьпоток": (self.open_stream, False), "openstream": (self.open_stream, False),
                    "закрыть": (self.close, False), "close": (self.close, False),
                    "прочитать": (self.read, True), "read": (self.read, True)}
         if key in methods:
@@ -499,6 +510,8 @@ class BSLJSONWriter(BSLObject):
         self._file = None
         self._filename = None
         self._encoding = "utf-8"
+        self._stream_encoding = None
+        self._stream_add_bom = False
         self._settings = BSLJSONWriterSettings()
         self._parts = []
         self._stack = []
@@ -542,6 +555,19 @@ class BSLJSONWriter(BSLObject):
         self._file = stream
         self._filename, self._encoding = filename, encoding
 
+    def open_stream(self, stream, encoding=None, add_bom=None, settings=None):
+        from . import file_io
+        from .text_streams import BinaryStreamSink
+        encoding = 'UTF-8' if encoding is None else _text(encoding)
+        codec = file_io._encoding(encoding or 'UTF-8')
+        add_bom = file_io._bool(add_bom)
+        if settings is not None and type(settings) is not BSLJSONWriterSettings:
+            raise TypeError("JSON: ожидаются ПараметрыЗаписиJSON")
+        target = BinaryStreamSink(stream)
+        self.set_string(settings)
+        self._file = target
+        self._stream_encoding, self._stream_add_bom = codec, add_bom
+
     def _release_file(self):
         stream = self._file
         self._file = None
@@ -551,7 +577,10 @@ class BSLJSONWriter(BSLObject):
     def __del__(self):
         stream = getattr(self, "_file", None)
         if stream is not None:
-            stream.close()
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
 
     def _append(self, value):
         if self._size + len(value) > MAX_TEXT:
@@ -626,10 +655,16 @@ class BSLJSONWriter(BSLObject):
         text = _layout("".join(self._parts), self._settings)
         if self._file is not None:
             try:
-                self._file.write(text)
+                if self._stream_encoding is None:
+                    self._file.write(text)
+                else:
+                    from .file_io import _encode as encode_text
+                    self._file.write(encode_text(text, self._stream_encoding, self._stream_add_bom))
             finally:
-                self._release_file()
-                self._active = False
+                try:
+                    self._release_file()
+                finally:
+                    self._active = False
             result = ""
         else:
             result = text
@@ -643,6 +678,7 @@ class BSLJSONWriter(BSLObject):
         methods = {
             "установитьстроку": self.set_string, "setstring": self.set_string,
             "открытьфайл": self.open_file, "openfile": self.open_file,
+            "открытьпоток": self.open_stream, "openstream": self.open_stream,
             "закрыть": self.close, "close": self.close,
             "записатьимясвойства": self.write_property_name, "writepropertyname": self.write_property_name,
             "записатьначалообъекта": self.write_start_object, "writestartobject": self.write_start_object,
