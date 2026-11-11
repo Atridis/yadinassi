@@ -11,7 +11,7 @@ from .sqlite_registers import RegisterView
 MAX_OPERATIONS = 256
 MAX_BYTES = 16 * 1024 * 1024
 KINDS = ('catalog_create','catalog_update','document_create','document_update',
-         'register_write','register_delete','register_set')
+         'register_write','register_delete','register_set','recorder_replace')
 
 
 def _storage():
@@ -24,10 +24,22 @@ def _hash(value): return hashlib.sha256(_json(value).encode('utf-8')).hexdigest(
 def _child(operation, index): return uuid5(operation, 'unit-of-work-v1:%d' % index)
 
 
+def _recorder_port(view):
+    # Absent until a future explicit canonical profile admits recorder schemas.
+    # No table discovery or implicit activation on legacy v11/v12 databases.
+    schemas=getattr(view._backend,'_recorder_schemas',None)
+    if type(schemas) is not tuple or not schemas:raise BackendError('unsupported')
+    from .sqlite_recorder_movements import RecorderMovementPort
+    return RecorderMovementPort(view._connection,view.database_id,view.configuration_generation,schemas)
+
+
 def _describe(view, request):
     if type(request) is not TransactionRequest or request.kind not in KINDS:
         raise BackendError('invalid_input')
     kind,draft,expected = request.kind,request.draft,request.expected
+    if kind=='recorder_replace':
+        if expected is not None:raise BackendError('invalid_input')
+        return _recorder_port(view).describe(draft)
     if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
     if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
     if kind.startswith('catalog_'):
@@ -83,6 +95,7 @@ class UnitOfWork:
         tables=['commit_receipt','unit_of_work_receipt']
         if view._backend.storage_version >= 7: tables.append('document_commit_receipt')
         if view._backend.storage_version >= 8: tables.append('information_register_receipt')
+        if getattr(view._backend,'_recorder_schemas',None):tables.append('recorder_movement_receipt')
         if any(view._connection.execute('SELECT 1 FROM '+table+' WHERE operation_id=?',(str(child),)).fetchone() for table in tables): raise BackendError('conflict')
         # Outer savepoint includes child receipt, state allocation and every
         # underlying mutation; failed staging never leaves a receipt orphan.
@@ -107,6 +120,9 @@ class UnitOfWork:
                 payload = _json([str(r.document_id),str(r.record_id),r.token,result.number])
                 view._connection.execute('INSERT INTO document_commit_receipt VALUES(?,?,?,?,?,?)',
                     (str(child),bound,str(r.document_id),str(r.record_id),int(r.token),result.number))
+            elif kind=='recorder_replace':
+                result=_recorder_port(view).replace(child,draft)
+                bound,payload=view._connection.execute('SELECT request_hash,outcome_json FROM recorder_movement_receipt WHERE operation_id=?',(str(child),)).fetchone()
             else:
                 port = RegisterView(view)
                 if kind == 'register_set': port.write_set(draft)
@@ -198,6 +214,9 @@ def resolve(backend, operation, requests):
                 exists = view._connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=? AND request_hash=? AND revisions_json=?',(child,entry[3],entry[4])).fetchone()
             elif request.kind.startswith('document_'):
                 exists = view._connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=? AND request_hash=? AND document_id=? AND record_id=? AND revision=? AND number=?',(child,entry[3],*_json_document_payload(entry[4]))).fetchone()
+            elif request.kind=='recorder_replace':
+                _recorder_port(view)
+                exists=view._connection.execute('SELECT 1 FROM recorder_movement_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             else:
                 exists = view._connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             if not exists: raise BackendError('integrity')
@@ -219,6 +238,10 @@ def resolve(backend, operation, requests):
                 if schema is None: raise BackendError('schema_changed')
                 result = None if revision is None else CatalogWriteOutcome(revision,normalize_string(draft.code,schema.code_length))
         elif kind.startswith('document_'): result = backend.resolve_document_write(child,draft,expected)
+        elif kind=='recorder_replace':
+            borrowed=backend.begin_read()
+            try:result=_recorder_port(borrowed).resolve(child,draft)
+            finally:borrowed.close()
         elif kind == 'register_set': result = backend.resolve_register_set(child,draft)
         else: result = backend.resolve_register_write(child,draft,expected,kind == 'register_delete')
         if result is None: raise BackendError('integrity')
