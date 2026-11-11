@@ -29,6 +29,14 @@ class SQLiteDBContext:
         return result
 
     @classmethod
+    def create_inventory(cls, path, configuration):
+        """Fresh explicit typed-reference inventory, never scalar-profile upgrade."""
+        result = object.__new__(cls)
+        result._backend = SQLiteCatalogBackend.create_inventory(path, configuration)
+        result.path = result._backend.path
+        return result
+
+    @classmethod
     def create_accumulation(cls, path, configuration):
         """Create a separate fresh accumulation profile with an explicit source grant."""
         result = object.__new__(cls)

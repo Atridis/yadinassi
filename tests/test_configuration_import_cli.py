@@ -215,7 +215,7 @@ class ConfigurationImportCLITests(unittest.TestCase):
         with mock.patch.object(reader,'load_configuration_directory',side_effect=error) as failed:
             result=self.run_cli(['--create-db',str(self.database),'--import-xml',str(self.source)])
             failed.assert_called_once()
-        self.assertEqual(result,(1,'','yadinassi: configuration import refused\n',
+        self.assertEqual(result,(1,'','yadinassi: configuration import refused: code=source_unavailable; stage=schema\n',
             (('import','ValueError','configuration source unavailable',None),)))
         self.assertIs(reader.load_configuration_directory,original_import)
         self.assertIs(cli.SQLiteDBContext.create.__func__,original_create)

@@ -27,6 +27,7 @@ class EnumMetadata(_MetadataObject):
         if key in ('name','имя'): return self._name
         if key in ('comment','комментарий'): return self._definition.comment
         if key in ('enumvalues','значенияперечисления'): return self._values
+        if key in ('fullname','полноеимя'): return HostFunction(name,lambda:'Перечисление.'+self._name)
         return super().get_member(name)
 
 
@@ -35,9 +36,12 @@ class BSLEnumManager(BSLObject):
         self._metadata=metadata;definition=metadata._definition
         self._value_type=BSLEnumType(definition.identity,definition.name,snapshot)
         self._manager_type=BSLEnumType(definition.identity,definition.name,snapshot,'manager')
-        self._values=tuple(BSLEnumReference(self._value_type,v.identity,metadata) for v in definition.values)
+        self._values=tuple(BSLEnumReference(self._value_type,v.identity,metadata,
+            None if any(lang.casefold()=='ru' for lang,_ in v.synonyms) else v.name) for v in definition.values)
         self._named={v.name.casefold():r for v,r in zip(definition.values,self._values)}
         self._empty=BSLEnumReference(self._value_type,UUID(int=0),metadata)
+
+    def __str__(self): return 'ПеречислениеМенеджер.'+self._metadata._name
 
     def count(self): return Decimal(len(self._values))
 

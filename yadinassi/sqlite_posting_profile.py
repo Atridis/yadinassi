@@ -19,20 +19,25 @@ def _storage():
     return sqlite_catalog
 
 
-def admit(connection,database_id,documents,*,validate_rows=False):
+def admit(connection,database_id,documents,*,validate_rows=False,_prepared=None):
     count,size=connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
     if not 1<=count<=4096 or size>8*1024*1024:raise BackendError('unsupported')
     if connection.execute("SELECT 1 FROM configuration_file WHERE typeof(path)!='text' OR length(path)>256 OR typeof(content)!='blob' OR length(content)>1048576 OR typeof(sha256)!='text' OR length(sha256)!=64 LIMIT 1").fetchone():raise BackendError('integrity')
-    files={}
+    files={};source_entries=[]
     for path,kind,raw,digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file'):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
-        files[path]=raw
+        files[path]=raw;source_entries.append((path,kind,digest))
     marker=connection.execute('SELECT singleton,profile,source_digest FROM posting_profile LIMIT 2').fetchall()
     if len(marker)!=1 or marker[0][0]!=1:raise BackendError('integrity')
-    try:config=import_variant(files,marker[0][1])
-    except (ValueError,TypeError,KeyError):raise BackendError('integrity') from None
-    if marker!=[(1,config.profile,config.source_digest)] or tuple(sorted(config.documents,key=lambda s:str(s.identity)))!=tuple(sorted(documents,key=lambda s:str(s.identity))):raise BackendError('integrity')
     info=connection.execute('SELECT configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
+    prepared_key=('posting',database_id,
+        tuple(connection.execute('PRAGMA '+name).fetchone()[0] for name in ('application_id','user_version','schema_version')),
+        info,tuple(marker),tuple(sorted(source_entries)),documents)
+    config=_prepared.lookup(prepared_key) if _prepared is not None else None
+    if config is None:
+        try:config=import_variant(files,marker[0][1])
+        except (ValueError,TypeError,KeyError):raise BackendError('integrity') from None
+    if marker!=[(1,config.profile,config.source_digest)] or tuple(sorted(config.documents,key=lambda s:str(s.identity)))!=tuple(sorted(documents,key=lambda s:str(s.identity))):raise BackendError('integrity')
     if info!=(str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
     if connection.execute('SELECT COUNT(*) FROM recorder_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')
     port=RecorderMovementPort(connection,database_id,1,config.registers)
@@ -49,6 +54,7 @@ def admit(connection,database_id,documents,*,validate_rows=False):
         posted_budget(connection)
         for doc,record in connection.execute('SELECT document_id,record_id FROM document_posting_state'):
             read_posted(connection,database_id,DocumentKey(database_id,UUID(doc),UUID(record)))
+    if _prepared is not None:_prepared.remember(prepared_key,config)
     return config
 
 
@@ -97,3 +103,24 @@ def create(cls,path,configuration):
                 if s._interruption(cleanup_error) and not s._interruption(error):error=cleanup_error
         if committing and not s._interruption(error):raise BackendError('uncertain_commit') from None
         raise error
+
+
+def preflight_configuration(configuration):
+    """Canonical source/storage checks before file allocation; compile, never run."""
+    config = canonical(configuration)
+    from .sqlite_documents import schema_data as document_data, parse_schema, _MAX_TOTAL
+    from .document_posting_program import compile_handlers
+    from .configuration_modules import MAX_ROUTINES
+    if len(config.files) > 2048 or sum(len(raw) for _, raw in config.files) > 8 * 1024 * 1024:
+        raise BackendError('unsupported')
+    size = 0
+    for document in config.documents:
+        raw = _storage()._json(document_data(document)); size += len(raw.encode('utf-8'))
+        if len(raw) > 65536 or parse_schema(raw) != document:
+            raise BackendError('unsupported')
+    if size > _MAX_TOTAL or sum(len(d.tabular_sections) for d in config.documents) > 512:
+        raise BackendError('unsupported')
+    programs, _ = compile_handlers(config)
+    if sum(len(program) for program in programs.values()) > MAX_ROUTINES:
+        raise BackendError('unsupported')
+    return config

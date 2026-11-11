@@ -25,7 +25,7 @@ class EnumDefinition:
 
 
 def read_enumerations(files, names, used, issues):
-    from .configuration_xml import (MD, V8, _activation_properties, _envelope_issues,
+    from .configuration_xml import (MD, V8, XR, _envelope_issues,
                                     _fail, _name, _object, _props, _text, _uuid)
     if len(names) > 128 or len({n.casefold() for n in names}) != len(names):
         _fail('enumeration inventory')
@@ -48,9 +48,54 @@ def read_enumerations(files, names, used, issues):
         if len(comment)>4096: _fail('enumeration comment bound')
         return tuple(result),comment
 
+    def generated_envelope(obj, owner):
+        """Closed declarative envelope, not authority for forms or UUID codecs.
+
+        Keep all source bytes. Generated identities are checked for collisions
+        but never substituted for runtime value identities or serialized GUIDs.
+        """
+        info=obj.find('{'+MD+'}InternalInfo')
+        if info is None: return False
+        if info.attrib or (info.text or '').strip() or len(info)!=3:
+            _fail('enumeration generated envelope')
+        seen=set()
+        for node in info:
+            if (node.tag!='{'+XR+'}GeneratedType' or set(node.attrib)!={'name','category'}
+                    or (node.text or '').strip() or (node.tail or '').strip() or len(node)!=2):
+                _fail('enumeration generated type')
+            category=node.get('category')
+            if category not in ('Ref','Manager','List') or category in seen or node.get('name')!='Enum'+category+'.'+owner:
+                _fail('enumeration generated family')
+            seen.add(category)
+            if [c.tag for c in node]!=['{'+XR+'}TypeId','{'+XR+'}ValueId']:
+                _fail('enumeration generated identity shape')
+            for child in node:
+                if child.attrib or len(child) or (child.tail or '').strip():
+                    _fail('enumeration generated identity shape')
+                identity=_uuid(child.text)
+                if identity in used: _fail('duplicate generated metadata UUID')
+                used.add(identity)
+        defaults={'UseStandardCommands':'false','Characteristics':'','QuickChoice':'true',
+            'ChoiceMode':'BothWays','DefaultListForm':'','DefaultChoiceForm':'',
+            'AuxiliaryListForm':'','AuxiliaryChoiceForm':'','ListPresentation':'',
+            'ExtendedListPresentation':'','Explanation':'','ChoiceHistoryOnInput':'Auto'}
+        props=_props(obj)
+        expected={'{'+MD+'}'+n for n in ('Name','Synonym','Comment',*defaults)}
+        if '{'+MD+'}StandardAttributes' in props:
+            expected.add('{'+MD+'}StandardAttributes')
+            defaults['StandardAttributes']=''
+        if set(props)!=expected: _fail('unsupported enumeration generated properties')
+        for name,value in defaults.items():
+            node=props['{'+MD+'}'+name]
+            if node.attrib or len(node) or (node.text or '')!=value or (node.tail or '').strip():
+                _fail('unsupported enumeration generated property')
+        return True
+
     def validate_object(obj, owner, *, children):
         allowed={'{'+MD+'}Properties'}
+        rich=generated_envelope(obj,owner) if children else False
         if children: allowed.add('{'+MD+'}ChildObjects')
+        if rich: allowed.add('{'+MD+'}InternalInfo')
         if set(obj.attrib)!={'uuid'} or (obj.text or '').strip(): _fail('enumeration envelope')
         if len({n.tag for n in obj})!=len(obj): _fail('enumeration duplicate container')
         for node in obj:
@@ -58,7 +103,7 @@ def read_enumerations(files, names, used, issues):
                 _fail('unsupported enumeration component')
         props=_props(obj)
         for tag,node in props.items():
-            if tag not in {'{'+MD+'}Name','{'+MD+'}Synonym','{'+MD+'}Comment'} or node.attrib or (node.tail or '').strip():
+            if (not rich and tag not in {'{'+MD+'}Name','{'+MD+'}Synonym','{'+MD+'}Comment'}) or node.attrib or (node.tail or '').strip():
                 _fail('unsupported enumeration property')
             if tag!='{'+MD+'}Synonym' and len(node): _fail('enumeration scalar property')
 

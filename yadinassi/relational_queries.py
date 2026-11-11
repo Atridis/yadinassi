@@ -247,6 +247,9 @@ class _Plan:
                         if self.sources[i].family == 'information_register' else 'Ref')
                 fields.append(self.resolve_field(i, syntax.Field((name,))))
 
+        from .query_predicate_plan import inner_source_predicates
+        self.source_predicates = ((self.predicate,) if len(self.sources) == 1
+                                  else inner_source_predicates(self))
         self.all_managers = tuple(self.managers) + tuple(
             manager for plan in self.derived_plans.values() for manager in plan.all_managers) + tuple(
             manager for member in self.memberships if member.plan is not None
@@ -382,13 +385,15 @@ class _Plan:
             return None
         if type(node.value) not in (str, bool, Decimal, BSLDate, BSLCatalogReference):
             return None
-        try: stored = _stored(self.managers[source], node.field.column, node.value)
+        try:
+            if type(node.value) is str: node.value.encode('utf-8')
+            stored = _stored(self.managers[source], node.field.column, node.value)
         except (TypeError, ValueError): return None
         return CatalogComparison(node.field.column.field, node.operator, stored)
 
     def document_storage_predicate(self, node, source):
         from .catalog_backend import CatalogComparison
-        from .dates import _parts
+        from .dates import _parts, TICKS_PER_SECOND
         if node is None: return ()
         if type(node) is syntax.Predicate:
             if node.kind != 'and': return None
@@ -402,7 +407,9 @@ class _Plan:
             from .catalog_qualifiers import validate_string
             try: validate_string(value, self.managers[source]._schema.number_length)
             except (TypeError, ValueError): return None
-        elif field == 'date' and type(value) is BSLDate: value = _parts(value)
+        elif field == 'date' and type(value) is BSLDate:
+            if value.ticks % TICKS_PER_SECOND: return None
+            value = _parts(value)
         elif field == 'deletion_mark' and type(value) is bool: pass
         else: return None
         return (CatalogComparison(field, node.operator, value),)
@@ -752,8 +759,8 @@ class _Plan:
         if self.sources[index].family == 'document':
             from .document_queries import load_documents
             return load_documents(manager, section, columns, view, budget,
-                predicate=(self.document_storage_predicate(self.predicate, index) or ())
-                if len(self.sources) == 1 and section is None else ())
+                predicate=(self.document_storage_predicate(self.source_predicates[index], index) or ())
+                if section is None else ())
         metadata = manager._catalogs._metadata
         if ((view.database_id, view.configuration_generation) != (metadata._database_id, metadata._generation)
                 or view.catalog_schema(manager._schema.identity) != manager._schema):
@@ -761,8 +768,8 @@ class _Plan:
         rows, seen, cursors = [], set(), set()
         continuation = None
         while True:
-            predicate = (self.storage_predicate(self.predicate, index)
-                         if len(self.sources) == 1 and section is None else None)
+            predicate = (self.storage_predicate(self.source_predicates[index], index)
+                         if section is None else None)
             request = CatalogScanRequest(predicate=predicate, page_size=1000, continuation=continuation, string_comparison='casefold_v1')
             if section is None:
                 page = view.scan_catalog_values(manager._schema.identity, request, tuple(c.field for c in columns))

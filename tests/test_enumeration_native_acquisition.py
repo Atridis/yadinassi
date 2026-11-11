@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 import xml.etree.ElementTree as ET
@@ -197,7 +198,7 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         suite=self.adapter();events=[];child=mock.MagicMock()
         child.wait.side_effect=suite.subprocess.TimeoutExpired('private command',120)
         process=mock.MagicMock();process.__enter__.return_value=child
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(suite.os,'name','posix'), mock.patch.object(suite.subprocess,'Popen',return_value=process), mock.patch.object(suite,'timeout_witness',side_effect=lambda p:events.append('witness') or {}), mock.patch.object(suite.full,'_stop_group',side_effect=lambda p:events.append('stop')):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(suite,'os',SimpleNamespace(name='posix')), mock.patch.object(suite.subprocess,'Popen',return_value=process), mock.patch.object(suite,'timeout_witness',side_effect=lambda p:events.append('witness') or {}), mock.patch.object(suite.full,'_stop_group',side_effect=lambda p:events.append('stop')):
             with self.assertRaises(suite.full.FullError) as error:
                 suite.run_designer_process(['owned','DESIGNER'],Path(directory),Path(directory)/'out',120,report={})
         self.assertEqual(error.exception.kind,'timeout');self.assertEqual(events,['witness','stop'])

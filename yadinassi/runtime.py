@@ -515,6 +515,24 @@ class Interpreter:
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
 
+    def _new_type_description(self, *values):
+        # Resolve only one application-owned enum type name. Mixed/reference
+        # unions and all qualifiers still pass through the descriptor's closed
+        # admission; do not turn arbitrary names into host type lookups.
+        if values and type(values[0]) is str and len(values[0]) <= 4096:
+            token = values[0].strip()
+            prefix, separator, _ = token.partition('.')
+            if (separator and ',' not in token and prefix.casefold() in
+                    ('enumref', 'перечислениессылка', 'enummanager', 'перечислениеменеджер')):
+                self._require_family()
+                if self._metadata._enumerations is None:
+                    raise ValueError('enumeration types require an active configuration application')
+                kind = self._metadata._enumerations.resolve_type(token)
+                source = BSLArray()
+                source.items.append(kind)
+                values = (source, *values[1:])
+        return BSLTypeDescription(*values)
+
     def _type_by_name(self, name):
         if self._metadata._enumerations is not None:
             value = self._metadata._enumerations.resolve_type(name)
@@ -1791,6 +1809,8 @@ class Interpreter:
             values = []
             for argument in node.arguments:
                 values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+            if factory.function is BSLTypeDescription:
+                return self._new_type_description(*values)
             return factory(*values)
         self.reject_host_omissions(node.arguments)
         if factory is None:
@@ -1820,6 +1840,8 @@ class Interpreter:
         arguments = tuple(parameters.items) if type(parameters) is BSLArray else ()
         if factory.function is callback_description_marker:
             return self._new_callback(arguments)
+        if factory.function is BSLTypeDescription:
+            return self._new_type_description(*arguments)
         return factory(*arguments)
 
     def visit_Assign(self, node: ast.Assign) -> None:

@@ -14,7 +14,7 @@ from .syntax.parser import parse
 from .values import Reference, HostFunction
 from .native_targets import target_context
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
-                         BSLFormButton, BSLFormTable, BSLFormCommand, FORM_FIELD_VIEWS,
+                         BSLFormButton, BSLFormTable, BSLFormGroup, BSLFormCommand, FORM_FIELD_VIEWS,
                          MAX_ATTRIBUTES, MAX_TOTAL_TEXT, name, scalar, text)
 
 from .form_tables import (FormTableSchema, BSLFormDataCollection, MAX_TABLES,
@@ -415,18 +415,21 @@ class FormSession:
             if event != 'close':
                 item = self.form.items._values.get(control.casefold())
                 expected = BSLFormTable if event in ('cell', 'select') else BSLFormField if event=='change' else BSLFormButton
-                if type(item) is not expected or not item.visible or not item.enabled or item._removed:
+                from .form_layout import effective_state
+                visible, enabled, readonly = effective_state(item) if type(item) is expected else (False, False, True)
+                if type(item) is not expected or not visible or not enabled or item._removed:
                     raise ValueError('Форма: недоступный элемент')
                 if event == 'change':
-                    if item.read_only or not item.data_path: raise ValueError('Форма: поле недоступно для ввода')
+                    if readonly or not item.data_path: raise ValueError('Форма: поле недоступно для ввода')
                 elif event in ('cell', 'select'):
                     table = item._table()
                     selected = None if row is None else table._lookup_id(row)
                     if event == 'cell':
                         col = next((c for c in table.schema.columns if c.name.casefold() == column.casefold()), None)
-                        if item.read_only or col is None or col.read_only:
+                        if readonly or col is None or col.read_only:
                             raise ValueError('ТаблицаФормы: ячейка недоступна для ввода')
                 else:
+                    if readonly and self.form._layout: raise ValueError('Форма: команда недоступна')
                     command = self.form.commands._values.get(item.command_name.casefold())
                     if command is None or not command.action: raise ValueError('Форма: команда не привязана')
                     action = self._application_actions.get(command.name.casefold())
@@ -460,8 +463,9 @@ class FormSession:
         if self._busy: raise ValueError("Форма: снимок во время обработчика недоступен")
         form = self.form
         # Detached immutable scalar records, not Python/BSL object handles.
-        items = tuple((x.name, 'button' if type(x) is BSLFormButton else 'table' if type(x) is BSLFormTable else 'field',x.title,
-                       x.visible,x.enabled,x.read_only,
+        from .form_layout import effective_state
+        items = tuple((x.name, 'button' if type(x) is BSLFormButton else 'table' if type(x) is BSLFormTable else 'group' if type(x) is BSLFormGroup else 'field',x.title,
+                       *effective_state(x),
                        x.command_name if type(x) is BSLFormButton else x.data_path)
                       for x in form.items._values.values())
         commands = tuple((x.name,x.title) for x in form.commands._values.values())

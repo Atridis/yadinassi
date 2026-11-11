@@ -10,6 +10,7 @@ import sys
 from uuid import UUID, uuid4
 from pathlib import Path
 from functools import wraps, cmp_to_key
+from threading import RLock
 from contextlib import contextmanager
 from dataclasses import replace
 
@@ -30,6 +31,7 @@ from . import sqlite_hierarchy as hierarchy_storage
 from .sqlite_hierarchy import HIERARCHY_DDL
 from . import sqlite_transaction_profile as transaction_profile
 from .sqlite_query_indexes import register_query_collations
+from .sqlite_read_handles import ReadHandle, reserve_owner, lifecycle
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
@@ -93,8 +95,36 @@ def _close_document_scan(owner):
         stream.close()
 
 
+def _retire_read_handle(owner):
+    handle = getattr(owner, '_read_handle', None)
+    if handle is not None:
+        handle.invalidate()
+        if getattr(owner._backend, '_read_handle', None) is handle:
+            owner._backend._read_handle = None
+        owner._read_handle = None
+
+
+def _read_owner(value):
+    owner = getattr(value, '_view', value)
+    return owner if (getattr(owner, '_read_handle', None) is not None
+                     and getattr(owner, '_connection', None) is not None) else None
+
+
 def _close_owned_connection(owner):
+    if owner._connection is None and owner._backend._active is owner:
+        # An interruption may land between the successful lease's detach
+        # assignments. The still-active owner exclusively owns this exact idle
+        # handle until publication completes; recover it for physical retirement.
+        handle = getattr(owner, '_read_handle', None) or owner._backend._read_handle
+        if handle is not None:
+            owner._connection = handle.connection
+            owner._read_handle = handle
+        else:
+            owner._backend._active = None
     if owner._connection is not None:
+        # Ownership stays with this owner until physical close succeeds. A
+        # failed/replaced lease is never returned to the retained read slot.
+        _retire_read_handle(owner)
         # A failed close makes the owner unusable but does not prove that
         # SQLite released its locks. Retain ownership until close succeeds.
         owner._closed=True; owner._scan_cursor=None
@@ -128,7 +158,9 @@ class _PendingConnection:
     def __init__(self, backend):
         self._backend=backend; self._connection=None
         self._closed=True; self._scan_cursor=None
+        self._read_handle=None
 
+    @lifecycle
     def close(self):
         _close_owned_connection(self)
         # Failure before sqlite3.connect returned did not acquire a handle.
@@ -140,13 +172,25 @@ def _boundary(function):
     @wraps(function)
     def call(*args, **kwargs):
         try:
-            return function(*args, **kwargs)
-        except BackendError:
+            result = function(*args, **kwargs)
+            owner = _read_owner(args[0]) if args else None
+            if owner is not None and not owner._closed:
+                owner._backend._check_file()
+            return result
+        except BaseException as error:
+            owner = _read_owner(args[0]) if args else None
+            if owner is not None:
+                owner._read_handle.invalidate()
+                if hasattr(owner, '_validated_sources'):
+                    owner._validated_sources.clear()
+            if isinstance(error, BackendError):
+                raise
+            if isinstance(error, sqlite3.Error):
+                raise BackendError('storage_error') from None
+            if isinstance(error, (ValueError, TypeError, KeyError, IndexError,
+                                  OverflowError, RecursionError)):
+                raise BackendError('integrity') from None
             raise
-        except sqlite3.Error:
-            raise BackendError('storage_error') from None
-        except (ValueError, TypeError, KeyError, IndexError, OverflowError, RecursionError):
-            raise BackendError('integrity') from None
     return call
 
 
@@ -401,14 +445,18 @@ class SQLiteCatalogBackend:
         self.path = _private_parent(os.path.abspath(raw))
         self._closed = False
         self._active = None
-        self._check_file()
+        self._owner_lock = RLock()
+        self._read_handle = None
+        from .prepared_source import PreparedSource
+        self._prepared_source = PreparedSource()
+        self._file_identity = self._check_file()
         connection = self._connect()
         try:
             connection.execute('BEGIN')  # Pin schema, registry and metadata to one snapshot.
             if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID:
                 raise BackendError('unsupported')
             self.format_version = connection.execute('PRAGMA user_version').fetchone()[0]
-            self.storage_version = (transaction_profile.base_version(connection) if self.format_version in (11, 12) else 7 if self.format_version in (13, 14) else self.format_version)
+            self.storage_version = (transaction_profile.base_version(connection) if self.format_version in (11, 12) else 7 if self.format_version in (13, 14, 15) else self.format_version)
             if self.storage_version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10): raise BackendError('unsupported')
             statements = list(_DDL)
             if self.storage_version >= 2:
@@ -474,6 +522,9 @@ class SQLiteCatalogBackend:
             if self.format_version == 14:
                 from .sqlite_accumulation_profile import DDL as accumulation_ddl
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in accumulation_ddl})
+            if self.format_version == 15:
+                from .sqlite_inventory_profile import DDL as inventory_ddl
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in inventory_ddl})
             if self.format_version == 12:
                 from .sqlite_configuration_history import DDL as update_ddl
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in update_ddl})
@@ -484,9 +535,12 @@ class SQLiteCatalogBackend:
             actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
             if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
-            actual_indexes = tuple(row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"))
-            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13, 14) else ()
-            if self.storage_version >= 2 and actual_indexes != expected_indexes: raise BackendError('unsupported')
+            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13, 14, 15) else ()
+            from .sqlite_query_indexes import read_index_bundle_ddls, admit_query_indexes
+            self._query_indexes = (admit_query_indexes(connection, expected_indexes,
+                read_index_bundle_ddls(self.storage_version,self._schemas,self._layout,
+                                       format_version=self.format_version))
+                if self.storage_version >= 2 else False)
             if self.format_version in (11, 12): transaction_profile.validate_marker(connection)
             if self.storage_version == 10:
                 if connection.execute('SELECT COUNT(*) FROM catalog_hierarchy').fetchone()[0] > _MAX_ROWS * len(schemas): raise BackendError('unsupported')
@@ -511,11 +565,17 @@ class SQLiteCatalogBackend:
             self._accumulation_schemas = ()
             if self.format_version == 13:
                 from .sqlite_posting_profile import admit
-                self.posting_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self.posting_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True,
+                    _prepared=self._prepared_source)
                 self._recorder_schemas = self.posting_configuration.registers
             if self.format_version == 14:
                 from .sqlite_accumulation_profile import admit
                 self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self._accumulation_schemas = self.accumulation_configuration.registers
+            if self.format_version == 15:
+                from .sqlite_inventory_profile import admit
+                self.accumulation_configuration = admit(connection, self.database_id, self._schemas,
+                    self._document_schemas, validate_rows=True)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
@@ -559,26 +619,33 @@ class SQLiteCatalogBackend:
             if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400 or info.st_nlink != 1 or info.st_size > _MAX_DATABASE_BYTES:
                 raise BackendError('invalid_input')
             _private_parent(self.path)
+            identity = (info.st_dev, info.st_ino)
+            if getattr(self, '_file_identity', identity) != identity:
+                raise BackendError('schema_changed')
+            return identity
         except OSError: raise BackendError('storage_error') from None
 
-    def _connect(self, *, _owner=None):
+    def _connect(self, *, _owner=None, _read_handle=False):
         self._check_file()
         connection = None
         try:
-            connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
+            readonly = self.read_only or _read_handle
+            connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if readonly else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2,
+                                         check_same_thread=not _read_handle)
             if _owner is not None: _owner._connection=connection
             register_query_collations(connection)
-            if self.read_only: connection.execute('PRAGMA query_only=ON')
+            if readonly: connection.execute('PRAGMA query_only=ON')
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA trusted_schema=OFF')
             connection.execute('PRAGMA synchronous=FULL')
-            if not self.read_only:
+            if not readonly:
                 page_size = connection.execute('PRAGMA page_size').fetchone()[0]
                 connection.execute('PRAGMA max_page_count=%d' % (_MAX_DATABASE_BYTES // page_size))
             if connection.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
                 raise BackendError('unsupported')
             if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
                 raise BackendError('unsupported')
+            self._check_file()
             return connection
         except BaseException:
             if _owner is not None:
@@ -587,6 +654,12 @@ class SQLiteCatalogBackend:
                 if connection is not None: _owner._connection=connection
             elif connection is not None: connection.close()
             raise
+
+    @classmethod
+    @_boundary
+    def create_inventory(cls, path, configuration):
+        from .sqlite_inventory_profile import create
+        return create(cls, path, configuration)
 
     @classmethod
     @_boundary
@@ -602,111 +675,9 @@ class SQLiteCatalogBackend:
 
     @classmethod
     @_boundary
-    def create(cls, path, configuration, *, activate=True, _source_profile=None):
+    def create(cls, path, configuration, *, activate=True, query_indexes=False, _source_profile=None):
         """Create only a new owned file, atomically import admitted XML and code."""
-        from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
-        if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
-            raise BackendError('invalid_input')
-        if type(activate) is not bool: raise BackendError('invalid_input')
-        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or not activate): raise BackendError('unsupported')
-        if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
-        if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
-        if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
-        if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
-            raise BackendError('invalid_input')
-        if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
-            raise BackendError('invalid_input')
-        if configuration.module_runtime is not None:
-            from .configuration_modules import MODULE_RUNTIME
-            from .configuration_xml import import_configuration
-            from .errors import BSLError
-            if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
-                raise BackendError('unsupported')
-            if _source_profile not in (None, APPLICATION_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE): raise BackendError('unsupported')
-            try:
-                if _source_profile == REFERENCE_PROFILE:
-                    from .configuration_reference_profile import import_reference_configuration
-                    canonical = import_reference_configuration({f.path:f.content for f in configuration.files})
-                elif _source_profile == BUSINESS_PROFILE:
-                    from .configuration_business_profile import import_business_configuration
-                    canonical = import_business_configuration({f.path:f.content for f in configuration.files})
-                elif _source_profile == APPLICATION_PROFILE:
-                    from .configuration_application_profile import import_application_configuration
-                    canonical = import_application_configuration({f.path:f.content for f in configuration.files})
-                else:
-                    canonical = import_configuration({f.path:f.content for f in configuration.files},
-                        numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
-            except (BSLError, ValueError, TypeError):
-                raise BackendError('unsupported') from None
-            if canonical != configuration: raise BackendError('unsupported')
-        elif configuration.common_modules:
-            raise BackendError('unsupported')
-        registers = configuration.information_registers
-        if type(registers) is not tuple: raise BackendError('invalid_input')
-        register_definitions = [register_schema_data(r) for r in registers]
-        documents = configuration.documents
-        if type(documents) is not tuple: raise BackendError('invalid_input')
-        document_definitions = [document_schema_data(s) for s in documents]
-        if (documents or registers) and (_source_profile not in (None, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
-        if _source_profile == REFERENCE_PROFILE:
-            from .configuration_reference_profile import import_reference_configuration
-            if configuration != import_reference_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        if _source_profile == BUSINESS_PROFILE:
-            from .configuration_business_profile import import_business_configuration
-            if configuration != import_business_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        if _source_profile == DOCUMENT_FORMS_PROFILE:
-            from .configuration_document_profile import import_document_forms_configuration
-            if configuration != import_document_forms_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        schemas = tuple(configuration.catalogs)
-        if not 1 <= len(schemas) + len(documents) + len(registers) <= 512: raise BackendError('invalid_input')
-        definitions = [_schema_data(s) for s in schemas]
-        section_count = sum(len(s.tabular_sections) for s in schemas)
-        if section_count > _MAX_DATABASE_SECTIONS or sum(len(_json(d)) for d in definitions) > _MAX_CONFIG_BYTES:
-            raise BackendError('invalid_input')
-        storage_version = (10 if any(s.hierarchy != 'none' for s in schemas) else 9 if any(r.periodic for r in registers) else 8 if registers else 7 if documents else 6 if _source_profile is not None else
-                           5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
-                           4 if any(s.numbering != 'explicit' for s in schemas) else
-                           3 if section_count else 2)
-        if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
-        identities = {s.identity for s in schemas}
-        if len(identities) != len(schemas): raise BackendError('invalid_input')
-        if any(f.target_catalog_id not in identities for s in schemas for f in _all_fields(s) if f.kind == 'catalog_ref'):
-            raise BackendError('invalid_input')
-        if documents:
-            document_ids = {d.identity for d in documents}
-            if identities & document_ids or len(document_ids) != len(documents): raise BackendError('invalid_input')
-            all_ids = set()
-            for schema in (*schemas,*documents):
-                for item in (schema,*schema.fields,*schema.tabular_sections,*(f for sec in schema.tabular_sections for f in sec.fields)):
-                    if item.identity in all_ids: raise BackendError('invalid_input')
-                    all_ids.add(item.identity)
-            if len({d.name.casefold() for d in documents}) != len(documents): raise BackendError('invalid_input')
-            if any(f.target_catalog_id not in identities for d in documents for f in _all_fields(d) if f.kind == 'catalog_ref'): raise BackendError('invalid_input')
-            if section_count + sum(len(d.tabular_sections) for d in documents) > _MAX_DATABASE_SECTIONS: raise BackendError('invalid_input')
-            if sum(len(_json(d)) for d in (*definitions,*document_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
-        if registers:
-            validate_register_configuration(registers, schemas, documents)
-            if sum(len(_json(d)) for d in (*definitions,*document_definitions,*register_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
-        files = tuple(configuration.files)
-        if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
-            raise BackendError('invalid_input')
-        if len({f.path for f in files}) != len(files): raise BackendError('invalid_input')
-        for f in files:
-            if type(f.kind) is not str or f.kind not in ('xml','module'): raise BackendError('invalid_input')
-            if type(f.path) is not str or len(f.path) > 256 or f.path.startswith('/') or '\\' in f.path or ':' in f.path or '\x00' in f.path or any(p in ('','.', '..') for p in f.path.split('/')) or type(f.content) is not bytes or len(f.content) > 1024*1024:
-                raise BackendError('invalid_input')
-        if storage_version == 6:
-            from .configuration_xml import _demo_configuration
-            if configuration != _demo_configuration({f.path: f.content for f in files}, _source_profile)[0]:
-                raise BackendError('unsupported')
-        if storage_version == 5:
-            from .configuration_xml import import_inert_configuration
-            canonical = import_inert_configuration({f.path: f.content for f in files})
-            if activate or configuration != canonical:
-                raise BackendError('unsupported')
+        (schemas, registers, documents, definitions, register_definitions, document_definitions, storage_version, files) = _preflight_create(configuration, activate=activate, query_indexes=query_indexes, _source_profile=_source_profile)
         raw = os.fspath(path)
         if type(raw) is not str or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise BackendError('invalid_input')
@@ -760,6 +731,12 @@ class SQLiteCatalogBackend:
                 for schema in schemas:
                     for section in schema.tabular_sections:
                         connection.execute(section_ddl(schema, section, layout, sections_layout))
+            if query_indexes:
+                from .sqlite_query_indexes import read_index_bundle_ddls, check_index_bundle_budget
+                bundle=read_index_bundle_ddls(storage_version,schemas,layout,format_version=storage_version)
+                check_index_bundle_budget(connection,bundle)
+                for statement in bundle:
+                    connection.execute(statement)
             for f in files:
                 connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)', (f.path,f.kind,f.content,hashlib.sha256(f.content).hexdigest()))
             connection.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
@@ -873,12 +850,16 @@ class SQLiteCatalogBackend:
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
         if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES:
             raise BackendError('integrity')
-        files = {}; entries = []
+        files = {}; entries = []; source_entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
-            files[path] = content; entries.append((path, kind))
-        try: imported = import_document_forms_configuration(files)
-        except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+            files[path] = content; entries.append((path, kind)); source_entries.append((path, kind, digest))
+        prepared_key = ('document_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info[0]), tuple(source_entries))
+        imported = self._prepared_source.lookup(prepared_key)
+        if imported is None:
+            try: imported = import_document_forms_configuration(files)
+            except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
         if (tuple((f.path, f.kind) for f in imported.files) != tuple(entries) or
                 imported.activation_issues != self.activation_issues or
                 (str(imported.config_uuid), imported.name) != (info[0][1], info[0][3]) or
@@ -906,6 +887,7 @@ class SQLiteCatalogBackend:
         if not admitting and identity != self._document_form_identity:
             raise BackendError('schema_changed')
         if admitting: self._document_form_identity = identity
+        self._prepared_source.remember(prepared_key, imported)
         return imported
 
     def _business_source_snapshot(self, connection, *, admitting=False):
@@ -929,17 +911,23 @@ class SQLiteCatalogBackend:
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
         if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES:
             raise BackendError('integrity')
-        files = {}; entries = []
+        files = {}; entries = []; source_entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
-            files[path] = content; entries.append((path, kind))
-        try:
-            if _source_profile_for_issues(self.activation_issues) == REFERENCE_PROFILE:
-                from .configuration_reference_profile import reference_configuration
-                imported, catalogs = reference_configuration(files)
-            else:
-                imported, catalogs = business_configuration(files)
-        except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+            files[path] = content; entries.append((path, kind)); source_entries.append((path, kind, digest))
+        prepared_key = ('business_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info[0]), tuple(source_entries))
+        prepared = self._prepared_source.lookup(prepared_key)
+        if prepared is None:
+            try:
+                if _source_profile_for_issues(self.activation_issues) == REFERENCE_PROFILE:
+                    from .configuration_reference_profile import reference_configuration
+                    imported, catalogs = reference_configuration(files)
+                else:
+                    imported, catalogs = business_configuration(files)
+            except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+        else:
+            imported, catalogs = prepared
         if (tuple((f.path, f.kind) for f in imported.files) != tuple(entries) or
                 imported.activation_issues != self.activation_issues or
                 (str(imported.config_uuid), imported.name) != (info[0][1], info[0][3]) or
@@ -969,6 +957,7 @@ class SQLiteCatalogBackend:
             raise BackendError('schema_changed')
         if admitting: self._business_form_identity = identity
         self._check_sequences(connection, self._schemas)
+        self._prepared_source.remember(prepared_key, (imported, catalogs))
         return imported, catalogs, info[0], imported.activation_issues[0].rsplit(':', 1)[1]
 
     @_boundary
@@ -1061,8 +1050,15 @@ class SQLiteCatalogBackend:
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
             files[path] = content
             entries.append([path, kind, len(content), digest])
-        try: imported, catalogs = _demo_configuration(files, self._demo_profile())
-        except ValueError: raise BackendError('schema_changed') from None
+        prepared_key = ('catalog_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info),
+            self._demo_profile(), tuple(tuple(entry) for entry in entries))
+        prepared = self._prepared_source.lookup(prepared_key)
+        if prepared is None:
+            try: imported, catalogs = _demo_configuration(files, self._demo_profile())
+            except ValueError: raise BackendError('schema_changed') from None
+        else:
+            imported, catalogs = prepared
         if (info[1], info[3]) != (str(imported.config_uuid), imported.name): raise BackendError('schema_changed')
         if imported.activation_issues != self.activation_issues: raise BackendError('schema_changed')
         if tuple((f.path, f.kind) for f in imported.files) != tuple((e[0], e[1]) for e in entries): raise BackendError('integrity')
@@ -1074,6 +1070,7 @@ class SQLiteCatalogBackend:
         manifest = hashlib.sha256(_json([self._demo_profile(), entries]).encode('utf-8')).hexdigest()
         if not admitting and (imported.config_uuid != self._demo_configuration_id or manifest != self._demo_manifest):
             raise BackendError('schema_changed')
+        self._prepared_source.remember(prepared_key, (imported, catalogs))
         return imported, catalogs, info, manifest
 
     def _inert_source_snapshot(self, connection, *, admitting=False):
@@ -1187,7 +1184,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def read_document_posted(self, key):
-        if self.format_version not in (13, 14): raise BackendError('unsupported')
+        if self.format_version not in (13, 14, 15): raise BackendError('unsupported')
         from .sqlite_document_posting_state import read_posted
         view = self.begin_read()
         try: return read_posted(view._connection, self.database_id, key)
@@ -1203,7 +1200,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def read_accumulation(self, register_id, key):
-        if self.format_version != 14: raise BackendError('unsupported')
+        if self.format_version not in (14, 15): raise BackendError('unsupported')
         from .sqlite_transactions import _accumulation_port
         view = self.begin_read()
         try: return _accumulation_port(view).read(register_id, key)
@@ -1212,7 +1209,7 @@ class SQLiteCatalogBackend:
     @_boundary
     def begin_unit_of_work(self, operation_id):
         from .sqlite_transactions import UnitOfWork
-        if self.format_version not in (11, 12, 13, 14): raise BackendError('unsupported')
+        if self.format_version not in (11, 12, 13, 14, 15): raise BackendError('unsupported')
         view = self.begin_write(operation_id)
         try: return UnitOfWork(view)
         except BaseException:
@@ -1221,7 +1218,7 @@ class SQLiteCatalogBackend:
     @_boundary
     def resolve_unit_of_work(self, operation_id, requests):
         from .sqlite_transactions import resolve
-        if self.format_version not in (11, 12, 13, 14): raise BackendError('unsupported')
+        if self.format_version not in (11, 12, 13, 14, 15): raise BackendError('unsupported')
         return resolve(self, operation_id, requests)
 
     @_boundary
@@ -1245,6 +1242,9 @@ class SQLiteCatalogBackend:
         view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return DocumentView(view)
         except BaseException as error:
+            # A wrapper never admitted successfully; retain the original
+            # physical-cleanup/poisoned-owner contract, not normal lease reuse.
+            _retire_read_handle(view)
             try: view.close()
             except BaseException as cleanup_error:
                 if _interruption(cleanup_error) and not _interruption(error): raise
@@ -1276,6 +1276,9 @@ class SQLiteCatalogBackend:
         view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return RegisterView(view)
         except BaseException as error:
+            # A wrapper never admitted successfully; retain the original
+            # physical-cleanup/poisoned-owner contract, not normal lease reuse.
+            _retire_read_handle(view)
             try: view.close()
             except BaseException as cleanup:
                 if _interruption(cleanup) and not _interruption(error): raise
@@ -1299,15 +1302,32 @@ class SQLiteCatalogBackend:
             return RegisterView(raw).resolve_set(operation_id, draft)
         finally: raw.close()
 
+    @lifecycle
     def _begin(self, operation_id, *, _receipt_only=False):
         if _receipt_only and operation_id is not None: raise BackendError('unsupported')
         if self._closed: raise BackendError('closed')
         if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
         pending = _PendingConnection(self)
+        reserve_owner(self, pending)
         try:
-            self._active = pending
-            connection = self._connect(_owner=pending)
+            self._check_file()
+            if operation_id is not None and self._read_handle is not None:
+                # Even a failed/uncertain writer must never reuse prior facts.
+                self._read_handle.invalidate()
+            handle = self._read_handle if operation_id is None else None
+            if handle is None:
+                connection = self._connect(_owner=pending, _read_handle=operation_id is None)
+                if operation_id is None:
+                    handle = ReadHandle(connection)
+                    pending._read_handle = handle
+                    self._read_handle = handle
+            else:
+                pending._connection = handle.connection
+                pending._read_handle = handle
+                connection = handle.connection
+                if connection.in_transaction:
+                    raise BackendError('busy')
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
                 if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
@@ -1341,20 +1361,31 @@ class SQLiteCatalogBackend:
                     else: self._demo_source_snapshot(connection)
                 if self.format_version == 13:
                     from .sqlite_posting_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas) != self.posting_configuration:
+                    if admit(connection, self.database_id, self._document_schemas,
+                             _prepared=self._prepared_source) != self.posting_configuration:
                         raise BackendError('schema_changed')
                 if self.format_version == 14:
                     from .sqlite_accumulation_profile import admit
                     if admit(connection, self.database_id, self._document_schemas) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
+                if self.format_version == 15:
+                    from .sqlite_inventory_profile import admit
+                    if admit(connection, self.database_id, self._schemas, self._document_schemas) != self.accumulation_configuration:
+                        raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
+                if handle is not None:
+                    view._read_handle = handle
+                    view._validated_sources = handle.pin()
             except sqlite3.OperationalError:
                 raise BackendError('busy') from None
             self._active = view
             return view
         except BaseException as error:
+            if self._read_handle is not None: self._read_handle.invalidate()
             try:
-                if self._active is not None: self._active.close()
+                if self._active is not None:
+                    _retire_read_handle(self._active)
+                    self._active.close()
             except BaseException as cleanup_error:
                 if _interruption(cleanup_error) and not _interruption(error): raise
             raise
@@ -1533,9 +1564,25 @@ class SQLiteCatalogBackend:
             if view is not None: view.close()
             else: connection.close()
 
+    @lifecycle
+    def _close_idle_read_handle(self):
+        if self._active is not None: raise BackendError('busy')
+        if self._read_handle is not None:
+            pending = _PendingConnection(self)
+            self._active = pending
+            pending._connection = self._read_handle.connection
+            pending._read_handle = self._read_handle
+            pending.close()
+
+    @lifecycle
     def close(self):
-        if self._active is not None: self._active.close()
-        self._closed = True
+        try:
+            if self._active is not None:
+                _close_owned_connection(self._active)
+            self._close_idle_read_handle()
+            self._closed = True
+        finally:
+            self._prepared_source.clear()
 
 
 class _View:
@@ -1544,6 +1591,7 @@ class _View:
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._validated_sources = {}
+        self._read_handle = None
         self._document_scan_stream = None
         self._document_scan_lookahead = None
         self._outcomes = []
@@ -1551,7 +1599,7 @@ class _View:
         self._section_write_rows = 0
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
-        if operation_id is not None and backend.format_version in (11, 12, 13, 14) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
+        if operation_id is not None and backend.format_version in (11, 12, 13, 14, 15) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
         if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
             raise BackendError('conflict')
         if operation_id is not None and backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')
@@ -2518,11 +2566,149 @@ class _View:
         return revisions
 
     def rollback(self): self.close()
+    @lifecycle
     def close(self):
-        _close_owned_connection(self)
+        handle = self._read_handle
+        if (self._closed or handle is None or self._poisoned
+                or self._connection is not handle.connection):
+            _close_owned_connection(self)
+            return
+        try:
+            self._closed = True
+            self._scan_cursor = None
+            _close_document_scan(self)
+            self._backend._check_file()
+            if not self._connection.in_transaction:
+                _close_owned_connection(self)
+                return
+            self._connection.execute('ROLLBACK')
+            handle.complete(self._validated_sources)
+            self._validated_sources.clear()
+            self._connection = None
+            self._read_handle = None
+            if self._backend._active is self:
+                self._backend._active = None
+        except BaseException as error:
+            # Cleanup failure must physically retire the handle. If close also
+            # fails, the existing owner remains busy and can retry cleanup.
+            try: _close_owned_connection(self)
+            except BaseException as cleanup:
+                if _interruption(cleanup) and not _interruption(error): raise
+            if isinstance(error, sqlite3.Error):
+                raise BackendError('storage_error') from None
+            raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)
+
+
+def _preflight_create(configuration, *, activate=True, query_indexes=False, _source_profile=None):
+    """Pure deterministic creation admission; no file, connection or execution."""
+    from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
+    if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
+        raise BackendError('invalid_input')
+    if type(activate) is not bool or type(query_indexes) is not bool: raise BackendError('invalid_input')
+    if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or not activate): raise BackendError('unsupported')
+    if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
+    if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
+    if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
+    if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
+        raise BackendError('invalid_input')
+    if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
+        raise BackendError('invalid_input')
+    if configuration.module_runtime is not None:
+        from .configuration_modules import MODULE_RUNTIME
+        from .configuration_xml import import_configuration
+        from .errors import BSLError
+        if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
+            raise BackendError('unsupported')
+        if _source_profile not in (None, APPLICATION_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE): raise BackendError('unsupported')
+        try:
+            if _source_profile == REFERENCE_PROFILE:
+                from .configuration_reference_profile import import_reference_configuration
+                canonical = import_reference_configuration({f.path:f.content for f in configuration.files})
+            elif _source_profile == BUSINESS_PROFILE:
+                from .configuration_business_profile import import_business_configuration
+                canonical = import_business_configuration({f.path:f.content for f in configuration.files})
+            elif _source_profile == APPLICATION_PROFILE:
+                from .configuration_application_profile import import_application_configuration
+                canonical = import_application_configuration({f.path:f.content for f in configuration.files})
+            else:
+                canonical = import_configuration({f.path:f.content for f in configuration.files},
+                    numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
+        except (BSLError, ValueError, TypeError):
+            raise BackendError('unsupported') from None
+        if canonical != configuration: raise BackendError('unsupported')
+    elif configuration.common_modules:
+        raise BackendError('unsupported')
+    registers = configuration.information_registers
+    if type(registers) is not tuple: raise BackendError('invalid_input')
+    register_definitions = [register_schema_data(r) for r in registers]
+    documents = configuration.documents
+    if type(documents) is not tuple: raise BackendError('invalid_input')
+    document_definitions = [document_schema_data(s) for s in documents]
+    if (documents or registers) and (_source_profile not in (None, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
+    if _source_profile == REFERENCE_PROFILE:
+        from .configuration_reference_profile import import_reference_configuration
+        if configuration != import_reference_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    if _source_profile == BUSINESS_PROFILE:
+        from .configuration_business_profile import import_business_configuration
+        if configuration != import_business_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    if _source_profile == DOCUMENT_FORMS_PROFILE:
+        from .configuration_document_profile import import_document_forms_configuration
+        if configuration != import_document_forms_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    schemas = tuple(configuration.catalogs)
+    if not 1 <= len(schemas) + len(documents) + len(registers) <= 512: raise BackendError('invalid_input')
+    definitions = [_schema_data(s) for s in schemas]
+    section_count = sum(len(s.tabular_sections) for s in schemas)
+    if section_count > _MAX_DATABASE_SECTIONS or sum(len(_json(d)) for d in definitions) > _MAX_CONFIG_BYTES:
+        raise BackendError('invalid_input')
+    storage_version = (10 if any(s.hierarchy != 'none' for s in schemas) else 9 if any(r.periodic for r in registers) else 8 if registers else 7 if documents else 6 if _source_profile is not None else
+                       5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
+                       4 if any(s.numbering != 'explicit' for s in schemas) else
+                       3 if section_count else 2)
+    if query_indexes and storage_version == 5: raise BackendError('unsupported')
+    if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
+    identities = {s.identity for s in schemas}
+    if len(identities) != len(schemas): raise BackendError('invalid_input')
+    if any(f.target_catalog_id not in identities for s in schemas for f in _all_fields(s) if f.kind == 'catalog_ref'):
+        raise BackendError('invalid_input')
+    if documents:
+        document_ids = {d.identity for d in documents}
+        if identities & document_ids or len(document_ids) != len(documents): raise BackendError('invalid_input')
+        all_ids = set()
+        for schema in (*schemas,*documents):
+            for item in (schema,*schema.fields,*schema.tabular_sections,*(f for sec in schema.tabular_sections for f in sec.fields)):
+                if item.identity in all_ids: raise BackendError('invalid_input')
+                all_ids.add(item.identity)
+        if len({d.name.casefold() for d in documents}) != len(documents): raise BackendError('invalid_input')
+        if any(f.target_catalog_id not in identities for d in documents for f in _all_fields(d) if f.kind == 'catalog_ref'): raise BackendError('invalid_input')
+        if section_count + sum(len(d.tabular_sections) for d in documents) > _MAX_DATABASE_SECTIONS: raise BackendError('invalid_input')
+        if sum(len(_json(d)) for d in (*definitions,*document_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
+    if registers:
+        validate_register_configuration(registers, schemas, documents)
+        if sum(len(_json(d)) for d in (*definitions,*document_definitions,*register_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
+    files = tuple(configuration.files)
+    if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
+        raise BackendError('invalid_input')
+    if len({f.path for f in files}) != len(files): raise BackendError('invalid_input')
+    for f in files:
+        if type(f.kind) is not str or f.kind not in ('xml','module'): raise BackendError('invalid_input')
+        if type(f.path) is not str or len(f.path) > 256 or f.path.startswith('/') or '\\' in f.path or ':' in f.path or '\x00' in f.path or any(p in ('','.', '..') for p in f.path.split('/')) or type(f.content) is not bytes or len(f.content) > 1024*1024:
+            raise BackendError('invalid_input')
+    if storage_version == 6:
+        from .configuration_xml import _demo_configuration
+        if configuration != _demo_configuration({f.path: f.content for f in files}, _source_profile)[0]:
+            raise BackendError('unsupported')
+    if storage_version == 5:
+        from .configuration_xml import import_inert_configuration
+        canonical = import_inert_configuration({f.path: f.content for f in files})
+        if activate or configuration != canonical:
+            raise BackendError('unsupported')
+    return (schemas, registers, documents, definitions, register_definitions, document_definitions, storage_version, files)

@@ -24,7 +24,8 @@ class BSLEnumType(BSLObject):
         return hash((id(self.snapshot),self.metadata_uuid,self.family))
 
     def __str__(self):
-        raise ValueError('enumeration type presentation awaits native evidence')
+        if self.family=='manager': return 'Перечисление менеджер: '+self.name
+        raise ValueError('enumeration reference type presentation awaits native evidence')
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,7 @@ class BSLEnumReference(BSLObject):
     value_type: BSLEnumType
     reference_uuid: UUID
     metadata: object = field(compare=False,hash=False,repr=False)
+    presentation: str | None = field(default=None,compare=False,hash=False,repr=False)
 
     def __post_init__(self):
         if type(self.value_type) is not BSLEnumType or self.value_type.family!='ref' or type(self.reference_uuid) is not UUID:
@@ -49,4 +51,7 @@ class BSLEnumReference(BSLObject):
 
     def __str__(self):
         if self.is_empty(): return ''
-        raise ValueError('enumeration value presentation awaits native evidence')
+        # Native43035110558 ru_RU ignores the authored English synonym.
+        # Russian synonyms and other UI languages remain outside this profile.
+        if type(self.presentation) is str: return self.presentation
+        raise ValueError('enumeration synonym presentation awaits native evidence')
