@@ -57,7 +57,7 @@ class InventoryScenarioTests(unittest.TestCase):
             lines=[]
             with closing(Interpreter(database_context=reopened,output=lines.append)) as fresh:
                 fresh.execute((EXAMPLE/'reopen.bsl').read_text())
-            self.assertEqual(lines,['P1, W1, 8'])
+            self.assertEqual(lines,['P1, W1, 8','Turnovers: P1, W1, receipt 10, expense 2, net 8'])
     def test_cli_preflight_create_execute_and_reopen(self):
         def cli(*args):
             result=subprocess.run([sys.executable,*(['-O'] if sys.flags.optimize else []),'-m','yadinassi',*map(str,args)],cwd=ROOT,capture_output=True,text=True)
@@ -67,7 +67,9 @@ class InventoryScenarioTests(unittest.TestCase):
         self.assertEqual(report['storage_format'],15);self.assertFalse(self.path.exists())
         cli('--create-db',self.path,'--import-xml',EXAMPLE/'source','--source-profile',PROFILE)
         self.assertIn('After repost: 8',cli('--f',self.path,EXAMPLE/'run.bsl'))
-        self.assertIn('P1, W1, 8',cli('--f',self.path,EXAMPLE/'reopen.bsl'))
+        reopened=cli('--f',self.path,EXAMPLE/'reopen.bsl')
+        self.assertIn('P1, W1, 8',reopened)
+        self.assertIn('Turnovers: P1, W1, receipt 10, expense 2, net 8',reopened)
     def test_closed_schema_kind_rejects_str_subclass(self):
         class Foreign(str):pass
         r=imported().registers[0]

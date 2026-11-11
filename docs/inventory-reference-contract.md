@@ -51,7 +51,8 @@ python -m yadinassi --f inventory.sqlite examples/inventory_reference/reopen.bsl
 
 The scenario posts a receipt of 10 and an issue of 3, refuses a second issue of
 100, unposts the first issue, then reposts it with quantity 2. The final reopened
-balance is 8. The negative-stock rule lives in the example's Issue handler,
+balance is 8; the reopened Turnovers report shows receipt 10, expense 2, net 8.
+The negative-stock rule lives in the example's Issue handler,
 which explicitly writes its movements and queries the same transaction. This
 is not a universal 1C rule, cost accounting, or prevention of every possible
 backdated oversell: the example checks the balance one second after its own
