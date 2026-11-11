@@ -255,7 +255,7 @@ PHASES=('prerequisites','inputs','install','build','redump','enterprise','marker
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified'}
 HASH_FIELDS={'source_sha256','module_sha256','module_verified_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details','partial_observations','case_diagnostics','install_diagnostics','incomplete'}
+    'timeout_witness','input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details','partial_observations','case_diagnostics','install_diagnostics','incomplete'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -277,6 +277,12 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(all(stage[k] is None or FULL.is_digest(stage[k]) for k in HASH_FIELDS))
         require(stage['output_size'] is None or type(stage['output_size']) is int and 0<stage['output_size']<=MAX_OUTPUT)
         require(stage['record_count'] is None or type(stage['record_count']) is int and stage['record_count']==route.COUNT)
+        witness=stage['timeout_witness']
+        if witness is not None:
+            require(type(witness) is dict and set(witness)=={'available','windows','dialogs','modals','categories'})
+            require(type(witness['available']) is bool)
+            require(all(type(witness[k]) is int and 0<=witness[k]<=8 for k in ('windows','dialogs','modals')))
+            require(type(witness['categories']) is list and len(witness['categories'])<=4 and all(v in ('error','license','authentication','configuration','unknown') for v in witness['categories']))
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(fixture.valid_diagnostic(stage['redump_diagnostic']))
         require(stage['configuration_validation']==fixture.VALIDATION_MODE)

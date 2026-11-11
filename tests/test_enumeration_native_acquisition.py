@@ -170,3 +170,29 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         values,errors=route.parse_attempt(raw,'a'*32)
         self.assertEqual(values,[[2,'']]);self.assertEqual(errors,[(1,'read','private native detail')])
         with self.assertRaises(ValueError):route.parse_wire(raw,'a'*32)
+
+    def test_timeout_witness_is_finite_and_bounded(self):
+        suite=self.adapter()
+        tree='\n'.join('  0x%x "private title"' % i for i in range(1,30))
+        properties='_NET_WM_STATE_MODAL _NET_WM_WINDOW_TYPE_DIALOG WM_NAME="error private password"'
+        with mock.patch.object(suite.shutil,'which',side_effect=lambda n:'/usr/bin/'+n), mock.patch.object(suite,'_xread',side_effect=[tree]+[properties]*8):
+            witness=suite.timeout_witness(Path('.'))
+        self.assertEqual(witness,dict(available=True,windows=8,dialogs=8,modals=8,categories=['error']))
+        self.assertNotIn('private',str(witness))
+
+    def test_timeout_witness_unavailable_is_not_success(self):
+        suite=self.adapter()
+        source=(ROOT/'scripts/native_1c_bootstrap/enumeration_suite.py').read_text()
+        self.assertLess(source.index("if not shutil.which('xwininfo')"),source.index("designer('load'"))
+        self.assertIn("raise full.FullError('unsupported_observation')",source)
+        with mock.patch.object(suite.shutil,'which',return_value=None):
+            self.assertEqual(suite.timeout_witness(Path('.')),dict(available=False,windows=0,dialogs=0,modals=0,categories=[]))
+
+    def test_designer_timeout_observes_before_guaranteed_cleanup(self):
+        suite=self.adapter();events=[];child=mock.MagicMock()
+        child.wait.side_effect=suite.subprocess.TimeoutExpired('private command',120)
+        process=mock.MagicMock();process.__enter__.return_value=child
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(suite.os,'name','posix'), mock.patch.object(suite.subprocess,'Popen',return_value=process), mock.patch.object(suite,'timeout_witness',side_effect=lambda p:events.append('witness') or {}), mock.patch.object(suite.full,'_stop_group',side_effect=lambda p:events.append('stop')):
+            with self.assertRaises(suite.full.FullError) as error:
+                suite.run_designer_process(['owned','DESIGNER'],Path(directory),Path(directory)/'out',120,report={})
+        self.assertEqual(error.exception.kind,'timeout');self.assertEqual(events,['witness','stop'])

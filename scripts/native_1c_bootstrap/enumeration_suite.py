@@ -5,6 +5,10 @@ import json
 import os
 import stat
 import shutil
+import subprocess
+import tempfile
+import re
+import time
 import sys
 import full_suite as full
 import run_stage
@@ -17,7 +21,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        partial_observations=[],case_diagnostics=[],install_diagnostics=[],incomplete=True,native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        timeout_witness=None,partial_observations=[],case_diagnostics=[],install_diagnostics=[],incomplete=True,native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -78,6 +82,92 @@ def run_owned_case(launcher,platform,script,launcher_epf,directory,output,expect
     if error:raise full.FullError('invalid_result')
 
 
+
+def _xread(command, directory):
+    # Only fixed installed X11 readers, private temporary output, no artifact.
+    with tempfile.TemporaryFile(dir=directory) as output:
+        subprocess.run(command, stdin=subprocess.DEVNULL, stdout=output,
+                       stderr=subprocess.DEVNULL, timeout=2, check=True)
+        output.seek(0); raw=output.read(65537)
+        if len(raw)>65536:raise ValueError('X11 witness bound')
+        return raw.decode('utf-8',errors='replace')
+
+
+def timeout_witness(directory):
+    result=dict(available=False,windows=0,dialogs=0,modals=0,categories=[])
+    info,prop=shutil.which('xwininfo'),shutil.which('xprop')
+    if not info or not prop:return result
+    try:
+        tree=_xread([info,'-root','-tree'],directory)
+        ids=list(dict.fromkeys(re.findall(r'^\s+(0x[0-9a-fA-F]+)\s+',tree,re.M)))[:8]
+        categories=set()
+        for identifier in ids:
+            value=_xread([prop,'-id',identifier,'_NET_WM_STATE','_NET_WM_WINDOW_TYPE','WM_NAME'],directory)
+            result['windows']+=1
+            result['dialogs']+=int('_NET_WM_WINDOW_TYPE_DIALOG' in value)
+            result['modals']+=int('_NET_WM_STATE_MODAL' in value)
+            # Never return titles, IDs, arbitrary text or arbitrary identifiers.
+            title=value.casefold()
+            for category,words in {'error':('error','ошибка'),'license':('license','лицензи'),
+                'authentication':('authentication','аутентифика'),
+                'configuration':('configuration','конфигурац')}.items():
+                if any(word in title for word in words):categories.add(category)
+        result['available']=True
+        result['categories']=sorted(categories or {'unknown'})
+    except Exception:
+        result['categories']=[]
+    return result
+
+def run_designer_process(command: list[str], directory: Path, log: Path, timeout: float,
+                *, report, require_clean_tree: bool = False) -> None:
+    if os.name != 'posix' or timeout != 120:
+        raise full.FullError('invalid_input')
+    full.absent(log)
+    with log.open('xb') as output:
+        with subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
+                              stdout=output, stderr=subprocess.STDOUT,
+                              start_new_session=True) as child:
+            try:
+                code = child.wait(timeout=120)
+            except subprocess.TimeoutExpired:
+                try:
+                    report['timeout_witness'] = timeout_witness(directory)
+                finally:
+                    try:
+                        full._stop_group(child)
+                    finally:
+                        raise full.FullError('timeout') from None
+            except BaseException:
+                full._stop_group(child)
+                raise
+            if require_clean_tree:
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        os.killpg(child.pid, 0)
+                    except ProcessLookupError:
+                        break
+                    if time.monotonic() >= deadline:
+                        full._stop_group(child)
+                        raise full.FullError('process_failed')
+                    time.sleep(0.02)
+            else:
+                full._stop_group(child)
+    if code:
+        error = full.FullError('process_failed')
+        error.exit_code = code  # Retain finite process status, never command/log text.
+        raise error
+    if '/DumpResult' in command:
+        result = Path(command[command.index('/DumpResult') + 1])
+        data = full.secure_bytes(result, 128)
+        try:
+            value = data.decode('utf-16' if data[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig').strip()
+            if not re.fullmatch(r'[+-]?[0-9]+', value) or int(value) != 0:
+                raise ValueError
+        except (ValueError, UnicodeError):
+            raise full.FullError('invalid_dump_result') from None
+
+
 def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
     report=empty_report(nonce);phase='inputs'
 
@@ -94,8 +184,8 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
             facts=dict(source_root_present=None if source_root is None else source_root.is_dir() and not source_root.is_symlink(),
                 configuration_present=None if source_root is None else (source_root/'Configuration.xml').is_file() and not (source_root/'Configuration.xml').is_symlink())
             try:
-                full.run_process(platform.command('DESIGNER')+args+['/Out',str(root/(label+'.log')),
-                    '/DumpResult',str(root/(label+'.result'))],root,root/(label+'-console.log'),120,require_clean_tree=True)
+                run_designer_process(platform.command('DESIGNER')+args+['/Out',str(root/(label+'.log')),
+                    '/DumpResult',str(root/(label+'.result'))],root,root/(label+'-console.log'),120,report=report,require_clean_tree=True)
             except Exception as error:
                 code=getattr(error,'exit_code',None)
                 facts['exit_code']=code if type(code) is int and -255<=code<=255 else None
@@ -116,6 +206,9 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
             path=prepared/name;path.parent.mkdir(parents=True,exist_ok=True)
             with path.open('xb') as stream:stream.write(raw)
         phase='install'
+        if not shutil.which('xwininfo') or not shutil.which('xprop'):
+            report['timeout_witness']=dict(available=False,windows=0,dialogs=0,modals=0,categories=[])
+            raise full.FullError('unsupported_observation')
         designer('load',['/LoadConfigFromFiles',str(prepared)])
         designer('update',['/UpdateDBCfg'])
         phase='redump';after=root/'after';after.mkdir()
