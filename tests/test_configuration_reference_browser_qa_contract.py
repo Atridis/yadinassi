@@ -71,6 +71,31 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
                       "session:['yadinassi.browser.resume/1']", "'only_resume_storage'", "'capability_not_removed'",
                       "'browser_cookies_not_empty'", "'capability_leak'")
 
+    def test_only_exact_busy_heartbeat_refusal_is_delivered_without_retry(self):
+        attachment = self.source.split("if(new URL(target).pathname==='/attachment'){", 1)[1].split(
+            "if(new URL(target).pathname==='/rpc'){", 1)[0]
+        condition = "if(body.action==='heartbeat'&&response.status()===409){"
+        self.assertEqual(attachment.count(condition), 1)
+        benign = attachment.split(condition, 1)[1].split("assert.equal(response.status(),200,'attachment_refused')", 1)[0]
+        for required in ("exactKeys(value,'protocol error')", "assert.equal(value.protocol,'yadinassi-browser-attachment/1')",
+                         "assert.equal(value.error,'busy','unexpected_heartbeat_refusal')",
+                         "++report.heartbeatBusy<=attachmentRequests", "'heartbeat_busy_budget'",
+                         'return await route.fulfill({response})'):
+            self.assertIn(required, benign)
+        self.assertLess(benign.index("assert.equal(value.error,'busy'"), benign.index('route.fulfill'))
+        self.assertLess(attachment.index('bytes.length<=8192'), attachment.index(condition))
+        self.assertLess(attachment.index('JSON.parse('), attachment.index(condition))
+        self.assertEqual(attachment.count('route.fetch('), 1)
+        self.assertNotIn('route.fetch(', benign)
+        self.assertNotIn('route.continue(', attachment)
+        self.requires('heartbeatBusy:0', '++attachmentRequests<=96', 'maxRedirects:0,maxRetries:0')
+        self.assertEqual(self.source.count('++report.heartbeatBusy'), 1)
+        # Every other attachment refusal and every business refusal stays fatal.
+        self.assertIn("assert.equal(response.status(),200,'attachment_refused')", attachment)
+        rpc = self.source.split("if(new URL(target).pathname==='/rpc'){", 1)[1].split('return route.continue()', 1)[0]
+        self.assertIn("assert.equal(response.status(),200,'rpc_status')", rpc)
+        self.assertNotIn('response.status()===409', rpc)
+
     def test_reference_requests_are_closed_server_owned_capabilities(self):
         self.requires("packet.method==='application.reference'", "'session revision action'", "'action control row column'",
                       "filter:'action ticket code',cancel:'action ticket',apply:'action ticket choice'",
@@ -102,11 +127,32 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
         # Failure metadata may only use these literal stages, never actual keys,
         # payloads, references or assertion/exception details.
         stages = set(re.findall(r"(?:wireStage=|stage\()'([^']+)'", self.source))
-        self.assertEqual(stages, {'attachment_request', 'attachment_response', 'attachment_delivery',
-            'request_schema', 'http_status', 'reply_budget', 'reply_json', 'held_apply',
+        self.assertEqual(stages, {'attachment_request', 'attachment_fetch', 'attachment_budget', 'attachment_json',
+            'attachment_status', 'attachment_schema', 'attachment_delivery',
+            'request_schema', 'rpc_fetch', 'http_status', 'reply_budget', 'reply_json', 'held_apply',
             'reply_envelope', 'reference_descriptor', 'reference_value', 'delivery'})
         self.assertEqual(self.source.count('report.wireStage??=wireStage'), 2)
         self.assertNotIn('report.wireStage=error', self.source)
+        self.requires("[200,400,403,404,405,409,411,413,503].find(allowed=>allowed===status)??'other'",
+                      "Object.keys(value).sort().join(',')!=='error,protocol'",
+                      "value.protocol!=='yadinassi-browser-attachment/1'",
+                      "['not_writer','stale_generation','busy','outcome_unknown','unauthorized','closed','capacity','invalid_message']",
+                      ".find(allowed=>allowed===value.error)??'unclassified'",
+                      "const stage=value=>{wireStage=value;business.stage=value;}",
+                      'checkReply(result,packet,stage)', 'if(businessWire===business)businessWire=null')
+        self.assertEqual(self.source.count("httpStatus='unavailable',refusalCode='none'"), 2)
+        self.assertEqual(self.source.count('httpStatus=diagnosticStatus(response.status())'), 2)
+        self.assertEqual(self.source.count("report.wireDiagnostic??={httpStatus,refusalCode,businessStage:businessWire?.stage??'idle'}"), 2)
+        attachment = self.source.split("if(new URL(target).pathname==='/attachment'){", 1)[1].split(
+            "if(new URL(target).pathname==='/rpc'){", 1)[0]
+        rpc = self.source.split("if(new URL(target).pathname==='/rpc'){", 1)[1].split('return route.continue()', 1)[0]
+        self.assertIn('if(host&&host.exitCode===null&&!aborted)', attachment)
+        self.assertIn('if(!aborted)', rpc)
+        for route in (attachment, rpc):
+            failure = route.split('}catch{', 1)[1]
+            self.assertLess(failure.index('report.wireDiagnostic??='), failure.index('wireFailure=true;abort()'))
+        diagnostic = self.source.split('function diagnosticRefusal(value){', 1)[1].split('function checkRequest(request){', 1)[0]
+        self.assertNotIn('return value.error', diagnostic)
 
     def test_source_binding_includes_new_runtime_example_and_shared_application(self):
         self.requires("'examples/configuration-reference-application'", "'yadinassi/configuration_reference_profile.py'",

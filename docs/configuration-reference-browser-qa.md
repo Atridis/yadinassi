@@ -49,7 +49,11 @@ There is no build during acquisition.
 
 The exact plan is **67 business RPCs**, with a fail-before-admission cap of 100.
 Attachment calls have a separate cap of 96 because heartbeats depend on elapsed
-wall time. Work is limited to 220 seconds, plus 20 seconds for verified cleanup.
+wall time. Only a heartbeat's HTTP 409 with the exact attachment-protocol
+`{protocol, error: "busy"}` envelope is passed through unchanged: an admitted
+business request may hold the server's ownership gate. The bounded `heartbeatBusy`
+counter records these replies. No heartbeat or business request is replayed, and
+all other refusals remain fatal. Work is limited to 220 seconds, plus 20 seconds for verified cleanup.
 No failed or uncertain business request is retried. Network routing admits only
 the current exact loopback origin and the existing fixed paths plus `/attachment`.
 The wire checks closed action schemas and server-issued picker/choice identities;
@@ -60,14 +64,17 @@ it rejects persistent UUIDs in either direction.
 Only `result.json`, `manifest.json`, and four PNGs are uploaded:
 `reference-product.png`, `reference-document.png`, `reference-resumed.png`, and
 `reference-independent.png`. Images and the result are hashed and size-bounded.
-Wire-failure diagnostics contain only a fixed validation-stage label. Reference
+Wire-failure diagnostics contain only fixed validation-stage labels, an allowlisted
+HTTP status and refusal code, and the in-flight business validation stage. Unknown
+values become fixed sentinel labels. The first failure is captured before abort;
+concurrent cancellation cannot replace it with a secondary failure. Reference
 table-column descriptors and scoped reference values have separate strict shapes.
 No database, browser profile, source contents, raw DOM, trace, capability, cookie,
 request/response payload, or exception text is exported. Every database and browser
 profile is fresh and owned by that invocation. Cleanup verifies process groups
 and temporary-directory removal; cleanup failure prevents PASS.
 
-Preparation alone is not browser evidence. The 17 new Python contract tests are
+Preparation alone is not browser evidence. The 18 new Python contract tests are
 offline source checks. Run them and the six mechanically updated legacy contract
 files only after the exact test-count notice. The real four-scenario acquisition
 must be launched separately through the reviewed route.

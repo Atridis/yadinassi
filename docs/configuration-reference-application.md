@@ -64,9 +64,11 @@ ownership, uncertain-write recovery, or independent child transaction denial.
 
 ## Validation status
 
-The first frontend run passed 293 JS checks. The first 39 Python cases had
-one test-fixture control-name mismatch, now corrected; the combined regression
-and four real Chromium acceptance flows are still pending. This is not a full
-validation or native reference-form parity claim.
+The combined regression passed 1566 Python cases normally and the same 1566
+with optimization, including legacy scalar forms, typed storage, callback errors
+and source provenance. The unchanged frontend passed 293 JS checks. Four real
+Chromium acceptance flows are still being verified: catalog selection passed,
+but the document flow remains blocked on QA attachment-response validation.
+This is not a full validation or native reference-form parity claim.
 Client references support identity equality, presentation and IsEmpty only;
 client TypeOf/TypeDescription and reference-object access are not claimed.

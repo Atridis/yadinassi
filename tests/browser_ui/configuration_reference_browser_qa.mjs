@@ -21,7 +21,7 @@ const scenarioNames=['catalog_choose_filter_cancel_clear_save','document_typed_c
   'retained_picker_reload_dirty_sibling','repeated_apply_late_navigation_owned_shutdown'];
 const plannedRPC=[20,23,14,10]; // 67 business RPCs; attachment heartbeats have a separate bound.
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null};
+const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null,heartbeatBusy:0};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
 let outputCreated=false,origin='',url='',phase='binding',aborted=false,rpc=0,failed=false;
 const bounded=(promise,ms,code)=>{
@@ -225,7 +225,17 @@ async function commitInput(name,text){
 }
 const wireEvents=[];
 let wireFailure=false;
+let businessWire=null;
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
+// Closed diagnostic vocabularies only. A malformed/unknown envelope never
+// supplies a string to the artifact, and diagnostics never authorize a reply.
+const diagnosticStatus=status=>[200,400,403,404,405,409,411,413,503].find(allowed=>allowed===status)??'other';
+function diagnosticRefusal(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='error,protocol'||
+    value.protocol!=='yadinassi-browser-attachment/1')return 'unclassified';
+  return ['not_writer','stale_generation','busy','outcome_unknown','unauthorized','closed','capacity','invalid_message']
+    .find(allowed=>allowed===value.error)??'unclassified';
+}
 function checkRequest(request){
   const headers=request.headers();
   assert.match(headers['x-yadinassi-session']||'',/^[A-Za-z0-9_-]{43}$/,'writer_credential');
@@ -439,17 +449,31 @@ async function main(){
     const target=route.request().url();
     if(aborted||!applicationAllowedRequest(target))return route.abort();
     if(new URL(target).pathname==='/attachment'){
-      let wireStage='attachment_request';
+      let wireStage='attachment_request',httpStatus='unavailable',refusalCode='none';
       try{
         assert.ok(++attachmentRequests<=96,'attachment_budget');
         const request=route.request(),body=request.postDataJSON();
         if(body.action==='attach'){exactKeys(body,'action instance');assert.match(body.instance,/^[0-9a-f]{32}$/);}
         else{exactKeys(body,'action generation pending');assert.ok(['status','heartbeat','detach','takeover'].includes(body.action));assert.ok(Number.isSafeInteger(body.generation)&&body.generation>=0);assert.equal(typeof body.pending,'boolean');}
-        wireStage='attachment_response';
+        wireStage='attachment_fetch';
         const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
+        httpStatus=diagnosticStatus(response.status());wireStage='attachment_budget';
         const bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');
+        wireStage='attachment_json';
         const value=JSON.parse(bytes.toString('utf8'));
+        if(response.status()!==200)refusalCode=diagnosticRefusal(value);
+        wireStage='attachment_status';
+        if(body.action==='heartbeat'&&response.status()===409){
+          // The server's dispatch gate may be held by an admitted business RPC.
+          // Only this exact pre-dispatch heartbeat refusal is benign. Deliver
+          // the real response unchanged; never retry it or any business request.
+          exactKeys(value,'protocol error');assert.equal(value.protocol,'yadinassi-browser-attachment/1');
+          assert.equal(value.error,'busy','unexpected_heartbeat_refusal');
+          assert.ok(++report.heartbeatBusy<=attachmentRequests,'heartbeat_busy_budget');
+          wireStage='attachment_delivery';return await route.fulfill({response});
+        }
         assert.equal(response.status(),200,'attachment_refused');
+        wireStage='attachment_schema';
         exactKeys(value,'protocol attachment role generation leaseSeconds graceSeconds recovery closed'+(body.action==='attach'?' credential resume':''));
         assert.equal(value.protocol,'yadinassi-browser-attachment/1');
         assert.match(value.attachment,/^attachment-[1-9][0-9]*$/);
@@ -461,30 +485,49 @@ async function main(){
           for(const token of [value.credential,value.resume]){assert.match(token,/^[A-Za-z0-9_-]{43}$/);tokens.push(token);}
         }
         wireStage='attachment_delivery';return await route.fulfill({response});
-      }catch{if(host&&host.exitCode===null&&!aborted){report.wireStage??=wireStage;wireFailure=true;abort();}return route.abort().catch(()=>{});}
+      }catch{
+        if(host&&host.exitCode===null&&!aborted){
+          report.wireStage??=wireStage;
+          report.wireDiagnostic??={httpStatus,refusalCode,businessStage:businessWire?.stage??'idle'};
+          wireFailure=true;abort();
+        }
+        return route.abort().catch(()=>{});
+      }
     }
     if(new URL(target).pathname==='/rpc'){
       if(rpc>=100){abort();return route.abort().catch(()=>{});}
       rpc++;
-      let wireStage='request_schema';
+      let wireStage='request_schema',httpStatus='unavailable',refusalCode='none';
+      const business={stage:wireStage};businessWire=business;
+      const stage=value=>{wireStage=value;business.stage=value;};
       try{
         const packet=checkRequest(route.request());
-        wireStage='http_status';
+        stage('rpc_fetch');
         const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
-        assert.equal(response.status(),200,'rpc_status');
-        wireStage='reply_budget';
+        httpStatus=diagnosticStatus(response.status());stage('reply_budget');
         const bytes=await response.body();assert.ok(bytes.length<=131072,'rpc_reply_budget');
         assert.ok(!/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i.test(bytes.toString('utf8')),'persistent_uuid_in_reply');
-        wireStage='reply_json';const result=JSON.parse(bytes.toString('utf8'));
+        stage('reply_json');const result=JSON.parse(bytes.toString('utf8'));
+        if(response.status()!==200)refusalCode=diagnosticRefusal(result);
+        stage('http_status');assert.equal(response.status(),200,'rpc_status');
         // Delay only delivery of an already completed real reply. Never invent
         // a reply or repeat a request to make the late-navigation scenario pass.
         if(delayedApply&&packet.method==='application.reference'&&packet.params.action.action==='apply'){
-          wireStage='held_apply';const gate=delayedApply;delayedApply=null;gate.entered();
+          stage('held_apply');const gate=delayedApply;delayedApply=null;gate.entered();
           await bounded(gate.released,remaining(5000),'held_apply_timeout');
         }
-        checkReply(result,packet,stage=>{wireStage=stage;});
-        wireStage='delivery';return await route.fulfill({response});
-      }catch{report.wireStage??=wireStage;wireFailure=true;abort();return route.abort().catch(()=>{});}
+        checkReply(result,packet,stage);
+        stage('delivery');return await route.fulfill({response});
+      }catch{
+        // Preserve the first failure before aborting. An in-flight RPC failing
+        // because another route or cleanup stopped the host is not its cause.
+        if(!aborted){
+          report.wireStage??=wireStage;
+          report.wireDiagnostic??={httpStatus,refusalCode,businessStage:businessWire?.stage??'idle'};
+          wireFailure=true;abort();
+        }
+        return route.abort().catch(()=>{});
+      }finally{if(businessWire===business)businessWire=null;}
     }
     return route.continue();
   });
