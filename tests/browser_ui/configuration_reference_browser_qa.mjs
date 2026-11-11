@@ -615,19 +615,27 @@ async function main(){
   await scenario(scenarioNames[2],async()=>{
     phase='retained_authoritative_sibling';await catalog().getByRole('button',{name:'New document',exact:true}).click();await countPanels(3);await value('Write status','Rows loaded: 0');await idle();
     await commitInput('Number (blank for automatic)','D2');await commitInput('Note','Sibling draft');
+    const sibling=appState.active,siblingEmpty=structuredClone(referenceValue(sibling,'CategoryInput'));
+    assert.equal(siblingEmpty.key,null,'sibling_initial_reference_not_empty');
     await switchOrder(0);await begin('Category');retainedChoice=structuredClone(appState.choice);
     phase='retained_picker_snapshot';await button('Check connection').click();await writer();await idle();
     assert.deepEqual(appState.choice,retainedChoice,'snapshot_lost_picker');
     phase='retained_picker_real_reload';page.once('dialog',dialog=>dialog.accept());await page.reload();await writer();await countPanels(3);await idle();
     await picker().waitFor();assert.deepEqual(appState.choice,retainedChoice,'reload_retargeted_picker');
     assert.deepEqual(referenceValue(firstOrder,'CategoryInput'),firstCategory,'reload_changed_owner');
-    await page.setViewportSize({width:390,height:844});await screenshot(screenshots[2]);
+    phase='retained_picker_narrow_evidence';
+    await page.setViewportSize({width:390,height:844});await picker().scrollIntoViewIfNeeded();await screenshot(screenshots[2]);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow_overflow');
     await cancel();await switchOrder(0);await value('Category','Category One');
     assert.deepEqual(referenceValue(firstOrder,'CategoryInput'),firstCategory,'reload_cancel_cleared_reference');
-    await switchOrder(1);await value('Note','Sibling draft');
-    const sibling=appState.sessions.filter(session=>session.title==='Non-posting order')[1].id;
-    assert.equal(snapshots.get(sibling).dirty,true,'sibling_dirty_lost');
+    phase='retained_sibling_authoritative_state';
+    await switchOrder(1);await value('Note','Sibling draft');await value('Category','');
+    assert.equal(appState.sessions.filter(session=>session.title==='Non-posting order')[1].id,sibling,'sibling_session_changed');
+    assert.deepEqual(snapshots.get(sibling)?.items.find(item=>item.name==='NoteInput')?.value,
+      {type:'String',value:'Sibling draft'},'sibling_authoritative_note_lost');
+    assert.deepEqual(referenceValue(sibling,'CategoryInput'),siblingEmpty,'sibling_empty_reference_changed');
+    // Authored configuration forms expose their declared fields, not a generic
+    // dirty flag. The real BeforeClose refusal is exercised in the next scenario.
     assert.equal(rpc,plannedRPC[0]+plannedRPC[1]+plannedRPC[2],'retained_rpc_plan');
   });
   await scenario(scenarioNames[3],async()=>{
@@ -651,6 +659,7 @@ async function main(){
     await switchOrder(1);await value('Note','Sibling draft');await value('Category','');
     const retired=rpc;await stale.evaluate(control=>control.click());await stale.dispose();
     assert.equal(rpc,retired,'retired_choice_retargeted_sibling');
+    phase='dirty_sibling_before_close';
     const refusal=replyFor(packet=>packet.params?.request?.params?.event==='close');
     await action('Close form').click();await refusal;await idle();assert.equal(await panels().count(),3,'dirty_sibling_closed');
     await value('Note','Sibling draft');await screenshot(screenshots[3]);

@@ -36,8 +36,11 @@ There is no build during acquisition.
    draft. Open D1's Category picker, request ordinary connection reconciliation,
    then perform a real browser reload using session resume. The picker ticket,
    owning session and prior typed reference must match. Cancel keeps C1 and D2's
-   authoritative dirty draft. Capture the picker at 390 pixels wide. This does
-   not claim that unsent input survives document destruction.
+   authoritative Note field and exact typed-empty Category in the same sibling
+   session. Configuration forms do not expose a generic dirty snapshot flag;
+   the next scenario verifies the authored BeforeClose refusal instead. Scroll
+   the real picker into view and capture it at 390 pixels wide. This does not
+   claim that unsent input survives document destruction.
 4. **Repeated apply and late intents, 10 RPCs.** Filter D1's picker to C2, double
    click Apply, and hold only delivery of the real completed response briefly.
    Late sibling navigation and Close must send no business request or change the

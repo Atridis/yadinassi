@@ -192,8 +192,21 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
     def test_picker_snapshot_and_real_reload_preserve_sibling_and_owner(self):
         self.requires("await button('Check connection').click()", "'snapshot_lost_picker'",
                       "page.once('dialog',dialog=>dialog.accept());await page.reload()", "'reload_retargeted_picker'",
-                      "'reload_changed_owner'", "'reload_cancel_cleared_reference'", "'sibling_dirty_lost'",
-                      "commitInput('Note','Sibling draft')", "document.documentElement.scrollWidth<=innerWidth")
+                      "'reload_changed_owner'", "'reload_cancel_cleared_reference'",
+                      "const sibling=appState.active,siblingEmpty=structuredClone(referenceValue(sibling,'CategoryInput'))",
+                      "siblingEmpty.key,null,'sibling_initial_reference_not_empty'", "'sibling_session_changed'",
+                      "snapshots.get(sibling)?.items.find(item=>item.name==='NoteInput')?.value",
+                      "{type:'String',value:'Sibling draft'},'sibling_authoritative_note_lost'",
+                      "referenceValue(sibling,'CategoryInput'),siblingEmpty,'sibling_empty_reference_changed'",
+                      "phase='retained_sibling_authoritative_state'", "phase='dirty_sibling_before_close'",
+                      "commitInput('Note','Sibling draft')", "document.documentElement.scrollWidth<=innerWidth",
+                      "await picker().scrollIntoViewIfNeeded();await screenshot(screenshots[2])")
+        retained = self.source.split('await scenario(scenarioNames[2]', 1)[1].split('await scenario(scenarioNames[3]', 1)[0]
+        self.assertLess(retained.index('const sibling='), retained.index('await page.reload()'))
+        self.assertLess(retained.index("phase='retained_sibling_authoritative_state'"),
+                        retained.index("'sibling_authoritative_note_lost'"))
+        self.assertNotIn('snapshots.get(sibling).dirty', self.source)
+        self.assertNotIn("'sibling_dirty_lost'", self.source)
         self.assertNotIn('page.setContent', self.source)
         self.assertNotIn('page.addInitScript', self.source)
 
