@@ -37,6 +37,25 @@ const businessPlan=[
  ['close:','close','catalog','openRecord','report:StockBalance','close:','close']
 ];
 const businessEvents=[];
+// Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
+// storage, environment and subprocess stderr never become artifact strings.
+const diagnosticPhases=['command_binding','command_outcome','command_idle',
+ 'fixture_create','fixture_audit','audit_catalogs','audit_document_count',
+ 'audit_document_posted','audit_document_quantity','audit_no_movements',
+ 'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan'];
+const diagnosticReasons=['session_panel_binding','active_session_missing','command_session_changed',
+ 'command_outcome_count','posting_outcome','audit_catalogs','audit_document_count',
+ 'audit_document_posted','audit_document_quantity','write_created_movements',
+ 'capability_not_removed','only_resume_storage','browser_cookies_not_empty',
+ 'owned_fixture_failed','owned_fixture_timeout','business_rpc_plan_changed',
+ 'late_reply_changed_owner','duplicate_open_rpc','duplicate_write_rpc','duplicate_post_rpc',
+ 'duplicate_write_revision','shortage_changed_persisted_state','shortage_not_rejected',
+ 'resource_value','report_refused','balance_not_exclusive','unsaved_draft_changed_persistence'];
+const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
+ (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
+const checkpoint=label=>{assert.ok(diagnosticPhases.includes(label),'invalid_diagnostic_phase');phase=label;};
+let activeScenario=null;
+
 const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:null,scenarios:results,sandbox:null,heartbeatBusy:0};
 let output,owned,home,env,host,browser,context,page,hostGroup,browserGroup;
@@ -252,14 +271,18 @@ except Exception:
 `;
 function inventoryFixture(operation){
   assert.ok(['create','audit'].includes(operation),'fixture_mode');
-  const raw=execFileSync(python,['-c',fixtureCode,operation,owned,path.join(repo,'examples/configuration-inventory-application')],
-    {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','ignore']});
+  checkpoint(operation==='create'?'fixture_create':'fixture_audit');
+  let raw;
+  try{raw=execFileSync(python,['-c',fixtureCode,operation,owned,path.join(repo,'examples/configuration-inventory-application')],
+    {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','ignore']});}
+  catch(error){throw Error(error?.code==='ETIMEDOUT'?'owned_fixture_timeout':'owned_fixture_failed');}
   return JSON.parse(raw);
 }
 const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null;
 async function command(title,control,state='saved'){
+ checkpoint('command_binding');
  // DOM panel insertion order follows the source-bound application sessions.
  // Pin the active opaque session before dispatch, never accept a saved sibling.
  const index=await panels().evaluateAll(nodes=>nodes.findIndex(node=>!node.hidden));
@@ -269,11 +292,12 @@ async function command(title,control,state='saved'){
  const reply=replyFor(packet=>packet.method==='application.form'&&packet.params.session===session&&
    packet.params.request.method==='form.event'&&packet.params.request.params.event==='command'&&
    packet.params.request.params.control===control);
- await action(title).click();const data=await (await reply).json();
+ await action(title).click();const data=await (await reply).json();checkpoint('command_outcome');
  assert.equal(data.result.session,session,'command_session_changed');
  const outcomes=data.result.state.posting.filter(item=>item.session===session);
  assert.equal(outcomes.length,1,'command_outcome_count');
- assert.equal(outcomes[0].state,state,'posting_outcome');await idle();
+ report.lastCommandOutcome=['saved','rejected','uncertain','committed'].includes(outcomes[0].state)?outcomes[0].state:'other';
+ assert.equal(outcomes[0].state,state,'posting_outcome');checkpoint('command_idle');await idle();
 }
 async function closeForm(){const reply=formReply('close');await action('Close form').click();await reply;await idle();}
 async function naturalStop(){
@@ -397,16 +421,16 @@ async function auditResponse(response){
 }
 async function repeatClick(locator){await locator.evaluate(control=>{control.click();control.click();});}
 async function scenario(name,fn){
- check();phase=name;const start=businessEvents.length,index=scenarioNames.indexOf(name);
- await fn();check();assert.deepEqual(businessEvents.slice(start),businessPlan[index],'business_rpc_plan_changed');
+ check();phase=name;const start=businessEvents.length,index=scenarioNames.indexOf(name);activeScenario=index;
+ await fn();check();checkpoint('business_plan');assert.deepEqual(businessEvents.slice(start),businessPlan[index],'business_rpc_plan_changed');
  results.push({name,status:'PASS',businessRpc:businessEvents.length-start});
 }
 async function screenshot(name){
   assert.ok(screenshots.includes(name),'unexpected_screenshot');
-  assert.equal(await page.evaluate(()=>location.hash),'','capability_not_removed');
-  assert.deepEqual(await page.evaluate(()=>({local:localStorage.length,session:Object.keys(sessionStorage)})),{local:0,session:['yadinassi.browser.resume/1']},'only_resume_storage');
-  assert.equal((await context.cookies()).length,0,'browser_cookies_not_empty');
-  await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
+  checkpoint('screenshot_capability');assert.equal(await page.evaluate(()=>location.hash),'','capability_not_removed');
+  checkpoint('screenshot_storage');assert.deepEqual(await page.evaluate(()=>({local:localStorage.length,session:Object.keys(sessionStorage)})),{local:0,session:['yadinassi.browser.resume/1']},'only_resume_storage');
+  checkpoint('screenshot_cookies');assert.equal((await context.cookies()).length,0,'browser_cookies_not_empty');
+  checkpoint('screenshot_capture');await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
 }
 async function sourceBinding(){
   const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-inventory-application','tests/browser_ui',
@@ -600,9 +624,12 @@ async function main(){
       await catalog().getByRole('cell',{name:title,exact:true}).waitFor();await closeForm();await countPanels(0);
     }
     await prepare('Receipt','R1','10.50','105');await command('Write document','WriteButton');
-    const db=inventoryFixture('audit');assert.deepEqual(db.catalogs,[['Products','P1','Widget'],['Warehouses','W1','Main warehouse']]);
-    assert.equal(db.documents.length,1);assert.equal(db.documents[0].posted,false);assert.equal(db.documents[0].quantity,'10.5');
-    assert.deepEqual(db.movements,[],'write_created_movements');await screenshot(screenshots[0]);
+    const db=inventoryFixture('audit');checkpoint('audit_catalogs');
+    assert.deepEqual(db.catalogs,[['Products','P1','Widget'],['Warehouses','W1','Main warehouse']],'audit_catalogs');
+    checkpoint('audit_document_count');assert.equal(db.documents.length,1,'audit_document_count');
+    checkpoint('audit_document_posted');assert.equal(db.documents[0].posted,false,'audit_document_posted');
+    checkpoint('audit_document_quantity');assert.equal(db.documents[0].quantity,'10.5','audit_document_quantity');
+    checkpoint('audit_no_movements');assert.deepEqual(db.movements,[],'write_created_movements');await screenshot(screenshots[0]);
   });
   await scenario(scenarioNames[1],async()=>{
     await command('Post document','PostButton');
@@ -675,8 +702,8 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
-  report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
-    /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
+  report.failure={phase,scenario:activeScenario,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
+    /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':diagnosticReason(error)};
 }
 finally{
   aborted=true;clearTimeout(deadline);

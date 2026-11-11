@@ -154,7 +154,10 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
 
     def test_fixed_redacted_diagnostics(self):
         self.contains("'capability_leak'", "'capability_not_removed'", "'only_resume_storage'",
-            "'unexpected_artifact'", 'resultSha256:sha256(raw)', 'sha256:sha256(bytes)')
+            "'unexpected_artifact'", 'resultSha256:sha256(raw)', 'sha256:sha256(bytes)',
+            'const diagnosticPhases=', 'const diagnosticReasons=', 'diagnosticReasons.find(code=>error?.message===code||',
+            "checkpoint('audit_document_quantity')", "checkpoint('screenshot_storage')",
+            'scenario:activeScenario', "report.lastCommandOutcome=['saved','rejected','uncertain','committed']")
         for forbidden in ('report.url', 'report.headers', 'report.response', 'report.stack', 'console.log(error'):
             self.assertNotIn(forbidden, self.source)
 

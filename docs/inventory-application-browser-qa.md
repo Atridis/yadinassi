@@ -101,3 +101,19 @@ identifiers are never published. A failed or incomplete flow remains FAIL.
 
 Preparation uses syntax/AST checks only. Offline contract execution and the four
 Chromium scenarios require a separately communicated count and reviewed route.
+
+## First acquisition diagnosis
+
+The first reviewed run reached 27 RPCs (23 business requests plus handshakes)
+before scenario 1 failed, with the sandbox verified and no wire failure. It did
+not acquire a screenshot or establish acceptance. One separately announced
+offline diagnostic reproduced those 23 real controller/server form actions and
+ran the exact embedded audit unchanged: the audit and scenario-1 assertions
+passed. This does not prove the browser path passed and does not justify changing
+runtime semantics.
+
+Follow-up diagnostics distinguish fixed command/outcome, fixture, individual
+audit-assertion and screenshot stages. Only exact allowlisted assertion reasons
+and the closed command-outcome vocabulary can enter the result; no raw assertion
+actual/expected values, subprocess errors or storage values are exported. The
+request plan, acquisition bounds and required assertions remain unchanged.
