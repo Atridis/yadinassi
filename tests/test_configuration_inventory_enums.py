@@ -4,6 +4,7 @@ from copy import deepcopy
 from hashlib import sha256
 from pathlib import Path
 import unittest
+from unittest import mock
 from uuid import UUID
 import xml.etree.ElementTree as ET
 
@@ -35,12 +36,14 @@ def source():
 def edit(files, path, callback):
     root = ET.fromstring(files[path])
     callback(root)
-    for prefix, uri in (('', xml.MD), ('v8', xml.V8), ('xr', xml.XR),
-                        ('xsi', 'http://www.w3.org/2001/XMLSchema-instance')):
-        ET.register_namespace(prefix, uri)
-    root.set('xmlns:cfg', xml.CFG)
-    root.set('xmlns:xs', xml.XS)
-    files[path] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
+    # Fixture namespace choices must not leak into unrelated import tests.
+    with mock.patch.dict(ET._namespace_map):
+        for prefix, uri in (('', xml.MD), ('v8', xml.V8), ('xr', xml.XR),
+                            ('xsi', 'http://www.w3.org/2001/XMLSchema-instance')):
+            ET.register_namespace(prefix, uri)
+        root.set('xmlns:cfg', xml.CFG)
+        root.set('xmlns:xs', xml.XS)
+        files[path] = ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 
 def named(parent, category, name):
@@ -197,6 +200,14 @@ class InventoryEnumSourceTests(unittest.TestCase):
             files = dict(self.files)
             edit(files, path, lambda root: root.set('version', '2.4'))
             with self.subTest(path=path), self.assertRaises(ValueError): self.load(files)
+
+    def test_mutation_helper_preserves_process_namespaces(self):
+        before=ET._namespace_map.copy()
+        edit(self.files,UNIT,lambda root:None)
+        self.assertEqual(ET._namespace_map,before)
+        with mock.patch.object(ET,'tostring',side_effect=ValueError('owned fixture failure')):
+            with self.assertRaises(ValueError):edit(self.files,UNIT,lambda root:None)
+        self.assertEqual(ET._namespace_map,before)
 
     def test_enum_metadata_unknown_envelope_is_refused(self):
         edit(self.files, UNIT, lambda root: root.set('extra', 'unsupported'))

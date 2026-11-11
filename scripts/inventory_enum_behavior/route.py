@@ -8,7 +8,7 @@ SCHEMA='native-1c-inventory-enum-v1'
 STAGE_SCHEMA='native-1c-inventory-enum-stage-v1'
 COUNT=12
 MAX_OUTPUT=131072
-SOURCE_SHA256='a3ff322446211ff933c0ad21f3570def5eeb25fbc4b230316b72b0deb26a4945'
+SOURCE_SHA256='a0daa71c1250b2e4871272a2e069b04f93da5ebd62bef175c4261eda6f28ec7f'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

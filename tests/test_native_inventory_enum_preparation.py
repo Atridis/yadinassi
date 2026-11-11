@@ -30,7 +30,16 @@ class InventoryEnumPreparationTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(ValueError):route.case_range(value)
 
     def test_source_digest_is_bound(self):
-        self.assertEqual(hashlib.sha256(route.source()).hexdigest(),route.SOURCE_SHA256)
+        raw=route.source()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),route.SOURCE_SHA256)
+        # Serialization must not call native IndexOf on a typed empty value.
+        # Its -1 token is our owned wire spelling, not a native IndexOf result.
+        enum_helper=raw.split(b'Function E(Val Value)',1)[1].split(b'EndFunction',1)[0]
+        for prefix,name in ((b'u',b'Units'),(b's',b'States')):
+            guard=b'If Value.IsEmpty() Then Return "'+prefix+b'-1"; EndIf;'
+            index=b'Enums.'+name+b'.IndexOf(Value)'
+            self.assertEqual(enum_helper.count(guard),1)
+            self.assertLess(enum_helper.index(guard),enum_helper.index(index))
 
     def test_fixture_assets_are_bound(self):
         _,assets=fixture.load_saved()

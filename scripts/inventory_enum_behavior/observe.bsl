@@ -8,8 +8,14 @@ Function B(Val Value)
     If Value Then Return "true"; EndIf; Return "false";
 EndFunction
 Function E(Val Value)
-    If TypeOf(Value)=Type("EnumRef.Units") Then Return "u"+N(Enums.Units.IndexOf(Value)); EndIf;
-    If TypeOf(Value)=Type("EnumRef.States") Then Return "s"+N(Enums.States.IndexOf(Value)); EndIf;
+    If TypeOf(Value)=Type("EnumRef.Units") Then
+        If Value.IsEmpty() Then Return "u-1"; EndIf;
+        Return "u"+N(Enums.Units.IndexOf(Value));
+    EndIf;
+    If TypeOf(Value)=Type("EnumRef.States") Then
+        If Value.IsEmpty() Then Return "s-1"; EndIf;
+        Return "s"+N(Enums.States.IndexOf(Value));
+    EndIf;
     If Value=Undefined Then Return "undefined"; EndIf;
     Return "other";
 EndFunction
