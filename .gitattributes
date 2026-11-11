@@ -200,3 +200,10 @@ scripts/native_1c_accumulation_register_profile.py text eol=lf
 scripts/native_1c_docker_lifecycle.py text eol=lf
 scripts/native_1c_full_host.py text eol=lf
 scripts/native_1c_smoke.py text eol=lf
+scripts/session_parameter_behavior/** text eol=lf
+scripts/native_1c_bootstrap/session_parameter_suite.py text eol=lf
+scripts/native_1c_session_parameter_probe.sh text eol=lf
+
+# Explicit session declarations and application runtime source.
+yadinassi/configuration_session_parameters.py text eol=lf
+yadinassi/session_parameters.py text eol=lf

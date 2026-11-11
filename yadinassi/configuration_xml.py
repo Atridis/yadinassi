@@ -61,6 +61,7 @@ class ConfigurationImport:
     common_modules: tuple = ()
     module_runtime: str | None = None
     information_registers: tuple[InformationRegisterSchema, ...] = ()
+    session_parameters: tuple = ()
 
 
 def _fail(reason):
@@ -612,8 +613,11 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
     children=config.find('{'+MD+'}ChildObjects')
     if children is None:_fail('missing configuration ChildObjects')
-    catalog_names=[];document_names=[];common_names=[];register_names=[]
+    catalog_names=[];document_names=[];common_names=[];register_names=[];session_names=[]
     for node in children:
+        if module_runtime is not None and node.tag=='{'+MD+'}SessionParameter':
+            if node.attrib or len(node): _fail('session parameter inventory entry')
+            session_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
             common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if node.tag=='{'+MD+'}InformationRegister':
@@ -722,6 +726,8 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         section_count+=len(document.tabular_sections)
         if section_count>512:_fail('tabular section count')
         documents.append(document)
+    from .configuration_session_parameters import read_session_parameters
+    session_parameters=read_session_parameters(files,session_names,used,issues)
     registers=[]
     for rname in register_names:
         path='InformationRegisters/'+rname+'.xml'
@@ -732,7 +738,8 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
                         *(f'Documents/{n}.xml' for n in document_names),
                         *(f'CommonModules/{n}.xml' for n in common_names),
-                        *(f'InformationRegisters/{n}.xml' for n in register_names)}
+                        *(f'InformationRegisters/{n}.xml' for n in register_names),
+                        *(f'SessionParameters/{n}.xml' for n in session_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
     # invent a Configuration owner for a file whose metadata owner is unknown.
@@ -749,6 +756,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     runtime_paths = {module.path for module in common_modules}
     if module_runtime is not None:
         runtime_paths.add('Ext/ManagedApplicationModule.bsl')
+        runtime_paths.add('Ext/SessionModule.bsl')
     unknown_module_count = 0
     unknown_module_issues = []
     unknown_module_json_size = 2  # The enclosing JSON array brackets.
@@ -776,7 +784,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
             if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
         elif entry.path == 'ConfigDumpInfo.xml':
             versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
-            if register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
+            if session_names or register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
                 issues.append('unsupported configuration file:'+entry.path)
         elif entry.path not in expected:
             _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
@@ -785,7 +793,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                       ' (individual paths retained in configuration files)')
     else:
         issues.extend(unknown_module_issues)
-    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers))
+    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),session_parameters=session_parameters)
     if module_runtime is not None:
         validate_module_sources(result)
     return result

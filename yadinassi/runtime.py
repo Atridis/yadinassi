@@ -43,6 +43,7 @@ from . import clocks, date_time_conversions, dates, formatting, number_in_words,
 from .chars import BSLChars, CHARS
 from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
+from .session_parameters import BSLSessionParameters
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
@@ -848,6 +849,12 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ('sessionparameters','параметрысеанса'):
+            if self._configuration_runtime is None:
+                raise ValueError('session parameters require an explicit configuration application')
+            parameters=self._configuration_runtime.session_parameters
+            parameters._authorize(self)
+            return parameters
         if name in ("thisobject", "этотобъект"):
             if not self._has_module_context:
                 raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
@@ -991,6 +998,8 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        if type(value) is BSLSessionParameters:
+            return (yield from value.read(self,node.name))
         if type(value) is _Module:
             self._require_module_storage_context()
             return value.get_member(node.name)
@@ -1000,6 +1009,10 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        if type(value) is BSLSessionParameters:
+            value._authorize(self)
+            index=(yield from self._visit(node.index))
+            return (yield from value.read(self,index))
         if (type(value) is BSLCommonModuleMetadataCollection
                 or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
                 or is_metadata_collection(value)):
@@ -1820,6 +1833,11 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            if type(value) is BSLSessionParameters:
+                value._authorize(self)
+                name=node.target.name if isinstance(node.target,ast.Attribute) else (yield from self._visit(node.target.index))
+                value.write(self,name,(yield from self._visit(node.value)))
+                return
             if isinstance(node.target, ast.Attribute):
                 if type(value) is _Module:
                     self._require_module_storage_context()
