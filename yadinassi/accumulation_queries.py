@@ -69,6 +69,7 @@ def manager(documents, source, parameters):
     from .configuration_accumulation import AccumulationConfiguration
     from .configuration_accumulation_references import InventoryConfiguration
     from .configuration_inventory_application import InventoryApplicationConfiguration
+    from .configuration_inventory_enums import InventoryEnumConfiguration
     from .sqlite_catalog import SQLiteCatalogBackend
     if documents is None or documents._context is None:
         raise ValueError('Accumulation query requires document context')
@@ -76,7 +77,7 @@ def manager(documents, source, parameters):
     if type(backend) is not SQLiteCatalogBackend:
         raise ValueError('Accumulation query requires the accumulation profile')
     config = backend.accumulation_configuration
-    if type(config) not in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration):
+    if type(config) not in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration):
         raise ValueError('Accumulation query requires the accumulation profile')
     matches = [schema for schema in config.registers
                if schema.name.casefold() == source.catalog.casefold()]
@@ -166,7 +167,7 @@ def load(manager, columns, view, budget, source, parameters):
     rows, groups = [], {}
     periodicity = _periodicity(source)
     reducer = (StatementReducer(schema, boundaries[0], boundaries[1], periodicity,
-                                combined=source.section == 'balance_and_turnovers')
+                                combined=source.section == 'balance_and_turnovers', enum_domain=owner._backend._enum_domain)
                if source.section == 'balance_and_turnovers' or periodicity else None)
     count = 0
     for key, partition in _accumulation_port(owner).scan(schema.identity):
@@ -227,7 +228,7 @@ def load(manager, columns, view, budget, source, parameters):
         return rows
     for dims, vectors, weights in groups.values():
         vectors, weights = tuple(vectors), tuple(weights)
-        net = _sum_resource_vectors(schema, vectors, weights)
+        net = _sum_resource_vectors(schema, vectors, weights, enum_domain=owner._backend._enum_domain)
         if source.section == 'balance' and all(value == 0 for value in net):
             continue
         values = dict(zip((f.identity for f in schema.dimensions), dims))
@@ -236,7 +237,7 @@ def load(manager, columns, view, budget, source, parameters):
         if source.section == 'turnovers':
             for name, weight in (('receipt', 1), ('expense', -1)):
                 chosen = tuple(vector for vector, sign in zip(vectors, weights) if sign == weight)
-                totals[name] = _sum_resource_vectors(schema, chosen, (1,) * len(chosen))
+                totals[name] = _sum_resource_vectors(schema, chosen, (1,) * len(chosen), enum_domain=owner._backend._enum_domain)
             if all(value == 0 for vector in totals.values() for value in vector):
                 raise ValueError('All-zero turnover group is outside the measured profile')
         for name, vector in totals.items():

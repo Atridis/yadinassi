@@ -184,7 +184,7 @@ def validate_schema(schema, *, enum_domain=None):
     return schema
 
 
-def _sum_resource_vectors(schema, vectors, weights):
+def _sum_resource_vectors(schema, vectors, weights, *, enum_domain=None):
     """Exact host arithmetic, not Balance/Turnovers or a result-field schema.
 
     Accept bounded exact tuples of normalized resource tuples and caller-chosen
@@ -195,7 +195,7 @@ def _sum_resource_vectors(schema, vectors, weights):
     this representation does not assert native aggregate field qualifiers.
     Neither inputs nor the ambient Decimal context are modified.
     """
-    validate_schema(schema)
+    validate_schema(schema, enum_domain=enum_domain)
     if (type(vectors) is not tuple or type(weights) is not tuple
             or len(vectors) > MAX_MOVEMENT_ROWS or len(weights) != len(vectors)):
         raise BackendError('invalid_input')
