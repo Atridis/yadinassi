@@ -184,6 +184,8 @@ def _number(value: Decimal) -> str:
 
 def _require_representable_description(value: BSLTypeDescription) -> None:
     """Never silently erase settings for types absent from the Pattern."""
+    if type(value.types) is not tuple or any(type(kind) is not BSLType for kind in value.types):
+        raise ValueError("Сериализация metadata-bound ОписаниеТипов пока не поддерживается")
     if value._query_scalar is not None:
         raise ValueError("Сериализация nullable описания колонки запроса пока не поддерживается")
     if BSLType.UUID in value.types:

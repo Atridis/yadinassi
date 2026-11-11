@@ -130,10 +130,12 @@ class CatalogDynamicTypesTests(unittest.TestCase):
             BSLTypeDescription('String').adjust_value(self.ref)
         types = BSLArray()
         types.items = [self.kind]
-        with self.assertRaisesRegex(ValueError, 'ссылки справочника'):
-            BSLTypeDescription(types)
-        with self.assertRaisesRegex(ValueError, 'ссылки справочника'):
-            BSLTypeDescription('String').contains_type(self.kind)
+        description = BSLTypeDescription(types)
+        self.assertTrue(description.contains_type(self.kind))
+        self.assertIs(description.adjust_value(self.ref), self.ref)
+        self.assertFalse(BSLTypeDescription('String').contains_type(self.kind))
+        with self.assertRaisesRegex(ValueError, 'metadata-bound'):
+            value_to_string_internal(description)
 
 
 if __name__ == '__main__':

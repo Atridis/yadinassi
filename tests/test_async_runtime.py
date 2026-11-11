@@ -32,7 +32,8 @@ class AsyncRuntimeTests(unittest.TestCase):
         self.assertIs(caught.exception, error)
         self.assertEqual(self.output, [])
         self.assertEqual(self.vm.variables['p'].state, 'failed')
-        self.assertIs(self.vm.variables['p'].result, error)
+        self.assertIsNot(self.vm.variables['p'].result, error)
+        self.assertEqual(self.vm.variables['p'].result.args, error.args)
         self.assertFalse(self.vm.pending_promises)
         self.assertFalse(self.vm._scheduler._tasks)
         self.assertIsNone(self.vm.locals)
@@ -66,7 +67,8 @@ class AsyncRuntimeTests(unittest.TestCase):
             self.run_code('Async Function First() Await 0; Crash(); EndFunction P=First();')
         with self.assertRaises(RuntimeError) as caught:
             self.run_code('Async Function Second(Val Input) Return Await Input; EndFunction Q=Second(P);')
-        self.assertIs(caught.exception, error)
+        self.assertIsNot(caught.exception, error)
+        self.assertEqual(caught.exception.args, error.args)
         self.assertEqual(self.vm.variables['q'].state, 'failed')
         self.assertFalse(self.vm.pending_promises)
         self.assertFalse(self.vm._scheduler._tasks)
@@ -85,9 +87,11 @@ class AsyncRuntimeTests(unittest.TestCase):
                     self.run_code('''Async Function Work(Val P)
                         Try Return Await P; Except Return 7; EndTry;
                     EndFunction Q=Work(Input);''')
-                self.assertIs(caught.exception, error)
+                self.assertIsNot(caught.exception, error)
+                self.assertEqual(caught.exception.args, error.args)
                 self.assertEqual(self.vm.variables['q'].state, 'failed')
-                self.assertIs(self.vm.variables['q'].result, error)
+                self.assertIsNot(self.vm.variables['q'].result, error)
+                self.assertEqual(self.vm.variables['q'].result.args, error.args)
                 self.assertFalse(self.vm.pending_promises)
                 self.assertIsNone(self.vm._scheduler.active_context.host_failure)
                 # The same object raised by an ordinary later builtin still

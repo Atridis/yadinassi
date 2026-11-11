@@ -1575,6 +1575,35 @@ class _View:
         return schemas
 
     @_boundary
+    def metadata_configuration(self):
+        """Current source tree order and name in this same admitted read view.
+
+        Field descriptors are built from logical schemas, never source receipts.
+        No configuration code is loaded or executed by this read-only port.
+        """
+        self._require()
+        from .configuration_xml import _object, _props, _text, MD, _XML_WHITESPACE
+        row = self._connection.execute("SELECT content,sha256 FROM configuration_file WHERE path='Configuration.xml'").fetchone()
+        if (row is None or type(row[0]) is not bytes or len(row[0]) > 1024*1024
+                or hashlib.sha256(row[0]).hexdigest() != row[1]): raise BackendError('integrity')
+        config, _ = _object(row[0], 'Configuration')
+        name = _text(_props(config),'Name')
+        expected = self._connection.execute('SELECT name FROM database_info WHERE singleton=1').fetchone()
+        if expected is None or expected[0] != name: raise BackendError('schema_changed')
+        children = config.find('{'+MD+'}ChildObjects')
+        if children is None: raise BackendError('integrity')
+        orders = {}
+        for family in ('Catalog','Document','InformationRegister'):
+            names = tuple((node.text or '').strip(_XML_WHITESPACE) for node in children if node.tag == '{'+MD+'}'+family)
+            if len(names) > 512 or len({n.casefold() for n in names}) != len(names): raise BackendError('integrity')
+            # Demo profiles admit only a documented subset of their source tree.
+            if family == 'Catalog' and self._backend.storage_version == 6:
+                admitted = {s.name.casefold() for s in self._backend._schemas}
+                names = tuple(n for n in names if n.casefold() in admitted)
+            orders[family] = names
+        return name, tuple(orders.items())
+
+    @_boundary
     def product_list_sources(self, catalog_id):
         """Exact list/object bytes admitted in this same read-only snapshot."""
         self._require()

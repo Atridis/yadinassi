@@ -1,7 +1,8 @@
 """A bounded scalar TypeDescription, grounded in native checkpoint probes.
 
 Supported types are Boolean, String, Date, Number, standalone Null and the
-separately bounded UUID singleton. Binary
+separately bounded UUID singleton. Snapshot-bound catalog/document reference
+singletons support introspection and exact-reference passthrough only. Binary
 runtime values, arbitrary object types, mixed Null ordering and ambiguous union
 fallbacks are intentionally excluded. Qualifiers and their internal value-stream
 codec are separate concerns; this module does not manufacture codec evidence.
@@ -11,6 +12,7 @@ Explicit resource limits are Yadinassi budgets, not inferred native maxima.
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, localcontext
+from uuid import UUID
 
 from .unique_identifiers import BSLUUID
 from .catalog_types import BSLCatalogReference, BSLCatalogType
@@ -51,8 +53,72 @@ def _unsupported(message):
     raise ValueError(f"ОписаниеТипов: {message} пока не поддерживается в Yadinassi")
 
 
+def _is_reference_type(kind):
+    return type(kind) is BSLCatalogType or type(kind) is BSLDocumentType
+
+
+def _checked_reference_type(kind, *, reference_only=True):
+    """Inspect exact built-ins before any hashing, comparison or presentation.
+
+    The snapshot is an opaque identity, never a callback or equality operand.
+    Metadata adapters must supply their existing manager's bound value type;
+    a metadata UUID alone cannot reconstruct a type or transport a reference.
+    """
+    if not _is_reference_type(kind):
+        raise TypeError('ОписаниеТипов: ожидается тип ссылки справочника или документа')
+    try:
+        identity, name, family = (object.__getattribute__(kind, attr)
+                                  for attr in ('metadata_uuid', 'name', 'family'))
+        object.__getattribute__(kind, 'snapshot')
+    except AttributeError:
+        raise ValueError('ОписаниеТипов: неполное состояние типа ссылки') from None
+    if (type(identity) is not UUID or type(name) is not str or not 1 <= len(name) <= 256
+            or type(family) is not str or family not in ('ref', 'manager', 'selection', 'object')):
+        raise ValueError('ОписаниеТипов: недопустимое состояние типа ссылки')
+    if reference_only and family != 'ref':
+        _unsupported('тип менеджера, выборки или объекта')
+    return kind
+
+
+def _reference_description_kind(description):
+    """Validate the narrow immutable reference-descriptor state, when present."""
+    kinds = description.types
+    if type(kinds) is not tuple or len(kinds) > _MAX_TYPE_ARGUMENT:
+        raise ValueError('ОписаниеТипов: недопустимый состав типов')
+    references = [kind for kind in kinds if _is_reference_type(kind)]
+    if not references:
+        return None
+    if len(kinds) != 1 or description._query_scalar is not None:
+        _unsupported('составное или nullable описание ссылки')
+    kind = _checked_reference_type(references[0])
+    # References have no admitted qualifier semantics. Do not normalize a
+    # malformed host-mutated descriptor while copying it or using its methods.
+    for attr, expected in _QUALIFIERS:
+        qualifier = object.__getattribute__(description, attr)
+        if type(qualifier) is not expected:
+            raise TypeError('ОписаниеТипов: недопустимый квалификатор ссылки')
+        fields = (('digits', 'fraction_digits') if expected is BSLNumberQualifiers
+                  else ('length',) if expected is BSLStringQualifiers or expected is BSLBinaryDataQualifiers
+                  else ())
+        for field in fields:
+            value = object.__getattribute__(qualifier, field)
+            if type(value) is not Decimal or not value.is_finite() or value != 0:
+                _unsupported('квалификаторы ссылки')
+    if (description.number_qualifiers.allowed_sign is not BSLAllowedSign.ANY
+            or description.string_qualifiers.allowed_length is not BSLAllowedLength.VARIABLE
+            or description.date_qualifiers.date_fractions is not BSLDateFractions.DATE_TIME
+            or description.binary_data_qualifiers.allowed_length is not BSLAllowedLength.VARIABLE):
+        _unsupported('квалификаторы ссылки')
+    return kind
+
+
+def _same_reference_type(left, right):
+    # Both operands have passed exact-type/state validation.
+    return (type(left) is type(right) and left.snapshot is right.snapshot
+            and left.metadata_uuid == right.metadata_uuid and left.family == right.family)
+
+
 def _type_set(value):
-    # !todo: measure catalog type descriptions/qualifiers before admitting them.
     if value is None or (type(value) is str and not value):
         return set()
     if type(value) is str:
@@ -65,15 +131,25 @@ def _type_set(value):
                 raise ValueError(f"ОписаниеТипов: тип не поддерживается: {token.strip()}")
             kinds.append(kind)
     elif type(value) is BSLArray:
+        if type(value.items) is not list:
+            raise TypeError('ОписаниеТипов: недопустимый состав Массива типов')
         if len(value.items) > _MAX_TYPE_ARGUMENT:
             raise ValueError("ОписаниеТипов: превышен предел ресурсов Yadinassi (4096 типов)")
         kinds = value.items
     else:
         raise TypeError("ОписаниеТипов: ожидается строка или Массив значений Тип")
+    references = [kind for kind in kinds if _is_reference_type(kind)]
+    if references:
+        # !todo Measure composite reference descriptions, duplicate/Undefined
+        # inputs and union fallbacks before expanding this singleton boundary.
+        if len(kinds) != 1:
+            _unsupported('составное описание ссылки')
+        return {_checked_reference_type(references[0])}
     result = set()
     for kind in kinds:
         # Validate before hashing: host objects must never supply equality/hash.
-        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType or (type(kind) is BSLDocumentLinesType or type(kind) is BSLDocumentSectionType) or type(kind) is BSLInformationRegisterType):
+        if (type(kind) is BSLDocumentLinesType or type(kind) is BSLDocumentSectionType
+                or type(kind) is BSLInformationRegisterType):
             _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("ОписаниеТипов: элементы массива должны иметь тип Тип")
@@ -86,6 +162,11 @@ def _type_set(value):
 
 
 def _canonical(kinds):
+    references = [kind for kind in kinds if _is_reference_type(kind)]
+    if references:
+        if len(kinds) != 1:
+            _unsupported('составное описание ссылки')
+        return (_checked_reference_type(references[0]),)
     if BSLType.UUID in kinds:
         if len(kinds) != 1:
             _unsupported("составное описание УникальныйИдентификатор")
@@ -209,9 +290,9 @@ def _qualifier_key(description):
 
 @dataclass(frozen=True, eq=False, init=False)
 class BSLTypeDescription(BSLObject):
-    """Immutable scalar schema with bilingual methods and qualifier properties."""
+    """Immutable scalar or snapshot-bound reference singleton description."""
 
-    types: tuple[BSLType, ...]
+    types: tuple[BSLType | BSLCatalogType | BSLDocumentType, ...]
     number_qualifiers: BSLNumberQualifiers
     string_qualifiers: BSLStringQualifiers
     date_qualifiers: BSLDateQualifiers
@@ -225,10 +306,15 @@ class BSLTypeDescription(BSLObject):
         if type(source) is BSLTypeDescription and source._query_scalar is not None:
             _unsupported("копирование nullable описания результата запроса")
         if type(source) is BSLTypeDescription:
+            reference = _reference_description_kind(source)
+            if reference is not None and args:
+                _unsupported('изменение состава или квалификаторов описания ссылки')
             if len(args) > 6:
                 raise TypeError("ОписаниеТипов: ожидается не более 7 аргументов")
             added = _type_set(args[0]) if args else set()
             removed = _type_set(args[1]) if len(args) > 1 else set()
+            if any(_is_reference_type(kind) for kind in (*added, *removed)):
+                _unsupported('добавление или удаление типа ссылки')
             if added & removed:
                 _unsupported("одновременное добавление и удаление одного типа")
             types = _canonical((set(source.types) | added) - removed)
@@ -238,6 +324,8 @@ class BSLTypeDescription(BSLObject):
                 raise TypeError("ОписаниеТипов: ожидается не более 5 аргументов")
             types = _canonical(_type_set(source))
             qualifier_args = args
+        if any(_is_reference_type(kind) for kind in types) and args:
+            _unsupported('квалификаторы описания ссылки')
         if BSLType.UUID in types and (type(source) is not str or args):
             _unsupported("перегрузка конструктора УникальныйИдентификатор")
         if type(source) is BSLTypeDescription and BSLType.UUID in source.types:
@@ -268,29 +356,50 @@ class BSLTypeDescription(BSLObject):
             object.__setattr__(self, attribute, supplied)
 
     def __str__(self):
+        _reference_description_kind(self)
         return ", ".join(str(kind) for kind in self.types)
 
     def __eq__(self, other):
         if type(other) is not BSLTypeDescription:
             return NotImplemented
+        _reference_description_kind(self)
+        _reference_description_kind(other)
         return self.types == other.types and _qualifier_key(self) == _qualifier_key(other)
 
     def __hash__(self):
+        _reference_description_kind(self)
         return hash((self.types, _qualifier_key(self)))
 
     def get_types(self):
+        _reference_description_kind(self)
         result = BSLArray()
         result.items = list(self.types)
         return result
 
     def contains_type(self, kind):
-        if (type(kind) is BSLCatalogType or type(kind) is BSLDocumentType or (type(kind) is BSLDocumentLinesType or type(kind) is BSLDocumentSectionType) or type(kind) is BSLInformationRegisterType):
+        reference = _reference_description_kind(self)
+        if _is_reference_type(kind):
+            _checked_reference_type(kind, reference_only=False)
+            return reference is not None and _same_reference_type(reference, kind)
+        if (type(kind) is BSLDocumentLinesType or type(kind) is BSLDocumentSectionType or type(kind) is BSLInformationRegisterType):
             _unsupported("тип ссылки справочника")
         if type(kind) is not BSLType:
             raise TypeError("СодержитТип: ожидается значение Тип")
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
+        reference = _reference_description_kind(self)
+        if reference is not None:
+            # Official AdjustValue returns an already matching value unchanged.
+            # !todo Measure default/Undefined/foreign-family reference coercions;
+            # never invent an unbound empty ref or UUID/string conversion here.
+            expected = BSLCatalogReference if type(reference) is BSLCatalogType else BSLDocumentReference
+            if type(value) is not expected:
+                _unsupported('значение по умолчанию или преобразование в ссылку')
+            kind = _checked_reference_type(value.value_type)
+            if type(value.reference_uuid) is not UUID or not _same_reference_type(reference, kind):
+                raise TypeError('ПривестиЗначение: ссылка требует тот же тип и snapshot')
+            return value
         if self._query_scalar is not None:
             # Native Query24 measures the descriptor's nullable metadata and
             # exact scalar assignment only, not mixed-Null coercion/defaults.
@@ -373,6 +482,13 @@ class BSLTypeDescription(BSLObject):
                    "adjustvalue": self.adjust_value, "привестизначение": self.adjust_value}
         method = methods.get(key)
         return super().get_member(name) if method is None else HostFunction(name, method)
+
+
+def _reference_description(kind):
+    """Metadata-only convenience: caller supplies its existing bound ref type."""
+    array = BSLArray()
+    array.items = [_checked_reference_type(kind)]
+    return BSLTypeDescription(array)
 
 
 def _query_nullable_description(scalar):

@@ -77,7 +77,7 @@ unaliased DeletionMark unload restriction remains in effect.
 
 Reference columns are available through a selection cursor. `Unload()` for
 dynamic-reference columns remains unsupported, including for empty results.
-This feature does not add dynamic-reference `TypeDescription` support or
+This query feature does not add dynamic-reference `TypeDescription` transport or
 internal-value codec representations. Do not turn references into guessed
 strings for transport between interpreters.
 
@@ -108,3 +108,7 @@ scalar metadata, joins and sections, identity rejection, temporary tables,
 UNION, read-view cleanup, and unchanged read-only database/configuration bytes.
 These tests and the example are host-contract checks, not a native 1C manual
 run or a replacement for one where native parity evidence is required.
+
+Snapshot-bound singleton reference descriptor introspection is documented
+[separately](metadata-reference-types.md). It does not enable reference-column
+Unload, external Query tables or codecs.
