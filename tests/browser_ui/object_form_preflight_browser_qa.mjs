@@ -286,7 +286,12 @@ function inventoryFixture(operation){
   catch(error){throw Error(error?.code==='ETIMEDOUT'?'owned_fixture_timeout':'owned_fixture_failed');}
   return JSON.parse(raw);
 }
-const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
+const replyFor=predicate=>{
+  const pending=page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
+  // A prior assertion may fail before its observer is awaited. Handle cleanup
+  // rejection now, while returning the original rejecting promise to callers.
+  pending.catch(()=>{});return pending;
+};
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null;
 // Keep already audited real responses until the matching delivered request is
@@ -621,15 +626,15 @@ async function main(){
   const noWrites=()=>assert.equal(wireEvents.filter(e=>e.event!=='close').length,0,'unexpected_form_write');
   const unchanged=()=>{checkpoint('audit_compare');assert.deepEqual(inventoryFixture('audit'),initialAudit,'readonly_audit_changed');};
   let owner=null,ownerPanel=null,ownerSessions=null;
-  const assertRaw=async()=>{
+  const assertRaw=async(pending=false)=>{
     assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).inputValue(),'RAW DRAFT','draft_changed');noWrites();
     assert.ok(lastApplicationState.sessions.some(s=>s.id===owner),'owner_identity_changed');
-    assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).isEditable(),true,'capacity_locked');
+    assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).isEditable(),!pending,'capacity_locked');
   };
   const returnOwner=async(pending=false)=>{
     checkpoint('owner_return');const index=lastApplicationState.sessions.findIndex(s=>s.id===owner);
     assert.ok(index>=0,'owner_identity_changed');await tabs().getByRole('button').nth(index).click();if(!pending)await flushPaint();
-    assert.equal(await ownerPanel.isVisible(),true,'owner_not_visible');await assertRaw();
+    assert.equal(await ownerPanel.isVisible(),true,'owner_not_visible');await assertRaw(pending);
   };
   const capacity=async(result,expectedSessions)=>{
     checkpoint('capacity_assert');assert.equal(result.error,'form_capacity','capacity_not_known');
@@ -713,7 +718,7 @@ async function main(){
     assert.equal(businessEvents.length,before+1,'duplicate_open_rpc');
     assert.equal(await catalog().getByRole('button',{name:'Open selected',exact:true}).isDisabled(),true,'busy_not_fenced');
     assert.equal(await reportPanel().getByRole('button',{name:'Show saved stock',exact:true}).isDisabled(),true,'busy_not_fenced');
-    await returnOwner(true);await assertRaw();checkpoint('delay_release');release();
+    await returnOwner(true);await assertRaw(true);checkpoint('delay_release');release();
     const response=await reply,result=deliveredReply(response).result;await flushPaint();
     await capacity(result,ownerSessions);assert.equal(businessEvents.length,before+1,'duplicate_open_rpc');
     assert.equal(await ownerPanel.isVisible(),true,'late_reply_changed_owner');await assertRaw();
