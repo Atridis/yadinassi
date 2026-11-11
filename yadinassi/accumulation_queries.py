@@ -12,7 +12,7 @@ from . import query_parser as syntax
 from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
 from .catalog_backend import BackendError
 from .dates import _from_parts
-from .accumulation_periods import bind_dates
+from .accumulation_periods import bind_dates, StatementReducer
 
 
 def needs_accumulation(statements):
@@ -26,10 +26,31 @@ def _boundaries(source, parameters):
         if source.period_boundary is not None:
             raise ValueError('Raw accumulation source has no period arguments')
         return ()
-    count = {'balance': 1, 'turnovers': 2}.get(source.section)
+    count = {'balance': 1, 'turnovers': 2, 'balance_and_turnovers': 2}.get(source.section)
     if count is None:
         raise ValueError('Invalid accumulation virtual source')
-    return bind_dates(source.period_boundary, parameters, count)
+    periodicity = _periodicity(source)
+    arguments = source.period_boundary[:-1] if periodicity else source.period_boundary
+    boundaries = bind_dates(arguments, parameters, count)
+    if source.section == 'balance_and_turnovers' or periodicity:
+        # Deliberate host admission, not an inferred native calendar cutoff.
+        # The accepted boundary probe refuses year 9999. Wider endpoint parity
+        # is deferred; legacy Balance/Turnovers and stored dates are unchanged.
+        if any(not 1900 <= value.year <= 2099 for value in boundaries):
+            raise ValueError('Stock period statements support query dates from 1900 through 2099')
+    return boundaries
+
+
+def _periodicity(source):
+    args = source.period_boundary
+    if type(args) is tuple and len(args) == 3:
+        mode = args[2]
+        if (source.section not in ('turnovers', 'balance_and_turnovers')
+                or type(mode) is not syntax.Periodicity
+                or type(mode.kind) is not str or mode.kind not in ('day', 'month')):
+            raise ValueError('Unsupported accumulation periodicity')
+        return mode.kind
+    return None
 
 
 class AccumulationQueryManager:
@@ -87,6 +108,8 @@ def field(manager, expression, source):
                 reference_identity=(manager.documents._metadata, schema.recorder_documents[0]))
         fields = schema.fields
     else:
+        if name in ('period', 'период') and _periodicity(source):
+            return _Column('', 'period', 'datetime', ('DateTime',))
         fields = schema.dimensions
     matches = [_Column('', f.identity, f.kind, f.qualifiers, f,
                reference_identity=(manager._catalogs._metadata, f.target_catalog_id)
@@ -95,6 +118,9 @@ def field(manager, expression, source):
     if source.section is not None:
         suffixes = (('balance', 'остаток'),) if source.section == 'balance' else (
             ('turnover', 'оборот'), ('receipt', 'приход'), ('expense', 'расход'))
+        if source.section == 'balance_and_turnovers':
+            suffixes += (('openingbalance', 'начальныйостаток'),
+                         ('closingbalance', 'конечныйостаток'))
         for resource in schema.resources:
             for english, russian in suffixes:
                 if name in (resource.name.casefold() + english, resource.name.casefold() + russian):
@@ -137,6 +163,10 @@ def load(manager, columns, view, budget, source, parameters):
         raise BackendError('schema_changed')
     boundaries = _boundaries(source, parameters)
     rows, groups = [], {}
+    periodicity = _periodicity(source)
+    reducer = (StatementReducer(schema, boundaries[0], boundaries[1], periodicity,
+                                combined=source.section == 'balance_and_turnovers')
+               if source.section == 'balance_and_turnovers' or periodicity else None)
     count = 0
     for key, partition in _accumulation_port(owner).scan(schema.identity):
         for row in partition.rows:
@@ -162,6 +192,10 @@ def load(manager, columns, view, budget, source, parameters):
                     values['recorder'] = manager._documents_by_id[key.document_id]._ref(key.record_id)
                 rows.append(tuple(values[column.field] for column in columns))
                 continue
+            if reducer is not None:
+                dims = tuple(values[f.identity] for f in schema.dimensions)
+                reducer.add(dims, tuple(_dimension_key(value) for value in dims), row)
+                continue
             if source.section == 'balance':
                 if row.period >= boundaries[0]:
                     continue
@@ -172,6 +206,24 @@ def load(manager, columns, view, budget, source, parameters):
             group = groups.setdefault(group_key, (dims, [], []))
             group[1].append(row.resources)
             group[2].append(1 if row.direction is AccumulationDirection.RECEIPT else -1)
+    if reducer is not None:
+        for dims, period, totals in reducer.rows(syntax.MAX_ROWS):
+            values = dict(zip((f.identity for f in schema.dimensions), dims))
+            if period is not None:
+                values['period'] = _from_parts((period.year, period.month, period.day,
+                    period.hour, period.minute, period.second))
+            for name, vector in totals.items():
+                for resource, value in zip(schema.resources, vector):
+                    _check_number(value, (38, resource.qualifiers[1], 'Any'))
+                    values[(resource.identity, name)] = value
+            # Sparse boundary rows can outnumber movements. Charge before
+            # materialization, irrespective of projection, WHERE or TOP.
+            budget[0] += len(values)
+            budget[1] += sum(len(value) for value in values.values() if type(value) is str)
+            if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query period result resource limit exceeded')
+            rows.append(tuple(values[column.field] for column in columns))
+        return rows
     for dims, vectors, weights in groups.values():
         vectors, weights = tuple(vectors), tuple(weights)
         net = _sum_resource_vectors(schema, vectors, weights)

@@ -74,3 +74,7 @@ which explicitly writes its movements and queries the same transaction. This
 is not a universal 1C rule, cost accounting, or prevention of every possible
 backdated oversell: the example checks the balance one second after its own
 Date. Production applications must author the business policy they require.
+
+A separate [period stock statement](accumulation-period-statements.md) adds
+opening/receipts/issues/closing and sparse Day/Month output without changing this
+source or storage grant. Its CLI example uses its own fresh database.

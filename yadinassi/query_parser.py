@@ -65,6 +65,11 @@ class Parameter:
 
 
 @dataclass(frozen=True, slots=True)
+class Periodicity:
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
 class Comparison:
     field: object
     operator: str
@@ -333,14 +338,22 @@ class _Parser:
             self.take('('); self.take('&'); boundary=Parameter(self.take('name')); self.take(')')
         if source_family == 'accumulation_register' and section is not None:
             names = {'balance': 'balance', 'остатки': 'balance',
-                     'turnovers': 'turnovers', 'обороты': 'turnovers'}
+                     'turnovers': 'turnovers', 'обороты': 'turnovers',
+                     'balanceandturnovers': 'balance_and_turnovers',
+                     'остаткииобороты': 'balance_and_turnovers'}
             if section.casefold() not in names:
                 raise ValueError('Unsupported accumulation-register virtual source')
             section = names[section.casefold()]
             self.take('('); self.take('&'); start = Parameter(self.take('name'))
             boundary = (start,)
-            if section == 'turnovers':
+            if section != 'balance':
                 self.take(','); self.take('&'); boundary += (Parameter(self.take('name')),)
+                if self.accept(','):
+                    periodicity = {'day': 'day', 'день': 'day',
+                                   'month': 'month', 'месяц': 'month'}.get(self.take('name').casefold())
+                    if periodicity is None:
+                        raise ValueError('Unsupported accumulation periodicity')
+                    boundary += (Periodicity(periodicity),)
             self.take(')')
         alias = self.take('name') if self.accept('as') else (section or catalog)
         return Source(catalog, alias, section, family=source_family, period_boundary=boundary)
@@ -566,7 +579,7 @@ def walk_nodes(value):
     """Walk only closed grammar nodes, including nested membership sources."""
     from dataclasses import fields
     node_types = (Field, Aggregate, NullLiteral, Expression, Source, Destroy, Join,
-                  Parameter, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
+                  Parameter, Periodicity, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
     if type(value) is tuple:
         for item in value: yield from walk_nodes(item)
     elif type(value) in node_types:
