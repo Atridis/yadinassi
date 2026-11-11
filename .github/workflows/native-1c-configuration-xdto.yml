@@ -1,4 +1,4 @@
-name: Isolated configuration_xdto observations
+name: Isolated configuration_xdto_linked observations
 on:
   pull_request:
     branches: [main]
@@ -40,26 +40,26 @@ jobs:
       - name: Install pinned host dependencies
         run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
       - name: Observe twelve cases in a fresh isolated owned infobase
-        id: configuration_xdto
+        id: configuration_xdto_linked
         env:
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
-        run: python3 scripts/native_1c_configuration_xdto_profile.py --execute-approved-image --export-native-outputs
+        run: python3 scripts/native_1c_configuration_xdto_linked_profile.py --execute-approved-image --export-native-outputs
       - name: Upload bounded acquisition report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-configuration_xdto-summary
-          path: native-smoke/configuration_xdto.json
+          name: native-configuration_xdto_linked-summary
+          path: native-smoke/configuration_xdto_linked.json
           if-no-files-found: error
           retention-days: 7
       - name: Upload only validated observations and provenance
-        if: always() && steps.configuration_xdto.outputs.configuration_xdto_outputs_ready == 'true'
+        if: always() && steps.configuration_xdto_linked.outputs.configuration_xdto_linked_outputs_ready == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: native-configuration_xdto-observations
+          name: native-configuration_xdto_linked-observations
           path: |
-            native-smoke/configuration_xdto-outputs/configuration_xdto.out
-            native-smoke/configuration_xdto-outputs/provenance.json
+            native-smoke/configuration_xdto_linked-outputs/configuration_xdto_linked.out
+            native-smoke/configuration_xdto_linked-outputs/provenance.json
           if-no-files-found: error
           retention-days: 7

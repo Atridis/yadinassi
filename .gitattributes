@@ -224,3 +224,12 @@ tests/fixtures/native_enumeration_43035110558.json -text
 scripts/configuration_xdto_behavior/** text eol=lf
 scripts/configuration_xdto_behavior/Package.bin -text
 scripts/native_1c_configuration_xdto_probe.sh text eol=lf
+
+# Source-bound linked configuration XDTO acquisition.
+scripts/configuration_xdto_linked_behavior/** text eol=lf
+scripts/configuration_xdto_linked_behavior/Package.bin -text
+scripts/configuration_xdto_linked_behavior/Envelope.bin -text
+scripts/native_1c_configuration_xdto_linked_profile.py text eol=lf
+scripts/native_1c_configuration_xdto_linked_probe.sh text eol=lf
+scripts/native_1c_bootstrap/configuration_xdto_linked_suite.py text eol=lf
+tests/test_configuration_xdto_linked_native_acquisition.py text eol=lf
