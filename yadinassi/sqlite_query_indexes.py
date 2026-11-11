@@ -62,14 +62,14 @@ def read_index_bundle_ddls(storage_version, schemas, layout, *, format_version):
     forbidden, and rowid remains SQLite's final physical tie-break.
     """
     if (type(storage_version) is not int or type(format_version) is not int
-            or storage_version not in range(1, 11) or format_version not in range(1, 15)):
+            or storage_version not in range(1, 11) or format_version not in range(1, 16)):
         raise BackendError('invalid_input')
     if storage_version in (1, 5):
         return ()
     # Reuse the existing exact schema/identity validation, without changing its
     # baseline return value or introducing caller-specified index expressions.
     catalog_query_index_ddls(schemas, layout)
-    result = list(catalog_query_index_ddls(schemas, layout)) if format_version not in (11, 12, 13, 14) else []
+    result = list(catalog_query_index_ddls(schemas, layout)) if format_version not in (11, 12, 13, 14, 15) else []
     for schema in sorted(schemas, key=lambda item: str(item.identity)):
         table = quote_identifier(layout.table_name(schema.identity))
         for field in ('code', 'description'):
@@ -84,7 +84,7 @@ def read_index_bundle_ddls(storage_version, schemas, layout, *, format_version):
                 result.append('CREATE INDEX ' + quote_identifier(binary) + ' ON ' + table +
                               '(' + field + ' COLLATE BINARY,record_id COLLATE yadinassi_uuid_v1)')
     if storage_version >= 7:
-        if format_version not in (11, 12, 13, 14):
+        if format_version not in (11, 12, 13, 14, 15):
             result.append('CREATE INDEX document_query_order_v1 ON document_record(document_id,date,number,record_id)')
         result.append('CREATE INDEX document_query_number_casefold_v1 ON document_record'
                       '(document_id,number COLLATE yadinassi_casefold_v1,date,record_id)')

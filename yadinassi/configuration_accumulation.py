@@ -27,6 +27,7 @@ _XR = '{' + xml.XR + '}'
 _XSI = '{' + xml.XSI + '}'
 _SCALARS = frozenset(('string', 'number', 'boolean', 'datetime'))
 _GENERATED = {
+    'Catalog': ('Object', 'Ref', 'Selection', 'List', 'Manager'),
     'Document': ('Object', 'Ref', 'Selection', 'List', 'Manager'),
     'AccumulationRegister': ('Record', 'Manager', 'Selection', 'List',
                              'RecordSet', 'RecordKey'),
@@ -161,7 +162,7 @@ def _object(raw, kind, used, expected_name=None):
     return obj, namespaces, identity, name
 
 
-def _field(node, namespaces, used, names, *, dimension=False):
+def _field(node, namespaces, used, names, *, dimension=False, targets=None):
     with location(field=metadata_name(node)):
         _shape(node, {'Properties'}, {'Properties'})
         props = _properties(node, {'Name', 'Type'} | _PRESENTATION
@@ -174,8 +175,9 @@ def _field(node, namespaces, used, names, *, dimension=False):
         names.add(name.casefold())
         if dimension:
             _exact(props, {'UseInTotals': 'true'})
-        kind, qualifiers, target = xml._type(props, namespaces, {})
-        if kind not in _SCALARS or target is not None:
+        kind, qualifiers, target = xml._type(props, namespaces, {} if targets is None else targets)
+        if not (kind in _SCALARS and target is None or
+                targets is not None and kind == 'catalog_ref' and target in targets.values()):
             _fail('scalar fields only')
         return FieldSchema(identity, name, kind, qualifiers, target)
 
@@ -206,7 +208,7 @@ def _recorder_targets(props, namespaces, declarations):
     return tuple(targets)
 
 
-def _document(raw, name, declarations, used):
+def _document(raw, name, declarations, used, *, targets=None):
     with location(file='Documents/'+name+'.xml', object=name):
         obj, namespaces, identity, _ = _object(raw, 'Document', used, name)
         allowed = ({'Name', 'NumberLength', 'Autonumbering', 'RegisterRecords'}
@@ -218,7 +220,7 @@ def _document(raw, name, declarations, used):
         if auto not in ('true', 'false'):
             _fail('unsupported document numbering')
         length = xml._int(props, 'NumberLength', 1, 9)
-        targets = _recorder_targets(props, namespaces, declarations)
+        recorders = _recorder_targets(props, namespaces, declarations)
         fields = []
         sections = []
         names = set(xml._DOCUMENT_RESERVED) | {
@@ -226,7 +228,7 @@ def _document(raw, name, declarations, used):
             'thisobject', 'этотобъект', 'setnewobjectref', 'установитьссылкунового'}
         for node in obj.find(_MD + 'ChildObjects'):
             if node.tag == _MD + 'Attribute':
-                fields.append(_field(node, namespaces, used, names))
+                fields.append(_field(node, namespaces, used, names, targets=targets))
             elif node.tag == _MD + 'TabularSection':
                 _shape(node, {'Properties', 'ChildObjects'}, {'Properties', 'ChildObjects'})
                 section_props = _properties(node, {'Name'} | _PRESENTATION)
@@ -240,7 +242,7 @@ def _document(raw, name, declarations, used):
                 for field in node.find(_MD + 'ChildObjects'):
                     if field.tag != _MD + 'Attribute':
                         _fail('unsupported section field')
-                    row_fields.append(_field(field, namespaces, used, row_names))
+                    row_fields.append(_field(field, namespaces, used, row_names, targets=targets))
                 if len(row_fields) > 64:
                     _fail('section field bound')
                 sections.append(TabularSectionSchema(section_id, section_name, tuple(row_fields)))
@@ -249,10 +251,10 @@ def _document(raw, name, declarations, used):
         if len(fields) > 64 or len(sections) > 16:
             _fail('document field bound')
         return (DocumentSchema(identity, name, length, tuple(fields), tuple(sections),
-                               'decimal_v1' if auto == 'true' else 'explicit'), targets)
+                               'decimal_v1' if auto == 'true' else 'explicit'), recorders)
 
 
-def _register(raw, name, owners, used):
+def _register(raw, name, owners, used, *, targets=None):
     with location(file='AccumulationRegisters/'+name+'.xml', object=name):
         obj, namespaces, identity, _ = _object(raw, 'AccumulationRegister', used, name)
         props = _properties(obj, {'Name', 'RegisterType', 'EnableTotalsSplitting'}
@@ -266,12 +268,13 @@ def _register(raw, name, owners, used):
             kind = node.tag.removeprefix(_MD)
             if kind not in groups or node.tag != _MD + kind:
                 _fail('unsupported accumulation field')
-            field = _field(node, namespaces, used, names, dimension=kind == 'Dimension')
+            field = _field(node, namespaces, used, names, dimension=kind == 'Dimension', targets=targets)
             if kind == 'Resource' and field.kind != 'number':
                 _fail('numeric accumulation resources required')
             groups[kind].append(field)
         schema = AccumulationRegisterSchema(identity, name, owners,
-            tuple(groups['Dimension']), tuple(groups['Resource']), tuple(groups['Attribute']))
+            tuple(groups['Dimension']), tuple(groups['Resource']), tuple(groups['Attribute']),
+            value_profile='scalar_v1' if targets is None else 'catalog_reference_v1')
         try:
             return validate_schema(schema)
         except BackendError:

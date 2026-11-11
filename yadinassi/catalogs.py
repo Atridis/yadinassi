@@ -376,6 +376,26 @@ class BSLCatalogObject(BSLObject):
             'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods:return HostFunction(name,methods[key])
         if key in self._sections:return self._sections[key]
+        if key in ('ref','ссылка') and self._revision is None and self._pending_write is not None:
+            from .configuration_accumulation_references import InventoryConfiguration
+            backend = self._manager._backend
+            if type(getattr(backend, 'accumulation_configuration', None)) is InventoryConfiguration:
+                from .database_transactions import current
+                transaction = current(backend)
+                if transaction is None or transaction.unit.state != 'open':
+                    raise BackendError('uncertain_commit')
+                matches = [index for participant, attr, index in transaction.participants
+                           if participant is self and attr == '_pending_write']
+                if len(matches) != 1:
+                    raise BackendError('unsupported')
+                request = transaction.unit.requests[matches[0]]
+                if (request.kind != 'catalog_create' or request.expected is not None
+                        or request.draft != self._pending_write[0] or request.draft.key != self._key):
+                    raise BackendError('unsupported')
+                # Native inventory12: a new item can be referenced and joined
+                # after staging, before outer commit. Do not accept its revision
+                # or mutate the detached buffer; rollback removes this visibility.
+                return self._manager._ref(self._key.record_id)
         return _field(self._values,name)
     def set_member(self,name,value):
         if self._pending_write is not None:raise BackendError('uncertain_commit')

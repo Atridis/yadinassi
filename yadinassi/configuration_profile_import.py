@@ -14,8 +14,10 @@ from .configuration_posting import PROFILE as POSTING
 from .configuration_posting_application import PROFILE as POSTING_FORMS, import_variant
 from .configuration_accumulation import PROFILE as ACCUMULATION, import_accumulation_configuration
 
+from .configuration_accumulation_references import PROFILE as INVENTORY, import_inventory_configuration
+
 LEGACY = 'legacy'
-PROFILES = (LEGACY, POSTING, POSTING_FORMS, ACCUMULATION)
+PROFILES = (LEGACY, POSTING, POSTING_FORMS, ACCUMULATION, INVENTORY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +33,7 @@ class PreparedConfiguration:
 
     def report(self):
         config = self.configuration
-        catalogs = config.catalogs if self.profile == LEGACY else ()
+        catalogs = config.catalogs if self.profile in (LEGACY, INVENTORY) else ()
         documents = config.documents
         registers = config.information_registers if self.profile == LEGACY else config.registers
         digest = sha256(b''.join(path.encode('utf-8') + b'\0' + sha256(raw).digest()
@@ -72,16 +74,21 @@ def _prepare_imported(config, profile, numbering_policy, module_runtime, activat
             config = preflight_configuration(config)
         files = config.files
         version = 13
-    else:
+    elif profile in (ACCUMULATION, INVENTORY):
         from .document_posting_program import compile_handlers
-        from .sqlite_accumulation_profile import _preflight_config
+        if profile == ACCUMULATION:
+            from .sqlite_accumulation_profile import _preflight_config
+        else:
+            from .sqlite_inventory_profile import _preflight_config
         # Preserve source-aware compilation diagnostics before the storage
         # boundary's intentionally generic BackendError translation.
         compile_handlers(config)
         with location(stage='storage'):
             _preflight_config(config)
         files = config.files
-        version = 14
+        version = 14 if profile == ACCUMULATION else 15
+    else:
+        raise ImportRefusal(ImportDiagnostic('profile_unsupported', 'schema'))
     return PreparedConfiguration(profile, tuple(sorted(files)), numbering_policy,
         module_runtime, activate, config, diagnostics, version)
 
@@ -96,8 +103,10 @@ def prepare_files(files, *, profile=LEGACY, numbering_policy='explicit', module_
             config = import_configuration(files, numbering_policy=numbering_policy, module_runtime=module_runtime)
         elif profile in (POSTING, POSTING_FORMS):
             config = import_variant(files, profile)
-        else:
+        elif profile == ACCUMULATION:
             config = import_accumulation_configuration(files, accumulation_runtime=profile)
+        else:
+            config = import_inventory_configuration(files, inventory_runtime=profile)
         return _prepare_imported(config, profile, numbering_policy, module_runtime, activate)
 
 
@@ -132,4 +141,6 @@ def create_prepared(path, prepared):
         return SQLiteDBContext.create(path, fresh.configuration, activate=fresh.activate)
     if fresh.profile in (POSTING, POSTING_FORMS):
         return SQLiteDBContext.create_posting(path, fresh.configuration)
-    return SQLiteDBContext.create_accumulation(path, fresh.configuration)
+    if fresh.profile == ACCUMULATION:
+        return SQLiteDBContext.create_accumulation(path, fresh.configuration)
+    return SQLiteDBContext.create_inventory(path, fresh.configuration)

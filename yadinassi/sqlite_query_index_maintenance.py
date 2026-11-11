@@ -40,7 +40,7 @@ def _digest(database, generation, version, schema_version, identity, source, bas
 def _validate(plan):
     if (type(plan) is not QueryIndexPlan or type(plan.database_id) is not UUID or not plan.database_id.int
             or type(plan.configuration_generation) is not int or not 1 <= plan.configuration_generation < 2**63
-            or type(plan.format_version) is not int or not 2 <= plan.format_version <= 14
+            or type(plan.format_version) is not int or not 2 <= plan.format_version <= 15
             or type(plan.schema_version) is not int or not 0 <= plan.schema_version < 2**31
             or type(plan.file_identity) is not tuple or len(plan.file_identity) != 2
             or any(type(n) is not int or n < 0 for n in plan.file_identity)
@@ -59,7 +59,7 @@ def _validate(plan):
 def _sets(backend):
     from .sqlite_transaction_profile import profile_index_ddls
     baseline = (profile_index_ddls(backend.storage_version, backend._schemas, backend._layout)
-                if backend.format_version in (11, 12, 13, 14) else ())
+                if backend.format_version in (11, 12, 13, 14, 15) else ())
     optional = read_index_bundle_ddls(backend.storage_version, backend._schemas,
                                      backend._layout, format_version=backend.format_version)
     return canonical_index_ddls(baseline), optional

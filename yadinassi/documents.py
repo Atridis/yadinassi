@@ -62,9 +62,10 @@ class BSLDocuments(BSLObject):
         from .sqlite_catalog import SQLiteCatalogBackend
         if type(backend) is not SQLiteCatalogBackend: return None
         from .configuration_accumulation import AccumulationConfiguration
+        from .configuration_accumulation_references import InventoryConfiguration
         configuration = backend.accumulation_configuration
         if configuration is None: configuration = backend.posting_configuration
-        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration): return None
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration): return None
         if self._posting_runtime is None:
             from .document_posting import PostingRuntime
             self._posting_runtime = PostingRuntime(self, configuration)
@@ -94,7 +95,33 @@ class BSLDocumentManager(BSLObject):
     _logical = BSLCatalogManager._logical
     _stored = BSLCatalogManager._stored
     _field_default = BSLCatalogManager._field_default
-    _assigned = BSLCatalogManager._assigned
+
+    def _assigned(self, field, value):
+        from .configuration_accumulation_references import InventoryConfiguration
+        from .catalog_types import BSLCatalogReference
+        if (field.kind == 'catalog_ref'
+                and type(getattr(self._backend, 'accumulation_configuration', None)) is InventoryConfiguration):
+            # Native inventory12 case 2: a wrong *catalog* target becomes the
+            # target's typed empty value. This is assignment conversion only;
+            # persisted rows, cross-database/family values and host forgeries
+            # are not admitted or repaired by the storage validation path.
+            if (type(value) is not BSLCatalogReference
+                    or value.value_type.snapshot is not self._catalogs._metadata):
+                raise TypeError('reference field requires same database family')
+            issuer = getattr(value.read_member, '__self__', None)
+            if (type(issuer) is not BSLCatalogManager
+                    or issuer._catalogs._metadata is not self._catalogs._metadata
+                    or value.value_type is not issuer._value_type
+                    or value.metadata is not issuer._metadata
+                    or value.read_member != issuer._read_member
+                    or value.get_object != issuer._get_object):
+                raise TypeError('reference field requires an owned catalog reference')
+            source = self._catalogs._manager_by_metadata_uuid(value.value_type.metadata_uuid)
+            if source._schema != issuer._schema:
+                raise TypeError('reference field requires a current catalog target')
+            if value.value_type.metadata_uuid != field.target_catalog_id:
+                value = self._field_default(field)
+        return BSLCatalogManager._assigned(self, field, value)
 
     def __init__(self,documents,metadata):
         self._documents,self._metadata = documents,metadata

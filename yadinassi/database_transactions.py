@@ -105,7 +105,7 @@ def active(backend):
     from .sqlite_catalog import SQLiteCatalogBackend
     if (not _admission_allowed.get() or type(backend) is not SQLiteCatalogBackend
             or _execution.get() is None or backend is not _execution_backend.get()
-            or backend.format_version not in (11, 12, 13, 14)):
+            or backend.format_version not in (11, 12, 13, 14, 15)):
         raise BackendError('unsupported')
     if backend._closed: raise BackendError('closed')
     transaction = current(backend)
