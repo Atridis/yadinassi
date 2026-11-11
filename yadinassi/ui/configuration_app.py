@@ -52,10 +52,18 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False):
-    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application)) > 1:
+def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
+    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application, reference_application, posting_application)) > 1:
         raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
+    if posting_application:
+        from ..configuration_posting_application import import_posting_application, PROFILE
+        imported = import_posting_application(files, posting_runtime=PROFILE)
+        return load_configuration_forms(files, document_schemas=imported.documents, posting_application=True)
+    if reference_application:
+        from ..configuration_reference_profile import import_reference_configuration
+        imported = import_reference_configuration(files)
+        return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents, reference_catalogs=imported.catalogs)
     if business_application:
         from ..configuration_business_profile import import_business_configuration
         imported = import_business_configuration(files)
@@ -82,10 +90,13 @@ def _definitions(configuration):
             enumerate(sorted(configuration.forms.items()), 1)}
 
 
-def _runtime(configuration, side, *, business_application=False, **kwargs):
+def _runtime(configuration, side, *, business_application=False, reference_application=False, **kwargs):
     from ..configuration_application_profile import import_application_configuration
     from ..configuration_runtime import ConfigurationApplication
-    if business_application:
+    if reference_application:
+        from ..configuration_reference_profile import import_reference_configuration
+        imported = import_reference_configuration(dict(configuration.source_files))
+    elif business_application:
         from ..configuration_business_profile import import_business_configuration
         imported = import_business_configuration(dict(configuration.source_files))
     else:
@@ -95,8 +106,14 @@ def _runtime(configuration, side, *, business_application=False, **kwargs):
 
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False):
         self.configuration = configuration
+        self.reference_application = reference_application
+        self.posting_application = posting_application
+        self.posting_configuration = None
+        if posting_application:
+            from ..configuration_posting_application import import_posting_application, PROFILE
+            self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
         self.definitions = _definitions(configuration)
         self.database = database
         self.bind_interpreter = bind_interpreter
@@ -110,12 +127,12 @@ class ConfigurationBroker:
         self.record_context = None
         self.application = None
         self.application_invocation = None
-        if application_host or business_application:
+        if application_host or business_application or reference_application:
             if bind_interpreter is not None:
                 raise ValueError('application owns its interpreter family')
             context = None if database is None else SQLiteDBContext(database)
             try:
-                self.application = _runtime(configuration, 'server', business_application=business_application, database_context=context, output=lambda value: None)
+                self.application = _runtime(configuration, 'server', business_application=business_application, reference_application=reference_application, database_context=context, output=lambda value: None)
                 self.record_context = context
                 if self.application.server_endpoints:
                     self.application_invocation = InvocationServer.from_handlers(
@@ -183,7 +200,7 @@ class ConfigurationBroker:
                              'deletionMark': card.values[2]})
             else:
                 rows.append({'key': key, 'number': card.number, 'date': card.date.isoformat(sep=' '),
-                             'deletionMark': card.deletion_mark})
+                             'deletionMark': card.deletion_mark, **({'posted': card.posted} if self.posting_application else {})})
         previous = self.projections.get(entry)
         version = 1 if previous is None else previous['version'] + (previous['rows'] != rows)
         result = {'entry': entry, 'version': version, 'rows': rows}
@@ -253,11 +270,16 @@ class ConfigurationBroker:
                 if definition.catalog_schema is not None:
                     from ..configuration_catalog import CatalogObjectSession
                     owned = CatalogObjectSession(context, definition.catalog_schema,
-                        dict(self.configuration.source_files), reference=reference)
+                        dict(self.configuration.source_files), reference=reference, reference_fields=self.reference_application)
                 elif definition.document_schema is not None:
                     from ..configuration_document import DocumentObjectSession
-                    owned = DocumentObjectSession(context, definition.document_schema,
-                        dict(self.configuration.source_files), key=reference)
+                    if self.posting_application:
+                        from ..configuration_posting_document import PostingDocumentSession
+                        owned = PostingDocumentSession(context, definition.document_schema,
+                            self.posting_configuration, definition.name, key=reference)
+                    else:
+                        owned = DocumentObjectSession(context, definition.document_schema,
+                            dict(self.configuration.source_files), key=reference, reference_fields=self.reference_application)
                 if owned is not None:
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned,
@@ -286,13 +308,69 @@ class ConfigurationBroker:
         if sid not in self.sessions:
             raise ValueError('retired session')
         server, nocontext, context = self.sessions[sid]
+        if operation == 'posting':
+            _keys(payload, 'action command receipt form')
+            if not self.posting_application or sid not in self.objects:
+                raise ValueError('explicit posting form required')
+            definition = next(d for d in self.definitions.values() if d.name == self.objects[sid].form)
+            binding = next((b for b in server.bindings if b.name == 'YadinassiPostingSync'), None)
+            frame = payload['form']; action = payload['action']; owned = self.objects[sid]
+            if (binding is None or type(frame) is not dict or frame.get('operation') != 'call'
+                    or frame.get('endpoint') != binding.endpoint or action not in ('execute', 'recover', 'sync')):
+                raise ValueError('unknown posting synchronization capability')
+            if action == 'execute' and not any(g.form == definition.name and g.command == payload['command']
+                    for g in self.posting_configuration.commands):
+                raise ValueError('ungranted posting command')
+            if action != 'execute' and payload['command'] is not None:
+                raise ValueError('unexpected posting command')
+            if action == 'recover' and (type(payload['receipt']) is not str or payload['receipt'] != owned.receipt_token):
+                raise ValueError('wrong posting receipt capability')
+            if action != 'recover' and payload['receipt'] is not None:
+                raise ValueError('unexpected posting receipt')
+            if action == 'recover':
+                from ..configuration_posting_document import recover_posting_frame
+                return recover_posting_frame(definition, server, owned, frame, payload['receipt'])
+            # Synchronize typed buffers through the ordinary replica protocol.
+            # The root effect cannot run until this dispatch returns successfully.
+            response = decode_line(server.exchange(encode_line(frame)))
+            if response.get('status') != 'ok' or response.get('accepted') is not True:
+                return {'form': response, 'posting': None}
+            from ..configuration_posting_document import dispatch_posting
+            from ..form_replication import _pack_state
+            state = dispatch_posting(definition, server, owned, action, payload['command'], payload['receipt'])
+            response['state'] = _pack_state(server.session, server.session._replica_handler_names)
+            encode_line(response)
+            return {'form': response, 'posting': state}
         if operation == 'guardClose':
             if payload != {}:
                 raise ValueError('invalid close guard')
             owned = self.objects.get(sid)
-            return {'allowed': (owned is None or not (owned.pending_commit or owned.pending_refresh))
+            dirty = (self.posting_application and owned is not None and
+                next(d for d in self.definitions.values() if d.name == owned.form)._document_image(server.session) != owned.baseline)
+            return {'allowed': not dirty and (owned is None or not (owned.pending_commit or owned.pending_refresh))
                     and (self.application is None or not self.application.interpreter.pending_promises)}
+        if operation == 'reference':
+            _keys(payload, 'action form')
+            chooser = getattr(server, '_reference_choice', None)
+            binding = next((b for b in server.bindings if b.name == 'YadinassiReferenceAction'), None)
+            frame = payload['form']
+            if (chooser is None or binding is None or type(payload['action']) is not dict
+                    or type(frame) is not dict or frame.get('operation') != 'call'
+                    or frame.get('endpoint') != binding.endpoint):
+                raise ValueError('unknown reference capability')
+            owned = self.objects.get(sid)
+            owned.verify_source()
+            chooser.pending = payload['action']
+            try:
+                response = decode_line(server.exchange(encode_line(frame)))
+            finally:
+                chooser.pending = None
+            return {'form': response, 'choice': chooser.projection(),
+                    'changed': chooser.changed_control, 'uncertain': chooser.uncertain}
         if operation == 'form':
+            chooser = getattr(server, '_reference_choice', None)
+            if chooser is not None and (chooser.active or chooser.uncertain):
+                raise ValueError('finish owned reference selection before another form dispatch')
             if (payload.get('operation') in ('close', 'dispose') and self.application is not None
                     and self.application.interpreter.pending_promises):
                 raise ValueError('application tasks must finish before releasing a form')
@@ -304,7 +382,13 @@ class ConfigurationBroker:
             scope = (nullcontext() if self.application is None else
                      self.application.event_messages(server.session._record_message))
             with scope:
-                return decode_line(server.exchange(encode_line(payload)))
+                response = decode_line(server.exchange(encode_line(payload)))
+            if (self.posting_application and owned is not None and payload.get('operation') == 'open'
+                    and response.get('status') == 'ok' and server.session.state == 'open'
+                    and owned.object._revision is None):
+                definition = next(d for d in self.definitions.values() if d.name == owned.form)
+                owned.baseline = definition._document_image(server.session)
+            return response
         if operation == 'invoke':
             if nocontext is None:
                 raise ValueError('NoContext channel unavailable')
@@ -317,6 +401,8 @@ class ConfigurationBroker:
                 raise ValueError('invalid retirement')
             if self.application is not None and self.application.interpreter.pending_promises:
                 raise ValueError('application tasks must finish before releasing a form')
+            owned = self.objects.get(sid)
+            if self.posting_application and owned is not None: owned.close()
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -350,7 +436,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -364,17 +450,21 @@ class ConfigurationProcess(FormProcess):
             command += ['--application-host']
         if business_application:
             command += ['--business-application']
+        if reference_application:
+            command += ['--reference-application']
+        if posting_application:
+            command += ['--posting-application']
         if document_objects:
             command += ['--document-objects']
         self._start(command, environment)
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False, document_objects=False, business_application=False):
+                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
     broker = None
     try:
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host, document_objects=document_objects, business_application=business_application), database, application_host=application_host, business_application=business_application)
+            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -404,8 +494,14 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
 class ConfigurationController:
     """Several forms, one serialized application queue; no nested event dispatch."""
     def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None,
-                 application_host=False, business_application=False):
+                 application_host=False, business_application=False, reference_application=False, posting_application=False):
         self.configuration = configuration
+        self.reference_application = reference_application
+        self.posting_application = posting_application
+        self.posting_configuration = None
+        if posting_application:
+            from ..configuration_posting_application import import_posting_application, PROFILE
+            self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
         self.definitions = _definitions(configuration)
         self.names = {definition.name.casefold(): entry for entry, definition in self.definitions.items()}
         self.initial_entry = None if initial_form is None else self._entry(initial_form)
@@ -419,16 +515,21 @@ class ConfigurationController:
         self.opened = self.closed = self.uncertain = False
         self.active = None
         self.catalog = None
+        self.choice = None
+        self._reference_action = None
+        self._reference_changed = None
+        self._posting_action = None
+        self.posting_states = {}
         self.catalog_versions = {}
         self.gate = Lock()
         self.application = None
         self.application_messages = []
         self._dispatch_active = False
-        if application_host or business_application:
+        if application_host or business_application or reference_application:
             if bind_interpreter is not None:
                 raise ValueError('application owns its interpreter family')
             service = HostFunction('OpenForm', self._application_open_form, returns_value=False)
-            self.application = _runtime(configuration, 'client', business_application=business_application, output=self._application_message,
+            self.application = _runtime(configuration, 'client', business_application=business_application, reference_application=reference_application, output=self._application_message,
                 host_services={'OpenForm': service, 'ОткрытьФорму': service},
                 server_exchange=lambda raw: encode_line(self._call('applicationInvoke', payload=decode_line(raw))))
 
@@ -466,6 +567,106 @@ class ConfigurationController:
     def close(self):
         if self.application is not None:
             self.application.close(force=True)
+
+    @staticmethod
+    def _validate_choice(choice):
+        if choice is None: return
+        import re
+        _keys(choice, 'ticket control row column title code rows error')
+        if (type(choice['ticket']) is not str or not re.fullmatch('[0-9a-f]{32}', choice['ticket'])
+                or type(choice['control']) is not str or len(choice['control']) > 128
+                or choice['row'] is not None and (type(choice['row']) is not int or not 1 <= choice['row'] <= 4096)
+                or choice['column'] is not None and (type(choice['column']) is not str or len(choice['column']) > 128)
+                or type(choice['title']) is not str or len(choice['title']) > 1024
+                or type(choice['code']) is not str or len(choice['code']) > 64
+                or choice['error'] not in (None, 'too_many_matches')
+                or type(choice['rows']) is not list or len(choice['rows']) > 32):
+            raise ValueError('invalid bounded reference choice')
+        tokens = set()
+        for row in choice['rows']:
+            _keys(row, 'choice code description')
+            if (type(row['choice']) is not str or not re.fullmatch('[0-9a-f]{32}', row['choice'])
+                    or row['choice'] in tokens or type(row['code']) is not str or len(row['code']) > 64
+                    or type(row['description']) is not str or len(row['description']) > 1024):
+                raise ValueError('invalid reference choice row')
+            tokens.add(row['choice'])
+
+    def _reference_request(self, params):
+        _keys(params, 'session revision action')
+        sid = params['session']
+        if not self.reference_application or type(sid) is not str or sid not in self.sessions:
+            raise ValueError('reference application session required')
+        controller, entry = self.sessions[sid]
+        if self.choice is not None and self.choice['session'] != sid:
+            raise ValueError('finish another form reference selection')
+        binding = next((b for b in self.definitions[entry].program.server_bindings
+                        if b.name == 'YadinassiReferenceAction'), None)
+        if binding is None or type(params['action']) is not dict:
+            raise ValueError('reference form action required')
+        if not controller._gate.acquire(blocking=False): raise ValueError('form busy')
+        session = controller.session
+        begun = False; error = None; queued_before = len(self.pending)
+        try:
+            session._begin(params['revision']); begun = True
+            self._reference_changed = None
+            self._reference_action = (sid, params['action'])
+            scope = (nullcontext() if self.application is None else
+                     self.application.event_messages(session._record_message))
+            with scope:
+                session._request('call', binding)
+                changed = self._reference_changed
+                if changed is not None:
+                    item = session.form.items._values[changed['control'].casefold()]
+                    if changed['row'] is not None:
+                        # Match ordinary cell dispatch: CurrentData identifies
+                        # the changed row, not the previously selected sibling.
+                        item._table()._lookup_id(changed['row'])
+                        item.current_row = changed['row']
+                    if item.action: session._invoke(item.action, 'client', [item])
+        except Exception:
+            if session.uncertain or self.uncertain:
+                self._lock(); error = 'outcome_unknown'
+            else:
+                error = 'reference_refused'
+        finally:
+            self._reference_action = None
+            if begun:
+                session.revision += 1; session._busy = False; session._gate.release()
+            controller._gate.release()
+        if error is not None:
+            # Preserve the known applied value, but discard only opens queued
+            # by the failed event, just like the ordinary form dispatch path.
+            while len(self.pending) > queued_before: self.pending.pop()
+        return sid, {'jsonrpc':'2.0','id':1,'result':{
+            'protocol':FORM_PROTOCOL, 'state':controller._snapshot(), 'error':error}}, error
+
+    def _posting_command(self, entry, request, controller):
+        if type(request) is not dict or request.get('method') != 'form.event': return None
+        params = request.get('params', {})
+        if params.get('event') != 'command': return None
+        definition = self.definitions[entry]
+        command = next((item[3] for item in definition.items if item[0] == params.get('control') and item[1] == 'Button'), None)
+        if not any(g.form == definition.name and g.command == command for g in self.posting_configuration.commands):
+            return None
+        item = controller.session.form.items._values.get(params.get('control', '').casefold())
+        declared = next(c for c in definition.commands if c[0] == command)
+        live = controller.session.form.commands._values.get(command.casefold())
+        if item is None or item.command_name != command or live is None or live.action != declared[2]:
+            raise ValueError('posting source command binding changed')
+        return command
+
+    def _posting_sync(self, sid, action, command=None, receipt=None):
+        controller, entry = self.sessions[sid]
+        binding = next((b for b in self.definitions[entry].program.server_bindings
+            if b.name == 'YadinassiPostingSync'), None)
+        if binding is None or controller.session._busy:
+            raise ValueError('posting barrier requires completed dispatch')
+        self._posting_action = (sid, action, command, receipt)
+        try:
+            controller.session._request('call', binding)
+            controller.session.revision += 1
+        finally:
+            self._posting_action = None
 
     def _entry(self, name):
         if type(name) is not str or len(name) > 256 or name.casefold() not in self.names:
@@ -527,7 +728,8 @@ class ConfigurationController:
                     seen = set()
                     document = self.definitions[result['entry']].document_schema
                     for row in result['rows']:
-                        _keys(row, 'key number date deletionMark' if document else 'key code description deletionMark')
+                        _keys(row, ('key number date deletionMark posted' if self.posting_application else 'key number date deletionMark') if document else 'key code description deletionMark')
+                        if self.posting_application and type(row['posted']) is not bool: raise ValueError('invalid posted state')
                         key = row['key']
                         if (type(key) is not str or not key.startswith('record-') or not key[7:].isascii()
                                 or not key[7:].isdigit() or len(key) > 12 or key in seen
@@ -544,6 +746,32 @@ class ConfigurationController:
                             raise ValueError('invalid catalog record')
                         seen.add(key)
                     self.catalog_versions[result['entry']] = result['version']
+            elif operation == 'posting':
+                _keys(result, 'form posting')
+                state = result['posting']
+                if state is not None:
+                    import re
+                    _keys(state, 'receipt state error posted')
+                    if (state['receipt'] is not None and (type(state['receipt']) is not str or not re.fullmatch('[0-9a-f]{32}', state['receipt']))
+                            or state['state'] not in ('new', 'unchanged', 'saved', 'committed', 'uncertain', 'rejected')
+                            or state['error'] not in (None, 'refresh_required', 'outcome_unknown', 'operation_refused')
+                            or (state['posted'] is not None if state['state'] in ('uncertain', 'committed')
+                                else type(state['posted']) is not bool)):
+                        raise ValueError('invalid posting result')
+                    self.posting_states[sid] = dict(state, session=sid)
+            elif operation == 'reference':
+                _keys(result, 'form choice changed uncertain')
+                if type(result['uncertain']) is not bool:
+                    raise ValueError('invalid reference outcome')
+                self._validate_choice(result['choice'])
+                changed = result['changed']
+                if changed is not None:
+                    _keys(changed, 'control row column')
+                    if type(changed['control']) is not str or len(changed['control']) > 128 or (changed['row'] is not None and (type(changed['row']) is not int or not 1 <= changed['row'] <= 4096)) or changed['column'] is not None and (type(changed['column']) is not str or len(changed['column']) > 128):
+                        raise ValueError('invalid changed reference control')
+                self.choice = None if result['choice'] is None else dict(result['choice'], session=sid)
+                self._reference_changed = changed
+                if result['uncertain']: self._lock()
             elif operation == 'guardClose':
                 _keys(result, 'allowed')
                 if type(result['allowed']) is not bool:
@@ -591,10 +819,29 @@ class ConfigurationController:
         queued_before = len(self.pending)
         try:
             def exchange(raw):
+                if self._posting_action is not None:
+                    owner, action, command, receipt = self._posting_action
+                    if owner != sid: raise ValueError('posting action owner mismatch')
+                    self._posting_action = None
+                    result = self._call('posting', sid, {'action': action, 'command': command,
+                        'receipt': receipt, 'form': decode_line(raw)})
+                    return encode_line(result['form'])
+                if self._reference_action is not None:
+                    owner, action = self._reference_action
+                    if owner != sid: raise ValueError('reference action owner mismatch')
+                    self._reference_action = None
+                    result = self._call('reference', sid, {'action': action, 'form': decode_line(raw)})
+                    return encode_line(result['form'])
                 return encode_line(self._call('form', sid, decode_line(raw)))
-            controller = FormController(definition.client_package(), exchange, parameters=parameters,
+            reference_scope = None
+            if definition.reference_targets:
+                from ..form_references import FormReferenceScope
+                reference_scope = FormReferenceScope(targets={i: n for i, _, n in definition.reference_targets})
+            controller = FormController(definition.client_package(), exchange, parameters=parameters, reference_scope=reference_scope,
                 bind_interpreter=lambda vm: self._bind(sid, vm),
                 interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
+            if self.posting_application:
+                controller.session.form._host_readonly = frozenset((dict(definition.object_fields)["Posted"].casefold(),))
             self.sessions[sid] = (controller, entry)
             if definition.program.nocontext_bindings:
                 port = InvocationPort(lambda raw: encode_line(self._call('invoke', sid, decode_line(raw))))
@@ -634,11 +881,13 @@ class ConfigurationController:
     def _state(self):
         return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
                 'entries': [{'id': entry, 'title': definition.title,
-                             'kind': ('document-object' if definition.document_schema is not None else
+                             'kind': ('posting-document' if self.posting_application else 'document-object' if definition.document_schema is not None else
                                       'form' if definition.catalog_schema is None else 'catalog-object')} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title}
                              for sid, (controller, entry) in self.sessions.items()],
                 'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
+                **({'choice': self.choice} if self.reference_application else {}),
+                **({'posting': list(self.posting_states.values())} if self.posting_application else {}),
                 'lifecycle': 'forms' if self.application is None else self.application.state,
                 'messages': list(self.application_messages),
                 'exitWarning': '' if self.application is None else self.application.last_exit_warning}
@@ -711,6 +960,15 @@ class ConfigurationController:
                 else:
                     sid, form, error = self._open(entry, {}, record)
                     self.operations[token] = (intent, sid, error)
+            elif method == 'application.reference':
+                sid, form, error = self._reference_request(params)
+                # OnChange may synchronously persist an object even if a later
+                # callback statement fails. Reconcile, never replay that write.
+                if not self.uncertain and self.catalog is not None:
+                    projection = self._call('catalog', payload={'entry': self.catalog['entry']})
+                    projection_error = projection.get('error')
+                    self.catalog = None if projection_error else projection
+                    error = error or projection_error
             elif method == 'application.form':
                 _keys(params, 'session request')
                 sid = params['session']
@@ -719,8 +977,14 @@ class ConfigurationController:
                 else:
                     controller, entry = self.sessions[sid]
                     nested_request = params['request']
+                    if (self.choice is not None and self.choice['session'] == sid
+                            and (type(nested_request) is not dict or nested_request.get('method') not in ('form.hello', 'form.snapshot'))):
+                        raise ValueError('finish reference selection first')
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
+                    if closing and self.posting_application and nested_request['params'].get('revision') == controller.session.revision:
+                        self._posting_sync(sid, 'sync')
+                        nested_request = dict(nested_request, params=dict(nested_request['params'], revision=controller.session.revision))
                     blocked = (closing and ((self.application is not None
                                   and self.application.interpreter.pending_promises)
                                or ((self.definitions[entry].catalog_schema is not None or self.definitions[entry].document_schema is not None or self.application is not None)
@@ -732,6 +996,12 @@ class ConfigurationController:
                         form['result']['error'] = 'busy'
                     else:
                         form = self._form_exchange(controller, nested_request)
+                        if self.posting_application and form['result']['error'] is None:
+                            command = self._posting_command(entry, nested_request, controller)
+                            if command is not None:
+                                self._posting_sync(sid, 'execute', command)
+                                form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
+                                    'method': 'form.snapshot', 'params': {}})
                     if controller.session.uncertain:
                         self._lock()
                     elif self.catalog is not None:
@@ -742,9 +1012,24 @@ class ConfigurationController:
                     if not controller.session.uncertain and controller.session.closed:
                         self._call('retire', sid)
                         del self.sessions[sid]
+                        self.posting_states.pop(sid, None)
                         if self.active == sid:
                             self.active = next(reversed(self.sessions), None)
                         controller.session.interpreter.close()
+            elif method == 'application.recoverPosting':
+                _keys(params, 'session receipt')
+                sid = params['session']
+                if not self.posting_application or sid not in self.sessions:
+                    raise ValueError('posting session required')
+                state = self.posting_states.get(sid)
+                if state is None or params['receipt'] != state['receipt'] or state['receipt'] is None:
+                    raise ValueError('posting receipt owner mismatch')
+                self._posting_sync(sid, 'recover', receipt=params['receipt'])
+                controller, entry = self.sessions[sid]
+                form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': 1, 'method': 'form.snapshot', 'params': {}})
+                if self.catalog is not None:
+                    projection = self._call('catalog', payload={'entry': self.catalog['entry']})
+                    error = projection.get('error'); self.catalog = None if error else projection
             elif method == 'application.snapshot':
                 if params:
                     raise ValueError('invalid snapshot request')
@@ -786,7 +1071,7 @@ class ConfigurationController:
 class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
-               'application.form', 'application.close', 'application.catalog', 'application.openRecord')
+               'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference', 'application.recoverPosting')
 
 
 def main(argv=None):
@@ -797,24 +1082,26 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
     parser.add_argument('--document-objects', action='store_true', help='Explicit non-posting document Object forms with bounded sections')
+    parser.add_argument('--posting-application', action='store_true', help='Explicit host posting command extension')
+    parser.add_argument('--reference-application', action='store_true', help='Explicit typed catalog-reference application profile')
     parser.add_argument('--business-application', action='store_true', help='Explicit mixed catalog/document application profile')
     parser.add_argument('--application-host', action='store_true', help='Explicit application/CommonModules and declared forms profile')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application)) > 1:
+    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application)) > 1:
         parser.error('choose one explicit configuration source profile')
-    if (args.document_objects or args.business_application) and args.f is None:
+    if (args.document_objects or args.business_application or args.reference_application or args.posting_application) and args.f is None:
         parser.error('document applications require --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
     process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
-        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
-        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
-            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application, idle_close=controller.idle_close)
+            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:

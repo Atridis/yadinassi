@@ -8,7 +8,7 @@ const target = path.resolve(root, '../../yadinassi/ui/assets/form');
 await mkdir(target, {recursive: true});
 const modules = [
   ['client', ['PROTOCOL', 'LIMITS', 'ERROR_MESSAGES', 'FormError', 'decimalText', 'validateScalar',
-    'validateSnapshot', 'scalarText', 'editable', 'tableCell', 'typedInput', 'scalarEqual', 'FormClient',
+    'validateSnapshot', 'scalarText', 'editable', 'inputHint', 'tableCell', 'typedInput', 'scalarEqual', 'FormClient',
     'readBoundedJSON', 'createTransport', 'takeSessionCapability']],
   ['attachment', ['BROWSER_PROTOCOL', 'RESUME_KEY', 'AttachmentRefusal', 'documentInstance', 'readBrowserLaunch', 'BrowserAttachment', 'createBrowserHost']],
   ['view', ['createFormView']], ['app', ['mountForm']],

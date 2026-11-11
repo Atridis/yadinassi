@@ -105,16 +105,59 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
     def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None,
-                 interpreter_factory=None):
+                 interpreter_factory=None, reference_scope=None):
         self.session = ReplicatedFormSession(package.source, exchange,
             handlers=package.handlers, bindings=package.bindings, parameters=parameters,
-            interpreter_factory=interpreter_factory)
+            interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         if bind_interpreter is not None:
             bind_interpreter(self.session.interpreter)
         self._gate = Lock()
         self._opened = False
         self._discard_commands = dict(package.discard_commands)
         self._dirty_attribute = package.dirty_attribute
+
+    @staticmethod
+    def _encode_view_value(descriptor, value):
+        from ..form_references import encode
+        return encode(descriptor, value, encode_value)
+
+    @staticmethod
+    def _editor_description(descriptor):
+        """Trusted presentation metadata, never a new value/admission codec.
+
+        The client may use these existing qualifiers for lossless input
+        preflight. BSL assignment and normalization remain authoritative. No
+        generic Invocation, XML/storage schema or reference authority is added.
+        """
+        from ..type_descriptions import BSLTypeDescription
+        from ..type_qualifiers import BSLAllowedSign, BSLAllowedLength, BSLDateFractions
+        from ..values import BSLType
+        if type(descriptor) is not BSLTypeDescription or len(descriptor.types) != 1:
+            return None
+        kind = descriptor.types[0]
+        if kind is BSLType.STRING:
+            qualifier = descriptor.string_qualifiers
+            return {'kind': 'string', 'length': int(qualifier.length),
+                    'fixed': qualifier.allowed_length is BSLAllowedLength.FIXED}
+        if kind is BSLType.NUMBER:
+            qualifier = descriptor.number_qualifiers
+            return {'kind': 'number', 'digits': int(qualifier.digits),
+                    'scale': int(qualifier.fraction_digits),
+                    'nonnegative': qualifier.allowed_sign is BSLAllowedSign.NONNEGATIVE}
+        if kind is BSLType.DATE:
+            parts = {BSLDateFractions.DATE_TIME: 'dateTime',
+                     BSLDateFractions.DATE: 'date', BSLDateFractions.TIME: 'time'}
+            return {'kind': 'date', 'parts': parts[descriptor.date_qualifiers.date_fractions]}
+        return None
+
+    @classmethod
+    def _view_column(cls, column, snapshot):
+        key, caption, value_type, readonly = snapshot
+        result = {'name': key, 'title': caption, 'type': value_type, 'readOnly': readonly}
+        editor = cls._editor_description(column.value_type)
+        if editor is not None:
+            result['editor'] = editor
+        return result
 
     def _snapshot(self):
         session = self.session
@@ -131,9 +174,10 @@ class FormController:
                 items.append({'name': name, 'kind': 'table', 'title': title or table.title,
                     'visible': visible, 'enabled': enabled, 'readOnly': read_only,
                     'controlId': control_id, 'tableId': table.identity,
-                    'columns': [{'name': key, 'title': caption, 'type': value_type, 'readOnly': readonly}
-                                for key, caption, value_type, readonly in table.columns],
-                    'rows': [{'id': identity, 'values': [encode_value(value) for value in values]}
+                    'columns': [self._view_column(column, entry) for column, entry in
+                                zip(session.form._tables[path.casefold()].schema.columns, table.columns)],
+                    'rows': [{'id': identity, 'values': [self._encode_view_value(column.value_type, value)
+                             for column, value in zip(session.form._tables[path.casefold()].schema.columns, values)]}
                              for identity, values in table.rows],
                     'currentRow': selections.get(name)})
                 continue
@@ -142,9 +186,17 @@ class FormController:
             view = {'InputField': 'input', 'CheckBoxField': 'checkbox', 'LabelField': 'label'}.get(view, view)
             if view not in ('input', 'checkbox', 'label'):
                 raise ValueError('unsupported form field view')
-            value = None if kind == 'button' else encode_value(values.get(path.casefold()))
-            items.append({'name': name, 'kind': kind, 'title': title, 'visible': visible,
-                'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value})
+            value = None if kind == 'button' else self._encode_view_value(
+                session.form._attributes[path.casefold()].value_type, values.get(path.casefold()))
+            item = {'name': name, 'kind': kind, 'title': title, 'visible': visible,
+                'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value}
+            if kind == 'field':
+                item['controlId'] = session.form.items._values[name.casefold()]._replica_id
+            editor = None if kind == 'button' else self._editor_description(
+                session.form._attributes[path.casefold()].value_type)
+            if editor is not None:
+                item['editor'] = editor
+            items.append(item)
         state = {'kind': 'closed' if session.closed and not session.uncertain else 'form',
             'revision': snapshot.revision, 'lifecycle': snapshot.state, 'title': snapshot.title,
             'uncertain': session.uncertain, 'items': items, 'messages': list(session.messages)}

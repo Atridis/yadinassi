@@ -4,13 +4,13 @@ name: Reviewed browser acceptance
 # No ordinary PR, main push, schedule, native job or user browser is dispatched.
 on:
   push:
-    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed]
+    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed, codex/posting-application-browser-reviewed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/business-application-browser-reviewed' && 'business-application-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || 'configuration-browser-reviewed' }}
+  group: ${{ github.ref == 'refs/heads/codex/posting-application-browser-reviewed' && 'posting-application-browser-reviewed' || github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/business-application-browser-reviewed' && 'business-application-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || github.ref == 'refs/heads/codex/configuration-reference-browser-reviewed' && 'configuration-reference-browser-reviewed' || github.ref == 'refs/heads/codex/scalar-editor-browser-reviewed' && 'scalar-editor-browser-reviewed' || 'configuration-browser-reviewed' }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +38,27 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
+      - name: Acquire four posting application flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/posting-application-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/posting_application_browser_qa.mjs
+      - name: Acquire four typed scalar flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/scalar-editor-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/scalar_editor_browser_qa.mjs
+      - name: Acquire four configuration reference flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/configuration-reference-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/configuration_reference_browser_qa.mjs
       - name: Acquire four mixed business flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/business-application-browser-reviewed'
         timeout-minutes: 5
@@ -186,5 +207,47 @@ jobs:
             ${{ runner.temp }}/yadinassi-document-form-browser-artifacts/document-reopened.png
             ${{ runner.temp }}/yadinassi-document-form-browser-artifacts/document-independent.png
             ${{ runner.temp }}/yadinassi-document-form-browser-artifacts/document-bounded.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only configuration reference screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/configuration-reference-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: configuration-reference-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/reference-product.png
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/reference-document.png
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/reference-resumed.png
+            ${{ runner.temp }}/yadinassi-configuration-reference-browser-artifacts/reference-independent.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only typed scalar screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/scalar-editor-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: scalar-editor-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/scalar-product.png
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/scalar-document.png
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/scalar-invalid.png
+            ${{ runner.temp }}/yadinassi-scalar-editor-browser-artifacts/scalar-independent.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only posting application screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/posting-application-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: posting-application-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/posting-cycle.png
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/posting-isolation.png
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/posting-cancelled.png
+            ${{ runner.temp }}/yadinassi-posting-browser-artifacts/posting-reopened.png
           if-no-files-found: error
           retention-days: 14

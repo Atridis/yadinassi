@@ -36,21 +36,24 @@ class DocumentSaveResult:
     listing: tuple = ()
 
 
-def require_document_form_schema(schema):
+def require_document_form_schema(schema, *, reference_fields=False):
+    if type(reference_fields) is not bool:
+        raise TypeError("explicit reference field admission required")
     if type(schema) is not DocumentSchema:
         raise TypeError('document schema required')
     fields = list(schema.fields)
     for section in schema.tabular_sections:
         fields.extend(section.fields)
-    if any(f.kind not in ('string', 'number', 'boolean', 'datetime')
-           or f.target_catalog_id is not None for f in fields):
+    allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ())
+    if any(f.kind not in allowed or (f.target_catalog_id is not None and
+           not (reference_fields and f.kind == 'catalog_ref')) for f in fields):
         raise ValueError('scalar document form fields and sections required')
 
 
 class DocumentObjectSession:
     """One detached editor; retain uncertain intent rather than replaying edits."""
-    def __init__(self, context, schema, source_files, key=None):
-        require_document_form_schema(schema)
+    def __init__(self, context, schema, source_files, key=None, *, reference_fields=False):
+        require_document_form_schema(schema, reference_fields=reference_fields)
         if (type(source_files) is not dict or not source_files or
                 any(type(k) is not str or type(v) is not bytes for k, v in source_files.items())):
             raise TypeError('exact configuration source bytes required')

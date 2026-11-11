@@ -8,7 +8,7 @@ is exposed by this adapter.
 from hashlib import sha256
 from enum import Enum
 from .catalog_backend import BackendError
-from .configuration_posting import canonical
+from .configuration_posting_application import canonical_runtime as canonical
 from .configuration_modules import compile_module
 from .document_posting_values import DocumentWriteMode, BSLRecorderCollection
 from .runtime import Interpreter

@@ -125,14 +125,32 @@ class FormDefinition:
     document_schema: object = None
     object_sections: tuple = ()
     tables: tuple = ()
+    reference_targets: tuple = ()
+    reference_slots: tuple = ()
+    posting_application: bool = False
 
     def client_package(self):
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
             bindings=self.program.server_bindings, discard_commands=(), dirty_attribute='')
 
-    def create_server(self, *, parameters=None, database_context=None, object_session=None, interpreter_factory=None):
+    def create_server(self, *, parameters=None, database_context=None, object_session=None, interpreter_factory=None, _validate_only=False):
         from .form_replication import ReplicatedFormServer
         initial = {}; server_bindings = ()
+        attributes, tables = self.attributes, self.tables
+        reference_scope = None; enroll = None
+        if self.reference_targets and not _validate_only:
+            if object_session is None:
+                raise ValueError('reference forms require an owned persistence activation')
+            from .configuration_references import owned_reference_scope
+            from .form_tables import FormTableColumn, FormTableSchema
+            reference_scope, reference_managers, enroll = owned_reference_scope(object_session, self.reference_targets)
+            slots = {(slot.casefold(), column.casefold()): target for slot, column, target in self.reference_slots}
+            attributes = tuple(BSLFormAttribute(a.name, reference_scope.descriptor(slots[a.name.casefold(), ''])
+                if (a.name.casefold(), '') in slots else a.value_type, title=a.title) for a in self.attributes)
+            tables = tuple(FormTableSchema(t.name, tuple(FormTableColumn(c.name,
+                reference_scope.descriptor(slots[t.name.casefold(), c.name.casefold()])
+                if (t.name.casefold(), c.name.casefold()) in slots else c.value_type,
+                c.title, c.read_only) for c in t.columns), t.title) for t in self.tables)
         if self.catalog_schema is not None or self.document_schema is not None:
             if object_session is not None:
                 object_session.verify_source()
@@ -144,14 +162,31 @@ class FormDefinition:
             def write(session):
                 if object_session is None:
                     raise ValueError('object form has no persistence activation')
+                if self.posting_application:
+                    raise ValueError('posting requires an explicit host command after form dispatch')
                 return (self._write_document(session, object_session) if self.document_schema
                         else self._write_object(session, object_session))
             server_bindings = (FormServerBinding('WriteObject', write),)
+        choice_holder = {}
+        if self.reference_targets:
+            from .form_runtime import FormServerBinding
+            server_bindings += (FormServerBinding('HostReferenceAction',
+                lambda session: choice_holder['choice'].execute(session)),)
         server = ReplicatedFormServer(self.program.server, self.program.endpoints,
-            handlers=self.program.handlers, attributes=self.attributes, tables=self.tables,
+            handlers=self.program.handlers, attributes=attributes, tables=tables,
             bindings=dict(self.bindings), database_context=database_context,
-            initial_values=initial, server_bindings=server_bindings, interpreter_factory=interpreter_factory)
+            initial_values=initial, server_bindings=server_bindings, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         session = server.session; form = session.form
+        if self.posting_application:
+            form._host_readonly = frozenset((dict(self.object_fields)["Posted"].casefold(),))
+        if enroll is not None:
+            enroll(session.interpreter)
+            session._reference_enroll_activation = enroll
+            session._reference_managers = reference_managers
+            session._reference_slots = self.reference_slots
+            from .configuration_reference_choice import ConfigurationReferenceChoice
+            choice_holder['choice'] = ConfigurationReferenceChoice(self, server, object_session)
+            server._reference_choice = choice_holder['choice']
         if self.document_schema:
             session._document_row_ids = {}
             if object_session is not None:
@@ -241,6 +276,14 @@ class FormDefinition:
     def _document_image(self, session):
         from .configuration_document import DocumentImage, DocumentRowImage
         form=session.form
+        # Posting consumes a detached image only after the form dispatch exits.
+        # Read immutable scalar storage without manufacturing a BSL activation.
+        if self.posting_application and not session._busy:
+            return DocumentImage(tuple((field,form._data[slot.casefold()]) for field,slot in self.object_fields),
+                tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
+                    tuple((column.name,row._data[column.name.casefold()]) for column in table.schema.columns))
+                    for row in table._rows))
+                    for section,slot in self.object_sections for table in (form._tables[slot.casefold()],)))
         return DocumentImage(tuple((field,form.get_member(slot)) for field,slot in self.object_fields),
             tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
                 tuple((column.name,row.get_member(column.name)) for column in table.schema.columns))
@@ -258,7 +301,8 @@ class FormDefinition:
         data=session.form._data.copy()
         for (field,slot),(_,value) in zip(self.object_fields,image.values):
             key=slot.casefold()
-            adjusted=scalar(session.form._attributes[key].value_type.adjust_value(scalar(value)))
+            from .form_references import adjust
+            adjusted=adjust(session.form._attributes[key].value_type, value)
             if type(adjusted) is not type(value) or adjusted!=value: raise ValueError("document header does not fit form type")
             data[key]=adjusted
         identities={};replacements={};allocations={}
@@ -297,7 +341,7 @@ class FormDefinition:
             old_data=session.form._data.copy();old_tables=session.form._tables;old_ids=session._document_row_ids
             try:
                 session.form._tables={schema.name.casefold():BSLFormDataCollection(session.form,schema,i)
-                    for i,schema in enumerate(self.tables,1)}
+                    for i,schema in enumerate((t.schema for t in old_tables.values()),1)}
                 for key,table in session.form._tables.items():
                     previous=old_tables[key]._snapshot()
                     table._replace_rows(previous.rows,previous.allocated)
@@ -338,12 +382,24 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
     props = _children(root, {L+k for k in ('Title', 'Attributes', 'ChildItems', 'Commands', 'Events')})
     attrs = []; object_fields = (); object_sections = (); tables = (); main_seen = False
+    reference_slots = []
+    reference_targets = tuple((i, catalog.identity, catalog.name) for i, catalog in enumerate(reference_catalogs, 1))
+    references = {identity: target for target, identity, _ in reference_targets}
+    def field_descriptor(field, slot, column=''):
+        from .ui.catalog_editor import _descriptor
+        if field.kind != 'catalog_ref': return _descriptor(field.kind, field.qualifiers)
+        if field.target_catalog_id not in references:
+            raise ValueError('reference target is outside the explicit form source grant')
+        reference_slots.append((slot, column, references[field.target_catalog_id]))
+        # Metadata-only structural template. Live create_server materializes the
+        # scoped descriptor before installing any value or running lifecycle code.
+        return BSLTypeDescription('String')
     schema = document_schema or catalog_schema
     for node in _inventory(props.get(L+'Attributes'), {L+'Attribute'}, 128):
         values = _children(node, {L+k for k in ('Type', 'Title', 'MainAttribute')})
@@ -366,19 +422,22 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
             if document_schema:
                 from .configuration_document import require_document_form_schema
                 from .form_tables import FormTableColumn, FormTableSchema
-                require_document_form_schema(schema)
+                require_document_form_schema(schema, reference_fields=bool(reference_catalogs))
                 specs = [('Number', 'string', (schema.number_length,)), ('Date', 'datetime', ()), ('DeletionMark', 'boolean', ())]
+                if posting_application: specs.append(('Posted', 'boolean', ()))
             else:
-                if schema.tabular_sections or any(f.kind == 'catalog_ref' for f in schema.fields):
+                if schema.tabular_sections or (not reference_catalogs and any(f.kind == 'catalog_ref' for f in schema.fields)):
                     raise ValueError('only scalar catalog object forms supported')
                 specs = [('Code', 'string', (schema.code_length,)), ('Description', 'string', (schema.description_length,)), ('DeletionMark', 'boolean', ())]
             specs.extend((f.name, f.kind, f.qualifiers) for f in schema.fields)
             object_fields = tuple((field, 'ObjectField'+str(i)) for i, (field, _, _) in enumerate(specs, 1))
             for (field, kind, qualifiers), (_, slot) in zip(specs, object_fields):
-                attrs.append(BSLFormAttribute(slot, _descriptor(kind, qualifiers), title=field))
+                declared = next((f for f in schema.fields if f.name == field), None)
+                descriptor = field_descriptor(declared, slot) if declared is not None else _descriptor(kind, qualifiers)
+                attrs.append(BSLFormAttribute(slot, descriptor, title=field))
             if document_schema:
                 object_sections = tuple((section.name, 'ObjectField'+str(i)) for i, section in enumerate(schema.tabular_sections, len(specs)+1))
-                tables = tuple(FormTableSchema(slot, tuple(FormTableColumn(f.name, _descriptor(f.kind, f.qualifiers), f.name) for f in section.fields), section.name)
+                tables = tuple(FormTableSchema(slot, tuple(FormTableColumn(f.name, field_descriptor(f, slot, f.name), f.name) for f in section.fields), section.name)
                     for section, (_, slot) in zip(schema.tabular_sections, object_sections))
             main_seen = True
             continue
@@ -422,9 +481,22 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
         if (kind == 'Table') != (path.casefold() in {t.name.casefold() for t in tables}):
             raise ValueError('table item requires a declared section path')
         action = _events(values.get(L+'Events'), {'onchange'}).get('onchange', '')
+        if posting_application and dict(object_fields).get('Posted') == path and (kind != 'LabelField' or action):
+            raise ValueError('Posted is an authoritative label only')
         items.append((node.get('name'), kind, _value(values,'Title'), path, action,
             _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
-    program = compile_form_module(module.decode('utf-8-sig'), object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections))
+    source = module.decode('utf-8-sig')
+    if posting_application:
+        import re
+        if re.search(r'\bYadinassiPostingSync\b', source, re.IGNORECASE):
+            raise ValueError('reserved posting synchronization name')
+        source += '\n&AtServer\nProcedure YadinassiPostingSync()\nEndProcedure\n'
+    if reference_slots:
+        import re
+        if re.search(r'\b(?:YadinassiReferenceAction|HostReferenceAction)\b', source, re.IGNORECASE):
+            raise ValueError('reserved internal reference dispatch name')
+        source += '\n&AtServer\nFunction YadinassiReferenceAction()\nReturn HostReferenceAction();\nEndFunction\n'
+    program = compile_form_module(source, object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections))
     from .syntax import ast
     declared_names = set()
     for side in (program.client, program.server, program.nocontext):
@@ -440,14 +512,15 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
     write_handler = bindings.pop('beforewriteatserver', '')
     definition = FormDefinition(public_name, identity, sha256(raw+b'\0'+module).hexdigest(), program,
         tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands),
-        catalog_schema, object_fields, write_handler, document_schema, object_sections, tables)
+        catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
+        reference_targets if reference_slots else (), tuple(reference_slots), posting_application)
     # Validate every declared handler and all reserved-name collisions eagerly.
-    validation_server = definition.create_server()
+    validation_server = definition.create_server(_validate_only=True)
     validation_server.session.interpreter.close()
     return definition
 
 
-def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=()):
+def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=(), posting_application=False):
     """Load declared CommonForms and Catalog/Document custom forms, explicitly."""
     accepted = _accept_source_files(files)
     schemas = {schema.name.casefold(): schema for schema in catalog_schemas}
@@ -508,7 +581,7 @@ def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=()):
         path = prefix+'/Ext/Form.xml'; module = prefix+'/Ext/Form/Module.bsl'
         is_document = public_name.startswith('Document.')
         definition = _definition(public_name, uid, files[path], files.get(module,b''),
-            None if is_document else schema, schema if is_document else None)
+            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application)
         if public_name.casefold() in forms:
             raise ValueError('duplicate form name')
         forms[public_name.casefold()] = definition
