@@ -34,11 +34,13 @@ Unit. Results remain typed cursors; no writes or posting authority are implied.
 8. One-column uncorrelated membership SELECT/UNION, duplicates/empty/NULL and
    other-enum controls; correlated queries are not part of this packet.
 9. UNION/ALL: same-enum identity, typed empty/NULL, duplicates, empty arms and
-   mixed-enum output controls. Metadata matters even without rows.
+   mixed-enum output controls. Empty controls measure Execute acceptance/refusal,
+   not the declared type of an empty or NULL-only result column.
 10. Balance/Turnovers/BalanceAndTurnovers through derived/union, retaining
     explicit dimension dependencies and existing typed virtual filters.
 11. Array mutation before and between Execute calls; a prior result is detached
-    while a subsequent execution observes current input.
+    while a subsequent execution observes current input. This does not measure
+    mutation during materialization; that requires a separate host regression.
 12. Staged posting, rollback and committed repost through composed queries.
     Host-only single-lease/issuer proof remains a separate regression obligation.
 
@@ -59,3 +61,8 @@ owned read view across UNION/derived/subquery sources. Detached data is not a
 lease or durable authority. Foreign/forged/stale namespaces, mixed-domain output
 schemas and empty-source guards remain fail-closed; no UUID/custom-field value
 alone can reconstruct an issuer capability.
+
+Finite row labels witness the runtime types of emitted non-NULL values only.
+The packet does not inspect QueryResult.Columns.ValueType. Empty-schema enum
+identity and mixed-domain refusal remain explicit host guards, not claimed
+native column-metadata parity.
