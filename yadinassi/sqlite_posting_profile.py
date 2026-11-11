@@ -54,8 +54,9 @@ def admit(connection,database_id,documents,*,validate_rows=False):
 
 def create(cls,path,configuration):
     s=_storage()
-    try:config=canonical(configuration)
-    except (ValueError,TypeError):raise BackendError('unsupported') from None
+    from .errors import BSLError
+    try:config=preflight_configuration(configuration)
+    except (ValueError,TypeError,BSLError):raise BackendError('unsupported') from None
     raw=os.fspath(path)
     if type(raw) is not str or raw.startswith(('file:','//','\\\\')) or '\x00' in raw:raise BackendError('invalid_input')
     absolute=s._private_parent(os.path.abspath(raw));connection=None;committing=False
@@ -97,3 +98,24 @@ def create(cls,path,configuration):
                 if s._interruption(cleanup_error) and not s._interruption(error):error=cleanup_error
         if committing and not s._interruption(error):raise BackendError('uncertain_commit') from None
         raise error
+
+
+def preflight_configuration(configuration):
+    """Canonical source/storage checks before file allocation; compile, never run."""
+    config = canonical(configuration)
+    from .sqlite_documents import schema_data as document_data, parse_schema, _MAX_TOTAL
+    from .document_posting_program import compile_handlers
+    from .configuration_modules import MAX_ROUTINES
+    if len(config.files) > 2048 or sum(len(raw) for _, raw in config.files) > 8 * 1024 * 1024:
+        raise BackendError('unsupported')
+    size = 0
+    for document in config.documents:
+        raw = _storage()._json(document_data(document)); size += len(raw.encode('utf-8'))
+        if len(raw) > 65536 or parse_schema(raw) != document:
+            raise BackendError('unsupported')
+    if size > _MAX_TOTAL or sum(len(d.tabular_sections) for d in config.documents) > 512:
+        raise BackendError('unsupported')
+    programs, _ = compile_handlers(config)
+    if sum(len(program) for program in programs.values()) > MAX_ROUTINES:
+        raise BackendError('unsupported')
+    return config

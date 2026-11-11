@@ -604,109 +604,7 @@ class SQLiteCatalogBackend:
     @_boundary
     def create(cls, path, configuration, *, activate=True, _source_profile=None):
         """Create only a new owned file, atomically import admitted XML and code."""
-        from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
-        if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
-            raise BackendError('invalid_input')
-        if type(activate) is not bool: raise BackendError('invalid_input')
-        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or not activate): raise BackendError('unsupported')
-        if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
-        if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
-        if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
-        if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
-            raise BackendError('invalid_input')
-        if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
-            raise BackendError('invalid_input')
-        if configuration.module_runtime is not None:
-            from .configuration_modules import MODULE_RUNTIME
-            from .configuration_xml import import_configuration
-            from .errors import BSLError
-            if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
-                raise BackendError('unsupported')
-            if _source_profile not in (None, APPLICATION_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE): raise BackendError('unsupported')
-            try:
-                if _source_profile == REFERENCE_PROFILE:
-                    from .configuration_reference_profile import import_reference_configuration
-                    canonical = import_reference_configuration({f.path:f.content for f in configuration.files})
-                elif _source_profile == BUSINESS_PROFILE:
-                    from .configuration_business_profile import import_business_configuration
-                    canonical = import_business_configuration({f.path:f.content for f in configuration.files})
-                elif _source_profile == APPLICATION_PROFILE:
-                    from .configuration_application_profile import import_application_configuration
-                    canonical = import_application_configuration({f.path:f.content for f in configuration.files})
-                else:
-                    canonical = import_configuration({f.path:f.content for f in configuration.files},
-                        numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
-            except (BSLError, ValueError, TypeError):
-                raise BackendError('unsupported') from None
-            if canonical != configuration: raise BackendError('unsupported')
-        elif configuration.common_modules:
-            raise BackendError('unsupported')
-        registers = configuration.information_registers
-        if type(registers) is not tuple: raise BackendError('invalid_input')
-        register_definitions = [register_schema_data(r) for r in registers]
-        documents = configuration.documents
-        if type(documents) is not tuple: raise BackendError('invalid_input')
-        document_definitions = [document_schema_data(s) for s in documents]
-        if (documents or registers) and (_source_profile not in (None, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
-        if _source_profile == REFERENCE_PROFILE:
-            from .configuration_reference_profile import import_reference_configuration
-            if configuration != import_reference_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        if _source_profile == BUSINESS_PROFILE:
-            from .configuration_business_profile import import_business_configuration
-            if configuration != import_business_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        if _source_profile == DOCUMENT_FORMS_PROFILE:
-            from .configuration_document_profile import import_document_forms_configuration
-            if configuration != import_document_forms_configuration({f.path: f.content for f in configuration.files}):
-                raise BackendError('unsupported')
-        schemas = tuple(configuration.catalogs)
-        if not 1 <= len(schemas) + len(documents) + len(registers) <= 512: raise BackendError('invalid_input')
-        definitions = [_schema_data(s) for s in schemas]
-        section_count = sum(len(s.tabular_sections) for s in schemas)
-        if section_count > _MAX_DATABASE_SECTIONS or sum(len(_json(d)) for d in definitions) > _MAX_CONFIG_BYTES:
-            raise BackendError('invalid_input')
-        storage_version = (10 if any(s.hierarchy != 'none' for s in schemas) else 9 if any(r.periodic for r in registers) else 8 if registers else 7 if documents else 6 if _source_profile is not None else
-                           5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
-                           4 if any(s.numbering != 'explicit' for s in schemas) else
-                           3 if section_count else 2)
-        if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
-        identities = {s.identity for s in schemas}
-        if len(identities) != len(schemas): raise BackendError('invalid_input')
-        if any(f.target_catalog_id not in identities for s in schemas for f in _all_fields(s) if f.kind == 'catalog_ref'):
-            raise BackendError('invalid_input')
-        if documents:
-            document_ids = {d.identity for d in documents}
-            if identities & document_ids or len(document_ids) != len(documents): raise BackendError('invalid_input')
-            all_ids = set()
-            for schema in (*schemas,*documents):
-                for item in (schema,*schema.fields,*schema.tabular_sections,*(f for sec in schema.tabular_sections for f in sec.fields)):
-                    if item.identity in all_ids: raise BackendError('invalid_input')
-                    all_ids.add(item.identity)
-            if len({d.name.casefold() for d in documents}) != len(documents): raise BackendError('invalid_input')
-            if any(f.target_catalog_id not in identities for d in documents for f in _all_fields(d) if f.kind == 'catalog_ref'): raise BackendError('invalid_input')
-            if section_count + sum(len(d.tabular_sections) for d in documents) > _MAX_DATABASE_SECTIONS: raise BackendError('invalid_input')
-            if sum(len(_json(d)) for d in (*definitions,*document_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
-        if registers:
-            validate_register_configuration(registers, schemas, documents)
-            if sum(len(_json(d)) for d in (*definitions,*document_definitions,*register_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
-        files = tuple(configuration.files)
-        if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
-            raise BackendError('invalid_input')
-        if len({f.path for f in files}) != len(files): raise BackendError('invalid_input')
-        for f in files:
-            if type(f.kind) is not str or f.kind not in ('xml','module'): raise BackendError('invalid_input')
-            if type(f.path) is not str or len(f.path) > 256 or f.path.startswith('/') or '\\' in f.path or ':' in f.path or '\x00' in f.path or any(p in ('','.', '..') for p in f.path.split('/')) or type(f.content) is not bytes or len(f.content) > 1024*1024:
-                raise BackendError('invalid_input')
-        if storage_version == 6:
-            from .configuration_xml import _demo_configuration
-            if configuration != _demo_configuration({f.path: f.content for f in files}, _source_profile)[0]:
-                raise BackendError('unsupported')
-        if storage_version == 5:
-            from .configuration_xml import import_inert_configuration
-            canonical = import_inert_configuration({f.path: f.content for f in files})
-            if activate or configuration != canonical:
-                raise BackendError('unsupported')
+        (schemas, registers, documents, definitions, register_definitions, document_definitions, storage_version, files) = _preflight_create(configuration, activate=activate, _source_profile=_source_profile)
         raw = os.fspath(path)
         if type(raw) is not str or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise BackendError('invalid_input')
@@ -2497,3 +2395,111 @@ for _document_method in ('_validate_query_source','documents','document_schema',
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)
+
+
+def _preflight_create(configuration, *, activate=True, _source_profile=None):
+    """Pure deterministic creation admission; no file, connection or execution."""
+    from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
+    if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
+        raise BackendError('invalid_input')
+    if type(activate) is not bool: raise BackendError('invalid_input')
+    if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or not activate): raise BackendError('unsupported')
+    if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
+    if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
+    if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
+    if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
+        raise BackendError('invalid_input')
+    if any(type(f) is not ConfigurationFile for f in configuration.files) or any(type(m) is not ConfigurationModule for m in configuration.modules):
+        raise BackendError('invalid_input')
+    if configuration.module_runtime is not None:
+        from .configuration_modules import MODULE_RUNTIME
+        from .configuration_xml import import_configuration
+        from .errors import BSLError
+        if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
+            raise BackendError('unsupported')
+        if _source_profile not in (None, APPLICATION_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE): raise BackendError('unsupported')
+        try:
+            if _source_profile == REFERENCE_PROFILE:
+                from .configuration_reference_profile import import_reference_configuration
+                canonical = import_reference_configuration({f.path:f.content for f in configuration.files})
+            elif _source_profile == BUSINESS_PROFILE:
+                from .configuration_business_profile import import_business_configuration
+                canonical = import_business_configuration({f.path:f.content for f in configuration.files})
+            elif _source_profile == APPLICATION_PROFILE:
+                from .configuration_application_profile import import_application_configuration
+                canonical = import_application_configuration({f.path:f.content for f in configuration.files})
+            else:
+                canonical = import_configuration({f.path:f.content for f in configuration.files},
+                    numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
+        except (BSLError, ValueError, TypeError):
+            raise BackendError('unsupported') from None
+        if canonical != configuration: raise BackendError('unsupported')
+    elif configuration.common_modules:
+        raise BackendError('unsupported')
+    registers = configuration.information_registers
+    if type(registers) is not tuple: raise BackendError('invalid_input')
+    register_definitions = [register_schema_data(r) for r in registers]
+    documents = configuration.documents
+    if type(documents) is not tuple: raise BackendError('invalid_input')
+    document_definitions = [document_schema_data(s) for s in documents]
+    if (documents or registers) and (_source_profile not in (None, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
+    if _source_profile == REFERENCE_PROFILE:
+        from .configuration_reference_profile import import_reference_configuration
+        if configuration != import_reference_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    if _source_profile == BUSINESS_PROFILE:
+        from .configuration_business_profile import import_business_configuration
+        if configuration != import_business_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    if _source_profile == DOCUMENT_FORMS_PROFILE:
+        from .configuration_document_profile import import_document_forms_configuration
+        if configuration != import_document_forms_configuration({f.path: f.content for f in configuration.files}):
+            raise BackendError('unsupported')
+    schemas = tuple(configuration.catalogs)
+    if not 1 <= len(schemas) + len(documents) + len(registers) <= 512: raise BackendError('invalid_input')
+    definitions = [_schema_data(s) for s in schemas]
+    section_count = sum(len(s.tabular_sections) for s in schemas)
+    if section_count > _MAX_DATABASE_SECTIONS or sum(len(_json(d)) for d in definitions) > _MAX_CONFIG_BYTES:
+        raise BackendError('invalid_input')
+    storage_version = (10 if any(s.hierarchy != 'none' for s in schemas) else 9 if any(r.periodic for r in registers) else 8 if registers else 7 if documents else 6 if _source_profile is not None else
+                       5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
+                       4 if any(s.numbering != 'explicit' for s in schemas) else
+                       3 if section_count else 2)
+    if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
+    identities = {s.identity for s in schemas}
+    if len(identities) != len(schemas): raise BackendError('invalid_input')
+    if any(f.target_catalog_id not in identities for s in schemas for f in _all_fields(s) if f.kind == 'catalog_ref'):
+        raise BackendError('invalid_input')
+    if documents:
+        document_ids = {d.identity for d in documents}
+        if identities & document_ids or len(document_ids) != len(documents): raise BackendError('invalid_input')
+        all_ids = set()
+        for schema in (*schemas,*documents):
+            for item in (schema,*schema.fields,*schema.tabular_sections,*(f for sec in schema.tabular_sections for f in sec.fields)):
+                if item.identity in all_ids: raise BackendError('invalid_input')
+                all_ids.add(item.identity)
+        if len({d.name.casefold() for d in documents}) != len(documents): raise BackendError('invalid_input')
+        if any(f.target_catalog_id not in identities for d in documents for f in _all_fields(d) if f.kind == 'catalog_ref'): raise BackendError('invalid_input')
+        if section_count + sum(len(d.tabular_sections) for d in documents) > _MAX_DATABASE_SECTIONS: raise BackendError('invalid_input')
+        if sum(len(_json(d)) for d in (*definitions,*document_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
+    if registers:
+        validate_register_configuration(registers, schemas, documents)
+        if sum(len(_json(d)) for d in (*definitions,*document_definitions,*register_definitions)) > _MAX_CONFIG_BYTES: raise BackendError('invalid_input')
+    files = tuple(configuration.files)
+    if not 1 <= len(files) <= _MAX_FILES or sum(len(f.content) for f in files) > _MAX_CONFIG_BYTES:
+        raise BackendError('invalid_input')
+    if len({f.path for f in files}) != len(files): raise BackendError('invalid_input')
+    for f in files:
+        if type(f.kind) is not str or f.kind not in ('xml','module'): raise BackendError('invalid_input')
+        if type(f.path) is not str or len(f.path) > 256 or f.path.startswith('/') or '\\' in f.path or ':' in f.path or '\x00' in f.path or any(p in ('','.', '..') for p in f.path.split('/')) or type(f.content) is not bytes or len(f.content) > 1024*1024:
+            raise BackendError('invalid_input')
+    if storage_version == 6:
+        from .configuration_xml import _demo_configuration
+        if configuration != _demo_configuration({f.path: f.content for f in files}, _source_profile)[0]:
+            raise BackendError('unsupported')
+    if storage_version == 5:
+        from .configuration_xml import import_inert_configuration
+        canonical = import_inert_configuration({f.path: f.content for f in files})
+        if activate or configuration != canonical:
+            raise BackendError('unsupported')
+    return (schemas, registers, documents, definitions, register_definitions, document_definitions, storage_version, files)
