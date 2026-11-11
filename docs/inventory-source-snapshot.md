@@ -6,7 +6,10 @@ returns the immutable configuration proved by **that view's successful current
 admission**, not a later backend attribute or a prepared importer cache entry.
 An optional `expected` value is compared using a closed exact-type immutable
 walk; arbitrary equality, coercion and presentation hooks are never invoked.
-Explicit `None` is not an omitted expected value.
+Explicit `None` is not an omitted expected value. Report constructor mismatch
+keeps its previous error categories: noncanonical expected data is unsupported,
+canonical different source is schema_changed. Only this negative path may
+reimport exact caller bytes; it never relabels current on-disk admission errors.
 
 Each actual begin still reads/hashes all current source bytes and checks the
 profile, database identity/generation, schema/DDL and existing movement/storage

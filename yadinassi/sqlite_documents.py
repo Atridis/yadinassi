@@ -120,7 +120,9 @@ class DocumentView:
     def inventory_source(self, *, expected=_UNSPECIFIED):
         if type(self) is not DocumentView:
             raise BackendError('unsupported')
-        return self._view.inventory_source(expected=expected)
+        from .sqlite_inventory_source import read
+        # The helper checks the exact physical owner before any duck method.
+        return read(self._view, expected=expected)
     def catalog_schema(self, identity): return self._view.catalog_schema(identity)
     def scan_catalog_values(self, identity, request, fields):
         return self._view.scan_catalog_values(identity, request, fields)

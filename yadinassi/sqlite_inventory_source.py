@@ -87,3 +87,36 @@ def read(view, *, expected=_UNSPECIFIED):
     if expected is not _UNSPECIFIED and not same_configuration_value(record.configuration, expected):
         raise BackendError('schema_changed')
     return record.configuration
+
+
+def constructor_configuration(current, expected):
+    """Preserve report constructor errors without recompiling the warm match.
+
+    The current storage admission happens outside this helper. Only a caller
+    expectation mismatch uses the cold failure path; no on-disk integrity error
+    is relabelled. Reconstruct from exact bytes, then use our closed comparison
+    instead of canonical()'s more general dataclass equality helper.
+    """
+    if same_configuration_value(current, expected):
+        return current
+    if type(expected) is not InventoryApplicationConfiguration:
+        raise BackendError('unsupported')
+    files = expected.files
+    from .configuration_xml import MAX_FILES
+    if (type(files) is not tuple or not 1 <= len(files) <= MAX_FILES
+            or any(type(item) is not tuple or len(item) != 2
+                   or type(item[0]) is not str or type(item[1]) is not bytes for item in files)
+            or len({path for path, raw in files}) != len(files)):
+        raise BackendError('unsupported')
+    if same_configuration_value(current.files, files):
+        # These exact bytes already have a proved canonical projection. Any
+        # other metadata/digest/grant payload is forged, not a different source.
+        raise BackendError('unsupported')
+    from .configuration_inventory_application import import_inventory_application
+    try:
+        fresh = import_inventory_application(dict(files), inventory_runtime=PROFILE)
+    except (ValueError, TypeError):
+        raise BackendError('unsupported') from None
+    if not same_configuration_value(fresh, expected):
+        raise BackendError('unsupported')
+    raise BackendError('schema_changed')

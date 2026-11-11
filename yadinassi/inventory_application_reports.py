@@ -340,7 +340,8 @@ class InventoryReports:
         self._admit()
         owner = self._backend.begin_read()
         try:
-            self._configuration = owner.inventory_source(expected=configuration)
+            from .sqlite_inventory_source import constructor_configuration
+            self._configuration = constructor_configuration(owner.inventory_source(), configuration)
             if (owner.database_id, owner.configuration_generation) != self._binding:
                 raise BackendError('schema_changed')
         finally:

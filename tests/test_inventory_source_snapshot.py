@@ -251,3 +251,37 @@ class InventorySourceSnapshotTests(unittest.TestCase):
                 with self.assertRaises(BackendError): host._verify()
         finally: host.context, host.backend = original
         self.assertEqual(touched, [])
+
+    def test_document_wrapper_refuses_duck_source_callback(self):
+        touched = []
+        class Duck:
+            def inventory_source(self, **kwargs): touched.append('called'); return self.config
+        wrapper = object.__new__(DocumentView)
+        wrapper._view = Duck()
+        with self.assertRaises(BackendError): wrapper.inventory_source()
+        self.assertEqual(touched, [])
+
+    def test_report_constructor_preserves_valid_other_source_category(self):
+        files = dict(self.files); files[DOC_FORM] += b'\n'
+        other = import_inventory_application(files, inventory_runtime=PROFILE)
+        with self.assertRaises(BackendError) as caught: InventoryReports(self.context, other)
+        self.assertEqual(caught.exception.code, 'schema_changed')
+        self.assertIsNone(self.backend._active)
+
+    def test_report_constructor_expected_failure_never_calls_hooks(self):
+        touched = []
+        class Hostile:
+            def __eq__(self, other): touched.append('eq'); return True
+            def __iter__(self): touched.append('iter'); return iter(())
+        for expected in (replace(self.config, files=Hostile()),
+                         replace(self.config, files=((Hostile(), b'x'),)),
+                         replace(self.config, source_digest=Hostile())):
+            with self.assertRaises(BackendError) as caught: InventoryReports(self.context, expected)
+            self.assertEqual(caught.exception.code, 'unsupported')
+        self.assertEqual(touched, [])
+
+    def test_report_constructor_does_not_relabel_current_source_failure(self):
+        self.sql('UPDATE configuration_file SET content=? WHERE path=?', (b'bad', DOC_FORM))
+        with self.assertRaises(BackendError) as caught: InventoryReports(self.context, self.config)
+        self.assertEqual(caught.exception.code, 'integrity')
+        self.assertIsNone(self.backend._active)
