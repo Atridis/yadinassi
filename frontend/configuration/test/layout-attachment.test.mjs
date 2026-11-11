@@ -5,7 +5,7 @@ import {APPLICATION_PROTOCOL} from '../src/client.mjs';
 import {validateSnapshot} from '../../form/src/client.mjs';
 import {BROWSER_PROTOCOL} from '../../form/src/attachment.mjs';
 import {environment,all} from '../../form/test/fake-dom.mjs';
-import {reply,response,pageLayout} from '../../form/test/fixtures.mjs';
+import {reply,response,pageLayout,state as formState} from '../../form/test/fixtures.mjs';
 
 const issued={protocol:BROWSER_PROTOCOL,attachment:'attachment-1',role:'writer',generation:1,leaseSeconds:90,graceSeconds:30,
   recovery:false,closed:false,credential:'c'.repeat(43),resume:'r'.repeat(43)};
@@ -57,4 +57,46 @@ test('real attachment wrapper permits locked layout inspection but no outer Open
   app.client.state={...app.client.state,choice:null};app.browserHost.notify();assert.equal(app.browserHost.content.inert,false);
   const {credential,resume,...publicStatus}=issued;app.browserHost.attachment.adopt({...publicStatus,generation:2});assert.equal(app.browserHost.content.inert,true);
   assert.equal(input('Notes').value,'  retained  ');assert.equal(requests.length,count);app.browserHost.attachment.dispose();
+});
+
+test('real attachment permits copy-only navigation between flat owned-capability forms after response loss',async()=>{
+  let state=initial();const requests=[],form=formState();
+  const env=environment(async(path,options)=>{
+    const request=JSON.parse(options.body);requests.push({path,request});
+    if(path==='/attachment')return response(issued);
+    const result={protocol:APPLICATION_PROTOCOL,state,error:null,session:null,form:null,updates:[]};
+    if(request.method==='application.open'){
+      const id=`form-${state.sessions.length+1}`;
+      state={...state,active:id,sessions:[...state.sessions,{id,entry:1,title:'Flat form',owner:null,blocked:false}]};
+      Object.assign(result,{state,session:id,form:reply({id:1},form)});
+    }else if(request.method==='application.form'){
+      const nested=request.params.request;
+      if(nested.params.event==='command')throw Error('lost completed reply');
+      Object.assign(result,{session:request.params.session,form:reply(nested,form)});
+    }
+    return response({jsonrpc:'2.0',id:request.id,result});
+  });
+  env.location.hash='#session='+'l'.repeat(43)+'&attachment=1';env.crypto={getRandomValues(bytes){bytes.fill(7);return bytes;}};
+  const storage=new Map();env.sessionStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
+  env.setInterval=()=>1;env.clearInterval=()=>{};
+  const app=mountApplication(env,env.document.root);await app.ready;await app.openForm(1);await app.openForm(1);
+  await Promise.all([...app.mounts.values()].map(entry=>entry.mount.ready));
+  const first=app.mounts.get('form-1'),second=app.mounts.get('form-2');
+  const input=all(second.panel).find(node=>node.tagName==='INPUT');
+  input.value='  raw copy after loss  ';input.emit('input');first.tab.emit('click');
+  await first.mount.run('command','Run');const count=requests.length;
+  assert.equal(app.client.terminal,true);assert.equal(app.browserHost.attachment.writable,false);
+  assert.equal(app.browserHost.content.inert,false);assert.equal(app.browserHost.content.dataset.inspection,'true');
+  second.tab.emit('click');assert.equal(second.panel.hidden,false);assert.equal(first.panel.hidden,true);
+  assert.equal(input.disabled,true);assert.equal(input.value,'  raw copy after loss  ');
+  assert.ok(second.panel.textContent.includes('Name:   raw copy after loss  '));
+  assert.ok(all(second.panel).filter(node=>node.tagName==='BUTTON').every(node=>node.disabled));
+  await second.mount.run('change','Name');await second.mount.run('command','Run');await second.mount.run('close');await second.mount.refresh();
+  await app.openForm(1);await assert.rejects(app.browserHost.transport({jsonrpc:'2.0',id:99,method:'application.close',params:{}}),{code:'not_writer'});
+  assert.equal(requests.length,count);assert.equal(app.client.terminal,true);
+  app.client.pending=1;app.browserHost.notify();assert.equal(app.browserHost.content.inert,true);
+  app.client.pending=0;app.browserHost.notify();assert.equal(app.browserHost.content.inert,false);
+  const {credential,resume,...status}=issued;app.browserHost.attachment.adopt({...status,generation:2});
+  assert.equal(app.browserHost.content.inert,true);assert.equal(input.value,'  raw copy after loss  ');
+  app.browserHost.attachment.dispose();
 });

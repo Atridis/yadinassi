@@ -282,7 +282,8 @@ export function mountApplication(environment, root, exchange = null) {
   browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
     !pickerBusy && !client.state?.choice && mounts.size &&
     [...mounts.values()].every(entry => entry.mount?.client?.locked && !entry.mount.client.busy) &&
-    [...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group'))));
+    ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
+      client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
     if (client.terminal) throw Error('Unknown previous outcome');
     const retained = new Set(mounts.keys());

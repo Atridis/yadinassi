@@ -13,10 +13,10 @@
     "../form/src/view.mjs": "762297959c54c3e69cb4c33e80b9aaf7e46275ffa10ab68e6a4e63b6ae9dbcf3",
     "../form/src/app.mjs": "dcfd190e3c408ac1977c80157dd3307e205a1ae189340571be13c168ed67fbd8",
     "src/client.mjs": "baa185635396f19b0373b96112695f67f60411eaa69e7a44664d022fdbcbcbe8",
-    "src/app.mjs": "2c9389c1913d2cabdcdb1fdc4b4f80254b35100f14b79457d2ccd8acb78fe955"
+    "src/app.mjs": "e472c601b5b307517ab128a056b344aab1ac1fe2911094dee3f548fc0c7c99e1"
   },
   "outputs": {
-    "app.js": "c05858ded04c16c03438936890fb8a9408c150af9f4b8cefa9ba38e92e6d5d18",
+    "app.js": "0e1613131d888400829e67172d7b976aa485394eebb910e897a09ce4dcec4403",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "style.css": "816034083658c9204169113d6ea81f89925e1a63632e07a2783f4a5527c9e676",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
