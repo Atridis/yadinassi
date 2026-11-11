@@ -14,10 +14,10 @@
     "src/index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
     "src/style.css": "ed3e908ade43af99165f53d58fe2b2a3d4908de36c65f297862271d9874a989a",
     "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
-    "../form/src/client.mjs": "c544a3935fabeba43e51a2bf7c3ae866c85a34214131cab240a763cb22f8251f"
+    "../form/src/client.mjs": "951055cec3e38619f029e1e8695ee2e885edee925fbcdf192b5b0a29a5d43f10"
   },
   "outputs": {
-    "app.js": "23fe9de5fff7a5c434de4485caab75bcbb23d65d99d0f2447c34f178ed46670a",
+    "app.js": "5f4213cc502202292ed18b2cc1d9039748c1e84de345543588bce45b72c25484",
     "index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
     "style.css": "ed3e908ade43af99165f53d58fe2b2a3d4908de36c65f297862271d9874a989a",
     "LICENSE.txt": "1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4"
