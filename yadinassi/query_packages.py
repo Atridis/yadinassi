@@ -82,13 +82,15 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
     try:
         from .document_queries import needs_documents
         from .register_queries import needs_registers
+        from .accumulation_queries import needs_accumulation
         documents_needed = needs_documents(statements)
         registers_needed = needs_registers(statements)
-        composite = documents_needed or registers_needed
+        accumulation_needed = needs_accumulation(statements)
+        composite = documents_needed or registers_needed or accumulation_needed
         # Metadata initialization opens its own view. Finish it before the
         # single package transaction, including catalog-first packages. Do not
         # require document metadata for a register-only database.
-        if documents_needed:
+        if documents_needed or accumulation_needed:
             if documents is None:
                 raise ValueError('Document query sources require document context')
             documents._metadata._snapshot()
