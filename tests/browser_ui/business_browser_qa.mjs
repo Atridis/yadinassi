@@ -383,6 +383,7 @@ async function main(){
     await action('New product').click();await countPanels(2);await value('Save status','');
     await entries().getByRole('button',{name:'Product pricing card',exact:true}).click();
     await catalog().getByText('No records yet.',{exact:true}).waitFor();
+    await tabs().getByRole('button',{name:'Product pricing card',exact:true}).click();await idle();
     await screenshot(screenshots[0]);
   });
   await scenario(scenarioNames[1],async()=>{
@@ -403,6 +404,7 @@ async function main(){
     phase='common_module_new_document';await action('New order').click();await countPanels(2);
     await entries().getByRole('button',{name:'Non-posting order',exact:true}).click();
     await catalog().getByRole('columnheader',{name:'Number',exact:true}).waitFor();
+    await tabs().getByRole('button',{name:'Non-posting order',exact:true}).click();await idle();
     await commitInput('Number (blank for automatic)','D1');await commitInput('Note','Business order');
     await action('Add line').click();await rowCount(1);await idle();
     await commitInput('Label, row 1','First');await commitInput('Quantity, row 1','2.50');

@@ -43,7 +43,9 @@ class BusinessBrowserContractTests(unittest.TestCase):
     def test_real_common_navigation_and_catalog_validation(self):
         for text in ["['Calculated in the owned server process','8']","action('Open details')","action('New product')",
             "value('MessageLabel'","'Form reject'","'Object reject'","'rejected_form_wrote'","'rejected_object_wrote'",
-            "'catalog_success_refresh'","name:'Business product'","await saveProduct()"]:
+            "'catalog_success_refresh'","name:'Business product'","await saveProduct()",
+            "tabs().getByRole('button',{name:'Product pricing card',exact:true}).click()",
+            "tabs().getByRole('button',{name:'Non-posting order',exact:true}).click()"]:
             self.assertIn(text,self.source)
 
     def test_durable_document_and_real_close_reply(self):
