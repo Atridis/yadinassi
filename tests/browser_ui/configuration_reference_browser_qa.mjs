@@ -314,7 +314,8 @@ async function sourceBinding(){
 }
 // Responses stay in memory only. Validate reference provenance without exporting
 // scoped identities, selection tickets, raw request/response bodies or DOM dumps.
-function checkReply(body,packet){
+function checkReply(body,packet,stage){
+  stage('reply_envelope');
   exactKeys(body,'jsonrpc id result');assert.equal(body.id,packet.id);assert.equal(body.jsonrpc,'2.0');
   const result=body.result;exactKeys(result,'protocol state error session form');
   assert.equal(result.protocol,'yadinassi-configuration-app/3');assert.equal(result.error,null,'application_refused');
@@ -323,16 +324,36 @@ function checkReply(body,packet){
     assert.equal(result.form.result.error,null,'form_refused');
     snapshots.set(result.session,result.form.result.state);
   }
-  const inspect=value=>{
+  const inspect=(value,context='value')=>{
+    // Only a table's columns array introduces descriptor context. A malformed
+    // reference value must not escape validation merely by omitting its scope.
+    if(context==='table-column'){
+      stage('reference_descriptor');
+      assert.ok(value&&typeof value==='object'&&!Array.isArray(value),'column_object');
+      exactKeys(value,'name title type readOnly');
+      assert.ok(typeof value.name==='string'&&value.name.length>0&&value.name.length<=128,'column_name');
+      assert.ok(typeof value.title==='string'&&value.title.length<=1024,'column_title');
+      assert.ok(['String','Number','Boolean','Date','FormCatalogRef'].includes(value.type),'column_type');
+      assert.equal(typeof value.readOnly,'boolean','column_readonly');
+      return;
+    }
+    assert.equal(context,'value','reference_context');
     if(!value||typeof value!=='object')return;
     if(value.type==='FormCatalogRef'){
+      stage('reference_value');
       exactKeys(value,'type scope target key text');assert.match(value.scope,/^[0-9a-f]{32}$/);
       assert.ok(Number.isSafeInteger(value.target)&&value.target>0&&value.target<=128);
       assert.ok(value.key===null||/^[0-9a-f]{32}$/.test(value.key));
       assert.ok(typeof value.text==='string'&&value.text.length<=1024);
       if(value.key===null)assert.equal(value.text,'');
     }
-    for(const nested of Object.values(value))inspect(nested);
+    for(const [key,nested] of Object.entries(value)){
+      if(value.kind==='table'&&key==='columns'){
+        stage('reference_descriptor');
+        assert.ok(Array.isArray(nested)&&nested.length>0&&nested.length<=8,'column_budget');
+        for(const column of nested)inspect(column,'table-column');
+      }else inspect(nested,'value');
+    }
   };
   inspect(result);appState=result.state;
 }
@@ -418,11 +439,13 @@ async function main(){
     const target=route.request().url();
     if(aborted||!applicationAllowedRequest(target))return route.abort();
     if(new URL(target).pathname==='/attachment'){
+      let wireStage='attachment_request';
       try{
         assert.ok(++attachmentRequests<=96,'attachment_budget');
         const request=route.request(),body=request.postDataJSON();
         if(body.action==='attach'){exactKeys(body,'action instance');assert.match(body.instance,/^[0-9a-f]{32}$/);}
         else{exactKeys(body,'action generation pending');assert.ok(['status','heartbeat','detach','takeover'].includes(body.action));assert.ok(Number.isSafeInteger(body.generation)&&body.generation>=0);assert.equal(typeof body.pending,'boolean');}
+        wireStage='attachment_response';
         const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
         const bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');
         const value=JSON.parse(bytes.toString('utf8'));
@@ -437,28 +460,31 @@ async function main(){
         if(body.action==='attach'){
           for(const token of [value.credential,value.resume]){assert.match(token,/^[A-Za-z0-9_-]{43}$/);tokens.push(token);}
         }
-        return await route.fulfill({response});
-      }catch{if(host&&host.exitCode===null&&!aborted){wireFailure=true;abort();}return route.abort().catch(()=>{});}
+        wireStage='attachment_delivery';return await route.fulfill({response});
+      }catch{if(host&&host.exitCode===null&&!aborted){report.wireStage??=wireStage;wireFailure=true;abort();}return route.abort().catch(()=>{});}
     }
     if(new URL(target).pathname==='/rpc'){
       if(rpc>=100){abort();return route.abort().catch(()=>{});}
       rpc++;
+      let wireStage='request_schema';
       try{
         const packet=checkRequest(route.request());
+        wireStage='http_status';
         const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
         assert.equal(response.status(),200,'rpc_status');
+        wireStage='reply_budget';
         const bytes=await response.body();assert.ok(bytes.length<=131072,'rpc_reply_budget');
         assert.ok(!/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i.test(bytes.toString('utf8')),'persistent_uuid_in_reply');
-        const result=JSON.parse(bytes.toString('utf8'));
+        wireStage='reply_json';const result=JSON.parse(bytes.toString('utf8'));
         // Delay only delivery of an already completed real reply. Never invent
         // a reply or repeat a request to make the late-navigation scenario pass.
         if(delayedApply&&packet.method==='application.reference'&&packet.params.action.action==='apply'){
-          const gate=delayedApply;delayedApply=null;gate.entered();
+          wireStage='held_apply';const gate=delayedApply;delayedApply=null;gate.entered();
           await bounded(gate.released,remaining(5000),'held_apply_timeout');
         }
-        checkReply(result,packet);
-        return await route.fulfill({response});
-      }catch{wireFailure=true;abort();return route.abort().catch(()=>{});}
+        checkReply(result,packet,stage=>{wireStage=stage;});
+        wireStage='delivery';return await route.fulfill({response});
+      }catch{report.wireStage??=wireStage;wireFailure=true;abort();return route.abort().catch(()=>{});}
     }
     return route.continue();
   });

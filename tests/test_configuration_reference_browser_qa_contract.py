@@ -81,6 +81,33 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
         request = self.source.split('function checkRequest(request){', 1)[1].split('async function scenario', 1)[0]
         self.assertNotIn("['String','Number','Boolean','FormCatalogRef']", request)
 
+    def test_reference_column_descriptors_cannot_bypass_strict_value_validation(self):
+        reply = self.source.split('function checkReply(body,packet,stage){', 1)[1].split('async function main(){', 1)[0]
+        descriptor = reply.split("if(context==='table-column'){", 1)[1].split("assert.equal(context,'value'", 1)[0]
+        for required in ("exactKeys(value,'name title type readOnly')", "!Array.isArray(value)",
+                         "value.name.length>0", "value.name.length<=128", "value.title.length<=1024",
+                         "['String','Number','Boolean','Date','FormCatalogRef'].includes(value.type)",
+                         "typeof value.readOnly,'boolean'", 'return;'):
+            self.assertIn(required, descriptor)
+        value = reply.split("if(value.type==='FormCatalogRef'){", 1)[1].split('for(const [key,nested]', 1)[0]
+        for required in ("exactKeys(value,'type scope target key text')", 'assert.match(value.scope,',
+                         'value.target<=128', 'value.key===null||', "if(value.key===null)assert.equal(value.text,'')"):
+            self.assertIn(required, value)
+        self.assertIn("if(value.kind==='table'&&key==='columns'){", reply)
+        self.assertIn("nested.length>0&&nested.length<=8", reply)
+        self.assertIn("for(const column of nested)inspect(column,'table-column')", reply)
+        self.assertIn("else inspect(nested,'value')", reply)
+        self.assertNotIn("Object.hasOwn(value,'scope')", reply)
+        self.assertEqual(self.source.count("inspect(column,'table-column')"), 1)
+        # Failure metadata may only use these literal stages, never actual keys,
+        # payloads, references or assertion/exception details.
+        stages = set(re.findall(r"(?:wireStage=|stage\()'([^']+)'", self.source))
+        self.assertEqual(stages, {'attachment_request', 'attachment_response', 'attachment_delivery',
+            'request_schema', 'http_status', 'reply_budget', 'reply_json', 'held_apply',
+            'reply_envelope', 'reference_descriptor', 'reference_value', 'delivery'})
+        self.assertEqual(self.source.count('report.wireStage??=wireStage'), 2)
+        self.assertNotIn('report.wireStage=error', self.source)
+
     def test_source_binding_includes_new_runtime_example_and_shared_application(self):
         self.requires("'examples/configuration-reference-application'", "'yadinassi/configuration_reference_profile.py'",
                       "'yadinassi/configuration_references.py'", "'yadinassi/configuration_reference_choice.py'",

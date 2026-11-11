@@ -181,7 +181,9 @@ def _pack_state(session, handlers):
 
 
 def _unpack_state(packet, session, handlers):
-    scope = session.reference_scope
+    # Scalar host preflight contexts predate the optional reference scope.
+    # Reference packet branches still require an explicit enrolled scope.
+    scope = getattr(session, 'reference_scope', None)
     checkpoint = None if scope is None else (scope.identity, dict(scope._client), dict(scope._client_values))
     try:
         return _unpack_state_candidate(packet, session, handlers)

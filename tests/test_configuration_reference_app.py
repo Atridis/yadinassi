@@ -129,8 +129,8 @@ class ReferenceApplicationTests(unittest.TestCase):
         session._invoke=invoke
         self.choose(sid,'LinesTable',second,'Product')
         self.assertEqual(invoked,[second])
-        self.assertEqual(item._table()._lookup_id(first).get_member('Label'),'New line')
-        self.assertEqual(item._table()._lookup_id(second).get_member('Label'),'Changed row')
+        self.assertEqual(item._table()._lookup_id(first)._data['label'],'New line')
+        self.assertEqual(item._table()._lookup_id(second)._data['label'],'Changed row')
         self.event(sid,'select',control='LinesTable',row=first)
         self.reference(sid,{'action':'clear','control':'LinesTable','row':second,'column':'Product'})
         self.assertEqual(invoked,[second,second])
@@ -172,10 +172,11 @@ class ReferenceApplicationTests(unittest.TestCase):
         key='Catalogs/Products/Forms/Card/Ext/Form/Module.bsl'
         callback=b'''Procedure Changed(Element)
  If Element.Name = "CategoryInput" Then
+  SelectedCategory = Object.Category;
   Object.Description = "Saved from reference callback";
-  If Object.Category.IsEmpty() Then Object.Description = "Cleared and saved"; EndIf;
+  If SelectedCategory.IsEmpty() Then Object.Description = "Cleared and saved"; EndIf;
   SaveAtServer();
-  If Object.Category.IsEmpty() Then Raise "after saved"; EndIf;
+  If SelectedCategory.IsEmpty() Then Raise "after saved"; EndIf;
  EndIf;'''
         files[key]=files[key].replace(b'Procedure Changed(Element)',callback)
         self.setup_application(files)

@@ -60,12 +60,14 @@ it rejects persistent UUIDs in either direction.
 Only `result.json`, `manifest.json`, and four PNGs are uploaded:
 `reference-product.png`, `reference-document.png`, `reference-resumed.png`, and
 `reference-independent.png`. Images and the result are hashed and size-bounded.
+Wire-failure diagnostics contain only a fixed validation-stage label. Reference
+table-column descriptors and scoped reference values have separate strict shapes.
 No database, browser profile, source contents, raw DOM, trace, capability, cookie,
 request/response payload, or exception text is exported. Every database and browser
 profile is fresh and owned by that invocation. Cleanup verifies process groups
 and temporary-directory removal; cleanup failure prevents PASS.
 
-Preparation alone is not browser evidence. The 16 new Python contract tests are
+Preparation alone is not browser evidence. The 17 new Python contract tests are
 offline source checks. Run them and the six mechanically updated legacy contract
 files only after the exact test-count notice. The real four-scenario acquisition
 must be launched separately through the reviewed route.
