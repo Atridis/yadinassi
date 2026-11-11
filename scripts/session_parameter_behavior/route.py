@@ -8,7 +8,7 @@ SCHEMA='native-1c-session_parameter-v1'
 STAGE_SCHEMA='native-1c-session_parameter-stage-v1'
 COUNT=16
 MAX_OUTPUT=131072
-SOURCE_SHA256='c9c83fde96753342ad0c9d4ac9d5b3524b17e98923d453f909af49a843d4db83'
+SOURCE_SHA256='3228c91147c125d1998f53362c9704b11a7738976955161254cf647636bb8f08'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

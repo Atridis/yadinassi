@@ -22,10 +22,14 @@ Function ObserveCase(CaseNo, Stage)
         Return String(SessionParameters.OwnedDate = Date(2026,1,2,3,4,5));
     EndIf;
     If CaseNo = 10 Then
-        SessionParameters.OwnedNumber = 12.345; Return String(SessionParameters.OwnedNumber);
+        Try SessionParameters.OwnedNumber = 12.345;
+        Except Return "error"; EndTry;
+        Return "assigned:" + String(SessionParameters.OwnedNumber);
     EndIf;
     If CaseNo = 11 Then
-        SessionParameters.OwnedString = "abcdefg"; Return SessionParameters.OwnedString;
+        Try SessionParameters.OwnedString = "abcdefg";
+        Except Return "error"; EndTry;
+        Return "assigned:" + SessionParameters.OwnedString;
     EndIf;
     If CaseNo = 12 Then
         Try SessionParameters.OwnedBoolean = New Array; Result = "assigned";

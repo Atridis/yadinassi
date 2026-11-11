@@ -63,6 +63,10 @@ class SessionParameterNativeAcquisitionTests(unittest.TestCase):
         self.assertIn(b'WriteJSON(Writer,V)',program)
         self.assertLess(program.index(b'Function ObserveCase'),program.index(b'|entered'))
         self.assertIn(b'SessionParameters.OwnedStartup',program);self.assertIn(b'OwnedFailure',program)
+        # Qualifier rejection is an observation, not a broken measurement.
+        self.assertIn(b'Try SessionParameters.OwnedNumber = 12.345;',program)
+        self.assertIn(b'Try SessionParameters.OwnedString = "abcdefg";',program)
+        self.assertEqual(program.count(b'Except Return "error"; EndTry;'),3)
 
     def test_fixture_adds_only_owned_parameters_and_get_set(self):
         before=baseline();_,after=prepare(before)
