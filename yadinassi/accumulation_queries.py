@@ -60,6 +60,7 @@ class AccumulationQueryManager:
 
 def manager(documents, source, parameters):
     from .configuration_accumulation import AccumulationConfiguration
+    from .configuration_accumulation_references import InventoryConfiguration
     from .sqlite_catalog import SQLiteCatalogBackend
     if documents is None or documents._context is None:
         raise ValueError('Accumulation query requires document context')
@@ -67,7 +68,7 @@ def manager(documents, source, parameters):
     if type(backend) is not SQLiteCatalogBackend:
         raise ValueError('Accumulation query requires the accumulation profile')
     config = backend.accumulation_configuration
-    if type(config) is not AccumulationConfiguration:
+    if type(config) not in (AccumulationConfiguration, InventoryConfiguration):
         raise ValueError('Accumulation query requires the accumulation profile')
     matches = [schema for schema in config.registers
                if schema.name.casefold() == source.catalog.casefold()]
@@ -101,7 +102,9 @@ def field(manager, expression, source):
         fields = schema.fields
     else:
         fields = schema.dimensions
-    matches = [_Column('', f.identity, f.kind, f.qualifiers, f)
+    matches = [_Column('', f.identity, f.kind, f.qualifiers, f,
+               reference_identity=(manager._catalogs._metadata, f.target_catalog_id)
+                   if f.kind == 'catalog_ref' else None)
                for f in fields if f.name.casefold() == name]
     if source.section is not None:
         suffixes = (('balance', 'остаток'),) if source.section == 'balance' else (

@@ -12,7 +12,7 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
-from .catalog_backend import BackendError, FieldSchema
+from .catalog_backend import BackendError, CatalogKey, FieldSchema
 from .catalog_qualifiers import normalize_field
 from .document_backend import DocumentKey
 
@@ -43,6 +43,7 @@ class AccumulationRegisterSchema:
     resources: tuple[FieldSchema, ...]
     attributes: tuple[FieldSchema, ...] = ()
     kind: AccumulationRegisterKind = AccumulationRegisterKind.BALANCE
+    value_profile: str = 'scalar_v1'
 
     @property
     def fields(self):
@@ -119,6 +120,8 @@ def validate_schema(schema):
         raise BackendError('invalid_input')
     if type(schema.kind) is not AccumulationRegisterKind:
         raise BackendError('unsupported')
+    if type(schema.value_profile) is not str or schema.value_profile not in ('scalar_v1', 'catalog_reference_v1'):
+        raise BackendError('unsupported')
     identities = {schema.identity}
     names = _RESERVED.copy()
     try:
@@ -133,7 +136,12 @@ def validate_schema(schema):
             field.name.encode('utf-8')
             identities.add(field.identity)
             names.add(field.name.casefold())
-            if (type(field.kind) is not str or field.kind not in _SCALAR_TYPES
+            reference = (schema.value_profile == 'catalog_reference_v1' and field.kind == 'catalog_ref')
+            if reference:
+                _uuid(field.target_catalog_id)
+                if field.qualifiers != () or type(field.qualifiers) is not tuple:
+                    raise BackendError('invalid_input')
+            elif (type(field.kind) is not str or field.kind not in _SCALAR_TYPES
                     or field.target_catalog_id is not None):
                 raise BackendError('unsupported')
             q = field.qualifiers
@@ -241,7 +249,12 @@ def validate_replacement(schema, request, database_id):
             if type(values) is not tuple or len(values) != len(fields):
                 raise BackendError('invalid_input')
             for value, field in zip(values, fields):
-                if type(value) is not _SCALAR_TYPES[field.kind]:
+                if field.kind == 'catalog_ref':
+                    if (type(value) is not CatalogKey or value.database_id != database_id
+                            or value.catalog_id != field.target_catalog_id
+                            or type(value.record_id) is not UUID):
+                        raise BackendError('invalid_input')
+                elif type(value) is not _SCALAR_TYPES[field.kind]:
                     raise BackendError('invalid_input')
                 if field.kind == 'datetime':
                     _date(value)

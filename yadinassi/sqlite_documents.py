@@ -173,7 +173,12 @@ class DocumentView:
             for value in values:
                 if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value): raise BackendError('not_found')
             return result
-        return tuple(s._decode(v,f,self.database_id) for f,v in zip(fields,values))
+        decoded = tuple(s._decode(v,f,self.database_id) for f,v in zip(fields,values))
+        if self._view._backend.format_version == 15:
+            for value in decoded:
+                if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value):
+                    raise BackendError('integrity')
+        return decoded
 
     def _sections(self, schema, contents, *, writing=False):
         if type(contents) is not (tuple if writing else list) or len(contents) > 16: raise BackendError('invalid_input' if writing else 'integrity')
@@ -214,14 +219,14 @@ class DocumentView:
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
     def _posted_value(self, key):
-        if self._view._backend.format_version not in (13, 14): return False
+        if self._view._backend.format_version not in (13, 14, 15): return False
         from .sqlite_document_posting_state import read_posted
         return read_posted(self._connection, self.database_id, key)
 
     def _record_sql(self, *, where='r.document_id=?', order=False, limit=False):
         sql = ('SELECT r.record_id,r.revision,r.number,r.date,r.deletion_mark,'
                'r.values_json,r.sections_json')
-        posted = self._view._backend.format_version in (13, 14)
+        posted = self._view._backend.format_version in (13, 14, 15)
         if posted: sql += ',p.document_revision,p.posted'
         sql += ' FROM document_record AS r'
         if posted:
@@ -240,7 +245,7 @@ class DocumentView:
         if not number or type(mark) is not int or mark not in (0,1): raise BackendError('integrity')
         key = DocumentKey(self.database_id,schema.identity,identity)
         posted = False
-        if self._view._backend.format_version in (13, 14):
+        if self._view._backend.format_version in (13, 14, 15):
             if len(row) == 9:
                 from .sqlite_document_posting_state import decode_posted
                 posted = decode_posted(revision, row[7], row[8])
@@ -296,7 +301,7 @@ class DocumentView:
         payload = ('r.sections_json' if section else
                    'r.values_json' if any(type(f) is UUID for f in fields) else 'NULL')
         sql = 'SELECT r.record_id,r.number,r.date,r.deletion_mark,'+payload+',r.revision'
-        posted = self._view._backend.format_version in (13,14) and 'posted' in fields
+        posted = self._view._backend.format_version in (13,14,15) and 'posted' in fields
         sql += ',p.document_revision,p.posted' if posted else ',NULL,NULL'
         sql += ' FROM document_record AS r'
         if posted:
@@ -318,7 +323,7 @@ class DocumentView:
         key = DocumentKey(self.database_id,schema.identity,identity)
         values = (dict(zip((d.identity for d in schema.fields), self._values(schema.fields,json.loads(payload))))
                   if payload is not None else {})
-        if self._view._backend.format_version in (13,14) and 'posted' in fields:
+        if self._view._backend.format_version in (13,14,15) and 'posted' in fields:
             from .sqlite_document_posting_state import decode_posted
             posted = decode_posted(revision,state_revision,posted)
         else: posted = False

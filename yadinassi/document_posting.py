@@ -94,8 +94,9 @@ class _PostingInterpreter(Interpreter):
 class PostingRuntime:
     def __init__(self, documents, configuration):
         self.documents = documents
-        from .configuration_accumulation import AccumulationConfiguration, canonical as accumulation_canonical
-        self.accumulation = type(configuration) is AccumulationConfiguration
+        from .configuration_accumulation import AccumulationConfiguration
+        from .configuration_accumulation_references import InventoryConfiguration, canonical_runtime as accumulation_canonical
+        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration)
         self.configuration = (accumulation_canonical(configuration) if self.accumulation
                               else canonical(configuration))
         self._programs, self._events = compile_handlers(self.configuration)
