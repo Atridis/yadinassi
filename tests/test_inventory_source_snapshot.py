@@ -228,3 +228,26 @@ class InventorySourceSnapshotTests(unittest.TestCase):
         for factory in (InventoryReports, InventoryRootOperations):
             with self.assertRaises(BackendError): factory(self.context, None)
             self.assertIsNone(self.backend._active)
+
+    def test_host_constructor_and_verify_refuse_duck_backend_before_begin(self):
+        from types import SimpleNamespace
+        touched = []
+        class Duck:
+            format_version = 15
+            def begin_document_read(self): touched.append('begin'); raise AssertionError('duck')
+        class Subclass(SQLiteCatalogBackend):
+            def begin_document_read(self): touched.append('subclass begin'); raise AssertionError('subclass')
+        fake = object.__new__(Subclass)
+        for backend in (Duck(), fake):
+            context = SimpleNamespace(backend=backend, require_active=lambda **kw: touched.append('context'))
+            with self.assertRaises(BackendError): InventoryRootOperations(context, self.config)
+        host = InventoryRootOperations(self.context, self.config); self.addCleanup(host.close)
+        original = host.context, host.backend
+        try:
+            for backend in (Duck(), fake):
+                host.backend = backend
+                host.context = SimpleNamespace(backend=backend)
+                with self.assertRaises(BackendError): host.verify_source()
+                with self.assertRaises(BackendError): host._verify()
+        finally: host.context, host.backend = original
+        self.assertEqual(touched, [])

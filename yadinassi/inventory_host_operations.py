@@ -87,6 +87,9 @@ class InventoryRootOperations(RootPostingOperations):
         self._interpreter._documents.posting_runtime()
 
     def _verify(self, *, require_root=True):
+        from .sqlite_catalog import SQLiteCatalogBackend
+        if type(self.backend) is not SQLiteCatalogBackend or self.backend.format_version != 15:
+            raise BackendError('unsupported')
         if self._closed or self.context.backend is not self.backend:
             raise BackendError('schema_changed')
         if require_root:

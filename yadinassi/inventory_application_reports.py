@@ -352,6 +352,7 @@ class InventoryReports:
         if (type(b) is not SQLiteCatalogBackend or self._context.backend is not b
                 or b.format_version != 15
                 or type(b.accumulation_configuration) is not InventoryApplicationConfiguration
+                or type(b.accumulation_configuration.profile) is not str
                 or b.accumulation_configuration.profile != PROFILE):
             raise BackendError('unsupported')
         if b._closed:
