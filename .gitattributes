@@ -171,3 +171,9 @@ scripts/native_1c_posting_probe.sh text eol=lf
 scripts/accumulation_register_behavior/** text eol=lf
 scripts/native_1c_bootstrap/accumulation_register_suite.py text eol=lf
 scripts/native_1c_accumulation_probe.sh text eol=lf
+
+# Declaration-only loader diagnostics retain their source bytes on Windows.
+scripts/accumulation_loader_control/** text eol=lf
+scripts/native_1c_bootstrap/accumulation_loader_control_suite.py text eol=lf
+scripts/native_1c_accumulation_loader_control_probe.sh text eol=lf
+scripts/native_1c_accumulation_loader_control.py text eol=lf
