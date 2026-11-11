@@ -11,7 +11,8 @@ from decimal import Decimal
 from . import query_parser as syntax
 from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
 from .catalog_backend import BackendError
-from .dates import BSLDate, TICKS_PER_SECOND, _from_parts, _parts
+from .dates import _from_parts
+from .accumulation_periods import bind_dates
 
 
 def needs_accumulation(statements):
@@ -26,24 +27,9 @@ def _boundaries(source, parameters):
             raise ValueError('Raw accumulation source has no period arguments')
         return ()
     count = {'balance': 1, 'turnovers': 2}.get(source.section)
-    args = source.period_boundary
-    if count is None or type(args) is not tuple or len(args) != count:
+    if count is None:
         raise ValueError('Invalid accumulation virtual source')
-    result = []
-    for parameter in args:
-        if type(parameter) is not syntax.Parameter:
-            raise ValueError('Accumulation source requires named Date parameters')
-        key = parameter.name.casefold()
-        if key not in parameters:
-            raise ValueError('Missing accumulation period parameter')
-        value = parameters[key]
-        if type(value) is not BSLDate or value.ticks % TICKS_PER_SECOND:
-            raise TypeError('Accumulation source requires exact second-resolution Date')
-        value.require_known()
-        result.append(_parts(value))
-    if count == 2 and result[0] > result[1]:
-        raise ValueError('Reversed accumulation interval is outside this profile')
-    return tuple(result)
+    return bind_dates(source.period_boundary, parameters, count)
 
 
 class AccumulationQueryManager:

@@ -19,7 +19,7 @@ class InventoryAcquisitionTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(provenance).hexdigest(),'e8270696c8a12fdfed930c1c495856a1b3484e779b674c6a778e60e712da0599')
         evidence=self.evidence()
         self.assertEqual(evidence['repository'],{'commit':'b52465db5dd71407eceb2f3af85f6f5e84263d6f','tree':'5dbb273f6e7bf8b61bdf5d2e83ac4833d1c30fbf','github_run_id':'43030189023','github_run_attempt':'1'})
-        self.assertEqual(evidence['interpreter']['source_file_count'],228)
+        self.assertEqual(evidence['interpreter']['source_file_count'],229)
         self.assertEqual(evidence['interpreter']['source_sha256'],'23ab585dda08e974b9202d6265ff6fbc61bab55a3307cfd3c010c736fc54d9ca')
         self.assertTrue(evidence['native_measurement_accepted'])
         # The original acquisition intentionally did not run the host replay.
