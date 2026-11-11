@@ -102,7 +102,8 @@ class ConfigurationLayoutBrowserContractTests(unittest.TestCase):
     def test_editor_selector_excludes_same_named_accessible_page_panel(self):
         self.contains("const field=name=>active().locator('input').and(active().getByLabel(name,{exact:true}))",
             "phase='layout_second_notes_draft'", "phase='layout_return_first_instance'",
-            "phase='layout_keyboard_end'", "phase='layout_narrow'", 'report.businessRpc=businessEvents.length')
+            "phase='layout_keyboard_end'", "phase='layout_narrow'", 'report.businessRpc=businessEvents.length', "phase='layout_second_summary_command'", "phase='layout_second_summary_readback'",
+            'fixedAssertions.includes(assertion)?assertion:', "safeError=code=>errors.includes(code)?code:'unexpected_protocol_code'")
         self.assertNotIn("const field=name=>active().getByLabel(", self.source)
         view = (ROOT / 'frontend/form/src/view.mjs').read_text(encoding='utf-8')
         self.assertIn("row.setAttribute('role', 'tabpanel')", view)

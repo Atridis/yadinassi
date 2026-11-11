@@ -164,6 +164,9 @@ async function command(title,control){
     packet.params.request.method==='form.event'&&packet.params.request.params.event==='command'&&
     packet.params.request.params.control===control);
   await action(title).click();const data=await (await reply).json();
+  const errors=[null,'invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused','retired_session'];
+  const safeError=code=>errors.includes(code)?code:'unexpected_protocol_code';
+  report.lastCommand={sessionMatches:data.result.session===session,applicationError:safeError(data.result.error),formError:safeError(data.result.form?.result?.error)};
   assert.equal(data.result.session,session,'command_session_changed');
   assert.equal(data.result.error,null,'application_command_failed');
   assert.equal(data.result.form.result.error,null,'form_command_failed');await idle();
@@ -477,7 +480,9 @@ async function main(){
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'narrow_horizontal_overflow');
     await screenshot(screenshots[2]);await page.setViewportSize({width:1100,height:850});
     phase='layout_return_second_instance';await tabs().getByRole('button').nth(1).click();await selected('Notes');await value('Notes','Sibling draft');
-    phase='layout_apply_second_draft';await commitInput('Notes','Sibling draft');await command('Build summary','ApplyNotes');await value('Summary',' : Sibling draft');
+    phase='layout_apply_second_draft';await commitInput('Notes','Sibling draft');
+    phase='layout_second_summary_command';await command('Build summary','ApplyNotes');
+    phase='layout_second_summary_readback';await value('Summary',' : Sibling draft');
     phase='layout_natural_close';await closeForm();await countPanels(1);await selected('Notes');await closeForm();await countPanels(0);
     await naturalStop();report.naturalShutdown=true;
   });
@@ -519,6 +524,10 @@ catch(error){
   // Fixed, bounded flags/counts only. Never record DOM text, field contents,
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;report.businessRpc=businessEvents.length;
+  const assertion=String(error?.message||'').split('\n',1)[0];
+  const fixedAssertions=['session_panel_binding','active_session_missing','command_session_changed','application_command_failed','form_command_failed',
+    'page_selection','hidden_draft_dispatched','focus_selection_not_retained','instance_navigation_dispatched','narrow_horizontal_overflow'];
+  report.assertion=fixedAssertions.includes(assertion)?assertion:'unclassified_step';
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};

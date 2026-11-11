@@ -98,6 +98,31 @@ class ConfigurationFormLayoutTests(unittest.TestCase):
         for value in (BSLType.FORM_GROUP, server.session.form.items._values['names']):
             with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError): value_to_string_internal(value)
 
+    def test_two_application_instances_keep_layout_and_summary_independent(self):
+        from test_configuration_app import ConfigurationApplicationTests
+        helper = ConfigurationApplicationTests(); self.addCleanup(helper.doCleanups)
+        broker, app = helper.setup_app('layouts')
+        first = helper.open(app, 'CommonForm.Layout', token='first')['session']
+        def event(sid, kind, control, value=None):
+            params = {'event': kind, 'revision': app.sessions[sid][0].session.revision, 'control': control}
+            if kind == 'change': params['value'] = {'type': 'String', 'value': value}
+            result = helper.rpc(app, 'form', session=sid,
+                request={'jsonrpc': '2.0', 'id': 1, 'method': 'form.event', 'params': params})
+            self.assertIsNone(result['error']); self.assertIsNone(result['form']['result']['error'])
+            return result
+        event(first, 'change', 'FirstNameInput', 'Ada')
+        event(first, 'command', 'ApplyIdentity')
+        event(first, 'command', 'ToggleNamesButton'); event(first, 'command', 'ToggleNamesButton')
+        second = helper.open(app, 'CommonForm.Layout', token='second')['session']
+        # Notes remains a renderer draft until after the first instance's visibility commands.
+        event(first, 'command', 'ToggleNotesButton'); event(first, 'command', 'ToggleNotesButton')
+        event(second, 'change', 'NotesInput', 'Sibling draft')
+        event(second, 'command', 'ApplyNotes')
+        for sessions in (app.sessions, broker.sessions):
+            self.assertEqual(sessions[first][0].session.form._data['summary'], 'Ada : ')
+            self.assertEqual(sessions[second][0].session.form._data['summary'], ' : Sibling draft')
+            self.assertTrue(sessions[second][0].session.form.items._values['notespage'].visible)
+
     def test_example_order_and_closed_topology(self):
         definition = self.definition()
         self.assertEqual(len(definition.layout), 14)
