@@ -43,6 +43,7 @@ from . import clocks, date_time_conversions, dates, formatting, number_in_words,
 from .chars import BSLChars, CHARS
 from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
+from .enumerations import BSLEnumerations, BSLEnumManager
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
@@ -514,7 +515,28 @@ class Interpreter:
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
 
+    def _new_type_description(self, *values):
+        # Resolve only one application-owned enum type name. Mixed/reference
+        # unions and all qualifiers still pass through the descriptor's closed
+        # admission; do not turn arbitrary names into host type lookups.
+        if values and type(values[0]) is str and len(values[0]) <= 4096:
+            token = values[0].strip()
+            prefix, separator, _ = token.partition('.')
+            if (separator and ',' not in token and prefix.casefold() in
+                    ('enumref', 'перечислениессылка', 'enummanager', 'перечислениеменеджер')):
+                self._require_family()
+                if self._metadata._enumerations is None:
+                    raise ValueError('enumeration types require an active configuration application')
+                kind = self._metadata._enumerations.resolve_type(token)
+                source = BSLArray()
+                source.items.append(kind)
+                values = (source, *values[1:])
+        return BSLTypeDescription(*values)
+
     def _type_by_name(self, name):
+        if self._metadata._enumerations is not None:
+            value = self._metadata._enumerations.resolve_type(name)
+            if value is not None: return value
         return self._information_registers.type_by_name(name)
 
     def _new_query(self, text=""):
@@ -864,6 +886,9 @@ class Interpreter:
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
             from .document_posting_values import DOCUMENT_WRITE_MODES
             return DOCUMENT_WRITE_MODES
+        if name in ("enums", "перечисления"):
+            if self._metadata._enumerations is None: raise ValueError("enumerations require an active configuration application")
+            return self._metadata._enumerations
         if name in ("документы", "documents"):
             return self._documents
         if name in ("справочники", "catalogs"):
@@ -1002,7 +1027,7 @@ class Interpreter:
         value = (yield from self._visit(node.object))
         if (type(value) is BSLCommonModuleMetadataCollection
                 or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
-                or is_metadata_collection(value)):
+                or is_metadata_collection(value) or type(value) is BSLEnumerations or type(value) is BSLEnumManager):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1721,7 +1746,7 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
-            if is_metadata_collection(owner) or type(owner) is BSLCatalogs or type(owner) is BSLDocuments:
+            if is_metadata_collection(owner) or type(owner) in (BSLCatalogs, BSLDocuments, BSLEnumerations, BSLEnumManager):
                 index = (yield from self._visit(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
@@ -1784,6 +1809,8 @@ class Interpreter:
             values = []
             for argument in node.arguments:
                 values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+            if factory.function is BSLTypeDescription:
+                return self._new_type_description(*values)
             return factory(*values)
         self.reject_host_omissions(node.arguments)
         if factory is None:
@@ -1813,6 +1840,8 @@ class Interpreter:
         arguments = tuple(parameters.items) if type(parameters) is BSLArray else ()
         if factory.function is callback_description_marker:
             return self._new_callback(arguments)
+        if factory.function is BSLTypeDescription:
+            return self._new_type_description(*arguments)
         return factory(*arguments)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -1827,7 +1856,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments)):
+                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments, BSLEnumerations, BSLEnumManager)):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):
@@ -2078,7 +2107,8 @@ class Interpreter:
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections
                 and type(collection) is not BSLSortDirections
-                and not is_metadata_collection(collection)):
+                and not is_metadata_collection(collection)
+                and type(collection) is not BSLEnumManager):
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)

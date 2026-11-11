@@ -50,7 +50,8 @@ def bind(stage,inputs,modules,*,observed=True):
 def source_provenance():
     # Exercise the real source inventory/aggregate hashing. Installed dependency
     # availability is irrelevant to this byte budget, so supply pinned versions.
-    # Current union: 228 runtime, project/native and packaged renderer files.
+    # Current union: 231 runtime, project/native and packaged renderer files.
+    # Includes three typed-enumeration declaration/runtime modules.
     # Includes explicit profile preflight and bounded import diagnostics.
     # Includes four indexed-read planner/lease/batch/index-maintenance modules.
     # Includes accumulation source/storage/profile, posting facade/compiler/query modules,
@@ -60,7 +61,7 @@ def source_provenance():
     # Independent provenance checks bind the source additions and reject byte drift.
     with mock.patch.object(full.importlib.metadata,'version',side_effect=lambda name:full.DEPENDENCIES[name]):
         result=full.interpreter_provenance(ROOT)
-    if result['source_file_count'] != 228:
+    if result['source_file_count'] != 231:
         raise AssertionError(('Unexpected runtime inventory',result['source_file_count']))
     return result
 
@@ -126,7 +127,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
             options=dict(zip(ib.OPTION_NAMES,selected));wire=self.roundtrip(stage,inputs,modules,**options)
             schemas.add(json.loads(wire)['schema'])
             public,code=summary(report_for(stage,accepted=True,provenance=provenance),selected=selected)
-            self.assertEqual(code,0);self.assertEqual(json.loads(public)['probe']['interpreter']['source_file_count'],228)
+            self.assertEqual(code,0);self.assertEqual(json.loads(public)['probe']['interpreter']['source_file_count'],231)
             for downgrade in ('schema','status','token','identity'):
                 raw=json.loads(wire)
                 if downgrade=='schema': raw['schema']-=4;raw.pop('preprocessor_status')
@@ -238,7 +239,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
             manifest=json.loads(files['provenance.json'])
             self.assertFalse(manifest['preprocessor_parity_claimed'])
             self.assertEqual(manifest['purpose'],'client-preprocessor-observation-v1')
-            self.assertEqual(manifest['interpreter']['source_file_count'],228)
+            self.assertEqual(manifest['interpreter']['source_file_count'],231)
             self.assertNotIn(TOKEN,files['provenance.json'].decode())
             # The complete production builder also sees the longest supported
             # comparison partition, including Async error rows when requested.
@@ -266,7 +267,7 @@ class PreprocessorBudgetTests(SyntheticFilesystemCase):
                         self.assertEqual(suite.preprocessor_client_marker(path,value['nonce'],phase,
                             source_hash=full.PREPROCESSOR_SOURCE_SHA256),value)
         BOUNDS['private_marker_upper']=max(markers);self.assertLessEqual(max(markers),2048)
-        provenance=source_provenance();self.assertEqual(provenance['source_file_count'],228)
+        provenance=source_provenance();self.assertEqual(provenance['source_file_count'],231)
         BOUNDS['runtime_source_count']=provenance['source_file_count']
         self.assertEqual(full.ARTIFACT_FILES,ab.ARTIFACT_CLASSES)
         self.assertEqual((suite.MAX_STAGE_REPORT,full.MAX_STAGE_REPORT,smoke.MAX_OUTPUT),(8192,8192,32768))

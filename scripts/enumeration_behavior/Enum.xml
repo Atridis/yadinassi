@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+<Enum uuid="3d3b06ac-f583-57bf-b588-4473f2184f14"><InternalInfo>
+<xr:GeneratedType name="EnumRef.OwnedStatus" category="Ref"><xr:TypeId>31b2d234-c3ec-5a1d-9ccd-6d9f71017c22</xr:TypeId><xr:ValueId>e251db84-8b20-5d97-93fc-743b302d711b</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="EnumManager.OwnedStatus" category="Manager"><xr:TypeId>2d4705e0-b4d3-52fe-bd5e-5d762c5e29df</xr:TypeId><xr:ValueId>da0a4294-144e-53e8-b79c-3e84e2cbdda8</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="EnumList.OwnedStatus" category="List"><xr:TypeId>b91ac66a-e3bd-56c9-870e-5ae86be5e15c</xr:TypeId><xr:ValueId>3625910a-ed00-549e-8906-32cb119d1288</xr:ValueId></xr:GeneratedType>
+</InternalInfo><Properties><Name>OwnedStatus</Name><Synonym/><Comment/><UseStandardCommands>false</UseStandardCommands><StandardAttributes/><Characteristics/><QuickChoice>true</QuickChoice><ChoiceMode>BothWays</ChoiceMode><DefaultListForm/><DefaultChoiceForm/><AuxiliaryListForm/><AuxiliaryChoiceForm/><ListPresentation/><ExtendedListPresentation/><Explanation/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput></Properties><ChildObjects>
+<EnumValue uuid="15cea96f-1ad5-5883-9c2a-fadbded288ec"><Properties><Name>Active</Name><Synonym><v8:item><v8:lang>en</v8:lang><v8:content>Active item</v8:content></v8:item></Synonym><Comment/></Properties></EnumValue>
+<EnumValue uuid="2057260b-cce3-5e5b-9e6a-bed5065d2fbc"><Properties><Name>Closed</Name><Synonym></Synonym><Comment/></Properties></EnumValue>
+</ChildObjects></Enum></MetaDataObject>

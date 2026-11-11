@@ -201,6 +201,10 @@ scripts/native_1c_docker_lifecycle.py text eol=lf
 scripts/native_1c_full_host.py text eol=lf
 scripts/native_1c_smoke.py text eol=lf
 
+# New owned enumeration acquisition inputs have source-bound byte hashes.
+scripts/enumeration_behavior/** text eol=lf
+scripts/native_1c_bootstrap/enumeration_suite.py text eol=lf
+scripts/native_1c_enumeration_probe.sh text eol=lf
 # Explicit import host modules are source-bound runtime inputs.
 yadinassi/configuration_diagnostics.py text eol=lf
 yadinassi/configuration_profile_import.py text eol=lf
@@ -212,3 +216,6 @@ scripts/native_1c_inventory_probe.sh text eol=lf
 scripts/native_1c_inventory_reference_profile.py text eol=lf
 # Immutable native evidence must never be normalized by checkout or readers.
 tests/fixtures/native_inventory_reference/* -text
+
+# Preserve the exact native enumeration evidence bytes on every platform.
+tests/fixtures/native_enumeration_43035110558.json -text
