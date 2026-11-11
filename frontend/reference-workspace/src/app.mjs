@@ -1,9 +1,13 @@
 import {createTransport, takeSessionCapability, scalarText, FormError} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
+import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs';
 import {REFERENCE_PROTOCOL, ReferenceClient} from './client.mjs';
 
 let workspaceSerial = 0n;
 export function mountReferenceWorkspace(environment, root, exchange = null) {
+  const browserHost = exchange ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document, prefix = 'reference-workspace-' + ++workspaceSerial + '-';
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('div'), background = el('div'), title = el('h1','Reference Orders');
@@ -36,6 +40,7 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
     (target || entry.panel).focus({preventScroll:true});
   };
   function paint() {
+    browserHost?.notify();
     const currentChild = child(), currentOwner = owner();
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
     const managing = disabled || Boolean(client.pending || opening || currentOwner || recovering.size);
@@ -68,7 +73,7 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
     paint();
   }
   function schedule() {
-    synchronization = synchronization.then(reconcile).catch(() => client.lock());
+    synchronization = synchronization.then(reconcile).catch(error => { if (error?.preDispatch !== true) client.lock(); });
     return synchronization;
   }
   async function settled() {
@@ -152,7 +157,7 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
     if (opening) return opening;
     if (!client.state || client.terminal || client.state.kind === 'closed' || owner() || client.pending) return Promise.resolve();
     opening = (async () => {
-      const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${++openToken}`});
+      const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${instance}-${++openToken}`});
       if (!result || result.error || client.terminal) return;
       const descriptor = client.state.sessions.find(session => session.id === result.session);
       const entry = mounts.get(descriptor.id) || mountSession(descriptor);
@@ -170,13 +175,21 @@ export function mountReferenceWorkspace(environment, root, exchange = null) {
   const refresh = button('Find / Refresh orders',list,() => perform('workspace.list',{code:code.value}));
   list.append(truncation,rows); background.append(title,introduction,toolbar,list,panels);
   shell.append(notice,background,dialogs); root.replaceChildren(shell);
-  if (!exchange) {
-    try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
-    catch { exchange = async () => { throw Error('Missing session'); }; }
-  }
+  if (!exchange) exchange = browserHost.transport;
   client = new ReferenceClient(exchange,observe,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
-  paint(); const ready = perform('workspace.hello',{protocol:REFERENCE_PROTOCOL});
-  return {ready,client,mounts,pending,openForm,settled};
+  browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  const resume = async () => {
+    if (client.terminal) throw Error('Unknown previous outcome');
+    const retained = new Set(mounts.keys());
+    const result = await client.request('workspace.hello',{protocol:REFERENCE_PROTOCOL});
+    const descriptor = owner();
+    if (descriptor && !mounts.has(descriptor.id)) await mountSession(descriptor).mount.ready;
+    await schedule();
+    for (const id of retained) if (mounts.has(id)) await mounts.get(id).mount.reconcileOwnership();
+    await settled(); return result;
+  };
+  paint(); const ready = browserHost ? browserHost.start(resume) : resume();
+  return {ready,client,mounts,pending,openForm,settled,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('reference-orders-app')) mountReferenceWorkspace(window,window.document.getElementById('reference-orders-app'));

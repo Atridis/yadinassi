@@ -163,7 +163,7 @@ class ConfigurationApplicationTests(unittest.TestCase):
     def test_stdio_duplicate_management_id_not_reexecuted(self):
         configuration = load_application(ROOT/'counter')
         hello = {'id': 1, 'operation': 'hello', 'session': '', 'payload': {'source': configuration.source_sha256}}
-        create = {'id': 2, 'operation': 'create', 'session': '', 'payload': {'entry': 1, 'parameters': {}}}
+        create = {'id': 2, 'operation': 'create', 'session': '', 'payload': {'entry': 1, 'parameters': {}, 'record': None}}
         output = BytesIO()
         self.assertEqual(serve_runtime(ROOT/'counter', input_stream=BytesIO(encode_line(hello)+encode_line(create)+encode_line(create)), output_stream=output), 1)
         self.assertEqual(len(output.getvalue().splitlines()), 2)

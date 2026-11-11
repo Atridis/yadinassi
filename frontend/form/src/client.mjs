@@ -200,7 +200,8 @@ export class FormClient {
               'outcome_unknown', 'busy', 'request_limit'].includes(reply.result.error))) throw new FormError('transport');
         validateSnapshot(reply.result.state);
         if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
-      } catch {
+      } catch (error) {
+        if (error?.preDispatch === true) throw error;
         this.transportFailed = true;
         throw new FormError('transport');
       }

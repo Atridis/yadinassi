@@ -3,21 +3,22 @@
   "dependencies": {},
   "sources": {
     "package.json": "699b2d0ff157a672f20773c17f90165db7789f2eb0f7b884fe76f16080189ded",
-    "build.mjs": "c11fac10cf56efe5756642fbaf41f4e6400a20b5107b7e46c41bec877ebb5758",
+    "build.mjs": "c059cbd8247d0bed837163eb75499f1960504daeed3e9c47b2a960fa22c9464c",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "src/style.css": "a116c2dd08ba640ddd614ae457094a4e59ff02ce7c660ac8ba964783175896d3",
-    "../form/src/style.css": "c1ba3abea3101ae4a1e5d45b0f4f7aa7df2da925ae5a034ad207b297162f7b78",
+    "src/style.css": "2356466fb05c55827553590767c925cca82c00da538579ffdd04191292a33804",
+    "../form/src/style.css": "dbb5b0d6d084e0bab64c4e32fae07ff940d728879a73f2783548970b4cbaa11b",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
-    "../form/src/client.mjs": "98007135df1c2ab7206feb0caa37efd967804efa47a2f491f4d3841555c1150d",
-    "../form/src/view.mjs": "ed6ff3c399f58d034174b50ffef5c7b07da2f38e18ed6db01984a6c5cfa255b9",
-    "../form/src/app.mjs": "2e520f26a31526d24f0ced510df5468ca86ec16a4110259ef7b8a2ccd5fb1999",
-    "src/client.mjs": "a75dec10cc3c88766a718aaa741dec9a9133ebb8307c9b50bb958eb093f20bbb",
-    "src/app.mjs": "e6a1319e650e8aae8fb9f1189a46c112d3213823fb3e252d7dc3b8336f779ec1"
+    "../form/src/client.mjs": "1b42a2b6f67e52c71dc14d1c7c8d63cd9c53f6479948ab202eb35e31d89de784",
+    "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
+    "../form/src/view.mjs": "35c894e80953183af0fdd198c89413e3dffc6f4af5dd9e1d53f12ac5aaa37285",
+    "../form/src/app.mjs": "1d5ccd3d51bdf7f1bc00d1cd13ae2e9a93c20fc3ed34b527e015dfab8d77c292",
+    "src/client.mjs": "35626d7b91fd609a337e962c5f658fc82713a008d8fca715ada8e079ae5d6158",
+    "src/app.mjs": "7249391e94f25131853b3e19fa17fdda97f277799a8eafa1abc3dddb812c7744"
   },
   "outputs": {
-    "app.js": "9455f6fb759a47dc0595aee064cc51b29925df78b042ab028665d8fadaba7813",
+    "app.js": "a209f61d5bc5e3e2bac6d2ab9e3299f46e41809f643a14919052459572aa6342",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "style.css": "3313ff61b36b76a5f97b299a0a16963403c02e263fb1855584c4c607e4690bba",
+    "style.css": "3b1bf067e5b420ed84e8248da70b81714622bbad27e551896e4442213b960b78",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

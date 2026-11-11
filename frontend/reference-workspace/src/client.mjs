@@ -89,7 +89,7 @@ export class ReferenceClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) invalid();
           this.formRevisions.set(result.session,revision);
         }
-      } catch { this.lock(); throw new FormError('transport'); }
+      } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain || result.form?.result.state.uncertain || result.form?.result.error === 'outcome_unknown') {
         this.lock(); throw new FormError('transport');

@@ -65,7 +65,7 @@ export class WorkspaceClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(result.session,revision);
         }
-      } catch { this.lock(); throw new FormError('transport'); }
+      } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
       this.changed(result);

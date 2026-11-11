@@ -373,6 +373,7 @@ def main(argv=None):
     parser.add_argument('packages', help='Trusted forms root containing order-intake and order-editor')
     parser.add_argument('--f', required=True, help='Existing Orders SQLite database')
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--browser-session', action='store_true')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.runtime:
@@ -380,7 +381,8 @@ def main(argv=None):
     process = server = None
     try:
         process = WorkspaceProcess(args.packages, args.f)
-        server = LocalUIServer(WorkspaceController(args.packages, process.exchange), handler=WorkspaceHandler)
+        server = LocalUIServer(WorkspaceController(args.packages, process.exchange), handler=WorkspaceHandler,
+                               browser_session=args.browser_session)
         print('Orders workspace. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:

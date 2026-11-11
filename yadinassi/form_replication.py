@@ -20,7 +20,8 @@ from .syntax.parser import parse
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
-from .ui.protocol import encode_line, decode_line, bounded_text, MAX_COUNTER
+from .ui.protocol import encode_line, decode_line, bounded_text, MAX_COUNTER, encode_value, decode_value
+from .dates import BSLDate
 
 from .form_table_replication import (pack_tables, unpack_tables, install_tables,
     capture_tables, capture_selections, table_delta, selection_delta,
@@ -31,6 +32,23 @@ _REASONS = frozenset(('invalid_request', 'sequence', 'stale_revision', 'closed',
     'request_limit', 'unknown_endpoint', 'invalid_arguments', 'invalid_delta',
     'server_error', 'result_unavailable', 'busy'))
 
+
+
+def _encode_form_scalar(value):
+    """Local form-state profile admits the ordinary empty Date, not endpoints.
+
+    Invocation arguments/results retain their measured generic transfer guard.
+    No fractional Date or overflow boundary is added to either profile.
+    """
+    if type(value) is BSLDate and value.ticks == 0 and not value.boundary:
+        return encode_value(value)
+    return _encode_scalar(value)
+
+
+def _decode_form_scalar(value):
+    result = decode_value(value)
+    _encode_form_scalar(result)
+    return result
 
 def _keys(value, keys):
     if type(value) is not dict or set(value) != set(keys.split()):
@@ -138,7 +156,7 @@ def _pack_state(session, handlers):
             [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
              kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
              kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
-            attribute.title, key in form._static, _encode_scalar(form._data[key])])
+            attribute.title, key in form._static, _encode_form_scalar(form._data[key])])
     return {'attributes': attributes, 'tables': pack_tables(form), 'title': form.title,
         'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'field',
             item.title, item.visible, item.enabled, item.read_only,
@@ -177,8 +195,8 @@ def _unpack_state(packet, session, handlers):
             BSLStringQualifiers(Decimal(q[3]), BSLAllowedLength(q[4])),
             BSLDateQualifiers(BSLDateFractions(q[5])))
         attribute = BSLFormAttribute(attr_name, kind, title=title)
-        value = scalar(_decode_scalar(encoded))
-        if _encode_scalar(kind.adjust_value(value)) != encoded:
+        value = scalar(_decode_form_scalar(encoded))
+        if _encode_form_scalar(kind.adjust_value(value)) != encoded:
             raise ValueError('form value outside schema')
         candidate._attributes[key] = attribute
         candidate._data[key] = value
@@ -289,7 +307,7 @@ def _install_state(session, decoded):
 
 
 def _capture(form):
-    return {'attributes': {key: _encode_scalar(value) for key, value in form._data.items()},
+    return {'attributes': {key: _encode_form_scalar(value) for key, value in form._data.items()},
             'tables': capture_tables(form), 'selections': capture_selections(form),
             'items': {key: _appearance(item) for key, item in form.items._values.items()},
             'title': form.title}
@@ -316,8 +334,8 @@ def _admit_delta(form, packet):
         if key not in form._attributes or key in seen:
             raise ValueError('invalid form delta attribute')
         seen.add(key)
-        value = scalar(_decode_scalar(encoded))
-        if _encode_scalar(form._attributes[key].value_type.adjust_value(value)) != encoded:
+        value = scalar(_decode_form_scalar(encoded))
+        if _encode_form_scalar(form._attributes[key].value_type.adjust_value(value)) != encoded:
             raise ValueError('form delta outside schema')
         data[key] = value
     if sum(len(value) for value in data.values() if type(value) is str) > MAX_TOTAL_TEXT:
@@ -346,7 +364,7 @@ def _apply_delta(form, admitted):
 class ReplicatedFormServer:
     """One server-owned form. Lifecycle and endpoints are trusted host setup."""
     def __init__(self, source, endpoints, *, handlers, attributes=(), tables=(), initial_values=None,
-                 bindings=None, database_context=None, server_bindings=()):
+                 bindings=None, database_context=None, server_bindings=(), interpreter_factory=None):
         _source(source, 'server')
         self._handlers, self._handler_names = _bindings(handlers, handlers=True)
         if type(endpoints) is not dict or len(endpoints) > MAX_ENDPOINTS:
@@ -363,7 +381,7 @@ class ReplicatedFormServer:
             normalized[event] = name(handler)
         self.session = FormSession(source, attributes=attributes, tables=tables, initial_values=initial_values,
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
-            database_context=database_context, server_bindings=server_bindings)
+            database_context=database_context, server_bindings=server_bindings, interpreter_factory=interpreter_factory)
         self.session._replica_handler_names = self._handler_names
         self.session._replica_handlers = self._handlers
         for binding in handlers:
@@ -492,13 +510,13 @@ class ReplicatedFormSession(FormSession):
     Form event revision, server revision, client sequence and request ID are
     separate counters. Unknown outcomes lock the channel; nothing is replayed.
     """
-    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None):
+    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None, interpreter_factory=None):
         _source(source, 'client')
         if not callable(exchange):
             raise TypeError('byte exchange required')
         self._handlers, _ = _bindings(handlers, handlers=True)
         _bindings(bindings)
-        super().__init__(source, output=output, parameters=parameters)
+        super().__init__(source, output=output, parameters=parameters, interpreter_factory=interpreter_factory)
         for binding in handlers:
             routine = self._bind(binding.name, 'client', len(binding.parameters))
             if tuple(parameter.name.casefold() for parameter in routine.parameters) != tuple(value.casefold() for value in binding.parameters):

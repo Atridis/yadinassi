@@ -3,6 +3,10 @@
 There is no source evaluator, scheduler, database writer or authority escalation
 here. Metadata selects ordinary compiled module instances and existing calls.
 """
+from contextlib import contextmanager
+from decimal import localcontext
+from .native_targets import target_context
+
 from .configuration_modules import MODULE_RUNTIME, compile_module
 from .configuration_xml import ConfigurationImport, import_configuration
 from .errors import BSLError
@@ -30,16 +34,31 @@ class ConfigurationApplication:
     independent scheduler, module receivers and application state.
     """
     def __init__(self, configuration, *, output=print, database_context=None,
-                 native_target='windows-8.3.27.2342'):
+                 native_target='windows-8.3.27.2342', side=None, host_services=None,
+                 server_exchange=None):
         from .runtime import Interpreter
         if type(configuration) is not ConfigurationImport or configuration.module_runtime != MODULE_RUNTIME:
             raise TypeError('an explicitly compiled configuration is required')
+        if side not in (None, 'client', 'server'):
+            raise ValueError('invalid application process side')
+        if server_exchange is not None and (side != 'client' or not callable(server_exchange)):
+            raise ValueError('server transport belongs to the client process')
+        self.side = side
+        self._output = output
+        self._event_output = None
+        self._event_sink = None
+        self._server_exchange = server_exchange
+        self.server_bindings = ()
+        self.server_endpoints = {}
         sources = {entry.path: entry.content for entry in configuration.files}
         numbering = ('decimal_v1' if any(s.numbering == 'decimal_v1'
                      for s in (*configuration.catalogs, *configuration.documents)) else 'explicit')
-        canonical = import_configuration(sources, numbering_policy=numbering,
-                                         module_runtime=MODULE_RUNTIME)
-        if configuration != canonical or configuration.activation_issues:
+        from .configuration_application_profile import (APPLICATION_SOURCE_ISSUE, import_application_configuration)
+        composed = (len(configuration.activation_issues) == 1 and
+                    configuration.activation_issues[0].startswith(APPLICATION_SOURCE_ISSUE + ':'))
+        canonical = (import_application_configuration(sources) if composed else
+                     import_configuration(sources, numbering_policy=numbering, module_runtime=MODULE_RUNTIME))
+        if configuration != canonical or (configuration.activation_issues and not composed):
             raise ValueError('configuration cannot be activated')
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
@@ -68,8 +87,22 @@ class ConfigurationApplication:
         self.configuration = configuration
         self.state = 'prepared'
         self.last_exit_warning = ''
-        self.interpreter = Interpreter(output, native_target=native_target,
+        self.interpreter = Interpreter(self._message, native_target=native_target,
                                        database_context=database_context)
+        if side == 'server':
+            self.interpreter._logical_side = 'server'
+            self.interpreter._context_stack = ['server']
+        from .values import HostFunction
+        self._host_services = {}
+        for name, function in (host_services or {}).items():
+            if type(name) is not str or type(function) is not HostFunction:
+                raise TypeError('named HostFunction services required')
+            if side == 'server' and name.casefold() in ('openform', 'открытьформу'):
+                raise ValueError('OpenForm is client-only')
+            if name.casefold() in self.interpreter.functions:
+                raise ValueError('host service conflicts with existing function')
+            self.interpreter.functions[name.casefold()] = function
+            self._host_services[name.casefold()] = function
         self._definitions = {m.name.casefold(): m for m in configuration.common_modules}
         self._modules = {}
         self._globals = {}
@@ -89,7 +122,17 @@ class ConfigurationApplication:
         return cls(configuration, **kwargs)
 
     @classmethod
+    def from_application_files(cls, files, **kwargs):
+        from .configuration_application_profile import import_application_configuration
+        return cls(import_application_configuration(files), **kwargs)
+
+    @classmethod
     def from_database(cls, context, **kwargs):
+        from .configuration_application_profile import APPLICATION_SOURCE_ISSUE
+        issues = context.backend.activation_issues
+        if len(issues) == 1 and issues[0].startswith(APPLICATION_SOURCE_ISSUE + ':'):
+            return cls.from_application_files(context.backend.export_configuration(),
+                                              database_context=context, **kwargs)
         return cls.from_files(context.backend.export_configuration(), numbering_policy='decimal_v1',
                               database_context=context, **kwargs)
 
@@ -139,15 +182,51 @@ class ConfigurationApplication:
                 if count and routine.parameters[0].by_value:
                     raise ValueError('application cancellation requires a reference parameter')
                 self._events[event] = routine
-        for program in programs.values():
+        for (_, program_side), program in programs.items():
+            if self.side is not None and program_side != self.side:
+                continue
             for routine in program:
                 self._common_routines[id(routine)] = routine
                 self._declared_routines[id(routine)] = routine
         self.bind_interpreter(root)
+        from .invocation import InvocationBinding, InvocationPort
+        remote = []
+        for name in sorted(self._definitions):
+            definition = self._definitions[name]
+            if definition.server_call:
+                for routine in programs[name, 'server']:
+                    if routine.exported:
+                        if routine.is_async or any(not p.by_value or p.default is not None for p in routine.parameters):
+                            if self.side is not None:
+                                raise ValueError('remote common export requires explicit by-value scalar contract')
+                        remote.append((name, routine))
+        bindings = {(name, routine.name.casefold()): InvocationBinding(routine.name, index + 1,
+                    tuple(p.name for p in routine.parameters), routine.is_function)
+                    for index, (name, routine) in enumerate(remote)} if self.side is not None else {}
+        self.server_bindings = tuple(bindings.values())
+        port = InvocationPort(self._server_exchange) if self._server_exchange is not None else None
         for (name, side), program in programs.items():
+            if self.side is not None and side != self.side:
+                if not (self.side == 'client' and self._definitions[name].server_call):
+                    continue
+                if port is None:
+                    raise ValueError('ServerCall requires a bound server transport')
+                child = root._activation_interpreter()
+                self.bind_interpreter(child)
+                for routine in program:
+                    if not routine.exported:
+                        continue
+                    binding = bindings[name, routine.name.casefold()]
+                    port._bind(child, binding)
+                    stub = child.server_routines[routine.name.casefold()]
+                    stub.exported = True
+                    self._common_routines[id(stub)] = stub
+                    self._declared_routines[id(stub)] = stub
+                child._self_module.ready = True
+                self._modules[name, side] = child._self_module
+                continue
             child = root._activation_interpreter()
             # Use the same family mechanisms as ordinary imported modules.
-            child._scheduler = root._scheduler
             child._diagnostic_owner = root._diagnostic_owner
             child.user_messages = root.user_messages
             child._inherit_host_bindings(root)
@@ -156,23 +235,86 @@ class ConfigurationApplication:
             child._execute_depth = root._execute_depth
             child._eval_depth = root._eval_depth
             self.bind_interpreter(child)
+            if side == 'server':
+                child._logical_side = 'server'
             child.execute_program(program)  # declarations only; validated above
             self._modules[name, side] = child._self_module
             if self._definitions[name].global_module:
                 for routine in program:
                     if routine.exported:
                         self._globals[routine.name.casefold(), side] = (routine, child)
+        if self.side == 'server':
+            for name, routine in remote:
+                binding = bindings[name, routine.name.casefold()]
+                owner = self._modules[name, 'server'].interpreter
+                self.server_endpoints[binding.endpoint] = (binding,
+                    lambda values, routine=routine, owner=owner: self._invoke_remote(owner, routine, values))
         # Application exports are visible to the same logical client context.
         for key, routine in app_routines.items():
             if routine.exported:
                 self._globals[key, 'client'] = (routine, root)
                 self._global_names.add(key)
 
+    def _message(self, value):
+        (self._event_output or self._output)(value)
+
+    @contextmanager
+    def event_messages(self, output, sink=None):
+        """Route only the active host event, never install a form context in modules."""
+        if not callable(output) or sink is not None and not callable(sink):
+            raise TypeError('message callbacks required')
+        if self._event_output is not None:
+            raise ValueError('application event already active')
+        self._event_output = output
+        self.interpreter.user_messages.set_sink(sink)
+        try:
+            yield
+        finally:
+            self.interpreter.user_messages.set_sink(None)
+            self._event_output = None
+
+    def interpreter_factory(self, output, **kwargs):
+        from .runtime import Interpreter
+        self.require_open()
+        child = Interpreter(output, native_target=self.interpreter.native_target,
+                            family_owner=self.interpreter, **kwargs)
+        # Independently dispatched form/NoContext VMs are not transaction roots.
+        # Dynamic admission carries this denial through reused common owners.
+        child._transaction_activation_allowed = False
+        child.functions.update(self._host_services)
+        if self.side == 'server': child._logical_side = 'server'
+        self.bind_interpreter(child)
+        return child
+
+    def form_interpreter_factory(self, session, output, **kwargs):
+        from .form_runtime import _FormInterpreter
+        self.require_open()
+        child = _FormInterpreter(session, output, native_target=self.interpreter.native_target,
+                                 family_owner=self.interpreter, **kwargs)
+        # Independently dispatched form/NoContext VMs are not transaction roots.
+        # Dynamic admission carries this denial through reused common owners.
+        child._transaction_activation_allowed = False
+        child.functions.update(self._host_services)
+        if self.side == 'server': child._logical_side = 'server'
+        self.bind_interpreter(child)
+        return child
+
+    def _invoke_remote(self, owner, routine, values):
+        if self.side != 'server' or self.state != 'running':
+            raise ValueError('server application is not running')
+        arguments = [ast.Literal(routine.token, value) for value in values]
+        with target_context(owner.native_target), localcontext():
+            return owner._scheduler.run_inline(owner.call_routine(
+                routine, arguments, owner, require_value=routine.is_function))
+
     def bind_interpreter(self, interpreter):
         """Host seam for application-owned modules, never a BSL method."""
         from .runtime import Interpreter
-        if not isinstance(interpreter, Interpreter) or interpreter._scheduler is not self.interpreter._scheduler:
+        if (not isinstance(interpreter, Interpreter)
+                or interpreter._scheduler is not self.interpreter._scheduler
+                or interpreter._family_owner is not self.interpreter):
             raise ValueError('configuration module must belong to this scheduler family')
+        interpreter._require_family()
         interpreter._configuration_runtime = self
         interpreter._metadata._common_modules = self._metadata
         interpreter.user_messages._before_publish = self.check_messages
@@ -184,6 +326,11 @@ class ConfigurationApplication:
 
     def is_common_routine(self, routine):
         return self._common_routines.get(id(routine)) is routine
+
+    @property
+    def reserved_form_names(self):
+        return frozenset(self._definitions) | frozenset(self._global_names) | frozenset(
+            routine.name.casefold() for routine in self._events.values())
 
     def check_program(self, program):
         self.require_open()
@@ -234,6 +381,12 @@ class ConfigurationApplication:
             raise ValueError('global export is unavailable in this context')
         return selected
 
+    def check_host_service(self, function, caller):
+        self.require_open()
+        if function.name.casefold() in ('openform', 'открытьформу'):
+            if caller.execution_context != 'client' or self.side == 'server' or self.state not in ('starting', 'running'):
+                raise ValueError('OpenForm requires an active client application event')
+
     def check_call(self, routine, caller):
         self.require_open()
         if self.state in ('before_exit', 'exiting') and (
@@ -254,6 +407,9 @@ class ConfigurationApplication:
             raise ValueError('configuration application can start only once')
         self.state = 'starting'
         try:
+            if self.side == 'server':
+                self.state = 'running'
+                return True
             self.interpreter.execute_program(self._program)
             cancel = BSLStructure('Cancel', False)
             self._invoke('before_start', ((cancel, 'Cancel'),))
@@ -282,7 +438,7 @@ class ConfigurationApplication:
             raise TypeError('force requires Boolean')
         if self.state == 'closed':
             return True
-        if force or self.state != 'running':
+        if force or self.state != 'running' or self.side == 'server':
             self.interpreter.close()
             self.state = 'closed'
             return True

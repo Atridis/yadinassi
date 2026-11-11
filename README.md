@@ -354,3 +354,9 @@ reference wire codec. Plain BSL execution is unchanged.
 Явный opt-in launcher выполняет объявленные XML-формы с единым Module.bsl,
 разделением клиента/сервера, OpenForm и несколькими удерживаемыми вкладками.
 [Границы профиля и два разных примера](docs/configuration-forms.md).
+
+Отдельный [application host](docs/configuration-application-host.md) объединяет
+CommonModules, запуск/закрытие приложения и управляемые формы. Один browser tab
+владеет вводом; повторное открытие URL требует явной передачи управления.
+Закрытие последней вкладки не выполняет Save/Discard: безопасное завершение
+зависит от состояния приложения и проходит через обычные обработчики закрытия.

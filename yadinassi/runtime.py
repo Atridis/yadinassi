@@ -179,7 +179,8 @@ class Interpreter:
                  native_target: str = WINDOWS_8_3_27_2342,
                  database_context: SQLiteDBContext | None = None,
                  compilation_profile: str = "standalone",
-                 user_message_sink: Callable | None = None):
+                 user_message_sink: Callable | None = None,
+                 family_owner: "Interpreter | None" = None):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
@@ -190,7 +191,19 @@ class Interpreter:
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
         self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
         self._xdto_factory = BSLXDTOFactory()
-        self._scheduler = Scheduler(self._native_target)
+        if family_owner is not None:
+            if not isinstance(family_owner, Interpreter) or family_owner.native_target != self._native_target:
+                raise ValueError('compatible interpreter family owner required')
+            if family_owner._family_owner is not family_owner:
+                raise ValueError('root interpreter family owner required')
+            if family_owner._family_closed:
+                raise ValueError('interpreter family is closed')
+        self._family_owner = self if family_owner is None else family_owner
+        self._family_closed = False
+        self._family_released = False
+        self._family_generation = 0 if family_owner is None else family_owner._family_generation
+        self._scheduler = (Scheduler(self._native_target) if family_owner is None
+                           else family_owner._scheduler)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
@@ -201,8 +214,9 @@ class Interpreter:
         self.server_module_names: set[str] = set()
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
-        self._context_stack = ["client"]
-        self._module_context_stack = [True]
+        if family_owner is None:
+            self._context_stack = ["client"]
+            self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
         # Family tombstones survive a missing side, including detached servers,
         # so an unavailable variant can never fall through to a host function.
@@ -421,7 +435,24 @@ class Interpreter:
 
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
-        self._scheduler.reset()
+        if self._family_owner is not self and self._scheduler.pending:
+            raise ValueError('cannot release a child while family tasks are pending')
+        if self._family_owner is not self:
+            self._family_released = True
+        if self._family_owner is self:
+            self._scheduler.reset()
+            self._family_closed = True
+            self._family_generation += 1
+
+    def _require_family(self):
+        if self._family_owner is self:
+            # A standalone embedding historically may execute again after reset.
+            # Its old children stay fenced by generation; application lifecycle
+            # remains independently guarded by ConfigurationApplication.
+            self._family_closed = False
+        elif (self._family_released or self._family_owner._family_closed
+                or self._family_generation != self._family_owner._family_generation):
+            raise ValueError("interpreter family member is closed")
 
     @property
     def pending_promises(self):
@@ -612,6 +643,7 @@ class Interpreter:
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Execute already-compiled AST; this does not select source branches."""
+        self._require_family()
         outermost = not self._scheduler.is_active
         try:
             from .database_transactions import admission, execution
@@ -1019,6 +1051,8 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
             from .database_transactions import forbid_transfer
             forbid_transfer(self._transaction_backend())
@@ -1342,6 +1376,8 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
+        self._require_family()
+        owner._require_family()
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
@@ -1536,7 +1572,8 @@ class Interpreter:
         """Internal specialization seam; ordinary modules retain their behavior."""
         return Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
                            database_context=self.database_context,
-                           compilation_profile=self.compilation_profile)
+                           compilation_profile=self.compilation_profile,
+                           family_owner=self._family_owner)
 
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
@@ -1816,7 +1853,8 @@ class Interpreter:
             child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target,
                                 database_context=self.database_context,
-                                compilation_profile=self.compilation_profile)
+                                compilation_profile=self.compilation_profile,
+                                family_owner=self._family_owner)
             child.user_messages = self.user_messages
             child._scheduler = self._scheduler
             if self._configuration_runtime is not None:
