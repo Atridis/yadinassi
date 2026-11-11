@@ -65,9 +65,12 @@ from .value_lists import BSLValueList, BSLValueListItem
 
 from .async_runtime import Promise
 from .callbacks import BSLCallbackDescription
+from .form_dialogs import QuestionDialogMode, DialogReturnCode
 
 
 _VALUE_TYPES = (
+    (QuestionDialogMode, BSLType.QUESTION_DIALOG_MODE, "QuestionDialogMode"),
+    (DialogReturnCode, BSLType.DIALOG_RETURN_CODE, "DialogReturnCode"),
     (AccumulationDirection, BSLType.ACCUMULATION_RECORD_TYPE, "AccumulationRecordType"),
     (BSLOpenSSLSecureConnection, BSLType.OPENSSL_SECURE_CONNECTION, "OpenSSLSecureConnection"),
     (BSLFileCertificationAuthorityCertificates, BSLType.FILE_CA_CERTIFICATES, "FileCertificationAuthorityCertificates"),

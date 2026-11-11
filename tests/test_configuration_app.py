@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import unittest
 from unittest import mock
-from scripts import entrypoint
+from yadinassi import launcher as entrypoint
 
 from yadinassi.configuration_forms import load_configuration_forms
 from yadinassi.ui.configuration_app import (ConfigurationBroker, ConfigurationController,

@@ -9,6 +9,9 @@ from .protocol import MAX_LINE_BYTES
 
 def main(argv=None, *, source=None, target=None):
     args = sys.argv[1:] if argv is None else argv
+    binding = None
+    if len(args) == 3 and args[1] == '--launch-binding':
+        binding = args[2]; args = args[:1]
     if len(args) != 1 or not args[0]:
         print('Expected one existing SQLite application file.', file=sys.stderr)
         return 2
@@ -17,6 +20,9 @@ def main(argv=None, *, source=None, target=None):
     context = application = None
     try:
         context = SQLiteDBContext(args[0])
+        if binding is not None:
+            from .database_launch import verify_binding
+            verify_binding(context.backend, binding, route='catalog')
         application = CatalogEditorApplication(context)
         session = CatalogEditorSession(application)
         while True:

@@ -155,6 +155,7 @@ const layoutTab=name=>active().getByRole('tab',{name,exact:true});
 const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null;
+const observedCommands=new Map();
 async function command(title,control){
   const index=await panels().evaluateAll(nodes=>nodes.findIndex(node=>!node.hidden));
   assert.equal(lastApplicationState?.sessions.length,await panels().count(),'session_panel_binding');
@@ -163,7 +164,12 @@ async function command(title,control){
   const reply=replyFor(packet=>packet.method==='application.form'&&packet.params.session===session&&
     packet.params.request.method==='form.event'&&packet.params.request.params.event==='command'&&
     packet.params.request.params.control===control);
-  await action(title).click();const data=await (await reply).json();
+  await action(title).click();const response=await reply;
+  const request=response.request().postDataJSON();
+  const observed=observedCommands.get(request.id);observedCommands.delete(request.id);
+  assert.ok(observed&&observed.packet.params.session===session&&
+    observed.packet.params.request.params.control===control,'command_observer_binding');
+  const data=observed.actual;
   const errors=[null,'invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused','retired_session'];
   const safeError=code=>errors.includes(code)?code:'unexpected_protocol_code';
   report.lastCommand={sessionMatches:data.result.session===session,applicationError:safeError(data.result.error),formError:safeError(data.result.form?.result?.error)};
@@ -208,7 +214,8 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    exactKeys(packet.params,'protocol dialogCapability inputCapability');assert.equal(packet.params.inputCapability,'yadinassi-owned-input/1');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.open'){
     exactKeys(packet.params,'entry request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
     assert.match(packet.params.request,/^open-[0-9a-f]{32}-[1-9][0-9]*$/);
@@ -408,6 +415,10 @@ async function main(){
         const event=packet.method==='application.form'?packet.params.request.params:null;
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
         const actual=await auditResponse(response);
+        if(event?.event==='command'){
+          assert.ok(observedCommands.size<96,'command_observer_budget');
+          observedCommands.set(packet.id,{packet,actual});
+        }
         if(dropNextChange&&event?.event==='change'){
           dropNextChange=false;
           assert.equal(actual.result.error,null,'dropped_application_failed');
@@ -533,10 +544,15 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;report.businessRpc=businessEvents.length;
   const assertion=String(error?.message||'').split('\n',1)[0];
-  const fixedAssertions=['session_panel_binding','active_session_missing','command_session_changed','application_command_failed','form_command_failed',
+  const fixedAssertions=['command_observer_binding','command_observer_budget','session_panel_binding','active_session_missing','command_session_changed','application_command_failed','form_command_failed',
     'page_selection','hidden_draft_dispatched','focus_selection_not_retained','instance_navigation_dispatched','narrow_horizontal_overflow',
     'locked_layout_inspection_unavailable','locked_outer_open_enabled','locked_outer_close_enabled','locked_intent_replayed','exact_raw_copy_missing','copy_not_selectable'];
   report.assertion=fixedAssertions.includes(assertion)?assertion:'unclassified_step';
+  report.failureClass=['AssertionError','TimeoutError','TypeError','Error'].includes(error?.name)?error.name:'other';
+  const reason=String(error?.message||'');
+  report.observerFailure=/No resource with given identifier|No data found for resource/.test(reason)?'response_body_unavailable':
+    /Target page, context or browser has been closed/.test(reason)?'browser_closed':
+    /strict mode violation/.test(reason)?'ambiguous_locator':'unclassified';
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};

@@ -352,6 +352,11 @@ class BSLClientApplicationForm(_Owned):
         if not self._session.interpreter._has_module_context: raise ValueError('Форма недоступна без контекста')
         if server and self._session.interpreter.execution_context != 'server': raise ValueError('Форма: операция доступна только на сервере')
     def _bind(self, handler, side, arity): return self._session._bind(name(handler), side, arity)
+    def get_method(self, method):
+        if method.casefold() in ('close', 'закрыть'):
+            from .values import HostFunction
+            return HostFunction(method, self._session.request_close, returns_value=False)
+        return super().get_method(method)
     def set_action(self, event_name, handler):
         self._check(True); event = text(event_name, MAX_NAME).casefold()
         event = self.EVENT_NAMES.get(event, event)
