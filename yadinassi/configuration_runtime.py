@@ -54,11 +54,15 @@ class ConfigurationApplication:
         numbering = ('decimal_v1' if any(s.numbering == 'decimal_v1'
                      for s in (*configuration.catalogs, *configuration.documents)) else 'explicit')
         from .configuration_application_profile import (APPLICATION_SOURCE_ISSUE, import_application_configuration)
+        from .configuration_business_profile import (BUSINESS_SOURCE_ISSUE, import_business_configuration)
+        business = (len(configuration.activation_issues) == 1 and
+                    configuration.activation_issues[0].startswith(BUSINESS_SOURCE_ISSUE + ':'))
         composed = (len(configuration.activation_issues) == 1 and
                     configuration.activation_issues[0].startswith(APPLICATION_SOURCE_ISSUE + ':'))
-        canonical = (import_application_configuration(sources) if composed else
+        canonical = (import_business_configuration(sources) if business else
+                     import_application_configuration(sources) if composed else
                      import_configuration(sources, numbering_policy=numbering, module_runtime=MODULE_RUNTIME))
-        if configuration != canonical or (configuration.activation_issues and not composed):
+        if configuration != canonical or (configuration.activation_issues and not (composed or business)):
             raise ValueError('configuration cannot be activated')
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
@@ -127,9 +131,18 @@ class ConfigurationApplication:
         return cls(import_application_configuration(files), **kwargs)
 
     @classmethod
+    def from_business_files(cls, files, **kwargs):
+        from .configuration_business_profile import import_business_configuration
+        return cls(import_business_configuration(files), **kwargs)
+
+    @classmethod
     def from_database(cls, context, **kwargs):
         from .configuration_application_profile import APPLICATION_SOURCE_ISSUE
+        from .configuration_business_profile import BUSINESS_SOURCE_ISSUE
         issues = context.backend.activation_issues
+        if len(issues) == 1 and issues[0].startswith(BUSINESS_SOURCE_ISSUE + ":"):
+            return cls.from_business_files(context.backend.export_configuration(),
+                                           database_context=context, **kwargs)
         if len(issues) == 1 and issues[0].startswith(APPLICATION_SOURCE_ISSUE + ':'):
             return cls.from_application_files(context.backend.export_configuration(),
                                               database_context=context, **kwargs)
