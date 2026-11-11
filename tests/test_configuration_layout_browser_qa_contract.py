@@ -94,6 +94,13 @@ class ConfigurationLayoutBrowserContractTests(unittest.TestCase):
             "'busy_page_enabled'", "'group_readonly_missing'", "'sibling_readonly_missing'", "'child_flag_not_restored'")
         self.assertNotIn('route.fulfill({body:', self.source)
 
+    def test_command_observer_reuses_validated_real_route_response(self):
+        self.contains('const observedCommands=new Map()', 'observedCommands.set(packet.id,{packet,actual})',
+            'observedCommands.get(request.id)', 'observedCommands.delete(request.id)',
+            "'command_observer_binding'", "'command_observer_budget'", "'response_body_unavailable'")
+        self.assertNotIn('(await reply).json()', self.source)
+        self.assertNotIn('route.fulfill({json:', self.source)
+
     def test_independent_pages_visibility_keyboard_and_narrow_view(self):
         self.contains('await countPanels(2)', "'instance_navigation_dispatched'", "'hidden_page_tab_exposed'",
             "press('End')", "press('ArrowRight')", 'width:390,height:844', "'narrow_horizontal_overflow'",
