@@ -97,6 +97,20 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             'exactInteger(row[resource+suffix])', '1378n', '13780n', 'OpeningBalance:', 'Receipt:', 'Expense:', 'ClosingBalance:',
             "row.Period.type,'Date'", 'initialAudit.dayTicks', 'initialAudit.monthTicks')
 
+    def test_saved_rows_have_real_readable_dates_headers_and_accessible_region(self):
+        self.contains('const auditPresentation=async(projected)=>',
+            "region.getAttribute('role'),'region'", "declared.title+' saved rows'",
+            "region.getAttribute('tabindex'),'0'", "scope:node.getAttribute('scope')",
+            "QuantityOpeningBalance:'Quantity Opening Balance'",
+            "AmountClosingBalance:'Amount Closing Balance'",
+            "'2026-11-11 00:00:00'", "'2026-11-01 00:00:00'",
+            'await auditPresentation(projected)', 'await auditPresentation(after)',
+            "cell.type==='Number'?cell.value:cell.text")
+        audit = self.source.split('const auditPresentation=async(projected)=>', 1)[1].split('const showStatement=', 1)[0]
+        for forbidden in ('new Date(', 'Date.parse(', 'readOnlyScalarText(', '.request(', '.click(', 'innerHTML'):
+            self.assertNotIn(forbidden, audit)
+        self.assertIn('Presentation assertions add no RPC', self.docs)
+
     def test_pages_are_same_snapshot_and_previous_is_exact(self):
         self.contains('first.rows.length,50', 'first.page.total,52', 'second.rows.length,2',
             "pageMove('Next',true)", "pageMove('Previous')", "assert.deepEqual(back,first,'report_page_order')",

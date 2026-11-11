@@ -266,6 +266,16 @@ function scalarText(value, editor) {
   if (value.type === 'Null') return 'Null';
   return value.value;
 }
+// Read-only presentation is not an editor capability. Keep the conservative
+// editor envelope unchanged, including its excluded upper boundary.
+function readOnlyScalarText(value) {
+  validateScalar(value);
+  if (value.type !== 'Date') return scalarText(value);
+  const ticks = BigInt(value.ticks);
+  if (ticks === 0n) return 'Empty date';
+  if (ticks % SECOND !== 0n) return value.ticks + ' ticks (exact date)';
+  return dateText(value, {parts: 'dateTime'}).replace('T', ' ');
+}
 function editable(item) {
   return item?.kind === 'field' && item.visible && item.enabled && !item.readOnly && item.view !== 'label' &&
     (['String', 'Number', 'Boolean'].includes(item.value.type) || item.value.type === 'Date' && item.editor?.kind === 'date' && dateFits(item.value, item.editor));
@@ -442,7 +452,7 @@ function takeSessionCapability(location, history) {
   return values.length === 1 && /^[A-Za-z0-9_-]{32,128}$/.test(values[0]) ? values[0] : null;
 }
 
-return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, editable, inputHint, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
+return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, readOnlyScalarText, editable, inputHint, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
 })();
 const __browserAttachment = (() => {
 const {createTransport, readBoundedJSON} = __formClient;

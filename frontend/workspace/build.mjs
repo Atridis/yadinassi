@@ -7,7 +7,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const target = path.resolve(root,'../../yadinassi/ui/assets/workspace');
 await mkdir(target,{recursive:true});
 const modules = [
-  ['formClient','../form/src/client.mjs',['PROTOCOL','LIMITS','ERROR_MESSAGES','FormError','decimalText','validateScalar','validateSnapshot','scalarText','editable','inputHint','tableCell','typedInput','scalarEqual','FormClient','readBoundedJSON','createTransport','takeSessionCapability']],
+  ['formClient','../form/src/client.mjs',['PROTOCOL','LIMITS','ERROR_MESSAGES','FormError','decimalText','validateScalar','validateSnapshot','scalarText','readOnlyScalarText','editable','inputHint','tableCell','typedInput','scalarEqual','FormClient','readBoundedJSON','createTransport','takeSessionCapability']],
   ['browserAttachment','../form/src/attachment.mjs',['BROWSER_PROTOCOL', 'RESUME_KEY', 'AttachmentRefusal', 'documentInstance', 'readBrowserLaunch', 'BrowserAttachment', 'createBrowserHost']],
   ['formView','../form/src/view.mjs',['createFormView']],
   ['formApp','../form/src/app.mjs',['mountForm']],

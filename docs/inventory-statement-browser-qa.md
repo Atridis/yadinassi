@@ -55,6 +55,14 @@ No external configuration directory or grant flag is passed to either launch.
    Opening now equals closing; receipt and expense are zero. No unknown-commit or
    host-lost receipt recovery is inferred from this restart.
 
+Presentation assertions add no RPC: each displayed report/page is checked against
+its real typed result. Day and Month cells must show the fixture's exact calendar
+dates (`2026-11-11 00:00:00` and `2026-11-01 00:00:00`) without timezone conversion.
+Generated resource headers are spaced for reading, with their original source
+names still visible. The saved table is inside a labelled, keyboard-focusable
+region, and every column has `scope=col`. Numeric and reference text remains exact;
+the assertions do not import the renderer's date conversion as their oracle.
+
 Exactly **46 business RPCs** are required. Only ordinary application/form
 hello/snapshot reads are excluded from that plan, not setup/page requests. The
 hard cap remains 180 total RPCs. No retry, skipped assertion or cap extension is

@@ -46,7 +46,8 @@ const diagnosticReasons=['business_rpc_plan_changed','owned_fixture_failed','own
  'too_many_partial','exact_choice_mismatch','cancel_changed_selection','explicit_empty_mismatch','excluded_filter_rows',
  'draft_changed','unexpected_form_change','retired_dom_dispatched','duplicate_page_rpc','busy_not_fenced','late_owner_changed',
  'close_refused','unexpected_form_write','readonly_audit_changed','restarted_ticket_reused','restarted_page_reused','source_binding_changed',
- 'capability_not_removed','only_resume_storage','browser_cookies_not_empty'];
+ 'capability_not_removed','only_resume_storage','browser_cookies_not_empty',
+ 'report_accessible_region','report_readable_headers','report_readable_cells'];
 const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
  (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
 const checkpoint=label=>{assert.ok(diagnosticPhases.includes(label),'invalid_diagnostic_phase');phase=label;};
@@ -649,6 +650,29 @@ async function main(){
     const html=value.endsWith(':00')?value.slice(0,-3):value;
     await locator.fill(html);assert.equal(await locator.inputValue(),html,'report_html_period');
   };
+  const auditPresentation=async(projected)=>{
+    const panel=reportPanel(),region=panel.locator('.configuration-report-table-scroll');
+    const declared=lastApplicationState.reports.find(value=>value.id===projected.report);
+    assert.equal(await region.getAttribute('role'),'region','report_accessible_region');
+    assert.equal(await region.getAttribute('aria-label'),declared.title+' saved rows','report_accessible_region');
+    assert.equal(await region.getAttribute('tabindex'),'0','report_accessible_region');
+    const headers=await region.locator('th').evaluateAll(nodes=>nodes.map(node=>({
+      scope:node.getAttribute('scope'),title:node.firstChild?.textContent,
+      original:node.querySelector('small')?.textContent??null})));
+    const titles={Period:'Period',Product:'Product',Warehouse:'Warehouse',
+      QuantityOpeningBalance:'Quantity Opening Balance',QuantityReceipt:'Quantity Receipt',
+      QuantityExpense:'Quantity Expense',QuantityClosingBalance:'Quantity Closing Balance',
+      AmountOpeningBalance:'Amount Opening Balance',AmountReceipt:'Amount Receipt',
+      AmountExpense:'Amount Expense',AmountClosingBalance:'Amount Closing Balance'};
+    assert.deepEqual(headers,projected.columns.map(column=>{
+      assert.ok(Object.hasOwn(titles,column.name),'report_readable_headers');
+      return {scope:'col',title:titles[column.name],original:titles[column.name]===column.name?null:column.name};
+    }),'report_readable_headers');
+    const cells=await region.locator('tbody tr').evaluateAll(rows=>rows.map(row=>[...row.cells].map(cell=>cell.textContent)));
+    const dateText=projected.periodicity==='Day'?'2026-11-11 00:00:00':'2026-11-01 00:00:00';
+    assert.deepEqual(cells,projected.rows.map(row=>row.map(cell=>cell.type==='Date'?dateText:
+      cell.type==='Number'?cell.value:cell.text)),'report_readable_cells');
+  };
   const showStatement=async(periodicity='None',opening=false)=>{
     checkpoint('report_fill');const panel=reportPanel();
     const start=opening?'2026-11-12T00:00:00':'2026-11-01T00:00:00';
@@ -665,6 +689,7 @@ async function main(){
     assert.deepEqual(Object.fromEntries(Object.keys(expected).map(k=>[k,projected[k]])),expected,'report_period_result');
     assert.equal(await panel.locator('table tbody tr').count(),projected.rows.length,'report_dom_rows');
     assert.equal(await panel.locator('table button,table input,table select').count(),0,'report_not_readonly');
+    await auditPresentation(projected);
     return projected;
   };
   const header=result=>Object.fromEntries(Object.entries(result).filter(([key])=>!['page','rows'].includes(key)));
@@ -678,6 +703,7 @@ async function main(){
     assert.equal(after.page.snapshot,before.page.snapshot,'report_page_identity');assert.equal(after.page.cursor,expected,'report_page_identity');
     assert.deepEqual(header(after),header(before),'report_page_identity');assert.equal(after.page.total,before.page.total,'report_page_identity');
     assert.equal(businessEvents.length,count+1,'duplicate_page_rpc');
+    await auditPresentation(after);
     return after;
   };
   const exactInteger=cell=>{

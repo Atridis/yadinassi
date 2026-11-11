@@ -266,6 +266,16 @@ function scalarText(value, editor) {
   if (value.type === 'Null') return 'Null';
   return value.value;
 }
+// Read-only presentation is not an editor capability. Keep the conservative
+// editor envelope unchanged, including its excluded upper boundary.
+function readOnlyScalarText(value) {
+  validateScalar(value);
+  if (value.type !== 'Date') return scalarText(value);
+  const ticks = BigInt(value.ticks);
+  if (ticks === 0n) return 'Empty date';
+  if (ticks % SECOND !== 0n) return value.ticks + ' ticks (exact date)';
+  return dateText(value, {parts: 'dateTime'}).replace('T', ' ');
+}
 function editable(item) {
   return item?.kind === 'field' && item.visible && item.enabled && !item.readOnly && item.view !== 'label' &&
     (['String', 'Number', 'Boolean'].includes(item.value.type) || item.value.type === 'Date' && item.editor?.kind === 'date' && dateFits(item.value, item.editor));
@@ -442,7 +452,7 @@ function takeSessionCapability(location, history) {
   return values.length === 1 && /^[A-Za-z0-9_-]{32,128}$/.test(values[0]) ? values[0] : null;
 }
 
-return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, editable, inputHint, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
+return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, readOnlyScalarText, editable, inputHint, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
 })();
 const __browserAttachment = (() => {
 const {createTransport, readBoundedJSON} = __formClient;
@@ -1389,7 +1399,7 @@ return {mountForm};
 })();
 const __configurationReports = (() => {
 /** Read-only stock projections. A label is never a reference or write capability. */
-const {FormError, validateScalar, scalarText} = __formClient;
+const {FormError, validateScalar, readOnlyScalarText} = __formClient;
 const keys = (v,names) => v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Object.keys(v).length === names.length && names.every(n => Object.hasOwn(v,n));
 const text = (v,n=1152) => typeof v === 'string' && v.length <= n*2 && [...v].length <= n &&
@@ -1523,7 +1533,12 @@ function validateReportReply(result,request,previous) {
   }
 }
 function reportCellText(cell) {
-  return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
+  return ['Catalog','Document'].includes(cell.type) ? cell.text : readOnlyScalarText(cell);
+}
+function reportColumnTitle(column) {
+  // Presentation only; the unchanged exact source name is displayed alongside.
+  return column.name.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2');
 }
 function createReportPanel(document, host, request, blocked, command=null) {
   const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
@@ -1600,7 +1615,14 @@ function createReportPanel(document, host, request, blocked, command=null) {
     if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
-        for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
+        for(const column of result.columns){
+          const title=reportColumnTitle(column),th=el('th',title);th.setAttribute('scope','col');
+          if(title!==column.name){const original=el('small',column.name);original.className='configuration-report-source-name';th.append(original);}
+          header.append(th);
+        }head.append(header);table.append(head,body);
+        const viewport=el('div');viewport.className='configuration-report-table-scroll';
+        viewport.setAttribute('role','region');viewport.setAttribute('aria-label',report.title+' saved rows');
+        viewport.setAttribute('tabindex','0');viewport.append(table);
         for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
         const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
@@ -1609,7 +1631,7 @@ function createReportPanel(document, host, request, blocked, command=null) {
           for(const filter of result.filters)output.append(el('p',filter.id+': '+(filter.mode==='all'?'All saved values':filter.text)));
         }
         const page=result.page;
-        output.append(el('p',page?`${page.total? page.offset+1:0}–${page.offset+result.rows.length} of ${page.total} saved rows. Pages share this detached snapshot. Refresh explicitly after another writer changes the database.`:`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),table);
+        output.append(el('p',page?`${page.total? page.offset+1:0}–${page.offset+result.rows.length} of ${page.total} saved rows. Pages share this detached snapshot. Refresh explicitly after another writer changes the database.`:`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),el('p','Dates have no timezone conversion. Focus the saved rows region to scroll wide tables with the keyboard.'),viewport);
         if(page){const nav=el('nav');nav.setAttribute('aria-label','Statement pages');
           for(const [label,cursor] of [['Previous saved page',page.previous],['Next saved page',page.next]])button(nav,label,disabled || cursor===null,()=>run('application.reportPage',{snapshot:page.snapshot,cursor}));output.append(nav);}
         if(!result.rows.length)output.append(el('p','No saved rows for these boundaries.'));
@@ -1628,7 +1650,7 @@ function createReportPanel(document, host, request, blocked, command=null) {
   return {update(next){state=next;paint();},pending:()=>busy};
 }
 
-return {validReportRequest, validReportAction, validateReports, validateReportReply, reportCellText, createReportPanel};
+return {validReportRequest, validReportAction, validateReports, validateReportReply, reportCellText, reportColumnTitle, createReportPanel};
 })();
 const __configurationInputs = (() => {
 const {FormError, validateScalar, validateSnapshot, typedInput, scalarEqual, scalarText} = __formClient;

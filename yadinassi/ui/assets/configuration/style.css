@@ -63,3 +63,8 @@
 .configuration-reports table { border-collapse: collapse; min-width: 100%; }
 .configuration-reports td, .configuration-reports th { padding: .4rem .7rem; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: pre-wrap; }
 .configuration-reports nav { display: flex; flex-wrap: wrap; gap: .5rem; }
+
+.configuration-report-table-scroll { max-width: 100%; overflow: auto; }
+.configuration-report-table-scroll:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.configuration-report-table-scroll th { white-space: normal; }
+.configuration-report-source-name { display: block; font-weight: normal; font-size: .8em; }

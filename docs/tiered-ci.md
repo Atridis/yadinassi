@@ -123,20 +123,47 @@ with elevated credentials. Only the release job retains contents-write access.
 
 ## Refresh data, not code
 
-Partition artifacts contain actual timings. After downloading all nine reports
-from one accepted **four-platform tag or manual heavy run** to a local directory, use:
+Partition artifacts contain actual timings. Download and independently verify
+all partitions from one accepted heavy run before calibration. To retain the
+four-platform requirement (the default), use a complete tag/manual run:
 
 ```sh
 python -m scripts.refresh_test_durations --reports downloaded-partitions \
-  --source TESTED_MERGE_SHA --run RUN_ID --output scripts/test_durations.json
+  --source TESTED_MERGE_SHA --run RUN_ID --attempt RUN_ATTEMPT \
+  --output scripts/test_durations.json
 ```
 
-The command requires all nine reports and `full_coverage=true`, same source/run
-binding, finite bounded numbers and all partition statuses. It parses JSON only; it neither executes
-artifact contents nor downloads, commits or publishes anything. Review the data
-change through a normal PR. Reduced PR/main, light-only or incomplete artifacts
-cannot replace the four-platform history. Zero weights for skipped cases never
-authorize skipping future tests.
+An ordinary PR/main run can instead calibrate **its three required platforms**
+explicitly, without claiming macOS ARM passed:
+
+```sh
+python -m scripts.refresh_test_durations --reports downloaded-partitions \
+  --source TESTED_MERGE_SHA --run RUN_ID --attempt RUN_ATTEMPT \
+  --scope required-platforms --output scripts/test_durations.json
+```
+
+Scope is derived from the exact event binding, never a caller-supplied platform
+list. The first form requires nine successful reports and full four-platform
+coverage. The second requires every report selected by that event: seven for
+ordinary PR/main, still nine for tag/manual. Both require disjoint complete
+coverage on each required platform, exact source/head/base/run/attempt binding,
+and finite bounded durations for every executed ID. Light-only, missing, extra,
+failed or mixed-attempt reports are rejected.
+
+New history schema 2 records the complete binding, actual required/excluded
+platforms and SHA-256 of each canonical parsed partition JSON. These fingerprints
+support later review; they do not authenticate artifacts or authorize merging.
+The existing schema 1 bootstrap data remains readable. Calibration stores the
+maximum measured platform duration and Intel duration, not job upload/setup time.
+Wholly fixture-skipped IDs remain unknown rather than acquiring fictional zero
+measurements. Unknown IDs still keep their entire fixture group in light.
+
+This command only parses local JSON. It does not execute artifact contents,
+download, run tests, commit, publish or change CI gates. Review the data diff and
+plan-only discovery's exact disjoint union before publication. Per-test history
+excludes class/module fixture time and is not a production benchmark or a wall
+clock prediction. Recalibrate after substantial runtime changes; do not lower
+coverage or skip tests to make a slow light partition appear faster.
 
 Check policy changes with focused synthetic normal/-O regressions. Actual
 Windows/macOS and Python 3.10 behavior must still pass the relevant CI jobs; local

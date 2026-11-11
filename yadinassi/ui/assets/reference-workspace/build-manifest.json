@@ -3,12 +3,12 @@
   "dependencies": {},
   "sources": {
     "package.json": "323f5afa4db45a907578e08d5cd47407b8c3d3c2a782944e76f0cd78ceb6e144",
-    "build.mjs": "5f81be6dcc7ae080d4009414e8e6d78882fc269d34dd775f77dcb63972e8e5b5",
+    "build.mjs": "0cd9949059f6e4460f58c9556cc8f620b1e061ebf4296a0ad241358e9738e967",
     "src/index.html": "eebbe7e0d68a5d6e1834b923e58c8faa0479808c07b999155c7ba1bfa08f4764",
     "src/style.css": "f971ec0455474b7619419c7fa913f00742055fb75e3a75f11372d420a96c3648",
     "../form/src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
-    "../form/src/client.mjs": "474812f53bc3f102297485f0b841c4587d46e6ee5a5985f22d7e21924d062c7d",
+    "../form/src/client.mjs": "8948c50a64eb4f0cfa6db2c7d7a25f5505da5d1707f39ee6453388957a89914c",
     "../form/src/attachment.mjs": "3f6d3a33ce2b68e99a1e19939c6d92af437e9993877faa9eec4d9c9429f4e8f0",
     "../form/src/view.mjs": "762297959c54c3e69cb4c33e80b9aaf7e46275ffa10ab68e6a4e63b6ae9dbcf3",
     "../form/src/app.mjs": "dcfd190e3c408ac1977c80157dd3307e205a1ae189340571be13c168ed67fbd8",
@@ -16,7 +16,7 @@
     "src/app.mjs": "d70745d2f2e8f11ddaae5bb63c878f14a6a4ddc246f3645044057407fc5505c7"
   },
   "outputs": {
-    "app.js": "532b72f21e9937ba7c50dcc86cb0b21e3ae0259edb4e6cf610c93d9ed0f6eb07",
+    "app.js": "0f4fea9f101125676f00505ebbe739bb21ff32798722dc5ef403a920495a6f2b",
     "index.html": "eebbe7e0d68a5d6e1834b923e58c8faa0479808c07b999155c7ba1bfa08f4764",
     "style.css": "66852744e3c35456fe9d79a93b3030ca1b728551319c2a9f77f34b6f2ff9b837",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

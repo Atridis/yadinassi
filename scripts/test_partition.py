@@ -12,6 +12,7 @@ from pathlib import Path
 import unittest
 
 from scripts.run_tests import TimedTextTestRunner, TimedTextTestResult, perf_counter
+from scripts.ci_test_gate import PLATFORMS, required_platforms, validate_binding
 
 WEIGHTS = ('seconds', 'intel_seconds')
 MAX_TESTS = 20000
@@ -32,16 +33,55 @@ def load_history(path):
     if len(raw) > 16 * 1024 * 1024:
         raise ValueError('history size limit')
     data = json.loads(raw.decode('utf-8'), object_pairs_hook=unique)
-    if (type(data) is not dict or set(data) != {'schema', 'source', 'tests'}
-            or type(data['schema']) is not int or data['schema'] != 1
-            or type(data['source']) is not dict or set(data['source']) != {'commit', 'run'}
-            or type(data['source']['commit']) is not str
-            or len(data['source']['commit']) != 40
-            or any(c not in '0123456789abcdef' for c in data['source']['commit'])
-            or type(data['source']['run']) is not int or data['source']['run'] <= 0):
-        raise ValueError('invalid history envelope')
-    validate_weights(data['tests'])
+    validate_history(data)
     return data['tests']
+
+
+def validate_history(data):
+    if type(data) is not dict or type(data.get('schema')) is not int:
+        raise ValueError('invalid history envelope')
+    if data['schema'] == 1:
+        if (set(data) != {'schema', 'source', 'tests'}
+                or type(data['source']) is not dict or set(data['source']) != {'commit', 'run'}
+                or type(data['source']['commit']) is not str
+                or len(data['source']['commit']) != 40
+                or any(c not in '0123456789abcdef' for c in data['source']['commit'])
+                or type(data['source']['run']) is not int or data['source']['run'] <= 0):
+            raise ValueError('invalid history envelope')
+    elif data['schema'] == 2:
+        if set(data) != {'schema', 'source', 'calibration', 'tests'}:
+            raise ValueError('invalid history envelope')
+        validate_binding(data['source'])
+        if not data['source']['heavy']:
+            raise ValueError('history requires heavy coverage')
+        platforms = list(required_platforms(data['source']))
+        excluded = [p for p in PLATFORMS if p not in platforms]
+        evidence = data['calibration']
+        if (type(evidence) is not dict or set(evidence) != {
+                'scope', 'required_platforms', 'excluded_platforms', 'partitions', 'unmeasured_ids'}
+                or evidence['scope'] not in ('all-platforms', 'required-platforms')
+                or evidence['required_platforms'] != platforms
+                or evidence['excluded_platforms'] != excluded
+                or (evidence['scope'] == 'all-platforms' and excluded)):
+            raise ValueError('invalid history platform scope')
+        expected = {f'{p}/light/0' for p in platforms} | {
+            f'{p}/heavy/{i}' for p in platforms for i in range(2 if p == 'mac-x86' else 1)}
+        digests = evidence['partitions']
+        if (type(digests) is not dict or set(digests) != expected
+                or any(type(v) is not str or len(v) != 64
+                       or any(c not in '0123456789abcdef' for c in v) for v in digests.values())):
+            raise ValueError('invalid history partition evidence')
+        missing = evidence['unmeasured_ids']
+        if (type(missing) is not list or len(missing) > MAX_TESTS
+                or any(type(v) is not str or not 0 < len(v) <= 1000 for v in missing)
+                or missing != sorted(set(missing))):
+            raise ValueError('invalid unmeasured history IDs')
+        validate_weights(data['tests'])
+        if set(missing) & set(data['tests']) or len(missing) + len(data['tests']) > MAX_TESTS:
+            raise ValueError('invalid measured history coverage')
+    else:
+        raise ValueError('invalid history schema')
+    validate_weights(data['tests'])
 
 
 def validate_weights(weights):
