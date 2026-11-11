@@ -255,7 +255,7 @@ PHASES=('prerequisites','inputs','install','build','redump','enterprise','marker
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified'}
 HASH_FIELDS={'source_sha256','module_sha256','module_verified_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic'}
+    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -279,6 +279,7 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(stage['record_count'] is None or type(stage['record_count']) is int and stage['record_count']==12)
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(fixture.valid_diagnostic(stage['redump_diagnostic']))
+        require(stage['configuration_validation']==fixture.VALIDATION_MODE)
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])

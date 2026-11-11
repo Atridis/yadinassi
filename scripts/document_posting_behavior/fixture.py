@@ -1,7 +1,7 @@
-"""Owned candidate XML, gated by Designer import and exact redump verification.
+"""Owned candidate XML, gated by Designer and material semantic projection.
 
-This is a candidate, not a previously observed platform export. Failure to
-preserve any supplied metadata is fatal; no widened activation is inferred.
+Designer-added UI defaults are not a parity target. Identities, field types,
+posting controls, recorder linkage and handler bytes remain authoritative.
 """
 from pathlib import Path
 from catalog_object_behavior import fixture as original
@@ -37,7 +37,50 @@ def prepare(files):
     expected['InformationRegisters/OwnedPostingRows.xml']=assets['InformationRegister.xml']
     _files(expected);return setup,expected
 
-verify_redump=original.verify_redump
+OWNED_XML = {'Documents/OwnedPostingDoc.xml': 'Document',
+             'InformationRegisters/OwnedPostingRows.xml': 'InformationRegister'}
+VALIDATION_MODE = 'owned-metadata-semantic-projection-v1'
+
+
+def _owned_projection(raw, kind):
+    root=original._signature(raw)
+    md='{'+original.MD+'}'
+    def one(node, name):
+        values=[c for c in node[3] if c[0]==md+name]
+        original._require(len(values)==1)
+        return values[0]
+    original._require(root[0]==md+'MetaDataObject' and len(root[3])==1)
+    obj=one(root,kind)
+    original._require(set(c[0] for c in obj[3])=={md+'InternalInfo',md+'Properties',md+'ChildObjects'})
+    props=one(obj,'Properties')
+    required=(('Name','NumberType','NumberLength','NumberAllowedLength','NumberPeriodicity',
+        'CheckUnique','Autonumbering','Posting','RealTimePosting','RegisterRecordsDeletion',
+        'RegisterRecordsWritingOnPost','RegisterRecords','PostInPrivilegedMode',
+        'UnpostInPrivilegedMode','DataLockControlMode') if kind=='Document' else
+        ('Name','InformationRegisterPeriodicity','WriteMode','DataLockControlMode',
+         'EnableTotalsSliceFirst','EnableTotalsSliceLast'))
+    selected=tuple(one(props,key) for key in required)
+    children=one(obj,'ChildObjects');fields=[]
+    for field in children[3]:
+        original._require(kind=='InformationRegister' and field[0] in (md+'Dimension',md+'Resource'))
+        original._require(len(field[3])==1 and field[3][0][0]==md+'Properties')
+        fp=field[3][0]
+        fields.append((field[0],field[1],one(fp,'Name'),one(fp,'Type')))
+    original._require(len(fields)==len(set((v[0],v[1]) for v in fields)))
+    return obj[0],obj[1],selected,tuple(sorted(fields))
+
+
+def verify_redump(expected, actual):
+    # Designer-generated UI defaults and generated type bookkeeping do not
+    # establish posting semantics. Validate the measurement's material inputs;
+    # unknown executable files, changed handlers and extra user fields still fail.
+    _files(expected);_files(actual);original._require(set(expected)==set(actual))
+    for path in expected:
+        if path in OWNED_XML:
+            original._require(_owned_projection(expected[path],OWNED_XML[path])==
+                              _owned_projection(actual[path],OWNED_XML[path]))
+        else:original.verify_redump({path:expected[path]},{path:actual[path]})
+    return True
 
 
 def redump_diagnostic(expected, actual):

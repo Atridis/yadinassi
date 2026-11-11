@@ -15,7 +15,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 

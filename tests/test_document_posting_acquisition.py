@@ -67,6 +67,38 @@ class PostingAcquisitionTests(unittest.TestCase):
         self.assertFalse(fixture.valid_diagnostic(['x'*121]))
         self.assertFalse(fixture.valid_diagnostic(['x']*13))
     def test_equal_redump_diagnostic_empty(self):
-        files={'Documents/OwnedPostingDoc.xml':b'<Metadata><Posting>Allow</Posting></Metadata>'}
+        files={'Other.xml':b'<Metadata><Posting>Allow</Posting></Metadata>'}
         self.assertEqual(fixture.redump_diagnostic(files,files),[])
         self.assertTrue(fixture.verify_redump(files,files))
+    def metadata(self):
+        _,assets=fixture.load_saved()
+        return {'Documents/OwnedPostingDoc.xml':assets['Document.xml'],
+            'InformationRegisters/OwnedPostingRows.xml':assets['InformationRegister.xml'],
+            'Documents/OwnedPostingDoc/Ext/ObjectModule.bsl':assets['ObjectModule.bsl']}
+    def test_semantic_metadata_accepts_designer_ui_defaults(self):
+        expected=self.metadata();actual=dict(expected);name='Documents/OwnedPostingDoc.xml'
+        actual[name]=actual[name].replace(b'<Name>OwnedPostingDoc</Name>',b'<Name>OwnedPostingDoc</Name><AuxiliaryChoiceForm/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>')
+        self.assertTrue(fixture.verify_redump(expected,actual))
+    def test_semantic_metadata_rejects_changed_posting_or_recorder(self):
+        expected=self.metadata();name='Documents/OwnedPostingDoc.xml'
+        for before,after in [(b'<Posting>Allow',b'<Posting>Deny'),(b'InformationRegister.OwnedPostingRows',b'InformationRegister.Other')]:
+            actual=dict(expected);actual[name]=actual[name].replace(before,after)
+            with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_changed_field_types(self):
+        expected=self.metadata();actual=dict(expected);name='InformationRegisters/OwnedPostingRows.xml'
+        actual[name]=actual[name].replace(b'<v8:Digits>10',b'<v8:Digits>12')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_changed_identity(self):
+        expected=self.metadata();actual=dict(expected);name='Documents/OwnedPostingDoc.xml'
+        actual[name]=actual[name].replace(b'dcd6cc18',b'dcd6cc19')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_handler_and_extra_executable(self):
+        expected=self.metadata();actual=dict(expected)
+        actual['Documents/OwnedPostingDoc/Ext/ObjectModule.bsl']+=b'\n//changed'
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+        actual=dict(expected);actual['Ext/SessionModule.bsl']=b'//unknown'
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_extra_user_field(self):
+        expected=self.metadata();actual=dict(expected);name='InformationRegisters/OwnedPostingRows.xml'
+        actual[name]=actual[name].replace(b'</ChildObjects>',b'<Attribute uuid="extra"><Properties><Name>Extra</Name><Type/></Properties></Attribute></ChildObjects>')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
