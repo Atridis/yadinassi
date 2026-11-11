@@ -265,3 +265,27 @@ tests/fixtures/native_inventory_period/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Independent filtered virtual-table acquisition bytes.
+scripts/inventory_filter_behavior/** text eol=lf
+scripts/native_1c_inventory_filter_profile.py text eol=lf
+scripts/native_1c_inventory_filter_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_filter_suite.py text eol=lf
+
+# Immutable native filter capture is byte-hashed on every platform.
+tests/fixtures/native_inventory_filter/* -text
+
+# Independent fresh EnumRef persistence acquisition bytes.
+scripts/inventory_enum_behavior/** text eol=lf
+scripts/native_1c_inventory_enum_profile.py text eol=lf
+scripts/native_1c_inventory_enum_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_enum_suite.py text eol=lf
+
+# Immutable two-process enum persistence capture.
+tests/fixtures/native_inventory_enum/** -text
+
+# Independent typed virtual predicate acquisition bytes.
+scripts/inventory_typed_filter_behavior/** text eol=lf
+scripts/native_1c_inventory_typed_filter_profile.py text eol=lf
+scripts/native_1c_inventory_typed_filter_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_typed_filter_suite.py text eol=lf

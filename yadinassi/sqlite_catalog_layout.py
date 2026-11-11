@@ -118,7 +118,7 @@ def load_layout(connection, schemas):
     return Layout(tables, fields)
 
 
-def catalog_ddl(schema, layout):
+def catalog_ddl(schema, layout, *, enum_domain=None):
     fields = [
         'record_id TEXT PRIMARY KEY NOT NULL',
         'revision INTEGER NOT NULL CHECK(revision>0)',
@@ -127,8 +127,14 @@ def catalog_ddl(schema, layout):
         'deletion_mark INTEGER NOT NULL CHECK(deletion_mark IN(0,1))',
     ]
     for field in schema.fields:
+        if field.kind != 'enum_ref' and field.target_enum_id is not None:
+            raise BackendError('unsupported')
         name = quote_identifier(layout.field_name(schema.identity, field.identity))
-        if field.kind == 'catalog_ref':
+        if field.kind == 'enum_ref':
+            from .sqlite_catalog import _enum_field
+            _enum_field(field, enum_domain)
+            fields.append(f'{name} TEXT NOT NULL')
+        elif field.kind == 'catalog_ref':
             target = quote_identifier(layout.table_name(field.target_catalog_id))
             fields.append(f'{name} TEXT REFERENCES {target}(record_id) DEFERRABLE INITIALLY DEFERRED')
         elif field.kind == 'boolean':
@@ -143,12 +149,20 @@ def index_ddls(schema, layout):
     return ()
 
 
-def encode_columns(encoded_values, schema):
+def encode_columns(encoded_values, schema, *, enum_domain=None):
     if type(encoded_values) not in (list, tuple) or len(encoded_values) != len(schema.fields):
         raise BackendError('integrity')
     result = []
     tags = {'string': 's', 'number': 'n', 'datetime': 'd', 'boolean': 'b', 'catalog_ref': 'r'}
     for value, field in zip(encoded_values, schema.fields):
+        if field.kind == 'enum_ref':
+            from .sqlite_catalog import _enum_field
+            domain = _enum_field(field, enum_domain)
+            key = domain.decode(value, field.target_enum_id)
+            result.append(str(key.value_id))
+            continue
+        if field.target_enum_id is not None:
+            raise BackendError('unsupported')
         if type(value) is not list or len(value) != (3 if field.kind == 'catalog_ref' else 2) or value[0] != tags.get(field.kind):
             raise BackendError('integrity')
         if field.kind == 'catalog_ref':
@@ -169,11 +183,20 @@ def encode_columns(encoded_values, schema):
     return tuple(result)
 
 
-def decode_columns(columns, schema):
+def decode_columns(columns, schema, *, enum_domain=None):
     if len(columns) != len(schema.fields): raise BackendError('integrity')
     result = []
     tags = {'string': 's', 'number': 'n', 'datetime': 'd'}
     for value, field in zip(columns, schema.fields):
+        if field.kind == 'enum_ref':
+            from .sqlite_catalog import _enum_field
+            domain = _enum_field(field, enum_domain)
+            payload = ['enum_ref_v1', str(field.target_enum_id), value]
+            domain.decode(payload, field.target_enum_id)
+            result.append(payload)
+            continue
+        if field.target_enum_id is not None:
+            raise BackendError('unsupported')
         if field.kind == 'catalog_ref':
             if value is not None and type(value) is not str: raise BackendError('integrity')
             result.append(['r', str(field.target_catalog_id), value if value is not None else str(UUID(int=0))])

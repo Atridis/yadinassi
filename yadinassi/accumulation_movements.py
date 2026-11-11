@@ -103,7 +103,7 @@ def _date(value):
         raise BackendError('invalid_input')
 
 
-def validate_schema(schema):
+def validate_schema(schema, *, enum_domain=None):
     """Validate even empty replacements; unsupported qualifiers cannot hide."""
     if type(schema) is not AccumulationRegisterSchema:
         raise BackendError('invalid_input')
@@ -120,8 +120,14 @@ def validate_schema(schema):
         raise BackendError('invalid_input')
     if type(schema.kind) is not AccumulationRegisterKind:
         raise BackendError('unsupported')
-    if type(schema.value_profile) is not str or schema.value_profile not in ('scalar_v1', 'catalog_reference_v1'):
+    if type(schema.value_profile) is not str or schema.value_profile not in ('scalar_v1', 'catalog_reference_v1', 'catalog_enum_reference_v1'):
         raise BackendError('unsupported')
+    enum_profile = schema.value_profile == 'catalog_enum_reference_v1'
+    if enum_profile != (enum_domain is not None):
+        raise BackendError('unsupported')
+    if enum_profile:
+        from .sqlite_catalog import _enum_domain
+        _enum_domain(enum_domain)
     identities = {schema.identity}
     names = _RESERVED.copy()
     try:
@@ -138,7 +144,16 @@ def validate_schema(schema):
             names.add(field.name.casefold())
             if type(field.kind) is not str:
                 raise BackendError('unsupported')
-            reference = (schema.value_profile == 'catalog_reference_v1' and field.kind == 'catalog_ref')
+            if field.kind == 'enum_ref':
+                if not enum_profile:
+                    raise BackendError('unsupported')
+                enum_domain.empty(field.target_enum_id)
+                if field.target_catalog_id is not None or type(field.qualifiers) is not tuple or field.qualifiers:
+                    raise BackendError('invalid_input')
+                continue
+            if field.target_enum_id is not None:
+                raise BackendError('unsupported')
+            reference = (schema.value_profile in ('catalog_reference_v1', 'catalog_enum_reference_v1') and field.kind == 'catalog_ref')
             if reference:
                 _uuid(field.target_catalog_id)
                 if field.qualifiers != () or type(field.qualifiers) is not tuple:
@@ -169,7 +184,7 @@ def validate_schema(schema):
     return schema
 
 
-def _sum_resource_vectors(schema, vectors, weights):
+def _sum_resource_vectors(schema, vectors, weights, *, enum_domain=None):
     """Exact host arithmetic, not Balance/Turnovers or a result-field schema.
 
     Accept bounded exact tuples of normalized resource tuples and caller-chosen
@@ -180,7 +195,7 @@ def _sum_resource_vectors(schema, vectors, weights):
     this representation does not assert native aggregate field qualifiers.
     Neither inputs nor the ambient Decimal context are modified.
     """
-    validate_schema(schema)
+    validate_schema(schema, enum_domain=enum_domain)
     if (type(vectors) is not tuple or type(weights) is not tuple
             or len(vectors) > MAX_MOVEMENT_ROWS or len(weights) != len(vectors)):
         raise BackendError('invalid_input')
@@ -214,15 +229,18 @@ def _sum_resource_vectors(schema, vectors, weights):
     return tuple(result)
 
 
-def validate_replacement(schema, request, database_id):
+def validate_replacement(schema, request, database_id, *, enum_domain=None):
     """Strict whole-partition intent, with a host optimistic snapshot token.
 
     Rows use contiguous host line ordinals. Equal dimensions, periods and even
     entire scalar payloads are retained as separate occurrences. Neither rule
     asserts unmeasured native record-set duplicate or numbering behavior.
     """
-    validate_schema(schema)
+    validate_schema(schema, enum_domain=enum_domain)
     _uuid(database_id)
+    if enum_domain is not None:
+        from .sqlite_catalog import _enum_domain
+        _enum_domain(enum_domain, database_id)
     if type(request) is not AccumulationReplacement:
         raise BackendError('invalid_input')
     _uuid(request.register_id)
@@ -251,6 +269,9 @@ def validate_replacement(schema, request, database_id):
             if type(values) is not tuple or len(values) != len(fields):
                 raise BackendError('invalid_input')
             for value, field in zip(values, fields):
+                if field.kind == 'enum_ref':
+                    enum_domain.require_key(value, field.target_enum_id)
+                    continue
                 if field.kind == 'catalog_ref':
                     if (type(value) is not CatalogKey
                             or any(type(identity) is not UUID for identity in (value.database_id, value.catalog_id, value.record_id))

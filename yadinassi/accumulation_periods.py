@@ -98,7 +98,8 @@ class StatementReducer:
     not dense gap filling. This reducer owns no connection or read lease.
     The caller validates/charges every source row, including excluded rows.
     """
-    def __init__(self, schema, start, end, periodicity, *, combined):
+    def __init__(self, schema, start, end, periodicity, *, combined, enum_domain=None):
+        self.enum_domain=enum_domain
         self.schema = schema
         self.start, self.end = _moment(start), _moment(end)
         self.span = CalendarSpan(start, end, periodicity) if periodicity else None
@@ -111,7 +112,7 @@ class StatementReducer:
         # guards. A single normalized vector has precisely the declared scale,
         # so integer extraction needs neither Decimal math nor a large power.
         from .accumulation_movements import _sum_resource_vectors
-        normalized = _sum_resource_vectors(self.schema, (resources,), (1,))
+        normalized = _sum_resource_vectors(self.schema, (resources,), (1,), enum_domain=self.enum_domain)
         result = []
         for value in normalized:
             sign, digits, _ = value.as_tuple()
