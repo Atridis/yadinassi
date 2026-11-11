@@ -251,6 +251,11 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    from .enum_types import BSLEnumType, BSLEnumReference
+    from .enumerations import BSLEnumManager
+    if type(value) is BSLEnumType: return BSLType.TYPE
+    if type(value) is BSLEnumReference: return value.value_type
+    if type(value) is BSLEnumManager: return value._manager_type
     if type(value) is BSLInformationRegisterType:
         return BSLType.TYPE
     if type(value) is BSLInformationRegisterManager:

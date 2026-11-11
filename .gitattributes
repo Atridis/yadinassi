@@ -200,3 +200,8 @@ scripts/native_1c_accumulation_register_profile.py text eol=lf
 scripts/native_1c_docker_lifecycle.py text eol=lf
 scripts/native_1c_full_host.py text eol=lf
 scripts/native_1c_smoke.py text eol=lf
+
+# New owned enumeration acquisition inputs have source-bound byte hashes.
+scripts/enumeration_behavior/** text eol=lf
+scripts/native_1c_bootstrap/enumeration_suite.py text eol=lf
+scripts/native_1c_enumeration_probe.sh text eol=lf

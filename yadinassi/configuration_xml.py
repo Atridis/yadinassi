@@ -61,6 +61,7 @@ class ConfigurationImport:
     common_modules: tuple = ()
     module_runtime: str | None = None
     information_registers: tuple[InformationRegisterSchema, ...] = ()
+    enumerations: tuple = ()
 
 
 def _fail(reason):
@@ -612,8 +613,10 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
     children=config.find('{'+MD+'}ChildObjects')
     if children is None:_fail('missing configuration ChildObjects')
-    catalog_names=[];document_names=[];common_names=[];register_names=[]
+    catalog_names=[];document_names=[];common_names=[];register_names=[];enum_names=[]
     for node in children:
+        if module_runtime is not None and node.tag=='{'+MD+'}Enum':
+            enum_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
             common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
         if node.tag=='{'+MD+'}InformationRegister':
@@ -722,6 +725,8 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         section_count+=len(document.tabular_sections)
         if section_count>512:_fail('tabular section count')
         documents.append(document)
+    from .configuration_enumerations import read_enumerations
+    enumerations=read_enumerations(files,enum_names,used,issues)
     registers=[]
     for rname in register_names:
         path='InformationRegisters/'+rname+'.xml'
@@ -732,7 +737,8 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
                         *(f'Documents/{n}.xml' for n in document_names),
                         *(f'CommonModules/{n}.xml' for n in common_names),
-                        *(f'InformationRegisters/{n}.xml' for n in register_names)}
+                        *(f'InformationRegisters/{n}.xml' for n in register_names),
+                        *(f'Enums/{n}.xml' for n in enum_names)}
     # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
     # A source archive may contain unknown modules, but it must not activate or
     # invent a Configuration owner for a file whose metadata owner is unknown.
@@ -785,7 +791,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                       ' (individual paths retained in configuration files)')
     else:
         issues.extend(unknown_module_issues)
-    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers))
+    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),enumerations)
     if module_runtime is not None:
         validate_module_sources(result)
     return result
