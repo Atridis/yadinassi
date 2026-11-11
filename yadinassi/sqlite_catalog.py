@@ -224,7 +224,53 @@ def _json(value):
     return json.dumps(value, ensure_ascii=True, separators=(',', ':'), allow_nan=False)
 
 
-def _fields_data(fields_schema):
+def _enum_domain(domain, database_id=None):
+    # Explicit internal format16 capability, never inferred from field contents.
+    from .enum_storage_values import EnumValueDomain, _uuid as enum_uuid
+    if type(domain) is not EnumValueDomain:
+        raise BackendError('unsupported')
+    try:
+        owner, declarations = domain.database_id, domain.declarations
+    except AttributeError:
+        raise BackendError('invalid_input') from None
+    enum_uuid(owner)
+    if type(declarations) is not tuple or len(declarations) > 128:
+        raise BackendError('invalid_input')
+    seen, count = set(), 0
+    for declaration in declarations:
+        if type(declaration) is not tuple or len(declaration) != 2:
+            raise BackendError('invalid_input')
+        identity, values = declaration
+        enum_uuid(identity)
+        if type(values) is not tuple or len(values) > 512:
+            raise BackendError('invalid_input')
+        count += len(values)
+        if count > 4096:
+            raise BackendError('invalid_input')
+        for item in (identity, *values):
+            enum_uuid(item)
+            if item in seen:
+                raise BackendError('invalid_input')
+            seen.add(item)
+    if database_id is not None:
+        enum_uuid(database_id)
+        if database_id != domain.database_id:
+            raise BackendError('invalid_input')
+    return domain
+
+
+def _enum_field(field, domain, database_id=None):
+    domain = _enum_domain(domain, database_id)
+    if (field.target_catalog_id is not None or type(field.qualifiers) is not tuple
+            or field.qualifiers):
+        raise BackendError('invalid_input')
+    domain.empty(field.target_enum_id)
+    return domain
+
+
+def _fields_data(fields_schema, *, enum_domain=None):
+    if enum_domain is not None:
+        _enum_domain(enum_domain)
     if type(fields_schema) is not tuple or len(fields_schema) > 64:
         raise BackendError('invalid_input')
     names = {'code', 'description', 'deletionmark', 'ref'}
@@ -237,7 +283,14 @@ def _fields_data(fields_schema):
         if identity in ids or field.name.casefold() in names:
             raise BackendError('invalid_input')
         ids.add(identity); names.add(field.name.casefold())
-        if type(field.kind) is not str or field.kind not in ('string', 'number', 'boolean', 'datetime', 'catalog_ref') or type(field.qualifiers) is not tuple:
+        if type(field.kind) is not str or field.kind not in ('string', 'number', 'boolean', 'datetime', 'catalog_ref', 'enum_ref') or type(field.qualifiers) is not tuple:
+            raise BackendError('unsupported')
+        if field.kind == 'enum_ref':
+            domain = _enum_domain(enum_domain)
+            domain.empty(field.target_enum_id)
+            if field.target_catalog_id is not None:
+                raise BackendError('invalid_input')
+        elif field.target_enum_id is not None:
             raise BackendError('unsupported')
         q = field.qualifiers
         if field.kind == 'string' and (len(q) != 1 or type(q[0]) is not int or not 0 <= q[0] <= 65536):
@@ -246,7 +299,7 @@ def _fields_data(fields_schema):
             raise BackendError('invalid_input')
         if field.kind == 'datetime' and (len(q) != 1 or type(q[0]) is not str or q[0] != 'DateTime'):
             raise BackendError('unsupported')
-        if field.kind in ('boolean', 'catalog_ref') and q:
+        if field.kind in ('boolean', 'catalog_ref', 'enum_ref') and q:
             raise BackendError('invalid_input')
         if field.kind == 'catalog_ref':
             _uuid(field.target_catalog_id)
@@ -254,10 +307,12 @@ def _fields_data(fields_schema):
             raise BackendError('invalid_input')
         fields.append([identity, field.name, field.kind, list(field.qualifiers),
                        str(field.target_catalog_id) if field.target_catalog_id else None])
+        if enum_domain is not None:
+            fields[-1].append(str(field.target_enum_id) if field.target_enum_id is not None else None)
     return fields
 
 
-def _schema_data(schema, *, enforce_serialized_limit=True):
+def _schema_data(schema, *, enforce_serialized_limit=True, enum_domain=None):
     if type(schema) is not CatalogSchema or type(schema.tabular_sections) is not tuple:
         raise BackendError('invalid_input')
     _uuid(schema.identity)
@@ -270,7 +325,7 @@ def _schema_data(schema, *, enforce_serialized_limit=True):
     if schema.numbering == 'decimal_v1' and not 1 <= schema.code_length <= 9:
         raise BackendError('invalid_input')
     if type(schema.hierarchy) is not str or schema.hierarchy not in ('none','groups_v1'): raise BackendError('invalid_input')
-    fields = _fields_data(schema.fields)
+    fields = _fields_data(schema.fields, enum_domain=enum_domain)
     if schema.hierarchy != 'none' and any(f.name.casefold() in ('parent','isfolder','родитель','этогруппа') for f in schema.fields): raise BackendError('invalid_input')
     result = [str(schema.identity), schema.name, schema.code_length, schema.description_length, fields]
     if len(schema.tabular_sections) > _MAX_SECTIONS: raise BackendError('invalid_input')
@@ -283,7 +338,7 @@ def _schema_data(schema, *, enforce_serialized_limit=True):
         identity = _uuid(section.identity)
         if section.identity in ids or section.name.casefold() in names: raise BackendError('invalid_input')
         names.add(section.name.casefold()); ids.add(section.identity)
-        sections.append([identity, section.name, _fields_data(section.fields)])
+        sections.append([identity, section.name, _fields_data(section.fields, enum_domain=enum_domain)])
     # Preserve the original five-element serialization for configurations without
     # sections, including existing stored definitions and migration fingerprints.
     if sections or schema.numbering != 'explicit' or schema.hierarchy != 'none': result.append(sections)
@@ -293,7 +348,7 @@ def _schema_data(schema, *, enforce_serialized_limit=True):
     return result
 
 
-def _schema(raw, *, allow_numbering=False, allow_hierarchy=False):
+def _schema(raw, *, allow_numbering=False, allow_hierarchy=False, enum_domain=None):
     if type(raw) is not str or len(raw) > 65536: raise BackendError('integrity')
     data = json.loads(raw)
     if type(data) is not list or len(data) not in (5, 6, 7, 8): raise BackendError('integrity')
@@ -304,8 +359,8 @@ def _schema(raw, *, allow_numbering=False, allow_hierarchy=False):
         return result
     def fields(items):
         if type(items) is not list or len(items) > 64: raise BackendError('integrity')
-        if any(type(f) is not list or len(f) != 5 or type(f[3]) is not list for f in items): raise BackendError('integrity')
-        return tuple(FieldSchema(identity(f[0]), f[1], f[2], tuple(f[3]), identity(f[4]) if f[4] is not None else None) for f in items)
+        if any(type(f) is not list or len(f) != (6 if enum_domain is not None else 5) or type(f[3]) is not list for f in items): raise BackendError('integrity')
+        return tuple(FieldSchema(identity(f[0]), f[1], f[2], tuple(f[3]), identity(f[4]) if f[4] is not None else None, identity(f[5]) if enum_domain is not None and f[5] is not None else None) for f in items)
     sections = ()
     if len(data) >= 6:
         if type(data[5]) is not list or not (0 if len(data) >= 7 else 1) <= len(data[5]) <= _MAX_SECTIONS: raise BackendError('integrity')
@@ -323,7 +378,7 @@ def _schema(raw, *, allow_numbering=False, allow_hierarchy=False):
         if data[7] != ['hierarchy_v1','groups_v1']: raise BackendError('integrity')
         hierarchy = 'groups_v1'
     result = CatalogSchema(identity(data[0]), data[1], data[2], data[3], fields(data[4]), sections, numbering, hierarchy)
-    if _schema_data(result, enforce_serialized_limit=False) != data:
+    if _schema_data(result, enforce_serialized_limit=False, enum_domain=enum_domain) != data:
         raise BackendError('integrity')
     return result
 
@@ -360,7 +415,15 @@ def _receipt_digest(intents, outcomes=None):
     return digest.hexdigest()
 
 
-def _encode(value, field, database_id):
+def _encode(value, field, database_id, *, enum_domain=None):
+    if type(field) is not FieldSchema or type(field.kind) is not str:
+        raise BackendError('invalid_input')
+    if enum_domain is not None:
+        _enum_domain(enum_domain, database_id)
+    if field.kind == 'enum_ref':
+        return _enum_field(field, enum_domain, database_id).encode(value, field.target_enum_id)
+    if field.target_enum_id is not None:
+        raise BackendError('unsupported')
     kind, q = field.kind, field.qualifiers
     if kind == 'string':
         if len(q) != 1:
@@ -404,7 +467,15 @@ def _encode(value, field, database_id):
     raise BackendError('unsupported')
 
 
-def _decode(value, field, database_id):
+def _decode(value, field, database_id, *, enum_domain=None):
+    if type(field) is not FieldSchema or type(field.kind) is not str:
+        raise BackendError('invalid_input')
+    if enum_domain is not None:
+        _enum_domain(enum_domain, database_id)
+    if field.kind == 'enum_ref':
+        return _enum_field(field, enum_domain, database_id).decode(value, field.target_enum_id)
+    if field.target_enum_id is not None:
+        raise BackendError('unsupported')
     if type(value) is not list or not value: raise BackendError('integrity')
     tag = value[0]
     try:
@@ -415,7 +486,7 @@ def _decode(value, field, database_id):
             s = value[1]; result = datetime.datetime(int(s[:4]),int(s[4:6]),int(s[6:8]),int(s[8:10]),int(s[10:12]),int(s[12:]))
         elif tag == 'r' and len(value) == 3: result = CatalogKey(database_id, UUID(value[1]), UUID(value[2]))
         else: raise BackendError('integrity')
-        if _encode(result, field, database_id) != value: raise BackendError('integrity')
+        if _encode(result, field, database_id, enum_domain=enum_domain) != value: raise BackendError('integrity')
         return result
     except (ValueError, TypeError, decimal.InvalidOperation):
         raise BackendError('integrity') from None

@@ -51,15 +51,22 @@ def _hash(value):
     return sha256(_json(value).encode('utf-8')).hexdigest()
 
 
-def schema_data(schema):
-    validate_schema(schema)
+def schema_data(schema, *, enum_domain=None):
+    validate_schema(schema, enum_domain=enum_domain)
     groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers)] for f in group]
               for group in (schema.dimensions, schema.resources, schema.attributes)]
     if schema.value_profile == 'catalog_reference_v1':
         groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers),
                     str(f.target_catalog_id) if f.target_catalog_id is not None else None]
                    for f in group] for group in (schema.dimensions, schema.resources, schema.attributes)]
+    if schema.value_profile == 'catalog_enum_reference_v1':
+        groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers),
+                    str(f.target_catalog_id) if f.target_catalog_id is not None else None,
+                    str(f.target_enum_id) if f.target_enum_id is not None else None]
+                   for f in group] for group in (schema.dimensions, schema.resources, schema.attributes)]
     tag = 'accumulation_scalar_v1' if schema.value_profile == 'scalar_v1' else 'accumulation_reference_v1'
+    if schema.value_profile == 'catalog_enum_reference_v1':
+        tag = 'accumulation_enum_reference_v1'
     data = [tag, str(schema.identity), schema.name,
             schema.kind.value, sorted(str(v) for v in schema.recorder_documents), *groups]
     if len(_json(data).encode('utf-8')) > MAX_SCHEMA_BYTES:

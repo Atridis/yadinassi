@@ -265,3 +265,9 @@ scripts/native_1c_inventory_period_probe.sh text eol=lf
 scripts/native_1c_bootstrap/inventory_period_suite.py text eol=lf
 # Independent native period capture is immutable on every checkout.
 tests/fixtures/native_inventory_period/* -text
+
+# Independent fresh EnumRef persistence acquisition bytes.
+scripts/inventory_enum_behavior/** text eol=lf
+scripts/native_1c_inventory_enum_profile.py text eol=lf
+scripts/native_1c_inventory_enum_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_enum_suite.py text eol=lf

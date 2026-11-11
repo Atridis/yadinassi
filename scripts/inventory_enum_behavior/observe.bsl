@@ -102,13 +102,13 @@ Function ObserveCase(Val CaseNo, Stage)
         Stage="query";
         Return EnumRows("SELECT P.Unit AS V,1 AS N FROM Catalog.Products AS P WHERE P.Unit=&Unit",Enums.Units.Pack)+"|"+
             EnumRows("SELECT D.State AS V,1 AS N FROM Document.Receipt AS D WHERE D.State=&State")+"|"+
-            EnumRows("SELECT L.Unit AS V,L.Quantity AS N FROM Document.Receipt.Lines AS L WHERE L.Unit=&Unit",Enums.Units.Pack)+"|"+
+            EnumRows("SELECT L.Unit AS V,L.Quantity AS N FROM Document.Receipt.Lines AS L WHERE L.Unit=&Unit ORDER BY N",Enums.Units.Pack)+"|"+
             Scalar("SELECT COUNT(*) AS N FROM Catalog.Products WHERE Unit<>&Unit",Enums.Units.EmptyRef());
     ElsIf CaseNo=8 Then
         Stage="query";
         Text="SELECT COUNT(*) AS N FROM Catalog.Products AS P INNER JOIN AccumulationRegister.Stock AS R ON P.Unit=R.Unit WHERE P.Unit=&Unit";
         First=Scalar(Text,Enums.Units.Piece);
-        Text="SELECT COUNT(*) AS N FROM Catalog.Products AS P LEFT JOIN Document.Receipt.Lines AS L ON P.Unit=L.Unit WHERE L.Unit IS NULL";
+        Text="SELECT COUNT(*) AS N FROM Catalog.Products AS P LEFT JOIN Document.Receipt.Lines AS L ON P.Unit=L.Unit AND L.Quantity=99 WHERE L.Unit IS NULL";
         Return First+"|"+Scalar(Text);
     ElsIf CaseNo=9 Then
         Stage="query";

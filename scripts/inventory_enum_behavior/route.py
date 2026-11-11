@@ -8,7 +8,7 @@ SCHEMA='native-1c-inventory-enum-v1'
 STAGE_SCHEMA='native-1c-inventory-enum-stage-v1'
 COUNT=12
 MAX_OUTPUT=131072
-SOURCE_SHA256='b4298d1347751780abfa1e2d392567dfe39caf86eed0d04aea98b82267604f85'
+SOURCE_SHA256='a3ff322446211ff933c0ad21f3570def5eeb25fbc4b230316b72b0deb26a4945'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')
@@ -64,9 +64,9 @@ def failure_details(result,nonce,phase=1):
     if type(messages) is not list or len(messages)>COUNT+2 or any(type(m) is not str or len(m)>8192 for m in messages):
         raise ValueError('invalid failure messages')
     entered=bool(messages and messages[0]==prefix+'entered');cases=0
-    for n,message in enumerate(messages[1:],1):
-        if n>COUNT or not message.startswith(prefix+str(n)+'|'):break
-        cases=n
+    for n,message in zip(case_range(phase),messages[1:]):
+        if not message.startswith(prefix+str(n)+'|'):break
+        cases+=1
     frames=[]
     for match in re.finditer(r'\{([^{}\r\n]{1,200})\(([0-9]{1,3})(?:,\s*[0-9]{1,3})?\)\}',text):
         module=next((name for name in ('TestModule','Receipt','Issue') if name in match[1]),None)
@@ -84,7 +84,7 @@ def valid_failure_details(value):
         type(value['codes']) is list and len(value['codes'])<=len(ERROR_CODES) and all(type(c) is str and c in ERROR_CODES for c in value['codes']))
 
 
-STAGES=('setup','seed','write','readback','query')
+STAGES=('setup','seed','write','read','readback','query')
 def parse_attempt(raw,nonce,phase):
     if type(raw) is not bytes or not 0<len(raw)<=MAX_OUTPUT:raise ValueError('wire')
     lines=raw.decode('utf-8').splitlines();prefix='ENP|'+nonce+'|p'+str(phase)+'|'
@@ -155,6 +155,7 @@ INSTALL_WORDS={
 
 }
 INSTALL_IDENTIFIERS=frozenset(('Receipt','Issue','Stock','Products','Warehouses','Product','Lines','Catalog','AccumulationRegister',
+    'Units','States','Unit','State','Piece','Pack','Draft','Approved','Enum','EnumValue',
     'Record','Manager','Selection','List','RecordSet','RecordKey','RegisterType','Balance',
     'RegisterRecords','EnableTotalsSplitting','DataLockControlMode','UseInTotals',
     'Amount','Quantity','Item','Warehouse','Note','Period','Active','RecordType',
