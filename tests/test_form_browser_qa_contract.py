@@ -57,6 +57,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
+            'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'])
         for forbidden in ('sudo ', 'sysctl ', 'container:', 'secrets.', 'write', '--with-deps', 'QA_CHROMIUM'):
             self.assertNotIn(forbidden, workflow)

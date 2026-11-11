@@ -121,8 +121,12 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
         self.requires("'--reference-application'", "'scalars.sqlite'", 'assert not target.exists()',
                       'SQLiteCatalogBackend.create_reference_application', 'assert backend.storage_version==7',
                       "['create','leap','empty','first','final']", 'maxBuffer:128', "'SCALAR_FIXTURE_OK'")
-        for forbidden in ('OwnedInfobase', 'tests/fixtures/native', 'integrational_tests', 'eval(', 'exec('):
+        for forbidden in ('OwnedInfobase', 'tests/fixtures/native', 'integrational_tests'):
             self.assertNotIn(forbidden, self.source)
+        # Inspect Python calls, not JavaScript's unrelated RegExp.exec method.
+        for node in ast.walk(ast.parse(script)):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                self.assertNotIn(node.func.id, ('eval', 'exec', '__import__'))
 
     def test_catalog_audits_prove_naive_typed_leap_day_and_empty_with_separate_read_only_access(self):
         self.requires('SQLiteCatalogBackend(target,read_only=True)', 'backend.export_configuration()==files',
