@@ -699,8 +699,11 @@ async function main(){
     await field('Checked, row 1').check();await idle();
     await action('Add line').click();await rowCount(2);await idle();
     await commitInput('DeliveryDate, row 2','2024-03-31T02:30:00');await commitInput('Label, row 2','Second line');
-    await commitInput('Quantity, row 2','2.50');await writeDocument();
-    await closeForm(1);await closeForm(0);await ordinaryShutdown();
+    phase='document_second_quantity';await commitInput('Quantity, row 2','2.50');
+    phase='document_write';await writeDocument();
+    phase='document_close_saved';await closeForm(1);
+    phase='document_close_welcome';await closeForm(0);
+    phase='document_ordinary_shutdown';await ordinaryShutdown();
     phase='independent_typed_datetime_audit_and_restart';fixture('first');
     await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await countPanels(1);await idle();
     await entries().getByRole('button',{name:'Non-posting order',exact:true}).click();await openNumber('D1');
@@ -786,7 +789,10 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
-  report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
+  const failureCode=['ordinary_host_exit_timeout','ordinary_host_exit_failed','owned_group_cleanup_unverified',
+    'independent_typed_readback','catalog_rpc_plan','restart_rpc_plan','invalid_draft_rpc_plan','total_rpc_plan']
+    .find(code=>error?.message===code)??(error?.name==='TimeoutError'?'browser_step_timeout':'unclassified_step');
+  report.failure={phase,code:failureCode,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
 finally{

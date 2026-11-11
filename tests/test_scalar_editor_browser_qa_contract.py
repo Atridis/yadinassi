@@ -157,7 +157,8 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
                       "commitInput('DeliveryDate, row 1','2024-11-03T01:30:00')",
                       "commitInput('DeliveryDate, row 2','2024-03-31T02:30:00')",
                       "select('Product, row 1','P2','Scalar product')", "commitInput('Quantity, row 1','3.2500')",
-                      'await closeForm(1);await closeForm(0);await ordinaryShutdown()', "fixture('first')",
+                      "phase='document_close_saved';await closeForm(1)", "phase='document_close_welcome';await closeForm(0)",
+                      "phase='document_ordinary_shutdown';await ordinaryShutdown()", "fixture('first')",
                       "await openNumber('D1')", "value('DeliveryDate, row 2','2024-03-31T02:30:00')")
         self.assertLess(scenario.index('await ordinaryShutdown()'), scenario.index("fixture('first')"))
         self.assertLess(scenario.index("fixture('first')"), scenario.index('await startHost()'))
