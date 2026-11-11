@@ -66,6 +66,60 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         self.assertEqual([value for _, value in observed], json.loads((FIXTURE / 'observations.out').read_text(encoding='utf-8')))
         self.assertEqual([(n, stage) for n, stage, _ in diagnostics], [(5, 'write'), (14, 'write'), (15, 'write')])
 
+    def test_query_column_actual_is_readable_but_helper_cannot_assign_it(self):
+        vm, _ = self.make()
+        self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
+                   'Function ReadActual(Value) Return Value;EndFunction '
+                   'Procedure AssignActual(Value) Value=99;EndProcedure')
+        self.assertEqual(vm.execute('ReadActual(S.Amount)'), Decimal(5))
+        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+            vm.execute('AssignActual(S.Amount);')
+        self.assertEqual(vm.execute('S.Amount'), Decimal(5))
+
+    def test_number_qualifier_actuals_are_bounded_readonly(self):
+        vm, _ = self.make()
+        vm.execute('N=New NumberQualifiers(38,3);'
+                   'Function ReadActual(Value) Return Value;EndFunction '
+                   'Procedure AssignActual(Value) Value=1;EndProcedure')
+        self.assertEqual(vm.execute('ReadActual(N.Digits)'), Decimal(38))
+        self.assertEqual(vm.execute('ReadActual(N.FractionDigits)'), Decimal(3))
+        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+            vm.execute('AssignActual(N.Digits);')
+        self.assertEqual(vm.execute('N.Digits'), Decimal(38))
+
+    def test_detached_line_number_actual_is_readable_and_not_mutable(self):
+        vm, _ = self.make()
+        vm.execute('O=Documents.OwnedAccumulationDoc.CreateDocument();R=O.RegisterRecords.OwnedAccumulationRows.Add();'
+                   'Function ReadActual(Value) Return Value;EndFunction '
+                   'Procedure AssignActual(Value) Value=1;EndProcedure')
+        self.assertEqual(vm.execute('ReadActual(R.LineNumber)'), Decimal(0))
+        with self.assertRaisesRegex(BSLRuntimeError, 'read-only property'):
+            vm.execute('AssignActual(R.LineNumber);')
+        self.assertEqual(vm.execute('R.LineNumber'), Decimal(0))
+
+    def test_readonly_actual_receiver_is_evaluated_once(self):
+        vm, _ = self.make()
+        self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
+                   'Function ReadActual(Value) Return Value;EndFunction')
+        selection, calls = vm.execute('S'), []
+        def cursor_once():
+            calls.append(True)
+            return selection
+        vm.register_function('CursorOnce', cursor_once)
+        self.assertEqual(vm.execute('ReadActual(CursorOnce().Amount)'), Decimal(5))
+        self.assertEqual(calls, [True])
+
+    def test_readonly_actual_does_not_grant_generic_object_or_method_reference(self):
+        vm, _ = self.make()
+        self.seed(vm, [('A', 1, 5, 2, False, 0)])
+        vm.execute('Q=New Query("SELECT Amount FROM ' + REG + '");S=Q.Execute().Select();S.Next();'
+                   'Function ReadActual(Value) Return Value;EndFunction')
+        for expression in ('ReadActual(S.Next)', 'ReadActual(R.Amount)', 'ReadActual(O.Number)'):
+            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError):
+                vm.execute(expression)
+
     def test_raw_scalars_and_recorder_reference_types(self):
         vm, _ = self.make()
         obj = self.seed(vm, [('A', 2, '1.25', '2.125', False, 0)])
@@ -80,7 +134,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         result = self.query(vm, 'SELECT AmountBalance,QuantityBalance FROM ' + REG + '.Balance(&At)', At=AT)
         self.assertEqual(result._rows, ())
         self.assertEqual([c.qualifiers for c in result._columns], [(38, 2, 'Any'), (38, 3, 'Any')])
-        result = self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense FROM ' + REG + '.Turnovers(&Start,&End)', Start=DATE, End=AT)
+        result = self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=DATE, EndAt=AT)
         self.assertEqual(result._rows, ())
         self.assertEqual([c.qualifiers for c in result._columns], [(38, 2, 'Any')] * 3)
 
@@ -99,12 +153,12 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
     def test_turnover_endpoints_are_inclusive_and_equal_interval_is_valid(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 1, 1, False, -1), ('A', 1, 10, 10, False, 0), ('A', 1, 100, 100, False, 1)])
-        self.assertEqual(self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&End)', Start=DATE, End=DATE)._rows, ((Decimal(10),),))
+        self.assertEqual(self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=DATE, EndAt=DATE)._rows, ((Decimal(10),),))
 
     def test_signed_resources_and_expense_subtotals_are_not_absolute_values(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 10, 4, False, 0), ('A', 1, 3, 1, True, 0), ('A', 1, -2, '-0.5', False, 0), ('A', 1, -1, '-0.25', True, 0)])
-        self.assertEqual(self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense,QuantityTurnover FROM ' + REG + '.Turnovers(&Start,&End)', Start=DATE, End=AT)._rows,
+        self.assertEqual(self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense,QuantityTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=DATE, EndAt=AT)._rows,
             ((Decimal(6), Decimal(8), Decimal(2), Decimal('2.75')),))
 
     def test_balance_suppresses_only_all_resource_zero_groups(self):
@@ -115,14 +169,14 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
     def test_zero_net_turnovers_with_nonzero_receipts_and_expenses_remain(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 5, False, 0), ('A', 1, 5, 5, True, 0)])
-        self.assertEqual(self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense FROM ' + REG + '.Turnovers(&Start,&End)', Start=DATE, End=AT)._rows,
+        self.assertEqual(self.query(vm, 'SELECT AmountTurnover,AmountReceipt,AmountExpense FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=DATE, EndAt=AT)._rows,
                          ((Decimal(0), Decimal(5), Decimal(5)),))
 
     def test_unmeasured_all_zero_turnover_group_is_explicitly_deferred(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 0, 0, False, 0)])
         with self.assertRaisesRegex(ValueError, 'All-zero turnover group'):
-            self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&End)', Start=DATE, End=AT)
+            self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=DATE, EndAt=AT)
 
     def test_virtual_grouping_uses_existing_uca_not_unicode_casefold(self):
         vm, _ = self.make()
@@ -186,25 +240,33 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         self.assertEqual(self.query(vm, 'SELECT Item,Warehouse,AmountBalance FROM ' + REG + '.Balance(&At)', At=AT)._rows, ((True, DATE, Decimal(5)),))
 
     def test_query_exception_and_interruption_release_outer_read_lease(self):
-        from yadinassi.database_transactions import execution, current
+        from yadinassi.database_transactions import execution, current, begin, rollback
+        from yadinassi.document_posting_values import DocumentWriteMode
         for error in (ValueError('query stopped'), KeyboardInterrupt()):
             with self.subTest(error=type(error).__name__):
                 vm, context = self.make()
+                vm.execute('A=Documents.OwnedAccumulationDoc.CreateDocument();A.Number="1";'
+                    'R=A.RegisterRecords.OwnedAccumulationRows.Add();R.Item="A";R.Amount=5;'
+                    'B=Documents.OwnedAccumulationDoc.CreateDocument();B.Number="2";'
+                    'R=B.RegisterRecords.OwnedAccumulationRows.Add();R.Item="B";R.Amount=3;'
+                    'Q=New Query("SELECT AmountBalance FROM ' + REG + '.Balance(&At)");'
+                    'Q.SetParameter("At",Date(2024,1,2));')
+                a, b, query = (vm.variables[name] for name in ('a', 'b', 'q'))
                 with execution(context.backend):
-                    vm.execute('BeginTransaction();')
-                    self.seed(vm, [('A', 1, 5, 2, False, 0)])
+                    begin(context.backend)
+                    a.write(DocumentWriteMode.POSTING)
                     with patch('yadinassi.accumulation_queries._dimension_key', side_effect=error):
                         with self.assertRaises(type(error)):
-                            self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=AT)
+                            query.execute()
                     self.assertEqual(current(context.backend).leases, 0)
-                    self.seed(vm, [('B', 1, 3, 1, False, 0)], '2')
-                    vm.execute('RollbackTransaction();')
+                    b.write(DocumentWriteMode.POSTING)
+                    rollback(context.backend)
 
     def test_russian_family_virtual_names_and_resource_suffixes(self):
         vm, _ = self.make()
         self.seed(vm, [('A', 1, 5, 2, False, 0)])
         self.assertEqual(self.query(vm, 'ВЫБРАТЬ AmountОстаток ИЗ РегистрНакопления.OwnedAccumulationRows.Остатки(&At)', At=AT)._rows, ((Decimal(5),),))
-        self.assertEqual(self.query(vm, 'SELECT AmountОборот,AmountПриход,AmountРасход FROM РегистрНакопления.OwnedAccumulationRows.Обороты(&Start,&End)', Start=DATE, End=AT)._rows, ((Decimal(5), Decimal(5), Decimal(0)),))
+        self.assertEqual(self.query(vm, 'SELECT AmountОборот,AmountПриход,AmountРасход FROM РегистрНакопления.OwnedAccumulationRows.Обороты(&Start,&EndAt)', Start=DATE, EndAt=AT)._rows, ((Decimal(5), Decimal(5), Decimal(0)),))
 
     def test_raw_and_totals_share_one_package_snapshot(self):
         vm, context = self.make()
@@ -230,13 +292,14 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         self.assertEqual(result._columns[0].qualifiers, (38, 2, 'Any'))
 
     def test_outer_transaction_staged_query_then_rollback(self):
-        from yadinassi.database_transactions import execution
-        vm, context = self.make()
-        with execution(context.backend):
-            vm.execute('BeginTransaction();')
-            self.seed(vm, [('A', 1, 5, 2, False, 0)])
-            self.assertEqual(self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=AT)._rows, ((Decimal(5),),))
-            vm.execute('RollbackTransaction();')
+        vm, _ = self.make()
+        vm.execute('O=Documents.OwnedAccumulationDoc.CreateDocument();O.Number="1";'
+            'R=O.RegisterRecords.OwnedAccumulationRows.Add();R.Item="A";R.Amount=5;'
+            'BeginTransaction();O.Write(DocumentWriteMode.Posting);'
+            'Q=New Query("SELECT AmountBalance FROM ' + REG + '.Balance(&At)");'
+            'Q.SetParameter("At",Date(2024,1,2));S=Q.Execute().Select();S.Next();'
+            'WasBalance=S.AmountBalance;RollbackTransaction();')
+        self.assertEqual(vm.execute('WasBalance'), Decimal(5))
         self.assertEqual(self.query(vm, 'SELECT COUNT(*) AS N FROM ' + REG)._rows, ((Decimal(0),),))
 
     def test_missing_or_wrong_boundary_rejected_before_database_read(self):
@@ -252,7 +315,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         from yadinassi.dates import BSLDate
         vm, _ = self.make()
         with self.assertRaises(TypeError): self.query(vm, 'SELECT AmountBalance FROM ' + REG + '.Balance(&At)', At=BSLDate(DATE.ticks + 1))
-        with self.assertRaises(ValueError): self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&End)', Start=AT, End=DATE)
+        with self.assertRaises(ValueError): self.query(vm, 'SELECT AmountTurnover FROM ' + REG + '.Turnovers(&Start,&EndAt)', Start=AT, EndAt=DATE)
 
     def test_record_type_projection_and_enum_parameters_are_not_coerced(self):
         vm, _ = self.make()
@@ -269,7 +332,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
         for suffix in ('.Balance()', '.Balance(&At,)', '.Balance(&At,&Filter)', '.Turnovers(&A)',
                        '.Turnovers(&A,&B,Month)', '.BalanceAndTurnovers(&A,&B)', '.SliceLast(&At)'):
             with self.subTest(suffix=suffix), self.assertRaises(ValueError):
-                syntax.parse('SELECT Item FROM ' + REG + suffix)
+                syntax.parse_package('SELECT Item FROM ' + REG + suffix)
 
     def test_input_budgets_charge_excluded_and_unprojected_values(self):
         vm, _ = self.make()

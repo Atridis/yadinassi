@@ -252,6 +252,7 @@ class Interpreter:
         self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
         self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
         self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
+        self.register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
         self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
@@ -509,7 +510,8 @@ class Interpreter:
                         Interpreter._error_info, Interpreter._type_by_name,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,
                         Interpreter._new_user_message, Interpreter._begin_transaction,
-                        Interpreter._commit_transaction, Interpreter._rollback_transaction)
+                        Interpreter._commit_transaction, Interpreter._rollback_transaction,
+                        Interpreter._transaction_active)
         wrappers = {}
 
         def copy_registry(registry):
@@ -623,6 +625,13 @@ class Interpreter:
 
     def _transaction_backend(self):
         return None if self.database_context is None else self.database_context.backend
+
+    def _transaction_active(self):
+        from .database_transactions import active
+        if (not getattr(self, '_transaction_activation_allowed', True)
+                or self._scheduler._active_task is not None or self._scheduler.pending):
+            raise ValueError('Transaction status requires an authorized synchronous activation')
+        return active(self._transaction_backend())
 
     def _begin_transaction(self):
         from .database_transactions import begin
@@ -1654,6 +1663,23 @@ class Interpreter:
                 owner.reference_get_member(node.name)
                 return _Reference(lambda: owner.reference_get_member(node.name),
                                   lambda value: owner.reference_set_member(node.name, value))
+            from .queries import BSLQueryResultSelection
+            from .accumulation_posting_values import BSLAccumulationRow
+            key = node.name.casefold()
+            observed_readonly = (
+                type(owner) is BSLQueryResultSelection and any(
+                    column.name.casefold() == key for column in owner._result._columns)
+                or type(owner) is BSLNumberQualifiers and key in
+                    ('digits', 'разрядность', 'fractiondigits', 'разрядностьдробнойчасти')
+                or type(owner) is BSLAccumulationRow and key in ('linenumber', 'номерстроки'))
+            if observed_readonly:
+                # Native accumulation16 calls scalar helpers with these actuals.
+                # Capture once; this closed reader admission grants no mutable
+                # query cursor/qualifier/occurrence property reference.
+                captured = owner.get_member(node.name)
+                def readonly(value):
+                    raise ValueError('Observed read-only property argument cannot be assigned')
+                return _Reference(lambda: captured, readonly)
             if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn, BSLValueTreeRow, BSLValueTreeColumn)):
                 raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the

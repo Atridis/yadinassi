@@ -64,9 +64,9 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         self.assertIs(self.vm.execute('AccumulationRecordType.Receipt'), AccumulationDirection.RECEIPT)
         self.assertIs(self.vm.execute('ВидДвиженияНакопления.Приход'), AccumulationDirection.RECEIPT)
         self.assertIs(self.vm.execute('ВидДвиженияНакопления.Расход'), AccumulationDirection.EXPENSE)
-        self.assertTrue(self.vm.execute('TypeOf(AccumulationRecordType.Expense)=Type("ВидДвиженияНакопления")'))
-        self.assertTrue(self.vm.execute('Type("AccumulationRecordType")=Type("ВидДвиженияНакопления")'))
-        self.assertFalse(self.vm.execute('AccumulationRecordType.Receipt=AccumulationRecordType.Expense'))
+        self.assertTrue(self.vm.execute('(TypeOf(AccumulationRecordType.Expense)=Type("ВидДвиженияНакопления"))'))
+        self.assertTrue(self.vm.execute('(Type("AccumulationRecordType")=Type("ВидДвиженияНакопления"))'))
+        self.assertFalse(self.vm.execute('(AccumulationRecordType.Receipt=AccumulationRecordType.Expense)'))
 
     def test_enum_namespace_requires_accumulation_source_grant(self):
         with closing(Interpreter()) as vm:
@@ -236,21 +236,22 @@ class AccumulationPostingRuntimeTests(unittest.TestCase):
         obj = self.new()
         self.vm.execute('BeginTransaction();O.Write(DocumentWriteMode.Posting);Saved=O.Ref;RollbackTransaction();')
         self.assertTrue(obj.is_new())
-        self.assertFalse(self.vm.execute('Saved=Documents.Order.EmptyRef()'))
-        self.assertTrue(self.vm.execute('Saved=O.Ref'))
+        self.assertFalse(self.vm.execute('(Saved=Documents.Order.EmptyRef())'))
+        self.assertTrue(self.vm.execute('(Saved=O.Ref)'))
         self.assertFalse(obj.get_member('Posted'))
         self.assertEqual(self.rows(obj), ())
         self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'), [(0,)])
 
-    def test_handler_observes_staged_reference_and_document(self):
+    def test_handler_observes_staged_reference_before_persistence(self):
         self.make('''Procedure Posting(Cancel,Mode)
 If Ref=Documents.Order.EmptyRef() Then Raise "empty staged reference";EndIf;
-Q=New Query("SELECT Number FROM Document.Order");
-If Q.Execute().Unload().Count()<>1 Then Raise "staged document missing";EndIf;
+AdditionalProperties.Insert("InsideRef",Ref);
 RegisterRecords.Rows.Write=True;
 EndProcedure''')
         obj = self.new()
         self.post()
+        self.assertEqual(obj.get_member('AdditionalProperties').get_member('InsideRef'),
+                         obj.get_member('Ref'))
         self.assertEqual(len(self.rows(obj)), 1)
 
     def test_two_documents_and_failed_later_write_preserve_earlier_stage(self):
@@ -292,6 +293,7 @@ EndProcedure''')
         self.make('Procedure Posting(Cancel,Mode) Calls=0;AdditionalProperties.Property("Calls",Calls);'
                   'AdditionalProperties.Insert("Calls",Calls+1);RegisterRecords.Rows.Write=True;EndProcedure')
         obj = self.new()
+        self.vm.execute('O.AdditionalProperties.Insert("Calls",0);')
         with execution(self.backend):
             begin(self.backend)
             obj.write(DocumentWriteMode.POSTING)
@@ -335,6 +337,64 @@ EndProcedure''')
                 with self.assertRaises(BSLRuntimeError): self.post()
                 self.assertEqual(self.rows(obj), ())
                 self.assertEqual(self.sql('SELECT COUNT(*) FROM document_record'), [(0,)])
+
+    def test_transaction_status_is_read_only_and_aliases_match(self):
+        with patch.object(self.backend, 'begin_unit_of_work', wraps=self.backend.begin_unit_of_work) as opened:
+            self.assertIs(self.vm.execute('TransactionActive()'), False)
+            opened.assert_not_called()
+        self.vm.execute('Before=TransactionActive();BeginTransaction();'
+                        'Inside=TransactionActive();Russian=ТранзакцияАктивна();'
+                        'RollbackTransaction();After=TransactionActive();'
+                        'BeginTransaction();CommitTransaction();Committed=TransactionActive();')
+        for name in ('before', 'after', 'committed'):
+            self.assertIs(self.vm.variables[name], False)
+        for name in ('inside', 'russian'):
+            self.assertIs(self.vm.variables[name], True)
+
+    def test_transaction_status_preserves_unavailable_contexts(self):
+        with closing(Interpreter()) as vm:
+            with self.assertRaises(BSLRuntimeError): vm.execute('TransactionActive()')
+        self.vm._transaction_activation_allowed = False
+        with self.assertRaises(BSLRuntimeError): self.vm.execute('TransactionActive()')
+        self.make('Procedure Posting(Cancel,Mode) Value=TransactionActive();EndProcedure')
+        obj = self.new()
+        with self.assertRaises(BSLRuntimeError): self.post()
+        self.assertTrue(obj.is_new())
+        self.assertEqual(self.rows(obj), ())
+
+    def test_transaction_status_cannot_inspect_another_execution_backend(self):
+        from yadinassi.database_transactions import rollback
+        owner = self.backend
+        self.make()
+        with execution(owner):
+            begin(owner)
+            try:
+                with self.assertRaises(BackendError): self.vm._transaction_active()
+                self.assertEqual(current(owner).unit.state, 'open')
+            finally:
+                rollback(owner)
+
+    def test_transaction_status_does_not_resolve_uncertain_owner(self):
+        from yadinassi.database_transactions import rollback
+        with execution(self.backend):
+            begin(self.backend)
+            transaction = current(self.backend)
+            transaction.unit.state = 'uncertain'
+            try:
+                with patch.object(self.backend, 'resolve_unit_of_work') as resolve:
+                    with self.assertRaisesRegex(BackendError, 'uncertain_commit'):
+                        self.vm._transaction_active()
+                    resolve.assert_not_called()
+                self.assertEqual(transaction.unit.state, 'uncertain')
+            finally:
+                transaction.unit.state = 'open'
+                rollback(self.backend)
+
+    def test_transaction_status_binding_is_owned_by_inherited_activation(self):
+        with closing(Interpreter(database_context=self.context)) as child:
+            child._inherit_host_bindings(self.vm)
+            for name in ('transactionactive', 'транзакцияактивна'):
+                self.assertIs(child.functions[name].function.__self__, child)
 
     def test_unowned_register_and_full_manager_api_are_not_exposed(self):
         self.new()
