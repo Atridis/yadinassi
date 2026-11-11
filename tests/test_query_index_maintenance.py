@@ -1,4 +1,5 @@
 """Closed optional indexes and explicit maintenance recovery contracts."""
+from contextlib import closing
 import dataclasses
 import sqlite3
 import tempfile
@@ -28,7 +29,9 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.storage, self.version = backend.storage_version, backend.format_version
         backend.close()
         # Model an existing pre-bundle database even when fresh creation opts in.
-        with sqlite3.connect(self.path) as db:
+        # sqlite3's context manager ends the transaction but does not close the
+        # file handle. Maintenance/replacement requires both boundaries.
+        with closing(sqlite3.connect(self.path)) as db, db:
             for (name,) in db.execute("SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL").fetchall():
                 db.execute('DROP INDEX "' + name + '"')
         self.bundle = read_index_bundle_ddls(self.storage, self.schemas, self.layout,
@@ -109,7 +112,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
 
     def test_stale_raw_data_refuses_apply(self):
         plan = prepare(self.path, maintenance=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE database_info SET generation=generation+1')
         with self.assertRaises(BackendError): apply(self.path, plan, maintenance=True)
         self.assertEqual(resolve(self.path, plan, maintenance=True), 'uncertain')
@@ -195,7 +198,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
 
     def test_raw_rowid_change_invalidates_exact_maintenance_plan(self):
         plan=prepare(self.path,maintenance=True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE configuration_file SET rowid=rowid+100')
         with self.assertRaisesRegex(BackendError,'conflict'):
             apply(self.path,plan,maintenance=True)
