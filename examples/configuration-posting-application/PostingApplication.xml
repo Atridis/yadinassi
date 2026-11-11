@@ -1,0 +1,1 @@
+<PostingApplication xmlns="urn:yadinassi:posting-application:1" version="1"><Form name="Document.Orders.Form.Card"><Command name="Write" id="3" mode="Write"/><Command name="Post" id="4" mode="Post"/><Command name="UndoPosting" id="5" mode="UndoPosting"/></Form></PostingApplication>

@@ -14,6 +14,7 @@ export function mountApplication(environment, root, exchange = null) {
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
+  const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
   applicationMessages.setAttribute('aria-label','Application messages'); applicationMessages.setAttribute('aria-live','polite');
@@ -35,7 +36,7 @@ export function mountApplication(environment, root, exchange = null) {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(pickerBusy || client.state?.choice || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
     if (userNavigation && client.state?.choice) return;
     if (userNavigation) navigation++;
@@ -49,6 +50,7 @@ export function mountApplication(environment, root, exchange = null) {
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
     workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+    if (client.state) paint();
   }
   async function choose(action, ticket = client.state?.choice?.ticket) {
     const choice = client.state?.choice;
@@ -124,7 +126,7 @@ export function mountApplication(environment, root, exchange = null) {
     workarea.className = active && catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
     if (!catalog) return;
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
-    const document = entry.kind === 'document-object';
+    const posting = entry.kind === 'posting-document', document = posting || entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
     const unavailable = () => Boolean(client.state?.choice) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
     const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
@@ -139,7 +141,7 @@ export function mountApplication(environment, root, exchange = null) {
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
-    for (const title of (document ? ['Select','Number','Date','Deletion mark'] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
+    for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
     head.append(headings);table.append(head);const body = el('tbody'); table.append(body);
     const rows = [];
     function paintSelection() {
@@ -168,6 +170,7 @@ export function mountApplication(environment, root, exchange = null) {
         }
       });
       selectCell.append(check);row.append(selectCell,el('td',document ? record.number : record.code),el('td',document ? record.date : record.description),el('td',record.deletionMark?'Marked':''));
+      if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
     catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
@@ -186,12 +189,28 @@ export function mountApplication(environment, root, exchange = null) {
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
-        if (['catalog-object','document-object'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
+        if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
       });
-      node.disabled = disabled || !['catalog-object','document-object'].includes(entry.kind) && client.state.sessions.length >= 8;
+      node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    postingPanel.replaceChildren();
+    const posting = client.state?.posting?.find(item => item.session === active);
+    postingPanel.hidden = !posting;
+    if (posting) {
+      postingPanel.append(el('p',`Posting operation: ${posting.state}${posting.error ? ' ('+posting.error+')' : ''}. ${['uncertain','committed'].includes(posting.state) ? 'Posted state awaiting authoritative refresh' : posting.posted ? 'Posted' : 'Not posted'}.`));
+      if (['uncertain','committed'].includes(posting.state)) {
+        const recover = button('Resolve saved operation',postingPanel,async () => {
+          if (client.pending || client.terminal || client.state.uncertain) return;
+          const owner = posting.session, receipt = posting.receipt;
+          const result = await perform('application.recoverPosting',{session:owner,receipt});
+          if (result && mounts.has(owner)) await mounts.get(owner).mount.refresh();
+        });
+        recover.disabled = !posting.receipt || client.pending > 0 || client.terminal || client.state.uncertain;
+        postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
+      }
+    }
     drawCatalog(); drawPicker();
   }
   function reconcile(result, request) {
@@ -233,7 +252,7 @@ export function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea,picker); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });

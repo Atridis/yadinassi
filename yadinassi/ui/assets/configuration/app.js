@@ -1251,6 +1251,7 @@ function validateApplicationReply(reply, request, previous) {
   const result = reply.result, state = result?.state;
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
+  if (state && Object.hasOwn(state,'posting')) shape.push('posting');
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
@@ -1262,19 +1263,22 @@ function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object'].includes(entry.kind)) throw new FormError('transport');
+        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
+  if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
   if (previous && Object.hasOwn(previous,'choice') !== Object.hasOwn(state,'choice')) throw new FormError('transport');
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object'].includes(e.kind)) ||
+    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
-    const seen = new Set(), document = state.entries.find(entry => entry.id === catalog.entry).kind === 'document-object';
+    const kind = state.entries.find(entry => entry.id === catalog.entry).kind;
+    const seen = new Set(), document = ['document-object','posting-document'].includes(kind), posting = kind === 'posting-document';
     for (const row of catalog.rows) {
-      const fields = document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
+      const fields = posting ? ['key','number','date','deletionMark','posted'] : document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
+      if (posting && typeof row.posted !== 'boolean') throw new FormError('transport');
       if (!keys(row,fields) || !recordKey(row.key) || seen.has(row.key) || typeof row.deletionMark !== 'boolean' ||
           (document ? !text(row.number,9) || typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.date)
                     : !text(row.code,1024) || !text(row.description,1024))) throw new FormError('transport');
@@ -1303,18 +1307,28 @@ function validateApplicationReply(reply, request, previous) {
       tokens.add(row.choice);
     }
   }
-  if (['application.form','application.reference'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
+  if (Object.hasOwn(state,'posting')) {
+    if (!Array.isArray(state.posting) || state.posting.length > 8) throw new FormError('transport');
+    const owners = new Set();
+    for (const item of state.posting) {
+      if (!keys(item,['session','receipt','state','error','posted']) || !sessions.has(item.session) || owners.has(item.session) ||
+          !(item.receipt === null || opaque(item.receipt)) || !['new','unchanged','saved','committed','uncertain','rejected'].includes(item.state) ||
+          ![null,'refresh_required','outcome_unknown','operation_refused'].includes(item.error) || (['uncertain','committed'].includes(item.state) ? item.posted !== null : typeof item.posted !== 'boolean')) throw new FormError('transport');
+      owners.add(item.session);
+    }
+  }
+  if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
-        request.method === 'application.reference' && nested.id !== 1 ||
+        ['application.reference','application.recoverPosting'].includes(request.method) && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
         !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (['application.form','application.reference'].includes(request.method) && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -1332,6 +1346,10 @@ class ApplicationClient {
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
           !referenceAction(params.action,this.state,params.session))) {
         const error = new FormError('reference_refused'); error.preDispatch = true; throw error;
+      }
+      if (method === 'application.recoverPosting' && (!keys(params,['session','receipt']) || !opaque(params.receipt) ||
+          !this.state?.posting?.some(item => item.session === params.session && item.receipt === params.receipt && ['uncertain','committed'].includes(item.state)))) {
+        const error = new FormError('unavailable'); error.preDispatch = true; throw error;
       }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {
@@ -1390,6 +1408,7 @@ function mountApplication(environment, root, exchange = null) {
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
+  const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
   applicationMessages.setAttribute('aria-label','Application messages'); applicationMessages.setAttribute('aria-live','polite');
@@ -1411,7 +1430,7 @@ function mountApplication(environment, root, exchange = null) {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(pickerBusy || client.state?.choice || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
     if (userNavigation && client.state?.choice) return;
     if (userNavigation) navigation++;
@@ -1425,6 +1444,7 @@ function mountApplication(environment, root, exchange = null) {
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
     workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+    if (client.state) paint();
   }
   async function choose(action, ticket = client.state?.choice?.ticket) {
     const choice = client.state?.choice;
@@ -1500,7 +1520,7 @@ function mountApplication(environment, root, exchange = null) {
     workarea.className = active && catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
     if (!catalog) return;
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
-    const document = entry.kind === 'document-object';
+    const posting = entry.kind === 'posting-document', document = posting || entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
     const unavailable = () => Boolean(client.state?.choice) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
     const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
@@ -1515,7 +1535,7 @@ function mountApplication(environment, root, exchange = null) {
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
-    for (const title of (document ? ['Select','Number','Date','Deletion mark'] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
+    for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
     head.append(headings);table.append(head);const body = el('tbody'); table.append(body);
     const rows = [];
     function paintSelection() {
@@ -1544,6 +1564,7 @@ function mountApplication(environment, root, exchange = null) {
         }
       });
       selectCell.append(check);row.append(selectCell,el('td',document ? record.number : record.code),el('td',document ? record.date : record.description),el('td',record.deletionMark?'Marked':''));
+      if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
     catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
@@ -1562,12 +1583,28 @@ function mountApplication(environment, root, exchange = null) {
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
-        if (['catalog-object','document-object'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
+        if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
       });
-      node.disabled = disabled || !['catalog-object','document-object'].includes(entry.kind) && client.state.sessions.length >= 8;
+      node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    postingPanel.replaceChildren();
+    const posting = client.state?.posting?.find(item => item.session === active);
+    postingPanel.hidden = !posting;
+    if (posting) {
+      postingPanel.append(el('p',`Posting operation: ${posting.state}${posting.error ? ' ('+posting.error+')' : ''}. ${['uncertain','committed'].includes(posting.state) ? 'Posted state awaiting authoritative refresh' : posting.posted ? 'Posted' : 'Not posted'}.`));
+      if (['uncertain','committed'].includes(posting.state)) {
+        const recover = button('Resolve saved operation',postingPanel,async () => {
+          if (client.pending || client.terminal || client.state.uncertain) return;
+          const owner = posting.session, receipt = posting.receipt;
+          const result = await perform('application.recoverPosting',{session:owner,receipt});
+          if (result && mounts.has(owner)) await mounts.get(owner).mount.refresh();
+        });
+        recover.disabled = !posting.receipt || client.pending > 0 || client.terminal || client.state.uncertain;
+        postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
+      }
+    }
     drawCatalog(); drawPicker();
   }
   function reconcile(result, request) {
@@ -1609,7 +1646,7 @@ function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea,picker); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });

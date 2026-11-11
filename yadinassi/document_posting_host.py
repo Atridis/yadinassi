@@ -18,6 +18,14 @@ from .document_posting_values import DocumentWriteMode
 MAX_RECEIPTS = 256
 
 
+class PostingRecoveryUnavailable(BackendError):
+    """No live host envelope. Storage retains its closed unsupported category."""
+    reason = 'recovery_unavailable'
+
+    def __init__(self):
+        super().__init__('unsupported')
+
+
 @dataclass(frozen=True, slots=True)
 class PostingOperationIntent:
     operation_id: UUID
@@ -151,13 +159,14 @@ class RootPostingOperations:
         modes = {'Write': DocumentWriteMode.WRITE, 'Post': DocumentWriteMode.POSTING,
                  'UndoPosting': DocumentWriteMode.UNDO_POSTING}
         # This is the last source/admission check before acquiring the root UoW.
+        callback = lambda: document.write(modes[intent.mode])
         self._verify()
         self._operations[operation_id] = (intent, operation, document)
-        return operation.run(lambda: document.write(modes[intent.mode]))
+        return operation.run(callback)
 
     def resolve(self, operation_id):
         if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise BackendError('recovery_unavailable')
+            raise PostingRecoveryUnavailable()
         operation = self._operations[operation_id][1]
         operation.release_for_resolution()
         self._verify()
@@ -165,12 +174,12 @@ class RootPostingOperations:
 
     def receipt(self, operation_id):
         if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise BackendError('recovery_unavailable')
+            raise PostingRecoveryUnavailable()
         return self._operations[operation_id][1].receipt
 
     def intent(self, operation_id):
         if type(operation_id) is not UUID or operation_id not in self._operations:
-            raise BackendError('recovery_unavailable')
+            raise PostingRecoveryUnavailable()
         return self._operations[operation_id][0]
 
     def close(self):

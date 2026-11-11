@@ -28,6 +28,7 @@ export function validateApplicationReply(reply, request, previous) {
   const result = reply.result, state = result?.state;
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
+  if (state && Object.hasOwn(state,'posting')) shape.push('posting');
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
@@ -39,19 +40,22 @@ export function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object'].includes(entry.kind)) throw new FormError('transport');
+        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
+  if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
   if (previous && Object.hasOwn(previous,'choice') !== Object.hasOwn(state,'choice')) throw new FormError('transport');
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object'].includes(e.kind)) ||
+    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
-    const seen = new Set(), document = state.entries.find(entry => entry.id === catalog.entry).kind === 'document-object';
+    const kind = state.entries.find(entry => entry.id === catalog.entry).kind;
+    const seen = new Set(), document = ['document-object','posting-document'].includes(kind), posting = kind === 'posting-document';
     for (const row of catalog.rows) {
-      const fields = document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
+      const fields = posting ? ['key','number','date','deletionMark','posted'] : document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
+      if (posting && typeof row.posted !== 'boolean') throw new FormError('transport');
       if (!keys(row,fields) || !recordKey(row.key) || seen.has(row.key) || typeof row.deletionMark !== 'boolean' ||
           (document ? !text(row.number,9) || typeof row.date !== 'string' || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(row.date)
                     : !text(row.code,1024) || !text(row.description,1024))) throw new FormError('transport');
@@ -80,18 +84,28 @@ export function validateApplicationReply(reply, request, previous) {
       tokens.add(row.choice);
     }
   }
-  if (['application.form','application.reference'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
+  if (Object.hasOwn(state,'posting')) {
+    if (!Array.isArray(state.posting) || state.posting.length > 8) throw new FormError('transport');
+    const owners = new Set();
+    for (const item of state.posting) {
+      if (!keys(item,['session','receipt','state','error','posted']) || !sessions.has(item.session) || owners.has(item.session) ||
+          !(item.receipt === null || opaque(item.receipt)) || !['new','unchanged','saved','committed','uncertain','rejected'].includes(item.state) ||
+          ![null,'refresh_required','outcome_unknown','operation_refused'].includes(item.error) || (['uncertain','committed'].includes(item.state) ? item.posted !== null : typeof item.posted !== 'boolean')) throw new FormError('transport');
+      owners.add(item.session);
+    }
+  }
+  if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
-        request.method === 'application.reference' && nested.id !== 1 ||
+        ['application.reference','application.recoverPosting'].includes(request.method) && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
         !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (['application.form','application.reference'].includes(request.method) && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -109,6 +123,10 @@ export class ApplicationClient {
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
           !referenceAction(params.action,this.state,params.session))) {
         const error = new FormError('reference_refused'); error.preDispatch = true; throw error;
+      }
+      if (method === 'application.recoverPosting' && (!keys(params,['session','receipt']) || !opaque(params.receipt) ||
+          !this.state?.posting?.some(item => item.session === params.session && item.receipt === params.receipt && ['uncertain','committed'].includes(item.state)))) {
+        const error = new FormError('unavailable'); error.preDispatch = true; throw error;
       }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {

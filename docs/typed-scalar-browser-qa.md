@@ -48,7 +48,8 @@ after acquisition. The harness does not build or install anything itself.
    suggest that unsent browser text survives document destruction.
 4. **Held real reply and ordinary shutdown, 7 RPCs.** Double click D1's Write,
    holding delivery of the single real response only after the server completes
-   it. Navigate to D2 while it is held. Application Close and the originating
+   it, the wire checker accepts it and its verified status is exactly `saved`.
+   Navigate to D2 while it is held. Application Close and the originating
    form's disabled Close send nothing. Releasing that same response once must
    leave D2 visible and its dirty Note unchanged. D2's authored BeforeClose
    refuses closure; explicitly write D2, close every form normally, shut down
@@ -72,6 +73,17 @@ observer or 15-second business fetch could otherwise impose an artificial
 cutoff below the production transport's deadline. Production still aborts its
 own request after 35 seconds; attachment fetches retain their 15-second bound.
 This is not a retry and does not extend the acquisition or cleanup deadlines.
+
+The held-write scenario uses that same response-wait budget to reach the hold,
+not a separate 10-second cutoff. Its exact originating session and Write command
+consume the one hold gate at admission. The completed, validated response is
+held for at most five seconds while synchronous native DOM clicks test late
+navigation and Close. Those clicks do not remove `disabled` or `inert`, force
+input, or wait for Playwright actionability on a disabled button. The originating
+Close must still be disabled. Sibling navigation is checked immediately, without
+a 10-second polling wait inside the five-second hold. Release happens in
+`finally`; the matching real browser response and normal idle state are then
+awaited before checking the retained sibling. No request is replayed.
 
 ## Safety and evidence
 
@@ -123,7 +135,15 @@ request/reply, DOM dump, exception text, URL, capability, identity, trace, video
 profile or source contents are exported. Process ownership, group disappearance
 and owned-directory removal are verified; cleanup failure prevents PASS.
 
-Preparation and static contracts are not browser evidence. The 27 new offline
+The held flow separately records only the same closed status vocabulary and
+booleans for admission, accepted body, entered hold, requested release, completed
+delivery and matching browser response. Fixed phases distinguish waiting for
+that reply, switching to the sibling, attempted late Close, release/receipt,
+sibling verification, refused Close, evidence, each subsequent Save/Close and
+ordinary application shutdown. Neither request count nor admission alone is
+reported as proof that a completed reply was held or delivered.
+
+Preparation and static contracts are not browser evidence. The 28 new offline
 contract tests and mechanically adjusted legacy route contracts require their
 own exact-count notice before execution. Real Chromium acquisition is a separate
 four-scenario run on the exact reviewed route.

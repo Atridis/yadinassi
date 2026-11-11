@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from uuid import uuid4
+from uuid import UUID, uuid4
 from yadinassi.catalog_backend import BackendError
 from yadinassi.configuration_posting import import_posting_configuration,PROFILE
 from yadinassi.sqlite_catalog import SQLiteCatalogBackend
@@ -25,6 +25,25 @@ class PostingProfileTests(unittest.TestCase):
         with closing(SQLiteCatalogBackend(self.path)) as other:
             self.assertEqual(other.posting_configuration,self.config)
             self.assertEqual(other.database_id,b.database_id)
+    def test_multiple_documents_name_order_differs_from_uuid_order(self):
+        files=source()
+        files['Configuration.xml']=files['Configuration.xml'].replace(
+            b'<Document>Order</Document>',b'<Document>Alpha</Document><Document>Order</Document>')
+        files['Documents/Alpha.xml']=files['Documents/Order.xml'].replace(
+            b'<Name>Order</Name>',b'<Name>Alpha</Name>').replace(
+            str(UUID(int=2)).encode(),str(UUID(int=42)).encode())
+        files['Documents/Alpha/Ext/ObjectModule.bsl']=files['Documents/Order/Ext/ObjectModule.bsl']
+        self.config=import_posting_configuration(files,posting_runtime=PROFILE)
+        self.assertEqual([d.name for d in self.config.documents],['Order','Alpha'])
+        b=self.create()
+        with closing(b.begin_read()) as view:
+            self.assertEqual(view.database_id,b.database_id)
+        unit=b.begin_unit_of_work(uuid4());unit.rollback()
+        with closing(SQLiteCatalogBackend(self.path)) as other:
+            self.assertEqual(other.posting_configuration,self.config)
+            with closing(other.begin_read()) as view:
+                self.assertEqual(view.database_id,b.database_id)
+
     def test_no_fake_migration_profile(self):
         self.create()
         with closing(sqlite3.connect(self.path)) as c:

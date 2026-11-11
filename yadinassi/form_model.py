@@ -321,6 +321,7 @@ class BSLClientApplicationForm(_Owned):
                    'передзакрытием':'beforeclose','призакрытии':'onclose'}
     def __init__(self, session):
         self._session = session; self._attributes = {}; self._data = {}; self._tables = {}; self._static = set()
+        self._host_readonly = frozenset()
         self.items = BSLFormItems(self); self.commands = BSLFormCommands(self)
         self.actions = {}; self.title = ''
     def _check(self, server=False):
@@ -374,6 +375,8 @@ class BSLClientApplicationForm(_Owned):
         return _FileMethods.get_member(self, member)
     def set_member(self, member, value):
         self._check(); key = member.casefold()
+        if key in self._host_readonly:
+            raise ValueError("host-owned form attribute is read-only")
         if key in self._attributes:
             kind = self._attributes[key].value_type
             if is_reference(kind) and not kind.scope.server:

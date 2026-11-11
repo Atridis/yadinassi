@@ -15,7 +15,7 @@ from yadinassi.configuration_document import DocumentObjectSession
 from yadinassi.database_context import SQLiteDBContext
 from yadinassi.database_transactions import admission, execution, RootOperationReceipt, Transaction
 from yadinassi.document_backend import DocumentDraft, DocumentKey
-from yadinassi.document_posting_host import RootPostingOperations
+from yadinassi.document_posting_host import RootPostingOperations, PostingRecoveryUnavailable
 from yadinassi.sqlite_transactions import UnitOfWork
 from posting_application_fixture import source, FORM
 
@@ -124,7 +124,9 @@ class PostingHostTests(unittest.TestCase):
 
     def test_receipt_unknown_after_host_restart_is_unavailable(self):
         receipt=self.execute();other=RootPostingOperations(self.context,self.config)
-        with self.assertRaisesRegex(BackendError,'recovery_unavailable'):other.resolve(receipt.operation_id)
+        with self.assertRaises(PostingRecoveryUnavailable):other.resolve(receipt.operation_id)
+        self.assertEqual(PostingRecoveryUnavailable().reason,'recovery_unavailable')
+        self.assertEqual(PostingRecoveryUnavailable().code,'unsupported')
         other.close()
 
     def test_final_source_recheck_does_not_leave_prepared_ledger(self):
@@ -136,7 +138,7 @@ class PostingHostTests(unittest.TestCase):
             return real()
         with patch.object(self.host,'_verify',side_effect=verify):
             with self.assertRaises(BackendError):self.execute(operation=operation)
-        with self.assertRaisesRegex(BackendError,'recovery_unavailable'):self.host.receipt(operation)
+        with self.assertRaises(PostingRecoveryUnavailable):self.host.receipt(operation)
         self.assertIsNone(self.card());self.host.close()
 
     def test_handler_cancellation_rolls_back_whole_operation(self):
@@ -229,3 +231,26 @@ class PostingHostTests(unittest.TestCase):
         with patch('yadinassi.document_posting_host.MAX_RECEIPTS',1):
             self.execute()
             with self.assertRaises(BackendError):self.execute(expected=self.card().revision)
+
+
+    def test_root_entry_failure_is_terminal_not_perpetual_prepared(self):
+        operation=uuid4()
+        with patch('yadinassi.database_transactions.RootOperation._enter',side_effect=MemoryError):
+            with self.assertRaises(MemoryError):self.execute(operation=operation)
+        receipt=self.host.receipt(operation)
+        self.assertEqual(receipt.state,'rejected')
+        with patch('yadinassi.document_posting.PostingRuntime.write',side_effect=AssertionError('replay')):
+            self.assertIs(self.execute(operation=operation),receipt)
+        self.assertIsNone(self.card());self.host.close()
+
+    def test_second_root_context_token_failure_restores_first_token(self):
+        from yadinassi import database_transactions as tx
+        operation=uuid4()
+        class Fault:
+            def get(self):return None
+            def set(self,value):raise MemoryError
+        with patch.object(tx,'_execution_backend',Fault()):
+            with self.assertRaises(MemoryError):self.execute(operation=operation)
+            self.assertIsNone(tx._execution.get())
+        self.assertEqual(self.host.receipt(operation).state,'rejected')
+        self.assertIsNone(self.card());self.host.close()

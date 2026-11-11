@@ -361,7 +361,7 @@ def _admit_delta(form, packet):
     for row in _rows(packet['attributes'], MAX_ATTRIBUTES):
         attr_name, encoded = _row(row, 2)
         key = name(attr_name).casefold()
-        if key not in form._attributes or key in seen:
+        if key not in form._attributes or key in seen or key in form._host_readonly:
             raise ValueError('invalid form delta attribute')
         seen.add(key)
         if is_reference(form._attributes[key].value_type):

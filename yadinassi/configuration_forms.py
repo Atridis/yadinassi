@@ -127,6 +127,7 @@ class FormDefinition:
     tables: tuple = ()
     reference_targets: tuple = ()
     reference_slots: tuple = ()
+    posting_application: bool = False
 
     def client_package(self):
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
@@ -161,6 +162,8 @@ class FormDefinition:
             def write(session):
                 if object_session is None:
                     raise ValueError('object form has no persistence activation')
+                if self.posting_application:
+                    raise ValueError('posting requires an explicit host command after form dispatch')
                 return (self._write_document(session, object_session) if self.document_schema
                         else self._write_object(session, object_session))
             server_bindings = (FormServerBinding('WriteObject', write),)
@@ -174,6 +177,8 @@ class FormDefinition:
             bindings=dict(self.bindings), database_context=database_context,
             initial_values=initial, server_bindings=server_bindings, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         session = server.session; form = session.form
+        if self.posting_application:
+            form._host_readonly = frozenset((dict(self.object_fields)["Posted"].casefold(),))
         if enroll is not None:
             enroll(session.interpreter)
             session._reference_enroll_activation = enroll
@@ -271,6 +276,14 @@ class FormDefinition:
     def _document_image(self, session):
         from .configuration_document import DocumentImage, DocumentRowImage
         form=session.form
+        # Posting consumes a detached image only after the form dispatch exits.
+        # Read immutable scalar storage without manufacturing a BSL activation.
+        if self.posting_application and not session._busy:
+            return DocumentImage(tuple((field,form._data[slot.casefold()]) for field,slot in self.object_fields),
+                tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
+                    tuple((column.name,row._data[column.name.casefold()]) for column in table.schema.columns))
+                    for row in table._rows))
+                    for section,slot in self.object_sections for table in (form._tables[slot.casefold()],)))
         return DocumentImage(tuple((field,form.get_member(slot)) for field,slot in self.object_fields),
             tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
                 tuple((column.name,row.get_member(column.name)) for column in table.schema.columns))
@@ -369,7 +382,7 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=()):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
@@ -411,6 +424,7 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
                 from .form_tables import FormTableColumn, FormTableSchema
                 require_document_form_schema(schema, reference_fields=bool(reference_catalogs))
                 specs = [('Number', 'string', (schema.number_length,)), ('Date', 'datetime', ()), ('DeletionMark', 'boolean', ())]
+                if posting_application: specs.append(('Posted', 'boolean', ()))
             else:
                 if schema.tabular_sections or (not reference_catalogs and any(f.kind == 'catalog_ref' for f in schema.fields)):
                     raise ValueError('only scalar catalog object forms supported')
@@ -467,9 +481,16 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
         if (kind == 'Table') != (path.casefold() in {t.name.casefold() for t in tables}):
             raise ValueError('table item requires a declared section path')
         action = _events(values.get(L+'Events'), {'onchange'}).get('onchange', '')
+        if posting_application and dict(object_fields).get('Posted') == path and (kind != 'LabelField' or action):
+            raise ValueError('Posted is an authoritative label only')
         items.append((node.get('name'), kind, _value(values,'Title'), path, action,
             _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
     source = module.decode('utf-8-sig')
+    if posting_application:
+        import re
+        if re.search(r'\bYadinassiPostingSync\b', source, re.IGNORECASE):
+            raise ValueError('reserved posting synchronization name')
+        source += '\n&AtServer\nProcedure YadinassiPostingSync()\nEndProcedure\n'
     if reference_slots:
         import re
         if re.search(r'\b(?:YadinassiReferenceAction|HostReferenceAction)\b', source, re.IGNORECASE):
@@ -492,14 +513,14 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
     definition = FormDefinition(public_name, identity, sha256(raw+b'\0'+module).hexdigest(), program,
         tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands),
         catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
-        reference_targets if reference_slots else (), tuple(reference_slots))
+        reference_targets if reference_slots else (), tuple(reference_slots), posting_application)
     # Validate every declared handler and all reserved-name collisions eagerly.
     validation_server = definition.create_server(_validate_only=True)
     validation_server.session.interpreter.close()
     return definition
 
 
-def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=()):
+def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=(), posting_application=False):
     """Load declared CommonForms and Catalog/Document custom forms, explicitly."""
     accepted = _accept_source_files(files)
     schemas = {schema.name.casefold(): schema for schema in catalog_schemas}
@@ -560,7 +581,7 @@ def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), 
         path = prefix+'/Ext/Form.xml'; module = prefix+'/Ext/Form/Module.bsl'
         is_document = public_name.startswith('Document.')
         definition = _definition(public_name, uid, files[path], files.get(module,b''),
-            None if is_document else schema, schema if is_document else None, reference_catalogs)
+            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application)
         if public_name.casefold() in forms:
             raise ValueError('duplicate form name')
         forms[public_name.casefold()] = definition

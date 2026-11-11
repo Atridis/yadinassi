@@ -338,11 +338,14 @@ class RootOperation:
 
     def _enter(self):
         require_host_root(self.backend)
-        token = _execution.set(object())
-        try: backend_token = _execution_backend.set(self.backend)
+        # Allocate the return container before installing either context. A
+        # tuple built on return could fail after both tokens were acquired.
+        tokens = [None, None]
+        tokens[0] = _execution.set(object())
+        try: tokens[1] = _execution_backend.set(self.backend)
         except BaseException:
-            _execution.reset(token); raise
-        return token, backend_token
+            _execution.reset(tokens[0]); raise
+        return tokens
 
     def _leave(self, tokens):
         transaction = self._transaction
@@ -355,9 +358,10 @@ class RootOperation:
     def run(self, callback):
         if self.receipt.state != 'prepared' or not callable(callback):
             raise BackendError('conflict')
-        tokens = self._enter()
+        tokens = None
         transaction = None
         try:
+            tokens = self._enter()
             transaction = Transaction(self.backend, _execution.get(), operation_id=self.receipt.operation_id)
             self._transaction = transaction
             self.backend._bsl_transaction = transaction
@@ -391,7 +395,7 @@ class RootOperation:
                 self.receipt = self._rejected
             if not isinstance(error, Exception) or isinstance(error, MemoryError): raise
         finally:
-            self._leave(tokens)
+            if tokens is not None: self._leave(tokens)
         return self.receipt
 
     def release_for_resolution(self):

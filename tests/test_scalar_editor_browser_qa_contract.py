@@ -188,18 +188,50 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
     def test_held_response_is_real_once_only_after_the_server_completed_write(self):
         rpc = self.source.split("if(new URL(target).pathname==='/rpc'){", 1)[1]
         self.assertLess(rpc.index('const response=await route.fetch'), rpc.index('await bounded(gate.released'))
-        self.requires("packet.params.request.params.event==='command'&&packet.params.request.params.control==='WriteButton'",
+        self.assertLess(rpc.index('checkReply(result,packet,stage)'), rpc.index('gate.entered()'))
+        self.assertLess(rpc.index("assert.equal(gate.diagnostic.status,'saved','held_write_not_saved')"), rpc.index('gate.entered()'))
+        self.requires("const gate={session:firstOrder,control:'WriteButton',entered,released,diagnostic}",
                       'control.click();control.click()', 'gate.entered()', 'await bounded(gate.released',
-                      'return await route.fulfill({response})', 'finally{release();}', "'double_write_replayed'",
-                      "'held_write_not_saved'")
+                      'await route.fulfill({response})', 'finally{diagnostic.releaseRequested=true;release();}', "'double_write_replayed'",
+                      "await bounded(holding,remaining(rpcReplyMs),'held_reply_not_ready')",
+                      "await bounded(gate.released,remaining(5000),'held_write_timeout')", "'held_write_not_saved'")
+        self.assertNotIn("'write_not_admitted'", self.source)
         self.assertNotIn('dispatchEvent(', self.source)
 
     def test_late_navigation_does_not_steal_sibling_or_send_close_and_dirty_sibling_is_saved(self):
         self.requires("'late_close_sent_work'", "'late_close_removed_owner'", "'late_reply_changed_sibling'",
                       "await value('Number (blank for automatic)','D2')", 'await ownerClose.evaluate(control=>control.click())',
-                      "'dirty_sibling_closed'", "typed(sibling,'NoteInput').value,'Sibling draft'",
-                      'await writeDocument();await closeForm(2);await switchOrder(0);await closeForm(1);await closeForm(0);await ordinaryShutdown()')
+                      "'dirty_sibling_closed'", "typed(sibling,'NoteInput')?.value,'Sibling draft'",
+                      "phase='sibling_write_saved';await writeDocument()", "phase='sibling_close_saved';await closeForm(2)",
+                      "phase='original_close_saved';await switchOrder(0);await closeForm(1)",
+                      "phase='welcome_close_saved';await closeForm(0)", "phase='final_ordinary_shutdown';await ordinaryShutdown()")
+        held = self.source.split("phase='held_write_navigate_sibling';", 1)[1].split("phase='held_write_receive_reply';", 1)[0]
+        self.assertIn("includeHidden:true}).evaluate(control=>control.click())", held)
+        self.assertIn("await ownerClose.evaluate(control=>control.disabled),true,'held_owner_close_not_disabled'", held)
+        self.assertIn("inputValue(),'D2','held_sibling_not_visible'", held)
+        for forbidden in ('.click();await', 'await value(', 'force:true', '.disabled=false', '.inert=false', 'removeAttribute('):
+            self.assertNotIn(forbidden, held)
         self.assertNotIn("action('Discard')", self.source)
+
+    def test_held_receipt_flags_are_closed_and_distinguish_admission_from_delivery(self):
+        self.requires('const held=matchesSave(packet,delayedWrite)?delayedWrite:null',
+                      'if(held){delayedWrite=null;held.diagnostic.requestAdmitted=true;}',
+                      "requestAdmitted:false,bodyAccepted:false,replyHeld:false,releaseRequested:false,",
+                      "deliveryCompleted:false,responseMatched:false,status:'not_received'",
+                      'gate.diagnostic.status=diagnosticSaveStatus(result.result)',
+                      'gate.diagnostic.replyHeld=true;gate.entered()',
+                      'if(held)held.diagnostic.deliveryCompleted=true',
+                      'if(!matchesSave(packet,gate))return false',
+                      "phase='held_write_receive_reply';await reply;await idle()")
+        rpc = self.source.split("if(new URL(target).pathname==='/rpc'){", 1)[1].split('page=await context.newPage()', 1)[0]
+        self.assertLess(rpc.index('held.diagnostic.requestAdmitted=true'), rpc.index('await route.fetch'))
+        self.assertLess(rpc.index('checkReply(result,packet,stage)'), rpc.index('gate.diagnostic.bodyAccepted=true'))
+        self.assertLess(rpc.index('await route.fulfill({response})'), rpc.index('held.diagnostic.deliveryCompleted=true'))
+        for phase in ('held_write_prepare', 'held_write_wait_for_reply', 'held_write_navigate_sibling',
+                      'held_write_attempt_late_close', 'held_write_receive_reply', 'held_write_verify_sibling',
+                      'dirty_sibling_before_close', 'dirty_sibling_evidence', 'sibling_write_saved', 'sibling_close_saved',
+                      'original_close_saved', 'welcome_close_saved', 'final_ordinary_shutdown'):
+            self.assertIn("phase='" + phase + "'", self.source)
 
     def test_screenshots_prove_visible_editable_dates_tables_and_invalid_raw_input(self):
         self.requires("const screenshots=['scalar-product.png','scalar-document.png','scalar-invalid.png','scalar-independent.png']",
@@ -246,7 +278,9 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
             'independent_typed_readback', 'catalog_rpc_plan', 'restart_rpc_plan', 'invalid_draft_rpc_plan', 'total_rpc_plan',
             'evidence_input_offscreen', 'evidence_input_clipped', 'evidence_viewport_missing',
             'reopened_checkbox_changed', 'reference_not_typed', 'reopened_lines_missing',
-            'reopened_product_column_missing', 'reopened_product_not_typed', 'save_reply_not_saved'])
+            'reopened_product_column_missing', 'reopened_product_not_typed', 'save_reply_not_saved',
+            'held_reply_not_ready', 'held_sibling_not_visible', 'held_owner_close_not_disabled', 'held_write_not_saved',
+            'late_close_sent_work', 'late_close_removed_owner', 'double_write_replayed', 'late_reply_changed_sibling', 'dirty_sibling_closed'])
         self.assertIn("fixed.find(code=>message===code||message.startsWith(code+'\\n'))", helper)
         self.assertNotIn('return message', helper)
         self.requires('report.failure={phase,code:stepFailureCode(error)', "phase='document_write'",

@@ -116,7 +116,7 @@ class PostingApplicationSourceTests(unittest.TestCase):
         manifest=files['PostingApplication.xml'];start=manifest.index(b'<Form ');end=manifest.index(b'</Form>')+len(b'</Form>')
         files['PostingApplication.xml']=manifest[:end]+manifest[start:end].replace(b'Document.Order.',b'Document.Alpha.')+manifest[end:]
         config=self.load(files)
-        self.assertEqual([d.name for d in config.documents],['Alpha','Order'])
+        self.assertEqual([d.name for d in config.documents],['Order','Alpha'])
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
             with closing(SQLiteDBContext.create_posting(Path(tmp)/'app.sqlite',config)) as context:
                 from yadinassi.document_posting_host import RootPostingOperations
