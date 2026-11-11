@@ -6,7 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = ['ui', 'form', 'reference', 'configuration', 'application-host',
-          'business-application', 'document-form', 'configuration-reference', 'scalar-editor']
+          'business-application', 'document-form', 'configuration-reference', 'scalar-editor', 'posting-application']
 
 
 class ScalarEditorBrowserContractTests(unittest.TestCase):
@@ -364,7 +364,7 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
         self.assertEqual(re.findall(r'uses: (\S+)', self.workflow), [
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 9])
+            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 10])
         self.assertEqual(self.workflow.split('\npermissions:\n', 1)[1].split('\nconcurrency:', 1)[0].strip(), 'contents: read')
         upload = self.step('Publish only typed scalar screenshots and redacted source-bound report')
         paths = upload.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]

@@ -16,7 +16,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
     def test_third_route_is_exact_and_preserves_two_existing_routes(self):
         source = self.workflow()
         trigger = source.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed, codex/posting-application-browser-reviewed]')
         for branch, harness in [('ui', 'demo_kind'), ('form', 'form'), ('reference', 'reference'), ('configuration', 'configuration')]:
             self.assertEqual(source.count(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'"), 1)
             self.assertEqual(source.count(f'run: node tests/browser_ui/{harness}_browser_qa.mjs'), 1)
@@ -25,7 +25,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertIn('permissions:\n  contents: read', source)
         self.assertIn('runs-on: ubuntu-22.04\n    timeout-minutes: 10', source)
-        self.assertEqual(source.count('timeout-minutes: 5'), 8)
+        self.assertEqual(source.count('timeout-minutes: 5'), 9)
 
     def test_exact_reference_artifact_allowlist_and_pinned_actions(self):
         source = self.workflow()
@@ -40,7 +40,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
         self.assertEqual(re.findall(r'uses: (\S+)', source), [
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 9])
+            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 10])
         self.assertIn('npm ci --prefix tests/browser_ui --ignore-scripts --no-audit --no-fund', source)
         self.assertIn('install chromium --no-shell', source)
 
