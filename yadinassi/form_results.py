@@ -46,3 +46,10 @@ class OwnedFormResult:
     child: str | None = None
     state: str = 'queued'
 
+    def finish(self, state):
+        """Keep only a tombstone after a known terminal outcome, never replay."""
+        self.state = state
+        self.callback = None
+        self.enrollment = None
+        self.result = None
+

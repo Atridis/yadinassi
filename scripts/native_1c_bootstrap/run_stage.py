@@ -164,12 +164,12 @@ def strict_simple_result(path: Path, output: Path) -> str:
     return hashlib.sha256(expected).hexdigest()
 
 
-def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, tree_suite: bool = False, tree_profile: str = 'tree-v1', form_runtime: bool = False) -> dict:
+def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, tree_suite: bool = False, tree_profile: str = 'tree-v1', form_runtime: bool = False, form_results: bool = False) -> dict:
     if type(tree_profile) is not str or tree_profile not in ('tree-v1', 'tree-copy-v1', 'tree-sort-v1', 'tree-columns-move-v1', 'tree-columns-move-boundary-v1', 'tree-columns-move-tail-v1', 'tree-columns-clear-v1', 'tree-columns-clear-lifetime-v1', 'tree-columns-clear-metadata-v1', 'tree-columns-delete-v1', 'tree-columns-delete-string-v1', 'format-numbers-v1', 'value-storage-v1', 'format-dates-v1', 'format-date-names-v1', 'format-date-tokens-v1', 'property-transfer-v1', 'json-family-v1', 'file-io-family-v1', 'xml-workflow-family-v1', 'binary-stream-family-v1', 'regex-family-v1', 'data-io-family-v1', 'dom-family-v1', 'xdto-family-v1', 'data-hashing-family-v1', 'zip-family-v1') or (not tree_suite and tree_profile != 'tree-v1'):
         raise StageError("invalid_input")
-    if type(form_runtime) is not bool:
+    if type(form_runtime) is not bool or type(form_results) is not bool or (form_runtime and form_results):
         raise StageError('invalid_input')
-    if form_runtime:
+    if form_runtime or form_results:
         import full_suite
         if (not full_suite.valid_nonce(full_nonce) or tree_suite
                 or any(value is not False for value in (client_probe, watchdog_check, client_dates,
@@ -274,8 +274,11 @@ def run(*, full_nonce: str | None = None, client_probe: bool = False, watchdog_c
             diagnostics = collect_diagnostics(evidence, stage, manifest,
                                               error.exit_code if isinstance(error, StageError) else None)
         report.update(failed_stage=stage, failure_kind=fallback, diagnostics=diagnostics)
-    if form_runtime:
-        import form_runtime_suite as form_lane
+    if form_runtime or form_results:
+        if form_results:
+            import form_results_suite as form_lane
+        else:
+            import form_runtime_suite as form_lane
         suite = form_lane.empty_report(full_nonce)
         if report['status'] == 'ok' and all(report[flag] for flag in FLAGS):
             suite = form_lane.run_suite(platform, ROOT / ('stage3-' + full_nonce), INPUTS, full_nonce)
@@ -305,8 +308,9 @@ def main(argv: list[str] | None = None) -> int:
     # Fixed full-mode arguments only; the nonce never selects an arbitrary path.
     arguments = [] if argv is None else argv
     full_nonce = None
+    form_results = bool(arguments and arguments[0] == '--form-results-suite')
     form_runtime = bool(arguments and arguments[0] == '--form-runtime-suite')
-    if form_runtime:
+    if form_runtime or form_results:
         import full_suite
         if len(arguments) != 3 or arguments[1] != '--invocation-nonce' or not full_suite.valid_nonce(arguments[2]):
             return 2
@@ -357,7 +361,7 @@ def main(argv: list[str] | None = None) -> int:
         full_nonce = arguments[2]
     # Only this bounded report is consumed by the shell. No tracebacks/raw errors.
     try:
-        report = run() if full_nonce is None else run(full_nonce=full_nonce, **({'form_runtime': True} if form_runtime else {}), **({"tree_suite": True, **({"tree_profile": tree_profile} if tree_profile != "tree-v1" else {})} if tree_suite else {}), client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
+        report = run() if full_nonce is None else run(full_nonce=full_nonce, **({'form_runtime': True} if form_runtime else {}), **({'form_results': True} if form_results else {}), **({"tree_suite": True, **({"tree_profile": tree_profile} if tree_profile != "tree-v1" else {})} if tree_suite else {}), client_probe=client_probe, watchdog_check=watchdog_check, client_dates=client_dates, **({"client_values": True} if client_values else {}), **({"client_collections": True} if client_collections else {}), **({"client_numbers": True} if client_numbers else {}), **({"client_async": True} if client_async else {}), **({"preprocessor_measurement": True} if preprocessor_measurement else {}))
     except Exception:
         report = empty_report()
         # An unexpected exception could follow a persisted user write. Never

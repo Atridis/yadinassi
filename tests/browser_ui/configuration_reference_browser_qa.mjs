@@ -6,6 +6,7 @@ import {readFileSync,readlinkSync,lstatSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
+import {checkUnownedApplicationCapability} from './unowned_application_capability.mjs';
 import {allowedRequest,childEnvironment,ownBrowserPid,
   commandLineArgs,sandboxCommand,sandboxStatus,sha256,launchURL} from './support.mjs';
 
@@ -343,7 +344,7 @@ async function sourceBinding(){
 function checkReply(body,packet,stage){
   stage('reply_envelope');
   exactKeys(body,'jsonrpc id result');assert.equal(body.id,packet.id);assert.equal(body.jsonrpc,'2.0');
-  const result=body.result;exactKeys(result,'protocol state error session form');
+  const result=body.result;checkUnownedApplicationCapability(result);
   assert.equal(result.protocol,'yadinassi-configuration-app/3');assert.equal(result.error,null,'application_refused');
   assert.equal(result.state.uncertain,false);assert.ok(Object.hasOwn(result.state,'choice'));
   if(result.form){

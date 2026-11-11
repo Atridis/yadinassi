@@ -590,8 +590,13 @@ class ReplicatedFormSession(FormSession):
         try:
             self._request('sync')
         finally:
-            self._messages = messages + self._messages
-            self.revision += 1; self._busy = False; self._gate.release()
+            try:
+                self._messages = messages + self._messages
+                if len(self._messages) > 64:
+                    self.uncertain = True
+                    raise ValueError('owned synchronization message limit')
+            finally:
+                self.revision += 1; self._busy = False; self._gate.release()
         return self.snapshot()
 
     def bind_nocontext(self, port, binding):
@@ -651,7 +656,7 @@ class ReplicatedFormSession(FormSession):
                 if accepted:
                     decoded = _unpack_state(response['state'], self, self._handlers)
                     lifecycle = decoded[2]
-                    if operation == 'call' and lifecycle != 'open' or operation in ('close', 'dispose') and lifecycle != 'closed':
+                    if operation in ('call', 'sync') and lifecycle != 'open' or operation in ('close', 'dispose') and lifecycle != 'closed':
                         raise ValueError('invalid response lifecycle')
                 elif response['state'] is not None or messages:
                     raise ValueError('rejected response contains effects')

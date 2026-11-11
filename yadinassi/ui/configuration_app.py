@@ -544,8 +544,11 @@ class ConfigurationController:
             raise ValueError('application message limit')
         self.application_messages.append(value)
 
-    def _application_open_form(self, name, parameters=None, owner=None, uniqueness=None,
-                               window=None, navigation=None, completion=None):
+    def _application_open_form(self, *arguments):
+        if len(arguments) not in (1, 2, 7):
+            raise TypeError('OpenForm requires one/two unowned or seven owned arguments')
+        name, parameters, owner, uniqueness, window, navigation, completion = (
+            *arguments, *([None] * (7 - len(arguments))))
         if (not self._dispatch_active or self.uncertain or self.application is None
                 or self.application.state not in ('starting', 'running') or self._completion_owner is not None):
             raise ValueError('OpenForm requires an active application client event')
@@ -555,7 +558,7 @@ class ConfigurationController:
         if len(self.sessions) + len(self.pending) >= MAX_FORMS or len(self.issued) + len(self.pending) >= MAX_SESSIONS:
             raise ValueError('form capacity exhausted')
         owned = None
-        if owner is not None or completion is not None:
+        if len(arguments) == 7:
             from ..form_results import OwnedFormResult, freeze_result
             sid = self._current_form_sid
             controller = self.sessions.get(sid, (None, None))[0]
@@ -583,7 +586,7 @@ class ConfigurationController:
         while len(self.pending) > count:
             _, _, owned = self.pending.pop()
             if owned is not None:
-                owned.state = 'opening_failed'
+                owned.finish('opening_failed')
                 if self.owner_children.get(owned.owner) is owned:
                     del self.owner_children[owned.owner]
 
@@ -597,6 +600,12 @@ class ConfigurationController:
         try:
             with scope:
                 response = controller.exchange(request)
+        except BaseException as exc:
+            self._drop_pending_after(queued_before)
+            self._close_requests.pop(sid, None)
+            if not isinstance(exc, Exception):
+                self._lock()
+            raise
         finally:
             self._current_form_sid = previous
         if response['result']['error'] is not None:
@@ -683,7 +692,7 @@ class ConfigurationController:
         if error is not None:
             # Preserve the known applied value, but discard only opens queued
             # by the failed event, just like the ordinary form dispatch path.
-            while len(self.pending) > queued_before: self.pending.pop()
+            self._drop_pending_after(queued_before)
         return sid, {'jsonrpc':'2.0','id':1,'result':{
             'protocol':FORM_PROTOCOL, 'state':controller._snapshot(), 'error':error}}, error
 
@@ -722,7 +731,7 @@ class ConfigurationController:
 
     def _lock(self):
         self.uncertain = True
-        self.pending.clear()
+        self._drop_pending_after(0)
         for controller, _ in self.sessions.values():
             controller.session.uncertain = True
 
@@ -842,6 +851,7 @@ class ConfigurationController:
                 if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.functions:
                     raise ValueError('reserved owned-form Close alias')
                 interpreter.functions[key] = HostFunction(alias, session.request_close, returns_value=False)
+                session.reserved_names.add(key)
             return
         def open_form(name, parameters=None):
             controller = self.sessions.get(sid, (None, None))[0]
@@ -927,10 +937,6 @@ class ConfigurationController:
             return sid, form, None
         except Exception:
             self._drop_pending_after(queued_before)
-            if owned is not None:
-                owned.state = 'opening_failed'
-                if self.owner_children.get(owned.owner) is owned:
-                    del self.owner_children[owned.owner]
             if controller is not None and controller.session.uncertain:
                 self._lock()
             if not self.uncertain:
@@ -938,6 +944,11 @@ class ConfigurationController:
                 self.sessions.pop(sid, None)
                 if controller is not None:
                     controller.session.interpreter.close()
+                if owned is not None:
+                    owned.finish('opening_failed')
+                    self.owner_children.pop(owned.owner, None)
+            elif owned is not None:
+                owned.state = 'uncertain'
             return None, None, 'open_failed'
 
     def _drain(self):
@@ -950,14 +961,21 @@ class ConfigurationController:
                 parent = self.sessions.get(owned.owner, (None, None))[0]
                 if (parent is None or parent.session.closed
                         or parent.session._owned_form_enrollment is not owned.enrollment):
-                    owned.state = 'owner_retired'
+                    owned.finish('owner_retired')
                     self.owner_children.pop(owned.owner, None)
                     error = 'retired_session'
                     continue
-            _, _, failed = self._open(entry, values, owned=owned)
-            if failed:
+            try:
+                _, _, failed = self._open(entry, values, owned=owned)
+            except BaseException:
                 if owned is not None:
-                    owned.state = 'opening_failed'
+                    owned.state = 'uncertain'
+                    if owned.child is None:
+                        self.owner_children.pop(owned.owner, None)
+                raise
+            if failed:
+                if owned is not None and not self.uncertain:
+                    owned.finish('opening_failed')
                     self.owner_children.pop(owned.owner, None)
                 error = failed
         return error
@@ -971,9 +989,15 @@ class ConfigurationController:
         self.posting_states.pop(sid, None)
         if self.active == sid:
             self.active = owned.owner if owned is not None and owned.owner in self.sessions else next(reversed(self.sessions), None)
-        controller.session.interpreter.close()
         if owned is not None and owned.state == 'open':
             owned.state = 'retired'
+        try:
+            controller.session.interpreter.close()
+        except BaseException:
+            if owned is not None: owned.state = 'uncertain'
+            if owned is not None: self.owner_children.pop(owned.owner, None)
+            self._lock()
+            raise
         return owned
 
     def _deliver_completed_form(self, owned, updates):
@@ -982,20 +1006,20 @@ class ConfigurationController:
         parent = self.sessions.get(owned.owner, (None, None))[0]
         if (parent is None or parent.session.closed
                 or parent.session._owned_form_enrollment is not owned.enrollment):
-            owned.state = 'owner_retired'
+            owned.finish('owner_retired')
             self.owner_children.pop(owned.owner, None)
             return 'retired_session'
         from ..form_results import result_value
         session = parent.session
-        # Decode/allocate before reserving at-most-once delivery. After this
-        # transition even a partial callback failure is terminal, never replayed.
-        value = result_value(owned.result)
+        # Reserve delivery before any fallible work. Even a partial callback or
+        # allocation failure is terminal, never an invitation to replay.
         owned.state = 'delivering'
         self._completion_owner = owned.owner
         previous = self._current_form_sid
         self._current_form_sid = owned.owner
         failed = False
         try:
+            value = result_value(owned.result)
             with self.application.event_messages(session._record_message):
                 session.synchronize_owned()
                 try:
@@ -1007,16 +1031,18 @@ class ConfigurationController:
                     # Preserve local partial effects even when completion failed.
                     session.synchronize_owned()
             owned.state = 'failed' if failed else 'delivered'
-        except BaseException:
-            owned.state = 'failed'
-            if session.uncertain:
+        except BaseException as exc:
+            if session.uncertain or not isinstance(exc, Exception):
                 self._lock()
+            owned.state = 'uncertain' if self.uncertain else 'failed'
             failed = True
             raise
         finally:
             self._completion_owner = None
             self._current_form_sid = previous
             self.owner_children.pop(owned.owner, None)
+            if owned.state in ('failed', 'delivered'):
+                owned.finish(owned.state)
         if session.uncertain:
             self._lock()
         reply = self._form_exchange(parent, {'jsonrpc':'2.0','id':1,'method':'form.snapshot','params':{}})
@@ -1127,7 +1153,12 @@ class ConfigurationController:
                     self.operations[token] = (intent, sid, error)
             elif method == 'application.reference':
                 if params.get('session') in self.owner_children:
+                    _keys(params, 'session revision action')
+                    sid = params['session']
                     error = 'owned_child_open'
+                    form = self._form_exchange(self.sessions[sid][0], {
+                        'jsonrpc':'2.0','id':1,'method':'form.snapshot','params':{}})
+                    form['result']['error'] = 'busy'
                 else:
                     sid, form, error = self._reference_request(params)
                 # OnChange may synchronously persist an object even if a later
@@ -1193,6 +1224,13 @@ class ConfigurationController:
                                 reply = self._form_exchange(parent, {'jsonrpc':'2.0','id':1,'method':'form.snapshot','params':{}})
                                 reply['result']['error'] = 'outcome_unknown' if parent.session.uncertain else 'event_failed'
                                 updates.append({'session': owned.owner, 'form': reply})
+                        if owned is not None and not self.uncertain and self.catalog is not None:
+                            # A completion may explicitly Write before a later
+                            # failure. Refresh lists, never repeat that handler.
+                            projection = self._call('catalog', payload={'entry': self.catalog['entry']})
+                            projection_error = projection.get('error')
+                            self.catalog = None if projection_error else projection
+                            error = error or projection_error
             elif method == 'application.recoverPosting':
                 _keys(params, 'session receipt')
                 sid = params['session']
