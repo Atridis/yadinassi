@@ -109,3 +109,18 @@ class ConfigurationDocumentTests(unittest.TestCase):
         with self.assertRaises(ValueError): DocumentObjectSession(self.context, schema, self.files)
         with self.assertRaises(ValueError): self.owned.object.set_member('Posted', True)
         with self.assertRaises(TypeError): self.owned.object.write('Posting')
+
+    def test_posting_profile_refuses_nonposting_host_editor_before_read(self):
+        from test_document_posting_runtime import posting_source
+        from yadinassi.configuration_posting import import_posting_configuration, PROFILE
+        files = posting_source()
+        config = import_posting_configuration(files, posting_runtime=PROFILE)
+        path = Path(self.temp.name) / 'posting.sqlite'
+        with SQLiteDBContext.create_posting(path, config) as context:
+            before = path.read_bytes()
+            with patch.object(context.backend, 'begin_document_read') as read:
+                with self.assertRaises(BackendError) as caught:
+                    DocumentObjectSession(context, config.documents[0], files)
+                self.assertEqual(caught.exception.code, 'unsupported')
+                read.assert_not_called()
+            self.assertEqual(path.read_bytes(), before)

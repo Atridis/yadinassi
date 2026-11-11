@@ -20,6 +20,14 @@ class SQLiteDBContext:
         result.path = result._backend.path
         return result
 
+    @classmethod
+    def create_posting(cls, path, configuration):
+        """Create a fresh source-granted recorder database, never migrate one."""
+        result = object.__new__(cls)
+        result._backend = SQLiteCatalogBackend.create_posting(path, configuration)
+        result.path = result._backend.path
+        return result
+
     @property
     def backend(self):
         return self._backend
