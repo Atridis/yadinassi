@@ -5,7 +5,8 @@ import os
 import sqlite3
 from uuid import UUID,uuid4
 from .catalog_backend import BackendError
-from .configuration_accumulation_references import canonical, import_inventory_configuration, PROFILE
+from .configuration_accumulation_references import (InventoryConfiguration, canonical,
+    import_inventory_configuration, PROFILE)
 from .sqlite_accumulation_movements import ACCUMULATION_DDL,AccumulationMovementPort,schema_data
 from .sqlite_document_posting_state import POSTED_DDL,POSTED_RECEIPT_DDL,read_posted
 
@@ -62,7 +63,7 @@ def _preflight_config(config):
         raise BackendError('unsupported') from None
 
 
-def admit(connection,database_id,catalogs,documents,*,validate_rows=False):
+def admit(connection,database_id,catalogs,documents,*,validate_rows=False,_prepared=None):
     if (connection.execute('PRAGMA application_id').fetchone()!=(_storage()._APPLICATION_ID,)
             or connection.execute('PRAGMA user_version').fetchone()!=(15,)):
         raise BackendError('integrity')
@@ -71,23 +72,37 @@ def admit(connection,database_id,catalogs,documents,*,validate_rows=False):
     count,size=connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
     if not 1<=count<=4096 or size>8*1024*1024:raise BackendError('unsupported')
     if connection.execute("SELECT 1 FROM configuration_file WHERE typeof(path)!='text' OR length(path)>256 OR typeof(content)!='blob' OR length(content)>1048576 OR typeof(sha256)!='text' OR length(sha256)!=64 LIMIT 1").fetchone():raise BackendError('integrity')
-    files={}
+    files={};source_entries=[]
     for path,kind,raw,digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file'):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
-        files[path]=raw
+        files[path]=raw;source_entries.append((path,kind,len(raw),digest))
     marker=connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
     if len(marker)!=1 or marker[0][0]!=1:raise BackendError('integrity')
-    try:
-        if marker[0][1]==PROFILE:
-            config=import_inventory_configuration(files,inventory_runtime=PROFILE)
-        else:
-            from .configuration_inventory_application import PROFILE as UI_PROFILE, import_inventory_application
-            if marker[0][1]!=UI_PROFILE:raise BackendError('integrity')
-            config=import_inventory_application(files,inventory_runtime=UI_PROFILE)
-    except (ValueError,TypeError):raise BackendError('integrity') from None
+    if marker[0][1]==PROFILE:
+        expected_type=InventoryConfiguration
+    else:
+        from .configuration_inventory_application import (InventoryApplicationConfiguration,
+            PROFILE as UI_PROFILE, import_inventory_application)
+        if marker[0][1]!=UI_PROFILE:raise BackendError('integrity')
+        expected_type=InventoryApplicationConfiguration
+    info=connection.execute('SELECT database_uuid,configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
+    # The exact full variant includes every original form/manifest byte and
+    # immutable command/report grant, never its temporary core projection.
+    prepared_key=('inventory',database_id,
+        tuple(connection.execute('PRAGMA '+name).fetchone()[0] for name in ('application_id','user_version','schema_version')),
+        info,tuple(marker),tuple(sorted(source_entries)),catalogs,documents)
+    config=_prepared.lookup(prepared_key) if _prepared is not None else None
+    if config is None:
+        try:
+            if expected_type is InventoryConfiguration:
+                config=import_inventory_configuration(files,inventory_runtime=PROFILE)
+            else:
+                config=import_inventory_application(files,inventory_runtime=UI_PROFILE)
+        except (ValueError,TypeError):raise BackendError('integrity') from None
+    if type(config) is not expected_type or config.profile!=marker[0][1]:raise BackendError('integrity')
     if marker!=[(1,config.profile,config.source_digest)] or config.documents!=documents or config.catalogs!=catalogs:raise BackendError('integrity')
-    info=connection.execute('SELECT configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
-    if info!=(str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
+    if info!=(str(database_id),str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
+
     if connection.execute('SELECT COUNT(*) FROM accumulation_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')
     if validate_rows:
         _preflight_config(config)
@@ -107,6 +122,7 @@ def admit(connection,database_id,catalogs,documents,*,validate_rows=False):
         posted_budget(connection)
         for doc,record in connection.execute('SELECT document_id,record_id FROM document_posting_state'):
             read_posted(connection,database_id,DocumentKey(database_id,_stored_uuid(doc),_stored_uuid(record)))
+    if _prepared is not None:_prepared.remember(prepared_key,config)
     return config
 
 

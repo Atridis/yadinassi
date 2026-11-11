@@ -1,4 +1,5 @@
 """Owned SQLite catalog persistence. No native database format dependencies."""
+from .sqlite_inventory_source import _UNSPECIFIED
 import datetime
 import decimal
 import hashlib
@@ -111,6 +112,7 @@ def _read_owner(value):
 
 
 def _close_owned_connection(owner):
+    if hasattr(owner, '_inventory_source'): owner._inventory_source = None
     if owner._connection is None and owner._backend._active is owner:
         # An interruption may land between the successful lease's detach
         # assignments. The still-active owner exclusively owns this exact idle
@@ -570,12 +572,13 @@ class SQLiteCatalogBackend:
                 self._recorder_schemas = self.posting_configuration.registers
             if self.format_version == 14:
                 from .sqlite_accumulation_profile import admit
-                self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True,
+                    _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             if self.format_version == 15:
                 from .sqlite_inventory_profile import admit
                 self.accumulation_configuration = admit(connection, self.database_id, self._schemas,
-                    self._document_schemas, validate_rows=True)
+                    self._document_schemas, validate_rows=True, _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
@@ -1378,11 +1381,21 @@ class SQLiteCatalogBackend:
                         raise BackendError('schema_changed')
                 if self.format_version == 14:
                     from .sqlite_accumulation_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas) != self.accumulation_configuration:
+                    if admit(connection, self.database_id, self._document_schemas,
+                             _prepared=self._prepared_source) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
+                admitted_inventory = None
                 if self.format_version == 15:
                     from .sqlite_inventory_profile import admit
-                    if admit(connection, self.database_id, self._schemas, self._document_schemas) != self.accumulation_configuration:
+                    from .sqlite_inventory_source import same_configuration_value
+                    from .configuration_inventory_application import InventoryApplicationConfiguration
+                    admitted_inventory = admit(connection, self.database_id, self._schemas, self._document_schemas,
+                                               _prepared=self._prepared_source)
+                    if type(admitted_inventory) is InventoryApplicationConfiguration:
+                        matches = same_configuration_value(admitted_inventory, self.accumulation_configuration)
+                    else:
+                        matches = admitted_inventory == self.accumulation_configuration
+                    if not matches:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
                 if handle is not None:
@@ -1391,6 +1404,9 @@ class SQLiteCatalogBackend:
             except sqlite3.OperationalError:
                 raise BackendError('busy') from None
             self._active = view
+            if not _receipt_only and admitted_inventory is not None:
+                from .sqlite_inventory_source import capture
+                capture(view, admitted_inventory)
             return view
         except BaseException as error:
             if self._read_handle is not None: self._read_handle.invalidate()
@@ -1603,6 +1619,7 @@ class _View:
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._validated_sources = {}
+        self._inventory_source = None
         self._read_handle = None
         self._document_scan_stream = None
         self._document_scan_lookahead = None
@@ -1623,6 +1640,12 @@ class _View:
         if self._closed or self._poisoned: raise BackendError('closed')
         if write and self._operation_id is None: raise BackendError('unsupported')
         if mutate and len(self._changes) >= _MAX_ROWS: raise BackendError('unsupported')
+
+    @_boundary
+    def inventory_source(self, *, expected=_UNSPECIFIED):
+        """Full forms15 source data proved by this exact current read admission."""
+        from .sqlite_inventory_source import read
+        return read(self, expected=expected)
 
     @_boundary
     def catalogs(self):
@@ -2580,6 +2603,7 @@ class _View:
     def rollback(self): self.close()
     @lifecycle
     def close(self):
+        self._inventory_source = None
         handle = self._read_handle
         if (self._closed or handle is None or self._poisoned
                 or self._connection is not handle.connection):

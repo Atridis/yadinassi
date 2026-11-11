@@ -5,22 +5,40 @@ from .catalog_backend import BackendError
 from .configuration_catalog import CatalogObjectSession
 from .configuration_document import require_document_form_schema, _OpenedDocument
 from .configuration_posting_document import PostingDocumentSession
-from .configuration_inventory_application import canonical
 from .inventory_host_operations import InventoryRootOperations, _source_configuration
 from .documents import BSLDocumentObject
 
 
 class InventoryCatalogSession(CatalogObjectSession):
     def __init__(self, context, schema, configuration, reference=None):
-        self.configuration = canonical(configuration)
+        self.configuration = _source_configuration(context.backend, expected=configuration)
         if schema not in self.configuration.catalogs:
             raise BackendError('unsupported')
         super().__init__(context, schema, dict(self.configuration.files), reference)
 
     def verify_source(self):
-        if _source_configuration(self.context.backend) != self.configuration:
+        # Preserve CatalogObjectSession's stale-editor/schema/identity contract,
+        # but bind source and schema to one admitted view instead of export.
+        if self._stale or self.context.backend is not self._backend:
+            self._stale = True
             raise BackendError('schema_changed')
-        super().verify_source()
+        try:
+            self.context.require_active(tabular_sections=True)
+            view = self._backend.begin_read()
+            try:
+                view.inventory_source(expected=self.configuration)
+                identity = (view.database_id, view.configuration_generation)
+                if view.catalog_schema(self.schema.identity) != self.schema:
+                    raise BackendError('schema_changed')
+                if self._identity is not None and identity != self._identity:
+                    raise BackendError('schema_changed')
+                self._identity = identity
+            finally:
+                view.close()
+        except BackendError as error:
+            if error.code in ('schema_changed', 'integrity'):
+                self._stale = True
+            raise
 
 
 class InventoryDocumentSession(PostingDocumentSession):
@@ -32,7 +50,7 @@ class InventoryDocumentSession(PostingDocumentSession):
     def __init__(self, context, schema, configuration, form, key=None, *, _opened=None):
         require_document_form_schema(schema, reference_fields=True)
         self.context, self.schema = context, schema
-        self.configuration = canonical(configuration)
+        self.configuration = _source_configuration(context.backend, expected=configuration)
         if schema not in self.configuration.documents:
             raise BackendError('unsupported')
         self._backend = context.backend

@@ -3,6 +3,7 @@
 Distinct document tables/keys; catalog layouts and receipt bytes are unchanged.
 The closed tagged scalar codec is shared, never exposed as a native codec.
 """
+from .sqlite_inventory_source import _UNSPECIFIED
 from hashlib import sha256
 from decimal import Decimal
 import json
@@ -116,6 +117,10 @@ class DocumentView:
     def _connection(self): return self._view._connection
     def close(self): self._view.close()
     def rollback(self): self._view.rollback()
+    def inventory_source(self, *, expected=_UNSPECIFIED):
+        if type(self) is not DocumentView:
+            raise BackendError('unsupported')
+        return self._view.inventory_source(expected=expected)
     def catalog_schema(self, identity): return self._view.catalog_schema(identity)
     def scan_catalog_values(self, identity, request, fields):
         return self._view.scan_catalog_values(identity, request, fields)

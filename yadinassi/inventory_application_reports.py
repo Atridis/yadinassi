@@ -15,7 +15,7 @@ from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
 from .catalog_backend import (BackendError, CatalogKey, CatalogComparison,
     CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision)
 from .configuration_inventory_application import (
-    InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS, canonical)
+    InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS)
 from .document_backend import DocumentKey
 
 MAX_INPUT_ROWS = 10000
@@ -335,12 +335,16 @@ class InventoryReports:
         from .sqlite_catalog import SQLiteCatalogBackend
         if type(self._backend) is not SQLiteCatalogBackend:
             raise BackendError('unsupported')
-        try:
-            self._configuration = canonical(configuration)
-        except (ValueError, TypeError):
-            raise BackendError('unsupported') from None
+        self._configuration = configuration
         self._binding = (self._backend.database_id, self._backend.configuration_generation)
         self._admit()
+        owner = self._backend.begin_read()
+        try:
+            self._configuration = owner.inventory_source(expected=configuration)
+            if (owner.database_id, owner.configuration_generation) != self._binding:
+                raise BackendError('schema_changed')
+        finally:
+            owner.close()
 
     def _admit(self):
         from .sqlite_catalog import SQLiteCatalogBackend
@@ -357,8 +361,7 @@ class InventoryReports:
                 or transactions._execution_backend.get() is not None
                 or transactions._registered(b) is not None):
             raise BackendError('unsupported')
-        if (b.accumulation_configuration != self._configuration
-                or (b.database_id, b.configuration_generation) != self._binding):
+        if (b.database_id, b.configuration_generation) != self._binding:
             raise BackendError('schema_changed')
 
     def choices(self, report_name, dimension_name, code=''):
@@ -385,15 +388,11 @@ class InventoryReports:
             terms += (CatalogComparison('code', 'eq', code),)
         request = CatalogScanRequest(predicate=terms[0] if len(terms) == 1 else CatalogPredicate('and', terms),
                                      order=(CatalogOrder('code'),), page_size=MAX_CHOICES)
-        from .sqlite_inventory_profile import admit
         owner = self._backend.begin_read()
         try:
             if (owner.database_id, owner.configuration_generation) != self._binding:
                 raise BackendError('schema_changed')
-            current = admit(owner._connection, owner.database_id,
-                            self._configuration.catalogs, self._configuration.documents)
-            if current != self._configuration:
-                raise BackendError('schema_changed')
+            current = owner.inventory_source(expected=self._configuration)
             page = owner.scan_catalog(field.catalog_id, request)
             if (type(page) is not CatalogPage or type(page.cards) is not tuple or len(page.cards) > MAX_CHOICES
                     or page.continuation is not None and (type(page.continuation) is not str
@@ -439,18 +438,14 @@ class InventoryReports:
         filters = _statement_options(grant, periodicity, filters, self._binding)
         schema = next(s for s in self._configuration.registers if s.identity == grant.register_id)
         columns = _columns(schema, grant.view, periodicity)
-        from .sqlite_inventory_profile import admit
         from .sqlite_transactions import _accumulation_port
         owner = self._backend.begin_read()
         try:
             if (owner.database_id, owner.configuration_generation) != self._binding:
                 raise BackendError('schema_changed')
-            # Reimport actual full bytes/marker on this very lease, not export
-            # through a second connection and not generation/cache alone.
-            current = admit(owner._connection, owner.database_id,
-                            self._configuration.catalogs, self._configuration.documents)
-            if current != self._configuration:
-                raise BackendError('schema_changed')
+            # Reuse this lease's actual full admission result, not a second
+            # import/export or a backend cache entry treated as proof.
+            current = owner.inventory_source(expected=self._configuration)
             known = _filter_labels(owner, filters)
             port = _accumulation_port(owner)
             rows = (_statement_rows(port, schema, boundaries, periodicity, filters)

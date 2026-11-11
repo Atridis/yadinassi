@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -88,7 +89,13 @@ class InventoryHostTests(unittest.TestCase):
     test_no_receipt_allocation_is_needed_after_commit=_ScalarHostTests.test_no_receipt_allocation_is_needed_after_commit
     test_commit_memory_error_retains_preallocated_uncertain_receipt=_ScalarHostTests.test_commit_memory_error_retains_preallocated_uncertain_receipt
     test_failed_rollback_cleanup_keeps_host_locked=_ScalarHostTests.test_failed_rollback_cleanup_keeps_host_locked
-    test_full_source_mismatch_refused_before_begin=_ScalarHostTests.test_full_source_mismatch_refused_before_begin
+    def test_full_source_mismatch_refused_before_begin(self):
+        # Source now comes from the actual read admission, not export().
+        with closing(sqlite3.connect(self.path)) as connection:
+            connection.execute("UPDATE configuration_file SET content=? WHERE path='Configuration.xml'", (b'bad',))
+            connection.commit()
+        with patch.object(self.backend, 'begin_unit_of_work', side_effect=AssertionError('begin')):
+            with self.assertRaises(BackendError): self.execute()
     test_empty_additional_properties_are_not_external_inputs=_ScalarHostTests.test_empty_additional_properties_are_not_external_inputs
     test_root_entry_failure_is_terminal_not_perpetual_prepared=_ScalarHostTests.test_root_entry_failure_is_terminal_not_perpetual_prepared
     test_second_root_context_token_failure_restores_first_token=_ScalarHostTests.test_second_root_context_token_failure_restores_first_token

@@ -4,12 +4,13 @@ No renderer value, form callback or core inventory profile supplies root
 transaction authority. Catalog references in an immutable intent carry database,
 metadata and record identity, never a label or a browser capability.
 """
+from .sqlite_inventory_source import _UNSPECIFIED
 from dataclasses import fields
 from uuid import UUID
 
 from .catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
 from .configuration_inventory_application import (
-    InventoryApplicationConfiguration, PROFILE, canonical,
+    InventoryApplicationConfiguration, PROFILE,
 )
 from . import database_transactions as transactions
 from .document_backend import DocumentDraft, DocumentKey, DocumentRevision
@@ -20,28 +21,30 @@ from .document_posting_host import (
 from .document_posting_values import DocumentWriteMode
 
 
-def _source_configuration(backend):
-    """Read-only source check, not a root-execution grant for a form VM."""
+def _source_configuration(backend, *, expected=_UNSPECIFIED):
+    """Current read admission, not a root-execution grant for a form VM."""
     from .sqlite_catalog import SQLiteCatalogBackend
-    if (type(backend) is not SQLiteCatalogBackend or backend.format_version != 15
-            or type(backend.accumulation_configuration) is not InventoryApplicationConfiguration
-            or backend.accumulation_configuration.profile != PROFILE):
+    if type(backend) is not SQLiteCatalogBackend or backend.format_version != 15:
         raise BackendError('unsupported')
-    if backend._closed:
-        raise BackendError('closed')
-    configuration = canonical(backend.accumulation_configuration)
-    if backend.export_configuration() != dict(configuration.files):
-        raise BackendError('schema_changed')
-    return configuration
+    view = backend.begin_read()
+    try:
+        return view.inventory_source(expected=expected)
+    finally:
+        view.close()
 
 
-def require_inventory_host_root(backend):
-    """Only exact physical15 forms, outside every BSL activation or owner."""
+def _require_inventory_host_context(backend):
+    # Context authority is independent of the read-only source data port.
     transactions.require_admission()
     if (transactions._execution.get() is not None
             or transactions._execution_backend.get() is not None
             or transactions._registered(backend) is not None):
         raise BackendError('unsupported')
+
+
+def require_inventory_host_root(backend):
+    """Only exact physical15 forms, outside every BSL activation or owner."""
+    _require_inventory_host_context(backend)
     _source_configuration(backend)
 
 
@@ -74,8 +77,7 @@ class InventoryRootOperations(RootPostingOperations):
     def __init__(self, context, configuration):
         self.context = context
         self.backend = context.backend
-        require_inventory_host_root(self.backend)
-        self.configuration = canonical(configuration)
+        self.configuration = configuration
         self._binding = None
         self._operations = {}
         self._closed = False
@@ -88,13 +90,11 @@ class InventoryRootOperations(RootPostingOperations):
         if self._closed or self.context.backend is not self.backend:
             raise BackendError('schema_changed')
         if require_root:
-            require_inventory_host_root(self.backend)
+            _require_inventory_host_context(self.backend)
         self.context.require_active(tabular_sections=True)
-        configuration = _source_configuration(self.backend)
-        if configuration != self.configuration:
-            raise BackendError('schema_changed')
         view = self.backend.begin_document_read()
         try:
+            configuration = view.inventory_source(expected=self.configuration)
             binding = (view.database_id, view.configuration_generation)
             if tuple(sorted(view.documents(), key=lambda s: str(s.identity))) != tuple(sorted(configuration.documents, key=lambda s: str(s.identity))):
                 raise BackendError('schema_changed')
@@ -106,6 +106,7 @@ class InventoryRootOperations(RootPostingOperations):
         if self._binding is not None and binding != self._binding:
             raise BackendError('schema_changed')
         self._binding = binding
+        self.configuration = configuration
 
     def verify_source(self):
         # Scoped reference normalization needs an integrity read from inside a
