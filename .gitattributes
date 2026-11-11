@@ -210,3 +210,8 @@ yadinassi/session_parameters.py text eol=lf
 
 # Immutable native session observations.
 tests/fixtures/native_session_parameters_43052415203.json -text
+
+# Owned temporary storage acquisition sources.
+scripts/temporary_storage_behavior/** text eol=lf
+scripts/native_1c_bootstrap/temporary_storage_suite.py text eol=lf
+scripts/native_1c_temporary_storage_probe.sh text eol=lf
