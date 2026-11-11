@@ -1387,6 +1387,114 @@ if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
 
 return {mountForm};
 })();
+const __configurationReports = (() => {
+/** Read-only stock projections. A label is never a reference or write capability. */
+const {FormError, validateScalar, scalarText} = __formClient;
+const keys = (v,names) => v !== null && typeof v === 'object' && !Array.isArray(v) &&
+  Object.keys(v).length === names.length && names.every(n => Object.hasOwn(v,n));
+const text = (v,n=1152) => typeof v === 'string' && v.length <= n*2 && [...v].length <= n &&
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(v);
+const views = ['Movements','Balance','Turnovers'];
+const date = value => {
+  if (!text(value,19) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) return false;
+  const [year,month,day,hour,minute,second]=value.match(/\d+/g).map(Number);
+  const leap=year%4===0 && (year%100!==0 || year%400===0);
+  return year>=1 && month>=1 && month<=12 && day>=1 && day<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][month-1] && hour<24 && minute<60 && second<60;
+};
+function validReportRequest(params, state) {
+  if (!keys(params,['report','at','start','end']) || !state?.reports?.some(r=>r.id===params.report) ||
+      state.kind==='closed' || state.choice || state.uncertain || state.posting?.some(p=>['uncertain','committed'].includes(p.state))) return false;
+  const view=state.reports.find(r=>r.id===params.report).view;
+  return view==='Movements' ? params.at===null && params.start===null && params.end===null
+    : view==='Balance' ? date(params.at) && params.start===null && params.end===null
+    : params.at===null && date(params.start) && date(params.end) && params.start<=params.end;
+}
+function validateReports(state, previous) {
+  const enabled=Object.hasOwn(state,'reports');
+  if (enabled !== Object.hasOwn(state,'report') || previous && enabled!==Object.hasOwn(previous,'reports')) throw new FormError('transport');
+  if (!enabled) return;
+  if (!Array.isArray(state.reports) || state.reports.length>96 || previous && JSON.stringify(state.reports)!==JSON.stringify(previous.reports)) throw new FormError('transport');
+  const seen=new Set();
+  for (const report of state.reports) {
+    if (!keys(report,['id','title','view']) || !text(report.id,128) || !/^[\p{ID_Start}_][\p{ID_Continue}]*$/u.test(report.id) ||
+        seen.has(report.id) || !text(report.title,256) || !views.includes(report.view)) throw new FormError('transport');
+    seen.add(report.id);
+  }
+  if (state.report===null) return;
+  const result=state.report, declared=state.reports.find(r=>r.id===result?.report);
+  if (!keys(result,['report','view','at','start','end','columns','rows']) || !declared || declared.view!==result.view ||
+      !validReportRequest({report:result.report,at:result.at,start:result.start,end:result.end},{...state,choice:null,posting:[],uncertain:false}) ||
+      !Array.isArray(result.columns) || !result.columns.length || result.columns.length>32 ||
+      !Array.isArray(result.rows) || result.rows.length>1000 || result.rows.length*result.columns.length>25000) throw new FormError('transport');
+  for (const column of result.columns) {
+    if (!keys(column,['name','type']) || !text(column.name,128) ||
+        !['String','Number','Boolean','Date','Catalog','Document'].includes(column.type)) throw new FormError('transport');
+  }
+  for (const row of result.rows) {
+    if (!Array.isArray(row) || row.length!==result.columns.length) throw new FormError('transport');
+    row.forEach((cell,index)=>{
+      if (cell?.type!==result.columns[index].type) throw new FormError('transport');
+      if (['Catalog','Document'].includes(cell.type)) {
+        if (!keys(cell,['type','text']) || !text(cell.text)) throw new FormError('transport');
+      } else validateScalar(cell);
+    });
+  }
+}
+function reportCellText(cell) {
+  return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
+}
+function createReportPanel(document, host, request, blocked) {
+  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
+  const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), output=el('div'), notice=el('p');
+  host.className='configuration-reports';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
+  navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');
+  const input=(labelText)=>{const label=el('label',labelText),field=el('input');field.type='datetime-local';field.step='1';field.setAttribute('aria-label',labelText);label.append(field);controls.append(label);return {label,field};};
+  const at=input('Balance before moment (exclusive)'), start=input('From moment (inclusive)'), end=input('Through moment (inclusive)');
+  const now=new Date(),pad=v=>String(v).padStart(2,'0');
+  const today=`${String(now.getFullYear()).padStart(4,'0')}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+  at.field.value=today+'T23:59:59';start.field.value=today+'T00:00:00';end.field.value=today+'T23:59:59';
+  const show=el('button','Show saved stock');show.type='button';controls.append(show);
+  host.append(title,el('p','Read-only saved database state. Unsaved form edits are not included. No movement or total can be edited here.'),navigation,controls,notice,output);
+  let state=null, selected=null, busy=false, localError='', lastResult=undefined;
+  function paint() {
+    host.hidden=!state?.reports?.length;if(host.hidden)return;
+    if(!state.reports.some(r=>r.id===selected))selected=state.reports[0].id;
+    const disabled=busy || blocked(), report=state.reports.find(r=>r.id===selected);
+    navigation.replaceChildren();
+    for(const item of state.reports){const button=el('button',item.title);button.type='button';button.disabled=disabled;button.setAttribute('aria-pressed',String(item.id===selected));
+      button.addEventListener('click',()=>{if(busy || blocked())return;selected=item.id;localError='';paint();});navigation.append(button);}
+    at.label.hidden=report.view!=='Balance';start.label.hidden=end.label.hidden=report.view!=='Turnovers';
+    for(const field of [at.field,start.field,end.field])field.disabled=disabled;
+    show.disabled=disabled;notice.textContent=localError || (disabled?'Finish the current selection or uncertain operation before reading stock.':'');
+    const result=state.report?.report===selected?state.report:null;
+    if(result!==lastResult){output.replaceChildren();lastResult=result;
+      if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
+        table.setAttribute('aria-label',report.title+' results');
+        for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
+        for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
+        const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:result.view==='Turnovers'?`Displayed turnovers from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
+        output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
+        output.append(el('p',`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),table);
+        if(!result.rows.length)output.append(el('p','No saved rows for these boundaries.'));
+      }else output.append(el('p','Choose boundaries and show saved stock. Changes to forms clear the previous report.'));
+    }
+  }
+  show.addEventListener('click',async()=>{
+    if(busy || blocked() || !state)return;
+    const report=state.reports.find(r=>r.id===selected);
+    const value=field=>field.value.length===16?field.value+':00':field.value;
+    const params={report:selected,at:report.view==='Balance'?value(at.field):null,start:report.view==='Turnovers'?value(start.field):null,end:report.view==='Turnovers'?value(end.field):null};
+    if(!validReportRequest(params,state)){localError='Enter valid whole-second boundaries; the start must not exceed the end.';paint();return;}
+    busy=true;localError='';paint();
+    try{const result=await request(params);if(result?.error)localError=result.error==='report_busy'?'Resolve the pending saved operation first.':'This report is unavailable or exceeds the bounded result limit.';}
+    catch{localError='Report request did not finish. It will not be repeated automatically.';}
+    finally{busy=false;paint();}
+  });
+  return {update(next){state=next;paint();},pending:()=>busy};
+}
+
+return {validReportRequest, validateReports, reportCellText, createReportPanel};
+})();
 const __configurationInputs = (() => {
 const {FormError, validateScalar, validateSnapshot, typedInput, scalarEqual, scalarText} = __formClient;
 
@@ -1457,6 +1565,7 @@ function validInputAnswer(params, inputs) {
 return {INPUT_CAPABILITY, inputField, validateInputs, validInputAnswer};
 })();
 const __configurationClient = (() => {
+const {validReportRequest, validateReports} = __configurationReports;
 const {INPUT_CAPABILITY, validateInputs, validInputAnswer} = __configurationInputs;
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
@@ -1469,7 +1578,7 @@ const text = (value, max) => typeof value === 'string' && value.length <= max * 
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
-  'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
+  'catalog_unavailable','catalog_limit','report_unavailable','report_busy','invalid_record','object_required','save_recovery_required',
   'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired','input_pending','input_refused','input_retired','input_stale'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
@@ -1493,6 +1602,7 @@ function validateApplicationReply(reply, request, previous) {
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
+  if (state && Object.hasOwn(state,'reports')) shape.push('reports','report');
   if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : []),...(inputCapability ? ['inputCapability','inputs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
@@ -1501,6 +1611,9 @@ function validateApplicationReply(reply, request, previous) {
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.entries) || !state.entries.length || state.entries.length > 64 ||
       !Array.isArray(state.sessions) || state.sessions.length > 8) throw new FormError('transport');
+  validateReports(state,previous);
+  if (request.method==='application.report' && result.error===null &&
+      (!state.report || ['report','at','start','end'].some(key=>state.report[key]!==request.params[key]))) throw new FormError('transport');
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
@@ -1632,7 +1745,7 @@ class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -1640,6 +1753,9 @@ class ApplicationClient {
           (method === 'application.reference' || method === 'application.recoverPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
+      }
+      if (method === 'application.report' && !validReportRequest(params,this.state)) {
+        const error=new FormError('unavailable'); error.preDispatch=true; throw error;
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
@@ -1726,6 +1842,7 @@ class ApplicationClient {
 return {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, validateApplicationReply, ApplicationClient};
 })();
 const __configurationApp = (() => {
+const {createReportPanel} = __configurationReports;
 const {INPUT_CAPABILITY, inputField, validInputAnswer} = __configurationInputs;
 const {FormError, createTransport, takeSessionCapability, scalarText, inputHint, typedInput} = __formClient;
 const {mountForm} = __formApp;
@@ -1743,6 +1860,9 @@ function mountApplication(environment, root, exchange = null) {
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
+  const reportPanel=el('section');
+  const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
+    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))));
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -1828,7 +1948,7 @@ function mountApplication(environment, root, exchange = null) {
   function drawPicker() {
     const choice = client.state?.choice;
     picker.hidden = !choice;
-    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice || dialogModal());
+    for (const node of [toolbar,entries,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
     for (const entry of mounts.values()) entry.mount?.repaint();
     if (!choice) {
       pickerTicket = null;
@@ -2103,7 +2223,7 @@ function mountApplication(environment, root, exchange = null) {
         postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
       }
     }
-    drawCatalog(); drawPicker(); drawDialog(); drawInput();
+    drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -2165,7 +2285,7 @@ function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker,dialog,inputDialog); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });

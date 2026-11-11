@@ -31,13 +31,13 @@ reference and posting-forms grants open their existing configuration application
 `--form DECLARED_NAME` optionally selects an initial declared form. No profile
 switch is exposed by this database launcher.
 
-Raw posting format 13 without the forms grant, accumulation format 14, future
+Raw posting format 13 without the forms grant, accumulation format 14, raw
 reference accumulation format 15, inactive archives and unknown profiles are
 refused. A storage/BSL feature is not automatically a browser UI capability.
-The future inventory demonstration needs its own reviewed forms/host grant:
-Products/Warehouses, Receipt/Issue editing and posting; movements, balance and
-turnovers are read-only derived views, not editable balances. This launcher does
-not claim that future grant is implemented.
+The separately admitted `accumulation-reference-forms-v1` marker opens its exact
+inventory forms host: Products/Warehouses and Receipt/Issue editing/posting,
+with read-only saved movements, balance and turnovers. The old core15 marker
+does not gain this authority and is never rewritten by the launcher.
 
 Source files are materialized into a private, bounded temporary directory and
 removed on normal exit/failure. The child checks the same database UUID,

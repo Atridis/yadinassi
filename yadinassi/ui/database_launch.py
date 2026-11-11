@@ -24,16 +24,17 @@ ROUTES = {
     'business': '--business-application',
     'references': '--reference-application',
     'posting': '--posting-application',
+    'inventory': '--inventory-application',
 }
 
 
 def configuration_route(*, catalog_objects=False, application_host=False,
                         document_objects=False, business_application=False,
-                        reference_application=False, posting_application=False):
+                        reference_application=False, posting_application=False, inventory_application=False):
     selected = [name for name, enabled in (
         ('catalog-forms', catalog_objects), ('application', application_host),
         ('documents', document_objects), ('business', business_application),
-        ('references', reference_application), ('posting', posting_application)) if enabled]
+        ('references', reference_application), ('posting', posting_application), ('inventory', inventory_application)) if enabled]
     if len(selected) != 1:
         raise ValueError('database UI requires one exact configuration grant')
     return selected[0]

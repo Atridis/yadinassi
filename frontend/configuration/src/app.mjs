@@ -1,3 +1,4 @@
+import {createReportPanel} from './reports.mjs';
 import {INPUT_CAPABILITY, inputField, validInputAnswer} from './inputs.mjs';
 import {FormError, createTransport, takeSessionCapability, scalarText, inputHint, typedInput} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
@@ -15,6 +16,9 @@ export function mountApplication(environment, root, exchange = null) {
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
+  const reportPanel=el('section');
+  const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
+    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))));
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -100,7 +104,7 @@ export function mountApplication(environment, root, exchange = null) {
   function drawPicker() {
     const choice = client.state?.choice;
     picker.hidden = !choice;
-    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice || dialogModal());
+    for (const node of [toolbar,entries,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
     for (const entry of mounts.values()) entry.mount?.repaint();
     if (!choice) {
       pickerTicket = null;
@@ -375,7 +379,7 @@ export function mountApplication(environment, root, exchange = null) {
         postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
       }
     }
-    drawCatalog(); drawPicker(); drawDialog(); drawInput();
+    drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -437,7 +441,7 @@ export function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker,dialog,inputDialog); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });

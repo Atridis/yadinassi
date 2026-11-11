@@ -56,3 +56,10 @@
 .configuration-value-input .typed-input-body input[type="text"], .configuration-value-input .typed-input-body textarea { min-width: 0; width: 100%; }
 .configuration-value-input .typed-input-body [role="radiogroup"] { max-height: 45vh; overflow: auto; }
 .configuration-value-input[data-locked="true"] { position: static; max-width: none; margin-block: 1rem; }
+
+.configuration-reports { margin-top: 1.5rem; border-top: 1px solid #cbd5e1; padding-top: 1rem; overflow-x: auto; }
+.configuration-reports label { display: inline-flex; flex-direction: column; gap: .25rem; margin: .5rem .75rem .5rem 0; }
+.configuration-reports label[hidden] { display: none; }
+.configuration-reports table { border-collapse: collapse; min-width: 100%; }
+.configuration-reports td, .configuration-reports th { padding: .4rem .7rem; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: pre-wrap; }
+.configuration-reports nav { display: flex; flex-wrap: wrap; gap: .5rem; }

@@ -93,7 +93,25 @@ def _admit(backend, connection, entries, metadata, catalogs, storage):
     profile = storage._source_profile_for_issues(backend.activation_issues)
     version = backend.format_version
     try:
-        if version == 13:
+        if version == 15:
+            from .configuration_inventory_application import (PROFILE, InventoryApplicationConfiguration,
+                import_inventory_application)
+            marker = connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
+            if len(marker) != 1 or marker[0][:2] != (1, PROFILE):
+                raise BackendError('unsupported')
+            config = import_inventory_application(source, inventory_runtime=PROFILE)
+            if (type(config) is not InventoryApplicationConfiguration
+                    or type(backend.accumulation_configuration) is not InventoryApplicationConfiguration
+                    or config != backend.accumulation_configuration
+                    or marker != [(1, PROFILE, config.source_digest)]
+                    or not _same_schemas(config.catalogs, catalogs)
+                    or not _same_schemas(config.documents, backend._document_schemas)):
+                raise BackendError('schema_changed')
+            identity, name = config.identity, config.name
+            canonical_files = tuple((p, 'module' if p.endswith('.bsl') else 'xml', raw)
+                                    for p, raw in config.files)
+            profile, route = PROFILE, 'inventory'
+        elif version == 13:
             from .configuration_posting_application import (PROFILE, PostingApplicationConfiguration,
                 import_posting_application)
             marker = connection.execute('SELECT singleton,profile,source_digest FROM posting_profile LIMIT 2').fetchall()
@@ -178,7 +196,7 @@ def launch_snapshot(backend):
     # Foreign or pending owners are rejected by current() without adoption.
     if current(backend) is not None:
         raise BackendError('unsupported')
-    if backend.format_version not in (1, 2, 3, 4, 6, 7, 10, 11, 12, 13):
+    if backend.format_version not in (1, 2, 3, 4, 6, 7, 10, 11, 12, 13, 15):
         raise BackendError('unsupported')
     view = backend.begin_read()
     try:

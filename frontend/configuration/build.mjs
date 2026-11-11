@@ -11,6 +11,7 @@ const modules = [
   ['browserAttachment','../form/src/attachment.mjs',['BROWSER_PROTOCOL', 'RESUME_KEY', 'AttachmentRefusal', 'documentInstance', 'readBrowserLaunch', 'BrowserAttachment', 'createBrowserHost']],
   ['formView','../form/src/view.mjs',['createFormView']],
   ['formApp','../form/src/app.mjs',['mountForm']],
+  ['configurationReports','src/reports.mjs',['validReportRequest','validateReports','reportCellText','createReportPanel']],
   ['configurationInputs','src/inputs.mjs',['INPUT_CAPABILITY','inputField','validateInputs','validInputAnswer']],
   ['configurationClient','src/client.mjs',['APPLICATION_PROTOCOL','DIALOG_CAPABILITY','validateApplicationReply','ApplicationClient']],
   ['configurationApp','src/app.mjs',['mountApplication']],

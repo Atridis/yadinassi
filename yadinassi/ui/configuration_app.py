@@ -26,7 +26,7 @@ from ..form_value_input import (INPUT_CAPABILITY, MAX_INPUTS, ScalarInputSpec,
     ValueListSelection, OwnedInput, scalar_descriptor)
 from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .local_app import LocalTransportError, LocalUIServer, _Handler
-from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER
+from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER, UIError
 
 PROTOCOL = 'yadinassi-configuration-app/3'
 MAX_FORMS = 8
@@ -57,10 +57,15 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
-    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application, reference_application, posting_application)) > 1:
+def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False):
+    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application, reference_application, posting_application, inventory_application)) > 1:
         raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
+    if inventory_application:
+        from ..configuration_inventory_application import import_inventory_application, PROFILE
+        imported = import_inventory_application(files, inventory_runtime=PROFILE)
+        return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents,
+            reference_catalogs=imported.catalogs, posting_application=True)
     if posting_application:
         from ..configuration_posting_application import import_posting_application, PROFILE
         imported = import_posting_application(files, posting_runtime=PROFILE)
@@ -109,13 +114,55 @@ def _runtime(configuration, side, *, business_application=False, reference_appli
     return ConfigurationApplication(imported, side=side, **kwargs)
 
 
+def _validate_report_projection(result, configuration, request):
+    _keys(result, 'report view at start end columns rows')
+    grant = next((r for r in configuration.reports if r.name == request['report']), None)
+    if (grant is None or result['view'] != grant.view
+            or any(result[k] != request[k] for k in ('report','at','start','end'))
+            or type(result['columns']) is not list or not 1 <= len(result['columns']) <= 32
+            or type(result['rows']) is not list or len(result['rows']) > 1000
+            or len(result['rows']) * len(result['columns']) > 25000):
+        raise ValueError('invalid report projection')
+    from ..inventory_application_reports import _columns
+    schema = next(s for s in configuration.registers if s.identity == grant.register_id)
+    kinds = {'string':'String', 'number':'Number', 'boolean':'Boolean', 'datetime':'Date',
+        'catalog_ref':'Catalog', 'document_ref':'Document', 'accumulation_direction':'String'}
+    expected = [{'name':c.name, 'type':kinds[c.kind]} for c in _columns(schema, grant.view)]
+    if result['columns'] != expected:
+        raise ValueError('report columns differ from exact admitted register')
+    for column in result['columns']:
+        _keys(column, 'name type')
+        if (type(column['name']) is not str or len(column['name']) > 128
+                or column['type'] not in ('String','Number','Boolean','Date','Catalog','Document')):
+            raise ValueError('invalid report column')
+    for row in result['rows']:
+        if type(row) is not list or len(row) != len(result['columns']):
+            raise ValueError('invalid report row')
+        for value, column in zip(row, result['columns']):
+            if type(value) is not dict or value.get('type') != column['type']:
+                raise ValueError('invalid typed report cell')
+            if column['type'] in ('Catalog','Document'):
+                _keys(value, 'type text')
+                if type(value['text']) is not str or len(value['text']) > 1152:
+                    raise ValueError('invalid report presentation')
+            else:
+                if _encode_scalar(_decode_scalar(value)) != value:
+                    raise ValueError('noncanonical report scalar')
+
+
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None, launch_route=None):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None, launch_route=None):
+        if inventory_application and any((application_host, business_application, reference_application, posting_application)):
+            raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
-        self.reference_application = reference_application
-        self.posting_application = posting_application
+        self.inventory_application = inventory_application
+        self.reference_application = reference_application or inventory_application
+        self.posting_application = posting_application or inventory_application
         self.posting_configuration = None
+        if inventory_application:
+            from ..configuration_inventory_application import import_inventory_application, PROFILE
+            self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if posting_application:
             from ..configuration_posting_application import import_posting_application, PROFILE
             self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
@@ -232,6 +279,59 @@ class ConfigurationBroker:
         self.projections[entry] = result
         return result
 
+    def _report(self, payload):
+        from datetime import datetime
+        from ..inventory_application_reports import InventoryReports
+        from ..accumulation_movements import AccumulationDirection
+        from ..catalog_backend import CatalogKey
+        from ..document_backend import DocumentKey
+        from ..dates import _date_from_datetime
+        _keys(payload, 'report at start end')
+        if not self.inventory_application or self.database is None:
+            raise ValueError('explicit inventory report grant required')
+        if (any(o.pending_commit or o.pending_refresh for o in self.objects.values())
+                or any(getattr(s, '_reference_choice', None) is not None and
+                    (s._reference_choice.active or s._reference_choice.uncertain)
+                    for s, _, _ in self.sessions.values())):
+            return {'error':'report_busy'}
+        try:
+            def boundary(value):
+                if value is None: return None
+                if type(value) is not str or len(value) != 19:
+                    raise ValueError('exact whole-second report boundary required')
+                parsed = datetime.fromisoformat(value)
+                if parsed.tzinfo is not None or parsed.microsecond or parsed.isoformat(timespec='seconds') != value:
+                    raise ValueError('canonical report boundary required')
+                return parsed
+            if self.record_context is None: self.record_context = self._open_context()
+            service = getattr(self, '_inventory_reports', None)
+            if service is None:
+                service = InventoryReports(self.record_context, self.posting_configuration)
+                self._inventory_reports = service
+            result = service.read(payload['report'], at=boundary(payload['at']),
+                start=boundary(payload['start']), end=boundary(payload['end']))
+            labels = dict(result.labels)
+            kinds = {'string':'String', 'number':'Number', 'boolean':'Boolean', 'datetime':'Date',
+                'catalog_ref':'Catalog', 'document_ref':'Document', 'accumulation_direction':'String'}
+            def cell(value):
+                if type(value) in (CatalogKey, DocumentKey):
+                    return {'type':'Catalog' if type(value) is CatalogKey else 'Document', 'text':labels[value]}
+                if type(value) is AccumulationDirection:
+                    value = 'Receipt' if value is AccumulationDirection.RECEIPT else 'Expense'
+                if type(value) is datetime: value = _date_from_datetime(value)
+                return _encode_scalar(value)
+            projection = {**payload, 'view':result.view,
+                'columns':[{'name':c.name, 'type':kinds[c.kind]} for c in result.columns],
+                'rows':[[cell(v) for v in row] for row in result.rows]}
+            # Reserve the rest of the envelope for immutable entries/sessions.
+            # A bounded refusal is not a partial/truncated successful report.
+            if len(encode_line(projection)) > MAX_LINE_BYTES // 2:
+                return {'error':'report_unavailable'}
+            _validate_report_projection(projection, self.posting_configuration, payload)
+            return projection
+        except Exception:
+            return {'error':'report_unavailable'}
+
     def exchange(self, request):
         _keys(request, 'operation session payload')
         operation, sid, payload = request['operation'], request['session'], request['payload']
@@ -255,6 +355,9 @@ class ConfigurationBroker:
             if sid or payload != {} or self.sessions or self.application is None:
                 raise ValueError('application cannot stop with open forms')
             return {'closed': self.application.close()}
+        if operation == 'report':
+            if sid: raise ValueError('report has no form session')
+            return self._report(payload)
         if operation == 'catalog':
             _keys(payload, 'entry')
             if sid:
@@ -293,11 +396,20 @@ class ConfigurationBroker:
                 owned = None
                 if definition.catalog_schema is not None:
                     from ..configuration_catalog import CatalogObjectSession
-                    owned = CatalogObjectSession(context, definition.catalog_schema,
-                        dict(self.configuration.source_files), reference=reference, reference_fields=self.reference_application)
+                    if self.inventory_application:
+                        from ..inventory_application_sessions import InventoryCatalogSession
+                        owned = InventoryCatalogSession(context, definition.catalog_schema,
+                            self.posting_configuration, reference=reference)
+                    else:
+                        owned = CatalogObjectSession(context, definition.catalog_schema,
+                            dict(self.configuration.source_files), reference=reference, reference_fields=self.reference_application)
                 elif definition.document_schema is not None:
                     from ..configuration_document import DocumentObjectSession
-                    if self.posting_application:
+                    if self.inventory_application:
+                        from ..inventory_application_sessions import InventoryDocumentSession
+                        owned = InventoryDocumentSession(context, definition.document_schema,
+                            self.posting_configuration, definition.name, key=reference)
+                    elif self.posting_application:
                         from ..configuration_posting_document import PostingDocumentSession
                         owned = PostingDocumentSession(context, definition.document_schema,
                             self.posting_configuration, definition.name, key=reference)
@@ -335,7 +447,7 @@ class ConfigurationBroker:
         server, nocontext, context = self.sessions[sid]
         if operation == 'posting':
             _keys(payload, 'action command receipt form')
-            if not self.posting_application or sid not in self.objects:
+            if not self.posting_application or sid not in self.objects or not hasattr(self.objects[sid], 'operations'):
                 raise ValueError('explicit posting form required')
             definition = next(d for d in self.definitions.values() if d.name == self.objects[sid].form)
             binding = next((b for b in server.bindings if b.name == 'YadinassiPostingSync'), None)
@@ -370,7 +482,7 @@ class ConfigurationBroker:
             if payload != {}:
                 raise ValueError('invalid close guard')
             owned = self.objects.get(sid)
-            dirty = (self.posting_application and owned is not None and
+            dirty = (self.posting_application and owned is not None and hasattr(owned, 'operations') and
                 next(d for d in self.definitions.values() if d.name == owned.form)._document_image(server.session) != owned.baseline)
             return {'allowed': not dirty and (owned is None or not (owned.pending_commit or owned.pending_refresh))
                     and (self.application is None or not self.application.interpreter.pending_promises)}
@@ -408,7 +520,7 @@ class ConfigurationBroker:
                      self.application.event_messages(server.session._record_message))
             with scope:
                 response = decode_line(server.exchange(encode_line(payload)))
-            if (self.posting_application and owned is not None and payload.get('operation') == 'open'
+            if (self.posting_application and owned is not None and hasattr(owned, 'operations') and payload.get('operation') == 'open'
                     and response.get('status') == 'ok' and server.session.state == 'open'
                     and owned.object._revision is None):
                 definition = next(d for d in self.definitions.values() if d.name == owned.form)
@@ -427,7 +539,7 @@ class ConfigurationBroker:
             if self.application is not None and self.application.interpreter.pending_promises:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
-            if self.posting_application and owned is not None: owned.close()
+            if self.posting_application and owned is not None and hasattr(owned, 'operations'): owned.close()
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -461,7 +573,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -479,6 +591,8 @@ class ConfigurationProcess(FormProcess):
             command += ['--reference-application']
         if posting_application:
             command += ['--posting-application']
+        if inventory_application:
+            command += ['--inventory-application']
         if document_objects:
             command += ['--document-objects']
         if launch_binding is not None:
@@ -487,7 +601,7 @@ class ConfigurationProcess(FormProcess):
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None):
+                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None):
     broker = None
     try:
         route = None
@@ -495,9 +609,9 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
             from .database_launch import configuration_route
             route = configuration_route(catalog_objects=catalog_objects, application_host=application_host,
                 document_objects=document_objects, business_application=business_application,
-                reference_application=reference_application, posting_application=posting_application)
+                reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application)
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application, launch_binding=launch_binding, launch_route=route)
+            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application, launch_binding=launch_binding, launch_route=route)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -527,11 +641,17 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
 class ConfigurationController:
     """Several forms, one serialized application queue; no nested event dispatch."""
     def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None,
-                 application_host=False, business_application=False, reference_application=False, posting_application=False):
+                 application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False):
+        if inventory_application and any((application_host, business_application, reference_application, posting_application)):
+            raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
-        self.reference_application = reference_application
-        self.posting_application = posting_application
+        self.inventory_application = inventory_application
+        self.reference_application = reference_application or inventory_application
+        self.posting_application = posting_application or inventory_application
         self.posting_configuration = None
+        if inventory_application:
+            from ..configuration_inventory_application import import_inventory_application, PROFILE
+            self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if posting_application:
             from ..configuration_posting_application import import_posting_application, PROFILE
             self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
@@ -559,6 +679,7 @@ class ConfigurationController:
         self.opened = self.closed = self.uncertain = False
         self.active = None
         self.catalog = None
+        self.report = None
         self.choice = None
         self._reference_action = None
         self._reference_changed = None
@@ -1011,7 +1132,7 @@ class ConfigurationController:
                     document = self.definitions[result['entry']].document_schema
                     for row in result['rows']:
                         _keys(row, ('key number date deletionMark posted' if self.posting_application else 'key number date deletionMark') if document else 'key code description deletionMark')
-                        if self.posting_application and type(row['posted']) is not bool: raise ValueError('invalid posted state')
+                        if document is not None and self.posting_application and type(row['posted']) is not bool: raise ValueError('invalid posted state')
                         key = row['key']
                         if (type(key) is not str or not key.startswith('record-') or not key[7:].isascii()
                                 or not key[7:].isdigit() or len(key) > 12 or key in seen
@@ -1028,6 +1149,13 @@ class ConfigurationController:
                             raise ValueError('invalid catalog record')
                         seen.add(key)
                     self.catalog_versions[result['entry']] = result['version']
+            elif operation == 'report':
+                if 'error' in result:
+                    _keys(result, 'error')
+                    if result['error'] not in ('report_busy','report_unavailable'):
+                        raise ValueError('invalid report refusal')
+                else:
+                    _validate_report_projection(result, self.posting_configuration, payload)
             elif operation == 'posting':
                 _keys(result, 'form posting')
                 state = result['posting']
@@ -1147,7 +1275,7 @@ class ConfigurationController:
             controller = FormController(definition.client_package(), exchange, parameters=parameters, reference_scope=reference_scope,
                 bind_interpreter=lambda vm: self._bind(sid, vm),
                 interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
-            if self.posting_application:
+            if definition.posting_application:
                 controller.session.form._host_readonly = frozenset((dict(definition.object_fields)["Posted"].casefold(),))
             self.sessions[sid] = (controller, entry)
             if owned is not None:
@@ -1411,7 +1539,7 @@ class ConfigurationController:
     def _state(self):
         return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
                 'entries': [{'id': entry, 'title': definition.title,
-                             'kind': ('posting-document' if self.posting_application else 'document-object' if definition.document_schema is not None else
+                             'kind': ('posting-document' if definition.posting_application else 'document-object' if definition.document_schema is not None else
                                       'form' if definition.catalog_schema is None else 'catalog-object')} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title,
                               **({'owner': self.owned_results[sid].owner if sid in self.owned_results else None,
@@ -1421,6 +1549,8 @@ class ConfigurationController:
                 'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
                 **({'choice': self.choice} if self.reference_application else {}),
                 **({'posting': list(self.posting_states.values())} if self.posting_application else {}),
+                **({'reports':[{'id':r.name,'title':r.register+' '+r.view,'view':r.view} for r in self.posting_configuration.reports],
+                    'report':self.report} if self.inventory_application else {}),
                 'lifecycle': 'forms' if self.application is None else self.application.state,
                 'messages': list(self.application_messages),
                 'exitWarning': '' if self.application is None else self.application.last_exit_warning}
@@ -1435,6 +1565,8 @@ class ConfigurationController:
                     or not 1 <= request['id'] <= MAX_COUNTER or type(request['params']) is not dict):
                 raise ValueError('invalid renderer request')
             method, params = request['method'], request['params']
+            if self.inventory_application and method not in ('application.hello','application.snapshot','application.catalog','application.report'):
+                self.report = None
             error = None; sid = None; form = None
             updates = []; retained_before = set(self.sessions)
             if self.closed:
@@ -1473,6 +1605,16 @@ class ConfigurationController:
                         sid, form, error = self._open(self.initial_entry, {})
             elif not self.opened:
                 raise ValueError('application handshake required')
+            elif method == 'application.report':
+                _keys(params, 'report at start end')
+                if not self.inventory_application:
+                    raise ValueError('inventory report grant required')
+                if self.choice is not None or any(p['state'] in ('uncertain','committed') for p in self.posting_states.values()):
+                    error = 'report_busy'; self.report = None
+                else:
+                    projected = self._call('report', payload=params)
+                    error = projected.get('error')
+                    self.report = None if error else projected
             elif method == 'application.catalog':
                 _keys(params, 'entry')
                 entry = params['entry']
@@ -1536,7 +1678,7 @@ class ConfigurationController:
                         raise ValueError('finish reference selection first')
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')
-                    if closing and self.posting_application and nested_request['params'].get('revision') == controller.session.revision:
+                    if closing and self.definitions[entry].posting_application and nested_request['params'].get('revision') == controller.session.revision:
                         self._posting_sync(sid, 'sync')
                         nested_request = dict(nested_request, params=dict(nested_request['params'], revision=controller.session.revision))
                     blocked = owner_blocked or (closing and ((self.application is not None
@@ -1552,7 +1694,7 @@ class ConfigurationController:
                         form = self._form_exchange(controller, nested_request)
                         form, close_error = self._finish_owned_close(sid, form)
                         error = error or close_error
-                        if self.posting_application and form['result']['error'] is None:
+                        if self.definitions[entry].posting_application and form['result']['error'] is None:
                             command = self._posting_command(entry, nested_request, controller)
                             if command is not None:
                                 self._posting_sync(sid, 'execute', command)
@@ -1648,9 +1790,23 @@ class ConfigurationController:
             response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
             try:
                 encode_line(response)
-            except Exception:
-                self._lock()
-                raise LocalTransportError('unavailable') from None
+            except Exception as failure:
+                # A readonly report can fit in isolation but overflow beside a
+                # retained large catalog. Refuse that whole projection, never
+                # truncate it or lock otherwise sound editing sessions.
+                if (self.inventory_application and self.report is not None
+                        and type(failure) is UIError and failure.code == 'message_limit'):
+                    self.report = None
+                    result['state']['report'] = None
+                    result['error'] = result['error'] or 'report_unavailable'
+                    try:
+                        encode_line(response)
+                    except Exception:
+                        self._lock()
+                        raise LocalTransportError('unavailable') from None
+                else:
+                    self._lock()
+                    raise LocalTransportError('unavailable') from None
             return response
         finally:
             self._dispatch_active = False
@@ -1661,7 +1817,7 @@ class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference',
-               'application.recoverPosting', 'application.answerDialog', 'application.answerInput')
+               'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report')
 
 
 def main(argv=None):
@@ -1672,6 +1828,7 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
     parser.add_argument('--document-objects', action='store_true', help='Explicit non-posting document Object forms with bounded sections')
+    parser.add_argument('--inventory-application', action='store_true', help='Explicit inventory catalog/document forms and stock reports profile')
     parser.add_argument('--posting-application', action='store_true', help='Explicit host posting command extension')
     parser.add_argument('--reference-application', action='store_true', help='Explicit typed catalog-reference application profile')
     parser.add_argument('--business-application', action='store_true', help='Explicit mixed catalog/document application profile')
@@ -1680,15 +1837,15 @@ def main(argv=None):
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application)) > 1:
+    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application, args.inventory_application)) > 1:
         parser.error('choose one explicit configuration source profile')
-    if (args.document_objects or args.business_application or args.reference_application or args.posting_application) and args.f is None:
+    if (args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application) and args.f is None:
         parser.error('document applications require --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, launch_binding=args.launch_binding)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, launch_binding=args.launch_binding)
     process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
         if args.launch_binding is not None:
             from .database_launch import verify_binding, configuration_route
             from ..sqlite_catalog import SQLiteCatalogBackend
@@ -1696,13 +1853,13 @@ def main(argv=None):
             try:
                 route = configuration_route(catalog_objects=args.catalog_objects, application_host=args.application_host,
                     document_objects=args.document_objects, business_application=args.business_application,
-                    reference_application=args.reference_application, posting_application=args.posting_application)
+                    reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
                 verify_binding(backend, args.launch_binding, dict(configuration.source_files), route=route)
             finally: backend.close()
-        process = ConfigurationProcess(args.configuration, args.f, launch_binding=args.launch_binding, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
-        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        process = ConfigurationProcess(args.configuration, args.f, launch_binding=args.launch_binding, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
-            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application, idle_close=controller.idle_close)
+            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:

@@ -4,8 +4,8 @@
 physical format 15. It is not the existing `accumulation-reference-v1` core grant
 and does not widen the scalar format-14 importer, default importer or existing
 format-13 posting application. Schema and receipt encoding are unchanged.
-Database/host integration must select the new exact marker explicitly; this
-source module alone does not create or open a database or grant execution.
+Database/host integration selects the new exact marker explicitly. The source
+module alone does not create or open a database or grant execution.
 
 The source contains flat scalar catalogs, reference-bearing posting documents,
 Balance accumulation registers, their original object handlers, and explicitly
@@ -79,5 +79,50 @@ implicitly enabled.
 reference-bearing document cards and three Stock reports. Its core schemas and
 posting handler bytes are unchanged. The Issue handler's negative-stock check
 is an authored business rule, not a built-in platform policy. Runtime admission
-uses metadata identities, not these demo names. Source/profile checks are not
-native UI parity evidence and do not claim the report/host adapter is complete.
+uses metadata identities, not these demo names. Source/profile checks are not native UI parity evidence. Browser acceptance is
+a separate required step; a passing controller test is not a Chromium result.
+
+## Create and open the explicit demonstration
+
+Create a **new** database with the reviewed source grant, never convert an old
+core15/demo database or replace its marker:
+
+```python
+from yadinassi.configuration_import import read_configuration_directory
+from yadinassi.configuration_inventory_application import import_inventory_application, PROFILE
+from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+
+files = read_configuration_directory("examples/configuration-inventory-application")
+configuration = import_inventory_application(files, inventory_runtime=PROFILE)
+SQLiteCatalogBackend.create_inventory_application("db/inventory.sqlite", configuration).close()
+```
+
+The destination must not exist and its parent directory must already exist. Then:
+
+```console
+yadinassi --ui --f db/inventory.sqlite --open-browser
+```
+
+The launcher reads the exact stored source; no external directory or extra
+profile argument is needed on reopening. Raw core15 and format14 remain refused.
+The explicit source-development route is `--configuration-ui DIRECTORY
+--inventory-application --f DB`, with the same full-source checks.
+
+Create Products and Warehouses cards, then a Receipt with an explicit number,
+warehouse and product lines. Write saves without posting; Post changes document,
+Posted and movements in one root operation. Undo posting clears its movements.
+An Issue that exceeds available stock is refused by the example's authored
+handler. Catalog save refreshes the selected list without replacing sibling drafts.
+
+Document close compares the complete authoritative typed image and pending
+receipt, not the example's local Dirty flag. An uncertain or committed-but-not-
+refreshed operation stays locked and uses its original receipt; the UI never
+replays handlers or claims rollback. Receipts are retained for this host lifetime,
+not durable recovery after process loss.
+
+Stock reports are read-only saved-state projections. Balance is strictly before
+the selected instant; Turnovers includes both endpoints. Labels and typed values
+come from one snapshot. Unsaved form inputs are not included, report reading
+does not resolve an operation, and pending receipts block reports. Changing form
+state clears an old projection; changing period controls never relabels the old
+result. Large results are refused as a whole, not silently truncated.

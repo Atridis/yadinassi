@@ -1,3 +1,4 @@
+import {validReportRequest, validateReports} from './reports.mjs';
 import {INPUT_CAPABILITY, validateInputs, validInputAnswer} from './inputs.mjs';
 import {FormError, validateSnapshot, PROTOCOL as FORM_PROTOCOL} from '../../form/src/client.mjs';
 
@@ -10,7 +11,7 @@ const text = (value, max) => typeof value === 'string' && value.length <= max * 
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
-  'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
+  'catalog_unavailable','catalog_limit','report_unavailable','report_busy','invalid_record','object_required','save_recovery_required',
   'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired','input_pending','input_refused','input_retired','input_stale'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
@@ -34,6 +35,7 @@ export function validateApplicationReply(reply, request, previous) {
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
+  if (state && Object.hasOwn(state,'reports')) shape.push('reports','report');
   if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : []),...(inputCapability ? ['inputCapability','inputs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
@@ -42,6 +44,9 @@ export function validateApplicationReply(reply, request, previous) {
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.entries) || !state.entries.length || state.entries.length > 64 ||
       !Array.isArray(state.sessions) || state.sessions.length > 8) throw new FormError('transport');
+  validateReports(state,previous);
+  if (request.method==='application.report' && result.error===null &&
+      (!state.report || ['report','at','start','end'].some(key=>state.report[key]!==request.params[key]))) throw new FormError('transport');
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
@@ -173,7 +178,7 @@ export class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -181,6 +186,9 @@ export class ApplicationClient {
           (method === 'application.reference' || method === 'application.recoverPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
+      }
+      if (method === 'application.report' && !validReportRequest(params,this.state)) {
+        const error=new FormError('unavailable'); error.preDispatch=true; throw error;
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||

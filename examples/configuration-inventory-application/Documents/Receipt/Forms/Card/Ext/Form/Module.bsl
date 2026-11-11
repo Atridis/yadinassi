@@ -41,5 +41,6 @@ Procedure Changed(Element)
 EndProcedure
 &AtClient
 Procedure BeforeClose(Cancel, Exit, MessageText, StandardProcessing)
- If Dirty Then Cancel = True; EndIf;
+ // The trusted host compares the complete typed image and pending receipt.
+ // A UI-local flag is not evidence of persistence or a reason to replay.
 EndProcedure
