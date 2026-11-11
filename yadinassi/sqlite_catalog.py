@@ -30,6 +30,7 @@ from . import sqlite_hierarchy as hierarchy_storage
 from .sqlite_hierarchy import HIERARCHY_DDL
 from . import sqlite_transaction_profile as transaction_profile
 from .sqlite_query_indexes import register_query_collations
+from .sqlite_read_handles import ReadHandle
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
@@ -93,8 +94,26 @@ def _close_document_scan(owner):
         stream.close()
 
 
+def _retire_read_handle(owner):
+    handle = getattr(owner, '_read_handle', None)
+    if handle is not None:
+        handle.invalidate()
+        if getattr(owner._backend, '_read_handle', None) is handle:
+            owner._backend._read_handle = None
+        owner._read_handle = None
+
+
+def _read_owner(value):
+    owner = getattr(value, '_view', value)
+    return owner if (getattr(owner, '_read_handle', None) is not None
+                     and getattr(owner, '_connection', None) is not None) else None
+
+
 def _close_owned_connection(owner):
     if owner._connection is not None:
+        # Ownership stays with this owner until physical close succeeds. A
+        # failed/replaced lease is never returned to the retained read slot.
+        _retire_read_handle(owner)
         # A failed close makes the owner unusable but does not prove that
         # SQLite released its locks. Retain ownership until close succeeds.
         owner._closed=True; owner._scan_cursor=None
@@ -128,6 +147,7 @@ class _PendingConnection:
     def __init__(self, backend):
         self._backend=backend; self._connection=None
         self._closed=True; self._scan_cursor=None
+        self._read_handle=None
 
     def close(self):
         _close_owned_connection(self)
@@ -140,13 +160,25 @@ def _boundary(function):
     @wraps(function)
     def call(*args, **kwargs):
         try:
-            return function(*args, **kwargs)
-        except BackendError:
+            result = function(*args, **kwargs)
+            owner = _read_owner(args[0]) if args else None
+            if owner is not None and not owner._closed:
+                owner._backend._check_file()
+            return result
+        except BaseException as error:
+            owner = _read_owner(args[0]) if args else None
+            if owner is not None:
+                owner._read_handle.invalidate()
+                if hasattr(owner, '_validated_sources'):
+                    owner._validated_sources.clear()
+            if isinstance(error, BackendError):
+                raise
+            if isinstance(error, sqlite3.Error):
+                raise BackendError('storage_error') from None
+            if isinstance(error, (ValueError, TypeError, KeyError, IndexError,
+                                  OverflowError, RecursionError)):
+                raise BackendError('integrity') from None
             raise
-        except sqlite3.Error:
-            raise BackendError('storage_error') from None
-        except (ValueError, TypeError, KeyError, IndexError, OverflowError, RecursionError):
-            raise BackendError('integrity') from None
     return call
 
 
@@ -401,7 +433,8 @@ class SQLiteCatalogBackend:
         self.path = _private_parent(os.path.abspath(raw))
         self._closed = False
         self._active = None
-        self._check_file()
+        self._read_handle = None
+        self._file_identity = self._check_file()
         connection = self._connect()
         try:
             connection.execute('BEGIN')  # Pin schema, registry and metadata to one snapshot.
@@ -559,26 +592,33 @@ class SQLiteCatalogBackend:
             if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400 or info.st_nlink != 1 or info.st_size > _MAX_DATABASE_BYTES:
                 raise BackendError('invalid_input')
             _private_parent(self.path)
+            identity = (info.st_dev, info.st_ino)
+            if getattr(self, '_file_identity', identity) != identity:
+                raise BackendError('schema_changed')
+            return identity
         except OSError: raise BackendError('storage_error') from None
 
-    def _connect(self, *, _owner=None):
+    def _connect(self, *, _owner=None, _read_handle=False):
         self._check_file()
         connection = None
         try:
-            connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if self.read_only else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2)
+            readonly = self.read_only or _read_handle
+            connection = sqlite3.connect(Path(self.path).as_uri() + ('?mode=ro' if readonly else '?mode=rw'), uri=True, isolation_level=None, detect_types=0, timeout=0.2,
+                                         check_same_thread=not _read_handle)
             if _owner is not None: _owner._connection=connection
             register_query_collations(connection)
-            if self.read_only: connection.execute('PRAGMA query_only=ON')
+            if readonly: connection.execute('PRAGMA query_only=ON')
             connection.execute('PRAGMA foreign_keys=ON')
             connection.execute('PRAGMA trusted_schema=OFF')
             connection.execute('PRAGMA synchronous=FULL')
-            if not self.read_only:
+            if not readonly:
                 page_size = connection.execute('PRAGMA page_size').fetchone()[0]
                 connection.execute('PRAGMA max_page_count=%d' % (_MAX_DATABASE_BYTES // page_size))
             if connection.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
                 raise BackendError('unsupported')
             if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
                 raise BackendError('unsupported')
+            self._check_file()
             return connection
         except BaseException:
             if _owner is not None:
@@ -1307,7 +1347,23 @@ class SQLiteCatalogBackend:
         pending = _PendingConnection(self)
         try:
             self._active = pending
-            connection = self._connect(_owner=pending)
+            self._check_file()
+            if operation_id is not None and self._read_handle is not None:
+                # Even a failed/uncertain writer must never reuse prior facts.
+                self._read_handle.invalidate()
+            handle = self._read_handle if operation_id is None else None
+            if handle is None:
+                connection = self._connect(_owner=pending, _read_handle=operation_id is None)
+                if operation_id is None:
+                    handle = ReadHandle(connection)
+                    pending._read_handle = handle
+                    self._read_handle = handle
+            else:
+                pending._connection = handle.connection
+                pending._read_handle = handle
+                connection = handle.connection
+                if connection.in_transaction:
+                    raise BackendError('busy')
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
                 if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
@@ -1348,13 +1404,19 @@ class SQLiteCatalogBackend:
                     if admit(connection, self.database_id, self._document_schemas) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
+                if handle is not None:
+                    view._read_handle = handle
+                    view._validated_sources = handle.pin()
             except sqlite3.OperationalError:
                 raise BackendError('busy') from None
             self._active = view
             return view
         except BaseException as error:
+            if self._read_handle is not None: self._read_handle.invalidate()
             try:
-                if self._active is not None: self._active.close()
+                if self._active is not None:
+                    _retire_read_handle(self._active)
+                    self._active.close()
             except BaseException as cleanup_error:
                 if _interruption(cleanup_error) and not _interruption(error): raise
             raise
@@ -1533,8 +1595,19 @@ class SQLiteCatalogBackend:
             if view is not None: view.close()
             else: connection.close()
 
+    def _close_idle_read_handle(self):
+        if self._active is not None: raise BackendError('busy')
+        if self._read_handle is not None:
+            pending = _PendingConnection(self)
+            self._active = pending
+            pending._connection = self._read_handle.connection
+            pending._read_handle = self._read_handle
+            pending.close()
+
     def close(self):
-        if self._active is not None: self._active.close()
+        if self._active is not None:
+            _close_owned_connection(self._active)
+        self._close_idle_read_handle()
         self._closed = True
 
 
@@ -1544,6 +1617,7 @@ class _View:
         self._closed = False; self._poisoned = False; self._changes = []; self._intents = []
         self._scan_cursor = None
         self._validated_sources = {}
+        self._read_handle = None
         self._document_scan_stream = None
         self._document_scan_lookahead = None
         self._outcomes = []
@@ -2490,7 +2564,35 @@ class _View:
 
     def rollback(self): self.close()
     def close(self):
-        _close_owned_connection(self)
+        handle = self._read_handle
+        if (self._closed or handle is None or self._poisoned
+                or self._connection is not handle.connection):
+            _close_owned_connection(self)
+            return
+        try:
+            self._closed = True
+            self._scan_cursor = None
+            _close_document_scan(self)
+            self._backend._check_file()
+            if not self._connection.in_transaction:
+                _close_owned_connection(self)
+                return
+            self._connection.execute('ROLLBACK')
+            handle.complete(self._validated_sources)
+            self._validated_sources.clear()
+            self._connection = None
+            self._read_handle = None
+            if self._backend._active is self:
+                self._backend._active = None
+        except BaseException as error:
+            # Cleanup failure must physically retire the handle. If close also
+            # fails, the existing owner remains busy and can retry cleanup.
+            try: _close_owned_connection(self)
+            except BaseException as cleanup:
+                if _interruption(cleanup) and not _interruption(error): raise
+            if isinstance(error, sqlite3.Error):
+                raise BackendError('storage_error') from None
+            raise
 
 # The document port shares the same closed storage error boundary.
 for _document_method in ('_validate_query_source','documents','document_schema','read_document','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):

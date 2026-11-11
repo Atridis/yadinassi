@@ -45,14 +45,14 @@ class CatalogReadPlanTests(unittest.TestCase):
                 view.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
             self.assertEqual(validate.call_count, 1)
 
-    def test_new_snapshot_validates_again(self):
+    def test_new_snapshot_reuses_same_unchanged_handle_proof(self):
         self.seed(3)
         first = self.view()
         first.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',)); first.close()
         second = self.view()
         with patch.object(second, '_preflight_v2', wraps=second._preflight_v2) as validate:
             second.scan_catalog_values(self.product.identity, CatalogScanRequest(), ('code',))
-            self.assertEqual(validate.call_count, 1)
+            self.assertEqual(validate.call_count, 0)
 
     def test_failed_validation_not_cached(self):
         self.seed(3); view = self.view()
