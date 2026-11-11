@@ -66,6 +66,9 @@ posting, migration, transaction authority or native FormWrite parity is added.
 
 ## Validation status
 
-Implementation is in progress in a separate branch. The first 17 Python
-projection/event checks passed; expanded identity, frontend and real-browser
-acceptance are pending. No full CI or completed acceptance is claimed here.
+Implementation is in a separate branch. All 23 focused Python projection,
+identity, event and durable-configuration checks passed. The expanded frontend
+regression, combined normal/optimized Python regression and four real Chromium
+scenarios are pending; the acquisition is described in
+[typed scalar browser acceptance](typed-scalar-browser-qa.md). No full CI or
+completed browser acceptance is claimed here.

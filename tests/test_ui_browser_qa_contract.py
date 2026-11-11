@@ -23,7 +23,7 @@ spec.loader.exec_module(fixture)
 class BrowserQAContractTests(unittest.TestCase):
     def test_workflow_is_explicit_opt_in_not_default_or_native(self):
         source = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
-        self.assertIn('branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed]', source)
+        self.assertIn('branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed]', source)
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'sudo ', 'sysctl ', 'container:', 'secrets.'):
             self.assertNotIn(forbidden, source)
         self.assertIn('runs-on: ubuntu-22.04', source)

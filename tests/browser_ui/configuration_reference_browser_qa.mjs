@@ -227,6 +227,22 @@ const wireEvents=[];
 let wireFailure=false;
 let businessWire=null;
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
+function checkEditor(editor,type){
+  assert.ok(editor&&typeof editor==='object'&&!Array.isArray(editor),'editor_object');
+  const count=(value,max)=>Number.isSafeInteger(value)&&value>=0&&value<=max;
+  if(type==='Date'){
+    exactKeys(editor,'kind parts');assert.equal(editor.kind,'date');
+    assert.ok(['dateTime','date','time'].includes(editor.parts),'editor_date_parts');
+  }else if(type==='Number'){
+    exactKeys(editor,'kind digits scale nonnegative');assert.equal(editor.kind,'number');
+    assert.ok(count(editor.digits,128)&&count(editor.scale,editor.digits),'editor_number_counts');
+    assert.equal(typeof editor.nonnegative,'boolean','editor_number_sign');
+  }else{
+    assert.equal(type,'String','editor_scalar_type');exactKeys(editor,'kind length fixed');assert.equal(editor.kind,'string');
+    assert.ok(count(editor.length,65536),'editor_string_length');assert.equal(typeof editor.fixed,'boolean','editor_string_fixed');
+    assert.ok(editor.length!==0||!editor.fixed,'editor_unqualified_string');
+  }
+}
 // Closed diagnostic vocabularies only. A malformed/unknown envelope never
 // supplies a string to the artifact, and diagnostics never authorize a reply.
 const diagnosticStatus=status=>[200,400,403,404,405,409,411,413,503].find(allowed=>allowed===status)??'other';
@@ -340,11 +356,12 @@ function checkReply(body,packet,stage){
     if(context==='table-column'){
       stage('reference_descriptor');
       assert.ok(value&&typeof value==='object'&&!Array.isArray(value),'column_object');
-      exactKeys(value,'name title type readOnly');
+      exactKeys(value,'name title type readOnly'+(Object.hasOwn(value,'editor')?' editor':''));
       assert.ok(typeof value.name==='string'&&value.name.length>0&&value.name.length<=128,'column_name');
       assert.ok(typeof value.title==='string'&&value.title.length<=1024,'column_title');
       assert.ok(['String','Number','Boolean','Date','FormCatalogRef'].includes(value.type),'column_type');
       assert.equal(typeof value.readOnly,'boolean','column_readonly');
+      if(Object.hasOwn(value,'editor'))checkEditor(value.editor,value.type);
       return;
     }
     assert.equal(context,'value','reference_context');

@@ -109,10 +109,10 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
     def test_reference_column_descriptors_cannot_bypass_strict_value_validation(self):
         reply = self.source.split('function checkReply(body,packet,stage){', 1)[1].split('async function main(){', 1)[0]
         descriptor = reply.split("if(context==='table-column'){", 1)[1].split("assert.equal(context,'value'", 1)[0]
-        for required in ("exactKeys(value,'name title type readOnly')", "!Array.isArray(value)",
+        for required in ("exactKeys(value,'name title type readOnly'+(Object.hasOwn(value,'editor')?' editor':''))", "!Array.isArray(value)",
                          "value.name.length>0", "value.name.length<=128", "value.title.length<=1024",
                          "['String','Number','Boolean','Date','FormCatalogRef'].includes(value.type)",
-                         "typeof value.readOnly,'boolean'", 'return;'):
+                         "typeof value.readOnly,'boolean'", "if(Object.hasOwn(value,'editor'))checkEditor(value.editor,value.type)", 'return;'):
             self.assertIn(required, descriptor)
         value = reply.split("if(value.type==='FormCatalogRef'){", 1)[1].split('for(const [key,nested]', 1)[0]
         for required in ("exactKeys(value,'type scope target key text')", 'assert.match(value.scope,',
@@ -241,7 +241,7 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
 
     def test_exact_eighth_reviewed_route_pins_and_artifacts(self):
         trigger = self.workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed]')
         step = self.step('Acquire four configuration reference flows with Chromium sandbox enabled')
         for value in ("if: github.ref == 'refs/heads/codex/configuration-reference-browser-reviewed'", 'timeout-minutes: 5',
                       'QA_SOURCE_SHA: ${{ github.sha }}', 'run: node tests/browser_ui/configuration_reference_browser_qa.mjs'):
@@ -257,6 +257,6 @@ class ConfigurationReferenceBrowserContractTests(unittest.TestCase):
         self.assertEqual(re.findall(r'uses: (\S+)', self.workflow), [
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 8])
+            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 9])
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'secrets.', 'sudo ', 'sysctl ', '--with-deps'):
             self.assertNotIn(forbidden, self.workflow)
