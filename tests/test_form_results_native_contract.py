@@ -7,7 +7,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class NativeFormResultsContractTests(unittest.TestCase):
-    def read(self,path):return (ROOT/path).read_text()
+    def read(self,path):return (ROOT/path).read_text(encoding='utf-8')
 
     def test_workflow_only_exact_owner_pr_branch(self):
         s=self.read('.github/workflows/native-1c-form-results.yml')
@@ -18,6 +18,8 @@ class NativeFormResultsContractTests(unittest.TestCase):
     def test_admission_before_credentials_and_pinned_actions(self):
         s=self.read('.github/workflows/native-1c-form-results.yml')
         self.assertLess(s.index('native_1c_ci_policy.py bind'),s.index('GHCR_TOKEN:'))
+        self.assertIn("(github.event.pull_request.head.ref == 'codex/configuration-form-results' ||",s)
+        self.assertIn("github.event.pull_request.head.ref == 'codex/configuration-dialogs') &&",s)
         import re
         self.assertEqual(len(re.findall(r'uses: [^\n]+@[0-9a-f]{40}',s)),4)
 
@@ -60,11 +62,11 @@ class NativeFormResultsContractTests(unittest.TestCase):
         self.assertIn('full.client_process_baseline(nonce)',s);self.assertIn('full.final_client_process_census(nonce)',s)
 
     def test_selector_closed_and_mutually_exclusive(self):
-        s=self.read('scripts/native_1c_bootstrap/run_stage.py')
+        s=self.read('scripts/native_1c_bootstrap/run_form_results_stage.py')
         self.assertIn('(form_runtime and form_results)',s)
         self.assertIn("type(form_results) is not bool",s)
         self.assertIn("arguments[0] == '--form-results-suite'",s)
-        shell=self.read('scripts/native_1c_smoke_probe.sh')
+        shell=self.read('scripts/native_1c_form_results_probe.sh')
         self.assertIn('[ "$#" -eq 3 ] && [ "$1" = --form-results-suite ]',shell)
         self.assertIn('tree_suite=form-results',shell)
         self.assertNotIn('importlib',shell)
@@ -101,11 +103,11 @@ class NativeFormResultsContractTests(unittest.TestCase):
         self.assertIn('python3 scripts/native_1c_form_results_profile.py --execute-approved-image --export-native-outputs',workflow)
         host=self.read('scripts/native_1c_form_results_profile.py')
         self.assertIn("'--form-results-suite', '--invocation-nonce', nonce",host)
-        shell=self.read('scripts/native_1c_smoke_probe.sh')
+        shell=self.read('scripts/native_1c_form_results_probe.sh')
         self.assertIn('if [ "$tree_suite" = form-results ]; then tree_flag=--form-results-suite; fi',shell)
         self.assertIn('if tree_mode == "form-results":',shell)
         self.assertIn('import form_results_suite as form_lane',shell)
-        stage=self.read('scripts/native_1c_bootstrap/run_stage.py')
+        stage=self.read('scripts/native_1c_bootstrap/run_form_results_stage.py')
         self.assertIn('if form_results:',stage)
         self.assertIn('import form_results_suite as form_lane',stage)
 

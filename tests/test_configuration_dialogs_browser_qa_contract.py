@@ -8,8 +8,8 @@ ROOT=Path(__file__).resolve().parents[1]
 class DialogBrowserContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.s=(ROOT/'tests/browser_ui/configuration_dialogs_browser_qa.mjs').read_text()
-        cls.w=(ROOT/'.github/workflows/configuration-dialogs-browser-qa.yml').read_text()
+        cls.s=(ROOT/'tests/browser_ui/configuration_dialogs_browser_qa.mjs').read_text(encoding='utf-8')
+        cls.w=(ROOT/'.github/workflows/configuration-dialogs-browser-qa.yml').read_text(encoding='utf-8')
     def contains(self,*items):
         for item in items:self.assertIn(item,self.s)
     def test_four_scenarios_exact_seventeen_business_requests(self):
@@ -18,7 +18,7 @@ class DialogBrowserContracts(unittest.TestCase):
         self.assertEqual(self.s.count('await scenario(scenarioNames['),4)
         self.contains('businessEvents.slice(start),businessPlan[index]')
     def test_example_commands_are_actual_names(self):
-        xml=(ROOT/'examples/configuration-dialogs/CommonForms/Welcome/Ext/Form.xml').read_text()
+        xml=(ROOT/'examples/configuration-dialogs/CommonForms/Welcome/Ext/Form.xml').read_text(encoding='utf-8')
         for name in ('QuestionButton','WarningButton','GreetingLabel','AnswerLabel','CountLabel'):self.assertIn(name,xml)
         self.contains("command('Ask confirmation','QuestionButton')","command('Show warning','WarningButton')")
     def test_closed_workflow(self):
