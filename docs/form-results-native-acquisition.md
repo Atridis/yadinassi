@@ -36,11 +36,17 @@ The packet comprises exactly eight native source files: processor metadata and
 object module, plus metadata/Form.xml/Module.bsl for Main and Child. Constants
 bind each raw source hash and combined source/form identity. Generated modules
 only substitute two fixed provenance literals. Designer builds the EPF, then
-re-dumps it; the exact eight-file inventory, full canonical XML, form UUIDs,
-registrations, QName bindings, events and both module sources must match before
-ENTERPRISE may run. Only BOM/CRLF, root serializer versions 2.4/2.20 and event
-ordering normalize. Other serialization differences fail closed and require
-separately reviewed evidence, not an automatic fallback.
+re-dumps it. The authored eight-file inventory remains closed. Redump reads only the three
+known BSL files as bounded regular nonlinked files; XML output inventory is not
+compared or read. A bounded tree scan rejects links, special files and unknown
+non-XML payloads, including additional executable modules. Both form modules and the inert object module
+must match normalized authored BSL (only BOM/CRLF normalization). Designer XML
+serialization is not a prerequisite for behavioural acquisition: successful
+Designer loading plus real lifecycle observations, rather than XML spelling,
+are the evidence sought. Authored source still receives exact hash and canonical
+XML checks before and after execution. The exclusively built EPF is hashed after
+build and securely reread immediately before and after ENTERPRISE. No executable
+module repair or arbitrary packet loader is permitted.
 
 There are five flow records, at most 16 event codes per flow, and a private trace
 cap of 64 events. Each flow has at most ten one-second idle checks. The outer
@@ -75,3 +81,14 @@ source or cleanup guards. This external-form observation is not proof that all
 CommonForm/application source profiles, modal/window modes, uniqueness options,
 owner shutdown semantics or asynchronous completion handlers match native 1C.
 The UI host's explicit owner-close refusal remains a host safety boundary.
+
+### Behavioural acquisition boundary
+
+The first attempt stopped before ENTERPRISE on a strict XML redump mismatch;
+it produced no lifecycle evidence. That structural serializer equality guard
+has been removed only for this new lane. No separate XML diagnostic run is
+needed. This deliberately trusts Designer's serialization of the owned XML,
+while retaining executable module/source/EPF integrity and all sandbox, timeout,
+process census, marker and cleanup guards. It does not prove XML roundtrip
+parity, runtime parity, or arbitrary third-party form safety. Historical native
+routes and goldens remain unchanged.

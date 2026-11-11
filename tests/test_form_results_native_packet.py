@@ -120,3 +120,26 @@ class NativeFormResultsPacketTests(unittest.TestCase):
         hashes={'scripts/form_results_packet/'+p:h for p,h in PACKET_HASHES.items()};route.verify_hashes(hashes)
         hashes.pop('scripts/form_results_packet/'+route.MODULES[1])
         with self.assertRaises(ValueError):route.verify_hashes(hashes)
+
+    def test_behaviour_redump_accepts_only_executable_projection(self):
+        files={name:route.sources()[name] for name in route.EXECUTABLE_MODULES}
+        self.assertEqual(route.validate_executable_redump(files),route.module_digest())
+
+    def test_behaviour_redump_refuses_each_executable_change(self):
+        for name in route.EXECUTABLE_MODULES:
+            files={name:route.sources()[name] for name in route.EXECUTABLE_MODULES}
+            files[name]+=b'\nMessage("changed");'
+            with self.assertRaises(ValueError):route.validate_executable_redump(files)
+
+    def test_behaviour_redump_refuses_unknown_or_missing_source(self):
+        for extra in (True,False):
+            files={name:route.sources()[name] for name in route.EXECUTABLE_MODULES}
+            if extra:files['unowned.bsl']=b'x'
+            else:del files[route.MODULES[0]]
+            with self.assertRaises(ValueError):route.validate_executable_redump(files)
+
+    def test_behaviour_redump_retains_size_and_normalization_bounds(self):
+        files={name:b'\xef\xbb\xbf'+route.sources()[name].replace(b'\n',b'\r\n') for name in route.EXECUTABLE_MODULES}
+        self.assertEqual(route.validate_executable_redump(files),route.module_digest())
+        files[route.MODULES[0]]=b'x'*(route.MAX_SOURCE+1)
+        with self.assertRaises(ValueError):route.validate_executable_redump(files)

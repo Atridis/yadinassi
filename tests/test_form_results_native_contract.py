@@ -55,7 +55,7 @@ class NativeFormResultsContractTests(unittest.TestCase):
     def test_early_and_final_source_witness(self):
         s=self.read('scripts/native_1c_bootstrap/form_results_suite.py')
         self.assertGreaterEqual(s.count('route.validate_redump('),3)
-        self.assertLess(s.index("route.validate_redump(dumped_files)"),s.index("phase='enterprise'"))
+        self.assertLess(s.index("route.validate_executable_redump(dumped_files)"),s.index("phase='enterprise'"))
         self.assertIn("if input_hashes(inputs)!=hashes",s)
         self.assertIn('full.client_process_baseline(nonce)',s);self.assertIn('full.final_client_process_census(nonce)',s)
 
@@ -146,3 +146,31 @@ class NativeFormResultsContractTests(unittest.TestCase):
         self.assertEqual(output,raw)
         self.assertEqual(verified['stage3']['schema'],suite.STAGE_SCHEMA)
         self.assertEqual(verified['stage3']['profile'],suite.PROFILE)
+
+    def test_epf_and_authored_source_witnesses_bracket_execution(self):
+        source=self.read('scripts/native_1c_bootstrap/form_results_suite.py')
+        before,after=source.split("phase='enterprise'",1)
+        self.assertIn('epf_digest=full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))',before)
+        self.assertIn('full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))!=epf_digest',before)
+        self.assertIn('full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))!=epf_digest',after)
+        self.assertIn('route.validate_redump(_dump_files(src))',before)
+        self.assertIn('route.validate_redump(_dump_files(src))',after)
+
+    def test_dump_executable_inventory_ignores_xml_only(self):
+        import sys
+        import tempfile
+        from unittest import mock
+        with mock.patch.object(sys,'path',[str(ROOT/'scripts'),str(ROOT/'scripts/native_1c_bootstrap'),*sys.path]):
+            import form_results_suite as suite
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for name in suite.route.EXECUTABLE_MODULES:
+                path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes(suite.route.sources()[name])
+            (root/'SerializerExtra.xml').write_bytes(b'<changed/>')
+            # Reader seam isolates Windows file metadata, not inventory logic.
+            with mock.patch.object(suite.full,'secure_bytes',side_effect=lambda path,limit:path.read_bytes()):
+                files=suite._dump_executable_files(root)
+                self.assertEqual(suite.route.validate_executable_redump(files),suite.route.module_digest())
+                (root/'Unknown.bsl').write_bytes(b'code')
+                with self.assertRaises(suite.full.FullError):suite._dump_executable_files(root)

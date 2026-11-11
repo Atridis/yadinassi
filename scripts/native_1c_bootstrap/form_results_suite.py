@@ -46,6 +46,24 @@ def _dump_files(directory):
     return {name:full.secure_bytes(directory/name,route.MAX_SOURCE,allow_empty=False) for name in expected}
 
 
+def _dump_executable_files(directory):
+    # XML output spelling/inventory is not executable evidence. Do not read it.
+    # Still reject links, special files, unbounded trees and unknown non-XML
+    # payloads rather than admitting another executable source or binary.
+    import stat
+    expected=set(route.EXECUTABLE_MODULES);seen=set()
+    for index,path in enumerate(directory.rglob('*')):
+        if index>=256:raise full.FullError('module_mismatch')
+        mode=path.lstat().st_mode
+        if stat.S_ISDIR(mode):continue
+        if not stat.S_ISREG(mode):raise full.FullError('module_mismatch')
+        name=path.relative_to(directory).as_posix()
+        if name in expected:seen.add(name)
+        elif path.suffix.lower()!='.xml':raise full.FullError('module_mismatch')
+    if seen!=expected:raise full.FullError('module_mismatch')
+    return {name:full.secure_bytes(directory/name,route.MAX_SOURCE) for name in expected}
+
+
 def run_suite(platform,root,inputs,nonce):
     report=empty_report(nonce);report.update(status='failed',failure_kind='unexpected_failure')
     phase='inputs';baseline=None
@@ -77,13 +95,14 @@ def run_suite(platform,root,inputs,nonce):
             '/Out',str(root/'build.log'),'/DumpResult',str(root/'build.result')],
             root,root/'build-console.log',120,require_clean_tree=True)
         full.require_epf(epf)
+        epf_digest=full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))
         phase='redump';dumped=root/'roundtrip';dumped.mkdir()
         full.run_process(platform.command('DESIGNER')+[
             '/DumpExternalDataProcessorOrReportToFiles',str(dumped/'Launcher.xml'),str(epf),
             '/Out',str(root/'dump.log'),'/DumpResult',str(root/'dump.result')],
             root,root/'dump-console.log',120,require_clean_tree=True)
-        dumped_files=_dump_files(dumped)
-        try:report['roundtrip_sha256']=route.validate_redump(dumped_files)
+        dumped_files=_dump_executable_files(dumped)
+        try:report['roundtrip_sha256']=route.validate_executable_redump(dumped_files)
         except ValueError:raise full.FullError('module_mismatch') from None
         if report['roundtrip_sha256']!=report['module_sha256']:raise full.FullError('module_mismatch')
         entered,completed,request=root/'entered.json',root/'completed.json',root/'request.json'
@@ -93,6 +112,12 @@ def run_suite(platform,root,inputs,nonce):
         with request.open('x',encoding='utf-8') as stream:json.dump(request_value,stream)
         # Read back the exact owned request before handing its only path to1C.
         if full.strict_json(full.secure_bytes(request,4096))!=request_value:raise full.FullError('invalid_input')
+        # Exact authored source and the exclusive built executable are reread
+        # immediately before execution; Designer XML spelling is not an oracle.
+        try:route.validate_redump(_dump_files(src))
+        except ValueError:raise full.FullError('module_mismatch') from None
+        if input_hashes(inputs)!=hashes or full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))!=epf_digest:
+            raise full.FullError('module_mismatch')
         phase='enterprise'
         try:
             full.run_process(platform.command('ENTERPRISE')+[
@@ -126,7 +151,8 @@ def run_suite(platform,root,inputs,nonce):
         phase='final'
         try:route.validate_redump(_dump_files(src))
         except ValueError:raise full.FullError('module_mismatch') from None
-        if input_hashes(inputs)!=hashes or route.module_digest(_dump_files(src))!=report['module_sha256']:
+        if (input_hashes(inputs)!=hashes or route.module_digest(_dump_files(src))!=report['module_sha256']
+                or full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))!=epf_digest):
             raise full.FullError('module_mismatch')
         report.update(status='ok',failure_kind='none',failure_phase='final',witness_verified=True,
                       output_sha256=full.digest(raw),output_size=len(raw),record_count=5)

@@ -1834,13 +1834,16 @@ function mountApplication(environment, root, exchange = null) {
       if (mounts.has(session.id)) { mounts.get(session.id).tab.textContent = session.title; continue; }
       const id = session.id, panel = el('section'); panel.hidden = true; panels.append(panel);
       const tab = button(session.title || 'Form',tabs,() => show(id));
-      const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status'); panel.append(ownerNotice);
+      const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status');
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
         businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
+      // mountForm creates its own root content. Attach the owner notice after
+      // that initial replacement, otherwise the retained node is detached.
+      panel.insertBefore(ownerNotice, panel.children[0] || null);
     }
     try {
       for (const update of result.updates || []) {

@@ -97,7 +97,7 @@ async function mounted(error=null){
 }
 test('mounted owner pauses all business controls and close while keeping raw text',async()=>{
   const {app,seen,owner,input}=await mounted();const count=seen.length;
-  assert.equal(input.disabled,true);assert.equal(input.value,'  unsent text  ');assert.equal(owner.ownerNotice.hidden,false);assert.ok(owner.panel.textContent.includes('Paused'));
+  assert.equal(input.disabled,true);assert.equal(input.value,'  unsent text  ');assert.equal(owner.ownerNotice.hidden,false);assert.ok(owner.panel.contains(owner.ownerNotice));assert.ok(owner.panel.textContent.includes('This form is paused'));assert.ok(owner.panel.textContent.includes('Paused'));
   await owner.mount.run('change','Name');await owner.mount.run('command','Choose');await owner.mount.run('close');await owner.mount.refresh();
   assert.equal(seen.length,count);assert.equal(app.client.terminal,false);
 });

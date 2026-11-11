@@ -104,3 +104,17 @@ def marker(raw,nonce,phase):
     if phase=='completed':parse_records(value['records'].encode('ascii'))
     elif value['records']!='':raise ValueError('marker phase payload')
     return value
+
+
+EXECUTABLE_MODULES=(*MODULES,'Launcher/Ext/ObjectModule.bsl')
+
+
+def validate_executable_redump(files):
+    """Behaviour acquisition trusts Designer XML serialization, not new BSL."""
+    expected=sources()
+    if type(files) is not dict or set(files)!=set(EXECUTABLE_MODULES):raise ValueError('packet inventory')
+    for path,raw in files.items():
+        if type(raw) is not bytes or not 0<len(raw)<=MAX_SOURCE:raise ValueError('packet size')
+        if path in EXECUTABLE_MODULES and normalized(raw)!=normalized(expected[path]):
+            raise ValueError('packet module binding')
+    return module_digest(files)
