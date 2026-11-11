@@ -45,7 +45,8 @@ class PreparedConfiguration:
 
 
 def _options(profile, numbering_policy, module_runtime, activate):
-    if type(profile) is not str or profile not in PROFILES or type(activate) is not bool:
+    if (type(profile) is not str or profile not in PROFILES or type(activate) is not bool
+            or type(numbering_policy) is not str or (module_runtime is not None and type(module_runtime) is not str)):
         raise ImportRefusal(ImportDiagnostic('profile_unsupported', 'schema'))
     if profile != LEGACY and (numbering_policy != 'explicit' or module_runtime is not None or not activate):
         raise ImportRefusal(ImportDiagnostic('profile_options_unsupported', 'schema'))
@@ -67,7 +68,8 @@ def _prepare_imported(config, profile, numbering_policy, module_runtime, activat
         files = tuple((f.path, f.content) for f in config.files)
     elif profile in (POSTING, POSTING_FORMS):
         from .sqlite_posting_profile import preflight_configuration
-        config = preflight_configuration(config)
+        with location(stage='storage'):
+            config = preflight_configuration(config)
         files = config.files
         version = 13
     else:
@@ -76,7 +78,8 @@ def _prepare_imported(config, profile, numbering_policy, module_runtime, activat
         # Preserve source-aware compilation diagnostics before the storage
         # boundary's intentionally generic BackendError translation.
         compile_handlers(config)
-        _preflight_config(config)
+        with location(stage='storage'):
+            _preflight_config(config)
         files = config.files
         version = 14
     return PreparedConfiguration(profile, tuple(sorted(files)), numbering_policy,
@@ -114,6 +117,11 @@ def create_prepared(path, prepared):
         raise ImportRefusal(ImportDiagnostic('profile_unsupported', 'schema'))
     # A forged/stale report never bypasses admission. Reimport exact retained
     # bytes, not the directory (which may have changed after the inspection).
+    if (type(prepared.files) is not tuple or not 1 <= len(prepared.files) <= 2048
+            or any(type(item) is not tuple or len(item) != 2 or type(item[0]) is not str
+                   or type(item[1]) is not bytes for item in prepared.files)
+            or len({path for path, raw in prepared.files}) != len(prepared.files)):
+        raise ImportRefusal(ImportDiagnostic('source_grant_mismatch', 'schema'))
     fresh = prepare_files(dict(prepared.files), profile=prepared.profile,
         numbering_policy=prepared.numbering_policy, module_runtime=prepared.module_runtime,
         activate=prepared.activate)

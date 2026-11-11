@@ -41,4 +41,18 @@ An unknown creation outcome still requires preserving the destination and
 SQLite journal and inspecting them before any retry or deletion. A preflight
 report cannot resolve that outcome or replay the write.
 
-Implementation checkpoint: validation is pending; no new native parity claim.
+The low-level Python posting constructor keeps its existing admission timing.
+The new explicit import workflow additionally compiles before allocating its
+destination; it does not retroactively change historical constructor behavior.
+Known parser error objects keep their original exception family and identity.
+Their safe import location is ephemeral, not a stored schema or BSL error field.
+
+See the exact [posting](document-posting-contract.md),
+[posting/forms](configuration-posting-application.md) and
+[accumulation](accumulation-register-plan.md) boundaries. In particular, measured
+native acquisition XML is not automatically a supported runtime source package.
+
+Local validation covers 266 focused tests and 1337 regressions both normally and
+with Python optimization, including four real CLI create/reopen/byte-exact export
+routes, lifecycle/query use, source refusal, and actual uncertain-create recovery.
+This host workflow introduces no new native semantics or acquisition cases.

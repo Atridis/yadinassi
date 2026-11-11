@@ -13,8 +13,9 @@ Explicit CLI creation is separate from script execution:
 yadinassi --create-db application.sqlite --import-xml /path/to/designer-xml
 ```
 
-The destination must not exist. `--inactive` stores an unsupported configuration
-as an inactive source archive; it does not enable application-data execution.
+The destination must not exist. In the legacy profile, `--inactive` stores
+admitted source with activation blockers as an inactive archive; it does not
+bypass XML admission or enable application-data execution.
 Ordinary invocation and `--f` never create a missing database implicitly.
 
 The Python import boundary accepts a mapping of relative Designer-export paths
@@ -71,8 +72,11 @@ primitive attributes and fixed catalog references, catalog objects and
 transactional create/update. Admitted catalog tabular sections and [bounded relational queries](relational-catalog-queries.md)
 are also supported. New document-bearing databases additionally support the
 [bounded v7 non-posting document lifecycle](sqlite-document-lifecycle.md), with
-separate document tables, metadata and identities. InformationRegisters, posting
-and general configuration callbacks remain unsupported. Unsupported
+separate document tables, metadata and identities. Independent and periodic InformationRegisters retain their existing closed
+legacy schema rules. Recorder posting and Balance accumulation registers use
+separate explicit source grants; general configuration callbacks are not enabled
+by ordinary import. The [profile import workflow](explicit-profile-import.md)
+provides read-only preflight and fresh creation for those grants. Unsupported
 semantics must not silently bypass validation or business logic. See the
 [runtime catalog contract](bsl-catalog-read-scenario.md) and
 [headless UI protocol](ui-protocol-v0.md) for their exact public surfaces.

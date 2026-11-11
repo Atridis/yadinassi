@@ -472,20 +472,21 @@ def _accept_source_files(files):
     if any(type(path) is not str for path in files):_fail('invalid path type')
     accepted=[];total=0;normalized=set()
     for path,raw in sorted(files.items()):
-        if (type(path) is not str or len(path)>256 or '\\' in path or ':' in path
-                or path.startswith('/') or any(ord(c)<32 for c in path) or any(x in ('','.', '..') for x in path.split('/'))):_fail('unsafe path')
-        p=PurePosixPath(path)
-        if p.suffix.lower() not in ('.xml','.bsl'):_fail('only XML/BSL interchange supported')
-        if path.casefold() in normalized:_fail('case-colliding paths')
-        normalized.add(path.casefold())
-        if type(raw) is not bytes or len(raw)>MAX_FILE_BYTES:_fail('file byte bound')
-        total+=len(raw)
-        if total>MAX_TOTAL_BYTES:_fail('total byte bound')
-        try:raw.decode('utf-8-sig')
-        except UnicodeError:_fail('non UTF-8 source')
-        if p.suffix.lower()=='.xml':
-            with location(stage='xml', file=path): _parse(raw)
-        accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
+        with location(file=path):
+            if (type(path) is not str or len(path)>256 or '\\' in path or ':' in path
+                    or path.startswith('/') or any(ord(c)<32 for c in path) or any(x in ('','.', '..') for x in path.split('/'))):_fail('unsafe path')
+            p=PurePosixPath(path)
+            if p.suffix.lower() not in ('.xml','.bsl'):_fail('only XML/BSL interchange supported')
+            if path.casefold() in normalized:_fail('case-colliding paths')
+            normalized.add(path.casefold())
+            if type(raw) is not bytes or len(raw)>MAX_FILE_BYTES:_fail('file byte bound')
+            total+=len(raw)
+            if total>MAX_TOTAL_BYTES:_fail('total byte bound')
+            try:raw.decode('utf-8-sig')
+            except UnicodeError:_fail('non UTF-8 source')
+            if p.suffix.lower()=='.xml':
+                with location(stage='xml', file=path): _parse(raw)
+            accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
     return tuple(accepted)
 
 

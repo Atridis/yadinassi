@@ -33,7 +33,7 @@ def import_posting_configuration(files,*,posting_runtime=None):
         if type(files) is not dict or not 1<=len(files)<=xml.MAX_FILES:raise ValueError('posting source count')
         total=0
         for path,raw in files.items():
-            with location(file=path, object=n):
+            with location(file=path):
                 if type(path) is not str or type(raw) is not bytes or len(raw)>xml.MAX_FILE_BYTES:raise ValueError('posting source shape')
                 total+=len(raw)
         if total>xml.MAX_TOTAL_BYTES or 'Configuration.xml' not in files:raise ValueError('posting source budget')

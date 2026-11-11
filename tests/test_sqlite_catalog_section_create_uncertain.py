@@ -12,7 +12,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from test_sqlite_catalog_backend import configuration
-from test_sqlite_catalog_create_uncertain import CreateConnection
+from test_sqlite_catalog_create_uncertain import CreateConnection, mocked_cli_storage_source
 from yadinassi.catalog_backend import (BackendError, CatalogDraft, CatalogKey, FieldSchema,
                                       TabularRow, TabularSectionRows, TabularSectionSchema)
 from yadinassi.sqlite_catalog import SQLiteCatalogBackend
@@ -206,7 +206,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
     def test_v3_cli_uncertain_warning_preserves_actual_concurrent_owner_and_rows(self):
         from yadinassi import cli
         errors, output = StringIO(), StringIO()
-        with patch('yadinassi.configuration_import.load_configuration_directory', return_value=self.config), \
+        with mocked_cli_storage_source(self.config), \
                 self.injected(commit_after_error=sqlite3.OperationalError('private diagnostic'), marker=self.write_concurrently), \
                 redirect_stderr(errors), redirect_stdout(output):
             status = cli.main(['--create-db', str(self.path), '--import-xml', '/private/source'])
@@ -223,7 +223,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
     def test_v3_cli_precommit_warning_preserves_actual_reserved_destination(self):
         from yadinassi import cli
         errors, output = StringIO(), StringIO()
-        with patch('yadinassi.configuration_import.load_configuration_directory', return_value=self.config), \
+        with mocked_cli_storage_source(self.config), \
                 self.injected(section_error=sqlite3.OperationalError('private section SQL')), \
                 redirect_stderr(errors), redirect_stdout(output):
             status = cli.main(['--create-db', str(self.path), '--import-xml', '/private/source'])
@@ -239,7 +239,7 @@ class SQLiteSectionCreateUncertainTests(unittest.TestCase):
     def test_v3_cli_success_retains_version_section_layout_and_sources(self):
         from yadinassi import cli
         errors, output = StringIO(), StringIO()
-        with patch('yadinassi.configuration_import.load_configuration_directory', return_value=self.config), \
+        with mocked_cli_storage_source(self.config), \
                 redirect_stderr(errors), redirect_stdout(output):
             status = cli.main(['--create-db', str(self.path), '--import-xml', '/private/source'])
         self.assertEqual(status, 0)

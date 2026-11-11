@@ -54,9 +54,8 @@ def admit(connection,database_id,documents,*,validate_rows=False):
 
 def create(cls,path,configuration):
     s=_storage()
-    from .errors import BSLError
-    try:config=preflight_configuration(configuration)
-    except (ValueError,TypeError,BSLError):raise BackendError('unsupported') from None
+    try:config=canonical(configuration)
+    except (ValueError,TypeError):raise BackendError('unsupported') from None
     raw=os.fspath(path)
     if type(raw) is not str or raw.startswith(('file:','//','\\\\')) or '\x00' in raw:raise BackendError('invalid_input')
     absolute=s._private_parent(os.path.abspath(raw));connection=None;committing=False

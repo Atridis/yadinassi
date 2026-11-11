@@ -309,7 +309,8 @@ def import_accumulation_configuration(files, *, accumulation_runtime=None):
             prefix = 'Documents/' if kind == 'Document' else 'AccumulationRegisters/'
             path = prefix + child_name + '.xml'
             if path not in files:
-                _fail('declared metadata missing')
+                with location(file=path, object=child_name):
+                    _fail('declared metadata missing')
             declarations[kind, child_name] = path
         if len(declarations) > 512:
             _fail('metadata bound')

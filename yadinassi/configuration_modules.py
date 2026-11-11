@@ -5,6 +5,7 @@ and the existing Interpreter, never by the XML importer or database opener.
 """
 from dataclasses import dataclass, replace
 from uuid import UUID
+from .configuration_diagnostics import location
 
 from .syntax import ast
 from .syntax.lexer import KEYWORDS, Lexer
@@ -117,11 +118,13 @@ def validate_module_sources(configuration):
             raise ValueError('missing or invalid common module source')
         for side, enabled in (('client', module.client), ('server', module.server)):
             if enabled:
-                program = compile_module(files[module.path], module.path, side, common=True)
+                with location(stage='compile', file=module.path):
+                    program = compile_module(files[module.path], module.path, side, common=True)
                 total += len(program)
     app = 'Ext/ManagedApplicationModule.bsl'
     if app in files:
-        program = compile_module(files[app], app, 'client', common=False)
+        with location(stage='compile', file=app):
+            program = compile_module(files[app], app, 'client', common=False)
         total += sum(type(node) is ast.Routine for node in program)
     if total > MAX_ROUTINES:
         raise ValueError('configuration runtime routine bound')

@@ -200,3 +200,7 @@ scripts/native_1c_accumulation_register_profile.py text eol=lf
 scripts/native_1c_docker_lifecycle.py text eol=lf
 scripts/native_1c_full_host.py text eol=lf
 scripts/native_1c_smoke.py text eol=lf
+
+# Explicit import host modules are source-bound runtime inputs.
+yadinassi/configuration_diagnostics.py text eol=lf
+yadinassi/configuration_profile_import.py text eol=lf
