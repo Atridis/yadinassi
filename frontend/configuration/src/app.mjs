@@ -257,6 +257,10 @@ export function mountApplication(environment, root, exchange = null) {
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
+    !pickerBusy && !client.state?.choice && mounts.size &&
+    [...mounts.values()].every(entry => entry.mount?.client?.locked && !entry.mount.client.busy) &&
+    [...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group'))));
   const resume = async () => {
     if (client.terminal) throw Error('Unknown previous outcome');
     const retained = new Set(mounts.keys());

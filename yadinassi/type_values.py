@@ -4,7 +4,7 @@ from .query_packages import BSLTempTablesManager
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLByteOrderMarkUse
 from .form_tables import BSLFormDataCollection, BSLFormDataCollectionItem
-from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormButton, BSLFormTable, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
+from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField, BSLFormGroup, BSLFormButton, BSLFormTable, BSLFormCommand, BSLFormFieldView, BSLFormItems, BSLFormCommands
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
@@ -83,6 +83,7 @@ _VALUE_TYPES = (
     (BSLClientApplicationForm, BSLType.FORM, "ClientApplicationForm"),
     (BSLFormAttribute, BSLType.FORM_ATTRIBUTE, "FormAttribute"),
     (BSLFormField, BSLType.FORM_FIELD, "FormField"),
+    (BSLFormGroup, BSLType.FORM_GROUP, "FormGroup"),
     (BSLFormTable, BSLType.FORM_TABLE, "FormTable"),
     (BSLFormDataCollection, BSLType.FORM_DATA_COLLECTION, "FormDataCollection"),
     (BSLFormDataCollectionItem, BSLType.FORM_DATA_COLLECTION_ITEM, "FormDataCollectionItem"),

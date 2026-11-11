@@ -12,7 +12,7 @@ from uuid import UUID
 from .configuration_xml import (MD, V8, _LOGFORM, _accept_source_files,
     _object, _parse, _props, _text, _type)
 from .form_model import (BSLFormAttribute, BSLFormField, BSLFormButton,
-    BSLFormCommand, BSLFormTable, BSLFormFieldView, BSLClientApplicationForm, name, text, scalar)
+    BSLFormCommand, BSLFormTable, BSLFormGroup, BSLFormFieldView, BSLClientApplicationForm, name, text, scalar)
 from .form_program import compile_form_module
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
@@ -128,6 +128,7 @@ class FormDefinition:
     reference_targets: tuple = ()
     reference_slots: tuple = ()
     posting_application: bool = False
+    layout: tuple = ()
 
     def client_package(self):
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
@@ -204,11 +205,12 @@ class FormDefinition:
             form.commands._values[item_name.casefold()] = command
         for item_name, kind, title, path, action, visible, enabled, read_only in self.items:
             item = (BSLFormButton(form, item_name) if kind == 'Button' else
-                    BSLFormTable(form, item_name) if kind == 'Table' else BSLFormField(form, item_name))
+                    BSLFormTable(form, item_name) if kind == 'Table' else
+                    BSLFormGroup(form, item_name) if kind in ('UsualGroup', 'Pages', 'Page') else BSLFormField(form, item_name))
             item.title, item.visible, item.enabled, item.read_only = title, visible, enabled, read_only
             if kind == 'Button':
                 item.command_name = path
-            else:
+            elif type(item) is not BSLFormGroup:
                 item.data_path = path
                 if action:
                     session._bind(action, 'client', 1)
@@ -216,6 +218,9 @@ class FormDefinition:
                 if kind != 'Table': item.view = {'InputField': BSLFormFieldView.INPUT,
                     'LabelField': BSLFormFieldView.LABEL, 'CheckBoxField': BSLFormFieldView.CHECKBOX}[kind]
             form.items._values[item_name.casefold()] = item
+        if self.layout:
+            from .form_layout import install_layout
+            install_layout(form, self.layout)
         session._allocated = len(self.items) + len(self.commands)
         return server
 
@@ -463,28 +468,57 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
         values = _children(node, {L+'Title', L+'Action'})
         commands.append((node.get('name'), _value(values, 'Title'), name(_value(values, 'Action'))))
     items = []; attr_names = {a.name.casefold() for a in attrs} | {t.name.casefold() for t in tables}; command_names = {c[0].casefold() for c in commands}
-    for node in _inventory(props.get(L+'ChildItems'), {L+k for k in ('InputField','LabelField','CheckBoxField','Button','Table')}, 128):
-        kind = node.tag[len(L):]
-        fields = ('Title','Visible','Enabled','ReadOnly','CommandName') if kind == 'Button' else ('Title','Visible','Enabled','ReadOnly','DataPath','Events')
-        values = _children(node, {L+k for k in fields})
-        path = _value(values, 'CommandName' if kind == 'Button' else 'DataPath')
-        if kind != 'Button' and path.startswith('Object.'):
-            field = path[len('Object.'):]
-            resolved = {key.casefold(): value for key, value in (*object_fields, *object_sections)}.get(field.casefold())
-            if resolved is None:
-                raise ValueError('unknown object form path')
-            path = resolved
-        elif kind != 'Button' and path.casefold().startswith('objectfield'):
-            raise ValueError('private object projection path')
-        if path.casefold() not in (command_names if kind == 'Button' else attr_names):
-            raise ValueError('unbound form item target')
-        if (kind == 'Table') != (path.casefold() in {t.name.casefold() for t in tables}):
-            raise ValueError('table item requires a declared section path')
-        action = _events(values.get(L+'Events'), {'onchange'}).get('onchange', '')
-        if posting_application and dict(object_fields).get('Posted') == path and (kind != 'LabelField' or action):
-            raise ValueError('Posted is an authoritative label only')
-        items.append((node.get('name'), kind, _value(values,'Title'), path, action,
-            _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
+    layout = []; layout_names = set(); layout_ids = set(); has_groups = False
+    def parse_items(container, parent='', parent_kind='', depth=1):
+        nonlocal has_groups
+        from .form_layout import MAX_LAYOUT_DEPTH
+        if container is not None and len(container) and depth > MAX_LAYOUT_DEPTH:
+            raise ValueError('form layout depth limit')
+        for node in _inventory(container, {L+k for k in ('InputField','LabelField','CheckBoxField','Button','Table','UsualGroup','Pages','Page')}, 128):
+            kind = node.tag[len(L):]; item_name = node.get('name')
+            key = item_name.casefold(); identity = int(node.get('id'))
+            if key in layout_names or identity in layout_ids or len(layout_names) >= 128:
+                raise ValueError('duplicate form layout identity or item limit')
+            layout_names.add(key); layout_ids.add(identity)
+            if (kind == 'Page') != (parent_kind == 'Pages'):
+                raise ValueError('Pages requires direct Page children only')
+            if kind in ('UsualGroup','Pages','Page'):
+                has_groups = True
+                fields = ('Title','Visible','Enabled','ReadOnly','ChildItems') + (('PagesRepresentation',) if kind == 'Pages' else ('Group','ShowTitle'))
+                values = _children(node, {L+k for k in fields})
+                orientation = _value(values, 'Group', 'Vertical')
+                if orientation not in ('Vertical','Horizontal') or _value(values,'PagesRepresentation','TabsOnTop') != 'TabsOnTop':
+                    raise ValueError('unsupported group/page presentation')
+                layout.append((item_name, parent, {'UsualGroup':'group','Pages':'pages','Page':'page'}[kind], orientation.lower(), _flag(values,'ShowTitle',True)))
+                items.append((item_name, kind, _value(values,'Title'), '', '', _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
+                children = values.get(L+'ChildItems')
+                if kind == 'Pages' and (children is None or not len(children)):
+                    raise ValueError('Pages requires at least one Page')
+                if children is not None:
+                    parse_items(children, item_name, kind, depth+1)
+                continue
+            layout.append((item_name, parent, 'control', 'vertical', True))
+            fields = ('Title','Visible','Enabled','ReadOnly','CommandName') if kind == 'Button' else ('Title','Visible','Enabled','ReadOnly','DataPath','Events')
+            values = _children(node, {L+k for k in fields})
+            path = _value(values, 'CommandName' if kind == 'Button' else 'DataPath')
+            if kind != 'Button' and path.startswith('Object.'):
+                field = path[len('Object.'):]
+                resolved = {key.casefold(): value for key, value in (*object_fields, *object_sections)}.get(field.casefold())
+                if resolved is None:
+                    raise ValueError('unknown object form path')
+                path = resolved
+            elif kind != 'Button' and path.casefold().startswith('objectfield'):
+                raise ValueError('private object projection path')
+            if path.casefold() not in (command_names if kind == 'Button' else attr_names):
+                raise ValueError('unbound form item target')
+            if (kind == 'Table') != (path.casefold() in {t.name.casefold() for t in tables}):
+                raise ValueError('table item requires a declared section path')
+            action = _events(values.get(L+'Events'), {'onchange'}).get('onchange', '')
+            if posting_application and dict(object_fields).get('Posted') == path and (kind != 'LabelField' or action):
+                raise ValueError('Posted is an authoritative label only')
+            items.append((node.get('name'), kind, _value(values,'Title'), path, action,
+                _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
+    parse_items(props.get(L+'ChildItems'))
     source = module.decode('utf-8-sig')
     if posting_application:
         import re
@@ -513,7 +547,7 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
     definition = FormDefinition(public_name, identity, sha256(raw+b'\0'+module).hexdigest(), program,
         tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands),
         catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
-        reference_targets if reference_slots else (), tuple(reference_slots), posting_application)
+        reference_targets if reference_slots else (), tuple(reference_slots), posting_application, tuple(layout) if has_groups else ())
     # Validate every declared handler and all reserved-name collisions eagerly.
     validation_server = definition.create_server(_validate_only=True)
     validation_server.session.interpreter.close()

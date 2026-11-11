@@ -45,7 +45,9 @@ class ConfigurationReferenceChoice:
         if type(control) is not str or not control or len(control)>128:
             raise ValueError('declared reference control required')
         form=session.form; item=form.items._values.get(control.casefold())
-        if type(item) not in (BSLFormField,BSLFormTable) or not item.visible or not item.enabled or item.read_only:
+        from .form_layout import effective_state
+        visible, enabled, readonly = effective_state(item) if type(item) in (BSLFormField, BSLFormTable) else (False, False, True)
+        if type(item) not in (BSLFormField,BSLFormTable) or not visible or not enabled or readonly:
             raise ValueError('reference control unavailable')
         slot=item.data_path.casefold()
         if type(item) is BSLFormField:

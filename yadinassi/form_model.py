@@ -242,6 +242,23 @@ class BSLFormTable(BSLFormField):
         else: return super().set_member(member, value)
 
 
+class BSLFormGroup(BSLFormField):
+    """Configuration-owned container with appearance only, no data or events."""
+    _methods = {}
+    def get_member(self, member):
+        if member.casefold() not in ('name', 'имя', 'title', 'заголовок', 'visible',
+                'видимость', 'enabled', 'доступность', 'readonly', 'толькопросмотр'):
+            self._check()
+            raise ValueError('ГруппаФормы: свойство не поддерживается')
+        return super().get_member(member)
+    def set_member(self, member, value):
+        if member.casefold() not in ('title', 'заголовок', 'visible', 'видимость',
+                'enabled', 'доступность', 'readonly', 'толькопросмотр'):
+            self._check()
+            raise ValueError('ГруппаФормы: структура доступна только конфигурации')
+        return super().set_member(member, value)
+
+
 class BSLFormButton(BSLFormField):
     _methods = {}
     def __init__(self, form, item_name):
@@ -268,6 +285,8 @@ class BSLFormCollection(_Owned):
         super().__init__(form); self._values = {}; self._commands = commands
     def add(self, item_name, item_type=None, parent=None):
         self._check(True); item_name = name(item_name); key = item_name.casefold()
+        if not self._commands and self._form._layout:
+            raise ValueError('Форма: структура конфигурации неизменяема')
         limit = MAX_COMMANDS if self._commands else MAX_ITEMS
         if self._form._session._allocated >= MAX_ALLOCATED: raise ValueError("Форма: превышен предел созданных объектов")
         if key in self._values or len(self._values) >= limit: raise ValueError('Форма: повторное имя или превышен предел')
@@ -291,6 +310,8 @@ class BSLFormCollection(_Owned):
     def count(self): self._check(); return Decimal(len(self._values))
     def delete(self, item):
         self._check(True)
+        if not self._commands and self._form._layout:
+            raise ValueError('Форма: структура конфигурации неизменяема')
         if type(item) not in (BSLFormField, BSLFormButton, BSLFormTable, BSLFormCommand) or item._form is not self._form or self._values.get(item.name.casefold()) is not item:
             raise ValueError('Форма: чужой или удаленный объект')
         if self._commands and any(type(x) is BSLFormButton and x.command_name.casefold() == item.name.casefold() for x in self._form.items._values.values()):
@@ -322,6 +343,7 @@ class BSLClientApplicationForm(_Owned):
     def __init__(self, session):
         self._session = session; self._attributes = {}; self._data = {}; self._tables = {}; self._static = set()
         self._host_readonly = frozenset()
+        self._layout = (); self._layout_parents = {}
         self.items = BSLFormItems(self); self.commands = BSLFormCommands(self)
         self.actions = {}; self.title = ''
     def _check(self, server=False):

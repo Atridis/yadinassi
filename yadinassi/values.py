@@ -26,6 +26,7 @@ class BSLType(Enum):
     FORM_DATA_COLLECTION = "ДанныеФормыКоллекция"
     FORM_DATA_COLLECTION_ITEM = "ДанныеФормыЭлементКоллекции"
     FORM_FIELD = "ПолеФормы"
+    FORM_GROUP = "ГруппаФормы"
     FORM_BUTTON = "КнопкаФормы"
     FORM_COMMAND = "КомандаФормы"
     FORM_ITEMS = "ВсеЭлементыФормы"
