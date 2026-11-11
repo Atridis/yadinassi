@@ -38,28 +38,39 @@ No external configuration directory or grant flag is passed to either launch.
    differs from All for both dimensions. Exact absent code returns zero choices,
    not an arbitrary fallback. Browser projections expose only labels and local
    choice/setup tokens, never persistent identities.
-3. **14 requests:** catalog/open saved Warehouse `W1`; leave its Description as
-   a raw unsent `RAW DRAFT`; prepare/read/page and exercise date, periodicity and chooser controls.
-   No form OnChange request is allowed until the two explicit lifecycle changes.
+3. **12 requests:** catalog/open saved Warehouse `W1`; leave its Description as
+   a raw unsent `RAW DRAFT`; prepare/read/page and exercise date, periodicity and
+   chooser controls. No form OnChange or command request is allowed in this flow.
    Hold one real fetched page response before delivery, with repeated click and
-   disabled controls, then release it once to the same owner. Captured retired
-   chooser/page elements are clicked after cancellation/form mutation and must
-   send no request. Two explicit Description changes (`Edited`, then the original
-   `Main warehouse`) retire setup/pages. One explicit **Save record** command then
-   must display exactly `unchanged`, clearing the source-authored Dirty flag before
-   real close. The command is not concealed as a read: independent audit proves
-   unchanged saved data, revisions and database file bytes. Reports themselves
-   never save or write.
-4. **6 requests:** close form and naturally exit the host, launch a new host,
+   disabled controls, then release it once to the same owner. A captured retired
+   chooser element is clicked after cancellation and must send no request.
+   Restore Description locally to its authoritative `Main warehouse` value using
+   fill only, without Enter, then genuinely close that same form. This retires the
+   setup/pages; clicking the captured retired page element must send no request.
+   Prepare/read a fresh report after close. This covers **Close retirement**, not
+   OnChange retirement. There is no Save command or assumed no-op Save path.
+4. **5 requests:** naturally exit the host (the form is already closed), launch a new host,
    prepare new setup, read None after the receipt moment and fetch its second page,
    then naturally exit again. New setup/snapshot/cursors cannot reuse prior tokens.
    Opening now equals closing; receipt and expense are zero. No unknown-commit or
    host-lost receipt recovery is inferred from this restart.
 
-Exactly **49 business RPCs** are required. Only ordinary application/form
+Exactly **46 business RPCs** are required. Only ordinary application/form
 hello/snapshot reads are excluded from that plan, not setup/page requests. The
 hard cap remains 180 total RPCs. No retry, skipped assertion or cap extension is
 used to accommodate a slow or failing stage.
+
+### Read-only form lifecycle
+
+The existing view's input listener removes a raw draft when its value again equals
+its authoritative snapshot. Close is a `data-form-action` control, so the preceding
+blur does not flush a change; even a fallback change with no draft sends no RPC.
+The normal close path validates an empty changes list and sends only `form.event`
+close. The source form initializes `Dirty = False` and only its `Changed` callback
+sets it true; no such callback is dispatched here. BeforeClose is not bypassed.
+The acquisition asserts the exact owner SID, completed retirement and zero change
+and command requests, then compares the independent audit. This does not claim
+catalog Save is a no-op when field values are unchanged.
 
 ## Independent audit and boundaries
 

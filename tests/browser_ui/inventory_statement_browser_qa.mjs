@@ -29,15 +29,15 @@ const businessPlan=[
   'setup:empty','report:None','setup:clear','report:None','setup:empty','report:None',
   'setup:clear','report:None','setup:begin','setup:filter','setup:cancel'],
  ['catalog','openRecord','setup:open','report:None','page','setup:begin','setup:filter','setup:cancel',
-  'report:None','change:DescriptionInput','change:DescriptionInput','command:SaveButton','setup:open','report:None'],
- ['close:','close','setup:open','report:None','page','close']
+  'report:None','close:','setup:open','report:None'],
+ ['close','setup:open','report:None','page','close']
 ];
 const businessEvents=[];
 // Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
 // storage, environment and subprocess stderr never become artifact strings.
 const diagnosticPhases=['fixture_create','fixture_audit','setup_click','setup_reply','report_tab','report_fill',
  'report_click','report_wait','report_read','report_assert','page_click','page_wait','page_assert',
- 'draft_focus','retired_choice','retired_page','delayed_page','restart','audit_compare',
+ 'draft_focus','restore_draft','close_form','retired_choice','retired_page','delayed_page','restart','audit_compare',
  'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan'];
 const diagnosticReasons=['business_rpc_plan_changed','owned_fixture_failed','owned_fixture_timeout',
  'audited_reply_missing','audited_reply_request','audited_reply_origin','audited_reply_budget','audited_reply_duplicate','audited_reply_id',
@@ -45,7 +45,7 @@ const diagnosticReasons=['business_rpc_plan_changed','owned_fixture_failed','own
  'report_typed_totals','report_page_identity','report_page_order','report_saved_labels','typed_seed_audit',
  'too_many_partial','exact_choice_mismatch','cancel_changed_selection','explicit_empty_mismatch','excluded_filter_rows',
  'draft_changed','unexpected_form_change','retired_dom_dispatched','duplicate_page_rpc','busy_not_fenced','late_owner_changed',
- 'unchanged_save_required','readonly_audit_changed','restarted_ticket_reused','restarted_page_reused','source_binding_changed',
+ 'close_refused','unexpected_form_write','readonly_audit_changed','restarted_ticket_reused','restarted_page_reused','source_binding_changed',
  'capability_not_removed','only_resume_storage','browser_cookies_not_empty'];
 const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
  (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
@@ -305,7 +305,7 @@ function deliveredReply(response){
   assert.equal(observed.origin,origin,'audited_reply_origin');
   return observed.actual;
 }
-async function closeForm(){const reply=formReply('close');await action('Close form').click();await reply;await idle();}
+async function closeForm(){const reply=formReply('close');await action('Close form').click();const result=deliveredReply(await reply).result;await idle();return result;}
 async function naturalStop(){
  const ended=new Promise(resolve=>host.once('exit',(code,signal)=>resolve({code,signal})));
  const reply=replyFor(packet=>packet.method==='application.close');await button('Close application').click();await reply;
@@ -321,14 +321,6 @@ async function value(name,expected){
   await page.waitForFunction(({name,expected})=>[...document.querySelectorAll('.configuration-form-panels > section:not([hidden]) input')]
     .some(input=>input.getAttribute('aria-label')===name&&input.value===expected),{name,expected},{timeout:remaining(10000)});
   assert.equal(await field(name).inputValue(),expected);
-}
-// Text inputs commit on blur or Enter. Explicit Enter waits for the supported
-// busy lifecycle instead of assuming Playwright's instantaneous focus/fill is a
-// human pause between two asynchronously committing fields. Reports themselves
-// never commit a raw draft; these two changes are explicit lifecycle probes.
-async function commitInput(name,text){
-  const reply=replyFor(packet=>packet.method==='application.form'&&['change','cell'].includes(packet.params.request.params?.event));
-  await field(name).fill(text);await field(name).press('Enter');await reply;await idle();
 }
 const wireEvents=[];
 let wireFailure=false;
@@ -717,7 +709,8 @@ async function main(){
   const unchanged=()=>{checkpoint('audit_compare');assert.deepEqual(inventoryFixture('audit'),initialAudit,'readonly_audit_changed');};
   const assertRaw=async()=>{await value('Description','RAW DRAFT');assert.equal(wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change');};
   const clickRetired=async handle=>{
-    const count=businessEvents.length;await handle.evaluate(node=>node.click());await flushPaint();
+    const count=businessEvents.length;assert.equal(await handle.evaluate(node=>node.isConnected),false,'retired_dom_dispatched');
+    await handle.evaluate(node=>node.click());await flushPaint();
     assert.equal(businessEvents.length,count,'retired_dom_dispatched');await handle.dispose();
   };
   await startHost();await page.goto(url);await writer();await idle();
@@ -765,18 +758,24 @@ async function main(){
     await begin('Product');await search('P002');const retiredChoice=await choicePanel().getByRole('button',{name:'Product 002',exact:true}).elementHandle();
     await cancel();checkpoint('retired_choice');await clickRetired(retiredChoice);await assertRaw();
     await showStatement();const retiredPage=await reportButton('Next saved page').elementHandle();
-    await commitInput('Description','Edited');assert.equal(lastApplicationState.report,null);assert.equal(lastApplicationState.reportSetup,null);
-    checkpoint('retired_page');await clickRetired(retiredPage);await commitInput('Description','Main warehouse');
-    // The source's Changed handler retains Dirty until its explicit Save. The
-    // restored card must take the genuine unchanged path, not write/discard it.
-    reply=formReply('command','SaveButton');await action('Save record').click();
-    const saved=deliveredReply(await reply).result;assert.equal(saved.session,owner,'late_owner_changed');
-    assert.equal(saved.error,null,'unchanged_save_required');await idle();await value('Status','unchanged');unchanged();
-    await prepareStatement();await showStatement();unchanged();await field('Description').scrollIntoViewIfNeeded();await screenshot(screenshots[2]);
+    // Restore only the local draft. The renderer removes a draft equal to its
+    // authoritative value, so Close flushes no change and source Dirty stays false.
+    checkpoint('restore_draft');await field('Description').fill('Main warehouse');
+    await value('Description','Main warehouse');
+    assert.equal(wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change');
+    const beforeClose=businessEvents.length;checkpoint('close_form');const closed=await closeForm();
+    assert.equal(closed.session,owner,'late_owner_changed');assert.equal(closed.error,null,'close_refused');
+    await countPanels(0);assert.ok(!closed.state.sessions.some(s=>s.id===owner),'close_refused');
+    assert.equal(businessEvents.length,beforeClose+1,'unexpected_form_change');
+    assert.equal(wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change');
+    assert.equal(wireEvents.filter(e=>e.event==='command').length,0,'unexpected_form_write');
+    assert.equal(lastApplicationState.report,null);assert.equal(lastApplicationState.reportSetup,null);
+    checkpoint('retired_page');await clickRetired(retiredPage);unchanged();
+    await prepareStatement();await showStatement();unchanged();await reportPanel().scrollIntoViewIfNeeded();await screenshot(screenshots[2]);
   });
   await scenario(scenarioNames[3],async()=>{
     const previousSetup=lastApplicationState.reportSetup.ticket,previousPage=lastApplicationState.report.page;
-    await closeForm();await countPanels(0);unchanged();await naturalStop();await page.close();
+    await countPanels(0);unchanged();await naturalStop();await page.close();
     checkpoint('restart');page=await context.newPage();await startHost();await page.goto(url);await writer();await idle();
     assert.equal(lastApplicationState.reportSetup,null);assert.equal(lastApplicationState.report,null);assert.equal(lastApplicationState.sessions.length,0);
     await page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock BalanceAndTurnovers',exact:true}).click();
@@ -788,7 +787,7 @@ async function main(){
     report.acceptance={storedSourceLauncher:true,explicitFullForms15:true,core15Denied:true,
       typedSetupBeforeBrowser:true,oneCatalogTransaction:true,oneReceiptPost:true,real52Rows:true,dayMonthNone:true,
       sameSnapshotPages:true,exactTypedSums:true,sourceGrantedFilters:true,tooManyRequiresCode:true,emptyDistinctFromAll:true,
-      labelsNotCapabilities:true,smallSiblingDraft:true,unchangedSave:true,rawDraftPreserved:true,retiredDomDenied:true,realResponseDelay:true,noReplay:true,
+      labelsNotCapabilities:true,smallSiblingDraft:true,localDraftRestored:true,closeRetiresPages:true,noFormWrites:true,rawDraftPreserved:true,retiredDomDenied:true,realResponseDelay:true,noReplay:true,
       naturalRestart:true,independentTypedAudit:true,reportWrites:false,restartReceiptRecovery:false,nativeWindowParity:false};
     report.audit={unchanged:true,fingerprint:initialAudit.fingerprint,sourceDigest:initialAudit.sourceDigest};
   });

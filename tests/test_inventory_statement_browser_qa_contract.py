@@ -29,11 +29,12 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertEqual(self.source.count('await scenario(scenarioNames['), 4)
         self.contains('results.map(row=>row.name),scenarioNames', 'total:4')
 
-    def test_exact_forty_nine_business_requests(self):
+    def test_exact_forty_six_business_requests(self):
         plan = json.loads(self.source.split('const businessPlan=', 1)[1].split(';', 1)[0].replace("'", '"'))
-        self.assertEqual([len(row) for row in plan], [8, 21, 14, 6])
-        self.assertEqual(sum(map(len, plan)), 49)
-        self.assertEqual(plan[2][9:12], ['change:DescriptionInput', 'change:DescriptionInput', 'command:SaveButton'])
+        self.assertEqual([len(row) for row in plan], [8, 21, 12, 5])
+        self.assertEqual(sum(map(len, plan)), 46)
+        self.assertEqual(plan[2][9:12], ['close:', 'setup:open', 'report:None'])
+        self.assertFalse(any(event.startswith(('change:', 'command:')) for scenario in plan for event in scenario))
         self.contains('businessEvents.slice(start),businessPlan[index]', "'business_rpc_plan_changed'",
             "businessEvents.push('setup:'+packet.params.action)", "businessEvents.push('page')",
             "businessEvents.push('report:'+packet.params.periodicity)")
@@ -130,10 +131,13 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertGreaterEqual(self.source.count('await assertRaw();'), 5)
         scenario = self.source.split('await scenario(scenarioNames[2],async()=>{', 1)[1].split('await scenario(scenarioNames[3]', 1)[0]
         for item in ("name:'Warehouses card'", "name:'W1',exact:true", "value('Description','Main warehouse')",
-                     "commitInput('Description','Edited')", "commitInput('Description','Main warehouse')",
-                     "formReply('command','SaveButton')", "action('Save record').click()",
-                     "saved.session,owner,'late_owner_changed'", "value('Status','unchanged');unchanged()"):
+                     "field('Description').fill('Main warehouse')", "checkpoint('close_form');const closed=await closeForm()",
+                     "closed.session,owner,'late_owner_changed'", "closed.error,null,'close_refused'",
+                     "businessEvents.length,beforeClose+1,'unexpected_form_change'",
+                     "wireEvents.filter(e=>e.event==='command').length,0,'unexpected_form_write'"):
             self.assertIn(item, scenario)
+        for forbidden in ('commitInput(', ".press('Enter')", "action('Save record')", 'SaveButton', 'unchangedSave'):
+            self.assertNotIn(forbidden, self.source)
         self.assertNotIn("name:'Receipt card'", scenario)
         self.assertNotIn('Document number', scenario)
         self.assertIn('MAX_TABLE_ROWS=32', self.docs)
@@ -143,7 +147,9 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.contains('const retiredChoice=', "checkpoint('retired_choice');await clickRetired(retiredChoice)",
             'const retiredPage=', "checkpoint('retired_page');await clickRetired(retiredPage)",
             'await handle.evaluate(node=>node.click())', "'retired_dom_dispatched'",
-            "commitInput('Description','Edited')", 'lastApplicationState.reportSetup,null')
+            "handle.evaluate(node=>node.isConnected),false,'retired_dom_dispatched'",
+            "checkpoint('close_form');const closed=await closeForm()", 'lastApplicationState.reportSetup,null',
+            'closeRetiresPages:true', 'noFormWrites:true')
         for forbidden in ('dispatchEvent(', 'setContent(', 'page.addInitScript(', 'evaluateOnNewDocument'):
             self.assertNotIn(forbidden, self.source)
 
