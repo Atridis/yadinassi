@@ -105,6 +105,17 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
             "assert.equal(observed.origin,origin,'audited_reply_origin')",
             'observedReplies.set(packet.id,{packet,actual:decoded,origin})',
             "observedReplies.size<180,'audited_reply_budget'", 'await auditResponse(response,packet)')
+        self.contains('const retainedOwner=refused.session',
+            "assert.equal(retainedOwner,result.session,'late_reply_changed_owner')",
+            'session=>session.id===retainedOwner', "assert.ok(index>=0,'active_session_missing')",
+            "assert.deepEqual(visible,[index],'late_reply_changed_owner')",
+            "checkpoint('late_owner_return');await assertRetainedOwner()",
+            "checkpoint('late_owner_delivery');await assertRetainedOwner()")
+        scenario = self.source.split('await scenario(scenarioNames[2]', 1)[1].split('await scenario(scenarioNames[3]', 1)[0]
+        self.assertLess(scenario.index('const retainedOwner=refused.session'), scenario.index("await catalogEntry('Receipt card')"))
+        self.assertEqual(scenario.count('await assertRetainedOwner()'), 3)
+        self.assertNotIn('sessions[ownerIndex]', scenario)
+        self.assertNotIn('sessions[ownerAfter]', scenario)
         self.assertNotIn('.json()', self.source)
         self.assertNotIn('page.waitForTimeout(', self.source)
 

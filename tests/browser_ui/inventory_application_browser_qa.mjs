@@ -43,7 +43,8 @@ const diagnosticPhases=['command_binding','command_click','command_wait','comman
  'fixture_create','fixture_audit','audit_catalogs','audit_document_count',
  'audit_document_posted','audit_document_quantity','audit_no_movements',
  'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan',
- 'report_tab','report_fill','report_click','report_wait','report_read','report_assert','report_done'];
+ 'report_tab','report_fill','report_click','report_wait','report_read','report_assert','report_done',
+ 'late_owner_pin','late_owner_return','late_owner_delivery'];
 const diagnosticReasons=['session_panel_binding','active_session_missing','command_session_changed',
  'command_outcome_count','posting_outcome','audit_catalogs','audit_document_count',
  'audit_document_posted','audit_document_quantity','write_created_movements',
@@ -691,16 +692,27 @@ async function main(){
     assert.deepEqual(inventoryFixture('audit'),before,'shortage_changed_persisted_state');
     reply=formReply('close');await action('Close form').click();const refused=deliveredReply(await reply).result;await idle();
     assert.equal(refused.error,'save_recovery_required','dirty_close_not_refused');await countPanels(1);await value('Quantity, row 1','99');
+    // Catalog navigation intentionally hides every form. Pin the actual refused
+    // owner now, not a visible-panel index after navigating away from it.
+    checkpoint('late_owner_pin');const retainedOwner=refused.session;
+    assert.match(retainedOwner,/^form-[1-9][0-9]*$/,'active_session_missing');
+    assert.equal(retainedOwner,result.session,'late_reply_changed_owner');
+    const assertRetainedOwner=async()=>{
+      const index=lastApplicationState.sessions.findIndex(session=>session.id===retainedOwner);
+      assert.ok(index>=0,'active_session_missing');
+      const visible=await panels().evaluateAll(nodes=>nodes.flatMap((node,index)=>node.hidden?[]:[index]));
+      assert.deepEqual(visible,[index],'late_reply_changed_owner');await value('Document number','I1');
+    };
+    await assertRetainedOwner();
     const panelsBefore=await panels().count(),rpcBefore=businessEvents.length;
     await button('Close application').click();await page.getByText('Close each form, including hidden tabs, before closing the application.',{exact:true}).waitFor();await idle();
     assert.equal(await panels().count(),panelsBefore);assert.equal(businessEvents.length,rpcBefore,'local_close_fence_dispatched');assert.equal(host.exitCode,null);
     await catalogEntry('Receipt card');await selectNumber('R1');let arrived,release;
     const arrival=new Promise(resolve=>arrived=resolve),wait=new Promise(resolve=>release=resolve);
-    const ownerIndex=await panels().evaluateAll(nodes=>nodes.findIndex(n=>!n.hidden));const retainedOwner=lastApplicationState.sessions[ownerIndex].id;
     const opens=businessEvents.filter(e=>e==='openRecord').length;delayed={arrived,wait};
     await repeatClick(catalog().getByRole('button',{name:'Open selected',exact:true}));await bounded(arrival,remaining(10000),'late_open_not_observed');
-    await tabs().getByRole('button',{name:'Issue card',exact:true}).click();release();await countPanels(2);await idle();await value('Quantity, row 1','99');
-    const ownerAfter=await panels().evaluateAll(nodes=>nodes.findIndex(n=>!n.hidden));assert.equal(lastApplicationState.sessions[ownerAfter].id,retainedOwner,'late_reply_changed_owner');
+    await tabs().getByRole('button',{name:'Issue card',exact:true}).click();checkpoint('late_owner_return');await assertRetainedOwner();
+    release();await countPanels(2);await idle();checkpoint('late_owner_delivery');await assertRetainedOwner();await value('Quantity, row 1','99');
     assert.equal(businessEvents.filter(e=>e==='openRecord').length,opens+1,'duplicate_open_rpc');
     await screenshot(screenshots[2]);await commitInput('Quantity, row 1','3.25');
     const writes=businessEvents.filter(e=>e==='command:WriteButton').length;reply=formReply('command','WriteButton');

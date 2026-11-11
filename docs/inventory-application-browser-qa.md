@@ -26,7 +26,10 @@ A separate fresh core-only physical15 database must refuse `launch_snapshot()`.
    Dirty Close form is refused and Close application cannot bypass live forms.
    Open R1 twice while holding only the genuine `openRecord` response, navigate
    back to I1, then release the response: one open and the same active owner,
-   with its unsaved quantity retained. Restore 3.25 and double-click Write:
+   with its unsaved quantity retained. The owner is pinned from the actual Close
+   refusal before catalog navigation, then checked both on returning to I1 and
+   after delayed delivery; hidden panels never supply a replacement owner.
+   Restore 3.25 and double-click Write:
    one request, one revision increment, no movement replay. Close the saved I1.
 4. Close R1 and naturally shut down the first host. Start a new host from the
    same stored source, reopen I1, verify typed reference presentations and 3.25,
@@ -141,3 +144,11 @@ boundaries, including 12:00:00. No browser state is injected. The persisted reop
 quantity assertion uses the declared scale-three spelling 3.250, consistent with
 the observed stored receipt quantity 10.500. No report numeric assertion, period
 meaning, runtime behavior, request count or time limit is relaxed.
+
+The following acquisition passed both catalog/reference and posting/report flows,
+including the period boundaries. Scenario 3 then exposed a QA-only assumption:
+catalog navigation deliberately hides all form panels, so no visible-panel index
+exists at that point. The observer now pins the exact session from the actual
+Close refusal, checks it against the preceding shortage response, and verifies
+that same owner before navigation, on explicit tab return and after late delivery.
+It does not accept an arbitrary retained sibling or add any request or retry.
