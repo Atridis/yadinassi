@@ -386,6 +386,7 @@ export function createFormView(document, root, handlers) {
     const names = new Set((current?.items || []).map(item => item.name));
     for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); control.tab?.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
     const nested = current?.items.some(item => item.kind === 'group');
+    fields.className = 'fields' + (nested ? ' nested-layout' : '');
     const positions = new Map();
     for (const item of current?.items || []) {
       let control = controls.get(item.name);

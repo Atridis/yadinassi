@@ -6,19 +6,19 @@
     "build.mjs": "2937d4293ace257058be1c94ce691c1700a0d69590bf636287a715d4d1588669",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "src/style.css": "2356466fb05c55827553590767c925cca82c00da538579ffdd04191292a33804",
-    "../form/src/style.css": "6978a7adf07eb1dcd462867e1c120ef8fe604e828754c663c35d3b4902ab5fca",
+    "../form/src/style.css": "33c3f57f1897d14a919068c866a30099d40466162c0c8534c105f48a90647dc4",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "../form/src/client.mjs": "951055cec3e38619f029e1e8695ee2e885edee925fbcdf192b5b0a29a5d43f10",
     "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
-    "../form/src/view.mjs": "34394d22144ba0adc28c2ccd6c51f0808ff1653f7f1b32c3fe697f63a0a614f7",
+    "../form/src/view.mjs": "9d30c07aaabc45e60e4a33e0e6e587529f380dc0ca16a43417e741b0a05bb7ad",
     "../form/src/app.mjs": "617924421e8c5a6ae36425be70f91a3135d0bc292e2715cbe7e86264a8545dad",
     "src/client.mjs": "ebdd0e413c0312865fe5043bb376846bf0fdd2fb25a9725f47d984916a0df744",
     "src/app.mjs": "380564bba4270966857716a7b540b9f4c86480579cfb8f668727922cacef6789"
   },
   "outputs": {
-    "app.js": "cc891e88ce7b5840a6befa1e16775871c9dafc4579869b46c6671f6574f216a8",
+    "app.js": "5883335ef7dcd40a2b8f02f00e9c35defa0a37bdb6912ac0516182bb9abd2abd",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "style.css": "a7d7fd2af45572730f958cc834bf2dd26b7b48db2e7d2ee1dc1d2013271d2fa1",
+    "style.css": "36286589b34bdd3f2d7e4005758cf96784abc67ebd65799043bceabb4a08035f",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

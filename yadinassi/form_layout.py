@@ -30,6 +30,8 @@ def validate_layout(rows, items):
             raise ValueError('unsupported form layout presentation')
         if parent_key and (parent_key not in seen or seen[parent_key] == 'control'):
             raise ValueError('layout parent must precede child')
+        if parent_key and parent != items[parent_key].name:
+            raise ValueError('noncanonical form layout parent')
         if (kind == 'page') != (seen.get(parent_key) == 'pages'):
             raise ValueError('pages require direct Page children only')
         depth = depths.get(parent_key, 0) + 1
@@ -39,6 +41,8 @@ def validate_layout(rows, items):
         if kind == 'page': page_counts[parent_key] += 1
         seen[key] = kind; depths[key] = depth
         result.append((item_name, parent, kind, orientation, show_title))
+    if tuple(row[0] for row in result) != tuple(item.name for item in items.values()):
+        raise ValueError('form layout order differs from item order')
     if set(seen) != set(items) or not page_counts and all(row[2] == 'control' for row in result):
         raise ValueError('incomplete form layout')
     if any(count == 0 for count in page_counts.values()):

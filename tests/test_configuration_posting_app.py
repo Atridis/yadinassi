@@ -21,7 +21,7 @@ def files():
 
 class PostingApplicationTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(dir=ROOT.parent / 'ui-test-tmp')
+        temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.path = Path(temporary.name)/'posting.sqlite'
         self.configuration = import_posting_application(files(), posting_runtime=PROFILE)

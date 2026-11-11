@@ -189,7 +189,8 @@ class ConfigurationFormLayoutTests(unittest.TestCase):
         server, client = self.sessions(); packet = _pack_state(server.session, server._handler_names)
         original = client.form._layout
         mutations = [lambda p: p['layout'][0].__setitem__(1, 'Names'), lambda p: p['layout'].pop(),
-                     lambda p: p['layout'][3].__setitem__(2, 'control'), lambda p: p.pop('layout')]
+                     lambda p: p['layout'][3].__setitem__(2, 'control'), lambda p: p.pop('layout'),
+                     lambda p: p['layout'][4].__setitem__(1, 'NAMES'), lambda p: p['items'].reverse()]
         for mutate in mutations:
             candidate = deepcopy(packet); mutate(candidate)
             with self.subTest(candidate=candidate['items'][0][0]), self.assertRaises(ValueError): _unpack_state(candidate, client, client._handlers)

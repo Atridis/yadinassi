@@ -1,10 +1,10 @@
 <Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.17">
   <Title>Configuration layout workbench</Title>
   <Attributes>
-    <Attribute name="FirstName" id="1"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
-    <Attribute name="LastName" id="2"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
-    <Attribute name="Notes" id="3"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
-    <Attribute name="Summary" id="4"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
+    <Attribute name="FirstName" id="1"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>512</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>
+    <Attribute name="LastName" id="2"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>512</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>
+    <Attribute name="Notes" id="3"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>512</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>
+    <Attribute name="Summary" id="4"><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>512</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Attribute>
   </Attributes>
   <ChildItems>
     <UsualGroup name="Workspace" id="1"><Title>Details</Title><Group>Vertical</Group><ChildItems>

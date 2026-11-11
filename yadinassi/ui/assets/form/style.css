@@ -6,6 +6,7 @@
 .browser-ownership{max-width:1100px;margin:16px auto;padding:14px 20px;border:1px solid #aac8c0;border-radius:10px;background:#eef7f4;color:#173c35;font:14px/1.5 system-ui,sans-serif}.browser-ownership p{margin:0 0 8px;overflow-wrap:anywhere}.browser-ownership p+p{font-size:12px;color:#47675e}.browser-ownership>div{display:flex;gap:10px;flex-wrap:wrap}.browser-ownership button{font:inherit;padding:7px 13px;border:1px solid #79998e;border-radius:6px;background:white;color:#173c35;cursor:pointer}.browser-ownership button:disabled{opacity:.5;cursor:default}.browser-ownership button:focus-visible{outline:3px solid #4088bc;outline-offset:2px}.browser-ownership [hidden]{display:none!important}.browser-ownership[data-role="observer"]{background:#fff7e9;border-color:#dcc28a;color:#634612}@media(max-width:680px){.browser-ownership{margin:10px;padding:12px}}
 
 /* Configuration topology is renderer-owned, not a native pixel-layout claim. */
+.fields.nested-layout { display: flex; flex-direction: column; align-items: stretch; }
 .layout-group { min-width: 0; border: 1px solid var(--line, #dce3e7); border-radius: 10px; padding: 16px; }
 .group-title { margin: 0 0 14px; font-size: 1rem; font-weight: 650; overflow-wrap: anywhere; }
 .group-content { display: flex; gap: 16px; min-width: 0; }
