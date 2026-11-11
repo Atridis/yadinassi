@@ -219,3 +219,10 @@ tests/fixtures/native_inventory_reference/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Source-bound ordinary regex extensions.
+scripts/regex_extensions_behavior/** text eol=lf
+scripts/native_1c_regex_extensions_profile.py text eol=lf
+scripts/native_1c_regex_extensions_probe.sh text eol=lf
+scripts/native_1c_bootstrap/regex_extensions_suite.py text eol=lf
+tests/test_regex_extensions_native_acquisition.py text eol=lf
