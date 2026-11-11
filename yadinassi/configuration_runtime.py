@@ -55,17 +55,23 @@ class ConfigurationApplication:
                      for s in (*configuration.catalogs, *configuration.documents)) else 'explicit')
         from .configuration_application_profile import (APPLICATION_SOURCE_ISSUE, import_application_configuration)
         from .configuration_business_profile import (BUSINESS_SOURCE_ISSUE, import_business_configuration)
+        from .configuration_reference_profile import REFERENCE_SOURCE_ISSUE, import_reference_configuration
+        references = (len(configuration.activation_issues) == 1 and
+                      configuration.activation_issues[0].startswith(REFERENCE_SOURCE_ISSUE + ":"))
         business = (len(configuration.activation_issues) == 1 and
                     configuration.activation_issues[0].startswith(BUSINESS_SOURCE_ISSUE + ':'))
         composed = (len(configuration.activation_issues) == 1 and
                     configuration.activation_issues[0].startswith(APPLICATION_SOURCE_ISSUE + ':'))
-        canonical = (import_business_configuration(sources) if business else
+        canonical = (import_reference_configuration(sources) if references else
+                     import_business_configuration(sources) if business else
                      import_application_configuration(sources) if composed else
                      import_configuration(sources, numbering_policy=numbering, module_runtime=MODULE_RUNTIME))
-        if configuration != canonical or (configuration.activation_issues and not (composed or business)):
+        if configuration != canonical or (configuration.activation_issues and not (composed or business or references)):
             raise ValueError('configuration cannot be activated')
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
+            if references and tuple(database_context.backend.activation_issues) != configuration.activation_issues:
+                raise ValueError('reference application requires its exact source grant')
             if database_context.backend.export_configuration() != sources:
                 raise ValueError('configuration source does not match the database')
             view = database_context.backend.begin_read()
@@ -131,6 +137,11 @@ class ConfigurationApplication:
         return cls(import_application_configuration(files), **kwargs)
 
     @classmethod
+    def from_reference_files(cls, files, **kwargs):
+        from .configuration_reference_profile import import_reference_configuration
+        return cls(import_reference_configuration(files), **kwargs)
+
+    @classmethod
     def from_business_files(cls, files, **kwargs):
         from .configuration_business_profile import import_business_configuration
         return cls(import_business_configuration(files), **kwargs)
@@ -139,7 +150,11 @@ class ConfigurationApplication:
     def from_database(cls, context, **kwargs):
         from .configuration_application_profile import APPLICATION_SOURCE_ISSUE
         from .configuration_business_profile import BUSINESS_SOURCE_ISSUE
+        from .configuration_reference_profile import REFERENCE_SOURCE_ISSUE
         issues = context.backend.activation_issues
+        if len(issues) == 1 and issues[0].startswith(REFERENCE_SOURCE_ISSUE + ":"):
+            return cls.from_reference_files(context.backend.export_configuration(),
+                                            database_context=context, **kwargs)
         if len(issues) == 1 and issues[0].startswith(BUSINESS_SOURCE_ISSUE + ":"):
             return cls.from_business_files(context.backend.export_configuration(),
                                            database_context=context, **kwargs)

@@ -7,7 +7,7 @@ is exposed by this adapter.
 """
 from enum import Enum
 from .catalog_backend import BackendError
-from .configuration_posting import canonical
+from .configuration_posting_application import canonical_runtime as canonical
 from .document_posting_program import compile_handlers
 from .document_posting_values import DocumentWriteMode, BSLRecorderCollection
 from .runtime import Interpreter

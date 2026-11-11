@@ -49,18 +49,22 @@ def scalar(value):
     raise TypeError('Форма: поддерживаются только скалярные данные')
 
 
+from .form_references import is_reference, adjust as adjust_form_value, require_scope
+
+
 class BSLFormAttribute(BSLObject):
     def __init__(self, attribute_name, value_type, path='', title='', saved_data=False):
         self._session = None
         self.name = name(attribute_name)
-        if type(value_type) is not BSLTypeDescription:
-            raise TypeError('РеквизитФормы: требуется ОписаниеТипов')
-        allowed = (BSLType.STRING, BSLType.NUMBER, BSLType.BOOLEAN, BSLType.DATE)
-        if len(value_type.types) != 1 or value_type.types[0] not in allowed:
-            raise ValueError('РеквизитФормы: пока поддерживается один скалярный тип')
-        if (value_type.string_qualifiers.length > MAX_TEXT or
-                value_type.number_qualifiers.digits > 128 or value_type.number_qualifiers.fraction_digits > 128):
-            raise ValueError('РеквизитФормы: превышен предел квалификаторов')
+        if not is_reference(value_type):
+            if type(value_type) is not BSLTypeDescription:
+                raise TypeError('РеквизитФормы: требуется ОписаниеТипов')
+            allowed = (BSLType.STRING, BSLType.NUMBER, BSLType.BOOLEAN, BSLType.DATE)
+            if len(value_type.types) != 1 or value_type.types[0] not in allowed:
+                raise ValueError('РеквизитФормы: пока поддерживается один скалярный тип')
+            if (value_type.string_qualifiers.length > MAX_TEXT or
+                    value_type.number_qualifiers.digits > 128 or value_type.number_qualifiers.fraction_digits > 128):
+                raise ValueError('РеквизитФормы: превышен предел квалификаторов')
         if text(path, MAX_NAME):
             raise ValueError('РеквизитФормы: вложенные реквизиты пока не поддерживаются')
         if type(saved_data) is not bool:
@@ -317,6 +321,7 @@ class BSLClientApplicationForm(_Owned):
                    'передзакрытием':'beforeclose','призакрытии':'onclose'}
     def __init__(self, session):
         self._session = session; self._attributes = {}; self._data = {}; self._tables = {}; self._static = set()
+        self._host_readonly = frozenset()
         self.items = BSLFormItems(self); self.commands = BSLFormCommands(self)
         self.actions = {}; self.title = ''
     def _check(self, server=False):
@@ -348,10 +353,11 @@ class BSLClientApplicationForm(_Owned):
             if type(attr) is not BSLFormAttribute: raise TypeError('Форма: требуется РеквизитФормы')
             key = attr.name.casefold()
             if key in attrs or key in self._tables or key in self._session.reserved_names or len(attrs) >= MAX_ATTRIBUTES: raise ValueError('Форма: имя занято или превышен предел')
-            default_length = int(attr.value_type.string_qualifiers.length)
+            require_scope(attr.value_type, self._session)
+            default_length = 0 if is_reference(attr.value_type) else int(attr.value_type.string_qualifiers.length)
             if sum(len(x) for x in data.values() if type(x) is str) + self._table_text_size() + default_length > MAX_TOTAL_TEXT:
                 raise ValueError("Форма: превышен предел данных")
-            attrs[key] = attr._copy(); data[key] = scalar(attr.value_type.adjust_value())
+            attrs[key] = attr._copy(); data[key] = adjust_form_value(attr.value_type)
         allocated = len([] if added is None else added.items)
         if self._session._allocated + allocated > MAX_ALLOCATED: raise ValueError("Форма: превышен предел созданных объектов")
         self._session._allocated += allocated
@@ -369,9 +375,13 @@ class BSLClientApplicationForm(_Owned):
         return _FileMethods.get_member(self, member)
     def set_member(self, member, value):
         self._check(); key = member.casefold()
+        if key in self._host_readonly:
+            raise ValueError("host-owned form attribute is read-only")
         if key in self._attributes:
-            scalar(value)
-            value = scalar(self._attributes[key].value_type.adjust_value(value))
+            kind = self._attributes[key].value_type
+            if is_reference(kind) and not kind.scope.server:
+                raise ValueError("client reference fields are read-only")
+            value = adjust_form_value(kind, value)
             total = sum(len(x) for k,x in self._data.items() if k != key and type(x) is str)
             if total + self._table_text_size() + (len(value) if type(value) is str else 0) > MAX_TOTAL_TEXT: raise ValueError('Форма: превышен предел данных')
             self._data[key] = value

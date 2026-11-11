@@ -4,7 +4,8 @@ Pending Write is staging, not persistence. Native transaction parity is not clai
 """
 from contextvars import ContextVar
 from contextlib import contextmanager
-from uuid import uuid4
+from uuid import UUID, uuid4
+from dataclasses import dataclass
 from .catalog_backend import BackendError
 from .transaction_backend import TransactionRequest
 
@@ -148,13 +149,15 @@ def rollback(backend):
 
 
 class Transaction:
-    def __init__(self, backend, owner):
+    def __init__(self, backend, owner, *, operation_id=None):
+        if operation_id is not None and (type(operation_id) is not UUID or not operation_id.int):
+            raise BackendError("invalid_input")
         self.backend, self.owner = backend, owner
         self.unit = None
         self.participants = ()
         self.prepared = None
         self.leases = 0
-        self.unit = backend.begin_unit_of_work(uuid4())
+        self.unit = backend.begin_unit_of_work(uuid4() if operation_id is None else operation_id)
 
     def _open(self):
         if self.unit.state != 'open': raise BackendError('uncertain_commit')
@@ -303,3 +306,164 @@ def query_view(manager):
     except BaseException:
         view.close()
         raise
+
+
+@dataclass(frozen=True, slots=True)
+class RootOperationReceipt:
+    """Host-lifetime immutable journal envelope; not a durable restart token."""
+    operation_id: UUID
+    state: str
+    requests: tuple = ()
+    outcomes: tuple = ()
+    accepted: bool = False
+    error: str | None = None
+
+
+def require_host_root(backend):
+    """Only the exact v13 forms grant, outside every BSL activation.
+
+    This host entry point is not an alternate root for scalar recorder or v14
+    accumulation journals. BSL TransactionActive remains separately read-only.
+    """
+    from .sqlite_catalog import SQLiteCatalogBackend
+    from .configuration_posting_application import PostingApplicationConfiguration, PROFILE, canonical
+    require_admission()
+    if (type(backend) is not SQLiteCatalogBackend or _execution.get() is not None
+            or _execution_backend.get() is not None or _registered(backend) is not None
+            or backend.format_version != 13
+            or type(backend.posting_configuration) is not PostingApplicationConfiguration
+            or backend.posting_configuration.profile != PROFILE):
+        raise BackendError('unsupported')
+    if backend._closed: raise BackendError('closed')
+    configuration = canonical(backend.posting_configuration)
+    if backend.export_configuration() != dict(configuration.files):
+        raise BackendError('schema_changed')
+
+
+class RootOperation:
+    """Trusted host-only coordinator with preallocated durable outcome images.
+
+    The callback runs once. Recovery releases retained resources and resolves
+    the exact frozen journal, never a callback, form dispatch or posting handler.
+    """
+    def __init__(self, backend, operation_id):
+        require_host_root(backend)
+        if type(operation_id) is not UUID or not operation_id.int:
+            raise BackendError('invalid_input')
+        self.backend = backend
+        self.receipt = RootOperationReceipt(operation_id, 'prepared')
+        self._rejected = RootOperationReceipt(operation_id, 'rejected', error='operation_failed')
+        self._cleanup = RootOperationReceipt(operation_id, 'uncertain', error='cleanup_required')
+        self._transaction = None
+        self._images = None
+        self._commit_attempted = False
+
+    @property
+    def locked(self):
+        transaction = self._transaction
+        return (self.receipt.state in ('prepared', 'uncertain')
+            or self.receipt.state == 'committed' and not self.receipt.accepted
+            or transaction is not None and (transaction.leases
+                or transaction.unit._view._connection is not None))
+
+    def _enter(self):
+        require_host_root(self.backend)
+        # Allocate the return container before installing either context. A
+        # tuple built on return could fail after both tokens were acquired.
+        tokens = [None, None]
+        tokens[0] = _execution.set(object())
+        try: tokens[1] = _execution_backend.set(self.backend)
+        except BaseException:
+            _execution.reset(tokens[0]); raise
+        return tokens
+
+    def _leave(self, tokens):
+        transaction = self._transaction
+        # Retain actual ownership when SQLite release failed. _closed alone
+        # is insufficient: a failed connection.close can leave locks alive.
+        if transaction is None or (not transaction.leases and transaction.unit._view._connection is None):
+            self.backend._bsl_transaction = None
+        _execution_backend.reset(tokens[1]); _execution.reset(tokens[0])
+
+    def run(self, callback):
+        if self.receipt.state != 'prepared' or not callable(callback):
+            raise BackendError('conflict')
+        tokens = None
+        transaction = None
+        try:
+            tokens = self._enter()
+            transaction = Transaction(self.backend, _execution.get(), operation_id=self.receipt.operation_id)
+            self._transaction = transaction
+            self.backend._bsl_transaction = transaction
+            callback()
+            if transaction.leases or not transaction.participants:
+                raise BackendError('unsupported')
+            requests, outcomes = transaction.unit.requests, transaction.unit._results
+            # Every final immutable image exists before COMMIT; neither failure
+            # handling nor successful installation needs a post-COMMIT allocation.
+            self._images = (
+                RootOperationReceipt(self.receipt.operation_id, 'uncertain', requests, outcomes, False, 'uncertain_commit'),
+                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, False, 'acceptance_required'),
+                RootOperationReceipt(self.receipt.operation_id, 'committed', requests, outcomes, True),
+                RootOperationReceipt(self.receipt.operation_id, 'not_committed', requests, outcomes, False, 'conflict'))
+            self.receipt = self._images[0]
+            self._commit_attempted = True
+            transaction.commit()
+            self.receipt = self._images[2]
+        except BaseException as error:
+            if transaction is None:
+                self.receipt = self._rejected
+            elif transaction.unit.state in ('uncertain', 'committed'):
+                # Publish certainty BEFORE fallible connection cleanup. The
+                # pending participants and exact envelope stay reachable even
+                # if close itself is interrupted or exhausts memory.
+                self.receipt = self._images[1 if transaction.unit.state == 'committed' else 0]
+                transaction.unit.close()
+            else:
+                self.receipt = self._cleanup
+                transaction.rollback()
+                self.receipt = self._rejected
+            if not isinstance(error, Exception) or isinstance(error, MemoryError): raise
+        finally:
+            if tokens is not None: self._leave(tokens)
+        return self.receipt
+
+    def release_for_resolution(self):
+        """Release only this operation's retained SQL resources, no replay."""
+        require_admission()
+        if _execution.get() is not None or _execution_backend.get() is not None:
+            raise BackendError('unsupported')
+        registered = _registered(self.backend)
+        transaction = self._transaction
+        if registered is not None and registered is not transaction:
+            raise BackendError('unsupported')
+        if transaction is not None:
+            if transaction.leases: raise BackendError('unsupported')
+            transaction.unit.close()
+            if transaction.unit._view._connection is not None:
+                raise BackendError('uncertain_commit')
+            if not self._commit_attempted:
+                transaction._unlock(); self.receipt = self._rejected
+        if registered is transaction: self.backend._bsl_transaction = None
+
+    def resolve(self):
+        self.release_for_resolution()
+        require_host_root(self.backend)
+        if self.receipt.state not in ('uncertain', 'committed') or self.receipt.accepted:
+            return self.receipt
+        transaction = self._transaction
+        if transaction is None or transaction.leases:
+            raise BackendError('unsupported')
+        outcomes = self.backend.resolve_unit_of_work(self.receipt.operation_id, self.receipt.requests)
+        if outcomes is None:
+            if self.receipt.state == 'committed': raise BackendError('integrity')
+            transaction._unlock()
+            self.receipt = self._images[3]
+            return self.receipt
+        if outcomes != self.receipt.outcomes: raise BackendError('integrity')
+        # Publish known committed before acceptance, which can still fail.
+        self.receipt = self._images[1]
+        transaction.unit.state = 'committed'
+        transaction._install()
+        self.receipt = self._images[2]
+        return self.receipt

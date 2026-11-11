@@ -12,6 +12,7 @@ from .form_tables import (FormTableColumn, FormTableSchema, BSLFormDataCollectio
     MAX_TABLE_ALLOCATED as MAX_ROW_IDENTITIES, validate_table_data)
 from .form_model import BSLFormTable, name, text, scalar
 from .ui.protocol import encode_value, decode_value
+from .form_references import is_reference, adjust, encode, decode
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
@@ -42,6 +43,8 @@ def _row(value, size):
 
 def _column(column):
     kind = column.value_type
+    if is_reference(kind):
+        return [column.name, "FormCatalogRef", [kind.target], column.title, column.read_only]
     return [column.name, kind.types[0].value,
         [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
          kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
@@ -49,8 +52,14 @@ def _column(column):
         column.title, column.read_only]
 
 
-def _decode_column(row):
+def _decode_column(row, session):
     column_name, kind, qualifiers, title, readonly = _row(row, 5)
+    if kind == 'FormCatalogRef':
+        if session.reference_scope is None or session.reference_scope.server or type(readonly) is not bool:
+            raise ValueError('explicit client reference column required')
+        target, = _row(qualifiers, 1)
+        _integer(target, 1, 128)
+        return FormTableColumn(column_name, session.reference_scope.descriptor(target), title, readonly)
     q = _row(qualifiers, 6)
     for value, maximum in zip(q, (128, 128, 1, 65536, 1, 3)):
         _integer(value, 0, maximum)
@@ -71,7 +80,7 @@ def pack_tables(form):
         result.append({'id': table._identity, 'name': table.schema.name,
             'title': table.schema.title, 'columns': [_column(c) for c in table.schema.columns],
             'allocated': snapshot.allocated,
-            'rows': [[identity, [encode_value(value) for value in values]]
+            'rows': [[identity, [encode(c.value_type, value, encode_value) for c,value in zip(table.schema.columns,values)]]
                      for identity, values in snapshot.rows]})
     return result
 
@@ -91,7 +100,7 @@ def unpack_tables(packet, candidate, session):
         key = name(record['name']).casefold()
         if key in values or key in candidate._attributes or key in session.reserved_names:
             raise ValueError('duplicate or reserved table name')
-        columns = tuple(_decode_column(column) for column in _list(record['columns'], MAX_COLUMNS))
+        columns = tuple(_decode_column(column, session) for column in _list(record['columns'], MAX_COLUMNS))
         schema = FormTableSchema(record['name'], columns, text(record['title'], 1024))
         allocated = _integer(record['allocated'], 0)
         previous = existing.get(key)
@@ -108,9 +117,9 @@ def unpack_tables(packet, candidate, session):
                 raise ValueError('removed row identity reused')
             seen.add(identity)
             _row(encoded, len(columns))
-            decoded = tuple(scalar(decode_value(value)) for value in encoded)
+            decoded = tuple(decode(c.value_type, value, decode_value) for c,value in zip(columns,encoded))
             for column, value, raw in zip(columns, decoded, encoded):
-                if encode_value(column.value_type.adjust_value(value)) != raw:
+                if encode(column.value_type, adjust(column.value_type,value), encode_value) != raw:
                     raise ValueError('table value outside schema')
             rows.append((identity, decoded))
         table = BSLFormDataCollection(candidate, schema, record['id'])
@@ -197,6 +206,8 @@ def admit_table_delta(form, cells, selections, scalar_data):
             raise ValueError('duplicate or removed table cell')
         seen.add(identity)
         column = table.schema.columns[column_index]
+        if is_reference(column.value_type):
+            raise ValueError("reference cell deltas require server-owned choice")
         value = scalar(decode_value(encoded))
         if encode_value(column.value_type.adjust_value(value)) != encoded:
             raise ValueError('table delta outside schema')

@@ -5,7 +5,7 @@ import os
 import sqlite3
 from uuid import UUID,uuid4
 from .catalog_backend import BackendError
-from .configuration_posting import canonical,import_posting_configuration,PROFILE
+from .configuration_posting_application import canonical_runtime as canonical, import_variant
 from .sqlite_recorder_movements import RECORDER_DDL,RecorderMovementPort,schema_data
 from .sqlite_document_posting_state import POSTED_DDL,POSTED_RECEIPT_DDL,read_posted
 
@@ -27,10 +27,11 @@ def admit(connection,database_id,documents,*,validate_rows=False):
     for path,kind,raw,digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file'):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
         files[path]=raw
-    try:config=import_posting_configuration(files,posting_runtime=PROFILE)
-    except (ValueError,TypeError):raise BackendError('integrity') from None
     marker=connection.execute('SELECT singleton,profile,source_digest FROM posting_profile LIMIT 2').fetchall()
-    if marker!=[(1,PROFILE,config.source_digest)] or config.documents!=documents:raise BackendError('integrity')
+    if len(marker)!=1 or marker[0][0]!=1:raise BackendError('integrity')
+    try:config=import_variant(files,marker[0][1])
+    except (ValueError,TypeError,KeyError):raise BackendError('integrity') from None
+    if marker!=[(1,config.profile,config.source_digest)] or tuple(sorted(config.documents,key=lambda s:str(s.identity)))!=tuple(sorted(documents,key=lambda s:str(s.identity))):raise BackendError('integrity')
     info=connection.execute('SELECT configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
     if info!=(str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
     if connection.execute('SELECT COUNT(*) FROM recorder_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')
@@ -79,7 +80,7 @@ def create(cls,path,configuration):
             connection.execute('INSERT INTO recorder_register_schema VALUES(?,?)',(str(schema.identity),s._json(schema_data(schema,database_id))))
             connection.executemany('INSERT INTO recorder_register_document VALUES(?,?)',[(str(schema.identity),str(doc)) for doc in schema.recorder_documents])
         for path,content in config.files:connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)',(path,'module' if path.endswith('.bsl') else 'xml',content,hashlib.sha256(content).hexdigest()))
-        connection.execute('INSERT INTO posting_profile VALUES(1,?,?)',(PROFILE,config.source_digest))
+        connection.execute('INSERT INTO posting_profile VALUES(1,?,?)',(config.profile,config.source_digest))
         for ddl in s.transaction_profile.profile_index_ddls(7,(),layout):connection.execute(ddl)
         connection.execute('PRAGMA application_id=%d'%s._APPLICATION_ID);connection.execute('PRAGMA user_version=13')
         admit(connection,database_id,config.documents,validate_rows=True)

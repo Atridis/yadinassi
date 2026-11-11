@@ -171,3 +171,32 @@ scripts/native_1c_posting_probe.sh text eol=lf
 scripts/accumulation_register_behavior/** text eol=lf
 scripts/native_1c_bootstrap/accumulation_register_suite.py text eol=lf
 scripts/native_1c_accumulation_probe.sh text eol=lf
+
+# Immutable accumulation observations, provenance and canonical runtime wrapper.
+# Preserve original evidence bytes, never normalize them in readers or tests.
+tests/fixtures/accumulation_register/*.out -text
+tests/fixtures/accumulation_register/provenance.json -text
+tests/fixtures/accumulation_register/RuntimeAccumulationRegister.xml -text
+
+# Remaining exact sources in the retained accumulation 34-input/4-host packet.
+# Already byte-preserved catalog/accumulation paths keep their existing rules.
+integrational_tests/launcher_1c/Launcher.xml text eol=lf
+integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl text eol=lf
+integrational_tests/launcher_1c/Launcher/Forms/Main.xml text eol=lf
+integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml text eol=lf
+integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl text eol=lf
+integrational_tests/launcher_1c/TestModule.xml text eol=lf
+integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl text eol=lf
+integrational_tests/test_launcher.py text eol=lf
+scripts/native_1c_bootstrap/diagnostics.py text eol=lf
+scripts/native_1c_bootstrap/evidence_gates.py text eol=lf
+scripts/native_1c_bootstrap/full_suite.py text eol=lf
+scripts/native_1c_bootstrap/inject_modules.py text eol=lf
+scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl text eol=lf
+scripts/native_1c_bootstrap/modules/SessionModule.bsl text eol=lf
+scripts/native_1c_bootstrap/run_stage.py text eol=lf
+scripts/native_1c_bootstrap/simple_smoke.bsl text eol=lf
+scripts/native_1c_accumulation_register_profile.py text eol=lf
+scripts/native_1c_docker_lifecycle.py text eol=lf
+scripts/native_1c_full_host.py text eol=lf
+scripts/native_1c_smoke.py text eol=lf

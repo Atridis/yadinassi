@@ -35,10 +35,13 @@ class CatalogObjectSession:
     ``validate_result`` must preflight, not mutate external form state; adoption
     occurs only after it accepts the refreshed record and authoritative list.
     """
-    def __init__(self, context, schema, source_files, reference=None):
+    def __init__(self, context, schema, source_files, reference=None, *, reference_fields=False):
+        if type(reference_fields) is not bool:
+            raise TypeError("explicit reference field admission required")
+        allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ())
         if (type(schema) is not CatalogSchema or schema.hierarchy != 'none' or schema.tabular_sections
-                or any(f.kind not in ('string', 'number', 'boolean', 'datetime')
-                       or f.target_catalog_id is not None for f in schema.fields)):
+                or any(f.kind not in allowed or (f.target_catalog_id is not None and
+                       not (reference_fields and f.kind == 'catalog_ref')) for f in schema.fields)):
             raise ValueError('scalar catalog object form required')
         if (type(source_files) is not dict or not source_files
                 or any(type(k) is not str or type(v) is not bytes for k, v in source_files.items())):

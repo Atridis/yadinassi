@@ -62,7 +62,7 @@ class DocumentBrowserContractTests(unittest.TestCase):
 
     def test_exact_optin_and_closed_uploaded_paths(self):
         workflow=self.workflow
-        self.assertIn('codex/document-form-browser-reviewed]',workflow)
+        self.assertIn('codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed, codex/posting-application-browser-reviewed]',workflow)
         step=workflow.split('      - name: Acquire five document form flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         for text in ["if: github.ref == 'refs/heads/codex/document-form-browser-reviewed'",'timeout-minutes: 5','QA_SOURCE_SHA: ${{ github.sha }}','node tests/browser_ui/document_form_browser_qa.mjs']:self.assertIn(text,step)
         upload=workflow.split('      - name: Publish only document form screenshots and redacted source-bound report\n',1)[1]

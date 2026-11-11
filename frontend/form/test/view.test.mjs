@@ -48,11 +48,14 @@ test('draft reconciliation preserves other input but adopts accepted field effec
   assert.deepEqual(view.changes(), [{control: 'Other', value: {type: 'String', value: 'Second'}}]);
 });
 
-test('removed or disabled fields discard inapplicable drafts and cannot be retargeted', () => {
+test('removed or disabled fields retain copy-only drafts and cannot be retargeted', () => {
   const {document, view} = create(); view.render(model(state())); edit(document, 'Pending');
-  view.render(model(state(1, {items: [field('Different')]}))); assert.equal(view.hasDrafts(), false);
+  view.render(model(state(1, {items: [field('Different')]}))); assert.equal(view.hasDrafts(), true);
+  assert.ok(document.root.textContent.includes('Name: Pending')); assert.throws(() => view.changes(), {code: 'draft_changed'});
+  view.clearDrafts(); view.render(model(state(1, {items: [field('Different')]})));
   edit(document, 'Other'); view.render(model(state(2, {items: [field('Different', {type: 'String', value: 'Host'}, {enabled: false})]})));
-  assert.equal(view.hasDrafts(), false); assert.equal(input(document).value, 'Host'); assert.equal(input(document).disabled, true);
+  assert.equal(view.hasDrafts(), true); assert.equal(input(document).value, 'Host'); assert.equal(input(document).disabled, true);
+  assert.ok(document.root.textContent.includes('Different: Other'));
 });
 
 test('Date and empty scalars are read-only and closed state hides all controls', () => {
@@ -147,6 +150,8 @@ test('stale draft failure adopts latest host value and needs new user intent', a
   });
   const app = mountForm(env, env.document.root); await app.ready; edit(env.document, 'Outdated'); await app.run('command', 'Run');
   assert.equal(requests.length, 2); assert.equal(input(env.document).value, 'Other client'); assert.equal(app.client.snapshot.revision, 7);
+  assert.ok(env.document.root.textContent.includes('Name: Outdated')); assert.equal(app.view.hasDrafts(), true);
+  assert.throws(() => app.view.changes(), {code: 'draft_changed'});
 });
 
 test('same-document reattach is read-only and capabilities never enter storage or DOM', async () => {
