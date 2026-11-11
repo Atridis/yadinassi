@@ -194,7 +194,13 @@ export function mountApplication(environment, root, exchange = null) {
       });
       node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
-    for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    for (const [id,entry] of mounts) {
+      const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
+      entry.ownerNotice.hidden = !blocked;
+      entry.ownerNotice.textContent = blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
+      if (client.terminal) entry.mount?.lock();
+      else entry.mount?.repaint();
+    }
     postingPanel.replaceChildren();
     const posting = client.state?.posting?.find(item => item.session === active);
     postingPanel.hidden = !posting;
@@ -223,11 +229,24 @@ export function mountApplication(environment, root, exchange = null) {
       if (mounts.has(session.id)) { mounts.get(session.id).tab.textContent = session.title; continue; }
       const id = session.id, panel = el('section'); panel.hidden = true; panels.append(panel);
       const tab = button(session.title || 'Form',tabs,() => show(id));
-      const entry = {panel,tab,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
+      const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status'); panel.append(ownerNotice);
+      const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
+        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
+    }
+    try {
+      for (const update of result.updates || []) {
+        const target = mounts.get(update.session);
+        if (!target?.mount) throw Error('Retired completion owner');
+        target.mount.adoptExternal(update.form);
+      }
+    } catch {
+      // A malformed/stale or concurrently busy owner cannot safely adopt an
+      // already executed completion. Lock the family; never replay the result.
+      client.lock(); status = 'Completion state could not be reconciled. All forms are locked.';
     }
     const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);

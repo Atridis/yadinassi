@@ -17,6 +17,7 @@ const ERROR_MESSAGES = Object.freeze({
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
   draft_hidden: 'Unsubmitted inputs are on another page. Return to that page and apply them before running this action.',
+  owned_child_open: 'Finish or close the owned form before editing its owner.',
   draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
@@ -1057,17 +1058,20 @@ function createFormView(document, root, handlers) {
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
     status.textContent = model.busy ? 'Working…' : !current ? 'Not connected' : current.uncertain || model.outcomeUnknown ? 'Outcome unknown'
+      : model.transportFailed ? 'Connection lost' : model.paused ? 'Paused' : model.locked && current.lifecycle === 'open' ? 'Locked'
       : current.lifecycle === 'open' ? 'Connected' : current.lifecycle === 'cancelled' ? 'Cancelled'
       : current.lifecycle === 'failed' ? 'Failed' : 'Closed';
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
-    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted;
+    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted || Boolean(model.refreshUnavailable);
     close.disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
     lock.textContent = model.outcomeUnknown || current?.uncertain
-      ? 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      ? model.refreshUnavailable ? 'The outcome is unknown and this session is locked. Copy pending edits before leaving. Refresh and replay are unavailable.'
+        : 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      : model.refreshUnavailable ? 'Editing is locked and refresh is unavailable. Copy pending edits before leaving. No command will be retried.'
       : 'Editing is locked. Use Refresh state to read the host’s result before continuing. No command will be retried.';
     empty.hidden = Boolean(current && current.kind !== 'closed' && current.items.some(item => item.visible));
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
@@ -1207,9 +1211,10 @@ function mountForm(environment, root, options = {}) {
     reference: options.onReference ? action => run('reference', action) : null,
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
-  const paint = () => view.render({paused: Boolean(options.referenceActive?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
+  const paint = () => view.render({paused: Boolean(options.referenceActive?.() || options.businessBlocked?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
-    transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
+    transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false,
+    refreshUnavailable: Boolean(options.transport && client?.transportFailed)});
   const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
   const finish = () => {
     busy = false; paint(); options.onChange?.(); browserHost?.notify();
@@ -1259,7 +1264,7 @@ function mountForm(environment, root, options = {}) {
   }
   async function run(event, name, row) {
     if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
-    if (busy || !client || client.locked || options.referenceActive?.() && event !== 'reference') return;
+    if (busy || !client || client.locked || options.businessBlocked?.() || options.referenceActive?.() && event !== 'reference') return;
     const reference = event === 'reference';
     if (reference && !options.onReference) return;
     const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
@@ -1300,6 +1305,7 @@ function mountForm(environment, root, options = {}) {
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {
+        if (options.businessBlocked?.()) throw new FormError('owned_child_open');
         // An earlier handler may delete, retype or supersede a later draft. Do not
         // retarget it or run a command that silently lost part of the user's edit.
         const locator = Object.hasOwn(change, 'row') ? change : change.control;
@@ -1307,6 +1313,7 @@ function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
+      if (options.businessBlocked?.()) throw new FormError('owned_child_open');
       if ((['command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) throw new FormError('draft_changed');
       if (reference) {
         if (referenceStart) {
@@ -1332,7 +1339,7 @@ function mountForm(environment, root, options = {}) {
     finally { finish(); view.endOwnershipReconcile(); }
   }
   async function refresh() {
-    if (busy || !client || options.referenceActive?.() || options.transport && client.transportFailed) return;
+    if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -1351,6 +1358,18 @@ function mountForm(environment, root, options = {}) {
   });
   const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
   const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
+  // A completion is an already executed trusted host event, not a second browser
+  // request. Preserve raw drafts/recovery and consume only its exact snapshot.
+  const adoptExternal = reply => {
+    if (!client || busy || client.busy || client.locked) throw new FormError('transport');
+    error = '';
+    try { client.adopt(reply,1); }
+    catch (caught) {
+      showError(caught);
+      if (client.transportFailed || client.outcomeUnknown) throw caught;
+    }
+    paint();
+  };
   paint();
   if (browserHost?.enabled) {
     client = new FormClient(browserHost.transport); token = 'attached';
@@ -1359,7 +1378,7 @@ function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -1380,7 +1399,7 @@ const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled','reference_refused'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
   (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
@@ -1397,10 +1416,11 @@ function referenceAction(action, state, session) {
 function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
+  const ownedResults = Object.hasOwn(result || {}, 'updates');
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
-  if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
+  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
@@ -1435,11 +1455,40 @@ function validateApplicationReply(reply, request, previous) {
     if (previous?.catalog?.entry === catalog.entry && catalog.version < previous.catalog.version) throw new FormError('transport');
   }
   for (const session of state.sessions) {
-    if (!keys(session,['id','entry','title']) || !sessionId(session.id) || sessions.has(session.id) ||
+    if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
-    if (old && old.entry !== session.entry) throw new FormError('transport');
+    if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
+    if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
     sessions.add(session.id);
+  }
+  if (ownedResults) {
+    const nodes = new Map(state.sessions.map(value => [value.id,value]));
+    for (const session of state.sessions) {
+      const children = state.sessions.filter(value => value.owner === session.id);
+      if (children.length > 1 || session.blocked !== (children.length === 1)) throw new FormError('transport');
+      const visited = new Set([session.id]); let owner = session.owner;
+      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      while (owner !== null) {
+        const parent = nodes.get(owner);
+        if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
+        visited.add(owner); owner = parent.owner;
+      }
+    }
+    if (!Array.isArray(result.updates) || result.updates.length > 8) throw new FormError('transport');
+    const updated = new Set();
+    for (const update of result.updates) {
+      const prior = previous?.sessions.find(value => value.id === update?.session);
+      if (!keys(update,['session','form']) || !sessions.has(update.session) || update.session === result.session || updated.has(update.session) ||
+          !prior?.blocked || !previous.sessions.some(value => value.owner === update.session && !sessions.has(value.id))) throw new FormError('transport');
+      const nested = update.form;
+      if (!keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || nested.id !== 1 ||
+          !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
+          ![null,'event_failed','outcome_unknown'].includes(nested.result.error)) throw new FormError('transport');
+      validateSnapshot(nested.result.state);
+      if (nested.result.state.kind === 'closed') throw new FormError('transport');
+      updated.add(update.session);
+    }
   }
   if (!(state.active === null || sessions.has(state.active)) || state.kind === 'closed' && sessions.size) throw new FormError('transport');
   if (Object.hasOwn(state,'choice') && state.choice !== null) {
@@ -1484,12 +1533,18 @@ class ApplicationClient {
   constructor(exchange, changed = () => {}, failed = () => {}) {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
+    this.ownedResults = null;
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
+          (method === 'application.reference' || method === 'application.recoverPosting' ||
+           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
+        const error = new FormError('owned_child_open'); error.preDispatch = true; throw error;
+      }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
           !referenceAction(params.action,this.state,params.session))) {
@@ -1503,6 +1558,8 @@ class ApplicationClient {
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
         result = validateApplicationReply(await this.exchange(request),request,this.state);
+        const owned = Object.hasOwn(result,'updates');
+        if (this.ownedResults !== null && this.ownedResults !== owned) throw new FormError('transport');
         if (result.state.catalog) {
           const {entry,version} = result.state.catalog;
           if (version < (this.catalogVersions.get(entry) ?? 0)) throw new FormError('transport');
@@ -1515,6 +1572,12 @@ class ApplicationClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(result.session,revision);
         }
+        for (const update of result.updates || []) {
+          const revision = update.form.result.state.revision;
+          if (this.retired.has(update.session) || revision < (this.formRevisions.get(update.session) ?? 0)) throw new FormError('transport');
+          this.formRevisions.set(update.session,revision);
+        }
+        this.ownedResults = owned;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
@@ -1736,7 +1799,13 @@ function mountApplication(environment, root, exchange = null) {
       });
       node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
-    for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    for (const [id,entry] of mounts) {
+      const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
+      entry.ownerNotice.hidden = !blocked;
+      entry.ownerNotice.textContent = blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
+      if (client.terminal) entry.mount?.lock();
+      else entry.mount?.repaint();
+    }
     postingPanel.replaceChildren();
     const posting = client.state?.posting?.find(item => item.session === active);
     postingPanel.hidden = !posting;
@@ -1765,11 +1834,24 @@ function mountApplication(environment, root, exchange = null) {
       if (mounts.has(session.id)) { mounts.get(session.id).tab.textContent = session.title; continue; }
       const id = session.id, panel = el('section'); panel.hidden = true; panels.append(panel);
       const tab = button(session.title || 'Form',tabs,() => show(id));
-      const entry = {panel,tab,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
+      const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status'); panel.append(ownerNotice);
+      const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
+        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
+    }
+    try {
+      for (const update of result.updates || []) {
+        const target = mounts.get(update.session);
+        if (!target?.mount) throw Error('Retired completion owner');
+        target.mount.adoptExternal(update.form);
+      }
+    } catch {
+      // A malformed/stale or concurrently busy owner cannot safely adopt an
+      // already executed completion. Lock the family; never replay the result.
+      client.lock(); status = 'Completion state could not be reconciled. All forms are locked.';
     }
     const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);

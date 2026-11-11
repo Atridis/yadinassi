@@ -3,18 +3,41 @@
 No scheduler, Python callable, dynamic source, or serialization lives here.
 The module receiver remains an opaque runtime-owned capability.
 """
+from dataclasses import dataclass
 from .values import BSLObject
+
+
+@dataclass(frozen=True, slots=True)
+class _FormCallbackTarget:
+    """Host-enrolled self-form capability, never a public module substitute."""
+    receiver: object
+    interpreter: object
+    family: object
+    generation: int
+    enrollment: object
+
+    def require(self, caller):
+        owner = self.interpreter
+        session = owner._form_session
+        if (caller._family_owner is not self.family or owner._family_owner is not self.family
+                or self.family._family_closed or self.family._family_generation != self.generation
+                or owner._family_released or session.closed
+                or session.form is not self.receiver
+                or getattr(session, '_owned_form_enrollment', None) is not self.enrollment):
+            raise ValueError('retired or foreign form callback')
+        return owner
 
 
 class BSLCallbackDescription(BSLObject):
     """Readonly description; mutable additional parameters retain their identity."""
 
-    __slots__ = ('procedure_name', 'module', 'additional_parameters')
+    __slots__ = ('procedure_name', 'module', 'additional_parameters', '_form_target')
 
-    def __init__(self, procedure_name=None, module=None, additional_parameters=None):
+    def __init__(self, procedure_name=None, module=None, additional_parameters=None, *, _form_target=None):
         self.procedure_name = procedure_name
         self.module = module
         self.additional_parameters = additional_parameters
+        self._form_target = _form_target
 
     def get_member(self, name):
         key = name.casefold()

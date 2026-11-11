@@ -452,6 +452,7 @@ class ReplicatedFormServer:
             self.bindings.append(binding)
         self.bindings = tuple(self.bindings)
         self._gate = Lock(); self._last_id = 0; self._sequence = 0; self._requests = 0
+        self._allow_host_sync = False
 
     def _reply(self, request_id, *, accepted=False, value=None, reason=None):
         session = self.session
@@ -483,7 +484,8 @@ class ReplicatedFormServer:
                 request_id = _integer(request['id'], 1)
                 _integer(request['revision']); _integer(request['sequence'], 1)
                 _integer(request['endpoint'], 0, MAX_ENDPOINTS)
-                if request['protocol'] != PROTOCOL or request['operation'] not in ('open', 'call', 'close', 'dispose'):
+                if (request['protocol'] != PROTOCOL or request['operation'] not in ('open', 'call', 'close', 'dispose', 'sync')
+                        or request['operation'] == 'sync' and not self._allow_host_sync):
                     raise ValueError('invalid request')
                 _rows(request['arguments'], 32)
             except Exception:
@@ -533,7 +535,7 @@ class ReplicatedFormServer:
                     session.state = 'cancelled' if session.closed else 'open'
                 elif operation in ('close', 'dispose'):
                     session.closed = True; session.state = 'closed'
-                else:
+                elif operation == 'call':
                     arguments = [ast.Literal(routine.token, value) for value in values]
                     with target_context(session.interpreter.native_target), localcontext():
                         result = session.interpreter._scheduler.run_inline(
@@ -578,6 +580,19 @@ class ReplicatedFormSession(FormSession):
         self._exchange = exchange; self._transport_gate = Lock()
         self._request_id = 0; self.server_revision = 0; self.client_sequence = 0
         self.uncertain = False; self._baseline = None
+        self._allow_host_sync = False
+
+    def synchronize_owned(self):
+        if not self._allow_host_sync or self._owned_form_enrollment is None or self.state != 'open':
+            raise ValueError('owned host synchronization unavailable')
+        messages = self._messages
+        self._begin(self.revision)
+        try:
+            self._request('sync')
+        finally:
+            self._messages = messages + self._messages
+            self.revision += 1; self._busy = False; self._gate.release()
+        return self.snapshot()
 
     def bind_nocontext(self, port, binding):
         if type(port) is not InvocationPort or type(binding) is not InvocationBinding:

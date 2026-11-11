@@ -9,7 +9,7 @@ const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled','reference_refused'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
   (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
@@ -26,10 +26,11 @@ function referenceAction(action, state, session) {
 export function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
+  const ownedResults = Object.hasOwn(result || {}, 'updates');
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
-  if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
+  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
@@ -64,11 +65,40 @@ export function validateApplicationReply(reply, request, previous) {
     if (previous?.catalog?.entry === catalog.entry && catalog.version < previous.catalog.version) throw new FormError('transport');
   }
   for (const session of state.sessions) {
-    if (!keys(session,['id','entry','title']) || !sessionId(session.id) || sessions.has(session.id) ||
+    if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
-    if (old && old.entry !== session.entry) throw new FormError('transport');
+    if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
+    if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
     sessions.add(session.id);
+  }
+  if (ownedResults) {
+    const nodes = new Map(state.sessions.map(value => [value.id,value]));
+    for (const session of state.sessions) {
+      const children = state.sessions.filter(value => value.owner === session.id);
+      if (children.length > 1 || session.blocked !== (children.length === 1)) throw new FormError('transport');
+      const visited = new Set([session.id]); let owner = session.owner;
+      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      while (owner !== null) {
+        const parent = nodes.get(owner);
+        if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
+        visited.add(owner); owner = parent.owner;
+      }
+    }
+    if (!Array.isArray(result.updates) || result.updates.length > 8) throw new FormError('transport');
+    const updated = new Set();
+    for (const update of result.updates) {
+      const prior = previous?.sessions.find(value => value.id === update?.session);
+      if (!keys(update,['session','form']) || !sessions.has(update.session) || update.session === result.session || updated.has(update.session) ||
+          !prior?.blocked || !previous.sessions.some(value => value.owner === update.session && !sessions.has(value.id))) throw new FormError('transport');
+      const nested = update.form;
+      if (!keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || nested.id !== 1 ||
+          !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
+          ![null,'event_failed','outcome_unknown'].includes(nested.result.error)) throw new FormError('transport');
+      validateSnapshot(nested.result.state);
+      if (nested.result.state.kind === 'closed') throw new FormError('transport');
+      updated.add(update.session);
+    }
   }
   if (!(state.active === null || sessions.has(state.active)) || state.kind === 'closed' && sessions.size) throw new FormError('transport');
   if (Object.hasOwn(state,'choice') && state.choice !== null) {
@@ -113,12 +143,18 @@ export class ApplicationClient {
   constructor(exchange, changed = () => {}, failed = () => {}) {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
+    this.ownedResults = null;
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
+          (method === 'application.reference' || method === 'application.recoverPosting' ||
+           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
+        const error = new FormError('owned_child_open'); error.preDispatch = true; throw error;
+      }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
           !referenceAction(params.action,this.state,params.session))) {
@@ -132,6 +168,8 @@ export class ApplicationClient {
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
         result = validateApplicationReply(await this.exchange(request),request,this.state);
+        const owned = Object.hasOwn(result,'updates');
+        if (this.ownedResults !== null && this.ownedResults !== owned) throw new FormError('transport');
         if (result.state.catalog) {
           const {entry,version} = result.state.catalog;
           if (version < (this.catalogVersions.get(entry) ?? 0)) throw new FormError('transport');
@@ -144,6 +182,12 @@ export class ApplicationClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(result.session,revision);
         }
+        for (const update of result.updates || []) {
+          const revision = update.form.result.state.revision;
+          if (this.retired.has(update.session) || revision < (this.formRevisions.get(update.session) ?? 0)) throw new FormError('transport');
+          this.formRevisions.set(update.session,revision);
+        }
+        this.ownedResults = owned;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }

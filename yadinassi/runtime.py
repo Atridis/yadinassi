@@ -1234,7 +1234,50 @@ class Interpreter:
         # operation/error-dialog protocol. Never silently discard a handler.
         if error_name is not None or error_module is not None:
             raise ValueError("Обработчик ошибки ОписаниеОповещения пока не поддерживается")
+        target = self._capture_form_callback(module)
+        if target is not None:
+            return BSLCallbackDescription(name, module, additional, _form_target=target)
         return BSLCallbackDescription(name, self._callback_module(module), additional)
+
+    def _capture_form_callback(self, receiver):
+        # Only the owned form interpreter overrides this closed enrollment seam.
+        return None
+
+    def callback_target(self, description):
+        """Validate a value capability without executing or creating source."""
+        self._require_callback_context()
+        if type(description) is not BSLCallbackDescription:
+            raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
+        from .callbacks import _FormCallbackTarget
+        target = description._form_target
+        if target is not None:
+            if type(target) is not _FormCallbackTarget or description.module is not target.receiver:
+                raise ValueError('invalid form callback capability')
+            owner = target.require(self)
+            if type(description.procedure_name) is not str or not description.procedure_name:
+                raise ValueError('callback procedure required')
+            routine = owner.routines.get(description.procedure_name.casefold())
+            if (routine is None or not routine.exported or routine.is_function or routine.is_async
+                    or routine.is_dual or not routine.module_context or routine.execution_context != 'client'
+                    or len(routine.parameters) != 2):
+                raise ValueError('form completion requires an exported synchronous two-argument client procedure')
+            return routine, owner
+        module = self._callback_module(description.module)
+        if module is None or not description.procedure_name:
+            raise ValueError('ОписаниеОповещения: не заданы имя процедуры и модуль')
+        routine = module.routine(description.procedure_name)
+        if routine.execution_context != 'client':
+            raise ValueError('Обработчик оповещения должен выполняться на клиенте')
+        return routine, module.interpreter
+
+    def dispatch_callback(self, description, result, token):
+        """Shared value-based dispatch; host callers still own event admission."""
+        routine, owner = self.callback_target(description)
+        if description._form_target is not None:
+            if not owner._form_session._busy or owner._form_session.interpreter is not self:
+                raise ValueError('form callback requires its owning trusted event')
+        arguments = [ast.Literal(token, result), ast.Literal(token, description.additional_parameters)]
+        return (yield from self.call_routine(routine, arguments, owner, require_value=False))
 
     def _run_callback(self, node):
         self._require_callback_context()
@@ -1245,21 +1288,7 @@ class Interpreter:
         result = None
         if len(node.arguments) == 2 and not isinstance(node.arguments[1], ast.OmittedArgument):
             result = yield from self._visit(node.arguments[1])
-        if type(description) is not BSLCallbackDescription:
-            raise TypeError("ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения")
-        module = self._callback_module(description.module)
-        if module is None or not description.procedure_name:
-            raise ValueError("ОписаниеОповещения: не заданы имя процедуры и модуль")
-        routine = module.routine(description.procedure_name)
-        if routine.execution_context != "client":
-            raise ValueError("Обработчик оповещения должен выполняться на клиенте")
-        # Feed already evaluated values into ordinary routine dispatch. No caller
-        # variable alias is manufactured; shared objects keep normal identity.
-        # The same path owns Export, arity/defaults, frames, errors and Async.
-        arguments = [ast.Literal(node.token, result),
-                     ast.Literal(node.token, description.additional_parameters)]
-        return (yield from self.call_routine(routine, arguments, module.interpreter,
-                                            require_value=False))
+        return (yield from self.dispatch_callback(description, result, node.token))
 
     def known_receiver(self, node: ast.Node) -> object:
         """Read explicit receiver storage only, never factories or arbitrary fields."""

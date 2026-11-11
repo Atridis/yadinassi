@@ -72,6 +72,18 @@ class FormSnapshot:
 
 
 class _FormInterpreter(Interpreter):
+    def _capture_form_callback(self, receiver):
+        session = self._form_session
+        enrollment = getattr(session, '_owned_form_enrollment', None)
+        if receiver is not session.form or enrollment is None:
+            return None
+        session.form._check()
+        if self is not session.interpreter or self.execution_context != 'client':
+            raise ValueError('self-form callback requires its client context')
+        from .callbacks import _FormCallbackTarget
+        family = self._family_owner
+        return _FormCallbackTarget(receiver, self, family, family._family_generation, enrollment)
+
     def __init__(self, session, *args, **kwargs):
         self._form_session = session
         super().__init__(*args, **kwargs)
@@ -215,6 +227,10 @@ class FormSession:
             self._application_actions[key] = action
         self._output = output; self._messages = []
         self.closed = False; self.state = 'created'; self.revision = 0
+        self._event_phase = None
+        self._completion_active = False
+        self._owned_form_enrollment = None
+        self._owned_close = None
         self._busy = False; self._steps = 0; self._events = 0
         self._gate = Lock(); self._allocated = 0
         from .form_references import FormReferenceScope
@@ -366,7 +382,37 @@ class FormSession:
 
     def _event(self, event, arguments):
         handler = self.form.actions.get(event)
-        return arguments if not handler else self._invoke(handler, self.form.EVENTS[event][0], arguments)
+        previous = self._event_phase
+        self._event_phase = event
+        try:
+            return arguments if not handler else self._invoke(handler, self.form.EVENTS[event][0], arguments)
+        finally:
+            self._event_phase = previous
+
+    def request_close(self, result=None):
+        self.form._check()
+        if (self._owned_close is None or self.interpreter.execution_context != 'client'
+                or self._completion_active or self._event_phase is not None or self.state != 'open'):
+            raise ValueError('Close(result) requires an active owned child command')
+        self._owned_close(result)
+
+    def dispatch_completion(self, description, result, *, revision):
+        """Trusted queued event. Never callable by a browser-selected handler."""
+        if self._owned_form_enrollment is None or self.state != 'open':
+            raise ValueError('owned live form required')
+        routine, owner = self.interpreter.callback_target(description)
+        if owner is not self.interpreter or description.module is not self.form:
+            raise ValueError('completion target differs from owner')
+        self._begin(revision)
+        self._completion_active = True
+        try:
+            with target_context(self.interpreter.native_target), localcontext():
+                self.interpreter._scheduler.run_inline(
+                    self.interpreter.dispatch_callback(description, result, routine.token))
+        finally:
+            self._completion_active = False
+            self.revision += 1; self._busy = False; self._gate.release()
+        return self.snapshot()
 
     def _begin(self, revision):
         if not self._gate.acquire(blocking=False): raise ValueError('Форма: обработчик уже исполняется')
