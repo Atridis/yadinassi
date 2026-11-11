@@ -96,6 +96,8 @@ class SQLiteCatalogAdmissionCleanupTests(unittest.TestCase):
             self.assertEqual(len(view.catalogs()), 2)
         finally: view.close()
         self.assertIsNone(self.backend._active)
+        # Factory fault probes deliberately begin with no retained idle reader.
+        self.backend._close_idle_read_handle()
 
     def test_begin_failure_before_or_after_sql_retains_live_handle(self):
         for statement in ('BEGIN', 'BEGIN IMMEDIATE'):

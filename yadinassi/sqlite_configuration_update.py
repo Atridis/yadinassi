@@ -121,7 +121,9 @@ def apply(path, plan, *, maintenance=False):
     from .sqlite_migration_plan import _open
     from .sqlite_catalog import _json, _schema_data, _encode, _View, _MAX_DATABASE_BYTES
     from .sqlite_catalog_layout import quote_identifier as q, catalog_ddl, encode_columns
-    from .sqlite_query_indexes import catalog_query_index_ddls
+    from .sqlite_query_indexes import (catalog_query_index_ddls, read_index_bundle_ddls,
+                                       admit_query_indexes, _index_name, check_index_bundle_budget)
+    from .sqlite_transaction_profile import profile_index_ddls
     from .sqlite_configuration_history import DDL, encode_files, digest, receipt_rows, validate
     from types import SimpleNamespace
     if type(plan) is not ConfigurationUpdatePlan: raise BackendError('invalid_input')
@@ -143,6 +145,9 @@ def apply(path, plan, *, maintenance=False):
         source=import_configuration(source_files,numbering_policy=numbering,module_runtime=plan.target.module_runtime)
         delta=additive_delta(source,plan.target)
         layout=Layout({UUID(c):n for c,n in plan.table_mapping},{(UUID(c),UUID(f)):n for c,f,n in plan.field_mapping})
+        preserve_read_indexes = admit_query_indexes(db,
+            profile_index_ddls(plan.base_profile, source.catalogs, layout),
+            read_index_bundle_ddls(plan.base_profile, source.catalogs, layout, format_version=11))
         old_schemas={s.identity:s for s in source.catalogs}
         epochs=receipt_rows(db)
         for ddl in DDL: db.execute(ddl)
@@ -180,6 +185,13 @@ def apply(path, plan, *, maintenance=False):
         for ddl in catalog_query_index_ddls(plan.target.catalogs,layout):
             name=ddl.split(' ON ')[0].removeprefix('CREATE INDEX ').strip('"')
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",(name,)).fetchone() is None:db.execute(ddl)
+        optional = read_index_bundle_ddls(plan.base_profile, plan.target.catalogs, layout, format_version=12)
+        if preserve_read_indexes:
+            for ddl in optional:
+                if db.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?", (_index_name(ddl),)).fetchone() is None:
+                    db.execute(ddl)
+        if admit_query_indexes(db, profile_index_ddls(plan.base_profile, plan.target.catalogs, layout), optional) != preserve_read_indexes:
+            raise BackendError('integrity')
         target_files={f.path:f.content for f in plan.target.files}
         db.execute('INSERT INTO configuration_update VALUES(1,?,?,?,?,?,?,?,?,?,?)',
             (str(plan.operation_id),plan.source_hash,plan.plan_hash,plan.source_generation,plan.source_generation+1,
@@ -194,6 +206,7 @@ def apply(path, plan, *, maintenance=False):
             validator._validated_sources.clear()
             validator._validate_scan_scalars(schema.identity,schema)
         validate(db,candidate)
+        check_index_bundle_budget(db,())
         if db.execute('PRAGMA page_count').fetchone()[0]*page_size>_MAX_DATABASE_BYTES:raise BackendError('unsupported')
         db.execute('PRAGMA user_version=12')
         committing=True;db.execute('COMMIT');db.close();db=None

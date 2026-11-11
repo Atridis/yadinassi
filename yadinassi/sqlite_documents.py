@@ -147,11 +147,17 @@ class DocumentView:
         return self.document_schema(key.document_id)
 
     def _preflight(self, schema):
+        self._view._require()
+        cache_key = ('document-coarse', schema.identity, schema)
+        if self._view._cache_validation_allowed() and cache_key in self._view._validated_sources:
+            return self._view._validated_sources[cache_key][0]
         args = (str(schema.identity),)
         invalid = self._connection.execute("SELECT 1 FROM document_record WHERE document_id=? AND (typeof(record_id)!='text' OR length(CAST(record_id AS BLOB))!=36 OR typeof(revision)!='integer' OR revision<1 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(date)!='text' OR length(date)!=14 OR typeof(deletion_mark)!='integer' OR deletion_mark NOT IN(0,1) OR typeof(values_json)!='text' OR typeof(sections_json)!='text' OR length(CAST(values_json AS BLOB))+length(CAST(sections_json AS BLOB))>?) LIMIT 1", args+(_MAX_ROW,)).fetchone()
         count, size = self._connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))+length(CAST(sections_json AS BLOB))+128),0) FROM document_record WHERE document_id=?', args).fetchone()
         if invalid: raise BackendError('integrity')
         if count > 10000 or size > _MAX_TOTAL: raise BackendError('unsupported')
+        if self._view._cache_validation_allowed():
+            self._view._validated_sources[cache_key] = (count,)
         return count
 
     def _values(self, fields, values, *, writing=False):
@@ -167,7 +173,12 @@ class DocumentView:
             for value in values:
                 if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value): raise BackendError('not_found')
             return result
-        return tuple(s._decode(v,f,self.database_id) for f,v in zip(fields,values))
+        decoded = tuple(s._decode(v,f,self.database_id) for f,v in zip(fields,values))
+        if self._view._backend.format_version == 15:
+            for value in decoded:
+                if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value):
+                    raise BackendError('integrity')
+        return decoded
 
     def _sections(self, schema, contents, *, writing=False):
         if type(contents) is not (tuple if writing else list) or len(contents) > 16: raise BackendError('invalid_input' if writing else 'integrity')
@@ -208,64 +219,170 @@ class DocumentView:
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
     def _posted_value(self, key):
-        if self._view._backend.format_version not in (13, 14): return False
+        if self._view._backend.format_version not in (13, 14, 15): return False
         from .sqlite_document_posting_state import read_posted
         return read_posted(self._connection, self.database_id, key)
 
-    def _card(self, schema, row):
-        record, revision, number, date, mark, values, sections = row
+    def _record_sql(self, *, where='r.document_id=?', order=False, limit=False):
+        sql = ('SELECT r.record_id,r.revision,r.number,r.date,r.deletion_mark,'
+               'r.values_json,r.sections_json')
+        posted = self._view._backend.format_version in (13, 14, 15)
+        if posted: sql += ',p.document_revision,p.posted'
+        sql += ' FROM document_record AS r'
+        if posted:
+            sql += (' LEFT JOIN document_posting_state AS p ON p.document_id=r.document_id'
+                    ' AND p.record_id=r.record_id')
+        sql += ' WHERE ' + where
+        if order: sql += ' ORDER BY r.date,r.number,r.record_id'
+        if limit: sql += ' LIMIT ?'
+        return sql
+
+    def _decode_record(self, schema, row):
+        record, revision, number, date, mark, values, sections = row[:7]
         identity = UUID(record); _storage()._uuid(identity)
         if str(identity) != record or type(revision) is not int or not 1 <= revision < 2**63: raise BackendError('integrity')
         validate_string(number,schema.number_length)
         if not number or type(mark) is not int or mark not in (0,1): raise BackendError('integrity')
         key = DocumentKey(self.database_id,schema.identity,identity)
-        extra = {}
-        if self._view._backend.format_version in (13, 14):
-            from .sqlite_document_posting_state import read_posted
-            extra['posted'] = read_posted(self._connection, self.database_id, key)
-        return DocumentCard(key,
-            DocumentRevision(self.database_id,self.configuration_generation,schema.identity,identity,str(revision)),
-            number,_storage()._decode(['d',date],_DATE_FIELD,self.database_id),bool(mark),
-            self._values(schema.fields,json.loads(values)),self._sections(schema,json.loads(sections)), **extra)
+        posted = False
+        if self._view._backend.format_version in (13, 14, 15):
+            if len(row) == 9:
+                from .sqlite_document_posting_state import decode_posted
+                posted = decode_posted(revision, row[7], row[8])
+            else:
+                posted = self._posted_value(key)
+        return (key, DocumentRevision(self.database_id,self.configuration_generation,
+                schema.identity,identity,str(revision)), number,
+                _storage()._decode(['d',date],_DATE_FIELD,self.database_id),bool(mark),
+                self._values(schema.fields,json.loads(values)),
+                self._sections(schema,json.loads(sections)),posted)
+
+    def _card(self, schema, row):
+        return DocumentCard(*self._decode_record(schema, row))
+
+    def _record_proof_key(self, schema, key):
+        return ('document-record', schema.identity, schema, key.record_id)
+
+    def _validate_record(self, schema, key):
+        """Point reads preserve their old full selected-record validation scope."""
+        self._preflight(schema)
+        proof_key = self._record_proof_key(schema, key)
+        if self._view._cache_validation_allowed() and (
+                proof_key in self._view._validated_sources or
+                ('document-full', schema.identity, schema) in self._view._validated_sources):
+            return
+        row = self._connection.execute(self._record_sql(
+            where='r.document_id=? AND r.record_id=?'),
+            (str(schema.identity),str(key.record_id))).fetchone()
+        if row is not None: self._decode_record(schema, row)
+        if self._view._cache_validation_allowed():
+            self._view._validated_sources[proof_key] = ()
 
     def read_document(self, key):
         schema = self._key(key); self._preflight(schema)
-        row = self._connection.execute('SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json FROM document_record WHERE document_id=? AND record_id=?', (str(schema.identity),str(key.record_id))).fetchone()
-        return None if row is None else self._card(schema,row)
+        row = self._connection.execute(self._record_sql(
+            where='r.document_id=? AND r.record_id=?'),
+            (str(schema.identity),str(key.record_id))).fetchone()
+        card = None if row is None else self._card(schema,row)
+        if self._view._cache_validation_allowed():
+            self._view._validated_sources[self._record_proof_key(schema, key)] = ()
+        return card
+
+    def _projection_fields(self, schema, fields, section=None):
+        definitions = schema.fields if section is None else section.fields
+        standard = ('ref','number','date','deletion_mark','posted') if section is None else ('ref','line_number')
+        if (type(fields) is not tuple or not 1 <= len(fields) <= 128 or
+                any((type(f) is not str and type(f) is not UUID) or
+                    (f not in standard and not any(f == d.identity for d in definitions)) for f in fields)):
+            raise BackendError('invalid_input')
+        return definitions
+
+    def _projection_sql(self, fields, *, where, order=False, section=False):
+        payload = ('r.sections_json' if section else
+                   'r.values_json' if any(type(f) is UUID for f in fields) else 'NULL')
+        sql = 'SELECT r.record_id,r.number,r.date,r.deletion_mark,'+payload+',r.revision'
+        posted = self._view._backend.format_version in (13,14,15) and 'posted' in fields
+        sql += ',p.document_revision,p.posted' if posted else ',NULL,NULL'
+        sql += ' FROM document_record AS r'
+        if posted:
+            sql += (' LEFT JOIN document_posting_state AS p ON p.document_id=r.document_id'
+                    ' AND p.record_id=r.record_id')
+        sql += ' WHERE ' + where
+        if order: sql += ' ORDER BY r.date,r.number,r.record_id'
+        return sql
+
+    def _project_header(self, schema, fields, row):
+        from .document_backend import DocumentValueRow
+        record, number, date, mark, payload, revision, state_revision, posted = row
+        identity = UUID(record); _storage()._uuid(identity)
+        if (str(identity) != record or type(revision) is not int or not 1<=revision<2**63
+                or type(mark) is not int or mark not in (0,1)):
+            raise BackendError('integrity')
+        validate_string(number,schema.number_length)
+        if not number: raise BackendError('integrity')
+        key = DocumentKey(self.database_id,schema.identity,identity)
+        values = (dict(zip((d.identity for d in schema.fields), self._values(schema.fields,json.loads(payload))))
+                  if payload is not None else {})
+        if self._view._backend.format_version in (13,14,15) and 'posted' in fields:
+            from .sqlite_document_posting_state import decode_posted
+            posted = decode_posted(revision,state_revision,posted)
+        else: posted = False
+        values.update(ref=key,number=number,date=_storage()._decode(['d',date],_DATE_FIELD,self.database_id),
+                      deletion_mark=bool(mark),posted=posted)
+        return DocumentValueRow(key,tuple(values[f] for f in fields))
+
+    def read_document_values(self, key, fields):
+        schema = self._key(key)
+        self._projection_fields(schema,fields)
+        # This read-only optimization never borrows a writer's stale proof.
+        if self._view._operation_id is not None: raise BackendError('unsupported')
+        self._validate_record(schema,key)
+        row = self._connection.execute(self._projection_sql(fields,
+            where='r.document_id=? AND r.record_id=?'),
+            (str(schema.identity),str(key.record_id))).fetchone()
+        return None if row is None else self._project_header(schema,fields,row)
 
     def select_documents(self, identity, request):
         schema = self.document_schema(identity)
         if type(request) is not DocumentSelection or type(request.limit) is not int or not 1 <= request.limit <= 1000: raise BackendError('invalid_input')
-        for value in (request.start,request.end):
-            if value is not None: _storage()._encode(value,_DATE_FIELD,self.database_id)
+        where = ['r.document_id=?']; args = [str(identity)]
+        for value, operator in ((request.start,'>='),(request.end,'<=')):
+            if value is not None:
+                encoded = _storage()._encode(value,_DATE_FIELD,self.database_id)[1]
+                where.append('r.date'+operator+'?'); args.append(encoded)
         if request.start is not None and request.end is not None and request.start > request.end: raise BackendError('invalid_input')
-        self._preflight(schema)
-        cards = []
-        for row in self._connection.execute('SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json FROM document_record WHERE document_id=? ORDER BY date,number,record_id', (str(identity),)):
-            card = self._card(schema,row)
-            if (request.start is None or card.date >= request.start) and (request.end is None or card.date <= request.end):
-                cards.append(card)
-                if len(cards) > request.limit: raise BackendError('unsupported')
-        return tuple(cards)
+        self._validate_query_source(schema, selection=request)
+        rows = self._connection.execute(self._record_sql(where=' AND '.join(where),order=True,limit=True),
+                                        (*args,request.limit+1)).fetchall()
+        if len(rows)>request.limit: raise BackendError('unsupported')
+        # Keep the selection's complete detached snapshot, including GetObject.
+        return tuple(self._card(schema,row) for row in rows)
 
-    def _validate_query_source(self, schema):
+    def _validate_query_source(self, schema, *, selection=None):
         """Validate all logical data once; retain only bounded aggregate costs."""
         self._view._require()
         key = ('document-full', schema.identity, schema)
         if self._view._cache_validation_allowed() and key in self._view._validated_sources:
             return self._view._validated_sources[key]
         self._preflight(schema)
-        count = cells = text = 0
+        count = cells = text = selected = 0
         validation = self._connection.execute(
-            'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
-            'FROM document_record WHERE document_id=?', (str(schema.identity),))
+            self._record_sql(order=selection is not None), (str(schema.identity),))
         try:
             for row in validation:
-                card = self._card(schema, row)
+                decoded = self._decode_record(schema, row)
+                if (selection is not None
+                        and (selection.start is None or decoded[3] >= selection.start)
+                        and (selection.end is None or decoded[3] <= selection.end)):
+                    selected += 1
+                    # Preserve the old sorted Select failure frontier: overflow
+                    # wins over corruption in rows not yet reached. No proof is
+                    # published for a truncated or failed validation.
+                    if selected > selection.limit: raise BackendError('unsupported')
                 count += 1
-                cells += 5 + len(card.values)
-                text += len(card.number) + sum(len(v) for v in card.values if type(v) is str)
-                for section in card.tabular_sections:
+                cells += 5 + len(decoded[5])
+                text += len(decoded[2]) + sum(len(v) for v in decoded[5] if type(v) is str)
+                for section in decoded[6]:
                     for line in section.rows:
                         cells += 2 + len(line.values)
                         text += sum(len(v) for v in line.values if type(v) is str)
@@ -290,11 +407,7 @@ class DocumentView:
         if section_id is not None:
             section = next((s for s in schema.tabular_sections if s.identity == section_id), None)
             if section is None: raise BackendError('invalid_input')
-        definitions = schema.fields if section is None else section.fields
-        standard = ('ref','number','date','deletion_mark','posted') if section is None else ('ref','line_number')
-        if (type(fields) is not tuple or not 1 <= len(fields) <= 128 or
-                any((type(f) is not str and type(f) is not UUID) or (f not in standard and not any(f == d.identity for d in definitions)) for f in fields)):
-            raise BackendError('invalid_input')
+        definitions = self._projection_fields(schema,fields,section)
         if type(request) is not DocumentScanRequest or type(request.page_size) is not int or not 1 <= request.page_size <= 1000:
             raise BackendError('invalid_input')
         from .catalog_backend import CatalogComparison
@@ -308,12 +421,12 @@ class DocumentView:
             field, value = term.field, term.value
             if field == 'number' and type(value) is str:
                 validate_string(value, schema.number_length)
-                column = 'number COLLATE yadinassi_casefold_v1'
+                column = 'r.number COLLATE yadinassi_casefold_v1'
             elif field == 'date' and type(value) is datetime:
                 value = _storage()._encode(value, _DATE_FIELD, self.database_id)[1]
-                column = 'date'
+                column = 'r.date'
             elif field == 'deletion_mark' and type(value) is bool and term.operator in ('eq','ne'):
-                value, column = int(value), 'deletion_mark'
+                value, column = int(value), 'r.deletion_mark'
             else: raise BackendError('invalid_input')
             where.append(column + ' ' + {'eq':'=','ne':'!=','lt':'<','le':'<=','gt':'>','ge':'>='}[term.operator] + ' ?')
             args.append(value)
@@ -329,26 +442,22 @@ class DocumentView:
             self._validate_query_source(schema)
         try:
             if request.continuation is None:
-                payload = ('values_json' if any(type(f) is UUID for f in fields) else 'NULL') if section is None else 'sections_json'
                 self._view._document_scan_stream = self._connection.execute(
-                    'SELECT record_id,number,date,deletion_mark,' + payload +
-                    ' FROM document_record WHERE document_id=?' + ((' AND ' + ' AND '.join(where)) if where else '') +
-                    ' ORDER BY date,number,record_id', (str(identity), *args))
+                    self._projection_sql(fields,where='r.document_id=?'+
+                        ((' AND '+' AND '.join(where)) if where else ''),order=True,section=section is not None),
+                    (str(identity),*args))
             stream = self._view._document_scan_stream
             pending = self._view._document_scan_lookahead
             rows = [] if pending is None else [pending]
             rows.extend(stream.fetchmany(request.page_size + 1 - len(rows)))
             more = len(rows) > request.page_size
             output = []
-            for record, number, date, mark, payload in rows[:request.page_size]:
-                key = DocumentKey(self.database_id, identity, UUID(record))
+            for row in rows[:request.page_size]:
                 if section is None:
-                    values = (dict(zip((d.identity for d in definitions), self._values(definitions, json.loads(payload))))
-                              if payload is not None else {})
-                    values.update(ref=key, number=number, date=_storage()._decode(['d', date], _DATE_FIELD, self.database_id),
-                                  deletion_mark=bool(mark), posted=self._posted_value(key))
-                    output.append(DocumentValueRow(key, tuple(values[f] for f in fields)))
+                    output.append(self._project_header(schema,fields,row))
                 else:
+                    record, number, date, mark, payload, revision, state_revision, posted = row
+                    key = DocumentKey(self.database_id,identity,UUID(record))
                     contents = next(item[1] for item in json.loads(payload) if item[0] == str(section_id))
                     for n, (_, line) in enumerate(contents, 1):
                         values = dict(zip((d.identity for d in definitions), self._values(definitions, line)))
@@ -393,9 +502,7 @@ class DocumentView:
                 # Keep one SQLite stream, not an OFFSET sort per page. The
                 # connection owns its lifetime, including backend-level close.
                 self._view._document_scan_stream = self._connection.execute(
-                    'SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json '
-                    'FROM document_record WHERE document_id=? ORDER BY date,number,record_id',
-                    (str(identity),))
+                    self._record_sql(order=True), (str(identity),))
             stream = self._view._document_scan_stream
             pending = self._view._document_scan_lookahead
             rows = ([] if pending is None else [pending])
@@ -418,8 +525,13 @@ class DocumentView:
     def find_document_number(self, identity, number):
         schema = self.document_schema(identity); validate_string(number,schema.number_length)
         self._preflight(schema)
-        row = self._connection.execute('SELECT record_id,revision,number,date,deletion_mark,values_json,sections_json FROM document_record WHERE document_id=? AND number=?', (str(identity),number)).fetchone()
-        return None if row is None else self._card(schema,row).key
+        row = self._connection.execute('SELECT record_id FROM document_record WHERE document_id=? AND number=?',
+                                       (str(identity),number)).fetchone()
+        if row is None: return None
+        key = DocumentKey(self.database_id,identity,UUID(row[0]))
+        if str(key.record_id)!=row[0]: raise BackendError('integrity')
+        self._validate_record(schema,key)
+        return key
 
     def _intent(self, draft, expected):
         if type(draft) is not DocumentDraft or type(draft.auto_number) is not bool or type(draft.deletion_mark) is not bool: raise BackendError('invalid_input')

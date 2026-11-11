@@ -151,8 +151,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    from .configuration_profile_import import PROFILES
+    parser.add_argument('--source-profile', choices=PROFILES,
+                        help='explicit closed source grant; default legacy, never auto-detected')
+    parser.add_argument('--check-xml', metavar='DIRECTORY',
+                        help='read-only source/schema/compile preflight; creates no database')
+    parser.add_argument('--report-json', action='store_true',
+                        help='bounded machine-readable preflight report; requires --check-xml')
     args = parser.parse_args(arguments)
     demo = args.create_demo_db is not None
+    from .configuration_diagnostics import from_exception
+    if args.report_json and args.check_xml is None:
+        parser.error('--report-json requires --check-xml')
+    if args.check_xml is not None:
+        if args.create_db is not None or demo or args.import_xml is not None or args.f is not None or args.file is not None or args.command is not None:
+            parser.error('--check-xml cannot be combined with creation or execution')
+        from .configuration_profile_import import prepare_directory
+        import json
+        try:
+            prepared = prepare_directory(args.check_xml, profile=args.source_profile or 'legacy',
+                numbering_policy=args.numbering_policy or 'explicit', module_runtime=args.module_runtime,
+                activate=not args.inactive)
+            report = prepared.report()
+        except (BackendError, BSLError, ValueError, OSError) as error:
+            report = {'format': 'configuration_preflight_v1', 'profile': args.source_profile or 'legacy',
+                      'ready': False, 'diagnostics': [from_exception(error).as_dict()]}
+        if args.report_json:
+            print(json.dumps(report, ensure_ascii=True, sort_keys=True))
+        elif report['ready']:
+            print('Configuration preflight ready: ' + report['profile'] + '; storage format ' + str(report['storage_format']) + '.')
+        else:
+            for diagnostic in report['diagnostics']:
+                print('yadinassi: configuration import refused: ' + '; '.join(k+'='+str(v) for k,v in diagnostic.items()), file=sys.stderr)
+        return 0 if report['ready'] else 1
+    if args.source_profile is not None and args.create_db is None:
+        parser.error('--source-profile requires --create-db or --check-xml')
     if args.create_db is not None or demo or args.import_xml is not None or args.inactive or args.numbering_policy is not None:
         if (args.create_db is None and not demo) or args.import_xml is None:
             parser.error("--create-db или --create-demo-db требуется вместе с --import-xml")
@@ -160,22 +193,30 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("импорт конфигурации не совмещается с исполнением или --f")
         if demo and (args.inactive or args.numbering_policy is not None or args.module_runtime is not None):
             parser.error("--create-demo-db не совмещается с --inactive или --numbering-policy")
-        from .configuration_import import load_configuration_directory, read_configuration_directory
+        from .configuration_import import read_configuration_directory
+        from .configuration_profile_import import prepare_directory, create_prepared
         try:
             if demo:
                 configuration = read_configuration_directory(args.import_xml)
             else:
-                configuration = load_configuration_directory(args.import_xml, numbering_policy=args.numbering_policy or 'explicit',
-                                                             module_runtime=args.module_runtime)
-        except (BackendError, BSLError, ValueError, OSError):
-            print("yadinassi: configuration import refused", file=sys.stderr)
+                prepared = prepare_directory(args.import_xml, profile=args.source_profile or 'legacy',
+                    numbering_policy=args.numbering_policy or 'explicit', module_runtime=args.module_runtime,
+                    activate=not args.inactive)
+                configuration = prepared.configuration
+                if prepared.diagnostics:
+                    from .configuration_diagnostics import ImportRefusal
+                    raise ImportRefusal(prepared.diagnostics[0])
+        except (BackendError, BSLError, ValueError, OSError) as error:
+            diagnostic = from_exception(error)
+            suffix = "" if diagnostic.code == "import_refused" else ": " + diagnostic.text()
+            print("yadinassi: configuration import refused" + suffix, file=sys.stderr)
             return 1
         try:
             if demo:
                 from .sqlite_catalog import SQLiteCatalogBackend
                 context = SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration)
             else:
-                context = SQLiteDBContext.create(args.create_db, configuration, activate=not args.inactive)
+                context = create_prepared(args.create_db, prepared)
             context.close()
         except BackendError as error:
             if error.code == 'uncertain_commit':
@@ -192,8 +233,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
         if args.inactive:
-            for issue in configuration.activation_issues:
-                print("Activation issue: " + issue)
+            from .configuration_diagnostics import activation_diagnostics
+            for diagnostic in activation_diagnostics(configuration):
+                print("Activation issue: " + diagnostic.text())
         return 0
     if args.module_runtime is not None and args.f is None:
         parser.error("--module-runtime при исполнении требует --f")

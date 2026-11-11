@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 from . import configuration_xml as xml
+from .configuration_diagnostics import location
 from .document_movements import RecorderRegisterSchema
 
 PROFILE='document-recorder-scalar-v1'
@@ -27,66 +28,69 @@ class PostingConfiguration:
 
 
 def import_posting_configuration(files,*,posting_runtime=None):
-    if type(posting_runtime) is not str or posting_runtime!=PROFILE:raise ValueError('explicit posting source grant required')
-    if type(files) is not dict or not 1<=len(files)<=xml.MAX_FILES:raise ValueError('posting source count')
-    total=0
-    for path,raw in files.items():
-        if type(path) is not str or type(raw) is not bytes or len(raw)>xml.MAX_FILE_BYTES:raise ValueError('posting source shape')
-        total+=len(raw)
-    if total>xml.MAX_TOTAL_BYTES or 'Configuration.xml' not in files:raise ValueError('posting source budget')
-    obj,ns,root=xml._object(files['Configuration.xml'],'Configuration',include_root=True)
-    props=xml._props(obj);identity=xml._uuid(obj.get('uuid'));name=xml._name(xml._text(props,'Name'))
-    issues=[];xml._envelope_issues(root,obj,issues,name)
-    xml._activation_properties(obj,{'Name','Synonym','Comment'},issues,name)
-    child=obj.find('{'+xml.MD+'}ChildObjects');declared={};used={identity}
-    if child is None:raise ValueError('posting declarations missing')
-    for item in child:
-        kind=item.tag.removeprefix('{'+xml.MD+'}')
-        if kind not in ('Document','InformationRegister') or item.tag!='{'+xml.MD+'}'+kind or len(item) or item.attrib:raise ValueError('unsupported posting declaration')
-        n=xml._name(item.text or '');key=(kind,n)
-        if any(k==kind and v.casefold()==n.casefold() for k,v in declared):raise ValueError('duplicate posting declaration')
-        path=('Documents/' if kind=='Document' else 'InformationRegisters/')+n+'.xml'
-        if path not in files:raise ValueError('posting metadata missing')
-        declared[key]=path
-    if len(declared)>512:raise ValueError('posting metadata bound')
-    documents=[];registers=[];links={};handlers=[];accepted={'Configuration.xml'}
-    for (kind,n),path in sorted(declared.items()):
-        accepted.add(path)
-        if kind=='Document':
-            document=xml._document_schema(files[path],n,{},used,issues,recorder_profile=True)
-            node,ns=xml._object(files[path],'Document');p=xml._props(node)
-            for key,value in (('RealTimePosting','Deny'),('RegisterRecordsDeletion','AutoDeleteOnUnpost'),('RegisterRecordsWritingOnPost','WriteSelected'),('PostInPrivilegedMode','false'),('UnpostInPrivilegedMode','false')):
-                if xml._text(p,key)!=value:raise ValueError('unsupported posting controls')
-            recorders=p.get('{'+xml.MD+'}RegisterRecords');targets=[]
-            if recorders is None:raise ValueError('recorder declarations missing')
-            for item in recorders:
-                text=item.text or ''
-                xr='http://v8.1c.ru/8.3/xcf/readable';xsi='http://www.w3.org/2001/XMLSchema-instance'
-                qname=item.get('{'+xsi+'}type','').split(':')
-                if (item.tag!='{'+xr+'}Item' or set(item.attrib)!={'{'+xsi+'}type'} or len(qname)!=2 or ns[id(item)].get(qname[0])!=xr or qname[1]!='MDObjectRef' or (item.tail or '').strip()):raise ValueError('unknown recorder XML grant')
-                if len(item) or not text.startswith('InformationRegister.') or text.count('.')!=1:raise ValueError('recorder declaration')
-                target=text.split('.')[1]
-                if ('InformationRegister',target) not in declared or target in targets:raise ValueError('recorder target')
-                targets.append(target)
-            if not targets:raise ValueError('empty posting movements')
-            links[document.identity]=tuple(targets);documents.append(document)
-            module='Documents/'+n+'/Ext/ObjectModule.bsl'
-            if module not in files:raise ValueError('posting handler source missing')
-            files[module].decode('utf-8-sig');accepted.add(module);handlers.append((document.identity,module,sha256(files[module]).hexdigest()))
-        else:
-            register=xml._register_schema(files[path],n,{},used,issues,recorder_profile=True)
-            if register.periodicity!='Nonperiodical':raise ValueError('periodic recorder profile unsupported')
-            if any(f.kind not in ('string','number','boolean','datetime') for f in register.declared_fields):raise ValueError('recorder scalar fields only')
-            registers.append(register)
-    if not documents or not registers or issues or set(files)!=accepted:raise ValueError('unsupported posting source or executable grant')
-    schemas=[]
-    for register in registers:
-        owners=tuple(sorted((d for d,targets in links.items() if register.name in targets),key=str))
-        if not owners:raise ValueError('unowned recorder register')
-        schemas.append(RecorderRegisterSchema(register.identity,owners,register.declared_fields,register.name,len(register.dimensions)))
-    source=tuple((path,files[path]) for path in sorted(files))
-    digest=sha256(b''.join(path.encode()+b'\0'+sha256(raw).digest() for path,raw in source)).hexdigest()
-    return PostingConfiguration(identity,name,source,tuple(sorted(documents,key=lambda d:str(d.identity))),tuple(schemas),tuple(handlers),PROFILE,digest)
+    with location(file='Configuration.xml'):
+        if type(posting_runtime) is not str or posting_runtime!=PROFILE:raise ValueError('explicit posting source grant required')
+        if type(files) is not dict or not 1<=len(files)<=xml.MAX_FILES:raise ValueError('posting source count')
+        total=0
+        for path,raw in files.items():
+            with location(file=path):
+                if type(path) is not str or type(raw) is not bytes or len(raw)>xml.MAX_FILE_BYTES:raise ValueError('posting source shape')
+                total+=len(raw)
+        if total>xml.MAX_TOTAL_BYTES or 'Configuration.xml' not in files:raise ValueError('posting source budget')
+        obj,ns,root=xml._object(files['Configuration.xml'],'Configuration',include_root=True)
+        props=xml._props(obj);identity=xml._uuid(obj.get('uuid'));name=xml._name(xml._text(props,'Name'))
+        issues=[];xml._envelope_issues(root,obj,issues,name)
+        xml._activation_properties(obj,{'Name','Synonym','Comment'},issues,name)
+        child=obj.find('{'+xml.MD+'}ChildObjects');declared={};used={identity}
+        if child is None:raise ValueError('posting declarations missing')
+        for item in child:
+            kind=item.tag.removeprefix('{'+xml.MD+'}')
+            if kind not in ('Document','InformationRegister') or item.tag!='{'+xml.MD+'}'+kind or len(item) or item.attrib:raise ValueError('unsupported posting declaration')
+            n=xml._name(item.text or '');key=(kind,n)
+            if any(k==kind and v.casefold()==n.casefold() for k,v in declared):raise ValueError('duplicate posting declaration')
+            path=('Documents/' if kind=='Document' else 'InformationRegisters/')+n+'.xml'
+            if path not in files:raise ValueError('posting metadata missing')
+            declared[key]=path
+        if len(declared)>512:raise ValueError('posting metadata bound')
+        documents=[];registers=[];links={};handlers=[];accepted={'Configuration.xml'}
+        for (kind,n),path in sorted(declared.items()):
+            with location(file=path, object=n):
+                accepted.add(path)
+                if kind=='Document':
+                    document=xml._document_schema(files[path],n,{},used,issues,recorder_profile=True)
+                    node,ns=xml._object(files[path],'Document');p=xml._props(node)
+                    for key,value in (('RealTimePosting','Deny'),('RegisterRecordsDeletion','AutoDeleteOnUnpost'),('RegisterRecordsWritingOnPost','WriteSelected'),('PostInPrivilegedMode','false'),('UnpostInPrivilegedMode','false')):
+                        if xml._text(p,key)!=value:raise ValueError('unsupported posting controls')
+                    recorders=p.get('{'+xml.MD+'}RegisterRecords');targets=[]
+                    if recorders is None:raise ValueError('recorder declarations missing')
+                    for item in recorders:
+                        text=item.text or ''
+                        xr='http://v8.1c.ru/8.3/xcf/readable';xsi='http://www.w3.org/2001/XMLSchema-instance'
+                        qname=item.get('{'+xsi+'}type','').split(':')
+                        if (item.tag!='{'+xr+'}Item' or set(item.attrib)!={'{'+xsi+'}type'} or len(qname)!=2 or ns[id(item)].get(qname[0])!=xr or qname[1]!='MDObjectRef' or (item.tail or '').strip()):raise ValueError('unknown recorder XML grant')
+                        if len(item) or not text.startswith('InformationRegister.') or text.count('.')!=1:raise ValueError('recorder declaration')
+                        target=text.split('.')[1]
+                        if ('InformationRegister',target) not in declared or target in targets:raise ValueError('recorder target')
+                        targets.append(target)
+                    if not targets:raise ValueError('empty posting movements')
+                    links[document.identity]=tuple(targets);documents.append(document)
+                    module='Documents/'+n+'/Ext/ObjectModule.bsl'
+                    if module not in files:raise ValueError('posting handler source missing')
+                    files[module].decode('utf-8-sig');accepted.add(module);handlers.append((document.identity,module,sha256(files[module]).hexdigest()))
+                else:
+                    register=xml._register_schema(files[path],n,{},used,issues,recorder_profile=True)
+                    if register.periodicity!='Nonperiodical':raise ValueError('periodic recorder profile unsupported')
+                    if any(f.kind not in ('string','number','boolean','datetime') for f in register.declared_fields):raise ValueError('recorder scalar fields only')
+                    registers.append(register)
+        if not documents or not registers or issues or set(files)!=accepted:raise ValueError('unsupported posting source or executable grant')
+        schemas=[]
+        for register in registers:
+            owners=tuple(sorted((d for d,targets in links.items() if register.name in targets),key=str))
+            if not owners:raise ValueError('unowned recorder register')
+            schemas.append(RecorderRegisterSchema(register.identity,owners,register.declared_fields,register.name,len(register.dimensions)))
+        source=tuple((path,files[path]) for path in sorted(files))
+        digest=sha256(b''.join(path.encode()+b'\0'+sha256(raw).digest() for path,raw in source)).hexdigest()
+        return PostingConfiguration(identity,name,source,tuple(sorted(documents,key=lambda d:str(d.identity))),tuple(schemas),tuple(handlers),PROFILE,digest)
 
 
 def canonical(config):

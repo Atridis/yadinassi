@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
 from .document_backend import DocumentSchema
 from .register_backend import InformationRegisterSchema
+from .configuration_diagnostics import location, metadata_name
 
 MD = 'http://v8.1c.ru/8.3/MDClasses'
 V8 = 'http://v8.1c.ru/8.1/data/core'
@@ -147,45 +148,47 @@ def _qname(node,ns):
 
 
 def _type(props,ns,targets):
-    t=props.get('{'+MD+'}Type')
-    if t is None:_fail('missing field type')
-    if t.attrib or (t.text or '').strip(_XML_WHITESPACE) or any((n.tail or '').strip(_XML_WHITESPACE) for n in t):_fail('unsupported type envelope')
-    types=[n for n in t if n.tag=='{'+V8+'}Type']
-    if len(types)!=1 or types[0].attrib:_fail('composite or absent field type unsupported')
-    namespace,name=_qname(types[0],ns)
-    qualifier = {'string':'StringQualifiers','decimal':'NumberQualifiers','dateTime':'DateQualifiers'}.get(name) if namespace==XS else None
-    allowed={'{'+V8+'}Type'}
-    if qualifier:allowed.add('{'+V8+'}'+qualifier)
-    if any(n.tag not in allowed for n in t) or len(types[0]):_fail('unsupported type components')
-    def qualifiers(kind):
-        nodes=[n for n in t if n.tag=='{'+V8+'}'+kind+'Qualifiers']
-        if len(nodes)!=1:_fail('missing qualifiers')
-        if nodes[0].attrib or (nodes[0].text or '').strip(_XML_WHITESPACE) or any((v.tail or '').strip(_XML_WHITESPACE) for v in nodes[0]):_fail('unsupported qualifier envelope')
-        d=_children(nodes[0])
-        if any(len(v) or v.attrib for v in d.values()):_fail('structured qualifier')
-        return {k.removeprefix('{'+V8+'}'):(v.text or '').strip(_XML_WHITESPACE) for k,v in d.items()}
-    if namespace==XS and name=='string':
-        q=qualifiers('String')
-        if set(q)!={'Length','AllowedLength'} or q['AllowedLength']!='Variable':_fail('string qualifiers')
-        if len(q['Length'])>4 or not re.fullmatch(r'[1-9][0-9]*',q['Length']) or not 1<=int(q['Length'])<=4096:_fail('string length')
-        return 'string',(int(q['Length']),),None
-    if namespace==XS and name=='decimal':
-        q=qualifiers('Number')
-        if set(q)!={'Digits','FractionDigits','AllowedSign'} or q['AllowedSign'] not in ('Any','Nonnegative'):_fail('number qualifiers')
-        if any(len(q[k])>2 or not re.fullmatch(r'0|[1-9][0-9]*',q[k]) for k in ('Digits','FractionDigits')):_fail('number qualifiers')
-        d,f=int(q['Digits']),int(q['FractionDigits'])
-        if not 1<=d<=38 or not 0<=f<=d:_fail('number precision')
-        return 'number',(d,f,q['AllowedSign']),None
-    if namespace==XS and name=='boolean':return 'boolean',(),None
-    if namespace==XS and name=='dateTime':
-        q=qualifiers('Date')
-        if q!={'DateFractions':'DateTime'}:_fail('date fractions')
-        return 'datetime',('DateTime',),None
-    if namespace==CFG and name.startswith('CatalogRef.'):
-        target=targets.get(name[len('CatalogRef.'):].casefold())
-        if target is None:_fail('unknown reference target')
-        return 'catalog_ref',(),target
-    _fail('unsupported field type')
+    with location(field=next((v.text for k, v in props.items() if k == '{'+MD+'}Name'), None), property='Type'):
+        t=props.get('{'+MD+'}Type')
+        if t is None:_fail('missing field type')
+        if t.attrib or (t.text or '').strip(_XML_WHITESPACE) or any((n.tail or '').strip(_XML_WHITESPACE) for n in t):_fail('unsupported type envelope')
+        types=[n for n in t if n.tag=='{'+V8+'}Type']
+        if len(types)!=1 or types[0].attrib:_fail('composite or absent field type unsupported')
+        namespace,name=_qname(types[0],ns)
+        qualifier = {'string':'StringQualifiers','decimal':'NumberQualifiers','dateTime':'DateQualifiers'}.get(name) if namespace==XS else None
+        allowed={'{'+V8+'}Type'}
+        if qualifier:allowed.add('{'+V8+'}'+qualifier)
+        if any(n.tag not in allowed for n in t) or len(types[0]):_fail('unsupported type components')
+        def qualifiers(kind):
+            with location(property=kind+'Qualifiers'):
+                nodes=[n for n in t if n.tag=='{'+V8+'}'+kind+'Qualifiers']
+                if len(nodes)!=1:_fail('missing qualifiers')
+                if nodes[0].attrib or (nodes[0].text or '').strip(_XML_WHITESPACE) or any((v.tail or '').strip(_XML_WHITESPACE) for v in nodes[0]):_fail('unsupported qualifier envelope')
+                d=_children(nodes[0])
+                if any(len(v) or v.attrib for v in d.values()):_fail('structured qualifier')
+                return {k.removeprefix('{'+V8+'}'):(v.text or '').strip(_XML_WHITESPACE) for k,v in d.items()}
+        if namespace==XS and name=='string':
+            q=qualifiers('String')
+            if set(q)!={'Length','AllowedLength'} or q['AllowedLength']!='Variable':_fail('string qualifiers')
+            if len(q['Length'])>4 or not re.fullmatch(r'[1-9][0-9]*',q['Length']) or not 1<=int(q['Length'])<=4096:_fail('string length')
+            return 'string',(int(q['Length']),),None
+        if namespace==XS and name=='decimal':
+            q=qualifiers('Number')
+            if set(q)!={'Digits','FractionDigits','AllowedSign'} or q['AllowedSign'] not in ('Any','Nonnegative'):_fail('number qualifiers')
+            if any(len(q[k])>2 or not re.fullmatch(r'0|[1-9][0-9]*',q[k]) for k in ('Digits','FractionDigits')):_fail('number qualifiers')
+            d,f=int(q['Digits']),int(q['FractionDigits'])
+            if not 1<=d<=38 or not 0<=f<=d:_fail('number precision')
+            return 'number',(d,f,q['AllowedSign']),None
+        if namespace==XS and name=='boolean':return 'boolean',(),None
+        if namespace==XS and name=='dateTime':
+            q=qualifiers('Date')
+            if q!={'DateFractions':'DateTime'}:_fail('date fractions')
+            return 'datetime',('DateTime',),None
+        if namespace==CFG and name.startswith('CatalogRef.'):
+            target=targets.get(name[len('CatalogRef.'):].casefold())
+            if target is None:_fail('unknown reference target')
+            return 'catalog_ref',(),target
+        _fail('unsupported field type')
 
 
 
@@ -469,19 +472,21 @@ def _accept_source_files(files):
     if any(type(path) is not str for path in files):_fail('invalid path type')
     accepted=[];total=0;normalized=set()
     for path,raw in sorted(files.items()):
-        if (type(path) is not str or len(path)>256 or '\\' in path or ':' in path
-                or path.startswith('/') or any(ord(c)<32 for c in path) or any(x in ('','.', '..') for x in path.split('/'))):_fail('unsafe path')
-        p=PurePosixPath(path)
-        if p.suffix.lower() not in ('.xml','.bsl'):_fail('only XML/BSL interchange supported')
-        if path.casefold() in normalized:_fail('case-colliding paths')
-        normalized.add(path.casefold())
-        if type(raw) is not bytes or len(raw)>MAX_FILE_BYTES:_fail('file byte bound')
-        total+=len(raw)
-        if total>MAX_TOTAL_BYTES:_fail('total byte bound')
-        try:raw.decode('utf-8-sig')
-        except UnicodeError:_fail('non UTF-8 source')
-        if p.suffix.lower()=='.xml':_parse(raw)
-        accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
+        with location(file=path):
+            if (type(path) is not str or len(path)>256 or '\\' in path or ':' in path
+                    or path.startswith('/') or any(ord(c)<32 for c in path) or any(x in ('','.', '..') for x in path.split('/'))):_fail('unsafe path')
+            p=PurePosixPath(path)
+            if p.suffix.lower() not in ('.xml','.bsl'):_fail('only XML/BSL interchange supported')
+            if path.casefold() in normalized:_fail('case-colliding paths')
+            normalized.add(path.casefold())
+            if type(raw) is not bytes or len(raw)>MAX_FILE_BYTES:_fail('file byte bound')
+            total+=len(raw)
+            if total>MAX_TOTAL_BYTES:_fail('total byte bound')
+            try:raw.decode('utf-8-sig')
+            except UnicodeError:_fail('non UTF-8 source')
+            if p.suffix.lower()=='.xml':
+                with location(stage='xml', file=path): _parse(raw)
+            accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
     return tuple(accepted)
 
 
@@ -522,13 +527,14 @@ def _document_schema(raw, name, targets, used, issues, *, recorder_profile=False
     fields = []; sections = []
 
     def field_schema(field, field_names, owner):
-        if field.tag != '{'+MD+'}Attribute': _fail('document child object unsupported')
-        _activation_properties(field, {'Name', 'Synonym', 'Comment', 'Type'}, issues, owner)
-        fp = _props(field); fn = _name(_text(fp, 'Name')); fid = _uuid(field.get('uuid'))
-        if fn.casefold() in field_names or fid in used: _fail('field identity/name collision')
-        field_names.add(fn.casefold()); used.add(fid)
-        kind, qualifiers, target = _type(fp, ns, targets)
-        return FieldSchema(fid, fn, kind, qualifiers, target)
+        with location(field=metadata_name(field)):
+            if field.tag != '{'+MD+'}Attribute': _fail('document child object unsupported')
+            _activation_properties(field, {'Name', 'Synonym', 'Comment', 'Type'}, issues, owner)
+            fp = _props(field); fn = _name(_text(fp, 'Name')); fid = _uuid(field.get('uuid'))
+            if fn.casefold() in field_names or fid in used: _fail('field identity/name collision')
+            field_names.add(fn.casefold()); used.add(fid)
+            kind, qualifiers, target = _type(fp, ns, targets)
+            return FieldSchema(fid, fn, kind, qualifiers, target)
 
     children = obj.find('{'+MD+'}ChildObjects')
     for item in (() if children is None else children):
@@ -599,196 +605,203 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
 
     It does not assert native numbering parity or waive other activation gates.
     """
-    if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
-        _fail('unsupported numbering policy')
-    from .configuration_modules import MODULE_RUNTIME, read_common_modules, validate_module_sources
-    if module_runtime is not None and (type(module_runtime) is not str or module_runtime != MODULE_RUNTIME):
-        _fail('unsupported module runtime profile')
-    accepted = _accept_source_files(files)
-    if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
-    config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
-    name=_name(_text(props,'Name'));issues=[];objects={};used={config_uuid}
-    _envelope_issues(config_root,config,issues,name)
-    _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
-    children=config.find('{'+MD+'}ChildObjects')
-    if children is None:_fail('missing configuration ChildObjects')
-    catalog_names=[];document_names=[];common_names=[];register_names=[]
-    for node in children:
-        if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
-            common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
-        if node.tag=='{'+MD+'}InformationRegister':
-            register_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
-        if node.tag=='{'+MD+'}Document':
-            document_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
-        if node.tag!='{'+MD+'}Catalog':
-            issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
-        catalog_names.append(_name((node.text or '').strip(_XML_WHITESPACE)))
-    minimum = 0 if module_runtime is not None else 1
-    if not minimum<=len(catalog_names)+len(document_names)+len(register_names)<=512:_fail('metadata inventory')
-    if len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
-    if len({x.casefold() for x in document_names})!=len(document_names):_fail('document inventory')
-    if len({x.casefold() for x in register_names})!=len(register_names):_fail('register inventory')
-    for cname in catalog_names:
-        path='Catalogs/'+cname+'.xml'
-        if path not in files:_fail('missing catalog XML')
-        obj,ns,root=_object(files[path],'Catalog',include_root=True);p=_props(obj);identity=_uuid(obj.get('uuid'))
-        if identity in used:_fail('duplicate metadata UUID')
-        used.add(identity)
-        if _text(p,'Name')!=cname:_fail('catalog filename/name mismatch')
-        objects[cname.casefold()]=(identity,obj,p,ns,root)
-    targets={key:v[0] for key,v in objects.items()};catalogs=[];section_count=0
-    for cname in catalog_names:
-        identity,obj,p,ns,root=objects[cname.casefold()]
-        # Admit only the whole closed envelope with fully verified fields; any
-        # mismatch retains the fail-closed path, never a partial whitelist.
-        generated = (_catalog_generated_identities(obj, ns)
-                     if root.attrib == {'version':'2.20'} and not (root.text or '').strip(_XML_WHITESPACE)
-                     and not (obj.tail or '').strip(_XML_WHITESPACE) else None)
-        if generated is None:
-            _envelope_issues(root,obj,issues,cname)
-            _activation_properties(obj,{'Name','Synonym','Comment','Hierarchical','HierarchyType','CodeType','CodeLength','DescriptionLength','Autonumbering','CheckUnique','CodeSeries','Owners'},issues,cname)
+    with location(file='Configuration.xml'):
+        if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
+            _fail('unsupported numbering policy')
+        from .configuration_modules import MODULE_RUNTIME, read_common_modules, validate_module_sources
+        if module_runtime is not None and (type(module_runtime) is not str or module_runtime != MODULE_RUNTIME):
+            _fail('unsupported module runtime profile')
+        accepted = _accept_source_files(files)
+        if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
+        config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
+        name=_name(_text(props,'Name'));issues=[];objects={};used={config_uuid}
+        _envelope_issues(config_root,config,issues,name)
+        _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
+        children=config.find('{'+MD+'}ChildObjects')
+        if children is None:_fail('missing configuration ChildObjects')
+        catalog_names=[];document_names=[];common_names=[];register_names=[]
+        for node in children:
+            if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
+                common_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+            if node.tag=='{'+MD+'}InformationRegister':
+                register_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+            if node.tag=='{'+MD+'}Document':
+                document_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+            if node.tag!='{'+MD+'}Catalog':
+                issues.append('unsupported metadata family:'+node.tag.rsplit('}',1)[-1]);continue
+            catalog_names.append(_name((node.text or '').strip(_XML_WHITESPACE)))
+        minimum = 0 if module_runtime is not None else 1
+        if not minimum<=len(catalog_names)+len(document_names)+len(register_names)<=512:_fail('metadata inventory')
+        if len({x.casefold() for x in catalog_names})!=len(catalog_names):_fail('catalog inventory')
+        if len({x.casefold() for x in document_names})!=len(document_names):_fail('document inventory')
+        if len({x.casefold() for x in register_names})!=len(register_names):_fail('register inventory')
+        for cname in catalog_names:
+            with location(file='Catalogs/'+cname+'.xml', object=cname):
+                path='Catalogs/'+cname+'.xml'
+                if path not in files:_fail('missing catalog XML')
+                obj,ns,root=_object(files[path],'Catalog',include_root=True);p=_props(obj);identity=_uuid(obj.get('uuid'))
+                if identity in used:_fail('duplicate metadata UUID')
+                used.add(identity)
+                if _text(p,'Name')!=cname:_fail('catalog filename/name mismatch')
+                objects[cname.casefold()]=(identity,obj,p,ns,root)
+        targets={key:v[0] for key,v in objects.items()};catalogs=[];section_count=0
+        for cname in catalog_names:
+            with location(file='Catalogs/'+cname+'.xml', object=cname):
+                identity,obj,p,ns,root=objects[cname.casefold()]
+                # Admit only the whole closed envelope with fully verified fields; any
+                # mismatch retains the fail-closed path, never a partial whitelist.
+                generated = (_catalog_generated_identities(obj, ns)
+                             if root.attrib == {'version':'2.20'} and not (root.text or '').strip(_XML_WHITESPACE)
+                             and not (obj.tail or '').strip(_XML_WHITESPACE) else None)
+                if generated is None:
+                    _envelope_issues(root,obj,issues,cname)
+                    _activation_properties(obj,{'Name','Synonym','Comment','Hierarchical','HierarchyType','CodeType','CodeLength','DescriptionLength','Autonumbering','CheckUnique','CodeSeries','Owners'},issues,cname)
+                else:
+                    if generated & used:_fail('duplicate generated metadata UUID')
+                    used.update(generated)
+                auto_numbering = _text(p, 'Autonumbering', 'false')
+                if auto_numbering not in ('false', 'true') or (auto_numbering == 'true' and numbering_policy != 'decimal_v1'):
+                    _fail('unsupported catalog semantics')
+                hierarchical = _text(p,'Hierarchical','false')
+                if hierarchical not in ('false','true') or (hierarchical=='true' and _text(p,'HierarchyType')!='HierarchyFoldersAndItems'):
+                    _fail('unsupported catalog hierarchy')
+                hierarchy = 'groups_v1' if hierarchical=='true' else 'none'
+                if (_text(p,'CodeType','String')!='String'
+                        or _text(p,'CheckUnique','true')!='true'
+                        or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
+                owners=p.get('{'+MD+'}Owners')
+                if owners is not None and (len(owners) or (owners.text or '').strip(_XML_WHITESPACE)):_fail('catalog owners unsupported')
+                for node in obj.iter():
+                    local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip(_XML_WHITESPACE)
+                    if local=='FillChecking' and text not in ('','DontCheck'):issues.append('required field validation unsupported:'+cname)
+                    if local in ('FillFromFillingValue','DataHistory','RegisterRecords') and text not in ('','false','DontUse'):issues.append('automatic metadata behavior unsupported:'+cname)
+                fields=[];sections=[];names=set(_RESERVED)
+                if hierarchy != 'none': names.update(('parent','родитель','isfolder','этогруппа','createfolder','создатьгруппу'))
+                child=obj.find('{'+MD+'}ChildObjects')
+                def field_schema(field, field_names, owner, row=False):
+                    with location(field=metadata_name(field)):
+                        if field.tag!='{'+MD+'}Attribute':_fail('child object unsupported')
+                        if row:
+                            section_components(field)
+                            nested=field.find('{'+MD+'}ChildObjects')
+                            if nested is not None and len(nested):_fail('attribute child object unsupported')
+                        # Rich Designer defaults require the envelope and every full field.
+                        # Every unmatched field retains the restrictive activation path.
+                        if generated is None or row:
+                            _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,owner)
+                        fp=_props(field);fn=_name(_text(fp,'Name'));fid=_uuid(field.get('uuid'))
+                        if fn.casefold() in field_names or fid in used:_fail('field identity/name collision')
+                        field_names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
+                        return FieldSchema(fid,fn,kind,q,target)
+                def section_components(section):
+                    # Inline executable payloads are outside this bounded metadata format,
+                    # even when hidden inside otherwise descriptive properties.
+                    for node in section.iter():
+                        local=node.tag.rsplit('}',1)[-1].casefold()
+                        if local.endswith('module') or local in ('code','script','procedure','function'):
+                            _fail('embedded executable component unsupported')
+                for item in () if child is None else child:
+                    if item.tag=='{'+MD+'}Attribute':
+                        fields.append(field_schema(item,names,cname))
+                    elif item.tag=='{'+MD+'}TabularSection':
+                        section_components(item)
+                        _activation_properties(item,{'Name','Synonym','Comment'},issues,cname)
+                        sp=_props(item);sn=_name(_text(sp,'Name'));sid=_uuid(item.get('uuid'))
+                        if sn.casefold() in names or sid in used:_fail('section identity/name collision')
+                        names.add(sn.casefold());used.add(sid)
+                        row_names=set(_RESERVED)|{'linenumber','номерстроки'}
+                        rows=item.find('{'+MD+'}ChildObjects')
+                        row_fields=tuple(field_schema(f,row_names,cname+'.'+sn,True)
+                                         for f in (() if rows is None else rows))
+                        if len(row_fields)>64:_fail('section field count')
+                        sections.append(TabularSectionSchema(sid,sn,row_fields));section_count+=1
+                        if len(sections)>16 or section_count>512:_fail('tabular section count')
+                    else:_fail('catalog child object unsupported')
+                if len(fields)>64:_fail('field count')
+                numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
+                code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
+                catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering,hierarchy))
+        documents=[]
+        for dname in document_names:
+            with location(file='Documents/'+dname+'.xml', object=dname):
+                path='Documents/'+dname+'.xml'
+                if path not in files:
+                    # Historical unsupported-family archives may declare a document
+                    # without supplying its source. Preserve those archives as inactive.
+                    issues.append('missing document XML:'+dname);continue
+                document=_document_schema(files[path],dname,targets,used,issues)
+                section_count+=len(document.tabular_sections)
+                if section_count>512:_fail('tabular section count')
+                documents.append(document)
+        registers=[]
+        for rname in register_names:
+            with location(file='InformationRegisters/'+rname+'.xml', object=rname):
+                path='InformationRegisters/'+rname+'.xml'
+                if path not in files:
+                    issues.append('missing information register XML:'+rname);continue
+                registers.append(_register_schema(files[path],rname,targets,used,issues))
+        common_modules = read_common_modules(files, common_names, used, issues) if module_runtime else ()
+        modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
+                            *(f'Documents/{n}.xml' for n in document_names),
+                            *(f'CommonModules/{n}.xml' for n in common_names),
+                            *(f'InformationRegisters/{n}.xml' for n in register_names)}
+        # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
+        # A source archive may contain unknown modules, but it must not activate or
+        # invent a Configuration owner for a file whose metadata owner is unknown.
+        module_paths = {f'Ext/{kind}.bsl': (config_uuid, kind)
+                        for kind in _CONFIGURATION_MODULES}
+        for cname in catalog_names:
+            with location(file='Catalogs/'+cname+'.xml', object=cname):
+                for kind in _CATALOG_MODULES:
+                    module_paths[f'Catalogs/{cname}/Ext/{kind}.bsl'] = (targets[cname.casefold()], kind)
+        for document in documents:
+            for kind in _CATALOG_MODULES:
+                module_paths[f'Documents/{document.name}/Ext/{kind}.bsl'] = (document.identity, kind)
+        for module in common_modules:
+            module_paths[module.path] = (module.identity, 'CommonModule')
+        runtime_paths = {module.path for module in common_modules}
+        if module_runtime is not None:
+            runtime_paths.add('Ext/ManagedApplicationModule.bsl')
+        unknown_module_count = 0
+        unknown_module_issues = []
+        unknown_module_json_size = 2  # The enclosing JSON array brackets.
+        for entry in accepted:
+            if entry.kind=='module':
+                binding = module_paths.get(entry.path)
+                if binding is None:
+                    unknown_module_count += 1
+                    if unknown_module_issues is not None:
+                        detail = 'unsupported module path:'+entry.path
+                        # Match SQLite's compact ensure_ascii=True representation,
+                        # including surrogate-pair escapes for astral characters.
+                        size = len(json.dumps(detail, ensure_ascii=True, separators=(',', ':')))
+                        size += bool(unknown_module_issues)  # Separator before this item.
+                        if (unknown_module_count > _MODULE_PATH_DIAGNOSTIC_LIMIT or
+                                unknown_module_json_size + size > _MODULE_PATH_DIAGNOSTIC_JSON_LIMIT):
+                            unknown_module_issues = None
+                        else:
+                            unknown_module_issues.append(detail)
+                            unknown_module_json_size += size
+                else:
+                    owner, kind = binding
+                    modules.append(ConfigurationModule(owner,kind,entry.path))
+                code='\n'.join(line.split('//',1)[0] for line in entry.content.decode('utf-8-sig').splitlines()).strip()
+                if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
+            elif entry.path == 'ConfigDumpInfo.xml':
+                versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
+                if register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
+                    issues.append('unsupported configuration file:'+entry.path)
+            elif entry.path not in expected:
+                _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
+        if unknown_module_issues is None:
+            issues.append('unsupported module paths:'+str(unknown_module_count)+
+                          ' (individual paths retained in configuration files)')
         else:
-            if generated & used:_fail('duplicate generated metadata UUID')
-            used.update(generated)
-        auto_numbering = _text(p, 'Autonumbering', 'false')
-        if auto_numbering not in ('false', 'true') or (auto_numbering == 'true' and numbering_policy != 'decimal_v1'):
-            _fail('unsupported catalog semantics')
-        hierarchical = _text(p,'Hierarchical','false')
-        if hierarchical not in ('false','true') or (hierarchical=='true' and _text(p,'HierarchyType')!='HierarchyFoldersAndItems'):
-            _fail('unsupported catalog hierarchy')
-        hierarchy = 'groups_v1' if hierarchical=='true' else 'none'
-        if (_text(p,'CodeType','String')!='String'
-                or _text(p,'CheckUnique','true')!='true'
-                or _text(p,'CodeSeries','WholeCatalog')!='WholeCatalog'):_fail('unsupported catalog semantics')
-        owners=p.get('{'+MD+'}Owners')
-        if owners is not None and (len(owners) or (owners.text or '').strip(_XML_WHITESPACE)):_fail('catalog owners unsupported')
-        for node in obj.iter():
-            local=node.tag.rsplit('}',1)[-1];text=(node.text or '').strip(_XML_WHITESPACE)
-            if local=='FillChecking' and text not in ('','DontCheck'):issues.append('required field validation unsupported:'+cname)
-            if local in ('FillFromFillingValue','DataHistory','RegisterRecords') and text not in ('','false','DontUse'):issues.append('automatic metadata behavior unsupported:'+cname)
-        fields=[];sections=[];names=set(_RESERVED)
-        if hierarchy != 'none': names.update(('parent','родитель','isfolder','этогруппа','createfolder','создатьгруппу'))
-        child=obj.find('{'+MD+'}ChildObjects')
-        def field_schema(field, field_names, owner, row=False):
-            if field.tag!='{'+MD+'}Attribute':_fail('child object unsupported')
-            if row:
-                section_components(field)
-                nested=field.find('{'+MD+'}ChildObjects')
-                if nested is not None and len(nested):_fail('attribute child object unsupported')
-            # Rich Designer defaults require the envelope and every full field.
-            # Every unmatched field retains the restrictive activation path.
-            if generated is None or row:
-                _activation_properties(field,{'Name','Synonym','Comment','Type'},issues,owner)
-            fp=_props(field);fn=_name(_text(fp,'Name'));fid=_uuid(field.get('uuid'))
-            if fn.casefold() in field_names or fid in used:_fail('field identity/name collision')
-            field_names.add(fn.casefold());used.add(fid);kind,q,target=_type(fp,ns,targets)
-            return FieldSchema(fid,fn,kind,q,target)
-        def section_components(section):
-            # Inline executable payloads are outside this bounded metadata format,
-            # even when hidden inside otherwise descriptive properties.
-            for node in section.iter():
-                local=node.tag.rsplit('}',1)[-1].casefold()
-                if local.endswith('module') or local in ('code','script','procedure','function'):
-                    _fail('embedded executable component unsupported')
-        for item in () if child is None else child:
-            if item.tag=='{'+MD+'}Attribute':
-                fields.append(field_schema(item,names,cname))
-            elif item.tag=='{'+MD+'}TabularSection':
-                section_components(item)
-                _activation_properties(item,{'Name','Synonym','Comment'},issues,cname)
-                sp=_props(item);sn=_name(_text(sp,'Name'));sid=_uuid(item.get('uuid'))
-                if sn.casefold() in names or sid in used:_fail('section identity/name collision')
-                names.add(sn.casefold());used.add(sid)
-                row_names=set(_RESERVED)|{'linenumber','номерстроки'}
-                rows=item.find('{'+MD+'}ChildObjects')
-                row_fields=tuple(field_schema(f,row_names,cname+'.'+sn,True)
-                                 for f in (() if rows is None else rows))
-                if len(row_fields)>64:_fail('section field count')
-                sections.append(TabularSectionSchema(sid,sn,row_fields));section_count+=1
-                if len(sections)>16 or section_count>512:_fail('tabular section count')
-            else:_fail('catalog child object unsupported')
-        if len(fields)>64:_fail('field count')
-        numbering = 'decimal_v1' if auto_numbering == 'true' else 'explicit'
-        code_length = _int(p, 'CodeLength', 1, 9 if numbering == 'decimal_v1' else 64)
-        catalogs.append(CatalogSchema(identity,cname,code_length,_int(p,'DescriptionLength',0,1024),tuple(fields),tuple(sections),numbering,hierarchy))
-    documents=[]
-    for dname in document_names:
-        path='Documents/'+dname+'.xml'
-        if path not in files:
-            # Historical unsupported-family archives may declare a document
-            # without supplying its source. Preserve those archives as inactive.
-            issues.append('missing document XML:'+dname);continue
-        document=_document_schema(files[path],dname,targets,used,issues)
-        section_count+=len(document.tabular_sections)
-        if section_count>512:_fail('tabular section count')
-        documents.append(document)
-    registers=[]
-    for rname in register_names:
-        path='InformationRegisters/'+rname+'.xml'
-        if path not in files:
-            issues.append('missing information register XML:'+rname);continue
-        registers.append(_register_schema(files[path],rname,targets,used,issues))
-    common_modules = read_common_modules(files, common_names, used, issues) if module_runtime else ()
-    modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
-                        *(f'Documents/{n}.xml' for n in document_names),
-                        *(f'CommonModules/{n}.xml' for n in common_names),
-                        *(f'InformationRegisters/{n}.xml' for n in register_names)}
-    # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
-    # A source archive may contain unknown modules, but it must not activate or
-    # invent a Configuration owner for a file whose metadata owner is unknown.
-    module_paths = {f'Ext/{kind}.bsl': (config_uuid, kind)
-                    for kind in _CONFIGURATION_MODULES}
-    for cname in catalog_names:
-        for kind in _CATALOG_MODULES:
-            module_paths[f'Catalogs/{cname}/Ext/{kind}.bsl'] = (targets[cname.casefold()], kind)
-    for document in documents:
-        for kind in _CATALOG_MODULES:
-            module_paths[f'Documents/{document.name}/Ext/{kind}.bsl'] = (document.identity, kind)
-    for module in common_modules:
-        module_paths[module.path] = (module.identity, 'CommonModule')
-    runtime_paths = {module.path for module in common_modules}
-    if module_runtime is not None:
-        runtime_paths.add('Ext/ManagedApplicationModule.bsl')
-    unknown_module_count = 0
-    unknown_module_issues = []
-    unknown_module_json_size = 2  # The enclosing JSON array brackets.
-    for entry in accepted:
-        if entry.kind=='module':
-            binding = module_paths.get(entry.path)
-            if binding is None:
-                unknown_module_count += 1
-                if unknown_module_issues is not None:
-                    detail = 'unsupported module path:'+entry.path
-                    # Match SQLite's compact ensure_ascii=True representation,
-                    # including surrogate-pair escapes for astral characters.
-                    size = len(json.dumps(detail, ensure_ascii=True, separators=(',', ':')))
-                    size += bool(unknown_module_issues)  # Separator before this item.
-                    if (unknown_module_count > _MODULE_PATH_DIAGNOSTIC_LIMIT or
-                            unknown_module_json_size + size > _MODULE_PATH_DIAGNOSTIC_JSON_LIMIT):
-                        unknown_module_issues = None
-                    else:
-                        unknown_module_issues.append(detail)
-                        unknown_module_json_size += size
-            else:
-                owner, kind = binding
-                modules.append(ConfigurationModule(owner,kind,entry.path))
-            code='\n'.join(line.split('//',1)[0] for line in entry.content.decode('utf-8-sig').splitlines()).strip()
-            if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
-        elif entry.path == 'ConfigDumpInfo.xml':
-            versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
-            if register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
-                issues.append('unsupported configuration file:'+entry.path)
-        elif entry.path not in expected:
-            _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
-    if unknown_module_issues is None:
-        issues.append('unsupported module paths:'+str(unknown_module_count)+
-                      ' (individual paths retained in configuration files)')
-    else:
-        issues.extend(unknown_module_issues)
-    result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers))
-    if module_runtime is not None:
-        validate_module_sources(result)
-    return result
+            issues.extend(unknown_module_issues)
+        result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers))
+        if module_runtime is not None:
+            validate_module_sources(result)
+        return result
 
 
 # This marker selects a durable inert-only storage profile. It is never an

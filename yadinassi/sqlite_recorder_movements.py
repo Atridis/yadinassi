@@ -121,36 +121,14 @@ class RecorderMovementPort:
         return _hash(['recorder_partition_v1',str(self.database_id),self.generation,
             self.definitions[schema.identity],str(recorder.document_id),str(recorder.record_id),revision,rows])
 
-    def scan(self, register_id):
-        """Bounded source scan, sharing the existing pinned owning connection."""
-        schema = self.schemas.get(register_id)
-        if schema is None: raise BackendError('unsupported')
-        count = self.connection.execute('SELECT COUNT(*) FROM recorder_partition WHERE register_id=?',(str(register_id),)).fetchone()[0]
-        if count > 10000: raise BackendError('unsupported')
-        self._require(register_id,DocumentKey(self.database_id,schema.recorder_documents[0],UUID(int=1)))
-        rows,size=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=?',(str(register_id),)).fetchone()
-        if rows>10000 or size>MAX_BYTES:raise BackendError('unsupported')
-        if self.connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
-        result=[];total=0
-        for doc,record in self.connection.execute('SELECT document_id,record_id FROM recorder_partition WHERE register_id=? ORDER BY document_id,record_id',(str(register_id),)):
-            key=DocumentKey(self.database_id,UUID(doc),UUID(record))
-            partition=self.read(register_id,key)
-            total+=len(partition.rows)
-            if total>10000:raise BackendError('unsupported')
-            result.append((key,partition))
-        return tuple(result)
-
-    def read(self,register_id,recorder):
-        schema=self._require(register_id,recorder);key=(str(register_id),str(recorder.document_id),str(recorder.record_id))
-        revision_row=self.connection.execute('SELECT revision FROM recorder_partition WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
-        revision=0 if revision_row is None else revision_row[0]
-        if type(revision) is not int or not 0<=revision<2**63:raise BackendError('integrity')
-        count,total=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
-        if count>10000 or total>MAX_BYTES:raise BackendError('unsupported')
-        if revision==0 and count:raise BackendError('integrity')
+    def _decoded_partition(self, schema, recorder, revision, source):
+        """Shared logical decoder; no declaration lookups or transaction changes."""
+        if type(revision) is not int or not 0 <= revision < 2**63:
+            raise BackendError('integrity')
         rows=[]
-        for line,active,raw,dimension_key in self.connection.execute('SELECT line_number,active,values_json,dimension_key FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number',key):
+        for line,active,raw,dimension_key in source:
             if type(line) is not int or line!=len(rows)+1 or type(active) is not int or active not in (0,1) or type(raw) is not str or len(raw.encode())>MAX_ROW_BYTES:raise BackendError('integrity')
+            if len(rows) >= MAX_DATABASE_ROWS: raise BackendError('unsupported')
             try:
                 data=json.loads(raw)
                 if type(data) is not list or len(data)!=len(schema.fields):raise BackendError('integrity')
@@ -160,10 +138,59 @@ class RecorderMovementPort:
                 if dimension_key!=self._dimension_key(schema,item):raise BackendError('integrity')
                 rows.append(item)
             except (ValueError,TypeError):raise BackendError('integrity') from None
+        if revision == 0 and rows: raise BackendError('integrity')
         rows=tuple(rows)
-        validate_replacement(schema,RecorderReplacement(register_id,recorder,rows,'0'*64),self.database_id)
+        validate_replacement(schema,RecorderReplacement(schema.identity,recorder,rows,'0'*64),self.database_id)
         encoded=self._encoded(schema,rows)
-        return RecorderPartition(register_id,recorder,revision,rows,self._snapshot(schema,recorder,revision,encoded))
+        return RecorderPartition(schema.identity,recorder,revision,rows,self._snapshot(schema,recorder,revision,encoded))
+
+    def scan(self, register_id):
+        """One declaration check and two bounded streams, never partition N+1."""
+        from contextlib import closing
+        from .sqlite_partition_scan import ordered_partitions, recorder_key
+        schema = self.schemas.get(register_id)
+        if schema is None: raise BackendError('unsupported')
+        self._require(register_id,DocumentKey(self.database_id,schema.recorder_documents[0],UUID(int=1)))
+        args = (str(register_id),)
+        count = self.connection.execute('SELECT COUNT(*) FROM recorder_partition WHERE register_id=?',args).fetchone()[0]
+        if count > MAX_DATABASE_PARTITIONS: raise BackendError('unsupported')
+        rows,size,largest=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0),COALESCE(MAX(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=?',args).fetchone()
+        if rows>MAX_DATABASE_ROWS or size>MAX_BYTES:raise BackendError('unsupported')
+        if largest>MAX_ROW_BYTES:raise BackendError('integrity')
+        if self.connection.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
+        # Cursor acquisition is nested so even a failure opening the second
+        # stream cannot retain the first cursor on the borrowed connection.
+        result=[];dimensions=set()
+        with closing(self.connection.execute(
+                'SELECT document_id,record_id,revision FROM recorder_partition '
+                'WHERE register_id=? ORDER BY document_id,record_id', args)) as metadata:
+            with closing(self.connection.execute(
+                    'SELECT document_id,record_id,line_number,active,values_json,dimension_key '
+                    'FROM recorder_movement WHERE register_id=? '
+                    'ORDER BY document_id,record_id,line_number', args)) as movements:
+                for doc,record,revision,raw_rows in ordered_partitions(
+                        metadata,movements,max_partitions=MAX_DATABASE_PARTITIONS,max_rows=MAX_DATABASE_ROWS):
+                    key=recorder_key(self.database_id,doc,record)
+                    partition=self._decoded_partition(schema,key,revision,raw_rows)
+                    if schema.dimension_count:
+                        for row in partition.rows:
+                            dimension=self._dimension_key(schema,row)
+                            if dimension in dimensions: raise BackendError('integrity')
+                            dimensions.add(dimension)
+                    result.append((key,partition))
+        return tuple(result)
+
+    def read(self,register_id,recorder):
+        from contextlib import closing
+        schema=self._require(register_id,recorder);key=(str(register_id),str(recorder.document_id),str(recorder.record_id))
+        revision_row=self.connection.execute('SELECT revision FROM recorder_partition WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
+        revision=0 if revision_row is None else revision_row[0]
+        if type(revision) is not int or not 0<=revision<2**63:raise BackendError('integrity')
+        count,total=self.connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(values_json AS BLOB))),0) FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=?',key).fetchone()
+        if count>10000 or total>MAX_BYTES:raise BackendError('unsupported')
+        if revision==0 and count:raise BackendError('integrity')
+        with closing(self.connection.execute('SELECT line_number,active,values_json,dimension_key FROM recorder_movement WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number',key)) as source:
+            return self._decoded_partition(schema,recorder,revision,source)
 
     def describe(self,request):
         if type(request) is not RecorderReplacement:raise BackendError('invalid_input')

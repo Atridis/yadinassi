@@ -1,5 +1,5 @@
 """Creation failures leave only disposable, authored test files in place."""
-from contextlib import closing, redirect_stderr
+from contextlib import closing, redirect_stderr, contextmanager
 from io import StringIO
 from pathlib import Path
 import sqlite3
@@ -10,6 +10,25 @@ from unittest.mock import patch
 from test_sqlite_catalog_backend import configuration
 from yadinassi.catalog_backend import BackendError
 from yadinassi.sqlite_catalog import SQLiteCatalogBackend
+
+
+@contextmanager
+def mocked_cli_storage_source(configuration):
+    """Isolate actual creation faults from import using the authored storage fixture.
+
+    This fixture intentionally contains <owned/>, not importable Designer XML.
+    Mock the host preparation boundary, not the new exact-byte reimport check.
+    Creation still uses the real SQLiteDBContext/SQLiteCatalogBackend and keeps
+    all transaction, concurrent-owner, journal and cleanup assertions below.
+    """
+    from yadinassi.configuration_profile_import import _prepare_imported
+    from yadinassi.database_context import SQLiteDBContext
+    prepared = _prepare_imported(configuration, 'legacy', 'explicit', None, True)
+    with patch('yadinassi.configuration_profile_import.prepare_directory', return_value=prepared), \
+         patch('yadinassi.configuration_profile_import.create_prepared',
+               side_effect=lambda path, retained: SQLiteDBContext.create(
+                   path, configuration, activate=retained.activate)):
+        yield
 
 
 class CreateConnection:
@@ -217,7 +236,7 @@ class SQLiteCreateUncertainTests(unittest.TestCase):
     def test_cli_warns_on_uncertain_creation_without_private_details(self):
         from yadinassi import cli
         output = StringIO()
-        with patch('yadinassi.configuration_import.load_configuration_directory', return_value=self.config), \
+        with mocked_cli_storage_source(self.config), \
                 patch.object(cli.SQLiteDBContext, 'create', side_effect=BackendError('uncertain_commit')), \
                 redirect_stderr(output):
             status = cli.main(['--create-db',str(self.path),'--import-xml','/private/source'])
@@ -236,7 +255,7 @@ class SQLiteCreateUncertainTests(unittest.TestCase):
                 context = Mock()
                 if phase == 'close': context.close.side_effect = BackendError('storage_error')
                 create = Mock(return_value=context) if phase == 'close' else Mock(side_effect=BackendError('storage_error'))
-                with patch('yadinassi.configuration_import.load_configuration_directory', return_value=self.config), \
+                with mocked_cli_storage_source(self.config), \
                         patch.object(cli.SQLiteDBContext, 'create', create), redirect_stderr(output):
                     status = cli.main(['--create-db',str(self.path),'--import-xml','/private/source'])
                 self.assertEqual(status, 1)
