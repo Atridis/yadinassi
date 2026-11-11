@@ -117,7 +117,7 @@ def validate_inputs(destination, hashes, smoke):
 
 def container_command(staged, hashes, name, nonce, smoke):
     validate_inputs(staged, hashes, smoke)
-    require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}', nonce) and name == 'onec-session_parameter-' + nonce)
+    require(type(nonce) is str and re.fullmatch('[0-9a-f]{32}', nonce) and name == 'onec-session-parameter-' + nonce)
     require(',' not in str(staged) and staged.is_absolute())
     return ['docker', 'create', '--name', name, '--label', DOCKER.OWNER_LABEL + '=' + nonce,
             '--hostname', 'onec-smoke',
@@ -140,7 +140,7 @@ def container_command(staged, hashes, name, nonce, smoke):
 
 @contextlib.contextmanager
 def private_work(temp_root, state):
-    manager = tempfile.TemporaryDirectory(prefix='onec-session_parameter-', dir=temp_root)
+    manager = tempfile.TemporaryDirectory(prefix='onec-session-parameter-', dir=temp_root)
     try:
         yield manager.name
     finally:
@@ -348,7 +348,7 @@ def run(root,temp_root,*,export_native_outputs=False,failure_state=None):
     token,actor=os.environ.pop('GHCR_TOKEN',''),os.environ.pop('GHCR_USER','')
     require(token and re.fullmatch('[A-Za-z0-9-]{1,39}',actor),'registry_credentials_missing')
     nonce=uuid.uuid4().hex
-    name='onec-session_parameter-'+nonce
+    name='onec-session-parameter-'+nonce
     state['stage']='provenance'
     provenance=FULL.repository_provenance(root);interpreter=FULL.interpreter_provenance(root)
     hosts=('scripts/native_1c_session_parameter_profile.py','scripts/native_1c_smoke.py','scripts/native_1c_full_host.py',

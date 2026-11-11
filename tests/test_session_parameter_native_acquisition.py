@@ -102,10 +102,22 @@ class SessionParameterNativeAcquisitionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
             dest=Path(directory)/'inputs';hashes=host.stage_inputs(ROOT,dest,host.SMOKE)
             host.validate_inputs(dest,hashes,host.SMOKE)
-            cmd=host.container_command(dest,hashes,'onec-session_parameter-'+'a'*32,'a'*32,host.SMOKE)
+            cmd=host.container_command(dest,hashes,'onec-session-parameter-'+'a'*32,'a'*32,host.SMOKE)
             self.assertIn('--session_parameter-suite',cmd);self.assertIn('--read-only',cmd)
             self.assertEqual(cmd[cmd.index('--network')+1],'none')
             self.assertNotIn('--accumulation-register-suite',cmd)
+            # Exercise the real shared validation boundary without Docker I/O.
+            calls=[]
+            def stopped(command, env, **kwargs):
+                calls.append(command)
+                raise host.DOCKER.CliError('docker_command_unavailable')
+            with self.assertRaises(host.DOCKER.LifecycleError) as error:
+                host.DOCKER.run_owned(cmd,{},name='onec-session-parameter-'+'a'*32,
+                    nonce='a'*32,image=host.SMOKE.IMAGE,seconds=host.SMOKE.FULL_MAX_RUNTIME,
+                    output_limit=host.MAX_TRANSPORT,runner=stopped)
+            self.assertTrue(calls, 'valid identity must reach image inspection')
+            self.assertNotIn('docker_lifecycle_invalid',str(error.exception))
+
 
     def test_changed_staged_source_denied(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
