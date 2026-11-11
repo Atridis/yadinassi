@@ -17,6 +17,8 @@ from .configuration_import import _host_directory
 from .configuration_xml import (INERT_SOURCE_ISSUE, DEMO_KINDS_SOURCE_ISSUE, DEMO_KINDS_PROFILE,
                                 DEMO_DIRECTORIES_SOURCE_ISSUE, DEMO_DIRECTORIES_PROFILE,
                                 DEMO_PRODUCTS_SOURCE_ISSUE, DEMO_PRODUCTS_PROFILE)
+from .configuration_catalog_profile import CATALOG_FORMS_PROFILE, CATALOG_FORMS_SOURCE_ISSUE
+from .configuration_application_profile import APPLICATION_PROFILE, APPLICATION_SOURCE_ISSUE
 from .catalog_backend import ConfigurationSourceIdentity, CatalogFormSource
 from .sqlite_registers import (REGISTER_DDL, schema_data as register_schema_data,
     load_schemas as load_register_schemas, validate_configuration as validate_register_configuration, RegisterView, install_boundaries)
@@ -54,6 +56,22 @@ _DEMO_SOURCE_ISSUES = {
     DEMO_KINDS_PROFILE: DEMO_KINDS_SOURCE_ISSUE,
     DEMO_DIRECTORIES_PROFILE: DEMO_DIRECTORIES_SOURCE_ISSUE,
 }
+
+
+def _source_profile_for_issues(issues):
+    """Recognize exact historical grants or a persisted generic source digest."""
+    if type(issues) not in (list, tuple) or len(issues) != 1:
+        return None
+    marker = issues[0]
+    if type(marker) is not str:
+        return None
+    for profile, issue in ((CATALOG_FORMS_PROFILE, CATALOG_FORMS_SOURCE_ISSUE),
+                           (APPLICATION_PROFILE, APPLICATION_SOURCE_ISSUE)):
+        prefix = issue + ':'
+        if marker.startswith(prefix):
+            digest = marker[len(prefix):]
+            return profile if len(digest) == 64 and all(c in '0123456789abcdef' for c in digest) else None
+    return next((profile for profile, issue in _DEMO_SOURCE_ISSUES.items() if marker == issue), None)
 
 
 def _interruption(error):
@@ -467,7 +485,7 @@ class SQLiteCatalogBackend:
             issues = json.loads(row[3])
             if type(issues) is not list or len(issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in issues): raise BackendError('integrity')
             self.activation_issues = tuple(issues)
-            if type(row[2]) is not int or row[2] not in (0,1) or any(type(v) is not str for v in self.activation_issues) or (self.activated and self.activation_issues and not (self.storage_version == 6 and self.activation_issues in tuple((issue,) for issue in _DEMO_SOURCE_ISSUES.values()))): raise BackendError('integrity')
+            if type(row[2]) is not int or row[2] not in (0,1) or any(type(v) is not str for v in self.activation_issues) or (self.activated and self.activation_issues and not (self.storage_version == 6 and _source_profile_for_issues(self.activation_issues) is not None)): raise BackendError('integrity')
             self.database_id = UUID(row[0]); self.configuration_generation = row[1]
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
@@ -483,7 +501,7 @@ class SQLiteCatalogBackend:
                 active_ids = {s.identity for s in imported.catalogs}
                 self._demo_form_catalog_ids = tuple(c.identity for c in catalogs
                     if c.identity in active_ids and c.default_object_form)
-            elif INERT_SOURCE_ISSUE in self.activation_issues or any(issue in self.activation_issues for issue in _DEMO_SOURCE_ISSUES.values()):
+            elif INERT_SOURCE_ISSUE in self.activation_issues or _source_profile_for_issues(self.activation_issues) is not None:
 
                 raise BackendError('unsupported')
         except BackendError: raise
@@ -545,8 +563,8 @@ class SQLiteCatalogBackend:
         if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
             raise BackendError('invalid_input')
         if type(activate) is not bool: raise BackendError('invalid_input')
-        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in _DEMO_SOURCE_ISSUES or not activate): raise BackendError('unsupported')
-        if _source_profile is None and any(issue in configuration.activation_issues for issue in _DEMO_SOURCE_ISSUES.values()): raise BackendError('unsupported')
+        if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE) or not activate): raise BackendError('unsupported')
+        if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
         if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
         if len(configuration.activation_issues) > 2048 or any(type(v) is not str or len(v) > 1024 for v in configuration.activation_issues) or len(_json(configuration.activation_issues)) > 65536: raise BackendError('invalid_input')
         if type(configuration.name) is not str or not configuration.name or len(configuration.name) > 128:
@@ -559,10 +577,14 @@ class SQLiteCatalogBackend:
             from .errors import BSLError
             if type(configuration.module_runtime) is not str or configuration.module_runtime != MODULE_RUNTIME:
                 raise BackendError('unsupported')
-            if _source_profile is not None: raise BackendError('unsupported')
+            if _source_profile not in (None, APPLICATION_PROFILE): raise BackendError('unsupported')
             try:
-                canonical = import_configuration({f.path:f.content for f in configuration.files},
-                    numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
+                if _source_profile == APPLICATION_PROFILE:
+                    from .configuration_application_profile import import_application_configuration
+                    canonical = import_application_configuration({f.path:f.content for f in configuration.files})
+                else:
+                    canonical = import_configuration({f.path:f.content for f in configuration.files},
+                        numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
             except (BSLError, ValueError, TypeError):
                 raise BackendError('unsupported') from None
             if canonical != configuration: raise BackendError('unsupported')
@@ -731,6 +753,22 @@ class SQLiteCatalogBackend:
         return cls.create(path, import_demo_products_configuration(files),
                           _source_profile=DEMO_PRODUCTS_PROFILE)
 
+    @classmethod
+    @_boundary
+    def create_catalog_forms(cls, path, files):
+        """Fresh explicit catalog_object_forms_v1 storage, never an archive upgrade."""
+        from .configuration_xml import import_catalog_forms_configuration
+        return cls.create(path, import_catalog_forms_configuration(files),
+                          _source_profile=CATALOG_FORMS_PROFILE)
+
+    @classmethod
+    @_boundary
+    def create_application(cls, path, files):
+        """Explicit composed source grant; old/inert import paths remain closed."""
+        from .configuration_application_profile import import_application_configuration
+        return cls.create(path, import_application_configuration(files),
+                          _source_profile=APPLICATION_PROFILE)
+
     @_boundary
     def catalog_write_preparation(self, catalog_id, *, expected=None):
         """Exact product source capability, never arbitrary archive activation.
@@ -740,15 +778,19 @@ class SQLiteCatalogBackend:
         """
         _uuid(catalog_id)
         if self._closed: raise BackendError('closed')
-        if self.storage_version != 6 or self._demo_profile() != DEMO_PRODUCTS_PROFILE:
+        if self.storage_version != 6 or self._demo_profile() not in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE):
             return None
         if self._active is not None: raise BackendError('busy')
         connection = self._connect()
         try:
             connection.execute('BEGIN')
             imported, catalogs, info, manifest = self._demo_source_snapshot(connection)
-            product = next(c for c in catalogs if c.name == 'Номенклатура')
-            if catalog_id != product.identity: return None
+            if self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE):
+                product = next((c for c in catalogs if c.identity == catalog_id), None)
+                if product is None: raise BackendError('not_found')
+            else:
+                product = next(c for c in catalogs if c.name == 'Номенклатура')
+                if catalog_id != product.identity: return None
             form = next(f for f in product.forms if product.default_object_form ==
                         'Catalog.' + product.name + '.Form.' + f.name)
             identity = ConfigurationSourceIdentity(self.database_id,
@@ -757,21 +799,23 @@ class SQLiteCatalogBackend:
                                          or expected != identity):
                 raise BackendError('schema_changed')
             files = {f.path: f.content for f in imported.files}
-            return files['Catalogs/Номенклатура/Ext/ObjectModule.bsl'].decode('utf-8-sig')
+            path = 'Catalogs/' + product.name + '/Ext/ObjectModule.bsl'
+            return files[path].decode('utf-8-sig') if path in files else None
         finally:
             connection.close()
 
     def _demo_profile(self):
-        for profile, issue in _DEMO_SOURCE_ISSUES.items():
-            if self.activation_issues == (issue,):
-                return profile
-        raise BackendError('schema_changed')
+        profile = _source_profile_for_issues(self.activation_issues)
+        if profile is None: raise BackendError('schema_changed')
+        return profile
 
     @_boundary
     def active_form_catalogs(self):
         """Host capability inventory, not arbitrary stored form execution."""
         if self._closed: raise BackendError('closed')
-        if self.storage_version != 6: return ()
+        # This inventory authorizes only the historical imported-form adapter.
+        # Generic object forms require the explicit configuration-form host.
+        if self.storage_version != 6 or self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE): return ()
         view = self.begin_read()
         try: return self._demo_form_catalog_ids
         finally: view.close()
@@ -784,7 +828,7 @@ class SQLiteCatalogBackend:
         if connection.execute("SELECT 1 FROM database_info WHERE typeof(database_uuid)!='text' OR length(CAST(database_uuid AS BLOB))!=36 OR typeof(configuration_uuid)!='text' OR length(CAST(configuration_uuid AS BLOB))!=36 OR typeof(generation)!='integer' OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(activation_issues)!='text' OR length(CAST(activation_issues AS BLOB))>1024 LIMIT 1").fetchone(): raise BackendError('integrity')
         rows = connection.execute('SELECT database_uuid,configuration_uuid,generation,name,activated,activation_issues FROM database_info LIMIT 2').fetchall()
         if (len(rows) != 1 or rows[0] != (str(self.database_id), str(self._demo_configuration_id),
-                self.configuration_generation, self._demo_configuration_name, 1, _json([_DEMO_SOURCE_ISSUES[self._demo_profile()]]))):
+                self.configuration_generation, self._demo_configuration_name, 1, _json(list(self.activation_issues)))):
             raise BackendError('schema_changed')
 
     def _demo_source_snapshot(self, connection, *, admitting=False):
@@ -802,11 +846,12 @@ class SQLiteCatalogBackend:
         if (info[0] != str(self.database_id) or type(info[2]) is not int
                 or info[2] != self.configuration_generation): raise BackendError('schema_changed')
         if (type(info[4]) is not int or info[4] != 1
-                or info[5] != _json([_DEMO_SOURCE_ISSUES[self._demo_profile()]])): raise BackendError('schema_changed')
+                or info[5] != _json(list(self.activation_issues))): raise BackendError('schema_changed')
         if connection.execute("SELECT 1 FROM configuration_file WHERE typeof(path)!='text' OR length(CAST(path AS BLOB))>1024 OR typeof(kind)!='text' OR kind NOT IN ('xml','module') OR typeof(content)!='blob' OR length(content)>1048576 OR typeof(sha256)!='text' OR length(CAST(sha256 AS BLOB))!=64 LIMIT 1").fetchone():
             raise BackendError('integrity')
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
-        if count != 19 or total > _MAX_CONFIG_BYTES: raise BackendError('schema_changed')
+        valid_count = (1 <= count <= _MAX_FILES if self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE) else count == 19)
+        if not valid_count or total > _MAX_CONFIG_BYTES: raise BackendError('schema_changed')
         files = {}; entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
@@ -815,6 +860,7 @@ class SQLiteCatalogBackend:
         try: imported, catalogs = _demo_configuration(files, self._demo_profile())
         except ValueError: raise BackendError('schema_changed') from None
         if (info[1], info[3]) != (str(imported.config_uuid), imported.name): raise BackendError('schema_changed')
+        if imported.activation_issues != self.activation_issues: raise BackendError('schema_changed')
         if tuple((f.path, f.kind) for f in imported.files) != tuple((e[0], e[1]) for e in entries): raise BackendError('integrity')
         expected = {(str(c.identity), c.name, _json(_schema_data(c))) for c in imported.catalogs}
         if connection.execute("SELECT 1 FROM catalog_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))>36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>4096 LIMIT 1").fetchone():
@@ -912,7 +958,7 @@ class SQLiteCatalogBackend:
         active = self.activated and self.storage_version != 5
         return Capabilities(active, active and not self.read_only, active and not self.read_only, active and not self.read_only,
                             catalog_tabular_sections=active and (self.storage_version in (3, 4, 7, 8, 9, 10)
-                                or (self.storage_version == 6 and self._demo_profile() == DEMO_PRODUCTS_PROFILE)),
+                                or (self.storage_version == 6 and self._demo_profile() in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE))),
                             catalog_write_outcomes=active and self.storage_version in (4, 6, 7, 8, 9, 10),
                             catalog_batch_receipts=active,
                             document_read=active and self.storage_version in (7, 8, 9, 10),

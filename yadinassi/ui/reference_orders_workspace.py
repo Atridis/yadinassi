@@ -476,6 +476,7 @@ def main(argv=None):
     parser.add_argument('packages', help='Trusted forms root with reference-order and catalog-choice')
     parser.add_argument('--f', required=True, help='Existing reference Orders SQLite database')
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--browser-session', action='store_true')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.runtime:
@@ -483,7 +484,8 @@ def main(argv=None):
     process = server = None
     try:
         process = ReferenceWorkspaceProcess(args.packages, args.f)
-        server = LocalUIServer(ReferenceWorkspaceController(args.packages, process.exchange), handler=ReferenceWorkspaceHandler)
+        server = LocalUIServer(ReferenceWorkspaceController(args.packages, process.exchange), handler=ReferenceWorkspaceHandler,
+                               browser_session=args.browser_session)
         print('Reference Orders workspace. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:

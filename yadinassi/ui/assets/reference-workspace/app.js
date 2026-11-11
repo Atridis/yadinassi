@@ -202,7 +202,8 @@ class FormClient {
               'outcome_unknown', 'busy', 'request_limit'].includes(reply.result.error))) throw new FormError('transport');
         validateSnapshot(reply.result.state);
         if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
-      } catch {
+      } catch (error) {
+        if (error?.preDispatch === true) throw error;
         this.transportFailed = true;
         throw new FormError('transport');
       }
@@ -295,8 +296,237 @@ function takeSessionCapability(location, history) {
 
 return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, editable, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
 })();
+const __browserAttachment = (() => {
+const {createTransport, readBoundedJSON} = __formClient;
+
+const BROWSER_PROTOCOL = 'yadinassi-browser-attachment/1';
+const RESUME_KEY = 'yadinassi.browser.resume/1';
+const tokenText = value => typeof value === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(value);
+const objectKeys = (value, names) => value && typeof value === 'object' && !Array.isArray(value) &&
+  Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
+const safeCounter = value => Number.isSafeInteger(value) && value >= 0;
+const refusalCodes = ['not_writer', 'stale_generation', 'busy', 'outcome_unknown', 'unauthorized', 'closed', 'capacity', 'invalid_message'];
+const messages = {
+  not_writer: 'This application is controlled in another tab. Take control here to continue.',
+  stale_generation: 'Control changed. Check the current tab ownership before continuing.',
+  busy: 'The host is completing another request. Check ownership again after it finishes.',
+  outcome_unknown: 'A previous request has an unknown outcome. Editing remains locked; no action will be repeated.',
+  unauthorized: 'This connection link has expired. Reopen the complete URL printed by the launcher.',
+  closed: 'This application session is closed. Start the launcher again to open it.',
+  capacity: 'Too many browser attachments. Restart the launcher after resolving any pending edits.',
+  invalid_message: 'The browser connection was rejected. Reopen the complete launcher URL.',
+  connection: 'Cannot verify the connection. Pending input stays in this page; check the connection before continuing.',
+};
+class AttachmentRefusal extends Error {
+  constructor(code) { super(messages[code] || messages.connection); this.name = 'AttachmentRefusal'; this.code = code; this.preDispatch = true; }
+}
+function documentInstance(environment = globalThis) {
+  const bytes = new Uint8Array(16);
+  (environment.crypto || globalThis.crypto).getRandomValues(bytes);
+  return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+}
+function readBrowserLaunch(environment) {
+  const params = new URLSearchParams(environment.location.hash.slice(1));
+  const values = params.getAll('session');
+  const launcher = values.length === 1 && tokenText(values[0]) ? values[0] : null;
+  const requested = params.getAll('attachment').length === 1 && params.get('attachment') === '1';
+  if (environment.location.hash) environment.history.replaceState(null, '', environment.location.pathname);
+  let resume = null;
+  // A full legacy launch URL explicitly selects its legacy protocol, even if
+  // this origin previously had an attachment. Never persist the launcher key.
+  if (!launcher || requested) {
+    try { const stored = environment.sessionStorage.getItem(RESUME_KEY); if (tokenText(stored)) resume = stored; } catch { /* Storage can be unavailable. */ }
+  }
+  return {enabled: requested || !launcher && Boolean(resume), launcher, resume};
+}
+function validateStatus(value, issued, previous) {
+  const keys = ['protocol', 'attachment', 'role', 'generation', 'leaseSeconds', 'graceSeconds', 'recovery', 'closed'];
+  if (issued) keys.push('credential', 'resume');
+  if (!objectKeys(value, keys) || value.protocol !== BROWSER_PROTOCOL ||
+      typeof value.attachment !== 'string' || !/^attachment-[1-9][0-9]{0,5}$/.test(value.attachment) ||
+      !['writer', 'observer'].includes(value.role) || !safeCounter(value.generation) ||
+      !Number.isInteger(value.leaseSeconds) || value.leaseSeconds < 10 || value.leaseSeconds > 3600 ||
+      !Number.isInteger(value.graceSeconds) || value.graceSeconds < 1 || value.graceSeconds > 3600 ||
+      typeof value.recovery !== 'boolean' || typeof value.closed !== 'boolean' ||
+      issued && (!tokenText(value.credential) || !tokenText(value.resume)) ||
+      previous && (value.attachment !== previous.attachment || value.generation < previous.generation)) throw Error('Invalid attachment response');
+  return value;
+}
+function readOnlyRPC(request) {
+  if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
+  return ['workspace.form', 'application.form'].includes(request.method) &&
+    ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
+}
+async function attachmentJSON(response) {
+  if (response.ok) return readBoundedJSON(response);
+  if ([403, 409].includes(response.status)) {
+    // Decode only the closed, fixed pre-dispatch refusal envelope. A generic
+    // HTTP failure remains an unknown business outcome, never a retry signal.
+    const value = await readBoundedJSON({ok: true, body: response.body, headers: response.headers});
+    if (objectKeys(value, ['protocol', 'error']) && value.protocol === BROWSER_PROTOCOL && refusalCodes.includes(value.error))
+      throw new AttachmentRefusal(value.error);
+  }
+  throw Error('Connection unavailable');
+}
+class BrowserAttachment {
+  constructor(environment, launch, changed = () => {}) {
+    this.environment = environment; this.instance = documentInstance(environment); this.bootstrap = launch.launcher || launch.resume;
+    this.changed = changed; this.info = null; this.credential = null; this.paused = true; this.suspended = false;
+    this.busy = false; this.rpcActive = 0; this.businessUnknown = false; this.message = ''; this.timer = null;
+    this.pending = () => false; this.uncertain = () => false; this.reconcile = async () => {};
+    this.reconciling = false; this.commandTail = Promise.resolve(); this.hiddenEpoch = 0; this.heartbeatPending = false;
+    this.hide = () => this.detach();
+    this.show = () => { this.suspended = false; this.paused = true; this.changed(); this.check().catch(() => {}); };
+    environment.addEventListener('pagehide', this.hide); environment.addEventListener('pageshow', this.show);
+  }
+  get writable() { return Boolean(this.info?.role === 'writer' && !this.info.closed && !this.paused && !this.suspended && !this.businessUnknown && !this.uncertain()); }
+  get pendingState() { return Boolean(this.pending() || this.rpcActive || this.businessUnknown || this.uncertain()); }
+  async post(path, body, key, headers = {}, keepalive = false) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 35000);
+    try {
+      return await attachmentJSON(await this.environment.fetch(path, {method: 'POST', cache: 'no-store', credentials: 'omit',
+        mode: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer', keepalive, signal: controller.signal,
+        headers: {'Content-Type': 'application/x-ndjson', 'X-Yadinassi-Session': key, ...headers}, body: JSON.stringify(body) + '\n'}));
+    } finally { clearTimeout(timer); }
+  }
+  adopt(value, issued = false) {
+    validateStatus(value, issued, this.info);
+    if (this.info && (value.generation !== this.info.generation || value.role !== this.info.role)) this.paused = true;
+    if (issued) {
+      this.credential = value.credential;
+      try { this.environment.sessionStorage.setItem(RESUME_KEY, value.resume); } catch { /* Reopen launcher after reload if unavailable. */ }
+      this.bootstrap = value.resume;
+    }
+    const {credential, resume, ...publicStatus} = value; this.info = publicStatus;
+    if (value.role !== 'writer' || value.closed) this.paused = true;
+    this.changed();
+  }
+  fail(error) {
+    this.paused = true; this.message = error instanceof AttachmentRefusal ? error.message : messages.connection;
+    if (error?.code === 'unauthorized' || error?.code === 'closed') {
+      this.stopHeartbeat();
+      try { this.environment.sessionStorage.removeItem(RESUME_KEY); } catch { /* No storage dependency. */ }
+    }
+    if (error?.code === 'outcome_unknown') this.businessUnknown = true;
+    this.changed();
+  }
+  async attach() {
+    if (!tokenText(this.bootstrap)) { this.fail(new AttachmentRefusal('unauthorized')); return false; }
+    if (this.busy) return false;
+    this.busy = true; this.message = ''; this.changed();
+    try {
+      const result = await this.post('/attachment', {action: 'attach', instance: this.instance}, this.bootstrap);
+      this.adopt(result, true); this.startHeartbeat(); await this.synchronize(); return true;
+    } catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  command(action, keepalive = false) {
+    const operation = async () => {
+      if (!this.info || !this.credential) throw new AttachmentRefusal('unauthorized');
+      const result = await this.post('/attachment', {action, generation: this.info.generation, pending: this.pendingState}, this.credential,
+        {'X-Yadinassi-Attachment': this.info.attachment}, keepalive);
+      this.adopt(result); return result;
+    };
+    // Detach must start inside pagehide, not wait behind a paused promise chain.
+    if (keepalive) return operation();
+    const result = this.commandTail.then(operation);
+    this.commandTail = result.catch(() => {}); return result;
+  }
+  async synchronize() {
+    if (this.info?.role !== 'writer' || this.info.closed || this.suspended || this.businessUnknown || this.uncertain()) return;
+    const epoch = this.hiddenEpoch;
+    this.paused = true; this.reconciling = true; this.changed();
+    try { await this.reconcile(); if (epoch === this.hiddenEpoch && !this.suspended) { this.paused = false; this.message = ''; } }
+    finally { this.reconciling = false; this.changed(); }
+  }
+  async check() {
+    if (this.busy || this.suspended) return false;
+    if (!this.info) return this.attach();
+    this.busy = true; this.paused = true; this.message = ''; this.changed();
+    try { await this.command('status'); this.startHeartbeat(); await this.synchronize(); return true; }
+    catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  async takeover() {
+    if (this.busy || this.suspended || this.businessUnknown || this.uncertain()) return false;
+    this.busy = true; this.paused = true; this.message = ''; this.changed();
+    try { await this.command('takeover'); this.startHeartbeat(); await this.synchronize(); return true; }
+    catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  startHeartbeat() {
+    if (this.timer !== null || this.suspended || this.info?.closed) return;
+    const schedule = this.environment.setInterval?.bind(this.environment) || setInterval;
+    this.timer = schedule(() => {
+      if (this.busy || this.suspended || this.heartbeatPending) return;
+      this.heartbeatPending = true;
+      this.command('heartbeat').catch(error => { if (error?.code !== 'busy') this.fail(error); }).finally(() => { this.heartbeatPending = false; });
+    }, 15000);
+    this.timer?.unref?.();
+  }
+  stopHeartbeat() {
+    if (this.timer !== null) (this.environment.clearInterval?.bind(this.environment) || clearInterval)(this.timer);
+    this.timer = null;
+  }
+  detach() {
+    this.hiddenEpoch++; this.paused = true; this.suspended = true; this.stopHeartbeat(); this.changed();
+    if (!this.info) return Promise.resolve();
+    return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
+  }
+  dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async exchange(request) {
+    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    this.rpcActive++;
+    try {
+      const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
+      return result;
+    } catch (error) {
+      if (!(error instanceof AttachmentRefusal)) this.businessUnknown = true;
+      this.fail(error); throw error;
+    } finally { this.rpcActive--; }
+  }
+}
+/** Shared ownership boundary. Legacy and test-injected exchanges remain separate. */
+function createBrowserHost(environment, root) {
+  const launch = readBrowserLaunch(environment);
+  if (!launch.enabled) return {enabled: false, content: root, instance: documentInstance(environment),
+    transport: createTransport(environment.fetch.bind(environment), launch.launcher), launcher: launch.launcher,
+    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, notify() {}};
+  const document = environment.document, banner = document.createElement('section'), description = document.createElement('p'),
+    detail = document.createElement('p'), actions = document.createElement('div'), takeover = document.createElement('button'),
+    check = document.createElement('button'), content = document.createElement('div');
+  banner.className = 'browser-ownership'; banner.setAttribute('aria-label', 'Browser tab ownership');
+  description.setAttribute('role', 'status'); description.setAttribute('aria-live', 'polite');
+  takeover.type = check.type = 'button'; takeover.textContent = 'Take control'; check.textContent = 'Check connection';
+  actions.append(takeover, check); banner.append(description, detail, actions); root.replaceChildren(banner, content);
+  const attachment = new BrowserAttachment(environment, launch, () => paint());
+  function paint() {
+    const writable = attachment.writable;
+    content.inert = !writable; content.setAttribute('aria-disabled', String(!writable));
+    banner.dataset.role = attachment.info?.role || 'connecting';
+    description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
+      : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
+        ? 'Another tab may control this application. Take control here to edit.' : 'Checking tab ownership before editing…');
+    detail.textContent = attachment.pendingState || attachment.info?.recovery
+      ? 'Pending changes or a recovery state need attention. Unsubmitted input is kept only in its original page; it is not restored in another tab.'
+      : 'Closing the last tab allows the host to stop after a grace period when it is safe. Refresh does not repeat an action.';
+    takeover.hidden = !attachment.info || attachment.info.closed || writable;
+    takeover.disabled = attachment.busy || attachment.suspended || attachment.businessUnknown || attachment.uncertain();
+    check.disabled = attachment.busy || attachment.suspended || Boolean(attachment.info?.closed);
+  }
+  takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
+  paint();
+  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); }, notify: paint,
+    start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
+}
+
+return {BROWSER_PROTOCOL, RESUME_KEY, AttachmentRefusal, documentInstance, readBrowserLaunch, BrowserAttachment, createBrowserHost};
+})();
 const __formView = (() => {
-const {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} = __formClient;
+const {FormError, editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} = __formClient;
 
 // DOM identity belongs to a retained view, never to a host control or table ID.
 // BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
@@ -334,11 +564,14 @@ function createFormView(document, root, handlers) {
   const fields = element('div', 'fields');
   const messages = element('section', 'messages'); messages.setAttribute('aria-label', 'Form messages');
   messages.setAttribute('aria-live', 'polite'); messages.setAttribute('aria-atomic', 'true');
+  const recovered = element('section', 'notice warning'); recovered.setAttribute('aria-label', 'Unsubmitted inputs from earlier state'); recovered.hidden = true;
   const actions = element('div', 'form-actions');
   panel.append(panelHeader, empty, fields, messages, actions);
   const footer = element('footer', 'page-footer', 'Changes are handled by the host. Refresh reads state only and never repeats a command.');
-  main.append(header, error, lock, panel, footer); root.replaceChildren(main);
-  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map();
+  main.append(header, error, lock, recovered, panel, footer); root.replaceChildren(main);
+  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map(), recovery = new Map();
+  let ownershipRead = false;
+  const remember = (key, label, draft) => { if (ownershipRead && draft) recovery.set(key, {label, value: draft.value}); };
   let current = null, isBusy = false, focusMemory = null, actionPointer = false;
   let serial = 0;
   const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value) === input;
@@ -375,6 +608,9 @@ function createFormView(document, root, handlers) {
     } else {
       row.htmlFor = id; hint.id = id + '-hint'; input.setAttribute('aria-describedby', hint.id);
       input.type = item.value.type === 'Boolean' ? 'checkbox' : 'text';
+      // A checkbox activation, including its label, owns the preceding blur.
+      // Its change intent flushes all pending fields before applying the toggle.
+      if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
@@ -384,10 +620,10 @@ function createFormView(document, root, handlers) {
         else drafts.set(item.name, {type: active.value.type, value});
       });
       input.addEventListener('change', () => {
-        if (input.type === 'checkbox' && !isBusy) handlers.change(item.name);
+        if (input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
       });
       input.addEventListener('blur', event => {
-        // Clicking or tabbing to a command belongs to its serialized flush path.
+        // Commands and checkbox activations own their serialized flush path.
         if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
             !event.relatedTarget?.closest('[data-form-action]')) handlers.change(item.name);
       });
@@ -402,7 +638,7 @@ function createFormView(document, root, handlers) {
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
   function discardTable(name) {
-    for (const [key, draft] of cellDrafts) if (draft.control === name) cellDrafts.delete(key);
+    for (const [key, draft] of cellDrafts) if (draft.control === name) { remember(key, name + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
   }
   function makeTable(item) {
     const row = element('section', 'form-table');
@@ -440,7 +676,9 @@ function createFormView(document, root, handlers) {
       if (sameValue(active, value)) cellDrafts.delete(key);
       else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
     });
-    input.addEventListener('change', () => { if (input.type === 'checkbox' && !isBusy) handlers.change(locator); });
+    input.addEventListener('change', () => {
+      if (input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
+    });
     input.addEventListener('blur', event => {
       if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
           !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
@@ -454,7 +692,7 @@ function createFormView(document, root, handlers) {
   }
   function renderTable(control, model, active) {
     const item = control.item;
-    const disabled = model.busy || model.locked || !active || !item.enabled || !item.visible;
+    const disabled = recovery.size > 0 || model.busy || model.locked || !active || !item.enabled || !item.visible;
     control.heading.textContent = item.title || item.name;
     control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
     control.scroll.setAttribute('aria-label', item.title || item.name);
@@ -500,6 +738,8 @@ function createFormView(document, root, handlers) {
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
+        if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
+        else delete input.dataset.formAction;
         input.className = 'cell-input' + (value.type === 'Number' ? ' decimal-cell' : '');
         input.disabled = disabled || input.type === 'checkbox' && readOnly; input.readOnly = readOnly;
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
@@ -521,7 +761,7 @@ function createFormView(document, root, handlers) {
       const item = current?.items.find(item => item.name === draft.control);
       const cell = tableCell(item, draft.row, draft.column);
       if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !editable(cell) || cell.value.type !== draft.type ||
-          !scalarEqual(cell.value, draft.base)) cellDrafts.delete(key);
+          !scalarEqual(cell.value, draft.base)) { remember(key, draft.control + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
     }
   }
   function render(model) {
@@ -538,7 +778,7 @@ function createFormView(document, root, handlers) {
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
     refresh.disabled = model.busy || !model.connected || model.exhausted;
-    close.disabled = model.busy || model.locked || !active;
+    close.disabled = recovery.size > 0 || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
@@ -549,12 +789,12 @@ function createFormView(document, root, handlers) {
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
       : current.kind === 'closed' ? 'This form is ' + current.lifecycle + '. You can close this tab.' : 'No visible controls.';
     const names = new Set((current?.items || []).map(item => item.name));
-    for (const [name, control] of controls) if (!names.has(name)) { control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
+    for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
     let fieldIndex = 0, actionIndex = 0;
     for (const item of current?.items || []) {
       let control = controls.get(item.name);
       if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
-        control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
+        remember('field:' + item.name, item.name, drafts.get(item.name)); control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
       }
       if (!control) { control = item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
       control.item = item;
@@ -565,8 +805,8 @@ function createFormView(document, root, handlers) {
       row.hidden = !item.visible || current.kind === 'closed';
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
-      if (readOnly) drafts.delete(item.name);
-      input.disabled = model.busy || model.locked || !active || !item.enabled || !item.visible ||
+      if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
+      input.disabled = (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
         (item.kind === 'button' && item.readOnly) || (input.type === 'checkbox' && readOnly);
       input.readOnly = readOnly;
       if (item.kind === 'button') input.textContent = item.title || item.name;
@@ -587,6 +827,9 @@ function createFormView(document, root, handlers) {
         hint.hidden = !hint.textContent;
       }
     }
+    recovered.hidden = recovery.size === 0;
+    recovered.replaceChildren(element('p', '', 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'),
+      ...Array.from(recovery.values(), draft => element('p', '', draft.label + ': ' + String(draft.value))));
     const nextMessages = current?.messages || [];
     // Rebuild only the bounded message list, never input nodes or host-supplied markup.
     messages.replaceChildren(...nextMessages.map(message => element('p', '', message)));
@@ -604,9 +847,12 @@ function createFormView(document, root, handlers) {
         cellDrafts.delete(cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column));
       }
     },
-    clearDrafts() { drafts.clear(); cellDrafts.clear(); },
-    hasDrafts() { return drafts.size + cellDrafts.size > 0; },
+    beginOwnershipReconcile() { ownershipRead = true; },
+    endOwnershipReconcile() { ownershipRead = false; },
+    clearDrafts() { drafts.clear(); cellDrafts.clear(); recovery.clear(); },
+    hasDrafts() { return drafts.size + cellDrafts.size + recovery.size > 0; },
     changes(only) {
+      if (recovery.size) throw new FormError('draft_changed');
       const changes = [];
       for (const item of current?.items || []) {
         if (item.kind === 'table') {
@@ -636,19 +882,22 @@ return {createFormView};
 const __formApp = (() => {
 const {FormClient, FormError, createTransport, takeSessionCapability} = __formClient;
 const {createFormView} = __formView;
+const {createBrowserHost, AttachmentRefusal} = __browserAttachment;
 
 /** Serialize UI intents before the first await, including blur followed by a command. */
 function mountForm(environment, root, options = {}) {
-  let client = null, token = null, queuedToken = null, busy = false, error = '';
+  const browserHost = options.transport ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  let client = null, token = browserHost?.launcher || null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
   const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
-  const showError = caught => { error = caught instanceof FormError ? caught.message : new FormError('transport').message; };
+  const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
   const finish = () => {
-    busy = false; paint(); options.onChange?.();
+    busy = false; paint(); options.onChange?.(); browserHost?.notify();
     if (queuedToken) { const next = queuedToken; queuedToken = null; connect(next); }
   };
   async function connect(incoming) {
@@ -673,7 +922,7 @@ function mountForm(environment, root, options = {}) {
     }
   }
   async function run(event, name, row) {
-    if (event === 'change' && options.isActive && !options.isActive()) return;
+    if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
@@ -690,9 +939,19 @@ function mountForm(environment, root, options = {}) {
     }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
-    try { changes = view.changes(event === 'change' ? name : undefined); }
+    try {
+      changes = view.changes(event === 'change' ? name : undefined);
+      if (event === 'toggle') {
+        // Validate every draft first, then apply the newly activated checkbox
+        // last, even when declaration order puts it before the field just left.
+        const target = change => typeof name === 'string'
+          ? !Object.hasOwn(change, 'row') && change.control === name
+          : change.control === name.control && change.row === name.row && change.column === name.column;
+        changes = [...changes.filter(change => !target(change)), ...changes.filter(target)];
+      }
+    }
     catch (caught) { showError(caught); paint(); return; }
-    if (event === 'change' && !changes.length) return;
+    if (['change', 'toggle'].includes(event) && !changes.length) return;
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {
@@ -709,6 +968,13 @@ function mountForm(environment, root, options = {}) {
     } catch (caught) { showError(caught); }
     finally { finish(); }
   }
+  async function reconcileOwnership() {
+    if (busy) throw new AttachmentRefusal('busy');
+    if (!client || client.transportFailed || client.outcomeUnknown) throw new FormError('transport');
+    busy = true; view.beginOwnershipReconcile(); paint();
+    try { return await (client.snapshot ? client.resync() : client.hello()); }
+    finally { finish(); view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -723,14 +989,19 @@ function mountForm(environment, root, options = {}) {
       if (!token) { error = new FormError('session_missing').message; paint(); }
     } catch { error = new FormError('session_missing').message; paint(); }
   };
-  if (!options.transport) environment.addEventListener('hashchange', reattach);
+  if (!options.transport && !browserHost?.enabled) environment.addEventListener('hashchange', reattach);
   if (!options.transport) environment.addEventListener('beforeunload', event => {
     if (hasPending()) { event.preventDefault(); event.returnValue = ''; }
   });
   const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
   const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
-  paint(); const ready = options.transport ? connect('embedded') : reattach();
-  return {ready, refresh, run, reattach, hasPending, lock, get client() { return client; }, view};
+  paint();
+  if (browserHost?.enabled) {
+    client = new FormClient(browserHost.transport); token = 'attached';
+    browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+  }
+  const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
+  return {ready, refresh, reconcileOwnership, run, reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -831,7 +1102,7 @@ class ReferenceClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) invalid();
           this.formRevisions.set(result.session,revision);
         }
-      } catch { this.lock(); throw new FormError('transport'); }
+      } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain || result.form?.result.state.uncertain || result.form?.result.error === 'outcome_unknown') {
         this.lock(); throw new FormError('transport');
@@ -854,10 +1125,14 @@ return {REFERENCE_PROTOCOL, validateReferenceReply, ReferenceClient};
 const __workspaceApp = (() => {
 const {createTransport, takeSessionCapability, scalarText, FormError} = __formClient;
 const {mountForm} = __formApp;
+const {createBrowserHost, documentInstance} = __browserAttachment;
 const {REFERENCE_PROTOCOL, ReferenceClient} = __workspaceClient;
 
 let workspaceSerial = 0n;
 function mountReferenceWorkspace(environment, root, exchange = null) {
+  const browserHost = exchange ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document, prefix = 'reference-workspace-' + ++workspaceSerial + '-';
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('div'), background = el('div'), title = el('h1','Reference Orders');
@@ -890,6 +1165,7 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
     (target || entry.panel).focus({preventScroll:true});
   };
   function paint() {
+    browserHost?.notify();
     const currentChild = child(), currentOwner = owner();
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
     const managing = disabled || Boolean(client.pending || opening || currentOwner || recovering.size);
@@ -922,7 +1198,7 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
     paint();
   }
   function schedule() {
-    synchronization = synchronization.then(reconcile).catch(() => client.lock());
+    synchronization = synchronization.then(reconcile).catch(error => { if (error?.preDispatch !== true) client.lock(); });
     return synchronization;
   }
   async function settled() {
@@ -1006,7 +1282,7 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
     if (opening) return opening;
     if (!client.state || client.terminal || client.state.kind === 'closed' || owner() || client.pending) return Promise.resolve();
     opening = (async () => {
-      const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${++openToken}`});
+      const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${instance}-${++openToken}`});
       if (!result || result.error || client.terminal) return;
       const descriptor = client.state.sessions.find(session => session.id === result.session);
       const entry = mounts.get(descriptor.id) || mountSession(descriptor);
@@ -1024,14 +1300,22 @@ function mountReferenceWorkspace(environment, root, exchange = null) {
   const refresh = button('Find / Refresh orders',list,() => perform('workspace.list',{code:code.value}));
   list.append(truncation,rows); background.append(title,introduction,toolbar,list,panels);
   shell.append(notice,background,dialogs); root.replaceChildren(shell);
-  if (!exchange) {
-    try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
-    catch { exchange = async () => { throw Error('Missing session'); }; }
-  }
+  if (!exchange) exchange = browserHost.transport;
   client = new ReferenceClient(exchange,observe,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
-  paint(); const ready = perform('workspace.hello',{protocol:REFERENCE_PROTOCOL});
-  return {ready,client,mounts,pending,openForm,settled};
+  browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  const resume = async () => {
+    if (client.terminal) throw Error('Unknown previous outcome');
+    const retained = new Set(mounts.keys());
+    const result = await client.request('workspace.hello',{protocol:REFERENCE_PROTOCOL});
+    const descriptor = owner();
+    if (descriptor && !mounts.has(descriptor.id)) await mountSession(descriptor).mount.ready;
+    await schedule();
+    for (const id of retained) if (mounts.has(id)) await mounts.get(id).mount.reconcileOwnership();
+    await settled(); return result;
+  };
+  paint(); const ready = browserHost ? browserHost.start(resume) : resume();
+  return {ready,client,mounts,pending,openForm,settled,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('reference-orders-app')) mountReferenceWorkspace(window,window.document.getElementById('reference-orders-app'));
 

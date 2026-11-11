@@ -202,7 +202,8 @@ class FormClient {
               'outcome_unknown', 'busy', 'request_limit'].includes(reply.result.error))) throw new FormError('transport');
         validateSnapshot(reply.result.state);
         if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
-      } catch {
+      } catch (error) {
+        if (error?.preDispatch === true) throw error;
         this.transportFailed = true;
         throw new FormError('transport');
       }
@@ -295,8 +296,237 @@ function takeSessionCapability(location, history) {
 
 return {PROTOCOL, LIMITS, ERROR_MESSAGES, FormError, decimalText, validateScalar, validateSnapshot, scalarText, editable, tableCell, typedInput, scalarEqual, FormClient, readBoundedJSON, createTransport, takeSessionCapability};
 })();
+const __browserAttachment = (() => {
+const {createTransport, readBoundedJSON} = __formClient;
+
+const BROWSER_PROTOCOL = 'yadinassi-browser-attachment/1';
+const RESUME_KEY = 'yadinassi.browser.resume/1';
+const tokenText = value => typeof value === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(value);
+const objectKeys = (value, names) => value && typeof value === 'object' && !Array.isArray(value) &&
+  Object.keys(value).length === names.length && names.every(name => Object.hasOwn(value, name));
+const safeCounter = value => Number.isSafeInteger(value) && value >= 0;
+const refusalCodes = ['not_writer', 'stale_generation', 'busy', 'outcome_unknown', 'unauthorized', 'closed', 'capacity', 'invalid_message'];
+const messages = {
+  not_writer: 'This application is controlled in another tab. Take control here to continue.',
+  stale_generation: 'Control changed. Check the current tab ownership before continuing.',
+  busy: 'The host is completing another request. Check ownership again after it finishes.',
+  outcome_unknown: 'A previous request has an unknown outcome. Editing remains locked; no action will be repeated.',
+  unauthorized: 'This connection link has expired. Reopen the complete URL printed by the launcher.',
+  closed: 'This application session is closed. Start the launcher again to open it.',
+  capacity: 'Too many browser attachments. Restart the launcher after resolving any pending edits.',
+  invalid_message: 'The browser connection was rejected. Reopen the complete launcher URL.',
+  connection: 'Cannot verify the connection. Pending input stays in this page; check the connection before continuing.',
+};
+class AttachmentRefusal extends Error {
+  constructor(code) { super(messages[code] || messages.connection); this.name = 'AttachmentRefusal'; this.code = code; this.preDispatch = true; }
+}
+function documentInstance(environment = globalThis) {
+  const bytes = new Uint8Array(16);
+  (environment.crypto || globalThis.crypto).getRandomValues(bytes);
+  return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+}
+function readBrowserLaunch(environment) {
+  const params = new URLSearchParams(environment.location.hash.slice(1));
+  const values = params.getAll('session');
+  const launcher = values.length === 1 && tokenText(values[0]) ? values[0] : null;
+  const requested = params.getAll('attachment').length === 1 && params.get('attachment') === '1';
+  if (environment.location.hash) environment.history.replaceState(null, '', environment.location.pathname);
+  let resume = null;
+  // A full legacy launch URL explicitly selects its legacy protocol, even if
+  // this origin previously had an attachment. Never persist the launcher key.
+  if (!launcher || requested) {
+    try { const stored = environment.sessionStorage.getItem(RESUME_KEY); if (tokenText(stored)) resume = stored; } catch { /* Storage can be unavailable. */ }
+  }
+  return {enabled: requested || !launcher && Boolean(resume), launcher, resume};
+}
+function validateStatus(value, issued, previous) {
+  const keys = ['protocol', 'attachment', 'role', 'generation', 'leaseSeconds', 'graceSeconds', 'recovery', 'closed'];
+  if (issued) keys.push('credential', 'resume');
+  if (!objectKeys(value, keys) || value.protocol !== BROWSER_PROTOCOL ||
+      typeof value.attachment !== 'string' || !/^attachment-[1-9][0-9]{0,5}$/.test(value.attachment) ||
+      !['writer', 'observer'].includes(value.role) || !safeCounter(value.generation) ||
+      !Number.isInteger(value.leaseSeconds) || value.leaseSeconds < 10 || value.leaseSeconds > 3600 ||
+      !Number.isInteger(value.graceSeconds) || value.graceSeconds < 1 || value.graceSeconds > 3600 ||
+      typeof value.recovery !== 'boolean' || typeof value.closed !== 'boolean' ||
+      issued && (!tokenText(value.credential) || !tokenText(value.resume)) ||
+      previous && (value.attachment !== previous.attachment || value.generation < previous.generation)) throw Error('Invalid attachment response');
+  return value;
+}
+function readOnlyRPC(request) {
+  if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
+  return ['workspace.form', 'application.form'].includes(request.method) &&
+    ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
+}
+async function attachmentJSON(response) {
+  if (response.ok) return readBoundedJSON(response);
+  if ([403, 409].includes(response.status)) {
+    // Decode only the closed, fixed pre-dispatch refusal envelope. A generic
+    // HTTP failure remains an unknown business outcome, never a retry signal.
+    const value = await readBoundedJSON({ok: true, body: response.body, headers: response.headers});
+    if (objectKeys(value, ['protocol', 'error']) && value.protocol === BROWSER_PROTOCOL && refusalCodes.includes(value.error))
+      throw new AttachmentRefusal(value.error);
+  }
+  throw Error('Connection unavailable');
+}
+class BrowserAttachment {
+  constructor(environment, launch, changed = () => {}) {
+    this.environment = environment; this.instance = documentInstance(environment); this.bootstrap = launch.launcher || launch.resume;
+    this.changed = changed; this.info = null; this.credential = null; this.paused = true; this.suspended = false;
+    this.busy = false; this.rpcActive = 0; this.businessUnknown = false; this.message = ''; this.timer = null;
+    this.pending = () => false; this.uncertain = () => false; this.reconcile = async () => {};
+    this.reconciling = false; this.commandTail = Promise.resolve(); this.hiddenEpoch = 0; this.heartbeatPending = false;
+    this.hide = () => this.detach();
+    this.show = () => { this.suspended = false; this.paused = true; this.changed(); this.check().catch(() => {}); };
+    environment.addEventListener('pagehide', this.hide); environment.addEventListener('pageshow', this.show);
+  }
+  get writable() { return Boolean(this.info?.role === 'writer' && !this.info.closed && !this.paused && !this.suspended && !this.businessUnknown && !this.uncertain()); }
+  get pendingState() { return Boolean(this.pending() || this.rpcActive || this.businessUnknown || this.uncertain()); }
+  async post(path, body, key, headers = {}, keepalive = false) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 35000);
+    try {
+      return await attachmentJSON(await this.environment.fetch(path, {method: 'POST', cache: 'no-store', credentials: 'omit',
+        mode: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer', keepalive, signal: controller.signal,
+        headers: {'Content-Type': 'application/x-ndjson', 'X-Yadinassi-Session': key, ...headers}, body: JSON.stringify(body) + '\n'}));
+    } finally { clearTimeout(timer); }
+  }
+  adopt(value, issued = false) {
+    validateStatus(value, issued, this.info);
+    if (this.info && (value.generation !== this.info.generation || value.role !== this.info.role)) this.paused = true;
+    if (issued) {
+      this.credential = value.credential;
+      try { this.environment.sessionStorage.setItem(RESUME_KEY, value.resume); } catch { /* Reopen launcher after reload if unavailable. */ }
+      this.bootstrap = value.resume;
+    }
+    const {credential, resume, ...publicStatus} = value; this.info = publicStatus;
+    if (value.role !== 'writer' || value.closed) this.paused = true;
+    this.changed();
+  }
+  fail(error) {
+    this.paused = true; this.message = error instanceof AttachmentRefusal ? error.message : messages.connection;
+    if (error?.code === 'unauthorized' || error?.code === 'closed') {
+      this.stopHeartbeat();
+      try { this.environment.sessionStorage.removeItem(RESUME_KEY); } catch { /* No storage dependency. */ }
+    }
+    if (error?.code === 'outcome_unknown') this.businessUnknown = true;
+    this.changed();
+  }
+  async attach() {
+    if (!tokenText(this.bootstrap)) { this.fail(new AttachmentRefusal('unauthorized')); return false; }
+    if (this.busy) return false;
+    this.busy = true; this.message = ''; this.changed();
+    try {
+      const result = await this.post('/attachment', {action: 'attach', instance: this.instance}, this.bootstrap);
+      this.adopt(result, true); this.startHeartbeat(); await this.synchronize(); return true;
+    } catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  command(action, keepalive = false) {
+    const operation = async () => {
+      if (!this.info || !this.credential) throw new AttachmentRefusal('unauthorized');
+      const result = await this.post('/attachment', {action, generation: this.info.generation, pending: this.pendingState}, this.credential,
+        {'X-Yadinassi-Attachment': this.info.attachment}, keepalive);
+      this.adopt(result); return result;
+    };
+    // Detach must start inside pagehide, not wait behind a paused promise chain.
+    if (keepalive) return operation();
+    const result = this.commandTail.then(operation);
+    this.commandTail = result.catch(() => {}); return result;
+  }
+  async synchronize() {
+    if (this.info?.role !== 'writer' || this.info.closed || this.suspended || this.businessUnknown || this.uncertain()) return;
+    const epoch = this.hiddenEpoch;
+    this.paused = true; this.reconciling = true; this.changed();
+    try { await this.reconcile(); if (epoch === this.hiddenEpoch && !this.suspended) { this.paused = false; this.message = ''; } }
+    finally { this.reconciling = false; this.changed(); }
+  }
+  async check() {
+    if (this.busy || this.suspended) return false;
+    if (!this.info) return this.attach();
+    this.busy = true; this.paused = true; this.message = ''; this.changed();
+    try { await this.command('status'); this.startHeartbeat(); await this.synchronize(); return true; }
+    catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  async takeover() {
+    if (this.busy || this.suspended || this.businessUnknown || this.uncertain()) return false;
+    this.busy = true; this.paused = true; this.message = ''; this.changed();
+    try { await this.command('takeover'); this.startHeartbeat(); await this.synchronize(); return true; }
+    catch (error) { this.fail(error); return false; }
+    finally { this.busy = false; this.changed(); }
+  }
+  startHeartbeat() {
+    if (this.timer !== null || this.suspended || this.info?.closed) return;
+    const schedule = this.environment.setInterval?.bind(this.environment) || setInterval;
+    this.timer = schedule(() => {
+      if (this.busy || this.suspended || this.heartbeatPending) return;
+      this.heartbeatPending = true;
+      this.command('heartbeat').catch(error => { if (error?.code !== 'busy') this.fail(error); }).finally(() => { this.heartbeatPending = false; });
+    }, 15000);
+    this.timer?.unref?.();
+  }
+  stopHeartbeat() {
+    if (this.timer !== null) (this.environment.clearInterval?.bind(this.environment) || clearInterval)(this.timer);
+    this.timer = null;
+  }
+  detach() {
+    this.hiddenEpoch++; this.paused = true; this.suspended = true; this.stopHeartbeat(); this.changed();
+    if (!this.info) return Promise.resolve();
+    return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
+  }
+  dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async exchange(request) {
+    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    this.rpcActive++;
+    try {
+      const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
+      return result;
+    } catch (error) {
+      if (!(error instanceof AttachmentRefusal)) this.businessUnknown = true;
+      this.fail(error); throw error;
+    } finally { this.rpcActive--; }
+  }
+}
+/** Shared ownership boundary. Legacy and test-injected exchanges remain separate. */
+function createBrowserHost(environment, root) {
+  const launch = readBrowserLaunch(environment);
+  if (!launch.enabled) return {enabled: false, content: root, instance: documentInstance(environment),
+    transport: createTransport(environment.fetch.bind(environment), launch.launcher), launcher: launch.launcher,
+    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, notify() {}};
+  const document = environment.document, banner = document.createElement('section'), description = document.createElement('p'),
+    detail = document.createElement('p'), actions = document.createElement('div'), takeover = document.createElement('button'),
+    check = document.createElement('button'), content = document.createElement('div');
+  banner.className = 'browser-ownership'; banner.setAttribute('aria-label', 'Browser tab ownership');
+  description.setAttribute('role', 'status'); description.setAttribute('aria-live', 'polite');
+  takeover.type = check.type = 'button'; takeover.textContent = 'Take control'; check.textContent = 'Check connection';
+  actions.append(takeover, check); banner.append(description, detail, actions); root.replaceChildren(banner, content);
+  const attachment = new BrowserAttachment(environment, launch, () => paint());
+  function paint() {
+    const writable = attachment.writable;
+    content.inert = !writable; content.setAttribute('aria-disabled', String(!writable));
+    banner.dataset.role = attachment.info?.role || 'connecting';
+    description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
+      : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
+        ? 'Another tab may control this application. Take control here to edit.' : 'Checking tab ownership before editing…');
+    detail.textContent = attachment.pendingState || attachment.info?.recovery
+      ? 'Pending changes or a recovery state need attention. Unsubmitted input is kept only in its original page; it is not restored in another tab.'
+      : 'Closing the last tab allows the host to stop after a grace period when it is safe. Refresh does not repeat an action.';
+    takeover.hidden = !attachment.info || attachment.info.closed || writable;
+    takeover.disabled = attachment.busy || attachment.suspended || attachment.businessUnknown || attachment.uncertain();
+    check.disabled = attachment.busy || attachment.suspended || Boolean(attachment.info?.closed);
+  }
+  takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
+  paint();
+  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); }, notify: paint,
+    start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
+}
+
+return {BROWSER_PROTOCOL, RESUME_KEY, AttachmentRefusal, documentInstance, readBrowserLaunch, BrowserAttachment, createBrowserHost};
+})();
 const __formView = (() => {
-const {editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} = __formClient;
+const {FormError, editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} = __formClient;
 
 // DOM identity belongs to a retained view, never to a host control or table ID.
 // BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
@@ -334,11 +564,14 @@ function createFormView(document, root, handlers) {
   const fields = element('div', 'fields');
   const messages = element('section', 'messages'); messages.setAttribute('aria-label', 'Form messages');
   messages.setAttribute('aria-live', 'polite'); messages.setAttribute('aria-atomic', 'true');
+  const recovered = element('section', 'notice warning'); recovered.setAttribute('aria-label', 'Unsubmitted inputs from earlier state'); recovered.hidden = true;
   const actions = element('div', 'form-actions');
   panel.append(panelHeader, empty, fields, messages, actions);
   const footer = element('footer', 'page-footer', 'Changes are handled by the host. Refresh reads state only and never repeats a command.');
-  main.append(header, error, lock, panel, footer); root.replaceChildren(main);
-  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map();
+  main.append(header, error, lock, recovered, panel, footer); root.replaceChildren(main);
+  const controls = new Map(); const drafts = new Map(), cellDrafts = new Map(), recovery = new Map();
+  let ownershipRead = false;
+  const remember = (key, label, draft) => { if (ownershipRead && draft) recovery.set(key, {label, value: draft.value}); };
   let current = null, isBusy = false, focusMemory = null, actionPointer = false;
   let serial = 0;
   const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value) === input;
@@ -375,6 +608,9 @@ function createFormView(document, root, handlers) {
     } else {
       row.htmlFor = id; hint.id = id + '-hint'; input.setAttribute('aria-describedby', hint.id);
       input.type = item.value.type === 'Boolean' ? 'checkbox' : 'text';
+      // A checkbox activation, including its label, owns the preceding blur.
+      // Its change intent flushes all pending fields before applying the toggle.
+      if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
@@ -384,10 +620,10 @@ function createFormView(document, root, handlers) {
         else drafts.set(item.name, {type: active.value.type, value});
       });
       input.addEventListener('change', () => {
-        if (input.type === 'checkbox' && !isBusy) handlers.change(item.name);
+        if (input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
       });
       input.addEventListener('blur', event => {
-        // Clicking or tabbing to a command belongs to its serialized flush path.
+        // Commands and checkbox activations own their serialized flush path.
         if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
             !event.relatedTarget?.closest('[data-form-action]')) handlers.change(item.name);
       });
@@ -402,7 +638,7 @@ function createFormView(document, root, handlers) {
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
   function discardTable(name) {
-    for (const [key, draft] of cellDrafts) if (draft.control === name) cellDrafts.delete(key);
+    for (const [key, draft] of cellDrafts) if (draft.control === name) { remember(key, name + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
   }
   function makeTable(item) {
     const row = element('section', 'form-table');
@@ -440,7 +676,9 @@ function createFormView(document, root, handlers) {
       if (sameValue(active, value)) cellDrafts.delete(key);
       else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
     });
-    input.addEventListener('change', () => { if (input.type === 'checkbox' && !isBusy) handlers.change(locator); });
+    input.addEventListener('change', () => {
+      if (input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
+    });
     input.addEventListener('blur', event => {
       if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
           !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
@@ -454,7 +692,7 @@ function createFormView(document, root, handlers) {
   }
   function renderTable(control, model, active) {
     const item = control.item;
-    const disabled = model.busy || model.locked || !active || !item.enabled || !item.visible;
+    const disabled = recovery.size > 0 || model.busy || model.locked || !active || !item.enabled || !item.visible;
     control.heading.textContent = item.title || item.name;
     control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
     control.scroll.setAttribute('aria-label', item.title || item.name);
@@ -500,6 +738,8 @@ function createFormView(document, root, handlers) {
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
+        if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
+        else delete input.dataset.formAction;
         input.className = 'cell-input' + (value.type === 'Number' ? ' decimal-cell' : '');
         input.disabled = disabled || input.type === 'checkbox' && readOnly; input.readOnly = readOnly;
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
@@ -521,7 +761,7 @@ function createFormView(document, root, handlers) {
       const item = current?.items.find(item => item.name === draft.control);
       const cell = tableCell(item, draft.row, draft.column);
       if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !editable(cell) || cell.value.type !== draft.type ||
-          !scalarEqual(cell.value, draft.base)) cellDrafts.delete(key);
+          !scalarEqual(cell.value, draft.base)) { remember(key, draft.control + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
     }
   }
   function render(model) {
@@ -538,7 +778,7 @@ function createFormView(document, root, handlers) {
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
     refresh.disabled = model.busy || !model.connected || model.exhausted;
-    close.disabled = model.busy || model.locked || !active;
+    close.disabled = recovery.size > 0 || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
@@ -549,12 +789,12 @@ function createFormView(document, root, handlers) {
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
       : current.kind === 'closed' ? 'This form is ' + current.lifecycle + '. You can close this tab.' : 'No visible controls.';
     const names = new Set((current?.items || []).map(item => item.name));
-    for (const [name, control] of controls) if (!names.has(name)) { control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
+    for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
     let fieldIndex = 0, actionIndex = 0;
     for (const item of current?.items || []) {
       let control = controls.get(item.name);
       if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
-        control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
+        remember('field:' + item.name, item.name, drafts.get(item.name)); control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
       }
       if (!control) { control = item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
       control.item = item;
@@ -565,8 +805,8 @@ function createFormView(document, root, handlers) {
       row.hidden = !item.visible || current.kind === 'closed';
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
-      if (readOnly) drafts.delete(item.name);
-      input.disabled = model.busy || model.locked || !active || !item.enabled || !item.visible ||
+      if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
+      input.disabled = (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
         (item.kind === 'button' && item.readOnly) || (input.type === 'checkbox' && readOnly);
       input.readOnly = readOnly;
       if (item.kind === 'button') input.textContent = item.title || item.name;
@@ -587,6 +827,9 @@ function createFormView(document, root, handlers) {
         hint.hidden = !hint.textContent;
       }
     }
+    recovered.hidden = recovery.size === 0;
+    recovered.replaceChildren(element('p', '', 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'),
+      ...Array.from(recovery.values(), draft => element('p', '', draft.label + ': ' + String(draft.value))));
     const nextMessages = current?.messages || [];
     // Rebuild only the bounded message list, never input nodes or host-supplied markup.
     messages.replaceChildren(...nextMessages.map(message => element('p', '', message)));
@@ -604,9 +847,12 @@ function createFormView(document, root, handlers) {
         cellDrafts.delete(cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column));
       }
     },
-    clearDrafts() { drafts.clear(); cellDrafts.clear(); },
-    hasDrafts() { return drafts.size + cellDrafts.size > 0; },
+    beginOwnershipReconcile() { ownershipRead = true; },
+    endOwnershipReconcile() { ownershipRead = false; },
+    clearDrafts() { drafts.clear(); cellDrafts.clear(); recovery.clear(); },
+    hasDrafts() { return drafts.size + cellDrafts.size + recovery.size > 0; },
     changes(only) {
+      if (recovery.size) throw new FormError('draft_changed');
       const changes = [];
       for (const item of current?.items || []) {
         if (item.kind === 'table') {
@@ -636,19 +882,22 @@ return {createFormView};
 const __formApp = (() => {
 const {FormClient, FormError, createTransport, takeSessionCapability} = __formClient;
 const {createFormView} = __formView;
+const {createBrowserHost, AttachmentRefusal} = __browserAttachment;
 
 /** Serialize UI intents before the first await, including blur followed by a command. */
 function mountForm(environment, root, options = {}) {
-  let client = null, token = null, queuedToken = null, busy = false, error = '';
+  const browserHost = options.transport ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  let client = null, token = browserHost?.launcher || null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
   const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
-  const showError = caught => { error = caught instanceof FormError ? caught.message : new FormError('transport').message; };
+  const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
   const finish = () => {
-    busy = false; paint(); options.onChange?.();
+    busy = false; paint(); options.onChange?.(); browserHost?.notify();
     if (queuedToken) { const next = queuedToken; queuedToken = null; connect(next); }
   };
   async function connect(incoming) {
@@ -673,7 +922,7 @@ function mountForm(environment, root, options = {}) {
     }
   }
   async function run(event, name, row) {
-    if (event === 'change' && options.isActive && !options.isActive()) return;
+    if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
     if (busy || !client || client.locked) return;
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
@@ -690,9 +939,19 @@ function mountForm(environment, root, options = {}) {
     }
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
-    try { changes = view.changes(event === 'change' ? name : undefined); }
+    try {
+      changes = view.changes(event === 'change' ? name : undefined);
+      if (event === 'toggle') {
+        // Validate every draft first, then apply the newly activated checkbox
+        // last, even when declaration order puts it before the field just left.
+        const target = change => typeof name === 'string'
+          ? !Object.hasOwn(change, 'row') && change.control === name
+          : change.control === name.control && change.row === name.row && change.column === name.column;
+        changes = [...changes.filter(change => !target(change)), ...changes.filter(target)];
+      }
+    }
     catch (caught) { showError(caught); paint(); return; }
-    if (event === 'change' && !changes.length) return;
+    if (['change', 'toggle'].includes(event) && !changes.length) return;
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {
@@ -709,6 +968,13 @@ function mountForm(environment, root, options = {}) {
     } catch (caught) { showError(caught); }
     finally { finish(); }
   }
+  async function reconcileOwnership() {
+    if (busy) throw new AttachmentRefusal('busy');
+    if (!client || client.transportFailed || client.outcomeUnknown) throw new FormError('transport');
+    busy = true; view.beginOwnershipReconcile(); paint();
+    try { return await (client.snapshot ? client.resync() : client.hello()); }
+    finally { finish(); view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -723,14 +989,19 @@ function mountForm(environment, root, options = {}) {
       if (!token) { error = new FormError('session_missing').message; paint(); }
     } catch { error = new FormError('session_missing').message; paint(); }
   };
-  if (!options.transport) environment.addEventListener('hashchange', reattach);
+  if (!options.transport && !browserHost?.enabled) environment.addEventListener('hashchange', reattach);
   if (!options.transport) environment.addEventListener('beforeunload', event => {
     if (hasPending()) { event.preventDefault(); event.returnValue = ''; }
   });
   const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
   const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
-  paint(); const ready = options.transport ? connect('embedded') : reattach();
-  return {ready, refresh, run, reattach, hasPending, lock, get client() { return client; }, view};
+  paint();
+  if (browserHost?.enabled) {
+    client = new FormClient(browserHost.transport); token = 'attached';
+    browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+  }
+  const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
+  return {ready, refresh, reconcileOwnership, run, reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -742,27 +1013,46 @@ return {mountForm};
 const __configurationClient = (() => {
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
-const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/1';
+const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/3';
 const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max;
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
-const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open'];
+const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
+const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
+  'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
+  'startup_cancelled','startup_failed','exit_cancelled'];
 function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
-      !keys(state,['kind','title','entries','sessions','active','uncertain']) || !['application','closed'].includes(state.kind) ||
+      !keys(state,['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning']) || !['application','closed'].includes(state.kind) ||
+      !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
+      !Array.isArray(state.messages) || state.messages.length > 64 || state.messages.some(message => !text(message,4096)) || !text(state.exitWarning,4096) ||
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
       !Array.isArray(state.entries) || !state.entries.length || state.entries.length > 64 ||
       !Array.isArray(state.sessions) || state.sessions.length > 8) throw new FormError('transport');
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
-    if (!keys(entry,['id','title']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024)) throw new FormError('transport');
+    if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
+        !['form','catalog-object'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
+  if (state.catalog !== null) {
+    const catalog = state.catalog;
+    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && e.kind === 'catalog-object') ||
+        !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
+        !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
+    const seen = new Set();
+    for (const row of catalog.rows) {
+      if (!keys(row,['key','code','description','deletionMark']) || !recordKey(row.key) || seen.has(row.key) ||
+          !text(row.code,1024) || !text(row.description,1024) || typeof row.deletionMark !== 'boolean') throw new FormError('transport');
+      seen.add(row.key);
+    }
+    if (previous?.catalog?.entry === catalog.entry && catalog.version < previous.catalog.version) throw new FormError('transport');
+  }
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title']) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
@@ -774,7 +1064,7 @@ function validateApplicationReply(reply, request, previous) {
   if (request.method === 'application.form' && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.hello'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
@@ -782,13 +1072,13 @@ function validateApplicationReply(reply, request, previous) {
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
   } else if (request.method === 'application.form' && result.error === null) throw new FormError('transport');
-  if (request.method === 'application.open' && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
+  if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
 class ApplicationClient {
   constructor(exchange, changed = () => {}, failed = () => {}) {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
-    this.formRevisions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
+    this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
@@ -799,6 +1089,11 @@ class ApplicationClient {
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
         result = validateApplicationReply(await this.exchange(request),request,this.state);
+        if (result.state.catalog) {
+          const {entry,version} = result.state.catalog;
+          if (version < (this.catalogVersions.get(entry) ?? 0)) throw new FormError('transport');
+          this.catalogVersions.set(entry,version);
+        }
         for (const session of result.state.sessions) if (this.retired.has(session.id)) throw new FormError('transport');
         for (const session of this.state?.sessions || []) if (!result.state.sessions.some(value => value.id === session.id)) this.retired.add(session.id);
         if (result.form !== null) {
@@ -806,7 +1101,7 @@ class ApplicationClient {
           if (revision < (this.formRevisions.get(result.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(result.session,revision);
         }
-      } catch { this.lock(); throw new FormError('transport'); }
+      } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
       this.changed(result,request); return result;
@@ -828,16 +1123,27 @@ return {APPLICATION_PROTOCOL, validateApplicationReply, ApplicationClient};
 const __configurationApp = (() => {
 const {createTransport, takeSessionCapability} = __formClient;
 const {mountForm} = __formApp;
+const {createBrowserHost, documentInstance} = __browserAttachment;
 const {APPLICATION_PROTOCOL, ApplicationClient} = __configurationClient;
 
 function mountApplication(environment, root, exchange = null) {
+  const browserHost = exchange ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document;
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
+  const workarea = el('div'), catalogPanel = el('section'); workarea.className = 'configuration-workarea';
+  panels.className = 'configuration-form-panels';
+  catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const notice = el('p'); notice.setAttribute('role','status');
+  const applicationMessages = el('section'), exitWarning = el('p');
+  applicationMessages.setAttribute('aria-label','Application messages'); applicationMessages.setAttribute('aria-live','polite');
+  exitWarning.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
+  let selectedEntry = null; const selectedRecords = new Set();
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -854,17 +1160,90 @@ function mountApplication(environment, root, exchange = null) {
     }
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
+    workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+  }
+  function reconcileSelection() {
+    const catalog = client.state?.catalog;
+    if (!catalog || selectedEntry !== catalog.entry) selectedRecords.clear();
+    selectedEntry = catalog?.entry ?? null;
+    const keys = new Set(catalog?.rows.map(row => row.key) || []);
+    for (const key of selectedRecords) if (!keys.has(key)) selectedRecords.delete(key);
+  }
+  function drawCatalog() {
+    reconcileSelection(); catalogPanel.replaceChildren();
+    const catalog = client.state?.catalog;
+    catalogPanel.hidden = !catalog;
+    workarea.className = active && catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+    if (!catalog) return;
+    const entry = client.state.entries.find(entry => entry.id === catalog.entry);
+    const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
+    const unavailable = () => client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
+    const create = button('New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
+    const openSelected = () => {
+      // Resolve from the live set and latest projection, never a captured row
+      // index or a previous render's single selection.
+      reconcileSelection();
+      const current = client.state?.catalog, key = [...selectedRecords][0];
+      if (!unavailable() && selectedRecords.size === 1 && current?.rows.some(row => row.key === key)) openForm(current.entry,key);
+    };
+    const open = button('Open selected',actions,openSelected);
+    const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
+    const table = el('table'), head = el('thead'), headings = el('tr');
+    for (const title of ['Select','Code','Description','Deletion mark']) headings.append(el('th',title));
+    head.append(headings);table.append(head);const body = el('tbody'); table.append(body);
+    const rows = [];
+    function paintSelection() {
+      for (const {row,check,key} of rows) { const checked = selectedRecords.has(key); check.checked = checked; check.disabled = unavailable(); row.setAttribute('aria-selected',String(checked)); }
+      count.textContent = `${selectedRecords.size} selected`;
+      open.disabled = unavailable() || selectedRecords.size !== 1; create.disabled = refresh.disabled = unavailable();
+    }
+    function select(key, multiple) {
+      if (unavailable()) return;
+      if (multiple) { if (selectedRecords.has(key)) selectedRecords.delete(key); else selectedRecords.add(key); }
+      else { selectedRecords.clear(); selectedRecords.add(key); }
+      paintSelection();
+    }
+    for (const record of catalog.rows) {
+      const row = el('tr'), selectCell = el('td'), check = el('input'); check.type = 'checkbox'; row.tabIndex = 0;
+      row.dataset.recordKey = record.key;check.setAttribute('aria-label',`Select ${record.code} ${record.description}`);
+      check.addEventListener('click',event => { event.stopPropagation?.(); select(record.key,true); });
+      row.addEventListener('click',event => select(record.key,Boolean(event.ctrlKey || event.metaKey)));
+      row.addEventListener('keydown',event => {
+        if (event.target && event.target !== row) return;
+        if (event.key === ' ') { event.preventDefault();select(record.key,Boolean(event.ctrlKey || event.metaKey)); }
+        if (event.key === 'Enter') { event.preventDefault();if (selectedRecords.size === 1 && selectedRecords.has(record.key)) openSelected(); }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault(); const index = rows.findIndex(item => item.row === row);
+          rows[index+(event.key === 'ArrowDown'?1:-1)]?.row.focus();
+        }
+      });
+      selectCell.append(check);row.append(selectCell,el('td',record.code),el('td',record.description),el('td',record.deletionMark?'Marked':''));
+      rows.push({row,check,key:record.key});body.append(row);
+    }
+    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
+    paintSelection();
+    workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';
   }
   function paint() {
+    browserHost?.notify();
+    applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
+    applicationMessages.hidden = !client.state?.messages?.length;
+    exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
     title.textContent = client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
-      const node = button(entry.title || `Form ${entry.id}`,entries,() => openForm(entry.id));
-      node.disabled = disabled || client.state.sessions.length >= 8;
+      const node = button(entry.title || `Form ${entry.id}`,entries,() => {
+        if (entry.kind === 'catalog-object') { show(null);perform('application.catalog',{entry:entry.id}); }
+        else openForm(entry.id);
+      });
+      node.disabled = disabled || entry.kind !== 'catalog-object' && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
+    drawCatalog();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -880,7 +1259,7 @@ function mountApplication(environment, root, exchange = null) {
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
     }
-    const generation = request?.method === 'application.open' ? intents.get(request.params.request) : undefined;
+    const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);
     else if (removedActive) show(client.state.active,false);
     paint();
@@ -888,26 +1267,37 @@ function mountApplication(environment, root, exchange = null) {
   async function perform(method,params) {
     try { return await client.request(method,params); }
     catch { status = 'Application connection failed.'; paint(); }
+    finally { paint(); }
   }
-  function openForm(entry) {
-    if (openings.has(entry)) return openings.get(entry);
-    const token = `open-${++openToken}`; intents.set(token,navigation);
-    const opening = perform('application.open',{entry,request:token}).finally(() => { openings.delete(entry); intents.delete(token); });
-    openings.set(entry,opening); return opening;
+  function openForm(entry, record = null) {
+    const key = `${entry}:${record ?? ''}`;
+    if (openings.has(key)) return openings.get(key);
+    const token = `open-${instance}-${++openToken}`; intents.set(token,navigation);
+    const params = {entry,request:token}; if (record !== null) params.record = record;
+    const opening = perform(record === null?'application.open':'application.openRecord',params).finally(() => { openings.delete(key); intents.delete(token);paint(); });
+    openings.set(key,opening); return opening;
   }
   const close = button('Close application',toolbar,async () => {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  shell.append(title,toolbar,entries,tabs,notice,panels); root.replaceChildren(shell);
-  if (!exchange) {
-    try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
-    catch { exchange = async () => { throw Error('Missing session'); }; }
-  }
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea); root.replaceChildren(shell);
+  if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
-  paint(); const ready = perform('application.hello',{protocol:APPLICATION_PROTOCOL});
-  return {ready,client,mounts,show,pending,openForm};
+  browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  const resume = async () => {
+    if (client.terminal) throw Error('Unknown previous outcome');
+    const retained = new Set(mounts.keys());
+    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL});
+    for (const [id,entry] of mounts) {
+      if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+      if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
+    }
+    return result;
+  };
+  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL});
+  return {ready,client,mounts,show,pending,openForm,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));
 
