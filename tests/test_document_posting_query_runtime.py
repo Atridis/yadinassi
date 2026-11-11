@@ -27,10 +27,10 @@ class PostingQueryRuntimeTests(unittest.TestCase):
         vm.register_function('PostingEmit',lambda number,value:observed.append((int(number),value)),returns_value=False)
         vm.register_function('PostingDiagnostic',lambda number,stage,error:diagnostics.append((int(number),stage,error)),returns_value=False)
         source=ROOT/'scripts/document_posting_behavior/observe.bsl'
-        vm.execute(source.read_text(),str(source))
+        vm.execute(source.read_text(encoding='utf-8'),str(source))
         self.assertEqual([number for number,_ in observed],list(range(1,15)),
                          msg=repr(diagnostics)[:8192])
-        self.assertEqual([value for _,value in observed],json.loads((ROOT/'tests/fixtures/document_posting/observations.out').read_text()))
+        self.assertEqual([value for _,value in observed],json.loads((ROOT/'tests/fixtures/document_posting/observations.out').read_text(encoding='utf-8')))
         self.assertEqual([(number,stage) for number,stage,_ in diagnostics],[(10,'write'),(10,'write'),(11,'write'),(13,'write')])
         self.assertEqual([error for _,_,error in diagnostics[:3]],
                          ['document write cancelled','document write cancelled','owned posting cancellation'])
