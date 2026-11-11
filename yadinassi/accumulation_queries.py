@@ -1,0 +1,205 @@
+"""Bounded raw, Balance and Turnovers sources on the document owner's view.
+
+The measured subset has active movements, second-resolution dates, scalar
+dimensions and numeric resources. Totals use exact scaled integer arithmetic
+and the existing native-backed caseless UCA key. Ordinary relational WHERE,
+ORDER BY and GROUP BY retain the query engine's separate host comparison policy.
+No totals table, SQL aggregate, independent connection or transaction is added.
+"""
+from decimal import Decimal
+
+from . import query_parser as syntax
+from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
+from .catalog_backend import BackendError
+from .dates import BSLDate, TICKS_PER_SECOND, _from_parts, _parts
+
+
+def needs_accumulation(statements):
+    return any(arm.family == 'accumulation_register' or any(
+        join.source.family == 'accumulation_register' for join in arm.joins)
+        for arm in syntax.selects(statements))
+
+
+def _boundaries(source, parameters):
+    if source.section is None:
+        if source.period_boundary is not None:
+            raise ValueError('Raw accumulation source has no period arguments')
+        return ()
+    count = {'balance': 1, 'turnovers': 2}.get(source.section)
+    args = source.period_boundary
+    if count is None or type(args) is not tuple or len(args) != count:
+        raise ValueError('Invalid accumulation virtual source')
+    result = []
+    for parameter in args:
+        if type(parameter) is not syntax.Parameter:
+            raise ValueError('Accumulation source requires named Date parameters')
+        key = parameter.name.casefold()
+        if key not in parameters:
+            raise ValueError('Missing accumulation period parameter')
+        value = parameters[key]
+        if type(value) is not BSLDate or value.ticks % TICKS_PER_SECOND:
+            raise TypeError('Accumulation source requires exact second-resolution Date')
+        value.require_known()
+        result.append(_parts(value))
+    if count == 2 and result[0] > result[1]:
+        raise ValueError('Reversed accumulation interval is outside this profile')
+    return tuple(result)
+
+
+class AccumulationQueryManager:
+    def __init__(self, documents, schema):
+        self.documents = documents
+        self._schema = schema
+        self._catalogs = documents._catalogs
+        self._documents_by_id = {document.identity: documents.get_index(document.name)
+            for document in documents._context.backend.accumulation_configuration.documents}
+
+    def _logical(self, field, value):
+        return self._documents_by_id[self._schema.recorder_documents[0]]._logical(field, value)
+
+
+def manager(documents, source, parameters):
+    from .configuration_accumulation import AccumulationConfiguration
+    from .sqlite_catalog import SQLiteCatalogBackend
+    if documents is None or documents._context is None:
+        raise ValueError('Accumulation query requires document context')
+    backend = documents._context.backend
+    if type(backend) is not SQLiteCatalogBackend:
+        raise ValueError('Accumulation query requires the accumulation profile')
+    config = backend.accumulation_configuration
+    if type(config) is not AccumulationConfiguration:
+        raise ValueError('Accumulation query requires the accumulation profile')
+    matches = [schema for schema in config.registers
+               if schema.name.casefold() == source.catalog.casefold()]
+    if len(matches) != 1:
+        raise ValueError('Unknown accumulation-register source')
+    _boundaries(source, parameters)  # Validate before opening a read lease.
+    return AccumulationQueryManager(documents, matches[0])
+
+
+def field(manager, expression, source):
+    from .queries import _Column
+    if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
+        raise ValueError('Unknown query source qualifier')
+    name = expression.parts[-1].casefold()
+    schema = manager._schema
+    if source.section is None:
+        standard = {'period': 'period', 'период': 'period', 'active': 'active',
+            'активность': 'active', 'recorder': 'recorder', 'регистратор': 'recorder',
+            'linenumber': 'line_number', 'номерстроки': 'line_number'}.get(name)
+        if standard == 'period':
+            return _Column('', standard, 'datetime', ('DateTime',))
+        if standard == 'active':
+            return _Column('', standard, 'boolean', ())
+        if standard == 'line_number':
+            return _Column('', standard, 'number', (10, 0, 'Nonnegative'))
+        if standard == 'recorder':
+            if len(schema.recorder_documents) != 1:
+                raise ValueError('Recorder projection requires one declared document type')
+            return _Column('', standard, 'document_ref', (),
+                reference_identity=(manager.documents._metadata, schema.recorder_documents[0]))
+        fields = schema.fields
+    else:
+        fields = schema.dimensions
+    matches = [_Column('', f.identity, f.kind, f.qualifiers, f)
+               for f in fields if f.name.casefold() == name]
+    if source.section is not None:
+        suffixes = (('balance', 'остаток'),) if source.section == 'balance' else (
+            ('turnover', 'оборот'), ('receipt', 'приход'), ('expense', 'расход'))
+        for resource in schema.resources:
+            for english, russian in suffixes:
+                if name in (resource.name.casefold() + english, resource.name.casefold() + russian):
+                    matches.append(_Column('', (resource.identity, english), 'number',
+                                           (38, resource.qualifiers[1], 'Any')))
+    if len(matches) != 1:
+        # RecordType projection/enum parameters and virtual attributes are not
+        # silently converted into numbers or strings by the shared query algebra.
+        raise ValueError('Unknown or unsupported accumulation query field')
+    return matches[0]
+
+
+def fallback_field(manager, source):
+    name = ('Period' if source.section is None else manager._schema.resources[0].name +
+            ('Balance' if source.section == 'balance' else 'Turnover'))
+    return field(manager, syntax.Field((name,)), source)
+
+
+def _dimension_key(value):
+    if type(value) is str:
+        from .collation import caseless_string_key
+        return ('string', caseless_string_key(value))
+    from .relational_queries import _key
+    return _key(value)
+
+
+def load(manager, columns, view, budget, source, parameters):
+    from .sqlite_documents import DocumentView
+    from .sqlite_transactions import _accumulation_port
+    from .queries import _section_value, _MAX_CELLS, _MAX_RESULT_TEXT
+    from .query_sources import _check_number
+    if type(view) is not DocumentView:
+        raise BackendError('unsupported')
+    owner = view._view
+    owner._require()
+    config = owner._backend.accumulation_configuration
+    schema = manager._schema
+    if (config is None or schema not in config.registers or
+            manager.documents._context.backend is not owner._backend):
+        raise BackendError('schema_changed')
+    boundaries = _boundaries(source, parameters)
+    rows, groups = [], {}
+    count = 0
+    for key, partition in _accumulation_port(owner).scan(schema.identity):
+        for row in partition.rows:
+            count += 1
+            if count > syntax.MAX_ROWS:
+                raise ValueError('Query input row limit exceeded')
+            if row.active is not True:
+                raise BackendError('unsupported')
+            values = {f.identity: _section_value(manager, f, value)
+                for f, value in zip(schema.fields, row.dimensions + row.resources + row.attributes)}
+            # Charge every source cell, even a row excluded by the period bound
+            # or a field absent from projection. Reduction cannot bypass budgets.
+            budget[0] += len(values) + 5
+            budget[1] += sum(len(value) for value in values.values() if type(value) is str)
+            if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
+                raise ValueError('Query input resource limit exceeded')
+            if source.section is None:
+                period = row.period
+                values.update(period=_from_parts((period.year, period.month, period.day,
+                    period.hour, period.minute, period.second)), active=row.active,
+                    line_number=Decimal(row.line_number))
+                if any(column.field == 'recorder' for column in columns):
+                    values['recorder'] = manager._documents_by_id[key.document_id]._ref(key.record_id)
+                rows.append(tuple(values[column.field] for column in columns))
+                continue
+            if source.section == 'balance':
+                if row.period >= boundaries[0]:
+                    continue
+            elif not boundaries[0] <= row.period <= boundaries[1]:
+                continue
+            dims = tuple(values[f.identity] for f in schema.dimensions)
+            group_key = tuple(_dimension_key(value) for value in dims)
+            group = groups.setdefault(group_key, (dims, [], []))
+            group[1].append(row.resources)
+            group[2].append(1 if row.direction is AccumulationDirection.RECEIPT else -1)
+    for dims, vectors, weights in groups.values():
+        vectors, weights = tuple(vectors), tuple(weights)
+        net = _sum_resource_vectors(schema, vectors, weights)
+        if source.section == 'balance' and all(value == 0 for value in net):
+            continue
+        values = dict(zip((f.identity for f in schema.dimensions), dims))
+        suffix = 'balance' if source.section == 'balance' else 'turnover'
+        totals = {suffix: net}
+        if source.section == 'turnovers':
+            for name, weight in (('receipt', 1), ('expense', -1)):
+                chosen = tuple(vector for vector, sign in zip(vectors, weights) if sign == weight)
+                totals[name] = _sum_resource_vectors(schema, chosen, (1,) * len(chosen))
+            if all(value == 0 for vector in totals.values() for value in vector):
+                raise ValueError('All-zero turnover group is outside the measured profile')
+        for name, vector in totals.items():
+            for resource, value in zip(schema.resources, vector):
+                _check_number(value, (38, resource.qualifiers[1], 'Any'))
+                values[(resource.identity, name)] = value
+        rows.append(tuple(values[column.field] for column in columns))
+    return rows

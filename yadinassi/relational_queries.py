@@ -87,7 +87,7 @@ def required(query):
         return (type(node) is syntax.Comparison and
                 (node.operator in ('is_null', 'is_not_null') or type(node.field) is not syntax.Field or
                  type(node.value) in (syntax.Field, syntax.Aggregate, syntax.Expression, syntax.NullLiteral) or node.value is None))
-    return (query.derived is not None or query.family in ('document', 'information_register') or query.joins or query.groups or query.having is not None or query.distinct
+    return (query.derived is not None or query.family in ('document', 'information_register', 'accumulation_register') or query.joins or query.groups or query.having is not None or query.distinct
             or any(type(p.field) is not syntax.Field for p in query.projections)
             or any(type(o.field) is not syntax.Field for o in query.order)
             or extended(query.predicate))
@@ -164,6 +164,9 @@ class _Plan:
             if source.family == 'document':
                 if documents is None: raise ValueError('Document query sources require document context')
                 manager = documents.get_index(source.catalog)
+            elif source.family == 'accumulation_register':
+                from .accumulation_queries import manager as accumulation_manager
+                manager = accumulation_manager(documents, source, self.parameters)
             elif source.family == 'information_register':
                 from .recorder_queries import manager as recorder_manager
                 manager = recorder_manager(documents, source.catalog)
@@ -176,6 +179,9 @@ class _Plan:
             self.managers.append(manager)
             section = None
             if source.section is not None:
+                if source.family == 'accumulation_register':
+                    self.sections.append(None)
+                    continue
                 if source.family == 'information_register':
                     if not manager._schema.periodic or source.section not in ('first','last') or type(source.period_boundary) is not syntax.Parameter:
                         raise ValueError('Invalid periodic register virtual source')
@@ -233,6 +239,10 @@ class _Plan:
         # COUNT(*) still binds a source field so rows and identity are validated.
         for i, fields in enumerate(self.fields):
             if not fields and not (self.sources[i].temporary or self.sources[i].external or self.sources[i].derived is not None):
+                if self.sources[i].family == 'accumulation_register':
+                    from .accumulation_queries import fallback_field
+                    fields.append(fallback_field(self.managers[i], self.sources[i]))
+                    continue
                 name = (self.managers[i]._schema.dimensions[0].name
                         if self.sources[i].family == 'information_register' else 'Ref')
                 fields.append(self.resolve_field(i, syntax.Field((name,))))
@@ -245,6 +255,9 @@ class _Plan:
     def resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
+        if source.family == 'accumulation_register' and not (source.temporary or source.external):
+            from .accumulation_queries import field as accumulation_field
+            return accumulation_field(self.managers[index], expression, source)
         if source.derived is not None:
             if len(expression.parts) == 2 and expression.parts[0].casefold() != source.alias.casefold():
                 raise ValueError('Unknown derived source qualifier')
@@ -727,6 +740,9 @@ class _Plan:
             if len(rows) > syntax.MAX_ROWS or budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
                 raise ValueError('Query input resource limit exceeded')
             return rows
+        if self.sources[index].family == 'accumulation_register':
+            from .accumulation_queries import load as load_accumulation
+            return load_accumulation(manager, columns, view, budget, self.sources[index], self.parameters)
         if self.sources[index].family == 'information_register':
             from .recorder_queries import RecorderQueryManager, load as load_recorder
             if type(manager) is RecorderQueryManager:
@@ -829,7 +845,7 @@ class _Plan:
         if view is None:
             manager = next((m for m in self.all_managers if m is not None), None)
             if manager is not None:
-                if any(arm.family in ('document', 'information_register') or any(j.source.family in ('document', 'information_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
+                if any(arm.family in ('document', 'information_register', 'accumulation_register') or any(j.source.family in ('document', 'information_register', 'accumulation_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
                     view = self.catalogs._context.backend.begin_query_read()
                 else:
                     view = _transaction_query_view(manager)

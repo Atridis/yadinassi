@@ -289,8 +289,26 @@ def without_request_site_diagnostic(template):
                             'ЭтапВхода = "request_key";')
 
 
+def without_accumulation_exit_status(source):
+    """Test-only exact diagnostic inverse before immutable historical layers."""
+    base = 'f2992733fcb01cdb2a03195dd80c879f44cc487dc5a84e9fff530aa5a5a6e4d1'
+    candidate = '174440879c406f8042cf78625c7f9c0bdff507273125b2101cef27bc6cd04b04'
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
+        return source  # Existing historical identity checks still reject drift.
+    current = ("        error = FullError('process_failed')\n"
+               "        error.exit_code = code  # Retain finite process status, never command/log text.\n"
+               "        raise error\n")
+    if source.count(current) != 1:
+        raise AssertionError('accumulation exit status unique hunk')
+    restored = source.replace(current, "        raise FullError('process_failed')\n", 1)
+    if hashlib.sha256(restored.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('accumulation exit status inner identity')
+    return restored
+
+
 def without_tree_access_probe(source):
     """Exact probe-only comparison inverse; no runtime admission fallback."""
+    source = without_accumulation_exit_status(source)
     inventory = json.loads((REPOSITORY / 'tests/tree_access_probe_source_inverse.json').read_text(encoding='utf-8'))
     contract = inventory['scripts/native_1c_bootstrap/full_suite.py']
     base = 'e203d1469d191d48ab3db74d03877010b833689b46263f4585723bc29a0f928a'

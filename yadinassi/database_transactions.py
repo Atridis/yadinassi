@@ -96,6 +96,24 @@ def require_admission():
     if not _admission_allowed.get(): raise BackendError('unsupported')
 
 
+def active(backend):
+    """Inspect only this synchronous execution's journal; never open or clean up.
+
+    Unavailable, foreign and uncertain owners are not reported as inactive.
+    This status function grants no transaction or callback authority.
+    """
+    from .sqlite_catalog import SQLiteCatalogBackend
+    if (not _admission_allowed.get() or type(backend) is not SQLiteCatalogBackend
+            or _execution.get() is None or backend is not _execution_backend.get()
+            or backend.format_version not in (11, 12, 13, 14)):
+        raise BackendError('unsupported')
+    if backend._closed: raise BackendError('closed')
+    transaction = current(backend)
+    if transaction is None: return False
+    if transaction.unit.state != 'open': raise BackendError('uncertain_commit')
+    return True
+
+
 def begin(backend):
     from .sqlite_catalog import SQLiteCatalogBackend
     if (not _admission_allowed.get() or type(backend) is not SQLiteCatalogBackend
@@ -302,12 +320,24 @@ class RootOperationReceipt:
 
 
 def require_host_root(backend):
-    """Only a trusted synchronous host caller outside every BSL activation."""
+    """Only the exact v13 forms grant, outside every BSL activation.
+
+    This host entry point is not an alternate root for scalar recorder or v14
+    accumulation journals. BSL TransactionActive remains separately read-only.
+    """
     from .sqlite_catalog import SQLiteCatalogBackend
+    from .configuration_posting_application import PostingApplicationConfiguration, PROFILE, canonical
     require_admission()
     if (type(backend) is not SQLiteCatalogBackend or _execution.get() is not None
-            or _execution_backend.get() is not None or _registered(backend) is not None):
+            or _execution_backend.get() is not None or _registered(backend) is not None
+            or backend.format_version != 13
+            or type(backend.posting_configuration) is not PostingApplicationConfiguration
+            or backend.posting_configuration.profile != PROFILE):
         raise BackendError('unsupported')
+    if backend._closed: raise BackendError('closed')
+    configuration = canonical(backend.posting_configuration)
+    if backend.export_configuration() != dict(configuration.files):
+        raise BackendError('schema_changed')
 
 
 class RootOperation:

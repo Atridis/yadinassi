@@ -1,0 +1,56 @@
+{
+  "repository": "vanessa-opensource/add",
+  "commit": "2deeed6636dfbb84f42ae625fd40c8ab662bb64e",
+  "license": {
+    "spdx": "MPL-2.0",
+    "path": "LICENSE",
+    "source_url": "https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/LICENSE",
+    "git_blob": "a612ad9813b006ce81d1ee438dd784da99a54007",
+    "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+    "bytes": 16725
+  },
+  "files": [
+    {
+      "path": "lib/CF/83xdd/AccumulationRegisters/РегистрНакопленияОстатки.xml",
+      "source_url": "https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/lib/CF/83xdd/AccumulationRegisters/РегистрНакопленияОстатки.xml",
+      "git_blob": "154bb545aa8f71b63559e1fb123f401c4c245b58",
+      "sha256": "19f0e833301d68843e0dddb921a678def1c0e819037a501200bab3fce3a6e227",
+      "bytes": 10303,
+      "encoding": "UTF-8 with BOM",
+      "schema_version": "2.4",
+      "modified": false,
+      "used_for": "Complete declaration, namespace header, generated type wrappers, StandardAttributes, Resource and Dimension wrappers"
+    },
+    {
+      "path": "lib/CF/83xdd/AccumulationRegisters/РегистрНакопления2.xml",
+      "source_url": "https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/lib/CF/83xdd/AccumulationRegisters/РегистрНакопления2.xml",
+      "git_blob": "6d6ba109ca02909ebaa06af190df7165c5856bc6",
+      "sha256": "31e8e0fa9d9ef01965da39eeb41ffd85c1f7663be2f19be0e978121eb290aeb2",
+      "bytes": 8081,
+      "encoding": "UTF-8 with BOM",
+      "schema_version": "2.4",
+      "modified": false,
+      "used_for": "Only the complete Attribute wrapper; sibling catalog-reference dimensions are never installed"
+    }
+  ],
+  "derivative": {
+    "path": "../../AccumulationRegister.xml",
+    "recipe": "../../native_source.py",
+    "modified": true,
+    "license": "MPL-2.0",
+    "encoding": "UTF-8 with BOM",
+    "schema_version": "2.4",
+    "bytes": 13445,
+    "sha256": "907fac5dbbed44e5d7034fdd7825b9a22835d807d379475fb72ec939467020a9",
+    "changes": [
+      "Replace register and field names/UUIDs and all six generated TypeId/ValueId pairs with the pre-existing owned identities.",
+      "Clear copied synonyms; retain empty comments.",
+      "Keep UseStandardCommands=false, RegisterType=Balance, DataLockControlMode=Managed, EnableTotalsSplitting=false.",
+      "Clone Resource wrappers for Amount Number(10,2) and Quantity Number(10,3), both AllowedSign=Any.",
+      "Clone Dimension wrappers for Item String(32,Variable) and Warehouse Number(4,0,Any), both UseInTotals=true.",
+      "Clone the sibling Attribute wrapper for Note String(32,Variable), replacing its entire boolean Type.",
+      "Preserve the complete native namespace header, all five StandardAttribute descriptors and all other wrapper properties.",
+      "Add the MPL-2.0 derivative source notice."
+    ]
+  }
+}

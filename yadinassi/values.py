@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    ACCUMULATION_RECORD_TYPE = "ВидДвиженияНакопления"
     USER_MESSAGE = "СообщениеПользователю"
     FORM = "ФормаКлиентскогоПриложения"
     FORM_ATTRIBUTE = "РеквизитФормы"
@@ -177,6 +178,8 @@ class BSLType(Enum):
     VALUE_LIST_ITEM = "ЭлементСпискаЗначений"
 
     def __str__(self) -> str:
+        if self is BSLType.ACCUMULATION_RECORD_TYPE:
+            raise ValueError("Представление вида движения накопления не измерено")
         # Native run 40221284540, collections record 856: TypeOf displays.
         # Enum values stay unspaced lookup names, not presentation aliases.
         if self in (BSLType.VALUE_STORAGE, BSLType.DEFLATION):

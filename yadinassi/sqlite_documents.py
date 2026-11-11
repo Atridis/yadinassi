@@ -208,7 +208,7 @@ class DocumentView:
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
     def _posted_value(self, key):
-        if self._view._backend.format_version != 13: return False
+        if self._view._backend.format_version not in (13, 14): return False
         from .sqlite_document_posting_state import read_posted
         return read_posted(self._connection, self.database_id, key)
 
@@ -220,7 +220,7 @@ class DocumentView:
         if not number or type(mark) is not int or mark not in (0,1): raise BackendError('integrity')
         key = DocumentKey(self.database_id,schema.identity,identity)
         extra = {}
-        if self._view._backend.format_version == 13:
+        if self._view._backend.format_version in (13, 14):
             from .sqlite_document_posting_state import read_posted
             extra['posted'] = read_posted(self._connection, self.database_id, key)
         return DocumentCard(key,
