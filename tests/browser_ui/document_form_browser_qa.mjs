@@ -119,8 +119,7 @@ function applicationAllowedRequest(target){
 }
 async function startHost(){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-document-forms'),
-    '--document-objects','--f',path.join(owned,'documents.sqlite')];
+  const args=['-m','yadinassi','--ui','--f',path.join(owned,'documents.sqlite')];
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=applicationLaunchReader();let settled=false;
   url=await bounded(new Promise((resolve,reject)=>{
@@ -223,7 +222,7 @@ async function screenshot(name){
 async function sourceBinding(){
   const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-document-forms','tests/browser_ui',
     'tests/test_configuration_document_forms.py','tests/test_configuration_document_replication.py','tests/test_configuration_document_admission.py',
-    'tests/test_document_form_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
+    'tests/test_document_form_browser_qa_contract.py','tests/test_database_ui_launcher.py','tests/test_database_ui_launch_process.py','tests/test_sqlite_launch_snapshot.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   return {commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}'),source};
 }

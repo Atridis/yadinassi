@@ -1175,6 +1175,12 @@ class SQLiteCatalogBackend:
                             register_write=active and self.storage_version in (8, 9, 10) and not self.read_only)
 
     @_boundary
+    def launch_snapshot(self):
+        """Detached exact-source UI admission under one owned read lease."""
+        from .sqlite_launch import launch_snapshot
+        return launch_snapshot(self)
+
+    @_boundary
     def begin_read(self):
         from .database_transactions import current
         transaction = current(self)

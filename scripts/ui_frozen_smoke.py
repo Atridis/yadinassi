@@ -23,7 +23,7 @@ def check_ui(executable, directory, env):
     directory.mkdir(parents=True)
     seed(directory)
     database = directory / 'owned.sqlite'
-    process = subprocess.Popen([executable, '--catalog-ui', '--f', str(database)],
+    process = subprocess.Popen([executable, '--ui', '--f', str(database)],
         cwd=directory, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL)
     lines = Queue()

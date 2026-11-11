@@ -29,7 +29,7 @@ EXCHANGE_TIMEOUT = 30
 
 class RuntimeBridge:
     """One persistent child and sequential transport; never retries a write."""
-    def __init__(self, database):
+    def __init__(self, database, *, launch_binding=None):
         environment = dict(os.environ)
         environment['PYTHONIOENCODING'] = 'utf-8'
         if getattr(sys, 'frozen', False):
@@ -37,6 +37,8 @@ class RuntimeBridge:
         else:
             environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
             command = [sys.executable, '-m', 'yadinassi.ui.editor_stdio', database]
+        if launch_binding is not None:
+            command += ['--launch-binding', launch_binding]
         self._start(command, environment)
 
     def _start(self, command, environment):
@@ -362,10 +364,12 @@ def main(argv=None):
     parser.add_argument('--f', required=True, metavar='SQLITE_FILE', help='Existing supported local SQLite application')
     parser.add_argument('--open-browser', action='store_true', help='Explicitly open the launch URL in your browser')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
+    parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     bridge = server = None
     try:
-        bridge = RuntimeBridge(args.f)
+        bridge = (RuntimeBridge(args.f) if args.launch_binding is None else
+                  RuntimeBridge(args.f, launch_binding=args.launch_binding))
         server = LocalUIServer(bridge, browser_session=args.browser_session)
         print('Yadinassi catalog editor — local-only; references are read-only.')
         print('Open this per-launch URL (do not share it):')

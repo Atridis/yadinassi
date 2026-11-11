@@ -21,7 +21,7 @@ from yadinassi.ui.form_app import (FormController, FormHandler, FormProcess,
 from yadinassi.ui.form_package import load_client, load_server
 from yadinassi.ui.local_app import LocalUIServer, LocalTransportError
 from yadinassi.ui.protocol import encode_line, decode_line, MAX_LINE_BYTES
-from scripts import entrypoint
+from yadinassi import launcher as entrypoint
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / 'examples/forms/estimate'

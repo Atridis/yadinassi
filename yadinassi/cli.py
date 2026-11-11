@@ -132,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
         print(_EMPTY_DATABASE, file=sys.stderr)
         return 2
     parser = argparse.ArgumentParser(prog="yadinassi", description="Интерпретатор языка 1С (BSL)",
-                                     allow_abbrev=False)
+                                     allow_abbrev=False,
+                                     epilog="UI: yadinassi --ui --f SQLITE_FILE [--open-browser]. The database must already grant a supported UI profile.")
     parser.add_argument("file", nargs="?", help="файл BSL для исполнения; '-' — стандартный ввод")
     parser.add_argument("-c", "-с", "--command", help="код BSL для исполнения")
     parser.add_argument("--f", metavar="SQLITE_FILE",

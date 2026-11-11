@@ -106,7 +106,7 @@ def _runtime(configuration, side, *, business_application=False, reference_appli
 
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None, launch_route=None):
         self.configuration = configuration
         self.reference_application = reference_application
         self.posting_application = posting_application
@@ -116,6 +116,8 @@ class ConfigurationBroker:
             self.posting_configuration = import_posting_application(dict(configuration.source_files), posting_runtime=PROFILE)
         self.definitions = _definitions(configuration)
         self.database = database
+        self.launch_binding = launch_binding
+        self.launch_route = launch_route
         self.bind_interpreter = bind_interpreter
         self.sessions = {}
         self.allocated = 0
@@ -127,10 +129,13 @@ class ConfigurationBroker:
         self.record_context = None
         self.application = None
         self.application_invocation = None
+        if (application_host or business_application or reference_application) and bind_interpreter is not None:
+            raise ValueError('application owns its interpreter family')
+        if launch_binding is not None:
+            if database is None: raise ValueError('database UI binding requires database')
+            self.record_context = self._open_context()
         if application_host or business_application or reference_application:
-            if bind_interpreter is not None:
-                raise ValueError('application owns its interpreter family')
-            context = None if database is None else SQLiteDBContext(database)
+            context = self.record_context if self.record_context is not None else (None if database is None else SQLiteDBContext(database))
             try:
                 self.application = _runtime(configuration, 'server', business_application=business_application, reference_application=reference_application, database_context=context, output=lambda value: None)
                 self.record_context = context
@@ -141,12 +146,26 @@ class ConfigurationBroker:
                 if context is not None: context.close()
                 raise
 
+    def _open_context(self):
+        if self.database is None:
+            return None
+        context = SQLiteDBContext(self.database)
+        try:
+            if self.launch_binding is not None:
+                from .database_launch import verify_binding
+                verify_binding(context.backend, self.launch_binding,
+                    dict(self.configuration.source_files), route=self.launch_route)
+            return context
+        except BaseException:
+            context.close()
+            raise
+
     def _catalog(self, entry):
         definition = self.definitions.get(entry) if type(entry) is int else None
         if definition is None or (definition.catalog_schema is None and definition.document_schema is None) or self.database is None:
             raise ValueError('declared object form and active database required')
         if self.record_context is None:
-            self.record_context = SQLiteDBContext(self.database)
+            self.record_context = self._open_context()
         context = self.record_context
         context.require_active(tabular_sections=True)
         if context.backend.export_configuration() != dict(self.configuration.source_files):
@@ -262,7 +281,7 @@ class ConfigurationBroker:
                 self._catalog(entry)
             self.allocated += 1
             sid = 'form-' + str(self.allocated)
-            context = None if self.database is None else SQLiteDBContext(self.database)
+            context = self._open_context()
             server = nocontext = None
             try:
                 definition = self.definitions[entry]
@@ -436,7 +455,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -456,15 +475,23 @@ class ConfigurationProcess(FormProcess):
             command += ['--posting-application']
         if document_objects:
             command += ['--document-objects']
+        if launch_binding is not None:
+            command += ['--launch-binding', launch_binding]
         self._start(command, environment)
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False):
+                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, launch_binding=None):
     broker = None
     try:
+        route = None
+        if launch_binding is not None:
+            from .database_launch import configuration_route
+            route = configuration_route(catalog_objects=catalog_objects, application_host=application_host,
+                document_objects=document_objects, business_application=business_application,
+                reference_application=reference_application, posting_application=posting_application)
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application)
+            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application, launch_binding=launch_binding, launch_route=route)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -1088,17 +1115,28 @@ def main(argv=None):
     parser.add_argument('--application-host', action='store_true', help='Explicit application/CommonModules and declared forms profile')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application)) > 1:
         parser.error('choose one explicit configuration source profile')
     if (args.document_objects or args.business_application or args.reference_application or args.posting_application) and args.f is None:
         parser.error('document applications require --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, launch_binding=args.launch_binding)
     process = server = controller = None
     try:
         configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
-        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
+        if args.launch_binding is not None:
+            from .database_launch import verify_binding, configuration_route
+            from ..sqlite_catalog import SQLiteCatalogBackend
+            backend = SQLiteCatalogBackend(args.f, read_only=True)
+            try:
+                route = configuration_route(catalog_objects=args.catalog_objects, application_host=args.application_host,
+                    document_objects=args.document_objects, business_application=args.business_application,
+                    reference_application=args.reference_application, posting_application=args.posting_application)
+                verify_binding(backend, args.launch_binding, dict(configuration.source_files), route=route)
+            finally: backend.close()
+        process = ConfigurationProcess(args.configuration, args.f, launch_binding=args.launch_binding, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
         controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
             browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application, idle_close=controller.idle_close)
