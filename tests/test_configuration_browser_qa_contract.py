@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -11,13 +12,16 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source = (ROOT / 'tests/browser_ui/configuration_browser_qa.mjs').read_text()
 
-    def test_exactly_three_closed_scenarios(self):
+    def test_exactly_six_closed_scenarios(self):
         declaration = self.source.split('const scenarioNames=', 1)[1].split(';', 1)[0]
         self.assertEqual(re.findall(r"'([^']+)'", declaration), [
             'declared_welcome_bsl_openform_child_parameters_close',
             'server_nocontext_repeated_commands_and_independent_forms',
-            'retained_hidden_invalid_draft_blocks_close'])
-        self.assertEqual(self.source.count('await scenario(scenarioNames['), 3)
+            'retained_hidden_invalid_draft_blocks_close',
+            'declared_catalog_create_form_and_object_refusals_save',
+            'catalog_selection_and_independent_dirty_forms',
+            'bsl_declared_second_catalog_and_durable_reopen'])
+        self.assertEqual(self.source.count('await scenario(scenarioNames['), 6)
         self.assertIn("assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios')", self.source)
 
     def test_one_sandboxed_browser_and_nonroot_only(self):
@@ -43,7 +47,7 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
                          "sha256(await readFile(path.join(repo,name)))"):
             self.assertIn(required, self.source)
         self.assertIn(".split('\\0').filter(Boolean)", self.source)
-        for prefix in ('frontend/form', 'frontend/configuration', 'examples/configuration-forms',
+        for prefix in ('frontend/form', 'frontend/configuration', 'examples/configuration-forms', 'examples/configuration-catalog-forms',
                        'tests/test_configuration_browser_qa_contract.py'):
             self.assertIn("'" + prefix + "'", self.source)
 
@@ -63,7 +67,7 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
 
     def test_closed_wire_methods_and_no_code_inputs(self):
         validator = self.source.split('function checkRequest(request){', 1)[1].split('async function repeatClick', 1)[0]
-        for method in ('application.hello','application.open','application.snapshot','application.close','application.form'):
+        for method in ('application.hello','application.open','application.openRecord','application.catalog','application.snapshot','application.close','application.form'):
             self.assertIn("'"+method+"'", validator)
         self.assertIn("exactKeys(packet.params,'entry request')", validator)
         self.assertIn("exactKeys(packet.params,'session request')", validator)
@@ -72,8 +76,8 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, validator)
         self.assertIn('!allowedRequest(target,origin)', self.source)
 
-    def test_closed_apps_and_no_database_or_native_claim(self):
-        self.assertIn("['welcome','counter'].includes(application)", self.source)
+    def test_closed_apps_and_explicit_owned_database_without_native_claim(self):
+        self.assertIn("['welcome','counter','catalog'].includes(application)", self.source)
         self.assertIn("'-m','yadinassi.ui.configuration_app'", self.source)
         self.assertIn("path.join(repo,'examples/configuration-forms',application)", self.source)
         self.assertNotIn('--create-db', self.source)
@@ -103,7 +107,10 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
         self.assertEqual(self.source.count('console.log('), 1)
 
     def test_exact_artifact_allowlist_hashes_and_no_capability_storage(self):
-        self.assertIn("const screenshots=['configuration-parameters.png','configuration-independent.png','configuration-draft-narrow.png']", self.source)
+        declared = self.source.split('const screenshots=', 1)[1].split(';', 1)[0]
+        self.assertEqual(re.findall(r"'([^']+)'", declared), [
+            'configuration-parameters.png', 'configuration-independent.png', 'configuration-draft-narrow.png',
+            'configuration-catalog-saved.png', 'configuration-catalog-selection.png', 'configuration-catalog-narrow.png'])
         for required in ("await mkdir(output)", "'wx'", "'screenshot_not_png'", 'sha256:sha256(bytes)',
                          'resultSha256:sha256(raw)', "'unexpected_artifact'", "'capability_leak'",
                          'localStorage.length+sessionStorage.length', '(await context.cookies()).length,0'):
@@ -112,8 +119,8 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
     def test_workflow_route_is_only_the_explicit_configuration_branch(self):
         workflow = (ROOT / '.github/workflows/ui-browser-qa.yml').read_text(encoding='utf-8')
         self.assertEqual(workflow.split('\non:\n',1)[1].split('\npermissions:',1)[0].strip(),
-            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/configuration-browser-reviewed]')
-        step = workflow.split('      - name: Acquire three configuration form flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
+            'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed, codex/scalar-editor-browser-reviewed, codex/posting-application-browser-reviewed]')
+        step = workflow.split('      - name: Acquire six configuration and catalog form flows with Chromium sandbox enabled\n',1)[1].split('\n      - ',1)[0]
         self.assertIn("if: github.ref == 'refs/heads/codex/configuration-browser-reviewed'", step)
         self.assertIn('timeout-minutes: 5', step)
         self.assertIn('QA_SOURCE_SHA: ${{ github.sha }}', step)
@@ -134,5 +141,47 @@ class ConfigurationBrowserQAContractTests(unittest.TestCase):
         paths = step.split('          path: |\n',1)[1].split('          if-no-files-found:',1)[0]
         self.assertEqual([line.strip() for line in paths.splitlines()],
             ['${{ runner.temp }}/yadinassi-configuration-browser-artifacts/'+name for name in (
-                'result.json','manifest.json','configuration-parameters.png','configuration-independent.png','configuration-draft-narrow.png')])
+                'result.json','manifest.json','configuration-parameters.png','configuration-independent.png','configuration-draft-narrow.png',
+                'configuration-catalog-saved.png','configuration-catalog-selection.png','configuration-catalog-narrow.png')])
         self.assertIn('if-no-files-found: error\n          retention-days: 14', step)
+
+    def test_catalog_flow_covers_real_refusals_selection_and_durable_reopen(self):
+        for required in ("'Form reject'", "'Object reject'", "'repeat_save_duplicated_record'",
+                         "'single_multi_selection_and_exact_opaque_target'", "'per_row_commands_returned'",
+                         "'independent_backend_audit_and_fresh_host_reopen'", "catalogFixture('audit')",
+                         "'catalog_narrow_page_overflow'", "datePicker:false,nativeStandardFormWrite:false"):
+            self.assertIn(required, self.source)
+        self.assertIn("exactKeys(packet.params,'entry record request')", self.source)
+        self.assertIn("/^record-[1-9][0-9]{0,8}$/", self.source)
+        self.assertIn("'yadinassi-configuration-app/3'", self.source)
+
+    def test_owned_fixture_uses_explicit_profile_and_independent_read_only_audit(self):
+        fixture = (ROOT / 'tests/browser_ui/configuration_catalog_fixture.py').read_text()
+        for required in ('SQLiteCatalogBackend.create_catalog_forms', 'read_only=True',
+                         "root / 'catalogs.sqlite'", 'root.is_symlink()', "BSLDate(0)",
+                         "Decimal('9.00')", "'emptyDatePreserved': True"):
+            self.assertIn(required, fixture)
+        self.assertNotIn('sqlite3', fixture)
+        self.assertIn("timeout:remaining(10000),maxBuffer:4096", self.source)
+        self.assertIn("path.join(owned,'catalogs.sqlite')", self.source)
+
+    def test_catalog_selectors_follow_declared_accessible_titles_not_control_names(self):
+        tail = self.source.split('await scenario(scenarioNames[3]', 1)[1]
+        for catalog, names in (('Products', ('CodeInput', 'DescriptionInput', 'PriceInput', 'ActiveInput', 'AvailableDateInput', 'StatusLabel')),
+                               ('Categories', ('CodeInput', 'DescriptionInput', 'StatusLabel'))):
+            form = ET.parse(ROOT / 'examples/configuration-catalog-forms/Catalogs' / catalog / 'Forms/Card/Ext/Form.xml').getroot()
+            ns = {'f': 'http://v8.1c.ru/8.3/xcf/logform'}
+            controls = {item.attrib['name']: item for item in form.find('f:ChildItems', ns)}
+            for name in names:
+                title = controls[name].findtext('f:Title', namespaces=ns)
+                self.assertTrue(title)
+                self.assertRegex(tail, r"(?:field|value|commitInput)\('" + re.escape(title) + r"'")
+                self.assertNotRegex(tail, r"(?:field|value|commitInput)\('" + re.escape(name) + r"'")
+
+    def test_async_text_commits_use_enter_and_busy_state_but_keep_final_draft(self):
+        helper = self.source.split('async function commitInput(name,text){',1)[1].split('\n}',1)[0]
+        self.assertIn("await field(name).fill(text);await field(name).press('Enter');await idle()",helper)
+        self.assertIn("await field('Unit price').fill('5');await value('Unit price','5')",self.source)
+        self.assertIn("phase='declared_product_checkbox_after_dirty_price'",self.source)
+        self.assertIn("phase='second_card_retained_price'",self.source)
+        self.assertNotIn('waitForTimeout', self.source)

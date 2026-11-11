@@ -4,6 +4,8 @@ These are explicit host semantics, not native temporary-table storage or measure
 native statement-result parity. Persistent database access is read-only through
 one CatalogReadView per package. No table rows escape as mutable buffers.
 """
+from .database_transactions import query_view as _transaction_query_view
+
 from dataclasses import dataclass
 from decimal import Decimal
 from threading import Lock
@@ -91,9 +93,17 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 raise ValueError('Document query sources require document context')
             documents._metadata._snapshot()
         if registers_needed:
-            if information_registers is None:
-                raise ValueError('Information-register query sources require register context')
-            information_registers._metadata._snapshot()
+            from .sqlite_catalog import SQLiteCatalogBackend
+            from .configuration_posting import PostingConfiguration
+            context = documents._context if documents is not None else None
+            backend = context.backend if context is not None else None
+            posting = backend.posting_configuration if type(backend) is SQLiteCatalogBackend else None
+            if type(posting) is PostingConfiguration:
+                documents._metadata._snapshot()
+            else:
+                if information_registers is None:
+                    raise ValueError('Information-register query sources require register context')
+                information_registers._metadata._snapshot()
         if composite: catalogs._metadata._snapshot()
         if manager._closed:
             raise ValueError('Temporary table manager is closed')
@@ -119,7 +129,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                                  information_registers=information_registers)
                 source_manager = next((m for m in plan.all_managers if m is not None), None)
                 if view is None and source_manager is not None:
-                    view = (catalogs._context.backend.begin_query_read() if composite else source_manager._view())
+                    view = (catalogs._context.backend.begin_query_read() if composite else _transaction_query_view(source_manager))
                 output = plan.execute(view=view, budget=budget)
                 if statement.into is not None:
                     tables[statement.into.casefold()] = _Table(output._columns, output._rows)

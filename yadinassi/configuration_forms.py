@@ -12,7 +12,7 @@ from uuid import UUID
 from .configuration_xml import (MD, V8, _LOGFORM, _accept_source_files,
     _object, _parse, _props, _text, _type)
 from .form_model import (BSLFormAttribute, BSLFormField, BSLFormButton,
-    BSLFormCommand, BSLFormFieldView, BSLClientApplicationForm, name, text, scalar)
+    BSLFormCommand, BSLFormTable, BSLFormFieldView, BSLClientApplicationForm, name, text, scalar)
 from .form_program import compile_form_module
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
@@ -119,17 +119,82 @@ class FormDefinition:
     title: str
     items: tuple
     commands: tuple
+    catalog_schema: object = None
+    object_fields: tuple = ()
+    write_handler: str = ''
+    document_schema: object = None
+    object_sections: tuple = ()
+    tables: tuple = ()
+    reference_targets: tuple = ()
+    reference_slots: tuple = ()
+    posting_application: bool = False
 
     def client_package(self):
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
             bindings=self.program.server_bindings, discard_commands=(), dirty_attribute='')
 
-    def create_server(self, *, parameters=None, database_context=None):
+    def create_server(self, *, parameters=None, database_context=None, object_session=None, interpreter_factory=None, _validate_only=False):
         from .form_replication import ReplicatedFormServer
+        initial = {}; server_bindings = ()
+        attributes, tables = self.attributes, self.tables
+        reference_scope = None; enroll = None
+        if self.reference_targets and not _validate_only:
+            if object_session is None:
+                raise ValueError('reference forms require an owned persistence activation')
+            from .configuration_references import owned_reference_scope
+            from .form_tables import FormTableColumn, FormTableSchema
+            reference_scope, reference_managers, enroll = owned_reference_scope(object_session, self.reference_targets)
+            slots = {(slot.casefold(), column.casefold()): target for slot, column, target in self.reference_slots}
+            attributes = tuple(BSLFormAttribute(a.name, reference_scope.descriptor(slots[a.name.casefold(), ''])
+                if (a.name.casefold(), '') in slots else a.value_type, title=a.title) for a in self.attributes)
+            tables = tuple(FormTableSchema(t.name, tuple(FormTableColumn(c.name,
+                reference_scope.descriptor(slots[t.name.casefold(), c.name.casefold()])
+                if (t.name.casefold(), c.name.casefold()) in slots else c.value_type,
+                c.title, c.read_only) for c in t.columns), t.title) for t in self.tables)
+        if self.catalog_schema is not None or self.document_schema is not None:
+            if object_session is not None:
+                object_session.verify_source()
+                if object_session.schema != (self.document_schema or self.catalog_schema):
+                    raise ValueError('object form schema mismatch')
+                values = dict(object_session.image().values) if self.document_schema else object_session.values()
+                initial = {slot: values[field] for field, slot in self.object_fields}
+            from .form_runtime import FormServerBinding
+            def write(session):
+                if object_session is None:
+                    raise ValueError('object form has no persistence activation')
+                if self.posting_application:
+                    raise ValueError('posting requires an explicit host command after form dispatch')
+                return (self._write_document(session, object_session) if self.document_schema
+                        else self._write_object(session, object_session))
+            server_bindings = (FormServerBinding('WriteObject', write),)
+        choice_holder = {}
+        if self.reference_targets:
+            from .form_runtime import FormServerBinding
+            server_bindings += (FormServerBinding('HostReferenceAction',
+                lambda session: choice_holder['choice'].execute(session)),)
         server = ReplicatedFormServer(self.program.server, self.program.endpoints,
-            handlers=self.program.handlers, attributes=self.attributes,
-            bindings=dict(self.bindings), database_context=database_context)
+            handlers=self.program.handlers, attributes=attributes, tables=tables,
+            bindings=dict(self.bindings), database_context=database_context,
+            initial_values=initial, server_bindings=server_bindings, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         session = server.session; form = session.form
+        if self.posting_application:
+            form._host_readonly = frozenset((dict(self.object_fields)["Posted"].casefold(),))
+        if enroll is not None:
+            enroll(session.interpreter)
+            session._reference_enroll_activation = enroll
+            session._reference_managers = reference_managers
+            session._reference_slots = self.reference_slots
+            from .configuration_reference_choice import ConfigurationReferenceChoice
+            choice_holder['choice'] = ConfigurationReferenceChoice(self, server, object_session)
+            server._reference_choice = choice_holder['choice']
+        if self.document_schema:
+            session._document_row_ids = {}
+            if object_session is not None:
+                self._install_document_image(session, object_session.image())
+        if self.write_handler:
+            routine = session._bind(self.write_handler, 'server', 1)
+            if routine.parameters[0].by_value:
+                raise ValueError('BeforeWriteAtServer requires reference Cancel')
         bind_parameters(session, parameters)
         form.title = self.title
         for item_name, title, action in self.commands:
@@ -138,7 +203,8 @@ class FormDefinition:
             command.title, command.action = title, action
             form.commands._values[item_name.casefold()] = command
         for item_name, kind, title, path, action, visible, enabled, read_only in self.items:
-            item = BSLFormButton(form, item_name) if kind == 'Button' else BSLFormField(form, item_name)
+            item = (BSLFormButton(form, item_name) if kind == 'Button' else
+                    BSLFormTable(form, item_name) if kind == 'Table' else BSLFormField(form, item_name))
             item.title, item.visible, item.enabled, item.read_only = title, visible, enabled, read_only
             if kind == 'Button':
                 item.command_name = path
@@ -147,11 +213,152 @@ class FormDefinition:
                 if action:
                     session._bind(action, 'client', 1)
                 item.action = action
-                item.view = {'InputField': BSLFormFieldView.INPUT,
+                if kind != 'Table': item.view = {'InputField': BSLFormFieldView.INPUT,
                     'LabelField': BSLFormFieldView.LABEL, 'CheckBoxField': BSLFormFieldView.CHECKBOX}[kind]
             form.items._values[item_name.casefold()] = item
         session._allocated = len(self.items) + len(self.commands)
         return server
+
+
+    def _write_object(self, session, owned):
+        """Explicit local WriteObject service, not native standard FormWrite."""
+        from .form_replication import _pack_state
+        from .ui.protocol import encode_line
+        if session.state != 'open':
+            raise ValueError('WriteObject requires an open object form')
+        def values():
+            return {field: session.form.get_member(slot) for field, slot in self.object_fields}
+        def prepare(candidate):
+            for field, slot in self.object_fields:
+                session.form.set_member(slot, candidate[field])
+            if self.write_handler:
+                cancelled = session._invoke(self.write_handler, 'server', [False])[0]
+                if type(cancelled) is not bool:
+                    raise ValueError('invalid form write cancellation')
+                if cancelled:
+                    return None
+            return values()
+        projected_values = {}
+        def preflight(result):
+            if hasattr(owned, 'projection_preflight'):
+                owned.projection_preflight(result.listing)
+            if len(result.listing.cards) > 256:
+                raise ValueError('catalog projection limit')
+            # Validate the whole bounded authoritative list, not merely the
+            # saved card's old eight-row page. No success with an unusable list.
+            encode_line({'entry': 64, 'version': 2147483647, 'rows': [
+                {'key': 'record-4096', 'code': card.values[0],
+                 'description': card.values[1], 'deletionMark': card.values[2]}
+                for card in result.listing.cards]})
+            previous = session.form._data.copy()
+            try:
+                for field, value in result.values:
+                    session.form.set_member(dict(self.object_fields)[field], value)
+                encode_line(_pack_state(session, session._replica_handler_names))
+                projected_values.clear()
+                projected_values.update((slot.casefold(), session.form._data[slot.casefold()])
+                                        for _, slot in self.object_fields)
+            finally:
+                session.form._data = previous
+        result = owned.save(values(), before_write=prepare, validate_result=preflight)
+        if result.state in ('saved', 'unchanged'):
+            # Preflight already validated the complete scalar projection.
+            session.form._data.update(projected_values)
+        locked = owned.pending_commit or owned.pending_refresh
+        slots = {slot.casefold() for _, slot in self.object_fields}
+        original = {item[0].casefold(): item[-1] for item in self.items}
+        for key, item in session.form.items._values.items():
+            if isinstance(item, BSLFormField) and item.data_path.casefold() in slots:
+                item.read_only = locked or original.get(key, True)
+        return result.state
+
+
+    def _document_image(self, session):
+        from .configuration_document import DocumentImage, DocumentRowImage
+        form=session.form
+        # Posting consumes a detached image only after the form dispatch exits.
+        # Read immutable scalar storage without manufacturing a BSL activation.
+        if self.posting_application and not session._busy:
+            return DocumentImage(tuple((field,form._data[slot.casefold()]) for field,slot in self.object_fields),
+                tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
+                    tuple((column.name,row._data[column.name.casefold()]) for column in table.schema.columns))
+                    for row in table._rows))
+                    for section,slot in self.object_sections for table in (form._tables[slot.casefold()],)))
+        return DocumentImage(tuple((field,form.get_member(slot)) for field,slot in self.object_fields),
+            tuple((section,tuple(DocumentRowImage(session._document_row_ids.get((slot.casefold(),row._row_id)),
+                tuple((column.name,row.get_member(column.name)) for column in table.schema.columns))
+                for row in table._rows))
+                for section,slot in self.object_sections for table in (form._tables[slot.casefold()],)))
+
+    def _install_document_image(self, session, image):
+        from .configuration_document import DocumentImage
+        from .form_tables import validate_table_data
+        if type(image) is not DocumentImage: raise TypeError('document image required')
+        if tuple(k for k,v in image.values)!=tuple(k for k,v in self.object_fields):
+            raise ValueError('complete document header required')
+        if tuple(k for k,v in image.sections)!=tuple(k for k,v in self.object_sections):
+            raise ValueError('complete document sections required')
+        data=session.form._data.copy()
+        for (field,slot),(_,value) in zip(self.object_fields,image.values):
+            key=slot.casefold()
+            from .form_references import adjust
+            adjusted=adjust(session.form._attributes[key].value_type, value)
+            if type(adjusted) is not type(value) or adjusted!=value: raise ValueError("document header does not fit form type")
+            data[key]=adjusted
+        identities={};replacements={};allocations={}
+        for (_,slot),(_,rows) in zip(self.object_sections,image.sections):
+            table=session.form._tables[slot.casefold()]
+            old_ids=[r._row_id for r in table._rows]
+            allocated=table._allocated
+            records=[]
+            for index,row in enumerate(rows):
+                if tuple(k for k,v in row.values)!=tuple(c.name for c in table.schema.columns):
+                    raise ValueError('complete document row required')
+                if index<len(old_ids): identity=old_ids[index]
+                else: allocated+=1;identity=allocated
+                values=tuple(v for k,v in row.values)
+                for column,value in zip(table.schema.columns,values):
+                    adjusted=column.value_type.adjust_value(value)
+                    if type(adjusted) is not type(value) or adjusted!=value: raise ValueError('document row does not fit form type')
+                records.append((identity,values))
+                if row.identity is not None: identities[slot.casefold(),identity]=row.identity
+            replacements[slot.casefold()]=tuple(records);allocations[slot.casefold()]=allocated
+        validate_table_data(session.form,replacements,data)
+        for key,records in replacements.items(): session.form._tables[key]._replace_rows(records,allocations[key])
+        session.form._data=data
+        session._document_row_ids=identities
+
+    def _write_document(self, session, owned):
+        from .form_tables import BSLFormDataCollection
+        from .form_replication import _pack_state
+        from .ui.protocol import encode_line
+        if session.state!='open': raise ValueError('WriteObject requires open document form')
+        # Recovery must not rebuild an intent from newer form values.
+        candidate=None if owned.pending_commit or owned.pending_refresh else self._document_image(session)
+        def preflight(result):
+            if hasattr(owned,'projection_preflight'): owned.projection_preflight(result.listing)
+            if len(result.listing)>256: raise ValueError('document list projection limit')
+            old_data=session.form._data.copy();old_tables=session.form._tables;old_ids=session._document_row_ids
+            try:
+                session.form._tables={schema.name.casefold():BSLFormDataCollection(session.form,schema,i)
+                    for i,schema in enumerate((t.schema for t in old_tables.values()),1)}
+                for key,table in session.form._tables.items():
+                    previous=old_tables[key]._snapshot()
+                    table._replace_rows(previous.rows,previous.allocated)
+                self._install_document_image(session,result.image)
+                encode_line(_pack_state(session,session._replica_handler_names))
+            finally:
+                session.form._data=old_data;session.form._tables=old_tables;session._document_row_ids=old_ids
+        result=owned.save(candidate,validate_result=preflight)
+        if result.state in ('saved','unchanged'):
+            self._install_document_image(session,result.image)
+        locked=owned.pending_commit or owned.pending_refresh
+        slots={slot.casefold() for _,slot in (*self.object_fields,*self.object_sections)}
+        original={item[0].casefold():item[-1] for item in self.items}
+        for key,item in session.form.items._values.items():
+            if isinstance(item,BSLFormField) and item.data_path.casefold() in slots:
+                item.read_only=locked or original.get(key,True)
+        return result.state
 
 
 @dataclass(frozen=True)
@@ -160,6 +367,7 @@ class ConfigurationForms:
     name: str
     source_sha256: str
     forms: object
+    source_files: object = None
 
     @property
     def title(self):
@@ -174,14 +382,67 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
     props = _children(root, {L+k for k in ('Title', 'Attributes', 'ChildItems', 'Commands', 'Events')})
-    attrs = []
+    attrs = []; object_fields = (); object_sections = (); tables = (); main_seen = False
+    reference_slots = []
+    reference_targets = tuple((i, catalog.identity, catalog.name) for i, catalog in enumerate(reference_catalogs, 1))
+    references = {identity: target for target, identity, _ in reference_targets}
+    def field_descriptor(field, slot, column=''):
+        from .ui.catalog_editor import _descriptor
+        if field.kind != 'catalog_ref': return _descriptor(field.kind, field.qualifiers)
+        if field.target_catalog_id not in references:
+            raise ValueError('reference target is outside the explicit form source grant')
+        reference_slots.append((slot, column, references[field.target_catalog_id]))
+        # Metadata-only structural template. Live create_server materializes the
+        # scoped descriptor before installing any value or running lifecycle code.
+        return BSLTypeDescription('String')
+    schema = document_schema or catalog_schema
     for node in _inventory(props.get(L+'Attributes'), {L+'Attribute'}, 128):
-        values = _children(node, {L+k for k in ('Type', 'Title')})
+        values = _children(node, {L+k for k in ('Type', 'Title', 'MainAttribute')})
+        if L+'MainAttribute' in values:
+            if (schema is None or main_seen or node.get('name') != 'Object'
+                    or not _flag(values, 'MainAttribute', False)):
+                raise ValueError('one catalog Object main attribute required')
+            type_node = values.get(L+'Type')
+            if type_node is None or type_node.attrib or len(type_node) != 1 or (type_node.text or '').strip():
+                raise ValueError('exact catalog object type required')
+            child = type_node[0]
+            target = (child.text or '').strip()
+            if (child.tag != '{'+V8+'}Type' or child.attrib or len(child) or (child.tail or '').strip()
+                    or ':' not in target):
+                raise ValueError('exact catalog object type required')
+            prefix, local = target.split(':', 1)
+            if namespaces.get(id(child), {}).get(prefix) != 'http://v8.1c.ru/8.1/data/enterprise/current-config' or local != ('DocumentObject.' if document_schema else 'CatalogObject.')+schema.name:
+                raise ValueError('object form owner/type mismatch')
+            from .ui.catalog_editor import _descriptor
+            if document_schema:
+                from .configuration_document import require_document_form_schema
+                from .form_tables import FormTableColumn, FormTableSchema
+                require_document_form_schema(schema, reference_fields=bool(reference_catalogs))
+                specs = [('Number', 'string', (schema.number_length,)), ('Date', 'datetime', ()), ('DeletionMark', 'boolean', ())]
+                if posting_application: specs.append(('Posted', 'boolean', ()))
+            else:
+                if schema.tabular_sections or (not reference_catalogs and any(f.kind == 'catalog_ref' for f in schema.fields)):
+                    raise ValueError('only scalar catalog object forms supported')
+                specs = [('Code', 'string', (schema.code_length,)), ('Description', 'string', (schema.description_length,)), ('DeletionMark', 'boolean', ())]
+            specs.extend((f.name, f.kind, f.qualifiers) for f in schema.fields)
+            object_fields = tuple((field, 'ObjectField'+str(i)) for i, (field, _, _) in enumerate(specs, 1))
+            for (field, kind, qualifiers), (_, slot) in zip(specs, object_fields):
+                declared = next((f for f in schema.fields if f.name == field), None)
+                descriptor = field_descriptor(declared, slot) if declared is not None else _descriptor(kind, qualifiers)
+                attrs.append(BSLFormAttribute(slot, descriptor, title=field))
+            if document_schema:
+                object_sections = tuple((section.name, 'ObjectField'+str(i)) for i, section in enumerate(schema.tabular_sections, len(specs)+1))
+                tables = tuple(FormTableSchema(slot, tuple(FormTableColumn(f.name, field_descriptor(f, slot, f.name), f.name) for f in section.fields), section.name)
+                    for section, (_, slot) in zip(schema.tabular_sections, object_sections))
+            main_seen = True
+            continue
+        if node.get('name').casefold() in ('object', 'объект', 'writeobject') or node.get('name').casefold().startswith('objectfield'):
+            raise ValueError('reserved object form attribute')
         if L+'Type' not in values:
             raise ValueError('form attribute type required')
         kind, q, _ = _type({M+'Type': values[L+'Type']}, namespaces, {})
@@ -195,22 +456,47 @@ def _definition(public_name, identity, raw, module):
         else:
             raise ValueError('only scalar form attributes supported')
         attrs.append(BSLFormAttribute(node.get('name'), value_type, title=_value(values, 'Title')))
+    if schema is not None and not main_seen:
+        raise ValueError('catalog object form main attribute required')
     commands = []
     for node in _inventory(props.get(L+'Commands'), {L+'Command'}, 64):
         values = _children(node, {L+'Title', L+'Action'})
         commands.append((node.get('name'), _value(values, 'Title'), name(_value(values, 'Action'))))
-    items = []; attr_names = {a.name.casefold() for a in attrs}; command_names = {c[0].casefold() for c in commands}
-    for node in _inventory(props.get(L+'ChildItems'), {L+k for k in ('InputField','LabelField','CheckBoxField','Button')}, 128):
+    items = []; attr_names = {a.name.casefold() for a in attrs} | {t.name.casefold() for t in tables}; command_names = {c[0].casefold() for c in commands}
+    for node in _inventory(props.get(L+'ChildItems'), {L+k for k in ('InputField','LabelField','CheckBoxField','Button','Table')}, 128):
         kind = node.tag[len(L):]
         fields = ('Title','Visible','Enabled','ReadOnly','CommandName') if kind == 'Button' else ('Title','Visible','Enabled','ReadOnly','DataPath','Events')
         values = _children(node, {L+k for k in fields})
         path = _value(values, 'CommandName' if kind == 'Button' else 'DataPath')
+        if kind != 'Button' and path.startswith('Object.'):
+            field = path[len('Object.'):]
+            resolved = {key.casefold(): value for key, value in (*object_fields, *object_sections)}.get(field.casefold())
+            if resolved is None:
+                raise ValueError('unknown object form path')
+            path = resolved
+        elif kind != 'Button' and path.casefold().startswith('objectfield'):
+            raise ValueError('private object projection path')
         if path.casefold() not in (command_names if kind == 'Button' else attr_names):
             raise ValueError('unbound form item target')
+        if (kind == 'Table') != (path.casefold() in {t.name.casefold() for t in tables}):
+            raise ValueError('table item requires a declared section path')
         action = _events(values.get(L+'Events'), {'onchange'}).get('onchange', '')
+        if posting_application and dict(object_fields).get('Posted') == path and (kind != 'LabelField' or action):
+            raise ValueError('Posted is an authoritative label only')
         items.append((node.get('name'), kind, _value(values,'Title'), path, action,
             _flag(values,'Visible',True), _flag(values,'Enabled',True), _flag(values,'ReadOnly',False)))
-    program = compile_form_module(module.decode('utf-8-sig'))
+    source = module.decode('utf-8-sig')
+    if posting_application:
+        import re
+        if re.search(r'\bYadinassiPostingSync\b', source, re.IGNORECASE):
+            raise ValueError('reserved posting synchronization name')
+        source += '\n&AtServer\nProcedure YadinassiPostingSync()\nEndProcedure\n'
+    if reference_slots:
+        import re
+        if re.search(r'\b(?:YadinassiReferenceAction|HostReferenceAction)\b', source, re.IGNORECASE):
+            raise ValueError('reserved internal reference dispatch name')
+        source += '\n&AtServer\nFunction YadinassiReferenceAction()\nReturn HostReferenceAction();\nEndFunction\n'
+    program = compile_form_module(source, object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections))
     from .syntax import ast
     declared_names = set()
     for side in (program.client, program.server, program.nocontext):
@@ -219,18 +505,26 @@ def _definition(public_name, identity, raw, module):
                 else (value.casefold() for value in declaration.names))
     if attr_names & declared_names:
         raise ValueError('form attribute shadows module declaration')
-    bindings = _events(props.get(L+'Events'), set(BSLClientApplicationForm.EVENTS))
+    allowed = set(BSLClientApplicationForm.EVENTS)
+    if main_seen and document_schema is None:
+        allowed.add('beforewriteatserver')
+    bindings = _events(props.get(L+'Events'), allowed)
+    write_handler = bindings.pop('beforewriteatserver', '')
     definition = FormDefinition(public_name, identity, sha256(raw+b'\0'+module).hexdigest(), program,
-        tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands))
+        tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands),
+        catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
+        reference_targets if reference_slots else (), tuple(reference_slots), posting_application)
     # Validate every declared handler and all reserved-name collisions eagerly.
-    validation_server = definition.create_server()
+    validation_server = definition.create_server(_validate_only=True)
     validation_server.session.interpreter.close()
     return definition
 
 
-def load_configuration_forms(files):
+def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=(), posting_application=False):
     """Load declared CommonForms and Catalog/Document custom forms, explicitly."""
     accepted = _accept_source_files(files)
+    schemas = {schema.name.casefold(): schema for schema in catalog_schemas}
+    documents = {schema.name.casefold(): schema for schema in document_schemas}
     config, _ = _object(files['Configuration.xml'], 'Configuration')
     identity = UUID(config.get('uuid')); config_name = name(_text(_props(config),'Name'))
     used = {identity}; forms = {}
@@ -259,7 +553,7 @@ def load_configuration_forms(files):
     entries = []
     for kind, value in declarations(config):
         if kind == 'CommonForm':
-            entries.append(('CommonForm.'+value, 'CommonForms/'+value, 'CommonForm', value))
+            entries.append(('CommonForm.'+value, 'CommonForms/'+value, 'CommonForm', value, None))
         elif kind in ('Catalog','Document'):
             prefix = kind+'s/'+value
             owner, _ = object_at(prefix+'.xml',kind)
@@ -268,10 +562,10 @@ def load_configuration_forms(files):
             for child_kind, form_name in declarations(owner):
                 if child_kind != 'Form':
                     raise ValueError('unexpected form owner declaration')
-                entries.append((kind+'.'+value+'.Form.'+form_name, prefix+'/Forms/'+form_name, 'Form', form_name))
+                entries.append((kind+'.'+value+'.Form.'+form_name, prefix+'/Forms/'+form_name, 'Form', form_name, schemas.get(value.casefold()) if kind == 'Catalog' else documents.get(value.casefold())))
     if not 1 <= len(entries) <= 64:
         raise ValueError('configuration form count')
-    for public_name, prefix, kind, form_name in entries:
+    for public_name, prefix, kind, form_name, schema in entries:
         obj, uid = object_at(prefix+'.xml', kind); props = _props(obj)
         if set(props) - {M+'Name', M+'FormType'}:
             raise ValueError('unsupported executable form metadata property')
@@ -285,11 +579,13 @@ def load_configuration_forms(files):
         if _text(props,'Name') != form_name or _text(props,'FormType','Managed') != 'Managed':
             raise ValueError('declared managed form required')
         path = prefix+'/Ext/Form.xml'; module = prefix+'/Ext/Form/Module.bsl'
-        definition = _definition(public_name, uid, files[path], files.get(module,b''))
+        is_document = public_name.startswith('Document.')
+        definition = _definition(public_name, uid, files[path], files.get(module,b''),
+            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application)
         if public_name.casefold() in forms:
             raise ValueError('duplicate form name')
         forms[public_name.casefold()] = definition
     digest = sha256()
     for entry in accepted:
         digest.update(entry.path.encode('utf-8')+b'\0'+files[entry.path]+b'\0')
-    return ConfigurationForms(identity, config_name, digest.hexdigest(), MappingProxyType(forms))
+    return ConfigurationForms(identity, config_name, digest.hexdigest(), MappingProxyType(forms), MappingProxyType(dict(files)))

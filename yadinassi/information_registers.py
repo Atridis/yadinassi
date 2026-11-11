@@ -102,6 +102,8 @@ class BSLInformationRegisterManager(BSLObject):
         if (view.database_id, view.configuration_generation, view.register_schema(self._schema.identity)) != (
                 m._database_id, m._generation, self._schema): raise BackendError('schema_changed')
     def _view(self):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._backend)
         view = self._backend.begin_register_read()
         try: self._check_view(view)
         except BaseException as error:
@@ -246,6 +248,9 @@ class BSLInformationRegisterRecordManager(BSLObject):
         self._operation_id = next_operation; self._pending = None
     def _write(self, deleted):
         m = self._manager
+        from .database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None and self._pending is not None: raise BackendError('unsupported')
         if not m._writable(): raise BackendError('unsupported')
         if self._pending is not None:
             draft, expected, operation, pending_delete = self._pending
@@ -257,6 +262,10 @@ class BSLInformationRegisterRecordManager(BSLObject):
             draft = RegisterDraft(m._record_key(self._values),tuple(m._stored(f,self._values[f.name.casefold()])
                 for f in (*m._schema.resources,*m._schema.attributes)))
             expected, operation = self._revision, self._operation_id
+        if transaction is not None:
+            transaction.stage(self, 'register_delete' if deleted else 'register_write',
+                              draft, expected, (draft,expected,operation,deleted))
+            return None
         tx = m._backend.begin_register_write(operation); committing = False
         try:
             m._check_view(tx)
@@ -426,6 +435,9 @@ class BSLInformationRegisterRecordSet(BSLObject):
     def write(self,replace=True):
         if type(replace) is not bool: raise TypeError('Replace requires Boolean')
         m=self._manager
+        from .database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None and self._pending is not None: raise BackendError('unsupported')
         if not m._writable(): raise BackendError('unsupported')
         if self._pending is not None:
             draft,operation=self._pending
@@ -437,6 +449,9 @@ class BSLInformationRegisterRecordSet(BSLObject):
                 for f in (*m._schema.resources,*m._schema.attributes))) for row in self._rows)
             draft=RegisterSetDraft(m._schema.identity,self._filters(),rows,replace,self._snapshot)
             operation=self._operation_id
+        if transaction is not None:
+            transaction.stage(self, 'register_set', draft, None, (draft,operation))
+            return None
         tx=m._backend.begin_register_write(operation);committing=False
         try:
             m._check_view(tx);tx.write_set(draft)

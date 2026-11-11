@@ -6,20 +6,21 @@ import {APPLICATION_PROTOCOL,ApplicationClient,validateApplicationReply} from '.
 import {mountApplication} from '../src/app.mjs';
 import {environment,all,buttons} from '../../form/test/fake-dom.mjs';
 import {state,reply,field,deferred} from '../../form/test/fixtures.mjs';
-const snapshot = (extra = {}) => ({kind:'application',title:'Configuration',entries:[{id:1,title:'Welcome'},{id:2,title:'Details'}],sessions:[],active:null,uncertain:false,...extra});
+const snapshot = (extra = {}) => ({kind:'application',lifecycle:'forms',messages:[],exitWarning:'',title:'Configuration',entries:[{id:1,title:'Welcome',kind:'form'},{id:2,title:'Details',kind:'form'}],sessions:[],active:null,uncertain:false,catalog:null,...extra});
 const response = (request, value = snapshot(), extra = {}) => ({jsonrpc:'2.0',id:request.id,result:{protocol:APPLICATION_PROTOCOL,state:value,error:null,session:null,form:null,...extra}});
-function host() {
+function host(formField = () => field('Amount',{type:'Number',value:'1.00'}), before = async () => {}) {
   let value = snapshot(), next = 0;
   const requests = [], env = environment();
   function open(entry) { const id = `form-${++next}`; value = {...value,active:id,sessions:[...value.sessions,{id,entry,title:`Form ${entry}`} ]}; return id; }
   const exchange = async request => {
     requests.push(request);
+    await before(request);
     if (request.method === 'application.open') return response(request,value = (()=>{open(request.params.entry);return value;})(),{session:value.active,form:reply({id:1})});
     if (request.method === 'application.form') {
       const nested = request.params.request, id = request.params.session, closed = nested.params.event === 'close';
       if (nested.params.event === 'command') open(2);
       if (closed) { const sessions = value.sessions.filter(session=>session.id!==id); value = {...value,sessions,active:sessions.at(-1)?.id??null}; }
-      return response(request,value,{session:id,form:reply(nested,state(nested.id-1,{items:[field('Amount',{type:'Number',value:'1.00'})],...(closed?{kind:'closed',lifecycle:'closed',items:[]}: {})}))});
+      return response(request,value,{session:id,form:reply(nested,state(nested.id-1,{items:[formField(nested)],...(closed?{kind:'closed',lifecycle:'closed',items:[]}: {})}))});
     }
     return response(request,value);
   };
@@ -32,7 +33,7 @@ test('exact bounded application state, stable entries and declared identities', 
   const request = {id:1,method:'application.hello',params:{}};
   assert.equal(validateApplicationReply(response(request),request,null).state.kind,'application');
   for (const patch of [{sessions:Array(9).fill({})},{entries:[]},{entries:Array(65).fill({})},{active:'form-1'},{uncertain:1},{extra:true}]) assert.throws(()=>validateApplicationReply(response(request,snapshot(patch)),request,null));
-  assert.throws(()=>validateApplicationReply(response(request),request,snapshot({entries:[{id:3,title:'changed'}]})));
+  assert.throws(()=>validateApplicationReply(response(request),request,snapshot({entries:[{id:3,title:'changed',kind:'form'}]})));
 });
 
 test('no crossed nested form, no server names or unknown errors accepted', () => {
@@ -110,4 +111,33 @@ test('late open does not steal selection after newer tab navigation', async () =
   });
   await app.ready;const opening=app.openForm(1);app.show(null);gate.resolve();await opening;
   await app.client.tail;assert.equal(app.mounts.get('form-1').panel.hidden,true);
+});
+
+const dateField = nested => field('When', nested?.params.event === 'change' ? nested.params.value : {type:'Date',ticks:'0'},
+  {controlId:1,editor:{kind:'date',parts:'dateTime'}});
+
+test('retained configuration tabs preserve invalid metadata date text without RPC or losing focus', async () => {
+  const {app,env,requests,settle}=host(dateField);await app.ready;await app.openForm(1);await settle();
+  const owner=app.mounts.get('form-1'),input=all(owner.panel).find(node=>node.tagName==='INPUT');
+  assert.equal(input.readOnly,false);input.value='2024-02-30T12:00:00';input.emit('input');input.focus();input.setSelectionRange(5,10);
+  await app.openForm(2);await settle();const before=requests.length;app.show('form-1');
+  assert.equal(app.mounts.get('form-1'),owner);assert.equal(input.value,'2024-02-30T12:00:00');
+  assert.equal(env.document.activeElement,input);assert.equal(input.selectionStart,5);assert.equal(requests.length,before);
+  await owner.mount.run('close');assert.equal(requests.length,before);assert.equal(app.pending(),true);
+});
+
+test('late typed Date reply stays in its retained owner without stealing the newer active tab', async () => {
+  const gate=deferred();const {app,env,requests,settle}=host(dateField,async request=>{
+    if(request.method==='application.form'&&request.params.request.params.event==='change')await gate.promise;
+  });
+  await app.ready;await app.openForm(1);await settle();await app.openForm(2);await settle();app.show('form-1');
+  const owner=app.mounts.get('form-1'),other=app.mounts.get('form-2');
+  const input=all(owner.panel).find(node=>node.tagName==='INPUT'),otherInput=all(other.panel).find(node=>node.tagName==='INPUT');
+  input.value='1970-01-01T00:00:00';input.emit('input');const pending=owner.mount.run('change','When');
+  app.show('form-2');otherInput.focus();gate.resolve();await pending;await settle();
+  assert.equal(owner.panel.hidden,true);assert.equal(other.panel.hidden,false);assert.equal(env.document.activeElement,otherInput);
+  assert.equal(input.value,'1970-01-01T00:00:00');assert.equal(owner.mount.view.hasDrafts(),false);
+  const changes=requests.filter(request=>request.method==='application.form'&&request.params.request.params.event==='change');
+  assert.equal(changes.length,1);assert.equal(changes[0].params.session,'form-1');
+  assert.deepEqual(changes[0].params.request.params.value,{type:'Date',ticks:'621355968000000'});
 });

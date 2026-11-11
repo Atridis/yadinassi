@@ -6,6 +6,8 @@ Input/intermediate bounds fail explicitly, never return partial aggregate totals
 String equality/order uses the existing casefold_v1 host policy, not regional 1C
 collation. Decimal aggregation uses an owned context, not the caller's context.
 """
+from .database_transactions import query_view as _transaction_query_view
+
 from dataclasses import dataclass, replace
 from decimal import Context, Decimal, InvalidOperation, ROUND_HALF_EVEN
 from uuid import UUID
@@ -163,9 +165,12 @@ class _Plan:
                 if documents is None: raise ValueError('Document query sources require document context')
                 manager = documents.get_index(source.catalog)
             elif source.family == 'information_register':
-                if information_registers is None:
-                    raise ValueError('Information-register query sources require register context')
-                manager = information_registers.get_index(source.catalog)
+                from .recorder_queries import manager as recorder_manager
+                manager = recorder_manager(documents, source.catalog)
+                if manager is None:
+                    if information_registers is None:
+                        raise ValueError('Information-register query sources require register context')
+                    manager = information_registers.get_index(source.catalog)
             else:
                 manager = catalogs.get_index(source.catalog)
             self.managers.append(manager)
@@ -249,6 +254,9 @@ class _Plan:
             i, column = matches[0]
             return replace(column, field=i, custom=None, explicit_alias=True)
         if source.family == 'information_register' and not (source.temporary or source.external):
+            from .recorder_queries import RecorderQueryManager, field as recorder_field
+            if type(self.managers[index]) is RecorderQueryManager:
+                return recorder_field(self.managers[index], expression, source.alias)
             from .register_queries import register_field
             return register_field(self.managers[index], expression, source.alias)
         if source.family == 'document' and not (source.temporary or source.external):
@@ -720,6 +728,9 @@ class _Plan:
                 raise ValueError('Query input resource limit exceeded')
             return rows
         if self.sources[index].family == 'information_register':
+            from .recorder_queries import RecorderQueryManager, load as load_recorder
+            if type(manager) is RecorderQueryManager:
+                return load_recorder(manager, columns, view, budget)
             from .register_queries import load_register
             return load_register(manager, columns, view, budget, source=self.sources[index], parameters=self.parameters)
         if self.sources[index].family == 'document':
@@ -821,7 +832,7 @@ class _Plan:
                 if any(arm.family in ('document', 'information_register') or any(j.source.family in ('document', 'information_register') for j in arm.joins) for arm in syntax.selects((self.query,))):
                     view = self.catalogs._context.backend.begin_query_read()
                 else:
-                    view = manager._view()
+                    view = _transaction_query_view(manager)
                 owner = True
         try:
             if budget is None: budget = [0, 0]

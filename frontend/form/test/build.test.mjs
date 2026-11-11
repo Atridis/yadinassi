@@ -16,7 +16,9 @@ test('bundle is self-contained and package has only the five closed static asset
   assert.deepEqual((await readdir(target)).sort(), ['LICENSE.txt', 'app.js', 'build-manifest.json', 'index.html', 'style.css'].sort());
   const bundle = await readFile(new URL('app.js', target), 'utf8');
   assert.equal(/^\s*(?:import|export)\s/m.test(bundle), false);
-  assert.equal(/(?:localStorage|sessionStorage|innerHTML|eval\(|new Function)/.test(bundle), false);
+  assert.equal(/(?:localStorage|innerHTML|eval\(|new Function)/.test(bundle), false);
+  assert.ok(bundle.includes('sessionStorage.setItem(RESUME_KEY, value.resume)'));
+  assert.equal(/sessionStorage\.setItem\([^,]+,\s*(?:this\.)?(?:launcher|credential|bootstrap)/.test(bundle), false);
   const html = await readFile(new URL('index.html', target), 'utf8');
   assert.ok(html.includes('type="module" src="/app.js"')); assert.equal(/https?:\/\//.test(html), false);
 });

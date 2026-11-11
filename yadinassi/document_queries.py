@@ -73,7 +73,7 @@ def _card_values(manager, card, view, seen, budget):
     if not card.number: raise BackendError('integrity')
     seen.add(card.key.record_id)
     values = {'ref': manager._ref(card.key.record_id), 'number': card.number,
-              'date': _date_from_datetime(card.date), 'deletion_mark': card.deletion_mark, 'posted': False}
+              'date': _date_from_datetime(card.date), 'deletion_mark': card.deletion_mark, 'posted': getattr(card, 'posted', False)}
     values.update((f.identity, _section_value(manager, f, v)) for f, v in zip(schema.fields, card.values))
     sections, total_rows = {}, 0
     # Cost accounts for unprojected values too, before buffers can accumulate.

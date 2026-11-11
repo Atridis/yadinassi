@@ -359,21 +359,50 @@ def without_tree_profile_measurement(source):
 
 
 def without_configuration_assets_provenance(source):
-    """Exact test-only inverse: the closed configuration renderer inventory."""
+    """Hash-bound configuration layer, standalone or after reference assets."""
     base = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
     candidate = '23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a'
+    reference = '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568'
+    combined = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest in (base, reference):
+        return source
+    if digest == combined:
+        old = '              for renderer in ("catalog", "form", "workspace", "reference-workspace") for name in\n'
+        new = '              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in\n'
+        target = reference
+    elif digest == candidate:
+        old = '              for renderer in ("catalog", "form", "workspace") for name in\n'
+        new = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
+        target = base
+    else:
+        raise AssertionError('configuration assets outer source identity')
+    if source.count(new) != 1:
+        raise AssertionError('configuration assets inverse unique hunk')
+    restored = source.replace(new, old, 1)
+    if hashlib.sha256(restored.encode('utf-8')).hexdigest() != target:
+        raise AssertionError('configuration assets inner source identity')
+    return restored
+
+
+def without_reference_workspace_assets_provenance(source):
+    """Exact inverse of the fourth closed renderer; keep historical hashes."""
+    base = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
+    candidate = '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568'
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() not in (base, candidate):
+        source = without_configuration_assets_provenance(source)
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == base:
         return source
     if digest != candidate:
-        raise AssertionError('configuration assets outer source identity')
+        raise AssertionError('reference workspace assets outer source identity')
     old = '              for renderer in ("catalog", "form", "workspace") for name in\n'
-    new = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
+    new = '              for renderer in ("catalog", "form", "workspace", "reference-workspace") for name in\n'
     if source.count(new) != 1:
-        raise AssertionError('configuration assets inverse unique hunk')
+        raise AssertionError('reference workspace assets inverse unique hunk')
     restored = source.replace(new, old, 1)
     if hashlib.sha256(restored.encode('utf-8')).hexdigest() != base:
-        raise AssertionError('configuration assets inner source identity')
+        raise AssertionError('reference workspace assets inner source identity')
     return restored
 
 
@@ -386,7 +415,7 @@ def without_workspace_assets_provenance(source):
     base = '3b0f228a5195de776313c33e33460ffb00a6013102d2a490f2d5082e097d1e79'
     candidate = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
     if hashlib.sha256(source.encode('utf-8')).hexdigest() not in (base, candidate):
-        source = without_configuration_assets_provenance(source)
+        source = without_reference_workspace_assets_provenance(source)
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest == base:
         return source

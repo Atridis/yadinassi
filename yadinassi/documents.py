@@ -1,4 +1,4 @@
-"""Detached, non-posting BSL document lifecycle over a logical document port.
+"""Detached BSL document lifecycle over a logical document port.
 
 This is a bounded local application contract, not unmeasured native parity.
 """
@@ -44,6 +44,8 @@ class BSLDocuments(BSLObject):
     def __init__(self, metadata, context, catalogs):
         self._metadata,self._context,self._catalogs = metadata,context,catalogs
         self._managers = {}
+        self._interpreter = None
+        self._posting_runtime = None
     def get_member(self,name): return self.get_index(name)
     def get_index(self,name):
         if type(name) is not str: raise TypeError('document name requires String')
@@ -52,6 +54,19 @@ class BSLDocuments(BSLObject):
         key = item._name.casefold()
         if key not in self._managers: self._managers[key] = BSLDocumentManager(self,item)
         return self._managers[key]
+    def posting_runtime(self):
+        if self._context is None: return None
+        from .configuration_posting import PostingConfiguration
+        from .configuration_posting_application import PostingApplicationConfiguration
+        backend = self._context.backend
+        from .sqlite_catalog import SQLiteCatalogBackend
+        if type(backend) is not SQLiteCatalogBackend: return None
+        configuration = backend.posting_configuration
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration): return None
+        if self._posting_runtime is None:
+            from .document_posting import PostingRuntime
+            self._posting_runtime = PostingRuntime(self, configuration)
+        return self._posting_runtime
     def type_by_name(self,name):
         if type(name) is str:
             prefix,separator,tail = name.partition('.')
@@ -93,6 +108,8 @@ class BSLDocumentManager(BSLObject):
         caps = self._backend.capabilities()
         return caps.atomic_transactions and caps.document_create and caps.document_update
     def _view(self):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._backend)
         view = self._backend.begin_document_read()
         try: self._check_view(view)
         except BaseException as error:
@@ -118,7 +135,9 @@ class BSLDocumentManager(BSLObject):
         return values
     def _fields(self,card):
         if (card.key.database_id,card.key.document_id,len(card.values)) != (self._key(_ZERO).database_id,self._schema.identity,len(self._schema.fields)): raise BackendError('integrity')
-        values = {'number':card.number,'date':_date_from_datetime(card.date),'deletionmark':card.deletion_mark,'posted':False,'ref':self._ref(card.key.record_id)}
+        posted = getattr(card,'posted',False)
+        if type(posted) is not bool: raise BackendError('integrity')
+        values = {'number':card.number,'date':_date_from_datetime(card.date),'deletionmark':card.deletion_mark,'posted':posted,'ref':self._ref(card.key.record_id)}
         values.update((f.name.casefold(),self._logical(f,v)) for f,v in zip(self._schema.fields,card.values))
         return values
     def _read(self,record):
@@ -162,6 +181,10 @@ class BSLDocumentObject(BSLObject):
         self._revision = None if card is None else card.revision
         self._values = manager._defaults(manager.empty_ref()) if card is None else manager._fields(card)
         self._operation_id = uuid4(); self._pending_write = None
+        self._posting_previous = None; self._posting_active = None
+        from .structures import BSLStructure
+        self._additional_properties = BSLStructure()
+        self._movements = None
         contents = {} if card is None else {s.section_id:s for s in card.tabular_sections}
         if card is not None and (len(contents) != len(card.tabular_sections) or set(contents) != {s.identity for s in manager._schema.tabular_sections}): raise BackendError('integrity')
         self._sections = {s.name.casefold():BSLDocumentLines(self,s,() if card is None else contents[s.identity].rows) for s in manager._schema.tabular_sections}
@@ -190,8 +213,26 @@ class BSLDocumentObject(BSLObject):
         self._revision = r; self._values = values; self._operation_id = next_operation
         for section in self._sections.values(): section._dirty = False
         self._pending_write = None
-    def write(self):
+        self._posting_previous = None
+    def _draft(self):
         m = self._manager
+        return DocumentDraft(self._key,self._values['number'],_date(self._values['date']),self._values['deletionmark'],
+            tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),
+            tuple(s._stored_rows() for s in self._sections.values()),
+            self.is_new() and m._schema.numbering == 'decimal_v1' and self._values['number'] == '')
+    def _rollback_pending(self):
+        if self._posting_previous is not None:
+            self._values['posted'] = self._posting_previous
+        self._posting_previous = None
+        self._pending_write = None
+    def write(self, mode=_OMITTED):
+        posting = self._manager._documents.posting_runtime()
+        if posting is not None: return posting.write(self, mode)
+        if mode is not _OMITTED: raise TypeError('ordinary document Write takes no arguments')
+        m = self._manager
+        from .database_transactions import current
+        transaction = current(m._backend)
+        if transaction is not None and self._pending_write is not None: raise BackendError('unsupported')
         if not m._writable(): raise BackendError('unsupported')
         if self._pending_write is not None:
             draft,expected,operation = self._pending_write
@@ -203,6 +244,10 @@ class BSLDocumentObject(BSLObject):
                 tuple(m._stored(f,self._values[f.name.casefold()]) for f in m._schema.fields),sections,
                 self.is_new() and m._schema.numbering == 'decimal_v1' and self._values['number'] == '')
             expected,operation = self._revision,self._operation_id
+        if transaction is not None:
+            transaction.stage(self, 'document_create' if expected is None else 'document_update',
+                              draft, expected, (draft,expected,operation))
+            return None
         tx = m._backend.begin_document_write(operation); committing = False
         try:
             m._check_view(tx)
@@ -226,6 +271,10 @@ class BSLDocumentObject(BSLObject):
                    'metadata':lambda:self._manager._metadata,'метаданные':lambda:self._manager._metadata}
         if key in methods: return HostFunction(name,methods[key])
         if key in self._sections: return self._sections[key]
+        posting = self._manager._documents.posting_runtime()
+        if posting is not None:
+            if key in ('additionalproperties','дополнительныесвойства'): return self._additional_properties
+            if key in ('registerrecords','движения'): return posting.movements(self)
         return _field(self._values,name)
     def set_member(self,name,value):
         if self._pending_write is not None: raise BackendError('uncertain_commit')

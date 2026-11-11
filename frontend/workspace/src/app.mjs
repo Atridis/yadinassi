@@ -1,8 +1,12 @@
 import {createTransport, takeSessionCapability, scalarText} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
+import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs';
 import {WORKSPACE_PROTOCOL, WorkspaceClient} from './client.mjs';
 
 export function mountWorkspace(environment, root, exchange = null) {
+  const browserHost = exchange ? null : createBrowserHost(environment, root);
+  root = browserHost?.content || root;
+  const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document;
   const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
   const shell = el('main'), title = el('h1','Orders workspace'), toolbar = el('nav'), tabs = el('nav'), panels = el('div');
@@ -33,6 +37,7 @@ export function mountWorkspace(environment, root, exchange = null) {
   }
   const pending = () => Boolean(client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount.hasPending()));
   function paint() {
+    browserHost?.notify();
     notice.textContent = client.terminal ? 'Connection lost or invalid response. All forms are locked. Copy pending edits before leaving. Restart the workspace; requests will not be replayed.' : status;
     const disabled = client.terminal || !client.state || client.state.kind === 'closed';
     refresh.disabled = disabled; create.disabled = disabled || client.state.sessions.length >= 4; close.disabled = disabled; code.disabled = disabled;
@@ -67,9 +72,14 @@ export function mountWorkspace(environment, root, exchange = null) {
   async function performOpen(row) {
     const generation = ++navigation;
     const title = row === null ? 'New order' : `Order ${client.state.orders.find(order => order.id === row)?.code || row}`;
-    const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${++openToken}`});
+    const result = await perform('workspace.open',{revision:client.state.revision,row,request:`open-${instance}-${++openToken}`});
     if (!result || result.error || client.terminal) return;
     const id = result.session;
+    await ensureSession(id, title);
+    if (generation === navigation && mounts.has(id)) show(id);
+    paint();
+  }
+  async function ensureSession(id, title) {
     if (!mounts.has(id)) {
       const panel = el('section'); panel.hidden = true; panels.append(panel);
       const tab = button(title,tabs, () => show(id));
@@ -81,8 +91,6 @@ export function mountWorkspace(environment, root, exchange = null) {
       mounts.set(id,entry);
       await entry.mount.ready;
     }
-    if (generation === navigation && mounts.has(id)) show(id);
-    paint();
   }
   button('Orders',toolbar, () => show(null));
   const create = button('New order',toolbar, () => openForm(null));
@@ -100,13 +108,23 @@ export function mountWorkspace(environment, root, exchange = null) {
   list.append(label);
   const refresh = button('Find / Refresh orders',list, () => perform('workspace.list',{code:code.value}));
   list.append(truncation,rows); shell.append(title,toolbar,tabs,notice,list,panels); root.replaceChildren(shell);
-  if (!exchange) {
-    try { exchange = createTransport(environment.fetch.bind(environment),takeSessionCapability(environment.location,environment.history)); }
-    catch { exchange = async () => { throw Error('Missing session'); }; }
-  }
+  if (!exchange) exchange = browserHost.transport;
   client = new WorkspaceClient(exchange, () => paint(), () => { for (const entry of mounts.values()) entry.mount.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
-  paint(); const ready = perform('workspace.hello',{protocol:WORKSPACE_PROTOCOL});
-  return {ready,client,mounts,show,pending,openForm,discardActive};
+  browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  const resume = async () => {
+    if (client.terminal) throw Error('Unknown previous outcome');
+    const retained = new Set(mounts.keys());
+    const result = await client.request('workspace.hello',{protocol:WORKSPACE_PROTOCOL});
+    reconcile();
+    for (const session of client.state.sessions) {
+      await ensureSession(session.id, session.kind === 'intake' ? 'New order' : 'Retained order');
+      if (retained.has(session.id)) await mounts.get(session.id).mount.reconcileOwnership();
+    }
+    if (active === null && mounts.size) show(mounts.keys().next().value);
+    return result;
+  };
+  paint(); const ready = browserHost ? browserHost.start(resume) : resume();
+  return {ready,client,mounts,show,pending,openForm,discardActive,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('orders-app')) mountWorkspace(window,window.document.getElementById('orders-app'));

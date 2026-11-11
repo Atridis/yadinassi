@@ -10,6 +10,7 @@ import json
 
 from .file_io import _methods
 from .form_model import BSLFormAttribute, _Owned, name, scalar, text, MAX_TOTAL_TEXT
+from .form_references import is_reference, adjust, encode, require_scope
 from .values import BSLType
 
 MAX_TABLES = 4
@@ -101,9 +102,8 @@ def _validate_rows(table, rows):
             raise ValueError('ТаблицаФормы: неверные ячейки')
         encoded = []
         for column, value in zip(table.schema.columns, values):
-            value = scalar(value)
-            tagged = encode_value(value)
-            if encode_value(scalar(column.value_type.adjust_value(value))) != tagged:
+            tagged = encode(column.value_type, value, encode_value)
+            if encode(column.value_type, adjust(column.value_type, value), encode_value) != tagged:
                 raise ValueError('ТаблицаФормы: значение вне схемы')
             encoded.append(tagged)
             if type(value) is str: total_text += len(value)
@@ -148,6 +148,7 @@ class BSLFormDataCollection(_Owned):
         super().__init__(form)
         if type(schema) is not FormTableSchema or type(identity) is not int or not 1 <= identity <= MAX_TABLES:
             raise ValueError('ТаблицаФормы: неверная регистрация')
+        for column in schema.columns: require_scope(column.value_type, form._session)
         self.schema, self._identity = schema, identity
         self._rows = []; self._by_id = {}; self._allocated = 0
 
@@ -164,7 +165,7 @@ class BSLFormDataCollection(_Owned):
         return row
 
     def _snapshot(self):
-        columns = tuple((c.name, c.title, _TYPE_NAMES[c.value_type.types[0]], c.read_only)
+        columns = tuple((c.name, c.title, 'FormCatalogRef' if is_reference(c.value_type) else _TYPE_NAMES[c.value_type.types[0]], c.read_only)
                         for c in self.schema.columns)
         rows = tuple((r._row_id, tuple(r._data[c.name.casefold()] for c in self.schema.columns))
                      for r in self._rows)
@@ -209,7 +210,7 @@ class BSLFormDataCollection(_Owned):
         if self._allocated >= MAX_TABLE_ALLOCATED or len(self._rows) >= MAX_TABLE_ROWS:
             raise ValueError('ТаблицаФормы: превышен предел строк')
         identity = self._allocated + 1
-        values = tuple(scalar(c.value_type.adjust_value()) for c in self.schema.columns)
+        values = tuple(adjust(c.value_type) for c in self.schema.columns)
         rows = self._snapshot().rows + ((identity, values),)
         validate_table_data(self._form, {self.schema.name.casefold(): rows})
         self._replace_rows(rows, identity)
@@ -267,7 +268,9 @@ class BSLFormDataCollectionItem(_Owned):
         self._check(); key = member.casefold()
         column = next((c for c in self._table.schema.columns if c.name.casefold() == key), None)
         if column is None: return super().set_member(member, value)
-        value = scalar(column.value_type.adjust_value(scalar(value)))
+        if is_reference(column.value_type) and not column.value_type.scope.server:
+            raise ValueError("client reference cells are read-only")
+        value = adjust(column.value_type, value)
         rows = tuple((r._row_id, tuple(value if r is self and c.name.casefold() == key
                     else r._data[c.name.casefold()] for c in self._table.schema.columns))
                     for r in self._table._rows)

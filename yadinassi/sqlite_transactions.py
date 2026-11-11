@@ -1,4 +1,5 @@
 """Host-owned ordered multi-port staging with one durable commit boundary."""
+from contextlib import contextmanager
 import hashlib
 import json
 from uuid import UUID, uuid5
@@ -11,7 +12,7 @@ from .sqlite_registers import RegisterView
 MAX_OPERATIONS = 256
 MAX_BYTES = 16 * 1024 * 1024
 KINDS = ('catalog_create','catalog_update','document_create','document_update',
-         'register_write','register_delete','register_set')
+         'register_write','register_delete','register_set','recorder_replace','document_set_posted')
 
 
 def _storage():
@@ -24,10 +25,29 @@ def _hash(value): return hashlib.sha256(_json(value).encode('utf-8')).hexdigest(
 def _child(operation, index): return uuid5(operation, 'unit-of-work-v1:%d' % index)
 
 
+def _recorder_port(view):
+    # Absent until a future explicit canonical profile admits recorder schemas.
+    # No table discovery or implicit activation on legacy v11/v12 databases.
+    schemas=getattr(view._backend,'_recorder_schemas',None)
+    if type(schemas) is not tuple or not schemas:raise BackendError('unsupported')
+    from .sqlite_recorder_movements import RecorderMovementPort
+    return RecorderMovementPort(view._connection,view.database_id,view.configuration_generation,schemas)
+
+
 def _describe(view, request):
     if type(request) is not TransactionRequest or request.kind not in KINDS:
         raise BackendError('invalid_input')
     kind,draft,expected = request.kind,request.draft,request.expected
+    if kind=='document_set_posted':
+        if expected is not None:raise BackendError('invalid_input')
+        port=_recorder_port(view)
+        from .sqlite_document_posting_state import describe_posted
+        described=describe_posted(view.database_id,view.configuration_generation,draft)
+        if draft.recorder.document_id not in {d for schema in port.schemas.values() for d in schema.recorder_documents}:raise BackendError('unsupported')
+        return described
+    if kind=='recorder_replace':
+        if expected is not None:raise BackendError('invalid_input')
+        return _recorder_port(view).describe(draft)
     if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
     if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
     if kind.startswith('catalog_'):
@@ -57,12 +77,22 @@ def _describe(view, request):
     return digest,size,('register',schema.identity)
 
 
+def _require_staged_document(intent,requests,bindings):
+    # A state transition never bypasses the document CAS/write in this batch.
+    for request,binding in zip(requests,bindings):
+        if request.kind not in ('document_create','document_update'):continue
+        if request.draft.key!=intent.recorder:continue
+        document,record,revision,_=_json_document_payload(binding[4])
+        if (document,record,revision)==(str(intent.recorder.document_id),str(intent.recorder.record_id),intent.document_revision):return
+    raise BackendError('conflict')
+
+
 class UnitOfWork:
     """Explicit commit only. A ticket proves staging, not persistent success."""
     def __init__(self, view):
         self._view = view; self.operation_id = view._operation_id
         self._requests = (); self._results = (); self._bindings = (); self._identities = frozenset()
-        self._bytes = 0; self.state = 'open'
+        self._bytes = 0; self.state = 'open'; self._savepoint_depth=0
 
     @property
     def requests(self): return self._requests
@@ -76,13 +106,15 @@ class UnitOfWork:
         if len(self._requests) >= MAX_OPERATIONS: raise BackendError('unsupported')
         view = self._view
         digest,size,identity = _describe(view,request)
-        if identity in self._identities: raise BackendError('unsupported')
+        if identity in self._identities and request.kind!='recorder_replace': raise BackendError('unsupported')
         if self._bytes + size > MAX_BYTES: raise BackendError('unsupported')
         index = len(self._requests); child = _child(self.operation_id,index)
         kind,draft,expected = request.kind,request.draft,request.expected
+        if kind=='document_set_posted':_require_staged_document(draft,self._requests,self._bindings)
         tables=['commit_receipt','unit_of_work_receipt']
         if view._backend.storage_version >= 7: tables.append('document_commit_receipt')
         if view._backend.storage_version >= 8: tables.append('information_register_receipt')
+        if getattr(view._backend,'_recorder_schemas',None):tables.extend(('recorder_movement_receipt','document_posting_receipt'))
         if any(view._connection.execute('SELECT 1 FROM '+table+' WHERE operation_id=?',(str(child),)).fetchone() for table in tables): raise BackendError('conflict')
         # Outer savepoint includes child receipt, state allocation and every
         # underlying mutation; failed staging never leaves a receipt orphan.
@@ -98,6 +130,9 @@ class UnitOfWork:
                 if modern: entry.append(result.code)
                 payload = _json([entry])
                 view._connection.execute('INSERT INTO commit_receipt VALUES(?,?,?)',(str(child),bound,payload))
+            elif kind=='document_set_posted':
+                from .sqlite_document_posting_state import write_posted_receipt
+                result,bound,payload=write_posted_receipt(view._connection,view.database_id,view.configuration_generation,child,draft)
             elif kind.startswith('document_'):
                 port = DocumentView(view)
                 if expected is None: port.create(draft)
@@ -107,6 +142,9 @@ class UnitOfWork:
                 payload = _json([str(r.document_id),str(r.record_id),r.token,result.number])
                 view._connection.execute('INSERT INTO document_commit_receipt VALUES(?,?,?,?,?,?)',
                     (str(child),bound,str(r.document_id),str(r.record_id),int(r.token),result.number))
+            elif kind=='recorder_replace':
+                result=_recorder_port(view).replace(child,draft)
+                bound,payload=view._connection.execute('SELECT request_hash,outcome_json FROM recorder_movement_receipt WHERE operation_id=?',(str(child),)).fetchone()
             else:
                 port = RegisterView(view)
                 if kind == 'register_set': port.write_set(draft)
@@ -125,6 +163,28 @@ class UnitOfWork:
         self._requests,self._results,self._bindings,self._identities,self._bytes = requests,results,bindings,identities,total
         return ticket
 
+    @contextmanager
+    def savepoint(self):
+        """Rollback one host operation and journal; keep earlier root stages."""
+        self._open()
+        if self._savepoint_depth>=32:raise BackendError('unsupported')
+        before=(self._requests,self._results,self._bindings,self._identities,self._bytes)
+        self._savepoint_depth+=1
+        try:
+            with self._view._atomic_record():yield self
+        except BaseException:
+            self._requests,self._results,self._bindings,self._identities,self._bytes=before
+            raise
+        finally:self._savepoint_depth-=1
+
+    def read_document_posted(self,key):
+        self._open();_recorder_port(self._view)
+        from .sqlite_document_posting_state import read_posted
+        return read_posted(self._view._connection,self._view.database_id,key)
+
+    def read_recorder(self,register_id,key):
+        self._open();return _recorder_port(self._view).read(register_id,key)
+
     def read_catalog(self, key):
         self._open(); return self._view.read_catalog(key)
 
@@ -136,6 +196,7 @@ class UnitOfWork:
 
     def commit(self):
         self._open()
+        if self._savepoint_depth:raise BackendError('unsupported')
         if not self._requests: raise BackendError('invalid_input')
         encoded = _json(self._bindings)
         digest = _hash(['unit_of_work_v1',str(self._view.database_id),self._view.configuration_generation,
@@ -178,6 +239,8 @@ def resolve(backend, operation, requests):
     if type(requests) is not tuple or not 1 <= len(requests) <= MAX_OPERATIONS: raise BackendError('invalid_input')
     view = backend.begin_read()
     try:
+        from .sqlite_configuration_history import bind
+        bind(view, 'unit', operation)
         if view._connection.execute("SELECT 1 FROM unit_of_work_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(request_hash)!=64 OR typeof(outcomes_json)!='text' OR length(CAST(outcomes_json AS BLOB))>?)",(str(operation),MAX_BYTES)).fetchone(): raise BackendError('integrity')
         row = view._connection.execute('SELECT request_hash,outcomes_json FROM unit_of_work_receipt WHERE operation_id=?',(str(operation),)).fetchone()
         if row is None: return None
@@ -185,17 +248,23 @@ def resolve(backend, operation, requests):
         if type(bindings) is not list or len(bindings) != len(requests): raise BackendError('conflict')
         for index,request in enumerate(requests):
             digest,size,identity = _describe(view,request); total += size
-            if identity in identities or total > MAX_BYTES: raise BackendError('invalid_input')
+            if (identity in identities and request.kind!='recorder_replace') or total > MAX_BYTES: raise BackendError('invalid_input')
             identities.add(identity)
             entry = bindings[index]
             if type(entry) is not list or len(entry) != 5 or any(type(x) is not str for x in entry): raise BackendError('integrity')
             expected = [request.kind,str(_child(operation,index)),digest]
             if entry[:3] != expected: raise BackendError('conflict')
             child = entry[1]
+            if request.kind=='document_set_posted':_require_staged_document(request.draft,requests[:index],bindings[:index])
             if request.kind.startswith('catalog_'):
                 exists = view._connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=? AND request_hash=? AND revisions_json=?',(child,entry[3],entry[4])).fetchone()
+            elif request.kind=='document_set_posted':
+                exists=view._connection.execute('SELECT 1 FROM document_posting_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             elif request.kind.startswith('document_'):
                 exists = view._connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=? AND request_hash=? AND document_id=? AND record_id=? AND revision=? AND number=?',(child,entry[3],*_json_document_payload(entry[4]))).fetchone()
+            elif request.kind=='recorder_replace':
+                _recorder_port(view)
+                exists=view._connection.execute('SELECT 1 FROM recorder_movement_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             else:
                 exists = view._connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             if not exists: raise BackendError('integrity')
@@ -216,7 +285,16 @@ def resolve(backend, operation, requests):
                 schema = next((s for s in backend._schemas if s.identity==draft.key.catalog_id),None)
                 if schema is None: raise BackendError('schema_changed')
                 result = None if revision is None else CatalogWriteOutcome(revision,normalize_string(draft.code,schema.code_length))
+        elif kind=='document_set_posted':
+            from .sqlite_document_posting_state import resolve_posted_receipt
+            borrowed=backend.begin_read()
+            try:result=resolve_posted_receipt(borrowed._connection,borrowed.database_id,borrowed.configuration_generation,child,draft)
+            finally:borrowed.close()
         elif kind.startswith('document_'): result = backend.resolve_document_write(child,draft,expected)
+        elif kind=='recorder_replace':
+            borrowed=backend.begin_read()
+            try:result=_recorder_port(borrowed).resolve(child,draft)
+            finally:borrowed.close()
         elif kind == 'register_set': result = backend.resolve_register_set(child,draft)
         else: result = backend.resolve_register_write(child,draft,expected,kind == 'register_delete')
         if result is None: raise BackendError('integrity')
@@ -224,5 +302,5 @@ def resolve(backend, operation, requests):
     return tuple(results)
 
 
-for _method in ('stage','read_catalog','read_document','read_register','commit'):
+for _method in ('stage','read_catalog','read_document','read_register','read_document_posted','read_recorder','commit'):
     setattr(UnitOfWork,_method,_storage()._boundary(getattr(UnitOfWork,_method)))

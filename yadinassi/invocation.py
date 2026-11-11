@@ -188,7 +188,7 @@ class InvocationServer:
     dispatch uses a fresh NoContext activation. BSL errors retain preceding
     effects; only a finite diagnostic and explicit messages cross back.
     """
-    def __init__(self, source, endpoints, *, database_context=None):
+    def __init__(self, source, endpoints, *, database_context=None, interpreter_factory=None):
         if type(endpoints) is not dict or not 1 <= len(endpoints) <= MAX_ENDPOINTS:
             raise ValueError('invalid endpoint inventory')
         from .form_program import admitted_program
@@ -198,7 +198,10 @@ class InvocationServer:
                 for node in program):
             raise ValueError('server module requires NoContext routines only')
         self._messages = []
-        self._interpreter = Interpreter(self._message, database_context=database_context)
+        factory = Interpreter if interpreter_factory is None else interpreter_factory
+        self._interpreter = factory(self._message, database_context=database_context)
+        if type(self._interpreter) is not Interpreter:
+            raise TypeError("plain interpreter factory required")
         self._interpreter.execute_program(program)
         self._routines = {}
         bindings = []
@@ -214,6 +217,28 @@ class InvocationServer:
         self._gate = Lock()
         self._last_id = 0
         self._requests = 0
+
+    @classmethod
+    def from_handlers(cls, endpoints, *, message_scope):
+        """Trusted host callbacks over the same closed scalar wire and no-replay gate."""
+        if type(endpoints) is not dict or not 1 <= len(endpoints) <= MAX_ENDPOINTS or not callable(message_scope):
+            raise ValueError('invalid endpoint inventory')
+        result = object.__new__(cls)
+        result._callbacks = {}
+        result._routines = {}
+        for endpoint, pair in endpoints.items():
+            binding, callback = pair
+            if type(binding) is not InvocationBinding or binding.endpoint != endpoint or not callable(callback):
+                raise ValueError('invalid trusted endpoint')
+            result._callbacks[endpoint] = callback
+            result._routines[endpoint] = binding
+        result.bindings = tuple(result._routines.values())
+        result._message_scope = message_scope
+        result._messages = []
+        result._gate = Lock()
+        result._last_id = 0
+        result._requests = 0
+        return result
 
     def _message(self, message):
         bounded_text(message, 1024)
@@ -259,6 +284,13 @@ class InvocationServer:
                 values = [_decode_scalar(value) for value in request['arguments']]
             except (UIError, TypeError, ValueError):
                 return self._reply(request_id, reason='invalid_arguments')
+            if hasattr(self, '_callbacks'):
+                try:
+                    with self._message_scope(self._message):
+                        result = self._callbacks[request['endpoint']](values)
+                    return self._reply(request_id, value=result)
+                except Exception:
+                    return self._reply(request_id, reason='server_error')
             activation = self._interpreter._new_server_activation(module_context=False)
             activation._context_stack.append('server')
             activation._module_context_stack.append(False)

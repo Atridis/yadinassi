@@ -16,14 +16,14 @@ export class EditorClient {
     if(id>MAX)throw Error('Request limit reached');
     let reply;
     try {reply=await this.exchange({jsonrpc:'2.0',id,method,params});}
-    catch(error){this.uncertain=true;throw Error('Connection interrupted. Do not repeat Save; resynchronize first.');}
+    catch(error){if(error?.preDispatch===true)throw error;this.uncertain=true;throw Error('Connection interrupted. Do not repeat Save; resynchronize first.');}
     if(!reply||typeof reply!=='object'||reply.jsonrpc!=='2.0'||reply.id!==id||
        Number.isInteger(reply.id)===false||Boolean(reply.result)===Boolean(reply.error)){
       this.uncertain=true;throw Error('Invalid editor response; resynchronize before editing.');
     }
     const snapshot=reply.result??reply.error?.data?.snapshot;
     if(snapshot){
-      try{validateSnapshot(snapshot);}catch(error){this.uncertain=true;throw error;}
+      try{validateSnapshot(snapshot);}catch(error){if(error?.preDispatch===true)throw error;this.uncertain=true;throw error;}
       if(this.snapshot&&snapshot.revision<this.snapshot.revision){this.uncertain=true;throw Error('Out-of-order editor response');}
       this.snapshot=snapshot;
       this.uncertain=false;
@@ -78,6 +78,18 @@ export function reconcileDraft(editor,draft,acceptedControl){
     }
   }
   return fresh;
+}
+/** Detached ownership reads may replace an editor or retire a row. Never
+ * silently retarget or erase its raw input; callers expose these values for copying. */
+export function orphanedDraft(previous, next, draft) {
+  const before=editorDraft(previous), after=editorDraft(next), result={fields:{},rows:{}};
+  for(const kind of ['fields','rows']) {
+    for(const [key,value] of Object.entries(draft?.[kind]||{})) {
+      if(value!==before[kind][key] && (previous?.editorId!==next?.editorId || !Object.hasOwn(after[kind],key)))
+        Object.defineProperty(result[kind],key,{value,enumerable:true,configurable:true,writable:true});
+    }
+  }
+  return Object.keys(result.fields).length||Object.keys(result.rows).length?result:null;
 }
 function draftChanges(editor,draft){
   const changes=[];

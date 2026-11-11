@@ -135,6 +135,10 @@ python -m yadinassi.ui.form_app examples/forms/order-editor --f orders.sqlite --
 Старые скалярные пакеты совместимы. Это ограниченный host-API, не импорт форм 1С.
 [Запуск и границы](docs/form-app.md), [таблицы и создание заказа](docs/form-tables.md),
 [редактирование существующих заказов](docs/order-workbench.md).
+Отдельный [пример заказов со ссылками](docs/reference-orders.md) добавляет выбор
+контрагента и товара через подчинённую форму, с сохранением точных типизированных
+ссылок. Для него создаётся новая база по отдельной конфигурации; прежние примеры
+и их базы не меняются.
 
 ## Разработка
 
@@ -340,10 +344,52 @@ separate owned process, optionally with server-only SQLite access.
 See [run a replicated form application](docs/form-app.md) for a calculation
 example and a persisted product-intake form. The [existing order workbench](docs/order-workbench.md)
 loads full headers and lines, saves the same record, and supports explicit discard
-and optimistic-conflict feedback. Plain BSL execution is unchanged.
+and optimistic-conflict feedback. The separate [reference Orders workspace](docs/reference-orders.md)
+adds an owned customer/product choice, then saves and reopens exact typed catalog
+references. It uses a new opt-in configuration, not a migration or generic
+reference wire codec. Plain BSL execution is unchanged.
 
 ### Конфигурационные управляемые формы
 
 Явный opt-in launcher выполняет объявленные XML-формы с единым Module.bsl,
 разделением клиента/сервера, OpenForm и несколькими удерживаемыми вкладками.
 [Границы профиля и два разных примера](docs/configuration-forms.md).
+
+Отдельный [application host](docs/configuration-application-host.md) объединяет
+CommonModules, запуск/закрытие приложения и управляемые формы. Один browser tab
+владеет вводом; повторное открытие URL требует явной передачи управления.
+Закрытие последней вкладки не выполняет Save/Discard: безопасное завершение
+зависит от состояния приложения и проходит через обычные обработчики закрытия.
+
+Отдельный [профиль форм документов](docs/configuration-document-forms.md) открывает
+объявленные XML-формы непроводимых документов: шапка, типизированные строки,
+команды над списком, атомарная запись и повторное открытие из SQLite. Список
+обновляется сразу после записи, соседние черновики сохраняются. Пример Orders
+не проводит документы и не имитирует движения или события ObjectModule;
+профиль включается явно для новой базы и не расширяет старые конфигурации.
+
+[Смешанное приложение конфигурации](docs/configuration-business-application.md)
+добавляет отдельный opt-in `configuration_business_v1`: общие формы и модули,
+запуск приложения, скалярные справочники и непроводимые документы с табличными
+частями работают в одном управляемом runtime. Пример
+`examples/configuration-business-application` запускается с
+`--business-application --f existing.sqlite` после явного создания новой базы.
+Это не миграция, не поддержка проведения и не замена типизированных ссылок строками.
+
+
+[Типизированные ссылки в приложении конфигурации](docs/configuration-reference-application.md)
+включаются отдельным профилем `configuration_references_v1` для новой базы:
+CatalogRef в карточке справочника, шапке документа и строках табличной части.
+Выбор существующей записи, очистка типизированной пустой ссылки и отмена
+работают через принадлежащий форме picker; сервер хранит настоящие ссылки,
+а браузер не получает UUID записей. Generic Invocation, старые source grants,
+миграция и проведение этим профилем не расширяются.
+
+[Типизированный ввод скалярных полей](docs/typed-form-scalar-editors.md)
+использует объявленные квалификаторы формы: даты отображаются и вводятся без
+часовых поясов, числа и строки проверяются до отправки без скрытого округления,
+обрезания или ограничения диапазона. Ошибочный черновик сохраняется для
+исправления; замена поля или строки не перенаправляет его в другой объект.
+Пример `examples/configuration-scalar-editors` сохраняет DateTime справочника,
+шапки документа и строк в существующем явном reference-профиле. Схемы хранения,
+generic Invocation, миграции и права транзакций не расширяются.

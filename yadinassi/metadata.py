@@ -233,7 +233,15 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
         if self._items is None:
             if self._context is None: require_database_context()
             if self._root is not None and self._family != 'Catalog': self._root._catalogs._snapshot()
-            reader = ('begin_query_read' if self._family != 'Catalog' and type(self._context) is SQLiteDBContext else self._reader)
+            reader = self._reader
+            if self._family != 'Catalog' and type(self._context) is SQLiteDBContext:
+                capabilities = self._context.backend.capabilities()
+                supported = (capabilities.document_read if self._family == 'Document'
+                             else capabilities.register_read)
+                # Older catalog-only layouts can reflect an empty family;
+                # active families keep their established metadata read port.
+                if not supported:
+                    reader = 'begin_query_read'
             view = getattr(self._context.backend, reader)()
             try:
                 entries = getattr(view,self._entries)()

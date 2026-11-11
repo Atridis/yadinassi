@@ -325,7 +325,7 @@ class BoundMetadataReferenceDescriptionTests(unittest.TestCase):
         self.vm.execute('Q=New Query("SELECT Ref FROM Catalog.Products");Result=Q.Execute();')
         with self.assertRaises(ValueError): self.vm.variables['result'].unload()
 
-    def test_imported_reference_description_binds_child_not_root_snapshot(self):
+    def test_imported_reference_description_binds_shared_family_snapshot(self):
         path = Path(self.temp.name) / 'Helper.bsl'
         path.write_text('Function Describe() Export A=New Array;A.Add(Type("CatalogRef.Categories"));'
                         'Return New TypeDescription(A);EndFunction', encoding='utf-8')
@@ -333,10 +333,10 @@ class BoundMetadataReferenceDescriptionTests(unittest.TestCase):
         child = self.vm.imports['helper'].interpreter
         description = self.vm.variables['d']
         own = child.execute('Catalogs.Categories.EmptyRef()')
-        foreign = self.vm.execute('Catalogs.Categories.EmptyRef()')
+        parent = self.vm.execute('Catalogs.Categories.EmptyRef()')
         self.assertIs(description.types[0], own.value_type)
         self.assertIs(description.adjust_value(own), own)
-        with self.assertRaises(TypeError): description.adjust_value(foreign)
+        self.assertIs(description.adjust_value(parent), parent)
 
 
 if __name__ == '__main__': unittest.main()

@@ -108,3 +108,6 @@ unchanged. Replay now includes cases 07/08, previously excluded: declared Payloa
 StringQualifiers.Length is 32 before applying the edited schema, 64 after applying.
 Replay authors those logical schemas independently and compares the entire original
 probe output; it does not create new native observations or validate the whole graph.
+
+Application-local metadata/type scope and interruption/failure behavior are
+specified in [application-family-lifecycle.md](application-family-lifecycle.md).

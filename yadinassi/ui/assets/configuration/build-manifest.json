@@ -3,21 +3,22 @@
   "dependencies": {},
   "sources": {
     "package.json": "699b2d0ff157a672f20773c17f90165db7789f2eb0f7b884fe76f16080189ded",
-    "build.mjs": "c11fac10cf56efe5756642fbaf41f4e6400a20b5107b7e46c41bec877ebb5758",
+    "build.mjs": "2937d4293ace257058be1c94ce691c1700a0d69590bf636287a715d4d1588669",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "src/style.css": "a116c2dd08ba640ddd614ae457094a4e59ff02ce7c660ac8ba964783175896d3",
-    "../form/src/style.css": "c1ba3abea3101ae4a1e5d45b0f4f7aa7df2da925ae5a034ad207b297162f7b78",
+    "src/style.css": "2356466fb05c55827553590767c925cca82c00da538579ffdd04191292a33804",
+    "../form/src/style.css": "dbb5b0d6d084e0bab64c4e32fae07ff940d728879a73f2783548970b4cbaa11b",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
-    "../form/src/client.mjs": "98007135df1c2ab7206feb0caa37efd967804efa47a2f491f4d3841555c1150d",
-    "../form/src/view.mjs": "ed6ff3c399f58d034174b50ffef5c7b07da2f38e18ed6db01984a6c5cfa255b9",
-    "../form/src/app.mjs": "2e520f26a31526d24f0ced510df5468ca86ec16a4110259ef7b8a2ccd5fb1999",
-    "src/client.mjs": "a75dec10cc3c88766a718aaa741dec9a9133ebb8307c9b50bb958eb093f20bbb",
-    "src/app.mjs": "e6a1319e650e8aae8fb9f1189a46c112d3213823fb3e252d7dc3b8336f779ec1"
+    "../form/src/client.mjs": "c544a3935fabeba43e51a2bf7c3ae866c85a34214131cab240a763cb22f8251f",
+    "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
+    "../form/src/view.mjs": "12fb71b0b236d0681b52cd01f7560d8735e352d75b90704c89380f6a42c807b1",
+    "../form/src/app.mjs": "82604d56701de998d64da2fecc940094b935973ee49a487ebe2ea0fab31c729c",
+    "src/client.mjs": "ebdd0e413c0312865fe5043bb376846bf0fdd2fb25a9725f47d984916a0df744",
+    "src/app.mjs": "380564bba4270966857716a7b540b9f4c86480579cfb8f668727922cacef6789"
   },
   "outputs": {
-    "app.js": "9455f6fb759a47dc0595aee064cc51b29925df78b042ab028665d8fadaba7813",
+    "app.js": "900c3304e31b73ea600a874add37fbf8952594dae95d8fb916ded65ff933e15b",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "style.css": "3313ff61b36b76a5f97b299a0a16963403c02e263fb1855584c4c607e4690bba",
+    "style.css": "3b1bf067e5b420ed84e8248da70b81714622bbad27e551896e4442213b960b78",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

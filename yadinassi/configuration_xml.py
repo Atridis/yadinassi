@@ -492,13 +492,16 @@ _DOCUMENT_RESERVED = _RESERVED | frozenset((
     'fill', 'заполнить', 'checkfill', 'проверитьзаполнение'))
 
 
-def _document_schema(raw, name, targets, used, issues):
+def _document_schema(raw, name, targets, used, issues, *, recorder_profile=False):
     """Authored XML-shaped document profile, not full Designer export parity.
 
     Only unposted documents, whole-series unique strings and explicit or local
     decimal numbering are admitted. Unknown behavior stays an activation issue.
     """
     obj, ns, root = _object(raw, 'Document', include_root=True)
+    if recorder_profile:
+        from .configuration_posting import validate_shape_projection
+        validate_shape_projection(obj, 'Document')
     props = _props(obj)
     identity = _uuid(obj.get('uuid'))
     if identity in used: _fail('duplicate metadata UUID')
@@ -507,10 +510,10 @@ def _document_schema(raw, name, targets, used, issues):
     _envelope_issues(root, obj, issues, name)
     _activation_properties(obj, {'Name', 'Synonym', 'Comment', 'NumberType',
         'NumberLength', 'NumberPeriodicity', 'CheckUnique', 'Autonumbering',
-        'Posting'}, issues, name)
+        'Posting'} | ({'RealTimePosting','RegisterRecordsDeletion','RegisterRecordsWritingOnPost','RegisterRecords','PostInPrivilegedMode','UnpostInPrivilegedMode'} if recorder_profile else set()), issues, name)
     if any(_text(props, key) != value for key, value in (
             ('NumberType', 'String'), ('NumberPeriodicity', 'Nonperiodical'),
-            ('CheckUnique', 'true'), ('Posting', 'Deny'))):
+            ('CheckUnique', 'true'), ('Posting', 'Allow' if recorder_profile else 'Deny'))):
         _fail('unsupported document semantics')
     auto = _text(props, 'Autonumbering')
     if auto not in ('false', 'true'): _fail('unsupported document numbering')
@@ -556,8 +559,11 @@ _REGISTER_RESERVED = _RESERVED | frozenset((
     'active', 'активность', 'linenumber', 'номерстроки'))
 
 
-def _register_schema(raw, name, targets, used, issues):
+def _register_schema(raw, name, targets, used, issues, *, recorder_profile=False):
     obj, ns, root = _object(raw, 'InformationRegister', include_root=True)
+    if recorder_profile:
+        from .configuration_posting import validate_shape_projection
+        validate_shape_projection(obj, 'InformationRegister')
     props = _props(obj)
     identity = _uuid(obj.get('uuid'))
     if identity in used: _fail('duplicate metadata UUID')
@@ -567,7 +573,7 @@ def _register_schema(raw, name, targets, used, issues):
     _activation_properties(obj, {'Name', 'Synonym', 'Comment',
         'InformationRegisterPeriodicity', 'WriteMode'}, issues, name)
     if (_text(props, 'InformationRegisterPeriodicity') not in ('Nonperiodical','WithinSecond','Day','Month','Quarter','Year')
-            or _text(props, 'WriteMode') != 'Independent'):
+            or _text(props, 'WriteMode') != ('RecorderSubordinate' if recorder_profile else 'Independent')):
         _fail('unsupported register semantics')
     groups = {'Dimension': [], 'Resource': [], 'Attribute': []}
     names = set(_REGISTER_RESERVED)
@@ -1085,6 +1091,14 @@ def import_demo_products_configuration(files):
 
 
 def _demo_configuration(files, profile):
+    # The version-6 source-bound layout also serves explicitly opted-in generic
+    # forms. This dispatch does not extend any historical demo hash grant.
+    from .configuration_catalog_profile import CATALOG_FORMS_PROFILE, catalog_forms_configuration
+    from .configuration_application_profile import APPLICATION_PROFILE, application_configuration
+    if profile == APPLICATION_PROFILE:
+        return application_configuration(files)
+    if profile == CATALOG_FORMS_PROFILE:
+        return catalog_forms_configuration(files)
     if profile == DEMO_PRODUCTS_PROFILE:
         return _demo_products_configuration(files)
     if profile == DEMO_KINDS_PROFILE:
@@ -1092,3 +1106,9 @@ def _demo_configuration(files, profile):
     if profile == DEMO_DIRECTORIES_PROFILE:
         return _demo_directories_configuration(files)
     _fail('unsupported demo source profile')
+
+
+def import_catalog_forms_configuration(files):
+    """Explicit scalar catalog object-form profile; ordinary import stays inert."""
+    from .configuration_catalog_profile import catalog_forms_configuration
+    return catalog_forms_configuration(files)[0]

@@ -3,3 +3,17 @@
 .configuration-app > section { padding: 20px; border: 1px solid #d8dde5; border-radius: 12px; }
 .configuration-app [aria-selected="true"] { outline: 2px solid #2368b3; }
 .configuration-app [hidden] { display: none !important; }
+.configuration-workarea { display: grid; gap: 20px; min-width: 0; }
+.configuration-workarea.with-form { grid-template-columns: minmax(270px, 360px) minmax(0, 1fr); }
+.configuration-workarea > div { min-width: 0; }
+.configuration-workarea.with-form .workspace { padding: 20px; }
+.configuration-catalog { padding: 18px; border: 1px solid #d8dde5; border-radius: 12px; align-self: start; overflow-x: auto; }
+.configuration-catalog h2 { margin-top: 0; }
+.catalog-commands { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.configuration-catalog table { width: 100%; border-collapse: collapse; text-align: left; }
+.configuration-catalog th, .configuration-catalog td { padding: 8px; border-bottom: 1px solid #d8dde5; overflow-wrap: anywhere; }
+.configuration-catalog th { font-size: 12px; }
+.configuration-catalog input[type="checkbox"] { width: 18px; height: 18px; }
+.configuration-catalog tr[aria-selected="true"] { outline: none; background: #e2f1ed; }
+.configuration-catalog tr:focus { outline: 2px solid #2368b3; outline-offset: -2px; }
+@media (max-width: 850px) { .configuration-workarea.with-form { grid-template-columns: 1fr; } }

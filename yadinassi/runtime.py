@@ -1,3 +1,4 @@
+from weakref import WeakValueDictionary
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -45,7 +46,7 @@ from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
-from .documents import BSLDocuments
+from .documents import BSLDocuments, BSLDocumentObject
 from .information_registers import BSLInformationRegisters, BSLInformationRegisterType, BSLInformationRegisterRecordSet
 from .document_types import BSLDocumentType
 from .document_lines import BSLDocumentLines, BSLDocumentLinesType, BSLDocumentLine, BSLDocumentSectionType
@@ -179,20 +180,30 @@ class Interpreter:
                  native_target: str = WINDOWS_8_3_27_2342,
                  database_context: SQLiteDBContext | None = None,
                  compilation_profile: str = "standalone",
-                 user_message_sink: Callable | None = None):
+                 user_message_sink: Callable | None = None,
+                 family_owner: "Interpreter | None" = None):
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
         self._database_context = database_context
-        self._metadata = BSLMetadata(database_context)
-        self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
-        self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
-        self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
-        self._metadata._catalog_managers = self._catalogs
-        self._metadata._document_managers = self._documents
         self._xdto_factory = BSLXDTOFactory()
-        self._scheduler = Scheduler(self._native_target)
+        if family_owner is not None:
+            if not isinstance(family_owner, Interpreter) or family_owner.native_target != self._native_target:
+                raise ValueError('compatible interpreter family owner required')
+            if family_owner._family_owner is not family_owner:
+                raise ValueError('root interpreter family owner required')
+            if family_owner._family_closed:
+                raise ValueError('interpreter family is closed')
+        self._family_owner = self if family_owner is None else family_owner
+        self._family_closed = False
+        self._family_released = False
+        self._family_generation = 0 if family_owner is None else family_owner._family_generation
+        if family_owner is None:
+            self._schema_scopes = WeakValueDictionary()
+        self._bind_schema_scope()
+        self._scheduler = (Scheduler(self._native_target) if family_owner is None
+                           else family_owner._scheduler)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
         self.functions: dict[str, HostFunction] = {}
@@ -203,8 +214,9 @@ class Interpreter:
         self.server_module_names: set[str] = set()
         self.server_initializers: list[ast.ServerInitializer] = []
         self._logical_side = "client"
-        self._context_stack = ["client"]
-        self._module_context_stack = [True]
+        if family_owner is None:
+            self._context_stack = ["client"]
+            self._module_context_stack = [True]
         self._client_routine_names: set[str] = set()
         # Family tombstones survive a missing side, including detached servers,
         # so an unavailable variant can never fall through to a host function.
@@ -236,6 +248,9 @@ class Interpreter:
         # Bind only immutable startup data, never the interpreter's client frame.
         connection_string = (database_context.connection_string if database_context is not None
                              else require_database_context)
+        self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
+        self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
+        self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
         self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
@@ -418,9 +433,51 @@ class Interpreter:
             raise BSLRuntimeError("Остались незавершенные асинхронные задания",
                                   "<async>", 1, 1)
 
+    def _bind_schema_scope(self):
+        # Types/metadata belong to one family generation, not to individual
+        # routine interpreters. Managers stay VM-local (notably document code).
+        scopes = self._family_owner._schema_scopes
+        metadata = scopes.get(id(self.database_context))
+        self._metadata = BSLMetadata(self.database_context) if metadata is None else metadata
+        scopes[id(self.database_context)] = self._metadata
+        self._catalogs = BSLCatalogs(self._metadata._catalogs, self.database_context)
+        self._documents = BSLDocuments(self._metadata._documents, self.database_context, self._catalogs)
+        self._documents._interpreter = self
+        self._information_registers = BSLInformationRegisters(
+            self._metadata._information_registers, self.database_context, self._catalogs, self._documents)
+        if metadata is None:
+            self._metadata._catalog_managers = self._catalogs
+            self._metadata._document_managers = self._documents
+
+    def cancel_pending(self):
+        """Cancel current cooperative work without retiring the module family."""
+        if self._family_owner is not self or self._family_closed:
+            raise ValueError('active root interpreter required')
+        self._scheduler.reset()
+
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
-        self._scheduler.reset()
+        if self._family_owner is not self and self._scheduler.pending:
+            raise ValueError('cannot release a child while family tasks are pending')
+        if self._family_owner is not self:
+            self._family_released = True
+        if self._family_owner is self:
+            self._scheduler.reset()
+            self._family_closed = True
+            self._family_generation += 1
+
+    def _require_family(self):
+        if self._family_owner is self:
+            # A standalone embedding historically may execute again after reset.
+            # Its old children stay fenced by generation; application lifecycle
+            # remains independently guarded by ConfigurationApplication.
+            if self._family_closed:
+                self._schema_scopes.clear()
+                self._bind_schema_scope()
+            self._family_closed = False
+        elif (self._family_released or self._family_owner._family_closed
+                or self._family_generation != self._family_owner._family_generation):
+            raise ValueError("interpreter family member is closed")
 
     @property
     def pending_promises(self):
@@ -475,7 +532,8 @@ class Interpreter:
         core_helpers = (Interpreter._message, Interpreter._error_description,
                         Interpreter._error_info, Interpreter._type_by_name,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,
-                        Interpreter._new_user_message)
+                        Interpreter._new_user_message, Interpreter._begin_transaction,
+                        Interpreter._commit_transaction, Interpreter._rollback_transaction)
         wrappers = {}
 
         def copy_registry(registry):
@@ -587,14 +645,39 @@ class Interpreter:
             self.locals = previous
             self._execute_depth[0] -= 1
 
+    def _transaction_backend(self):
+        return None if self.database_context is None else self.database_context.backend
+
+    def _begin_transaction(self):
+        from .database_transactions import begin
+        if (not getattr(self, '_transaction_activation_allowed', True)
+                or self._scheduler._active_task is not None or self._scheduler.pending):
+            raise ValueError('Transactions require synchronous execution without pending tasks')
+        begin(self._transaction_backend())
+
+    def _commit_transaction(self):
+        if not getattr(self, '_transaction_activation_allowed', True):
+            raise ValueError('Transaction control is unavailable in this activation')
+        from .database_transactions import commit
+        commit(self._transaction_backend())
+
+    def _rollback_transaction(self):
+        if not getattr(self, '_transaction_activation_allowed', True):
+            raise ValueError('Transaction control is unavailable in this activation')
+        from .database_transactions import rollback
+        rollback(self._transaction_backend())
+
     def execute(self, text: str, source: str = "<строка>") -> object:
         return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Execute already-compiled AST; this does not select source branches."""
+        self._require_family()
         outermost = not self._scheduler.is_active
         try:
-            return self._execute_program_boundary(program, outermost)
+            from .database_transactions import admission, execution
+            with admission(getattr(self, "_transaction_activation_allowed", True)), execution(self._transaction_backend()):
+                return self._execute_program_boundary(program, outermost)
         finally:
             if outermost:
                 # A synchronous root failure can bypass the pump altogether.
@@ -624,6 +707,8 @@ class Interpreter:
             # keep the same receiver, storage and public availability.
             self._self_module.ready = True
             if outermost:
+                from .database_transactions import forbid_transfer
+                forbid_transfer(self._transaction_backend())
                 self.run_until_idle()
             return result
 
@@ -760,6 +845,10 @@ class Interpreter:
             return self._self_module
         if name in ("регистрысведений", "informationregisters"):
             return self._information_registers
+        if name in ("documentwritemode", "режимзаписидокумента"):
+            if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
+            from .document_posting_values import DOCUMENT_WRITE_MODES
+            return DOCUMENT_WRITE_MODES
         if name in ("документы", "documents"):
             return self._documents
         if name in ("справочники", "catalogs"):
@@ -996,7 +1085,11 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        if self._configuration_runtime is not None:
+            self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
+            from .database_transactions import forbid_transfer
+            forbid_transfer(self._transaction_backend())
             return (yield from self._run_callback(node))
         if function.function is read_json or function.function is write_json:
             if require_value and not function.returns_value:
@@ -1317,6 +1410,8 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool) -> object:
+        self._require_family()
+        owner._require_family()
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
@@ -1381,6 +1476,9 @@ class Interpreter:
                     raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
                 late_inputs[name] = value
             bindings[name] = value
+        if crossing or function.is_async:
+            from .database_transactions import forbid_transfer
+            forbid_transfer(self._transaction_backend())
         if crossing:
             # Native 8.3.27.1508: names remain storage, expression results remain
             # values/handles. Clone the complete packet only after actual effects.
@@ -1403,33 +1501,35 @@ class Interpreter:
         owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
         owner._module_context_stack.append(function.module_context)
-        try:
-            if crossing:
-                for initializer in owner.server_initializers:
-                    yield from owner.block(initializer.body)
-                owner.locals = bindings
-            result = None
+        from .database_transactions import admission
+        with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                (yield from owner.block(function.body))
-            except _Return as returned:
-                result = returned.value
-            if crossing:
-                # Validate the entire outgoing packet before touching caller
-                # storage. Escaping errors never reach this normal-return path.
-                packet = self._copy_context_packet(
-                    [result] + [bindings[name] for name, _ in copyback])
-                result = packet[0]
-                # Every output/result gets an independent per-occurrence copy.
-                # Publish only after the whole packet validates and allocates.
-                for (_, reference), value in zip(copyback, packet[1:]):
-                    reference.set(value)
-            return result
-        finally:
-            owner._module_context_stack.pop()
-            owner._context_stack.pop()
-            owner.locals = previous
-            if crossing:
-                self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
+                if crossing:
+                    for initializer in owner.server_initializers:
+                        yield from owner.block(initializer.body)
+                    owner.locals = bindings
+                result = None
+                try:
+                    (yield from owner.block(function.body))
+                except _Return as returned:
+                    result = returned.value
+                if crossing:
+                    # Validate the entire outgoing packet before touching caller
+                    # storage. Escaping errors never reach this normal-return path.
+                    packet = self._copy_context_packet(
+                        [result] + [bindings[name] for name, _ in copyback])
+                    result = packet[0]
+                    # Every output/result gets an independent per-occurrence copy.
+                    # Publish only after the whole packet validates and allocates.
+                    for (_, reference), value in zip(copyback, packet[1:]):
+                        reference.set(value)
+                return result
+            finally:
+                owner._module_context_stack.pop()
+                owner._context_stack.pop()
+                owner.locals = previous
+                if crossing:
+                    self._scheduler.active_context.state.pop(owner._diagnostic_owner, None)
 
     def _async_body(self, function: ast.Routine, bindings: dict):
         previous = self.locals
@@ -1448,6 +1548,8 @@ class Interpreter:
             self.locals = previous
 
     def visit_Await(self, node: ast.Await):
+        from .database_transactions import forbid_transfer
+        forbid_transfer(self._transaction_backend())
         value = yield from self._visit(node.operand)
         # Even settled promises suspend in the measured client profile.
         # Scalar operands also resume as themselves; no synchronous unwrap.
@@ -1504,11 +1606,13 @@ class Interpreter:
         """Internal specialization seam; ordinary modules retain their behavior."""
         return Interpreter(self.output, encoding=self.encoding, native_target=self.native_target,
                            database_context=self.database_context,
-                           compilation_profile=self.compilation_profile)
+                           compilation_profile=self.compilation_profile,
+                           family_owner=self._family_owner)
 
     def _new_server_activation(self, *, module_context: bool = True) -> "Interpreter":
         """Fresh logical server call, not a real server or a form context."""
         server = self._activation_interpreter()
+        server._transaction_activation_allowed = False
         server.user_messages = self.user_messages
         server._scheduler = self._scheduler
         if self._configuration_runtime is not None:
@@ -1560,6 +1664,14 @@ class Interpreter:
                 owner.get_member(node.name)
                 return _Reference(lambda: owner.get_member(node.name),
                                   lambda value: owner.set_member(node.name, value))
+            if (type(owner) is BSLDocumentObject and node.name.casefold() in ('ref','ссылка')
+                    and owner._manager._documents.posting_runtime() is not None):
+                # Native14 observer passes the read-only document Ref to local
+                # helpers. Preserve the actual property; assignment remains
+                # rejected by the object's setter, never a writable temporary.
+                owner.get_member(node.name)
+                return _Reference(lambda:owner.get_member(node.name),
+                                  lambda value:owner.set_member(node.name,value))
             if type(owner) is BSLValueListItem:
                 # Native PR74: a field is live storage, not a copy-out temporary.
                 # Resolve the item once; its existing setters retain conversion,
@@ -1789,7 +1901,8 @@ class Interpreter:
             child = Interpreter(self.output, encoding=self.encoding,
                                 native_target=self.native_target,
                                 database_context=self.database_context,
-                                compilation_profile=self.compilation_profile)
+                                compilation_profile=self.compilation_profile,
+                                family_owner=self._family_owner)
             child.user_messages = self.user_messages
             child._scheduler = self._scheduler
             if self._configuration_runtime is not None:
