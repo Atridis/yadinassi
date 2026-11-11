@@ -4,13 +4,13 @@ name: Reviewed browser acceptance
 # No ordinary PR, main push, schedule, native job or user browser is dispatched.
 on:
   push:
-    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/document-form-browser-reviewed]
+    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || 'configuration-browser-reviewed' }}
+  group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/business-application-browser-reviewed' && 'business-application-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || 'configuration-browser-reviewed' }}
   cancel-in-progress: false
 
 jobs:
@@ -38,6 +38,13 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
+      - name: Acquire four mixed business flows with Chromium sandbox enabled
+        if: github.ref == 'refs/heads/codex/business-application-browser-reviewed'
+        timeout-minutes: 5
+        env:
+          QA_SOURCE_SHA: ${{ github.sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/business_browser_qa.mjs
       - name: Acquire five document form flows with Chromium sandbox enabled
         if: github.ref == 'refs/heads/codex/document-form-browser-reviewed'
         timeout-minutes: 5
@@ -150,6 +157,20 @@ jobs:
             ${{ runner.temp }}/yadinassi-reference-browser-artifacts/reference-created.png
             ${{ runner.temp }}/yadinassi-reference-browser-artifacts/reference-choice-narrow.png
             ${{ runner.temp }}/yadinassi-reference-browser-artifacts/reference-reopened.png
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish only business application screenshots and redacted source-bound report
+        if: always() && github.ref == 'refs/heads/codex/business-application-browser-reviewed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: business-application-browser-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/business-startup.png
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/business-product.png
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/business-document.png
+            ${{ runner.temp }}/yadinassi-business-browser-artifacts/business-independent.png
           if-no-files-found: error
           retention-days: 14
       - name: Publish only document form screenshots and redacted source-bound report
