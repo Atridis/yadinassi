@@ -216,3 +216,6 @@ scripts/native_1c_inventory_probe.sh text eol=lf
 scripts/native_1c_inventory_reference_profile.py text eol=lf
 # Immutable native evidence must never be normalized by checkout or readers.
 tests/fixtures/native_inventory_reference/* -text
+
+# Preserve the exact native enumeration evidence bytes on every platform.
+tests/fixtures/native_enumeration_43035110558.json -text

@@ -123,6 +123,7 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         lines=(ROOT/'.gitattributes').read_text().splitlines()
         for name in ('scripts/enumeration_behavior/**','scripts/native_1c_bootstrap/enumeration_suite.py','scripts/native_1c_enumeration_probe.sh'):
             self.assertIn(name+' text eol=lf',lines)
+        self.assertIn('tests/fixtures/native_enumeration_43035110558.json -text',lines)
 
     def test_diagnostics_do_not_export_arbitrary_text(self):
         value=route.install_diagnostic('password=secret\nBroken OwnedStatus private-token-19282','load')
