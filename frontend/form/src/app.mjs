@@ -67,6 +67,7 @@ export function mountForm(environment, root, options = {}) {
     const reference = event === 'reference';
     if (reference && !options.onReference) return;
     const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
+    if ((['change', 'toggle', 'command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) return;
     let target;
     if (referenceStart) {
       try { target = referenceTarget(name); } catch (caught) { showError(caught); paint(); return; }
@@ -110,6 +111,7 @@ export function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
+      if ((['command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) throw new FormError('draft_changed');
       if (reference) {
         if (referenceStart) {
           const latest = referenceTarget(name);

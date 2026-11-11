@@ -14,6 +14,7 @@ export const ERROR_MESSAGES = Object.freeze({
   transport: 'Connection interrupted or response invalid. The outcome may be unknown. Refresh state before another action; do not repeat the action.',
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
+  draft_hidden: 'Unsubmitted inputs are on another page. Return to that page and apply them before running this action.',
   draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
@@ -175,20 +176,25 @@ export function validateSnapshot(state) {
       new Set(state.discardCommands).size !== state.discardCommands.length)) throw new FormError('transport');
   const names = new Set(), tables = new Map(), controlIds = new Set(); let cells = 0;
   for (const item of state.items) {
-    const table = item?.kind === 'table';
-    const shape = table ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'tableId', 'columns', 'rows', 'currentRow']
+    const table = item?.kind === 'table', group = item?.kind === 'group';
+    const shape = group ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'parent', 'layoutKind', 'orientation', 'showTitle'] : table ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'tableId', 'columns', 'rows', 'currentRow']
       : ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'view', 'value'];
+    if (!group && record(item) && Object.hasOwn(item, 'parent')) shape.push('parent');
     if (item?.kind === 'field' && Object.hasOwn(item, 'editor')) shape.push('editor');
     if (item?.kind === 'field' && Object.hasOwn(item, 'controlId')) shape.push('controlId');
     if (!keys(item, shape) || !validText(item.name) || !item.name.length || names.has(item.name) ||
-        !validText(item.title) || !['field', 'button', 'table'].includes(item.kind) ||
+        !validText(item.title) || !['field', 'button', 'table', 'group'].includes(item.kind) ||
         ['visible', 'enabled', 'readOnly'].some(name => typeof item[name] !== 'boolean')) throw new FormError('transport');
     names.add(item.name);
     if (Object.hasOwn(item, 'controlId')) {
       if (!integer(item.controlId) || !item.controlId || item.controlId > LIMITS.controlIds || controlIds.has(item.controlId)) throw new FormError('transport');
       controlIds.add(item.controlId);
     }
-    if (table) {
+    if (group) {
+      if (!['group', 'pages', 'page'].includes(item.layoutKind) || !['vertical', 'horizontal'].includes(item.orientation) ||
+          typeof item.showTitle !== 'boolean' || item.layoutKind === 'pages' && (item.orientation !== 'vertical' || !item.showTitle))
+        throw new FormError('transport');
+    } else if (table) {
       if (!integer(item.tableId) || !item.tableId || !Array.isArray(item.columns) || !item.columns.length ||
           item.columns.length > LIMITS.columns || !Array.isArray(item.rows) || item.rows.length > LIMITS.rows)
         throw new FormError('transport');
@@ -226,6 +232,23 @@ export function validateSnapshot(state) {
       }
     }
   }
+  const nested = state.items.some(item => item.kind === 'group');
+  const ancestors = new Map(), depths = new Map(), pageCounts = new Map();
+  for (const item of state.items) {
+    if (!nested) { if (Object.hasOwn(item, 'parent')) throw new FormError('transport'); continue; }
+    if (!Object.hasOwn(item, 'parent') || !validText(item.parent)) throw new FormError('transport');
+    const parent = ancestors.get(item.parent);
+    if (item.parent && (!parent || parent.kind !== 'group') ||
+        (item.layoutKind === 'page') !== (parent?.layoutKind === 'pages')) throw new FormError('transport');
+    if (parent && (!parent.visible && item.visible || !parent.enabled && item.enabled || parent.readOnly && !item.readOnly))
+      throw new FormError('transport');
+    const depth = (depths.get(item.parent) || 0) + 1;
+    if (depth > 8) throw new FormError('transport');
+    if (item.layoutKind === 'pages') pageCounts.set(item.name, 0);
+    if (item.layoutKind === 'page') pageCounts.set(item.parent, pageCounts.get(item.parent) + 1);
+    ancestors.set(item.name, item); depths.set(item.name, depth);
+  }
+  if ([...pageCounts.values()].some(count => count === 0)) throw new FormError('transport');
   if ((state.discardCommands || []).some(name => !state.items.some(item => item.name === name && item.kind === 'button')))
     throw new FormError('transport');
   if (new TextEncoder().encode(JSON.stringify(state)).length > LIMITS.bytes) throw new FormError('transport');

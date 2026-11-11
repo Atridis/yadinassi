@@ -1,0 +1,36 @@
+<Form xmlns="http://v8.1c.ru/8.3/xcf/logform" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.17">
+  <Title>Configuration layout workbench</Title>
+  <Attributes>
+    <Attribute name="FirstName" id="1"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
+    <Attribute name="LastName" id="2"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
+    <Attribute name="Notes" id="3"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
+    <Attribute name="Summary" id="4"><Type><v8:Type>xs:string</v8:Type></Type></Attribute>
+  </Attributes>
+  <ChildItems>
+    <UsualGroup name="Workspace" id="1"><Title>Details</Title><Group>Vertical</Group><ChildItems>
+      <Pages name="Sections" id="2"><Title>Sections</Title><PagesRepresentation>TabsOnTop</PagesRepresentation><ChildItems>
+        <Page name="IdentityPage" id="3"><Title>Identity</Title><ChildItems>
+          <UsualGroup name="Names" id="4"><Title>Name</Title><Group>Horizontal</Group><ChildItems>
+            <InputField name="FirstNameInput" id="5"><Title>First name</Title><DataPath>FirstName</DataPath></InputField>
+            <InputField name="LastNameInput" id="6"><Title>Last name</Title><DataPath>LastName</DataPath></InputField>
+          </ChildItems></UsualGroup>
+          <Button name="ApplyIdentity" id="7"><Title>Build summary</Title><CommandName>BuildSummary</CommandName></Button>
+        </ChildItems></Page>
+        <Page name="NotesPage" id="8"><Title>Notes</Title><ChildItems>
+          <InputField name="NotesInput" id="9"><Title>Notes</Title><DataPath>Notes</DataPath></InputField>
+          <Button name="ApplyNotes" id="10"><Title>Build summary</Title><CommandName>BuildSummary</CommandName></Button>
+        </ChildItems></Page>
+      </ChildItems></Pages>
+    </ChildItems></UsualGroup>
+    <UsualGroup name="Actions" id="11"><ShowTitle>false</ShowTitle><Group>Horizontal</Group><ChildItems>
+      <Button name="ToggleNamesButton" id="12"><Title>Lock/unlock name group</Title><CommandName>ToggleNames</CommandName></Button>
+      <Button name="ToggleNotesButton" id="13"><Title>Show/hide notes page</Title><CommandName>ToggleNotes</CommandName></Button>
+    </ChildItems></UsualGroup>
+    <LabelField name="SummaryLabel" id="14"><Title>Summary</Title><DataPath>Summary</DataPath></LabelField>
+  </ChildItems>
+  <Commands>
+    <Command name="BuildSummary" id="1"><Action>BuildSummaryClick</Action></Command>
+    <Command name="ToggleNames" id="2"><Action>ToggleNamesClick</Action></Command>
+    <Command name="ToggleNotes" id="3"><Action>ToggleNotesClick</Action></Command>
+  </Commands>
+</Form>

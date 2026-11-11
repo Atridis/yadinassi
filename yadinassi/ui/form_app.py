@@ -166,8 +166,17 @@ class FormController:
         views = {key.casefold(): value for key, value in snapshot.item_views}
         tables = {table.name.casefold(): table for table in snapshot.tables}
         selections = dict(snapshot.selections)
+        layout = {row[0]: row for row in session.form._layout}
         items = []
         for name, kind, title, visible, enabled, read_only, path in snapshot.items:
+            parent = {'parent': layout[name][1]} if layout else {}
+            if kind == 'group':
+                _, _, layout_kind, orientation, show_title = layout[name]
+                items.append({'name': name, 'kind': kind, 'title': title,
+                    'visible': visible, 'enabled': enabled, 'readOnly': read_only,
+                    'controlId': session.form.items._values[name.casefold()]._replica_id,
+                    'layoutKind': layout_kind, 'orientation': orientation, 'showTitle': show_title, **parent})
+                continue
             if kind == 'table':
                 table = tables[path.casefold()]
                 control_id = session.form.items._values[name.casefold()]._replica_id
@@ -179,7 +188,7 @@ class FormController:
                     'rows': [{'id': identity, 'values': [self._encode_view_value(column.value_type, value)
                              for column, value in zip(session.form._tables[path.casefold()].schema.columns, values)]}
                              for identity, values in table.rows],
-                    'currentRow': selections.get(name)})
+                    'currentRow': selections.get(name), **parent})
                 continue
             view = views.get(name.casefold(), 'input')
             # Native view names are not renderer-controlled.
@@ -189,7 +198,7 @@ class FormController:
             value = None if kind == 'button' else self._encode_view_value(
                 session.form._attributes[path.casefold()].value_type, values.get(path.casefold()))
             item = {'name': name, 'kind': kind, 'title': title, 'visible': visible,
-                'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value}
+                'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value, **parent}
             if kind == 'field':
                 item['controlId'] = session.form.items._values[name.casefold()]._replica_id
             editor = None if kind == 'button' else self._editor_description(

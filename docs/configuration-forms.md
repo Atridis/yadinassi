@@ -35,14 +35,15 @@ Only the admitted XML subset is executable:
 
 - managed form metadata: Name and FormType;
 - scalar attributes with String/Number/Boolean/Date types;
-- flat InputField, LabelField, CheckBoxField and Button controls;
+- InputField, LabelField, CheckBoxField and Button controls, including the
+  bounded nested layout below;
 - declared commands and OnChange, OnCreateAtServer, OnOpen, BeforeClose,
   OnClose handlers supported by the existing form session;
 - ordinary scalar values, bounded immutable Parameters/Параметры.
 
 Unsupported behavior-bearing XML is rejected, not ignored. Localized title
 objects, automatic object forms, native standard commands, automatic persistence,
-layout groups, dynamic lists, and arbitrary FormData are not enabled by this
+dynamic lists, arbitrary layout properties, and arbitrary FormData are not enabled by this
 profile. This is not a claim that every Designer dump can already run.
 
 ## One BSL module, independent runtimes
@@ -120,3 +121,99 @@ selection. Selection is reconciled with catalog/page changes and authoritative
 save results. The command resolves its target from current selection and the
 latest snapshot before sending, even before the next render. Keyboard arrows
 move row focus; Enter opens the sole selected row.
+
+
+## Nested groups and tab pages
+
+```console
+python -m yadinassi.ui.configuration_app examples/configuration-forms/layouts --form CommonForm.Layout
+```
+
+The authored workbench demonstrates two pages, a horizontal name group, retained
+raw edits, server summary calculation, and BSL group/page appearance changes. It
+uses the same host as the other examples, without application-specific Python.
+It is not a native-export fixture or evidence of 1C pixel/layout parity.
+
+The additional XML subset is closed:
+
+- `UsualGroup`: Title, Visible, Enabled, ReadOnly, Group (`Vertical` or
+  `Horizontal`), ShowTitle and ChildItems;
+- `Pages`: Title, Visible, Enabled, ReadOnly, PagesRepresentation (`TabsOnTop`
+  only) and ChildItems containing one or more direct `Page` children;
+- `Page`: Title, Visible, Enabled, ReadOnly, Group, ShowTitle and ChildItems.
+  A Page is admitted only directly inside Pages; pages may contain nested groups,
+  tables and further Pages. Existing field/reference/table/command admission is
+  unchanged. Group/Page titles remain scalar strings, not localized objects.
+
+Declaration order is retained, including buttons inside groups. In a nested
+form, root controls also stay in declaration order rather than collecting every
+button into a separate toolbar. Horizontal groups wrap at narrow widths. Layout
+has at most 128 total nodes, eight levels, and globally unique item names and
+numeric IDs across all child inventories. Topology is fixed by configuration:
+programmatic Items.Add/Delete, reparenting, custom layout events, CurrentPage and
+unlisted presentation properties are refused. The flat programmatic API remains
+unchanged. Original XML/module bytes remain part of the complete source digest
+and canonical profile verification; accepting layout does not add any storage,
+standard-command, privileged-execution or native-service authority.
+
+### Own properties versus effective restrictions
+
+Groups are available through Items before OnCreateAtServer and OnOpen. Their
+Title, Visible, Enabled and ReadOnly can be read and changed by admitted BSL on
+either side. Each child's own flags are retained: changing a group never writes
+its descendants' BSL properties. Effective Visible/Enabled are the conjunction
+of a node's own and ancestor values; effective ReadOnly is their disjunction.
+Removing a parent restriction therefore restores, but never elevates, each
+child's own state. Replication transmits own properties and immutable topology;
+the renderer projection derives effective flags. This is a specified bounded
+host policy, not an assertion of measured native group-inheritance semantics.
+
+Host event admission enforces effective Visible/Enabled on changes, commands,
+table cells/selections and reference selection. Effective ReadOnly blocks input,
+reference changes and commands in nested forms, while a read-only table may
+still select rows for inspection. Trusted BSL may still assign data directly,
+just as before; appearance is not a data-security boundary. Flat legacy command
+dispatch semantics have not been changed by this feature.
+
+### Renderer-owned page navigation and drafts
+
+Page selection is private to one retained renderer view. No selected-page state,
+BSL handler, CurrentPage value or event crosses the host boundary. Initially the
+first visible enabled page is selected, or the first visible page if all are
+disabled. A hidden/disabled selected page falls back by the same rule. Hidden
+pages have no tab; disabled pages cannot be selected. ReadOnly does not prevent
+navigation. Nested page selections are independent. Tab buttons support arrows,
+Home and End and expose linked tab/tabpanel accessibility semantics.
+
+Switching pages does not flush inputs, run BSL, refresh or discard drafts. Input
+nodes, raw strings and selection ranges are retained, including invalid number
+or date text. Pending edits on an inactive page block commands and Close before
+any event is sent: return to that page and apply the edit (Enter or ordinary
+blur), or explicitly Refresh to discard it. This avoids silently replaying a
+hidden page's OnChange while acting on another page. Inactive, detached and
+replaced DOM controls are fenced before dispatch; no intent is queued for later
+page reactivation. Page switches are disabled while an event or reference picker
+is in flight. An authoritative change that removes, rebinds, disables, hides or
+supersedes a pending edit preserves its raw text in copy-only recovery rather
+than retargeting it. Existing transport-uncertainty locks remain unchanged.
+
+These are distinct guarantees: the host rejects **BSL-hidden/disabled** controls
+using inherited properties. It cannot reject a merely **renderer-inactive** page
+as such, because no active-page token is sent. The latter is a browser interaction
+contract, not a server authorization claim. Explicit refresh and form retirement
+keep their existing draft-discard semantics. Page state is not persisted across
+a browser reload or new activation.
+
+### Evidence and native boundary
+
+Host/unit coverage exercises strict XML topology, source identity, own/effective
+properties, replication admission, catalog/document compositions and reference
+restrictions. Renderer tests cover tab navigation, retained scalar/table drafts,
+hidden-control dispatch, authoritative fallback and delayed responses. Real
+browser acceptance is separate and must be reported for the exact tested tree.
+No native window, tab-event, selected-page or responsive-layout parity is claimed.
+Before adding native inheritance or CurrentPage semantics, acquire a bounded
+source-bound 1C observation with a two-page form: record child own flags before,
+during and after a parent visibility/enabled/readOnly toggle, capture which
+controls remain interactive, and record event traces when switching with an
+uncommitted edit. Do not reinterpret this renderer policy as that evidence.
