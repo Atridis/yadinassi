@@ -158,7 +158,11 @@ standard-command, privileged-execution or native-service authority.
 
 ### Own properties versus effective restrictions
 
-Groups are available through Items before OnCreateAtServer and OnOpen. Their
+Groups are available through Items before OnCreateAtServer and OnOpen.
+TypeOf returns the nominal FormGroup / ГруппаФормы type for UsualGroup, Pages
+and Page, so BSL can inspect Items by type on either side. This does not enable
+New FormGroup, dynamic Items.Add of that type, native type serialization,
+CurrentPage or native inheritance semantics. Their
 Title, Visible, Enabled and ReadOnly can be read and changed by admitted BSL on
 either side. Each child's own flags are retained: changing a group never writes
 its descendants' BSL properties. Effective Visible/Enabled are the conjunction

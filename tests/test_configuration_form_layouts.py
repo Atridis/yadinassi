@@ -11,6 +11,10 @@ from test_configuration_forms import sources, pair
 from test_configuration_catalog_profile import catalog_form_sources
 from document_form_fixture import sources as document_sources
 from test_form_tables import active
+from yadinassi import Interpreter
+from yadinassi.errors import BSLRuntimeError
+from yadinassi.type_values import type_by_name, type_of
+from yadinassi.serialization import value_to_string_internal
 from yadinassi.catalog_backend import BackendError
 from yadinassi.configuration_forms import load_configuration_forms
 from yadinassi.configuration_xml import import_catalog_forms_configuration
@@ -46,6 +50,53 @@ class ConfigurationFormLayoutTests(unittest.TestCase):
         self.addCleanup(server.session.interpreter.close)
         client.open()
         return server, client
+
+    def test_group_nominal_type_bilingual_and_exact_on_both_replicas(self):
+        server, client = self.sessions()
+        for name in ('FormGroup', 'formgroup', 'ГруппаФормы', 'ГРУППАФОРМЫ'):
+            self.assertIs(type_by_name(name), BSLType.FORM_GROUP)
+        self.assertIs(type_of(BSLType.FORM_GROUP), BSLType.TYPE)
+        for form in (server.session.form, client.form):
+            for name in ('workspace', 'sections', 'identitypage', 'names', 'notespage', 'actions'):
+                self.assertIs(type_of(form.items._values[name]), BSLType.FORM_GROUP)
+            self.assertIs(type_of(form.items._values['firstnameinput']), BSLType.FORM_FIELD)
+            self.assertIs(type_of(form.items._values['applyidentity']), BSLType.FORM_BUTTON)
+
+    def test_bsl_server_can_inspect_items_by_group_type(self):
+        files = layout_sources()
+        files[MODULE] = files[MODULE].replace(b'Summary = FirstName + " " + LastName + ": " + Notes;', b'''Count = 0;
+            For Each Item In Items Do
+                If TypeOf(Item) = Type("FormGroup") Then Count = Count + 1; EndIf;
+            EndDo;
+            Summary = String(Count);''')
+        _, client = self.sessions(files)
+        client.dispatch('command', revision=client.revision, control='ApplyIdentity')
+        self.assertEqual(client.form._data['summary'], '6')
+
+    def test_bsl_client_group_type_lookup_and_presentation(self):
+        files = layout_sources()
+        files[MODULE] = files[MODULE].replace(b'Items.Names.ReadOnly = Not Items.Names.ReadOnly;',
+            'If ТипЗнч(Items.Names) = Тип("группаформы") And TypeOf(Items.Names) <> Type("FormField") Then Summary = String(TypeOf(Items.Sections)); EndIf;'.encode())
+        _, client = self.sessions(files)
+        client.dispatch('command', revision=client.revision, control='ToggleNamesButton')
+        self.assertEqual(client.form._data['summary'], 'ГруппаФормы')
+
+    def test_nominal_group_does_not_authorize_constructor_or_dynamic_add(self):
+        vm = Interpreter(); self.addCleanup(vm.close)
+        for expression in ('New FormGroup', 'New ГруппаФормы', 'New (Type("FormGroup"))'):
+            with self.subTest(expression=expression), self.assertRaises(BSLRuntimeError): vm.execute(expression)
+        server, client = pair(load_configuration_forms(sources('counter')).resolve('CommonForm.Counter'))
+        self.addCleanup(server.session.interpreter.close); self.addCleanup(client.interpreter.close)
+        client.open()
+        with active(server.session):
+            before = tuple(server.session.form.items._values)
+            with self.assertRaises(TypeError): server.session.form.items.add('Group', BSLType.FORM_GROUP)
+            self.assertEqual(tuple(server.session.form.items._values), before)
+
+    def test_group_value_and_type_native_codecs_remain_explicitly_closed(self):
+        server, _ = self.sessions()
+        for value in (BSLType.FORM_GROUP, server.session.form.items._values['names']):
+            with self.subTest(kind=type(value).__name__), self.assertRaises(ValueError): value_to_string_internal(value)
 
     def test_example_order_and_closed_topology(self):
         definition = self.definition()
