@@ -65,15 +65,22 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         full.absent(root);root.mkdir(mode=0o700)
         baseline=full.client_process_baseline(nonce)
         def designer(label,args):
+            source_root=Path(args[1]) if label=='load' else None
+            facts=dict(source_root_present=None if source_root is None else source_root.is_dir() and not source_root.is_symlink(),
+                configuration_present=None if source_root is None else (source_root/'Configuration.xml').is_file() and not (source_root/'Configuration.xml').is_symlink())
             try:
                 full.run_process(platform.command('DESIGNER')+args+['/Out',str(root/(label+'.log')),
                     '/DumpResult',str(root/(label+'.result'))],root,root/(label+'-console.log'),120,require_clean_tree=True)
-            except Exception:
+            except Exception as error:
+                code=getattr(error,'exit_code',None)
+                facts['exit_code']=code if type(code) is int and -255<=code<=255 else None
                 for name in (label+'.log',label+'-console.log'):
                     try:
                         raw=full.secure_bytes(root/name,65536,allow_empty=True)
-                        report['install_diagnostics'].append(route.install_diagnostic(diagnostics.native_text(raw),label))
+                        report['install_diagnostics'].append(route.install_diagnostic(diagnostics.native_text(raw),label,**facts))
                     except Exception:pass
+                if not report['install_diagnostics']:
+                    report['install_diagnostics'].append(route.install_diagnostic('',label,**facts))
                 raise
             if not full.native_processes_quiet(platform.executable):raise full.FullError('process_failed')
         before=root/'before';before.mkdir()

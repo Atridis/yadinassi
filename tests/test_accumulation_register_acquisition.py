@@ -218,5 +218,34 @@ class AccumulationAcquisitionTests(unittest.TestCase):
     def test_install_failure_capture_is_guarded_and_not_raw(self):
         source=(ROOT/'scripts/native_1c_bootstrap/accumulation_register_suite.py').read_text(encoding='utf-8')
         self.assertIn('full.secure_bytes(root/name,65536,allow_empty=True)',source)
-        self.assertIn('route.install_diagnostic(diagnostics.native_text(raw),label)',source)
+        self.assertIn('route.install_diagnostic(diagnostics.native_text(raw),label,**facts)',source)
         self.assertIn("if stage['status']=='ok':require(stage['install_diagnostics']==[])",(ROOT/'scripts/native_1c_accumulation_register_profile.py').read_text(encoding='utf-8'))
+
+    def test_install_diagnostic_discriminates_loader_terms(self):
+        value=route.install_diagnostic('X Error: BadName named color or font does not exist','load')
+        for token in ('error','invalid_name','color','font','not','exists'):self.assertIn(token,value['tokens'])
+    def test_install_diagnostic_discriminates_xml_terms(self):
+        value=route.install_diagnostic('Ошибка преобразования XDTO: Имя метаданных не определено. Свойство UseInTotals','load')
+        for token in ('error','conversion','xml','name','metadata','not','defined','owned:UseInTotals'):self.assertIn(token,value['tokens'])
+    def test_install_diagnostic_exact_facts(self):
+        value=route.install_diagnostic('', 'load',exit_code=37,source_root_present=True,configuration_present=False)
+        self.assertTrue(route.valid_install_diagnostic(value));self.assertEqual(value['exit_code'],37)
+        self.assertIs(value['source_root_present'],True);self.assertIs(value['configuration_present'],False)
+    def test_install_diagnostic_rejects_coerced_facts(self):
+        for kwargs in ({'exit_code':True},{'exit_code':256},{'source_root_present':1},{'configuration_present':'true'}):
+            with self.subTest(kwargs=kwargs),self.assertRaises(ValueError):route.install_diagnostic('', 'load',**kwargs)
+    def test_install_preinvocation_facts_are_boolean_only(self):
+        source=(ROOT/'scripts/native_1c_bootstrap/accumulation_register_suite.py').read_text(encoding='utf-8')
+        self.assertIn("source_root=Path(args[1]) if label=='load' else None",source)
+        self.assertLess(source.index('facts=dict(source_root_present='),source.index("full.run_process(platform.command('DESIGNER')"))
+        self.assertIn("code=getattr(error,'exit_code',None)",source)
+    def test_failed_native_process_retains_only_finite_exit_status(self):
+        from unittest import mock
+        from test_native_1c_full_stage import suite
+        process=mock.MagicMock();process.__enter__.return_value=process;process.wait.return_value=37
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            root=Path(directory)
+            with mock.patch.object(suite.os,'name','posix'),mock.patch.object(suite.subprocess,'Popen',return_value=process),mock.patch.object(suite,'_stop_group'):
+                with self.assertRaises(suite.FullError) as caught:suite.run_process(['native'],root,root/'console',120)
+        self.assertEqual(caught.exception.kind,'process_failed');self.assertEqual(caught.exception.exit_code,37)
+        self.assertEqual(str(caught.exception),'process_failed')

@@ -108,10 +108,10 @@ INSTALL_LABELS=('before','load','update','after')
 INSTALL_WORDS={
     'error':('error','ошибка','ошибки'), 'invalid':('invalid','недопустимый','недопустимое','недопустимая','неверное','неверный'),
     'unknown':('unknown','неизвестный','неизвестное','неизвестная'),
-    'not':('not','не'), 'found':('found','найден','найдена','найдено','обнаружено'),
+    'not':('not','не'),
     'must':('must','должен','должна','должно'), 'required':('required','требуется','необходимо'),
     'cannot':('cannot','невозможно','нельзя'), 'only':('only','только'),
-    'name':('name','имя','имени','наименование'), 'field':('field','поле','поля'),
+    'field':('field','поле','поля'),
     'attribute':('attribute','атрибут','атрибута','реквизит','реквизита'),
     'element':('element','элемент','элемента'), 'type':('type','тип','типа'),
     'value':('value','значение','значения'), 'property':('property','свойство','свойства'),
@@ -124,16 +124,45 @@ INSTALL_WORDS={
     'identifier':('identifier','идентификатор','идентификатора'), 'module':('module','модуль','модуля'),
     'rights':('rights','право','права','прав'), 'role':('role','роль','роли'),
     'read':('read','чтение'), 'write':('write','запись'), 'update':('update','изменение','обновление'),
-    'load':('load','загрузка','загрузки'), 'failed':('failed','ошибкой'),
+    'load':('load','loading','загрузка','загрузки','загрузке'), 'failed':('failed','failure','ошибкой'),
+    'xml':('xml','xdto','хдто'), 'conversion':('conversion','convert','преобразование','преобразования'),
+    'mapping':('mapping','отображение','отображения'), 'namespace':('namespace','пространство','пространства'),
+    'metadata':('metadata','метаданные','метаданных'), 'object':('object','объект','объекта'),
+    'setting':('setting','settings','настройка','настройки'), 'enum':('enum','enumeration','перечисление','перечисления'),
+    'absent':('absent','missing','отсутствует','отсутствуют'), 'defined':('defined','определен','определено','определена'),
+    'exists':('exists','exist','существует','существуют'), 'unique':('unique','уникальный','уникальное','уникально','уникальным'),
+    'correct':('correct','корректный','корректное'), 'unsupported':('unsupported','поддерживается','поддерживаются'),
+    'while':('while','при'), 'operation':('operation','операция','операции'),
+    'opening':('open','opening','открытие','открытия','открыть'), 'reading':('reading','чтения','читать'),
+    'file':('file','files','файл','файла','файлы','файлов'), 'directory':('directory','folder','каталог','каталога','каталогов'),
+    'path':('path','путь','пути'), 'format':('format','формат','формата'), 'encoding':('encoding','кодировка','кодировки'),
+    'parse':('parse','parser','parsing','разбор','разбора'), 'end':('end','конец','конца'),
+    'unexpected':('unexpected','неожиданный','неожиданное'), 'symbol':('symbol','символ','символа'),
+    'line':('line','строка','строки'), 'column':('column','колонка','колонки'),
+    'invalid_name':('badname',), 'display':('display','дисплей','дисплея'), 'font':('font','fonts','шрифт','шрифта'),
+    'color':('color','цвет','цвета'), 'request':('request','запрос','запроса'),
+    'connection':('connection','соединение','соединения'), 'protocol':('protocol','protocols','протокол','протокола'),
+    'authentication':('authentication','аутентификация','аутентификации'), 'session':('session','сессия','сеанса'),
+    'library':('library','libraries','библиотека','библиотеки'), 'plugin':('plugin','плагин'),
+    'application':('application','приложение','приложения'), 'platform':('platform','платформа','платформы'),
+    'terminate':('terminate','terminated','termination','завершение'), 'exception':('exception','исключение','исключения'),
+    'system':('system','система','системы'), 'memory':('memory','память','памяти'),
+    'sequence':('sequence','последовательность','последовательности'),
+    'found':('found','найден','найдена','найдено','обнаружено','обнаружен','обнаружена'),
+    'name':('name','names','имя','имени','имен','наименование'),
+
 }
 INSTALL_IDENTIFIERS=frozenset(('OwnedAccumulationDoc','OwnedAccumulationRows','AccumulationRegister',
     'Record','Manager','Selection','List','RecordSet','RecordKey','RegisterType','Balance',
     'RegisterRecords','EnableTotalsSplitting','DataLockControlMode','UseInTotals',
     'Amount','Quantity','Item','Warehouse','Note','Period','Active','RecordType',
-    'AppendRows','Input','Set','Rows','First','Replacement','PersistedCount','Posting','Cancel','PostingMode'))
+    'AppendRows','Input','Set','Rows','First','Replacement','PersistedCount','Posting','Cancel','PostingMode',
+    'Name','MetaDataObject','Configuration','InternalInfo','Properties','ChildObjects','GeneratedType',
+    'TypeId','ValueId','NumberQualifiers','StringQualifiers','Digits','FractionDigits','AllowedSign',
+    'Length','AllowedLength','Resource','Dimension','Attribute','Update','Read'))
 _INSTALL_TOKENS=frozenset(INSTALL_WORDS)|frozenset('owned:'+v for v in INSTALL_IDENTIFIERS)|{'redacted','line_break'}
 
-def install_diagnostic(text,label):
+def install_diagnostic(text,label,*,exit_code=None,source_root_present=None,configuration_present=None):
     if type(text) is not str or len(text)>65536 or label not in INSTALL_LABELS:
         raise ValueError('install diagnostic input')
     aliases={word:token for token,words in INSTALL_WORDS.items() for word in words}
@@ -141,16 +170,22 @@ def install_diagnostic(text,label):
     # Remove credential-bearing lines before matching even fixed vocabulary.
     text=re.sub(r'^.*(?:password|passwd|token|secret|authorization|cookie|пароль|токен|секрет)\s*[:=].*$',
                 ' ',text,flags=re.I|re.M)
+    if (exit_code is not None and (type(exit_code) is not int or not -255<=exit_code<=255)
+            or any(v is not None and type(v) is not bool for v in (source_root_present,configuration_present))):
+        raise ValueError('install diagnostic facts')
     tokens=[]
     for word in re.findall(r'\r\n|\r|\n|[^\W\d_]+(?:_[^\W\d_]+)*',text,re.UNICODE):
         token='line_break' if word in ('\r','\n','\r\n') else identities.get(word.casefold(),aliases.get(word.casefold(),'redacted'))
         if token not in ('redacted','line_break') or not tokens or tokens[-1]!=token:tokens.append(token)
-    return {'step':label,'tokens':tokens[:96] if len(tokens)<=96 else tokens[:48]+tokens[-48:],
+    return {'step':label,'exit_code':exit_code,'source_root_present':source_root_present,
+            'configuration_present':configuration_present,'tokens':tokens[:96] if len(tokens)<=96 else tokens[:48]+tokens[-48:],
             'truncated':len(tokens)>96}
 
 def valid_install_diagnostic(value):
-    return (type(value) is dict and set(value)=={'step','tokens','truncated'}
+    return (type(value) is dict and set(value)=={'step','tokens','truncated','exit_code','source_root_present','configuration_present'}
         and type(value['step']) is str and value['step'] in INSTALL_LABELS
+        and (value['exit_code'] is None or type(value['exit_code']) is int and -255<=value['exit_code']<=255)
+        and all(value[k] is None or type(value[k]) is bool for k in ('source_root_present','configuration_present'))
         and type(value['truncated']) is bool and type(value['tokens']) is list
         and len(value['tokens'])<=96 and (not value['truncated'] or len(value['tokens'])==96)
         and all(type(v) is str and v in _INSTALL_TOKENS for v in value['tokens']))
