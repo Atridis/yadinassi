@@ -219,3 +219,10 @@ tests/fixtures/native_inventory_reference/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Source-bound ordinary DOM XPath observations.
+scripts/dom_xpath_behavior/** text eol=lf
+scripts/native_1c_dom_xpath_profile.py text eol=lf
+scripts/native_1c_dom_xpath_probe.sh text eol=lf
+scripts/native_1c_bootstrap/dom_xpath_suite.py text eol=lf
+tests/test_dom_xpath_native_acquisition.py text eol=lf
