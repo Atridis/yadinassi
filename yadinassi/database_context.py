@@ -28,6 +28,14 @@ class SQLiteDBContext:
         result.path = result._backend.path
         return result
 
+    @classmethod
+    def create_accumulation(cls, path, configuration):
+        """Create a separate fresh accumulation profile with an explicit source grant."""
+        result = object.__new__(cls)
+        result._backend = SQLiteCatalogBackend.create_accumulation(path, configuration)
+        result.path = result._backend.path
+        return result
+
     @property
     def backend(self):
         return self._backend

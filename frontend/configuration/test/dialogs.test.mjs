@@ -64,6 +64,8 @@ test('owner event is paused but snapshot is permitted',async()=>{
   let calls=0;const client=new ApplicationClient(async request=>{calls++;return envelope(request,undefined,request.method==='application.form'?{session:'form-1',form:reply(request.params.request,form())}:{});});
   await client.request('application.hello',hello);
   await assert.rejects(client.form('form-1',{id:1,method:'form.event',params:{event:'close'}}),e=>e.code==='dialog_pending');
+  await assert.rejects(client.form('form-2',{id:1,method:'form.event',params:{event:'command'}}),e=>e.code==='dialog_pending');
+  await assert.rejects(client.request('application.open',{entry:1,request:'later'}),e=>e.code==='dialog_pending');
   await client.form('form-1',{id:1,method:'form.snapshot',params:{}});assert.equal(calls,2);
 });
 test('double answer retires its ticket before a queued second answer can dispatch',async()=>{

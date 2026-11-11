@@ -96,6 +96,8 @@ _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
 _UNSUPPORTED_CODEC_TYPES = frozenset({
     BSLType.QUESTION_DIALOG_MODE, BSLType.DIALOG_RETURN_CODE,
+    # Type/TypeOf identity is measured; no internal stream/identifier is admitted.
+    BSLType.ACCUMULATION_RECORD_TYPE,
     BSLType.USER_MESSAGE, BSLType.CALLBACK_DESCRIPTION,
     BSLType.TEMP_TABLES_MANAGER, BSLType.QUERY, BSLType.QUERY_RESULT, BSLType.QUERY_RESULT_SELECTION,
     BSLType.HTTP_CONNECTION, BSLType.HTTP_REQUEST, BSLType.HTTP_RESPONSE, BSLType.BYTE_ORDER_MARK_USE,
@@ -183,6 +185,8 @@ def _number(value: Decimal) -> str:
 
 def _require_representable_description(value: BSLTypeDescription) -> None:
     """Never silently erase settings for types absent from the Pattern."""
+    if type(value.types) is not tuple or any(type(kind) is not BSLType for kind in value.types):
+        raise ValueError("Сериализация metadata-bound ОписаниеТипов пока не поддерживается")
     if value._query_scalar is not None:
         raise ValueError("Сериализация nullable описания колонки запроса пока не поддерживается")
     if BSLType.UUID in value.types:

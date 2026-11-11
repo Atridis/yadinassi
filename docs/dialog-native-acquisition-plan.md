@@ -1,6 +1,6 @@
 # Owned asynchronous dialog acquisition plan
 
-Status: source candidate only. Nothing here is measured native parity.
+Status: separate source-bound acquisition lane prepared, not executed. Nothing here is measured native parity.
 
 ## API contract to verify
 
@@ -36,7 +36,7 @@ AdditionalParameters identity flag and finite event order. At most six records,
 4096 bytes and 120 seconds total. Explicit client module variables are required.
 The runner must impose a bounded idle watchdog, produce entered/completed markers,
 and continue outside completion, not open a new dialog reentrantly from it.
-The candidate BSL is intentionally not yet a runnable acquisition route.
+The runnable owned source is dialog_packet/Launcher/Forms/Main/Ext/Form/Module.bsl; observations.bsl retains the initial design only, is not staged or executed.
 
 Use a new owned one-form EPF, pinned source hashes, secure bounded reads of known
 executable modules, EPF before/after hash, existing network-none readonly sandbox
@@ -57,3 +57,21 @@ used solely to obtain real native callbacks for signature/type/identity evidence
 Before running anything: finalize separate route and offline contracts, collect
 exact test count, obtain parent review and notification. Proposed native count
 is six; no tests, native execution, browser, installation or CI has run.
+
+
+## Prepared route and review counts
+
+Dedicated new files: native_1c_dialogs_profile.py, native_1c_dialogs_probe.sh,
+bootstrap/dialogs_suite.py and bootstrap/run_dialogs_stage.py. The dedicated probe
+rejects every public selector except --dialogs-suite plus its nonce. Historical
+runners are unchanged. The new workflow binds only codex/configuration-dialogs
+owner PR events, before credentials; artifacts are dialogs-report.json and the
+validated dialogs.out/provenance pair. Source packet has five native files,
+including exactly two executable BSL modules. Source/output and EPF guards are
+independent of XML output inventory or serializer spelling.
+
+Review count: 15 offline Python cases and 6 native timeout flows. Only AST,
+shell syntax and diff whitespace checks were performed; tests/native were not
+run. Result identity is recorded as 0/1 rather than assumed. No GUI keyboard,
+button click, close or default-input claim is made. Runtime parity stays
+not_evaluated. User-facing host API may still reject all optional arguments.

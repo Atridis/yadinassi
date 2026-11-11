@@ -2,9 +2,14 @@
 import assert from 'node:assert/strict';
 
 export function checkUnownedApplicationCapability(result) {
+  const dialog = Object.hasOwn(result,'dialogCapability');
   const owned = Object.hasOwn(result, 'updates');
   assert.deepEqual(Object.keys(result).sort(),
-    ('protocol state error session form' + (owned ? ' updates' : '')).split(' ').sort(), 'wire_keys');
+    ('protocol state error session form' + (owned ? ' updates' : '') + (dialog ? ' dialogCapability dialogs' : '')).split(' ').sort(), 'wire_keys');
+  if (dialog) {
+    assert.equal(result.dialogCapability,'yadinassi-owned-dialog/1','dialog_capability');
+    assert.deepEqual(result.dialogs,[],'unexpected_dialog');
+  }
   if (!owned) return;
   // These scenarios have no Close(result) or completion. Do not quietly accept
   // unsolicited snapshots or weaken their original closed-envelope witness.

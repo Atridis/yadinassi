@@ -31,6 +31,9 @@ class DialogReturnCode(Enum):
 
 
 class _QuestionModes(BSLObject):
+    def __str__(self):
+        raise ValueError('dialog namespace presentation is outside the host profile')
+
     def get_member(self, name):
         values = {'ok': QuestionDialogMode.OK, 'ок': QuestionDialogMode.OK,
                   'okcancel': QuestionDialogMode.OK_CANCEL, 'окотмена': QuestionDialogMode.OK_CANCEL,
@@ -40,6 +43,9 @@ class _QuestionModes(BSLObject):
 
 
 class _ReturnCodes(BSLObject):
+    def __str__(self):
+        raise ValueError('dialog namespace presentation is outside the host profile')
+
     def get_member(self, name):
         values = {'ok': DialogReturnCode.OK, 'ок': DialogReturnCode.OK,
                   'cancel': DialogReturnCode.CANCEL, 'отмена': DialogReturnCode.CANCEL,

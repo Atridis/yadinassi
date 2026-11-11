@@ -167,6 +167,12 @@ export class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      // A modal that arrived after an intent was queued must stop that older
+      // business intent too. Read-only reconciliation is still allowed.
+      if (this.dialogs.length && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting'].includes(method) ||
+          method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
+        const error = new FormError('dialog_pending'); error.preDispatch = true; throw error;
+      }
       if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
           (method === 'application.reference' || method === 'application.recoverPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
@@ -195,7 +201,7 @@ export class ApplicationClient {
         const nextDialogs = result.dialogs || [];
         for (const dialog of nextDialogs) {
           const previous = this.dialogs.find(d => d.ticket === dialog.ticket);
-          if (this.retiredDialogs.has(dialog.ticket) || previous && JSON.stringify(previous) !== JSON.stringify(dialog)) throw new FormError('transport');
+          if (this.retiredDialogs.has(dialog.ticket) || previous && ['owner','kind','title','text','choices'].some(key => JSON.stringify(previous[key]) !== JSON.stringify(dialog[key]))) throw new FormError('transport');
         }
         for (const dialog of this.dialogs) if (!nextDialogs.some(d => d.ticket === dialog.ticket)) this.retiredDialogs.add(dialog.ticket);
         if (this.retiredDialogs.size > 256) throw new FormError('transport');

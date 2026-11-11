@@ -1239,7 +1239,7 @@ class ConfigurationController:
             elif method == 'application.hello':
                 requested_dialogs = params.get('dialogCapability') == DIALOG_CAPABILITY
                 expected = {'protocol': PROTOCOL, **({'dialogCapability': DIALOG_CAPABILITY} if requested_dialogs else {})}
-                if params != expected or requested_dialogs and self.application is None:
+                if params != expected:
                     raise ValueError('invalid application handshake')
                 if self.opened and requested_dialogs != self._dialog_capability:
                     raise ValueError('dialog negotiation is immutable')

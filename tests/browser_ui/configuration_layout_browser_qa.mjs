@@ -208,7 +208,8 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    exactKeys(packet.params,'protocol dialogCapability');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.open'){
     exactKeys(packet.params,'entry request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
     assert.match(packet.params.request,/^open-[0-9a-f]{32}-[1-9][0-9]*$/);

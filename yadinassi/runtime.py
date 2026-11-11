@@ -1,3 +1,4 @@
+from weakref import WeakValueDictionary
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -40,7 +41,7 @@ from .numeric import bits, elementary, numbers
 from . import regex_functions
 from . import clocks, date_time_conversions, dates, formatting, number_in_words, period_presentation, serialization, strings, type_values, value_checks, xml_values
 from .chars import BSLChars, CHARS
-from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection
+from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
@@ -186,11 +187,6 @@ class Interpreter:
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
         self._database_context = database_context
-        self._metadata = BSLMetadata(database_context)
-        self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
-        self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
-        self._documents._interpreter = self
-        self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
         self._xdto_factory = BSLXDTOFactory()
         if family_owner is not None:
             if not isinstance(family_owner, Interpreter) or family_owner.native_target != self._native_target:
@@ -203,6 +199,9 @@ class Interpreter:
         self._family_closed = False
         self._family_released = False
         self._family_generation = 0 if family_owner is None else family_owner._family_generation
+        if family_owner is None:
+            self._schema_scopes = WeakValueDictionary()
+        self._bind_schema_scope()
         self._scheduler = (Scheduler(self._native_target) if family_owner is None
                            else family_owner._scheduler)
         self._diagnostic_owner = self
@@ -252,6 +251,7 @@ class Interpreter:
         self.register_function("НачатьТранзакцию", self._begin_transaction, "BeginTransaction", returns_value=False)
         self.register_function("ЗафиксироватьТранзакцию", self._commit_transaction, "CommitTransaction", returns_value=False)
         self.register_function("ОтменитьТранзакцию", self._rollback_transaction, "RollbackTransaction", returns_value=False)
+        self.register_function("ТранзакцияАктивна", self._transaction_active, "TransactionActive")
         self.register_function("СтрокаСоединенияИнформационнойБазы", connection_string,
                                "InfoBaseConnectionString")
         self.register_function("ЗаполнитьЗначенияСвойств", fill_property_values,
@@ -434,6 +434,28 @@ class Interpreter:
             raise BSLRuntimeError("Остались незавершенные асинхронные задания",
                                   "<async>", 1, 1)
 
+    def _bind_schema_scope(self):
+        # Types/metadata belong to one family generation, not to individual
+        # routine interpreters. Managers stay VM-local (notably document code).
+        scopes = self._family_owner._schema_scopes
+        metadata = scopes.get(id(self.database_context))
+        self._metadata = BSLMetadata(self.database_context) if metadata is None else metadata
+        scopes[id(self.database_context)] = self._metadata
+        self._catalogs = BSLCatalogs(self._metadata._catalogs, self.database_context)
+        self._documents = BSLDocuments(self._metadata._documents, self.database_context, self._catalogs)
+        self._documents._interpreter = self
+        self._information_registers = BSLInformationRegisters(
+            self._metadata._information_registers, self.database_context, self._catalogs, self._documents)
+        if metadata is None:
+            self._metadata._catalog_managers = self._catalogs
+            self._metadata._document_managers = self._documents
+
+    def cancel_pending(self):
+        """Cancel current cooperative work without retiring the module family."""
+        if self._family_owner is not self or self._family_closed:
+            raise ValueError('active root interpreter required')
+        self._scheduler.reset()
+
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
         if self._family_owner is not self and self._scheduler.pending:
@@ -450,6 +472,9 @@ class Interpreter:
             # A standalone embedding historically may execute again after reset.
             # Its old children stay fenced by generation; application lifecycle
             # remains independently guarded by ConfigurationApplication.
+            if self._family_closed:
+                self._schema_scopes.clear()
+                self._bind_schema_scope()
             self._family_closed = False
         elif (self._family_released or self._family_owner._family_closed
                 or self._family_generation != self._family_owner._family_generation):
@@ -509,7 +534,8 @@ class Interpreter:
                         Interpreter._error_info, Interpreter._type_by_name,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,
                         Interpreter._new_user_message, Interpreter._begin_transaction,
-                        Interpreter._commit_transaction, Interpreter._rollback_transaction)
+                        Interpreter._commit_transaction, Interpreter._rollback_transaction,
+                        Interpreter._transaction_active)
         wrappers = {}
 
         def copy_registry(registry):
@@ -623,6 +649,13 @@ class Interpreter:
 
     def _transaction_backend(self):
         return None if self.database_context is None else self.database_context.backend
+
+    def _transaction_active(self):
+        from .database_transactions import active
+        if (not getattr(self, '_transaction_activation_allowed', True)
+                or self._scheduler._active_task is not None or self._scheduler.pending):
+            raise ValueError('Transaction status requires an authorized synchronous activation')
+        return active(self._transaction_backend())
 
     def _begin_transaction(self):
         from .database_transactions import begin
@@ -821,6 +854,12 @@ class Interpreter:
             return self._self_module
         if name in ("регистрысведений", "informationregisters"):
             return self._information_registers
+        if name in ("accumulationrecordtype", "виддвижениянакопления"):
+            posting = self._documents.posting_runtime()
+            if posting is None or not posting.accumulation:
+                raise ValueError("accumulation posting profile required")
+            from .accumulation_posting_values import ACCUMULATION_RECORD_TYPES
+            return ACCUMULATION_RECORD_TYPES
         if name in ("documentwritemode", "режимзаписидокумента"):
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
             from .document_posting_values import DOCUMENT_WRITE_MODES
@@ -968,7 +1007,8 @@ class Interpreter:
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
         if (type(value) is BSLCommonModuleMetadataCollection
-                or type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments)):
+                or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
+                or is_metadata_collection(value)):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1675,6 +1715,12 @@ class Interpreter:
                 owner.get_member(node.name)
                 return _Reference(lambda: owner.get_member(node.name),
                                   lambda value: owner.set_member(node.name, value))
+            if is_metadata_object(owner):
+                # Reading a metadata lvalue through an ordinary BSL parameter
+                # is allowed; mutation still reaches its read-only setter.
+                owner.get_member(node.name)
+                return _Reference(lambda: owner.get_member(node.name),
+                                  lambda value: owner.set_member(node.name, value))
             if (type(owner) is BSLDocumentObject and node.name.casefold() in ('ref','ссылка')
                     and owner._manager._documents.posting_runtime() is not None):
                 # Native14 observer passes the read-only document Ref to local
@@ -1690,6 +1736,23 @@ class Interpreter:
                 owner.reference_get_member(node.name)
                 return _Reference(lambda: owner.reference_get_member(node.name),
                                   lambda value: owner.reference_set_member(node.name, value))
+            from .queries import BSLQueryResultSelection
+            from .accumulation_posting_values import BSLAccumulationRow
+            key = node.name.casefold()
+            observed_readonly = (
+                type(owner) is BSLQueryResultSelection and any(
+                    column.name.casefold() == key for column in owner._result._columns)
+                or type(owner) is BSLNumberQualifiers and key in
+                    ('digits', 'разрядность', 'fractiondigits', 'разрядностьдробнойчасти')
+                or type(owner) is BSLAccumulationRow and key in ('linenumber', 'номерстроки'))
+            if observed_readonly:
+                # Native accumulation16 calls scalar helpers with these actuals.
+                # Capture once; this closed reader admission grants no mutable
+                # query cursor/qualifier/occurrence property reference.
+                captured = owner.get_member(node.name)
+                def readonly(value):
+                    raise ValueError('Observed read-only property argument cannot be assigned')
+                return _Reference(lambda: captured, readonly)
             if not isinstance(owner, (BSLStructure, BSLFixedStructure, BSLValueTableRow, BSLValueTableColumn, BSLValueTreeRow, BSLValueTreeColumn)):
                 raise TypeError("Передача свойства по ссылке поддерживается только для структуры, строки или колонки таблицы")
             # Bind the receiver once and validate existence before entering the
@@ -1700,7 +1763,7 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
-            if type(owner) in (BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+            if is_metadata_collection(owner) or type(owner) is BSLCatalogs or type(owner) is BSLDocuments:
                 index = (yield from self._visit(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
@@ -1806,7 +1869,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if type(value) in (BSLChars, BSLCatalogMetadataCollection, BSLCatalogs, BSLDocumentMetadataCollection, BSLDocuments):
+                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments)):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):
@@ -2056,7 +2119,8 @@ class Interpreter:
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections
-                and type(collection) is not BSLSortDirections):
+                and type(collection) is not BSLSortDirections
+                and not is_metadata_collection(collection)):
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)

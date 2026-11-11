@@ -1,8 +1,8 @@
 """Replay a pinned official BSL probe against the owned SQLite backend.
 
 Captured native behavior remains unchanged. This is offline logical replay,
-not a new native run or physical-file equivalence claim. Attribute controls
-remain visible exclusions; no unsupported observation is called a match.
+not a new native run or physical-file equivalence claim. All 26 cases, including
+attribute type qualifiers, are replayed; captures and source bytes are unchanged.
 """
 from __future__ import annotations
 
@@ -12,9 +12,8 @@ from pathlib import Path
 import metadata_catalog_probe_contract as wire
 
 PROBE_SHA256 = 'acb83b5ae6e5de3630cce70fe1214f9027439e8ee505a52a29e7697a3d5f5785'
-SUPPORTED_IDS = tuple(i for i in range(1, 27) if i not in (7, 8))
-EXCLUDED = {7: 'Attributes API not implemented; native applied-view discriminator only',
-            8: 'Attributes API not implemented; native applied-view discriminator only'}
+SUPPORTED_IDS = tuple(range(1, 27))
+EXCLUDED = {}
 
 
 def _execute(context):

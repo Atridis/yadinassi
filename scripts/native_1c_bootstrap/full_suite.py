@@ -364,7 +364,9 @@ def run_process(command: list[str], directory: Path, log: Path, timeout: float,
             else:
                 _stop_group(child)
     if code:
-        raise FullError('process_failed')
+        error = FullError('process_failed')
+        error.exit_code = code  # Retain finite process status, never command/log text.
+        raise error
     if '/DumpResult' in command:
         result = Path(command[command.index('/DumpResult') + 1])
         data = secure_bytes(result, 128)
