@@ -81,11 +81,11 @@ def validate_database_budget(connection):
 class AccumulationMovementPort:
     """Private host primitive; the owning application supplies the transaction."""
 
-    def __init__(self, connection, database_id, generation, schemas):
+    def __init__(self, connection, database_id, generation, schemas, *, active_only=False):
         if (type(connection) is not sqlite3.Connection or type(database_id) is not UUID
                 or not database_id.int or type(generation) is not int
                 or not 1 <= generation < 2**63 or type(schemas) is not tuple
-                or not 1 <= len(schemas) <= 512):
+                or not 1 <= len(schemas) <= 512 or type(active_only) is not bool):
             raise BackendError('invalid_input')
         if connection.execute('PRAGMA foreign_keys').fetchone() != (1,):
             raise BackendError('unsupported')
@@ -100,6 +100,9 @@ class AccumulationMovementPort:
         self.connection = connection
         self.database_id = database_id
         self.generation = generation
+        # The generic host codec can retain inactive raw occurrences. The
+        # activated source-granted profile is deliberately narrower.
+        self.active_only = active_only
         self.schemas = {schema.identity: schema for schema in schemas}
         self.definitions = {schema.identity: raw for schema, raw in zip(schemas, definitions)}
 
@@ -217,6 +220,8 @@ class AccumulationMovementPort:
                                  self.database_id)
         except BackendError:
             raise BackendError('integrity') from None
+        if self.active_only and any(row.active is not True for row in rows):
+            raise BackendError('unsupported')
         encoded = self._encoded(schema, rows)
         return AccumulationPartition(register_id, recorder, revision, rows,
                                      self._snapshot(schema, recorder, revision, encoded))
@@ -251,6 +256,8 @@ class AccumulationMovementPort:
             raise BackendError('invalid_input')
         schema = self._require(request.register_id, request.recorder)
         validate_replacement(schema, request, self.database_id)
+        if self.active_only and any(row.active is not True for row in request.rows):
+            raise BackendError('unsupported')
         rows = self._encoded(schema, request.rows)
         intent = ['accumulation_replace_v1', str(self.database_id), self.generation,
                   self.definitions[schema.identity], str(request.recorder.document_id),

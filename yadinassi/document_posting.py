@@ -5,11 +5,10 @@ movements, never begin, commit or roll back the caller's transaction. No object
 module initializer, imports, asynchronous execution or arbitrary handler grant
 is exposed by this adapter.
 """
-from hashlib import sha256
 from enum import Enum
 from .catalog_backend import BackendError
 from .configuration_posting import canonical
-from .configuration_modules import compile_module
+from .document_posting_program import compile_handlers
 from .document_posting_values import DocumentWriteMode, BSLRecorderCollection
 from .runtime import Interpreter
 from .syntax import ast
@@ -19,15 +18,7 @@ from .database_transactions import admission, execution, current, begin, require
 from .sqlite_document_posting_state import PostedIntent
 from .transaction_backend import TransactionRequest
 
-MAX_SOURCE = 65536
 MAX_STEPS = 100000
-_EVENTS = {
-    'before': (('beforewrite','передзаписью'),3),
-    'after': (('onwrite','призаписи'),1),
-    'posting': (('posting','обработкапроведения'),2),
-    'undo': (('undoposting','обработкаудаленияпроведения'),1),
-}
-
 
 class _PostingMode(Enum):
     NON_REALTIME = 'non_realtime'
@@ -103,30 +94,20 @@ class _PostingInterpreter(Interpreter):
 class PostingRuntime:
     def __init__(self, documents, configuration):
         self.documents = documents
-        self.configuration = canonical(configuration)
-        self._programs = {}; self._events = {}
-        files = dict(configuration.files)
-        for identity,path,digest in configuration.handlers:
-            raw = files[path]
-            if len(raw)>MAX_SOURCE or sha256(raw).hexdigest()!=digest: raise ValueError('document source binding')
-            program = compile_module(raw,path,'server',common=True)
-            names = [routine.name.casefold() for routine in program]
-            if len(names)!=len(set(names)): raise ValueError('duplicate document routine')
-            events = {}
-            for event,(aliases,arity) in _EVENTS.items():
-                selected = [routine for routine in program if routine.name.casefold() in aliases]
-                if len(selected)>1: raise ValueError('duplicate document handler')
-                routine = selected[0] if selected else None
-                if routine is not None and (routine.is_function or len(routine.parameters)!=arity or
-                        any(parameter.default is not None for parameter in routine.parameters) or routine.parameters[0].by_value):
-                    raise ValueError('document handler signature')
-                events[event] = routine
-            self._programs[identity] = program; self._events[identity] = events
+        from .configuration_accumulation import AccumulationConfiguration, canonical as accumulation_canonical
+        self.accumulation = type(configuration) is AccumulationConfiguration
+        self.configuration = (accumulation_canonical(configuration) if self.accumulation
+                              else canonical(configuration))
+        self._programs, self._events = compile_handlers(self.configuration)
     def movements(self, document):
         if document._movements is None:
             schemas = tuple(schema for schema in self.configuration.registers
                             if document._key.document_id in schema.recorder_documents)
-            document._movements = BSLRecorderCollection(document,schemas)
+            if self.accumulation:
+                from .accumulation_posting_values import BSLAccumulationCollection
+                document._movements = BSLAccumulationCollection(document, schemas)
+            else:
+                document._movements = BSLRecorderCollection(document, schemas)
         return document._movements
     def write(self, document, mode):
         from .documents import _OMITTED
@@ -159,6 +140,11 @@ class PostingRuntime:
                     transaction.stage(document,'document_create' if expected is None else 'document_update',
                                       draft,expected,(draft,expected,document._operation_id))
                     outcome = transaction.unit._results[-1].result
+                    if self.accumulation:
+                        # Native acquisition establishes the reference inside the
+                        # handler and retains it on a later outer rollback. This
+                        # detached identity is not a persistence/commit claim.
+                        document._values['ref'] = document._manager._ref(document._key.record_id)
                     transaction.unit.stage(TransactionRequest('document_set_posted',
                         PostedIntent(document._key,int(outcome.revision.token),posted)))
                     document._values['posted'] = posted

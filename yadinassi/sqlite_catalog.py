@@ -406,7 +406,7 @@ class SQLiteCatalogBackend:
             if connection.execute('PRAGMA application_id').fetchone()[0] != _APPLICATION_ID:
                 raise BackendError('unsupported')
             self.format_version = connection.execute('PRAGMA user_version').fetchone()[0]
-            self.storage_version = (transaction_profile.base_version(connection) if self.format_version in (11, 12) else 7 if self.format_version == 13 else self.format_version)
+            self.storage_version = (transaction_profile.base_version(connection) if self.format_version in (11, 12) else 7 if self.format_version in (13, 14) else self.format_version)
             if self.storage_version not in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10): raise BackendError('unsupported')
             statements = list(_DDL)
             if self.storage_version >= 2:
@@ -469,6 +469,9 @@ class SQLiteCatalogBackend:
             if self.format_version == 13:
                 from .sqlite_posting_profile import DDL as posting_ddl
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in posting_ddl})
+            if self.format_version == 14:
+                from .sqlite_accumulation_profile import DDL as accumulation_ddl
+                expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in accumulation_ddl})
             if self.format_version == 12:
                 from .sqlite_configuration_history import DDL as update_ddl
                 expected.update({ddl.split('(')[0].split()[-1]: ddl for ddl in update_ddl})
@@ -480,7 +483,7 @@ class SQLiteCatalogBackend:
             if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
             actual_indexes = tuple(row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"))
-            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13) else ()
+            expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13, 14) else ()
             if self.storage_version >= 2 and actual_indexes != expected_indexes: raise BackendError('unsupported')
             if self.format_version in (11, 12): transaction_profile.validate_marker(connection)
             if self.storage_version == 10:
@@ -501,11 +504,17 @@ class SQLiteCatalogBackend:
                 from .sqlite_configuration_history import validate
                 validate(connection, self)
             self.posting_configuration = None
+            self.accumulation_configuration = None
             self._recorder_schemas = ()
+            self._accumulation_schemas = ()
             if self.format_version == 13:
                 from .sqlite_posting_profile import admit
                 self.posting_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
                 self._recorder_schemas = self.posting_configuration.registers
+            if self.format_version == 14:
+                from .sqlite_accumulation_profile import admit
+                self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self._accumulation_schemas = self.accumulation_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
             if self.storage_version == 5:
@@ -576,6 +585,12 @@ class SQLiteCatalogBackend:
                 if connection is not None: _owner._connection=connection
             elif connection is not None: connection.close()
             raise
+
+    @classmethod
+    @_boundary
+    def create_accumulation(cls, path, configuration):
+        from .sqlite_accumulation_profile import create
+        return create(cls, path, configuration)
 
     @classmethod
     @_boundary
@@ -1152,7 +1167,7 @@ class SQLiteCatalogBackend:
 
     @_boundary
     def read_document_posted(self, key):
-        if self.format_version != 13: raise BackendError('unsupported')
+        if self.format_version not in (13, 14): raise BackendError('unsupported')
         from .sqlite_document_posting_state import read_posted
         view = self.begin_read()
         try: return read_posted(view._connection, self.database_id, key)
@@ -1167,9 +1182,17 @@ class SQLiteCatalogBackend:
         finally: view.close()
 
     @_boundary
+    def read_accumulation(self, register_id, key):
+        if self.format_version != 14: raise BackendError('unsupported')
+        from .sqlite_transactions import _accumulation_port
+        view = self.begin_read()
+        try: return _accumulation_port(view).read(register_id, key)
+        finally: view.close()
+
+    @_boundary
     def begin_unit_of_work(self, operation_id):
         from .sqlite_transactions import UnitOfWork
-        if self.format_version not in (11, 12, 13): raise BackendError('unsupported')
+        if self.format_version not in (11, 12, 13, 14): raise BackendError('unsupported')
         view = self.begin_write(operation_id)
         try: return UnitOfWork(view)
         except BaseException:
@@ -1178,7 +1201,7 @@ class SQLiteCatalogBackend:
     @_boundary
     def resolve_unit_of_work(self, operation_id, requests):
         from .sqlite_transactions import resolve
-        if self.format_version not in (11, 12, 13): raise BackendError('unsupported')
+        if self.format_version not in (11, 12, 13, 14): raise BackendError('unsupported')
         return resolve(self, operation_id, requests)
 
     @_boundary
@@ -1299,6 +1322,10 @@ class SQLiteCatalogBackend:
                 if self.format_version == 13:
                     from .sqlite_posting_profile import admit
                     if admit(connection, self.database_id, self._document_schemas) != self.posting_configuration:
+                        raise BackendError('schema_changed')
+                if self.format_version == 14:
+                    from .sqlite_accumulation_profile import admit
+                    if admit(connection, self.database_id, self._document_schemas) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
             except sqlite3.OperationalError:
@@ -1504,7 +1531,7 @@ class _View:
         self._section_write_rows = 0
         row = connection.execute('SELECT database_uuid,generation FROM database_info WHERE singleton=1').fetchone()
         self.database_id, self.configuration_generation = UUID(row[0]), row[1]
-        if operation_id is not None and backend.format_version in (11, 12, 13) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
+        if operation_id is not None and backend.format_version in (11, 12, 13, 14) and connection.execute('SELECT 1 FROM unit_of_work_receipt WHERE operation_id=?',(str(operation_id),)).fetchone(): raise BackendError('conflict')
         if operation_id is not None and connection.execute('SELECT 1 FROM commit_receipt WHERE operation_id=?',(str(operation_id),)).fetchone() is not None:
             raise BackendError('conflict')
         if operation_id is not None and backend.storage_version in (7, 8, 9, 10) and connection.execute('SELECT 1 FROM document_commit_receipt WHERE operation_id=?', (str(operation_id),)).fetchone(): raise BackendError('conflict')

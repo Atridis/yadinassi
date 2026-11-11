@@ -821,6 +821,12 @@ class Interpreter:
             return self._self_module
         if name in ("регистрысведений", "informationregisters"):
             return self._information_registers
+        if name in ("accumulationrecordtype", "виддвижениянакопления"):
+            posting = self._documents.posting_runtime()
+            if posting is None or not posting.accumulation:
+                raise ValueError("accumulation posting profile required")
+            from .accumulation_posting_values import ACCUMULATION_RECORD_TYPES
+            return ACCUMULATION_RECORD_TYPES
         if name in ("documentwritemode", "режимзаписидокумента"):
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
             from .document_posting_values import DOCUMENT_WRITE_MODES

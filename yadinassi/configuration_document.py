@@ -90,7 +90,8 @@ class DocumentObjectSession:
             self.context.require_active(tabular_sections=True)
             # This host editor owns ordinary, unposted document writes only.
             # A separate posting source grant must not activate its callbacks.
-            if getattr(self._backend, 'posting_configuration', None) is not None:
+            if (getattr(self._backend, 'posting_configuration', None) is not None
+                    or getattr(self._backend, 'accumulation_configuration', None) is not None):
                 raise BackendError('unsupported')
             if self._backend.export_configuration() != dict(self._sources):
                 raise BackendError('schema_changed')

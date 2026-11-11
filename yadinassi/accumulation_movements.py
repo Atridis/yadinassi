@@ -1,9 +1,10 @@
-"""Unactivated host accumulation movement contract, not native semantics.
+"""Host accumulation occurrence storage contract and exact resource arithmetic.
 
 An occurrence belongs to one recorder and line, not to a unique dimension key.
 Direction is an exact enum, deliberately without Boolean/numeric coercion or a
 signed-resource interpretation. Balance/Turnovers aggregation, native write
 behavior, source grants and runtime binding are outside this storage contract.
+The private resource arithmetic helper does not interpret movement directions.
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -28,6 +29,9 @@ class AccumulationRegisterKind(Enum):
 class AccumulationDirection(Enum):
     RECEIPT = 'receipt'
     EXPENSE = 'expense'
+
+    def __str__(self):
+        raise ValueError('accumulation record type presentation is outside this profile')
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +157,51 @@ def validate_schema(schema):
     if any(field.kind != 'number' for field in schema.resources):
         raise BackendError('unsupported')
     return schema
+
+
+def _sum_resource_vectors(schema, vectors, weights):
+    """Exact host arithmetic, not Balance/Turnovers or a result-field schema.
+
+    Accept bounded exact tuples of normalized resource tuples and caller-chosen
+    exact int +1/-1 weights. Direction mapping, row selection and grouping are
+    deliberately absent. Stored numeric qualifiers validate inputs only: an
+    output may exceed their width or be negative for a Nonnegative resource.
+    Results use each resource's declared scale and canonical positive zero;
+    this representation does not assert native aggregate field qualifiers.
+    Neither inputs nor the ambient Decimal context are modified.
+    """
+    validate_schema(schema)
+    if (type(vectors) is not tuple or type(weights) is not tuple
+            or len(vectors) > MAX_MOVEMENT_ROWS or len(weights) != len(vectors)):
+        raise BackendError('invalid_input')
+    totals = [0] * len(schema.resources)
+    for vector, weight in zip(vectors, weights):
+        if (type(vector) is not tuple or len(vector) != len(schema.resources)
+                or type(weight) is not int or weight not in (-1, 1)):
+            raise BackendError('invalid_input')
+        for index, (value, field) in enumerate(zip(vector, schema.resources)):
+            try:
+                normalized = normalize_field(value, field)
+            except (TypeError, ValueError):
+                raise BackendError('invalid_input') from None
+            if type(normalized) is not Decimal or normalized != value:
+                raise BackendError('invalid_input')
+            sign, digits, exponent = normalized.as_tuple()
+            coefficient = 0
+            for digit in digits:
+                coefficient = coefficient * 10 + digit
+            # Normalization bounds the coefficient and exponent before this
+            # power, including extreme-exponent zero. Equality above refuses
+            # any rounding/clamping instead of silently changing the input.
+            coefficient *= 10 ** (exponent + field.qualifiers[1])
+            totals[index] += weight * (-coefficient if sign else coefficient)
+    result = []
+    for total, field in zip(totals, schema.resources):
+        # Both int conversion and tuple construction are exact: no Decimal
+        # addition, multiplication, quantize, unary sign or context precision.
+        sign, digits, _ = Decimal(total).as_tuple()
+        result.append(Decimal((sign, digits, -field.qualifiers[1])))
+    return tuple(result)
 
 
 def validate_replacement(schema, request, database_id):
