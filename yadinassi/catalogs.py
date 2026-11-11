@@ -170,7 +170,7 @@ class BSLCatalogManager(BSLObject):
         from .configuration_inventory_enums import InventoryEnumConfiguration
         from .database_transactions import query_view
         backend=self._backend
-        if (type(backend) is SQLiteCatalogBackend and backend.format_version==16
+        if (field=='code' and type(backend) is SQLiteCatalogBackend and backend.format_version==16
                 and type(backend.accumulation_configuration) is InventoryEnumConfiguration):
             # The measured format16 observer resolves catalog keys inside the
             # current owned transaction. Borrow its existing read lease only;

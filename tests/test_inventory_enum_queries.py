@@ -107,5 +107,7 @@ class InventoryEnumQueryTests(unittest.TestCase):
         self.seed_document()
         self.query('SELECT Unit FROM AccumulationRegister.Stock')
         self.assertIsNone(self.context.backend._active)
-        self.vm.execute('BeginTransaction(); Q=New Query("SELECT Unit FROM Catalog.Products"); S=Q.Execute().Select();Inside=TransactionActive();RollbackTransaction();')
+        self.vm.execute('BeginTransaction(); Found=Catalogs.Products.FindByCode("P"); Rejected=False;Try Catalogs.Products.FindByDescription("P",True);Except Rejected=True;EndTry;Q=New Query("SELECT Unit FROM Catalog.Products"); S=Q.Execute().Select();Inside=TransactionActive();RollbackTransaction();')
+        self.assertTrue(self.vm.execute('(Found=P.Ref)'))
+        self.assertTrue(self.vm.execute('Rejected'))
         self.assertTrue(self.vm.execute('Inside'))

@@ -26,8 +26,9 @@ a canonical different-enum parameter is no match, not an empty-ref match.
 Read queries support raw catalog/document/line/movement enum projections, exact
 Eq/Ne, same-enum joins, NULL from unmatched outer joins, grouping, DISTINCT and
 COUNT(DISTINCT), and enum-dimensional Balance/Turnovers/Day/Month statements.
-Numeric resources retain the exact integer-coefficient reducer. Input validation,
-row/cell budgets and current-owner snapshot checks precede filtering and TOP.
+Numeric resources retain the exact integer-coefficient reducer. Stock input validation and row/cell budgets precede period selection and
+reduction. Raw queries retain the existing planner budget and row-proof policy;
+all enum decoding stays inside the current owner snapshot.
 
 Enum ordering, MIN/MAX, mixed-enum field comparisons, enum conditional/membership
 expressions, derived/external/temp/UNION/package paths and reference Unload remain

@@ -179,7 +179,15 @@ class InventoryApplicationSourceTests(unittest.TestCase):
         self.refused(self.changed(MANIFEST,b'<Command name="Post" id="4" mode="Post"/>',b''))
 
     def test_nonempty_command_handler_refused(self):
-        self.refused(self.changed(DOC_MODULE,b'Procedure PostCommand(Command)\n',b'Procedure PostCommand(Command)\n Message("not empty");\n'))
+        header = b'Procedure PostCommand(Command)'
+        for ending in (b'\n', b'\r\n'):
+            with self.subTest(ending=ending):
+                files = source()
+                module = files[DOC_MODULE].replace(b'\r\n', b'\n').replace(b'\n', ending)
+                self.assertIn(header + ending, module)
+                files[DOC_MODULE] = module.replace(header + ending,
+                    header + ending + b' Message("not empty");' + ending)
+                self.refused(files)
 
     def test_wrong_command_handler_arity_and_default_refused(self):
         for parameters in (b'()',b'(Command, Other)',b'(Command = Undefined)'):

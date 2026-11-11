@@ -28,7 +28,7 @@ class InventoryEnumRuntimeBindingTests(unittest.TestCase):
         self.bridge=binding(self.vm._metadata)
 
     def test_root_namespace_and_typed_empty(self):
-        self.assertTrue(self.vm.execute('TypeOf(Enums.Units.EmptyRef())=Type("EnumRef.Units")'))
+        self.assertTrue(self.vm.execute('(TypeOf(Enums.Units.EmptyRef())=Type("EnumRef.Units"))'))
         self.assertIs(self.vm.execute('Enums.Units.Piece'),self.ref)
 
     def test_catalog_default_and_roundtrip_canonical_identity(self):
