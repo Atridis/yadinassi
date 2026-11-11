@@ -13,7 +13,9 @@ BUSINESS_PROFILE = 'configuration_business_v1'
 BUSINESS_SOURCE_ISSUE = 'explicit configuration business application source:v1'
 
 
-def business_configuration(files):
+def business_configuration(files, *, _reference_fields=False):
+    if type(_reference_fields) is not bool:
+        raise TypeError("explicit reference profile flag required")
     from .configuration_xml import (MD, V8, _accept_source_files, _object, _props,
         _text, _name, _fail, _inert_configuration, import_configuration, ConfigurationModule)
     from .configuration_modules import MODULE_RUNTIME
@@ -134,12 +136,17 @@ def business_configuration(files):
     ordinary = import_configuration(projected, numbering_policy='decimal_v1', module_runtime=MODULE_RUNTIME)
     if ordinary.activation_issues or ordinary.information_registers:
         _fail('unsupported application metadata semantics')
-    if any(s.hierarchy != 'none' or s.tabular_sections or any(f.kind == 'catalog_ref' for f in s.fields) for s in ordinary.catalogs):
+    if any(s.hierarchy != 'none' or s.tabular_sections or
+           (not _reference_fields and any(f.kind == 'catalog_ref' for f in s.fields))
+           for s in ordinary.catalogs):
         _fail('scalar application catalogs only')
+    if _reference_fields and len(ordinary.catalogs) > 128:
+        _fail('reference application catalog target budget')
     from .configuration_document import require_document_form_schema
-    for schema in ordinary.documents: require_document_form_schema(schema)
+    for schema in ordinary.documents: require_document_form_schema(schema, reference_fields=_reference_fields)
     from .configuration_forms import load_configuration_forms
-    definitions = load_configuration_forms(source, catalog_schemas=ordinary.catalogs, document_schemas=ordinary.documents)
+    definitions = load_configuration_forms(source, catalog_schemas=ordinary.catalogs, document_schemas=ordinary.documents,
+        reference_catalogs=ordinary.catalogs if _reference_fields else ())
     if len(definitions.forms) != len(form_prefixes):
         _fail('unbound application form declaration')
     # All metadata owners share one UUID domain, even across module/form loaders.
@@ -158,8 +165,12 @@ def business_configuration(files):
         validate_catalog_object_source(source[module.path].decode('utf-8-sig'), by_id[module.owner])
     manifest = sha256(json.dumps([(f.path, f.kind, sha256(f.content).hexdigest())
         for f in accepted], ensure_ascii=True, separators=(',', ':')).encode()).hexdigest()
+    issue = BUSINESS_SOURCE_ISSUE
+    if _reference_fields:
+        from .configuration_reference_profile import REFERENCE_SOURCE_ISSUE
+        issue = REFERENCE_SOURCE_ISSUE
     return replace(ordinary, files=accepted, modules=ordinary.modules + tuple(object_modules),
-                   activation_issues=(BUSINESS_SOURCE_ISSUE + ':' + manifest,)), catalogs
+                   activation_issues=(issue + ':' + manifest,)), catalogs
 
 
 def import_business_configuration(files):

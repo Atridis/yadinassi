@@ -27,6 +27,8 @@ from .form_table_replication import (pack_tables, unpack_tables, install_tables,
     capture_tables, capture_selections, table_delta, selection_delta,
     admit_table_delta, apply_table_delta)
 
+from .form_references import is_reference, adjust, encode, decode, require_scope
+
 PROTOCOL = 'yadinassi-form/1'
 _REASONS = frozenset(('invalid_request', 'sequence', 'stale_revision', 'closed',
     'request_limit', 'unknown_endpoint', 'invalid_arguments', 'invalid_delta',
@@ -152,6 +154,11 @@ def _pack_state(session, handlers):
     attributes = []
     for key, attribute in form._attributes.items():
         kind = attribute.value_type
+        if is_reference(kind):
+            require_scope(kind, session)
+            attributes.append([attribute.name, "FormCatalogRef", [kind.target], attribute.title,
+                key in form._static, encode(kind, form._data[key], _encode_form_scalar)])
+            continue
         attributes.append([attribute.name, kind.types[0].value,
             [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
              kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
@@ -174,6 +181,17 @@ def _pack_state(session, handlers):
 
 
 def _unpack_state(packet, session, handlers):
+    scope = session.reference_scope
+    checkpoint = None if scope is None else (scope.identity, dict(scope._client), dict(scope._client_values))
+    try:
+        return _unpack_state_candidate(packet, session, handlers)
+    except BaseException:
+        if checkpoint is not None:
+            scope.identity, scope._client, scope._client_values = checkpoint
+        raise
+
+
+def _unpack_state_candidate(packet, session, handlers):
     """Validate an entire detached candidate before touching live client state."""
     _keys(packet, 'attributes tables title items commands actions allocated lifecycle')
     candidate = BSLClientApplicationForm(session)
@@ -186,18 +204,28 @@ def _unpack_state(packet, session, handlers):
         key = name(attr_name).casefold()
         if key in candidate._attributes or key in session.reserved_names:
             raise ValueError('duplicate or reserved form attribute')
-        q = _row(qualifiers, 6)
-        for value, maximum in zip(q, (128, 128, 1, 65536, 1, 3)):
-            _integer(value, 0, maximum)
-        _booleans([static])
-        kind = BSLTypeDescription(kind,
-            BSLNumberQualifiers(Decimal(q[0]), Decimal(q[1]), BSLAllowedSign(q[2])),
-            BSLStringQualifiers(Decimal(q[3]), BSLAllowedLength(q[4])),
-            BSLDateQualifiers(BSLDateFractions(q[5])))
-        attribute = BSLFormAttribute(attr_name, kind, title=title)
-        value = scalar(_decode_form_scalar(encoded))
-        if _encode_form_scalar(kind.adjust_value(value)) != encoded:
-            raise ValueError('form value outside schema')
+        if kind == 'FormCatalogRef':
+            if session.reference_scope is None or session.reference_scope.server:
+                raise ValueError('explicit client reference scope required')
+            target, = _row(qualifiers, 1)
+            _integer(target, 1, 128)
+            kind = session.reference_scope.descriptor(target)
+            _booleans([static])
+            attribute = BSLFormAttribute(attr_name, kind, title=title)
+            value = decode(kind, encoded, _decode_form_scalar)
+        else:
+            q = _row(qualifiers, 6)
+            for value, maximum in zip(q, (128, 128, 1, 65536, 1, 3)):
+                _integer(value, 0, maximum)
+            _booleans([static])
+            kind = BSLTypeDescription(kind,
+                BSLNumberQualifiers(Decimal(q[0]), Decimal(q[1]), BSLAllowedSign(q[2])),
+                BSLStringQualifiers(Decimal(q[3]), BSLAllowedLength(q[4])),
+                BSLDateQualifiers(BSLDateFractions(q[5])))
+            attribute = BSLFormAttribute(attr_name, kind, title=title)
+            value = scalar(_decode_form_scalar(encoded))
+            if _encode_form_scalar(kind.adjust_value(value)) != encoded:
+                raise ValueError('form value outside schema')
         candidate._attributes[key] = attribute
         candidate._data[key] = value
         if static:
@@ -307,7 +335,7 @@ def _install_state(session, decoded):
 
 
 def _capture(form):
-    return {'attributes': {key: _encode_form_scalar(value) for key, value in form._data.items()},
+    return {'attributes': {key: encode(form._attributes[key].value_type, value, _encode_form_scalar) for key, value in form._data.items()},
             'tables': capture_tables(form), 'selections': capture_selections(form),
             'items': {key: _appearance(item) for key, item in form.items._values.items()},
             'title': form.title}
@@ -334,6 +362,8 @@ def _admit_delta(form, packet):
         if key not in form._attributes or key in seen:
             raise ValueError('invalid form delta attribute')
         seen.add(key)
+        if is_reference(form._attributes[key].value_type):
+            raise ValueError("reference deltas require server-owned choice")
         value = scalar(_decode_form_scalar(encoded))
         if _encode_form_scalar(form._attributes[key].value_type.adjust_value(value)) != encoded:
             raise ValueError('form delta outside schema')
@@ -364,7 +394,7 @@ def _apply_delta(form, admitted):
 class ReplicatedFormServer:
     """One server-owned form. Lifecycle and endpoints are trusted host setup."""
     def __init__(self, source, endpoints, *, handlers, attributes=(), tables=(), initial_values=None,
-                 bindings=None, database_context=None, server_bindings=(), interpreter_factory=None):
+                 bindings=None, database_context=None, server_bindings=(), interpreter_factory=None, reference_scope=None):
         _source(source, 'server')
         self._handlers, self._handler_names = _bindings(handlers, handlers=True)
         if type(endpoints) is not dict or len(endpoints) > MAX_ENDPOINTS:
@@ -381,7 +411,7 @@ class ReplicatedFormServer:
             normalized[event] = name(handler)
         self.session = FormSession(source, attributes=attributes, tables=tables, initial_values=initial_values,
             bindings={key: value for key, value in normalized.items() if key == 'oncreateatserver'},
-            database_context=database_context, server_bindings=server_bindings, interpreter_factory=interpreter_factory)
+            database_context=database_context, server_bindings=server_bindings, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         self.session._replica_handler_names = self._handler_names
         self.session._replica_handlers = self._handlers
         for binding in handlers:
@@ -510,13 +540,13 @@ class ReplicatedFormSession(FormSession):
     Form event revision, server revision, client sequence and request ID are
     separate counters. Unknown outcomes lock the channel; nothing is replayed.
     """
-    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None, interpreter_factory=None):
+    def __init__(self, source, exchange, *, handlers, bindings=(), output=None, parameters=None, interpreter_factory=None, reference_scope=None):
         _source(source, 'client')
         if not callable(exchange):
             raise TypeError('byte exchange required')
         self._handlers, _ = _bindings(handlers, handlers=True)
         _bindings(bindings)
-        super().__init__(source, output=output, parameters=parameters, interpreter_factory=interpreter_factory)
+        super().__init__(source, output=output, parameters=parameters, interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         for binding in handlers:
             routine = self._bind(binding.name, 'client', len(binding.parameters))
             if tuple(parameter.name.casefold() for parameter in routine.parameters) != tuple(value.casefold() for value in binding.parameters):

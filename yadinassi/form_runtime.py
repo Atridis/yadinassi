@@ -178,7 +178,7 @@ class FormSession:
     Exceptions retain completed BSL mutations and increment revision: clients
     must resynchronize, never assume a transaction rollback.
     """
-    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None):
+    def __init__(self, source, *, attributes=(), tables=(), initial_values=None, bindings=None, output=None, database_context=None, application_actions=(), server_bindings=(), parameters=None, interpreter_factory=None, reference_scope=None):
         if type(attributes) not in (tuple,list) or len(attributes)>MAX_ATTRIBUTES:
             raise ValueError('Форма: слишком много реквизитов')
         if type(tables) is not tuple or len(tables) > MAX_TABLES or any(type(t) is not FormTableSchema for t in tables):
@@ -213,6 +213,11 @@ class FormSession:
         self.closed = False; self.state = 'created'; self.revision = 0
         self._busy = False; self._steps = 0; self._events = 0
         self._gate = Lock(); self._allocated = 0
+        from .form_references import FormReferenceScope
+        if reference_scope is not None and type(reference_scope) is not FormReferenceScope:
+            raise TypeError("explicit form reference scope required")
+        self.reference_scope = reference_scope
+        if reference_scope is not None: reference_scope.attach(self)
         self.form = BSLClientApplicationForm(self)
         factory = _FormInterpreter if interpreter_factory is None else interpreter_factory
         self.interpreter = factory(self, self._record_message, database_context=database_context)
@@ -254,10 +259,14 @@ class FormSession:
                 if type(attr) is not BSLFormAttribute or attr.name.casefold() in self.reserved_names or attr.name.casefold() in self.form._attributes or attr.name.casefold() in self.form._tables:
                     raise ValueError('Форма: неверный или повторный реквизит')
                 key = attr.name.casefold()
-                if sum(len(x) for x in self.form._data.values() if type(x) is str) + int(attr.value_type.string_qualifiers.length) > MAX_TOTAL_TEXT:
+                from .form_references import is_reference
+                length = 0 if is_reference(attr.value_type) else int(attr.value_type.string_qualifiers.length)
+                if sum(len(x) for x in self.form._data.values() if type(x) is str) + length > MAX_TOTAL_TEXT:
                     raise ValueError("Форма: превышен предел данных")
                 self.form._attributes[key] = attr._copy()
-                self.form._data[key] = scalar(attr.value_type.adjust_value())
+                from .form_references import adjust, require_scope
+                require_scope(attr.value_type, self)
+                self.form._data[key] = adjust(attr.value_type)
                 self.form._static.add(key)
             validate_table_data(self.form)
             for key, value in initial_values.items():

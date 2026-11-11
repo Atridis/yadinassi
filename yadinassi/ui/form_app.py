@@ -105,16 +105,21 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
     def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None,
-                 interpreter_factory=None):
+                 interpreter_factory=None, reference_scope=None):
         self.session = ReplicatedFormSession(package.source, exchange,
             handlers=package.handlers, bindings=package.bindings, parameters=parameters,
-            interpreter_factory=interpreter_factory)
+            interpreter_factory=interpreter_factory, reference_scope=reference_scope)
         if bind_interpreter is not None:
             bind_interpreter(self.session.interpreter)
         self._gate = Lock()
         self._opened = False
         self._discard_commands = dict(package.discard_commands)
         self._dirty_attribute = package.dirty_attribute
+
+    @staticmethod
+    def _encode_view_value(descriptor, value):
+        from ..form_references import encode
+        return encode(descriptor, value, encode_value)
 
     def _snapshot(self):
         session = self.session
@@ -133,7 +138,8 @@ class FormController:
                     'controlId': control_id, 'tableId': table.identity,
                     'columns': [{'name': key, 'title': caption, 'type': value_type, 'readOnly': readonly}
                                 for key, caption, value_type, readonly in table.columns],
-                    'rows': [{'id': identity, 'values': [encode_value(value) for value in values]}
+                    'rows': [{'id': identity, 'values': [self._encode_view_value(column.value_type, value)
+                             for column, value in zip(session.form._tables[path.casefold()].schema.columns, values)]}
                              for identity, values in table.rows],
                     'currentRow': selections.get(name)})
                 continue
@@ -142,7 +148,8 @@ class FormController:
             view = {'InputField': 'input', 'CheckBoxField': 'checkbox', 'LabelField': 'label'}.get(view, view)
             if view not in ('input', 'checkbox', 'label'):
                 raise ValueError('unsupported form field view')
-            value = None if kind == 'button' else encode_value(values.get(path.casefold()))
+            value = None if kind == 'button' else self._encode_view_value(
+                session.form._attributes[path.casefold()].value_type, values.get(path.casefold()))
             items.append({'name': name, 'kind': kind, 'title': title, 'visible': visible,
                 'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value})
         state = {'kind': 'closed' if session.closed and not session.uncertain else 'form',
