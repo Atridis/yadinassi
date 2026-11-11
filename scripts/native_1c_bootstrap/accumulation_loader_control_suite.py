@@ -14,6 +14,7 @@ def empty_report(nonce):
     return dict(schema=contract.STAGE_SCHEMA, profile=contract.PROFILE, nonce=nonce,
         status='failed', failure_kind='prerequisites_failed', failure_phase='prerequisites',
         input_sha256={}, prepared_sha256=None, redump_sha256=None,
+        target_input_schema_version=None, target_redump_schema_version=None,
         case_count=contract.COUNT, completed_case_count=0,
         configuration_validation=fixture.VALIDATION_MODE, redump_diagnostic=[],
         install_diagnostics=[], process_diagnostics=full.empty_process_diagnostics(),
@@ -111,6 +112,7 @@ def run_suite(platform, root, inputs, nonce):
                 stream.write(raw)
         fixture.verify_redump(expected, dump_files(prepared))
         report['prepared_sha256'] = fixture.inventory_digest(expected)
+        report['target_input_schema_version'] = fixture.target_schema_version(expected)
         phase = 'load'
         report['entered'] = True
         designer('load', ['/LoadConfigFromFiles', str(prepared)])
@@ -122,6 +124,7 @@ def run_suite(platform, root, inputs, nonce):
         designer('after', ['/DumpConfigToFiles', str(after), '-Format', 'Hierarchical'])
         report['redump_completed'] = True
         actual = dump_files(after)
+        report['target_redump_schema_version'] = fixture.target_schema_version(actual)
         report['redump_sha256'] = fixture.inventory_digest(actual)
         report['redump_diagnostic'] = fixture.redump_diagnostic(expected, actual)
         try:

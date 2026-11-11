@@ -1,6 +1,7 @@
 """Offline loader-control contracts. Native execution is always mocked."""
 import contextlib
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -34,6 +35,7 @@ def successful_stage(inputs=None, nonce=NONCE):
     stage.update(status='ok', failure_kind='none', failure_phase='final',
         input_sha256=hashes() if inputs is None else inputs,
         prepared_sha256='c' * 64, redump_sha256='d' * 64, completed_case_count=1,
+        target_input_schema_version='2.4', target_redump_schema_version='2.4',
         process_diagnostics=dict(suite.full.empty_process_diagnostics(), stage='after_exit', reason='none'),
         **{key: True for key in contract.FLAGS})
     return stage
@@ -66,28 +68,39 @@ class FixtureTests(unittest.TestCase):
         return fixture.prepare(baseline())[1]
 
     def reject(self, expected, actual):
+        self.assertNotEqual(expected, actual, 'mutation must change the fixture bytes or file set')
         with self.assertRaises(ValueError):
             fixture.verify_redump(expected, actual)
 
-    def test_exactly_fields_and_document_handler_removed(self):
+    def test_exact_native_asset_and_three_target_substitutions(self):
         files = baseline()
         source = fixture.source.prepare(files)[1]
-        reduced = fixture.prepare(files)[1]
-        self.assertEqual(set(source) - set(reduced), {fixture.MODULE})
-        for name in set(reduced) - {fixture.REGISTER}:
-            self.assertEqual(reduced[name], source[name])
-        left, tail = source[fixture.REGISTER].split(b'<ChildObjects>')
-        _, right = tail.split(b'</ChildObjects>')
-        self.assertEqual(reduced[fixture.REGISTER], left + b'<ChildObjects></ChildObjects>' + right)
+        actual = fixture.prepare(files)[1]
+        self.assertEqual(set(source) - set(actual), {fixture.MODULE, fixture.SOURCE_REGISTER})
+        self.assertEqual(set(actual) - set(source), {fixture.REGISTER})
+        substitutions = {
+            'Configuration.xml': (b'>OwnedAccumulationRows<', ('>' + fixture.REGISTER_NAME + '<').encode()),
+            fixture.DOCUMENT: (fixture.OLD_TARGET, fixture.NEW_TARGET),
+            fixture.original.ROLE_FILES[1]: (b'>' + fixture.OLD_TARGET + b'<', b'>' + fixture.NEW_TARGET + b'<'),
+        }
+        self.assertEqual(len(substitutions), 3)
+        for name, (before, after) in substitutions.items():
+            self.assertEqual(source[name].count(before), 1)
+            self.assertEqual(actual[name], source[name].replace(before, after, 1))
+        for name in set(actual) - set(substitutions) - {fixture.REGISTER}:
+            self.assertEqual(actual[name], source[name])
+        self.assertEqual(actual[fixture.REGISTER], fixture.native_declaration())
 
-    def test_original_inputs_and_rights_are_unchanged(self):
+    def test_original_inputs_and_rights_are_not_broadened(self):
         files = baseline()
         original = dict(files)
-        reduced = fixture.prepare(files)[1]
+        actual = fixture.prepare(files)[1]
         source = fixture.source.prepare(files)[1]
         self.assertEqual(files, original)
-        for path in fixture.original.ROLE_FILES:
-            self.assertEqual(reduced[path], source[path])
+        role, rights = fixture.original.ROLE_FILES
+        self.assertEqual(actual[role], source[role])
+        self.assertEqual(actual[rights].count(fixture.NEW_TARGET), 1)
+        self.assertEqual(actual[rights].replace(fixture.NEW_TARGET, fixture.OLD_TARGET), source[rights])
 
     def test_equal_strict_redump_passes(self):
         expected = self.prepared()
@@ -97,13 +110,13 @@ class FixtureTests(unittest.TestCase):
         expected = self.prepared()
         actual = dict(expected)
         actual[fixture.REGISTER] = actual[fixture.REGISTER].replace(
-            b'd782356a-9cef-5a95-bcb4-b0a023d9e836', b'd782356a-9cef-5a95-bcb4-b0a023d9e837')
+            b'c2ca0ce2-1e82-4cae-b478-30d241ab9233', b'c2ca0ce2-1e82-4cae-b478-30d241ab9234')
         self.reject(expected, actual)
 
     def test_document_identity_and_recorder_link_changes_fail(self):
         expected = self.prepared()
         for before, after in ((b'98ed6b79', b'98ed6b78'),
-                              (b'AccumulationRegister.OwnedAccumulationRows', b'AccumulationRegister.Other')):
+                              (fixture.NEW_TARGET, b'AccumulationRegister.Other')):
             actual = dict(expected)
             actual[fixture.DOCUMENT] = actual[fixture.DOCUMENT].replace(before, after)
             self.reject(expected, actual)
@@ -111,17 +124,17 @@ class FixtureTests(unittest.TestCase):
     def test_changed_register_and_document_properties_fail(self):
         expected = self.prepared()
         for name, before, after in ((fixture.REGISTER, b'<RegisterType>Balance', b'<RegisterType>Turnovers'),
-                (fixture.REGISTER, b'<EnableTotalsSplitting>false', b'<EnableTotalsSplitting>true'),
+                (fixture.REGISTER, b'<EnableTotalsSplitting>true', b'<EnableTotalsSplitting>false'),
                 (fixture.DOCUMENT, b'<Posting>Allow', b'<Posting>Deny'),
                 (fixture.DOCUMENT, b'<SequenceFilling>AutoFill', b'<SequenceFilling>DontFill')):
             actual = dict(expected)
             actual[name] = actual[name].replace(before, after)
             self.reject(expected, actual)
 
-    def test_fields_and_handler_cannot_reappear(self):
+    def test_old_register_and_handler_cannot_reappear(self):
         expected = self.prepared()
         source = fixture.source.prepare(baseline())[1]
-        for path in (fixture.REGISTER, fixture.MODULE):
+        for path in (fixture.SOURCE_REGISTER, fixture.MODULE):
             actual = dict(expected)
             actual[path] = source[path]
             self.reject(expected, actual)
@@ -142,8 +155,11 @@ class FixtureTests(unittest.TestCase):
 
     def test_tampered_expected_owned_source_is_refused(self):
         expected = self.prepared()
-        expected[fixture.DOCUMENT] = expected[fixture.DOCUMENT].replace(b'<Posting>Allow', b'<Posting>Deny')
-        self.reject(expected, expected)
+        before = expected[fixture.DOCUMENT]
+        expected[fixture.DOCUMENT] = before.replace(b'<Posting>Allow', b'<Posting>Deny')
+        self.assertNotEqual(before, expected[fixture.DOCUMENT])
+        with self.assertRaises(ValueError):
+            fixture.verify_redump(expected, expected)
 
     def test_inventory_digest_binds_names_and_bytes(self):
         expected = self.prepared()
@@ -158,6 +174,102 @@ class FixtureTests(unittest.TestCase):
         self.assertTrue(fixture.verify_redump(expected, actual))
         del actual['ConfigDumpInfo.xml']
         self.reject(expected, actual)
+
+    def test_public_source_and_license_are_exact_and_attributed(self):
+        root = fixture.PUBLIC_ROOT
+        self.assertEqual({path.name for path in root.iterdir()},
+            {fixture.REGISTER_NAME + '.xml', 'LICENSE', 'SOURCE.json', 'NOTICE.md'})
+        value = json.loads((root / 'SOURCE.json').read_text(encoding='utf-8'))
+        self.assertEqual(value['repository'], 'vanessa-opensource/add')
+        self.assertEqual(value['commit'], '2deeed6636dfbb84f42ae625fd40c8ab662bb64e')
+        self.assertEqual(value['git_blob'], fixture.NATIVE_GIT_BLOB)
+        self.assertEqual(value['sha256'], fixture.NATIVE_SHA256)
+        raw = fixture.native_declaration()
+        self.assertEqual(len(raw), value['bytes'])
+        self.assertEqual(len(raw), 10303)
+        self.assertTrue(raw.startswith(b'\xef\xbb\xbf'))
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), fixture.NATIVE_SHA256)
+        self.assertEqual(hashlib.sha1(b'blob 10303\0' + raw).hexdigest(), fixture.NATIVE_GIT_BLOB)
+        license_raw = (root / 'LICENSE').read_bytes()
+        self.assertEqual(value['license']['spdx'], 'MPL-2.0')
+        self.assertEqual(value['license']['git_blob'], 'a612ad9813b006ce81d1ee438dd784da99a54007')
+        self.assertEqual(hashlib.sha256(license_raw).hexdigest(),
+            '1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5')
+        self.assertIn(b'Mozilla Public License Version 2.0', license_raw)
+        notice = (root / 'NOTICE.md').read_text(encoding='utf-8')
+        self.assertIn(value['source_url'], notice)
+        self.assertIn('unmodified', notice)
+        self.assertIn('Mozilla Public License', notice)
+        attributes = (ROOT / '.gitattributes').read_text(encoding='utf-8').splitlines()
+        self.assertIn('scripts/accumulation_loader_control/** text eol=lf', attributes)
+
+    def test_native_asset_retains_complete_identity_descriptors_and_fields(self):
+        root, _ = fixture.original._xml(fixture.native_declaration())
+        md = '{' + fixture.original.MD + '}'
+        xr = '{http://v8.1c.ru/8.3/xcf/readable}'
+        v8 = '{' + fixture.original.V8 + '}'
+        self.assertEqual(root.get('version'), '2.4')
+        register = root[0]
+        self.assertEqual(register.get('uuid'), '8d62a3dc-3d13-40e5-aab1-f73487263e75')
+        properties = register.find(md + 'Properties')
+        self.assertEqual(properties.find(md + 'Name').text, fixture.REGISTER_NAME)
+        self.assertEqual(properties.find(md + 'RegisterType').text, 'Balance')
+        self.assertEqual(properties.find(md + 'DataLockControlMode').text, 'Managed')
+        self.assertEqual(properties.find(md + 'EnableTotalsSplitting').text, 'true')
+        self.assertEqual(len(register.find(md + 'InternalInfo').findall(xr + 'GeneratedType')), 6)
+        self.assertEqual([node.get('name') for node in properties.find(md + 'StandardAttributes')],
+            ['RecordType', 'Active', 'LineNumber', 'Recorder', 'Period'])
+        fields = register.find(md + 'ChildObjects')
+        self.assertEqual([node.tag for node in fields], [md + 'Resource', md + 'Dimension'])
+        resource, dimension = [node.find(md + 'Properties') for node in fields]
+        self.assertEqual(resource.find(md + 'Name').text, 'РесурсЧисло1')
+        self.assertEqual(dimension.find(md + 'Name').text, 'Измерение1')
+        number = resource.find(md + 'Type/' + v8 + 'NumberQualifiers')
+        self.assertEqual([node.text for node in number], ['10', '2', 'Any'])
+        string = dimension.find(md + 'Type/' + v8 + 'StringQualifiers')
+        self.assertEqual([node.text for node in string], ['10', 'Variable'])
+        self.assertEqual(dimension.find(md + 'UseInTotals').text, 'true')
+        self.assertEqual([node.text for node in root.iter(v8 + 'Type')], ['xs:decimal', 'xs:string'])
+        for node in root.iter():
+            self.assertNotIn(node.tag.rsplit('}', 1)[-1], ('Form', 'Template', 'Command', 'ObjectModule'))
+        self.assertNotIn('cfg:', fixture.native_declaration().decode('utf-8-sig'))
+
+    def test_native_input_pin_refuses_bom_newline_schema_or_identity_drift(self):
+        raw = fixture.native_declaration()
+        for changed in (raw[3:], raw.replace(b'\n', b'\r\n'),
+                raw.replace(b'version="2.4"', b'version="2.20"'),
+                raw.replace(b'8d62a3dc', b'8d62a3dd')):
+            self.assertNotEqual(raw, changed)
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                (root / (fixture.REGISTER_NAME + '.xml')).write_bytes(changed)
+                with mock.patch.object(fixture, 'PUBLIC_ROOT', root), self.assertRaises(ValueError):
+                    fixture.native_declaration()
+
+    def test_native_fields_and_standard_descriptors_remain_strict(self):
+        expected = self.prepared()
+        for before, after in ((b'<v8:Digits>10', b'<v8:Digits>11'),
+                (b'<v8:Length>10', b'<v8:Length>12'),
+                (b'<UseInTotals>true', b'<UseInTotals>false'),
+                (b'<xr:FillChecking>ShowError', b'<xr:FillChecking>DontCheck')):
+            actual = dict(expected)
+            actual[fixture.REGISTER] = actual[fixture.REGISTER].replace(before, after)
+            self.reject(expected, actual)
+        actual = dict(expected)
+        actual[fixture.REGISTER] = actual[fixture.REGISTER].replace(b'</ChildObjects>',
+            b'<Attribute uuid="extra"><Properties><Name>Extra</Name></Properties></Attribute></ChildObjects>')
+        self.reject(expected, actual)
+
+    def test_schema_upgrade_is_observed_but_never_silently_normalized(self):
+        expected = self.prepared()
+        actual = dict(expected)
+        actual[fixture.REGISTER] = actual[fixture.REGISTER].replace(b'version="2.4"', b'version="2.20"')
+        self.assertEqual(fixture.target_schema_version(expected), '2.4')
+        self.assertEqual(fixture.target_schema_version(actual), '2.20')
+        self.reject(expected, actual)
+        actual[fixture.REGISTER] = expected[fixture.REGISTER].replace(b'version="2.4"', b'version="private-token"')
+        self.assertEqual(fixture.target_schema_version(actual), 'other')
+        self.assertEqual(fixture.target_schema_version({}), None)
 
 
 class TransportTests(unittest.TestCase):
@@ -174,7 +286,7 @@ class TransportTests(unittest.TestCase):
     def test_failure_retains_finite_loader_facts_only(self):
         stage = suite.empty_report(NONCE)
         stage.update(failure_kind='process_failed', failure_phase='load', entered=True,
-            input_sha256=hashes(), prepared_sha256='c' * 64,
+            input_sha256=hashes(), prepared_sha256='c' * 64, target_input_schema_version='2.4',
             install_diagnostics=[contract.install_diagnostic('private-value secret=xyz', 'load',
                 exit_code=-11, source_root_present=True, configuration_present=True)])
         report = self.validate(envelope(stage))
@@ -198,7 +310,8 @@ class TransportTests(unittest.TestCase):
             self.validate(data)
 
     def test_old_sixteen_case_profile_and_non_one_counts_are_refused(self):
-        for field, value in (('profile', fixture.source.route.PROFILE), ('case_count', 16),
+        for field, value in (('profile', fixture.source.route.PROFILE), ('profile', 'accumulation-loader-control-v1'),
+                             ('schema', 'native-1c-accumulation-loader-control-stage-v1'), ('case_count', 16),
                              ('case_count', True), ('completed_case_count', 0)):
             data = envelope()
             data['report']['stage3'][field] = value
@@ -260,6 +373,24 @@ class TransportTests(unittest.TestCase):
             data['report']['stage3'][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.validate(data)
+
+    def test_schema_facts_are_finite_and_verified_redump_cannot_claim_upgrade(self):
+        for field, value in (('target_input_schema_version', '2.20'),
+                ('target_redump_schema_version', '2.20'), ('target_redump_schema_version', 'private'),
+                ('target_redump_schema_version', 2.4), ('target_input_schema_version', None)):
+            data = envelope()
+            data['report']['stage3'][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                self.validate(data)
+        stage = suite.empty_report(NONCE)
+        stage.update(entered=True, load_completed=True, redump_completed=True,
+            target_input_schema_version='2.4', target_redump_schema_version='2.20',
+            failure_kind='output_mismatch', failure_phase='redump', input_sha256=hashes())
+        report = self.validate(envelope(stage))
+        self.assertTrue(report['stage3']['load_completed'])
+        self.assertTrue(report['stage3']['redump_completed'])
+        self.assertFalse(report['stage3']['config_verified'])
+        self.assertTrue(all(report['stage3'][key] is False for key in contract.ACCEPTANCE_FLAGS))
 
 
 class HostIsolationTests(unittest.TestCase):
@@ -374,19 +505,19 @@ class HostIsolationTests(unittest.TestCase):
             self.fake_host_run(changed_source=True)
 
     def test_cross_platform_byte_pins_and_no_export_option(self):
-        attributes = (ROOT / '.gitattributes').read_text().splitlines()
+        attributes = (ROOT / '.gitattributes').read_text(encoding='utf-8').splitlines()
         for path in ('scripts/accumulation_loader_control/**',
                 'scripts/native_1c_accumulation_loader_control.py',
                 'scripts/native_1c_accumulation_loader_control_probe.sh',
                 'scripts/native_1c_bootstrap/accumulation_loader_control_suite.py'):
             self.assertIn(path + ' text eol=lf', attributes)
-        source = (ROOT / 'scripts/native_1c_accumulation_loader_control.py').read_text()
+        source = (ROOT / 'scripts/native_1c_accumulation_loader_control.py').read_text(encoding='utf-8')
         self.assertNotIn('--export-native-outputs', source)
         self.assertNotIn('GITHUB_OUTPUT', source)
 
 
 class SuiteTests(unittest.TestCase):
-    def simulate(self, *, failed_load=False, changed_redump=False, changed_prepared=False, invalid_user=False):
+    def simulate(self, *, failed_load=False, changed_redump=False, changed_prepared=False, invalid_user=False, schema_upgrade=False):
         calls = []
         baseline_files = baseline()
         loaded_files = {}
@@ -405,8 +536,11 @@ class SuiteTests(unittest.TestCase):
                 if action == '/DumpConfigToFiles':
                     # Redump the actual loaded snapshot, not a new fixture with fresh UUIDs.
                     files = dict(baseline_files if len(calls) == 1 else loaded_files)
-                    if len(calls) > 1 and changed_redump:
-                        files[fixture.REGISTER] = files[fixture.REGISTER].replace(b'<RegisterType>Balance', b'<RegisterType>Turnovers')
+                    if len(calls) > 1 and (changed_redump or schema_upgrade):
+                        before = files[fixture.REGISTER]
+                        files[fixture.REGISTER] = (before.replace(b'version="2.4"', b'version="2.20"') if schema_upgrade else
+                            before.replace(b'<RegisterType>Balance', b'<RegisterType>Turnovers'))
+                        self.assertNotEqual(files[fixture.REGISTER], before)
                     write_files(Path(command[3]), files)
                     if len(calls) > 1 and changed_prepared:
                         (root / 'prepared' / fixture.DOCUMENT).write_bytes(b'<Altered/>')
@@ -492,12 +626,12 @@ class SuiteTests(unittest.TestCase):
                 self.assertEqual(report['stage3']['completed_case_count'], 0)
 
     def test_native_source_has_no_postload_enterprise_or_update(self):
-        source = (ROOT / 'scripts/native_1c_bootstrap/accumulation_loader_control_suite.py').read_text()
+        source = (ROOT / 'scripts/native_1c_bootstrap/accumulation_loader_control_suite.py').read_text(encoding='utf-8')
         self.assertNotIn("command('ENTERPRISE')", source)
         self.assertNotIn('/UpdateDBCfg', source)
         self.assertNotIn('run_case(', source)
         self.assertIn('run_stage.main([])', source)
-        probe = (ROOT / 'scripts/native_1c_accumulation_loader_control_probe.sh').read_text()
+        probe = (ROOT / 'scripts/native_1c_accumulation_loader_control_probe.sh').read_text(encoding='utf-8')
         self.assertIn('!= --accumulation-loader-control', probe)
         self.assertNotIn('--accumulation-register-suite', probe)
         self.assertIn('stop_session_bus', probe)
@@ -529,10 +663,24 @@ class SuiteTests(unittest.TestCase):
             with static_container_files(root), self.assertRaises(suite.full.FullError):
                 suite.input_hashes(root)
 
+    def test_native_schema_upgrade_retains_load_success_and_fails_only_redump(self):
+        report, calls = self.simulate(schema_upgrade=True)
+        self.assertEqual(calls, ['/DumpConfigToFiles', '/LoadConfigFromFiles', '/DumpConfigToFiles'])
+        self.assertEqual(report['failure_phase'], 'redump')
+        self.assertEqual(report['failure_kind'], 'output_mismatch')
+        self.assertTrue(report['load_completed'])
+        self.assertTrue(report['redump_completed'])
+        self.assertFalse(report['config_verified'])
+        self.assertEqual(report['target_input_schema_version'], '2.4')
+        self.assertEqual(report['target_redump_schema_version'], '2.20')
+        self.assertEqual(report['completed_case_count'], 0)
+        self.assertTrue(all(report[key] is False for key in contract.ACCEPTANCE_FLAGS))
+        host.validate_envelope(encode(envelope(report)), NONCE, hashes())
+
 
 class WorkflowTests(unittest.TestCase):
     def workflow(self):
-        return (ROOT / '.github/workflows/native-1c-accumulation-loader-control.yml').read_text()
+        return (ROOT / '.github/workflows/native-1c-accumulation-loader-control.yml').read_text(encoding='utf-8')
 
     def test_temporary_workflow_is_exact_owner_branch_and_draft_only(self):
         source = self.workflow()
@@ -566,7 +714,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn('native_1c_accumulation_register_profile.py', source)
 
     def test_original_sixteen_case_workflow_does_not_select_control_branch(self):
-        original = (ROOT / '.github/workflows/native-1c-accumulation-register.yml').read_text()
+        original = (ROOT / '.github/workflows/native-1c-accumulation-register.yml').read_text(encoding='utf-8')
         self.assertIn("head.ref == 'codex/accumulation-balance-registers'", original)
         self.assertNotIn('codex/accumulation-loader-control', original)
 

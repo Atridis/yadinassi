@@ -1,10 +1,10 @@
 """Closed one-case diagnostic transport, distinct from the 16-case acquisition."""
 from accumulation_register_behavior import route as source_route
 
-PROFILE = 'accumulation-loader-control-v1'
-SCHEMA = 'native-1c-accumulation-loader-control-envelope-v1'
-STAGE_SCHEMA = 'native-1c-accumulation-loader-control-stage-v1'
-HOST_SCHEMA = 'native-1c-accumulation-loader-control-host-v1'
+PROFILE = 'accumulation-loader-control-full-native-v2'
+SCHEMA = 'native-1c-accumulation-loader-control-envelope-v2'
+STAGE_SCHEMA = 'native-1c-accumulation-loader-control-stage-v2'
+HOST_SCHEMA = 'native-1c-accumulation-loader-control-host-v2'
 MANIFEST = 'accumulation-loader-control-inputs.json'
 COUNT = 1
 MAX_TRANSPORT = 32768
@@ -17,7 +17,8 @@ HASH_FIELDS = frozenset(('prepared_sha256', 'redump_sha256'))
 STAGE_KEYS = FLAGS | ACCEPTANCE_FLAGS | HASH_FIELDS | {
     'schema', 'profile', 'nonce', 'status', 'failure_kind', 'failure_phase',
     'input_sha256', 'case_count', 'completed_case_count', 'configuration_validation',
-    'redump_diagnostic', 'install_diagnostics', 'process_diagnostics'}
+    'redump_diagnostic', 'install_diagnostics', 'process_diagnostics',
+    'target_input_schema_version', 'target_redump_schema_version'}
 
 
 def install_diagnostic(text, label, **facts):

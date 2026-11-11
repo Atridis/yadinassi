@@ -1,43 +1,51 @@
-# Accumulation metadata loader control
+# Full native declaration loader control, v2
 
-This is exactly one diagnostic case, not a replacement for the 16-case
-accumulation-register acquisition and not native semantic or runtime parity.
-No existing acquisition inputs, workflow, or runtime behavior are changed.
-The dedicated temporary workflow is owner-only and restricted to the exact
-Draft branch codex/accumulation-loader-control. Never mark this PR ready or
-merge it; close it after the diagnostic result is verified.
+Exactly one diagnostic case, not the original 16-case acquisition and not
+semantic measurement or runtime parity. The previous stripped declaration
+control still failed in LoadConfigFromFiles. This version tests one materially
+different input: an entire native-produced public register declaration.
 
-After the existing approved disposable NativeSmoke bootstrap prerequisite:
+The dedicated workflow remains owner-only and restricted to the exact Draft
+branch codex/accumulation-loader-control and existing PR #278. This temporary
+diagnostic source is not intended for a Ready transition or merge.
 
-1. Dump the fresh bootstrap configuration.
-2. Apply the same source-owned Document and AccumulationRegister declarations,
-   preserving UUIDs, generated types, properties, recorder link and existing
-   rights. Deterministically remove all register Resource/Attribute/Dimension
-   children and the document ObjectModule.bsl. No other changes or extra grants.
-3. Run LoadConfigFromFiles once and, only on success, DumpConfigToFiles once.
-4. Verify the exact file set and strict semantic XML signatures, including all
-   authored properties, generated type IDs and recorder link. Preserve bootstrap
-   modules and rights. ConfigDumpInfo.xml remains export bookkeeping only.
+After the unchanged approved disposable NativeSmoke bootstrap prerequisite:
 
-There is no UpdateDBCfg after this control's load and no post-load Enterprise,
-observer, movement, query, posting, or balance execution. The known bootstrap
-itself retains its existing setup and simple-smoke prerequisite; it is not a
-second accumulation control. A successful control proves only that this exact
-reduced source loaded and survived the strict redump, not that fields or
-accumulation behavior work. A Designer-added property is not silently ignored.
+1. Dump the fresh bootstrap configuration and prepare the original owned
+   accumulation scaffold.
+2. Replace its register with the complete byte-pinned public source from
+   vanessa-opensource/add commit 2deeed6636dfbb84f42ae625fd40c8ab662bb64e.
+   Keep its UTF-8 BOM, schema 2.4, Russian name, UUIDs, six generated types,
+   five standard descriptors, decimal resource, string dimension and defaults.
+   The exact source, attribution, provenance and full MPL-2.0 license are in
+   public_source/vanessa_add. No binary configuration or module is included.
+3. Make exactly three target-reference substitutions: the Configuration's
+   AccumulationRegister child, the owned Document.RegisterRecords item and
+   the narrow role object name. Preserve the owned Document's other bytes,
+   omit its handler, and preserve all permissions and bootstrap modules.
+4. Run LoadConfigFromFiles once, then DumpConfigToFiles once only on success.
+   There is no post-load UpdateDBCfg, Enterprise, observer, movement, posting,
+   query or balance execution. Bootstrap's existing simple smoke is only a
+   prerequisite, not another accumulation control.
+5. Verify the exact source file set and strict semantic XML signatures,
+   including schema version, identities, generated types, all properties,
+   standard descriptors, fields, recorder linkage and unchanged grants.
+   Only ConfigDumpInfo.xml remains export bookkeeping.
 
-The profile, transport and report schemas are loader-control-specific. All
+A redump may upgrade native schema 2.4 to 2.20. The input must not be rewritten
+and the verification gate must not normalize that difference. Bounded finite
+input/redump schema facts distinguish this from a load failure. load_completed
+and redump_verified remain separate; successful loading survives a subsequent
+redump-verification failure in the diagnostic report.
+
+The v2 profile and transport/report schemas distinguish this run from v1. All
 native measurement, semantic measurement and runtime parity acceptance flags
-are always false, including successful runs. Only diagnostic_control_passed may
-be true. The CLI exit status describes this diagnostic, never parity acceptance.
-No raw native console text, native XML, database, modules, or observer output is
-exported. Failure diagnostics use bounded fixed vocabulary, exit status and
-boolean source-presence facts only.
+are always false. Only diagnostic_control_passed may be true. Even success
+proves only loading and verified redump of this exact source, not register
+behavior. No raw native logs, XML, database, modules or outputs are exported.
 
-The host retains the same pinned image, nonce, source inventory, read-only
-mount, nonroot/no-network constraints, bounded process budget, private session
-bus, process census, registry credential removal, ownership-checked container
-cleanup and private-payload cleanup. Source and host provenance are rechecked
-before the public summary is emitted. There is no artifact export option. The temporary workflow uploads only the
-bounded diagnostic summary. Execution or publication requires exact-count
-notification by the coordinator; this implementation does not run either.
+The pinned image, source inventory, nonce, ownership checks, isolated mounts,
+process limits and census, session bus, credential cleanup, container removal,
+private-payload cleanup, provenance checks and workflow policy are unchanged.
+The existing workflow uploads only a bounded JSON summary. Tests, native
+execution and publication wait for the coordinator's exact-count notice.

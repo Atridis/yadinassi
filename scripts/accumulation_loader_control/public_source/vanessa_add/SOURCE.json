@@ -1,0 +1,20 @@
+{
+  "repository": "vanessa-opensource/add",
+  "commit": "2deeed6636dfbb84f42ae625fd40c8ab662bb64e",
+  "path": "lib/CF/83xdd/AccumulationRegisters/РегистрНакопленияОстатки.xml",
+  "source_url": "https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/lib/CF/83xdd/AccumulationRegisters/РегистрНакопленияОстатки.xml",
+  "git_blob": "154bb545aa8f71b63559e1fb123f401c4c245b58",
+  "sha256": "19f0e833301d68843e0dddb921a678def1c0e819037a501200bab3fce3a6e227",
+  "bytes": 10303,
+  "encoding": "UTF-8 with BOM",
+  "schema_version": "2.4",
+  "modified": false,
+  "license": {
+    "spdx": "MPL-2.0",
+    "path": "LICENSE",
+    "source_url": "https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/LICENSE",
+    "git_blob": "a612ad9813b006ce81d1ee438dd784da99a54007",
+    "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+    "bytes": 16725
+  }
+}

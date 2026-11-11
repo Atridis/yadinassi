@@ -1,4 +1,4 @@
-"""One isolated declaration-only load/redump diagnostic; acceptance is always false."""
+"""One isolated full-native-declaration load/redump diagnostic; acceptance is always false."""
 from __future__ import annotations
 import contextlib
 import importlib.util
@@ -50,6 +50,9 @@ def staged_files(smoke=SMOKE):
         files['scripts/catalog_object_behavior/'+name]='bootstrap/catalog_object_behavior/'+name
     for name in ('__init__.py', 'contract.py', 'fixture.py'):
         files['scripts/accumulation_loader_control/' + name] = 'bootstrap/accumulation_loader_control/' + name
+    for name in (fixture.REGISTER_NAME + '.xml', 'SOURCE.json', 'NOTICE.md', 'LICENSE'):
+        relative = 'accumulation_loader_control/public_source/vanessa_add/' + name
+        files['scripts/' + relative] = 'bootstrap/' + relative
     return files
 
 
@@ -169,6 +172,11 @@ def validate_envelope(raw, nonce, hashes, validator=SMOKE.validate_report):
         require(all(stage[key] is None or FULL.is_digest(stage[key]) for key in contract.HASH_FIELDS))
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({}, hashes))
         require(stage['configuration_validation'] == fixture.VALIDATION_MODE)
+        require(stage['target_input_schema_version'] in (None, fixture.INPUT_SCHEMA_VERSION))
+        require(stage['target_redump_schema_version'] in fixture.SCHEMA_VERSIONS)
+        require(not stage['entered'] or stage['target_input_schema_version'] == fixture.INPUT_SCHEMA_VERSION)
+        require(stage['target_redump_schema_version'] is None or stage['redump_completed'])
+        require(not stage['config_verified'] or stage['target_redump_schema_version'] == fixture.INPUT_SCHEMA_VERSION)
         require(fixture.valid_diagnostic(stage['redump_diagnostic']))
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(type(stage['install_diagnostics']) is list and len(stage['install_diagnostics']) <= 2)
