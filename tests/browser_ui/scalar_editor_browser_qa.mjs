@@ -43,7 +43,9 @@ function stepFailureCode(error){
     'independent_typed_readback','catalog_rpc_plan','restart_rpc_plan','invalid_draft_rpc_plan','total_rpc_plan',
     'evidence_input_offscreen','evidence_input_clipped','evidence_viewport_missing',
     'reopened_checkbox_changed','reference_not_typed','reopened_lines_missing',
-    'reopened_product_column_missing','reopened_product_not_typed','save_reply_not_saved'];
+    'reopened_product_column_missing','reopened_product_not_typed','save_reply_not_saved',
+    'held_reply_not_ready','held_sibling_not_visible','held_owner_close_not_disabled','held_write_not_saved',
+    'late_close_sent_work','late_close_removed_owner','double_write_replayed','late_reply_changed_sibling','dirty_sibling_closed'];
   return fixed.find(code=>message===code||message.startsWith(code+'\n'))??
     (error?.name==='TimeoutError'?'browser_step_timeout':'unclassified_step');
 }
@@ -599,6 +601,8 @@ async function main(){
         const packet=checkRequest(route.request());
         const saving=matchesSave(packet,pendingSave)?pendingSave:null;
         if(saving)saving.diagnostic.requestAdmitted=true;
+        const held=matchesSave(packet,delayedWrite)?delayedWrite:null;
+        if(held){delayedWrite=null;held.diagnostic.requestAdmitted=true;}
         stage('rpc_fetch');
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
         httpStatus=diagnosticStatus(response.status());stage('reply_budget');
@@ -607,16 +611,19 @@ async function main(){
         stage('reply_json');const result=JSON.parse(bytes.toString('utf8'));
         if(response.status()!==200)refusalCode=diagnosticRefusal(result);
         stage('http_status');assert.equal(response.status(),200,'rpc_status');
-        // Delay only delivery of an already completed real reply. Never invent
-        // a reply or repeat a request to make the late-navigation scenario pass.
-        if(delayedWrite&&packet.method==='application.form'&&packet.params.request.params.event==='command'&&packet.params.request.params.control==='WriteButton'){
-          stage('held_write');const gate=delayedWrite;delayedWrite=null;gate.entered();
-          await bounded(gate.released,remaining(5000),'held_write_timeout');
-        }
         checkReply(result,packet,stage);
         if(saving){saving.diagnostic.bodyAccepted=true;saving.diagnostic.status=diagnosticSaveStatus(result.result);}
+        // Delay only delivery of an already completed real reply. Never invent
+        // a reply or repeat a request to make the late-navigation scenario pass.
+        if(held){
+          const gate=held;gate.diagnostic.bodyAccepted=true;gate.diagnostic.status=diagnosticSaveStatus(result.result);
+          assert.equal(gate.diagnostic.status,'saved','held_write_not_saved');
+          stage('held_write');gate.diagnostic.replyHeld=true;gate.entered();
+          await bounded(gate.released,remaining(5000),'held_write_timeout');
+        }
         stage('delivery');await route.fulfill({response});
         if(saving)saving.diagnostic.deliveryCompleted=true;
+        if(held)held.diagnostic.deliveryCompleted=true;
         return;
       }catch{
         // Preserve the first failure before aborting. An in-flight RPC failing
@@ -822,27 +829,49 @@ async function main(){
     assert.equal(rpc,plannedRPC[0]+plannedRPC[1]+plannedRPC[2],'invalid_draft_rpc_plan');
   });
   await scenario(scenarioNames[3],async()=>{
+    phase='held_write_prepare';
     let entered,release;const holding=new Promise(resolve=>entered=resolve),released=new Promise(resolve=>release=resolve);
-    delayedWrite={entered,released};const before=countEvent('command','WriteButton');
+    const diagnostic={requestAdmitted:false,bodyAccepted:false,replyHeld:false,releaseRequested:false,
+      deliveryCompleted:false,responseMatched:false,status:'not_received'};report.heldDiagnostic=diagnostic;
+    const gate={session:firstOrder,control:'WriteButton',entered,released,diagnostic};delayedWrite=gate;
+    const before=countEvent('command','WriteButton');
     const write=await action('Write document').elementHandle(),ownerClose=await action('Close form').elementHandle();
-    phase='held_real_write_reply_and_late_navigation';
+    const reply=replyFor(packet=>{
+      if(!matchesSave(packet,gate))return false;
+      diagnostic.responseMatched=true;return true;
+    });reply.catch(()=>{});
+    phase='held_write_wait_for_reply';
     try{
-      await write.evaluate(control=>{control.click();control.click();});await bounded(holding,remaining(10000),'write_not_admitted');
+      await write.evaluate(control=>{control.click();control.click();});await bounded(holding,remaining(rpcReplyMs),'held_reply_not_ready');
       const admitted=rpc;
-      await tabs().getByRole('button',{name:'Non-posting order',exact:true}).nth(1).click();await value('Number (blank for automatic)','D2');
-      await button('Close application').click();await ownerClose.evaluate(control=>control.click());
+      phase='held_write_navigate_sibling';
+      // Navigation is synchronous. Native clicks preserve disabled/inert state
+      // and do not spend the five-second hold awaiting Playwright actionability.
+      await tabs().getByRole('button',{name:'Non-posting order',exact:true}).nth(1).evaluate(control=>control.click());
+      assert.equal(await field('Number (blank for automatic)').inputValue(),'D2','held_sibling_not_visible');
+      phase='held_write_attempt_late_close';
+      await page.getByRole('button',{name:'Close application',exact:true,includeHidden:true}).evaluate(control=>control.click());
+      assert.equal(await ownerClose.evaluate(control=>control.disabled),true,'held_owner_close_not_disabled');
+      await ownerClose.evaluate(control=>control.click());
       assert.equal(rpc,admitted,'late_close_sent_work');assert.equal(await panels().count(),3,'late_close_removed_owner');
-    }finally{release();}
-    await idle();await value('Number (blank for automatic)','D2');await value('Note','Sibling draft');
+    }finally{diagnostic.releaseRequested=true;release();}
+    phase='held_write_receive_reply';await reply;await idle();
+    phase='held_write_verify_sibling';await value('Number (blank for automatic)','D2');await value('Note','Sibling draft');
     assert.equal(countEvent('command','WriteButton'),before+1,'double_write_replayed');
-    assert.equal(snapshots.get(firstOrder).items.find(item=>item.name==='StatusLabel').value.value,'saved','held_write_not_saved');
-    assert.equal(typed(sibling,'NoteInput').value,'Sibling draft','late_reply_changed_sibling');
+    assert.equal(snapshots.get(firstOrder)?.items.find(item=>item.name==='StatusLabel')?.value?.value,'saved','held_write_not_saved');
+    assert.equal(typed(sibling,'NoteInput')?.value,'Sibling draft','late_reply_changed_sibling');
     await write.dispose();await ownerClose.dispose();
-    phase='dirty_sibling_refuses_close_then_saves';
-    const refusal=replyFor(packet=>packet.params?.request?.params?.event==='close');await action('Close form').click();await refusal;await idle();
+    phase='dirty_sibling_before_close';
+    const refusal=replyFor(packet=>packet.method==='application.form'&&packet.params.session===sibling&&
+      packet.params.request.params?.event==='close');await action('Close form').click();await refusal;await idle();
     assert.equal(await panels().count(),3,'dirty_sibling_closed');await value('Note','Sibling draft');
+    phase='dirty_sibling_evidence';
     await captureEvidence(screenshots[3],['Note']);
-    await writeDocument();await closeForm(2);await switchOrder(0);await closeForm(1);await closeForm(0);await ordinaryShutdown();
+    phase='sibling_write_saved';await writeDocument();
+    phase='sibling_close_saved';await closeForm(2);
+    phase='original_close_saved';await switchOrder(0);await closeForm(1);
+    phase='welcome_close_saved';await closeForm(0);
+    phase='final_ordinary_shutdown';await ordinaryShutdown();
     phase='final_independent_datetime_and_sibling_audit';fixture('final');
     assert.equal(rpc,plannedRPC.reduce((sum,value)=>sum+value,0),'total_rpc_plan');
     report.acceptance={typedCatalogDateTime:true,typedEmptySaved:true,typedDocumentDateTime:true,typedLineDateTime:true,
