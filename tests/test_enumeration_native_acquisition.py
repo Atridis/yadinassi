@@ -55,7 +55,7 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         self.assertLess(program.index(b'Function ObserveCase'),program.index(b'|entered'))
         self.assertIn(b'FullName()',program);self.assertIn(b'String(Manager)',program)
 
-    def test_fixture_adds_only_enum_and_read_right(self):
+    def test_fixture_adds_only_enum_and_preserves_baseline_rights(self):
         before=baseline();_,after=fixture.prepare(before)
         self.assertEqual(set(after)-set(before),{'Enums/OwnedStatus.xml'})
         md='{'+fixture.original.MD+'}'
@@ -65,10 +65,9 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         self.assertEqual(names[index-1:index+2],[md+'UseStandardCommands',md+'StandardAttributes',md+'Characteristics'])
         self.assertEqual(len(properties[index]),0)
         self.assertIn(b'<Enum>OwnedStatus</Enum>',after['Configuration.xml'])
-        rights=after[fixture.original.ROLE_FILES[1]]
-        self.assertIn(b'Enum.OwnedStatus',rights)
-        tail=rights[rights.index(b'Enum.OwnedStatus'):]
-        self.assertNotIn(b'Insert',tail);self.assertNotIn(b'Update',tail)
+        for path in fixture.original.ROLE_FILES:
+            self.assertEqual(after[path],before[path])
+        self.assertNotIn(b'Enum.OwnedStatus',after[fixture.original.ROLE_FILES[1]])
 
     def test_material_projection_keeps_value_order(self):
         _,files=fixture.prepare(baseline());name='Enums/OwnedStatus.xml';actual=dict(files)

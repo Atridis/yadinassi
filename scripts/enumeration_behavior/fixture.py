@@ -21,11 +21,8 @@ def load_saved():
 
 def prepare(files):
     setup,assets=load_saved();original._baseline(files,setup);expected=dict(files)
-    md=original.MD;rights=original.RIGHTS
+    md=original.MD
     expected['Configuration.xml']=original._append(files['Configuration.xml'],(md+'}MetaDataObject',md+'}Configuration',md+'}ChildObjects'),lambda p:'<'+p+'Enum>OwnedStatus</'+p+'Enum>')
-    def grants(p):
-        return '<'+p+'object><'+p+'name>Enum.OwnedStatus</'+p+'name><'+p+'right><'+p+'name>Read</'+p+'name><'+p+'value>true</'+p+'value></'+p+'right></'+p+'object>'
-    expected[original.ROLE_FILES[1]]=original._append(files[original.ROLE_FILES[1]],(rights+'}Rights',),grants)
     expected['Enums/OwnedStatus.xml']=assets['Enum.xml']
     _files(expected);return setup,expected
 
