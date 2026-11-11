@@ -169,9 +169,10 @@ class InventoryRuntimeTests(unittest.TestCase):
         self.assertTrue(self.vm.execute('D.Warehouse').is_empty())
         self.assertTrue(self.vm.execute('L.Product').is_empty())
         self.assertTrue(self.vm.execute('R.Product').is_empty())
-    def test_wrong_catalog_host_guard(self):
+    def test_wrong_catalog_assignment_coerces_to_typed_empty(self):
         self.seed(); self.vm.execute('D=Documents.Receipt.CreateDocument();')
-        with self.assertRaises(BSLRuntimeError): self.vm.execute('D.Warehouse=P.Ref;')
+        self.vm.execute('D.Warehouse=P.Ref;')
+        self.assertTrue(self.vm.execute('(D.Warehouse=Catalogs.Warehouses.EmptyRef())'))
     def test_reference_join_balance(self):
         self.seed(); self.document(); self.document('Issue','2',3)
         table=self.query('SELECT P.Description AS Product, B.QuantityBalance AS Quantity FROM '

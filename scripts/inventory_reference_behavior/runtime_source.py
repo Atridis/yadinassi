@@ -15,12 +15,20 @@ MD='http://v8.1c.ru/8.3/MDClasses'
 V8='http://v8.1c.ru/8.1/data/core'
 XR='http://v8.1c.ru/8.3/xcf/readable'
 XSI='http://www.w3.org/2001/XMLSchema-instance'
-for p,u in (('',MD),('v8',V8),('xr',XR),('xsi',XSI)):ET.register_namespace(p,u)
 def tag(name):return '{'+MD+'}'+name
 def emit(obj):
     root=ET.Element(tag('MetaDataObject'),{'version':'2.20','xmlns:xs':'http://www.w3.org/2001/XMLSchema','xmlns:cfg':'http://v8.1c.ru/8.1/data/enterprise/current-config'})
     root.append(obj)
-    return ET.tostring(root,encoding='utf-8',xml_declaration=True)
+    # This offline, single-threaded developer utility must not change the
+    # namespace choices of its importing process, including other XML tests.
+    previous = ET._namespace_map.copy()
+    try:
+        for prefix, uri in (('',MD),('v8',V8),('xr',XR),('xsi',XSI)):
+            ET.register_namespace(prefix, uri)
+        return ET.tostring(root,encoding='utf-8',xml_declaration=True)
+    finally:
+        ET._namespace_map.clear()
+        ET._namespace_map.update(previous)
 def fields(source):
     result=ET.Element(tag('ChildObjects'))
     for child in source:

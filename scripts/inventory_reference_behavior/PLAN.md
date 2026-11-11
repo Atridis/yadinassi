@@ -1,6 +1,7 @@
 # Owned inventory-reference acquisition
 
-Candidate source and acquisition scaffold, NOT recorded native evidence.
+Owned source with native evidence from run43030189023 on 1C8.3.27.1508.
+Immutable output/provenance: `tests/fixtures/native_inventory_reference/`.
 Exactly **12 numbered observations** execute in one fresh isolated NativeSmoke
 infobase only after official XML import, UpdateDBCfg and material redump.
 No previous scalar-accumulation native16 fixture or golden is changed.
@@ -19,8 +20,8 @@ wrappers, deterministic owned UUIDs, and complete candidate document section and
 attribute wrappers from the repository demo. The Stock native2.4 derivative
 retains MPL-2.0 attribution; its originals/license remain under
 `../accumulation_register_behavior/public_source/vanessa_add/`. No third-party
-module executes. The document section wrapper is an unmeasured candidate until
-Designer accepts and redumps it. Native source is not accepted by the runtime.
+module executes. The document section wrapper was accepted and materially verified by Designer
+in that acquisition. Native source is still not accepted by the runtime.
 
 `runtime_source/` is separately authored2.20 with the exact proposed
 accumulation-reference-v1 grant; `runtime_source.py` reproduces it using only
@@ -57,8 +58,9 @@ host safety rule is claimed as native parity.
 
 The new branch-gated workflow retains isolated pinned-image, non-root, no-network,
 read-only-root and credential cleanup constraints from the existing route. No
-workflow dispatch or local/native execution has occurred in preparation. Before
-execution, coordinator must announce exact local test counts and native12.
+workflow dispatch is enabled. The first native12 execution was announced by
+the coordinator and source-bound to head4bef30e9 / admitted tree5dbb273f.
+Future local/native execution still requires the coordinator's exact-count notice.
 
 ## Non-polymorphic observation selectors
 

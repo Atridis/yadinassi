@@ -1,7 +1,11 @@
 """Offline acquisition gates; no native semantic expected values and no Docker."""
 from pathlib import Path
+import importlib
+import os
 import tempfile
 import unittest
+from unittest import mock
+from xml.etree import ElementTree as ET
 from inventory_reference_behavior import fixture, route, native_source, runtime_source
 import native_1c_inventory_reference_profile as host
 
@@ -9,6 +13,12 @@ ROOT=Path(__file__).resolve().parents[1]
 NONCE='a'*32
 
 class InventoryReferencePreparationTests(unittest.TestCase):
+    def setUp(self):
+        # Static Windows fixture adapter only, not native containment proof.
+        if os.name == 'nt':
+            from test_native_1c_full_host import read_synthetic_file
+            patcher=mock.patch.object(host.FULL,'read_regular',side_effect=read_synthetic_file)
+            patcher.start();self.addCleanup(patcher.stop)
     def test_twelve_numbered_groups(self):
         self.assertEqual(route.COUNT,12)
         self.assertEqual(route.source().count(b'For CaseNo = 1 To 12 Do'),1)
@@ -16,6 +26,17 @@ class InventoryReferencePreparationTests(unittest.TestCase):
         for name,raw in native_source.derive().items():self.assertEqual((ROOT/'scripts/inventory_reference_behavior'/name).read_bytes(),raw)
     def test_runtime_assets_reproducible(self):
         for name,raw in runtime_source.derive().items():self.assertEqual((ROOT/'scripts/inventory_reference_behavior/runtime_source'/name).read_bytes(),raw)
+    def test_runtime_generator_preserves_process_namespace_map(self):
+        before=ET._namespace_map.copy()
+        importlib.reload(runtime_source)
+        self.assertEqual(ET._namespace_map,before)
+        runtime_source.derive()
+        self.assertEqual(ET._namespace_map,before)
+    def test_runtime_generator_restores_namespace_map_after_serialization_failure(self):
+        before=ET._namespace_map.copy()
+        with mock.patch.object(ET,'tostring',side_effect=ValueError('owned failure')):
+            with self.assertRaises(ValueError):runtime_source.derive()
+        self.assertEqual(ET._namespace_map,before)
     def test_exact_pinned_assets(self):
         _,assets=fixture.load_saved()
         self.assertEqual(set(assets),set(fixture.ASSET_HASHES)|{'generated/observe.bsl'})
@@ -56,13 +77,13 @@ class InventoryReferencePreparationTests(unittest.TestCase):
         self.assertIn('scripts/inventory_reference_behavior/observe.bsl',files)
         self.assertNotIn('scripts/accumulation_register_behavior/observe.bsl',files)
     def test_staging_revalidates_source(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            stage=Path(tmp)/'stage';hashes=host.stage_inputs(ROOT,stage,host.SMOKE)
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            stage=Path(tmp).resolve()/'stage';hashes=host.stage_inputs(ROOT,stage,host.SMOKE)
             host.validate_inputs(stage,hashes,host.SMOKE)
             (stage/'bootstrap/inventory_reference_behavior/observe.bsl').write_bytes(b'drift')
             with self.assertRaises(ValueError):host.validate_inputs(stage,hashes,host.SMOKE)
     def test_workflow_is_separate_branch_and_no_dispatch(self):
-        source=(ROOT/'.github/workflows/native-1c-inventory-reference.yml').read_text()
+        source=(ROOT/'.github/workflows/native-1c-inventory-reference.yml').read_text(encoding='utf-8')
         self.assertIn("head.ref == 'codex/db-inventory-references'",source)
         self.assertNotIn('workflow_dispatch',source)
         self.assertIn('Observe twelve cases',source)
@@ -70,10 +91,10 @@ class InventoryReferencePreparationTests(unittest.TestCase):
     def test_no_polymorphic_recorder_binding_in_sources(self):
         root=ROOT/'scripts/inventory_reference_behavior'
         for name in ('observe.bsl','ReceiptModule.bsl','IssueModule.bsl'):
-            raw=(root/name).read_text()
+            raw=(root/name).read_text(encoding='utf-8')
             self.assertNotIn('R.Recorder',raw)
             self.assertNotIn('WHERE R.Recorder',raw)
         for name,kind in (('ReceiptModule.bsl','receipt'),('IssueModule.bsl','issue')):
-            raw=(root/name).read_text()
+            raw=(root/name).read_text(encoding='utf-8')
             self.assertIn('Row.Note = "'+kind+':" + Number;',raw)
             self.assertIn('Q.SetParameter("Tag", "'+kind+':" + Number);',raw)

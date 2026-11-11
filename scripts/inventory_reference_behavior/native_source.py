@@ -27,7 +27,7 @@ def derive():
     demo=(ROOT/'tests/fixtures/demo_cf/source/Catalogs/Номенклатура.xml').read_text(encoding='utf-8-sig')
     section=re.search(r'<TabularSection .*?</TabularSection>',demo,re.S)[0]
     template=re.search(r'<Attribute .*?</Attribute>',section,re.S)[0]
-    doc=(ROOT/'scripts/accumulation_register_behavior/Document.xml').read_text()
+    doc=(ROOT/'scripts/accumulation_register_behavior/Document.xml').read_text(encoding='utf-8')
     for name in ('Receipt','Issue'):
         line=field('Product','Products',name+':Lines',template)
         for numeric,scale in (('Quantity',3),('Amount',2)):

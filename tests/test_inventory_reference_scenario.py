@@ -13,6 +13,7 @@ from uuid import uuid4
 from yadinassi import Interpreter, BSLRuntimeError
 from yadinassi.accumulation_movements import validate_schema
 from yadinassi.catalog_backend import BackendError
+from yadinassi.catalog_types import BSLCatalogReference
 from yadinassi.configuration_accumulation_references import PROFILE
 from yadinassi.configuration_profile_import import prepare_directory, create_prepared
 from yadinassi.database_context import SQLiteDBContext
@@ -35,28 +36,29 @@ class InventoryScenarioTests(unittest.TestCase):
         p=prepare_directory(ASSETS/'runtime_source',profile=PROFILE)
         self.assertEqual((p.report()['catalogs'],p.report()['documents'],p.report()['registers']),(2,2,1))
         self.assertEqual(p.format_version,15)
-    def test_candidate_native12_observer_executes_as_host_subset(self):
+    def test_measured_native12_replay(self):
         context,vm,_=self.make(ASSETS/'runtime_source')
         observed=[];diagnostics=[]
         vm.register_function('ПодробноеПредставлениеОшибки',lambda info:info.get_member('Description'))
         vm.register_function('AccumulationEmit',lambda n,value:observed.append((int(n),value)),returns_value=False)
         vm.register_function('AccumulationDiagnostic',lambda n,stage,error:diagnostics.append((int(n),stage,error)),returns_value=False)
-        vm.execute((ASSETS/'observe.bsl').read_text(),'candidate-inventory12-not-native-evidence')
+        vm.execute((ASSETS/'observe.bsl').read_text(encoding='utf-8'),'measured-inventory12-host-replay')
         self.assertEqual([n for n,_ in observed],list(range(1,13)),repr(diagnostics))
         self.assertEqual(diagnostics,[])
-        # Host target guard. Native wrong-target coercion may deliberately differ.
-        self.assertEqual(observed[0][1],'1,1,1,1')
-        self.assertEqual(observed[1][1],'1,1,0|1,1,0|1,1,0')
+        native=json.loads((ROOT/'tests/fixtures/native_inventory_reference/observations12.out').read_text(encoding='ascii'))
+        self.assertEqual(native[1],'0,0,1|0,0,1|0,0,1')
+        for index in range(12):
+            with self.subTest(case=index+1):self.assertEqual(observed[index][1],native[index])
     def test_public_stock_example_atomic_refusal_and_reopen(self):
         context,vm,output=self.make(EXAMPLE/'source')
-        vm.execute((EXAMPLE/'run.bsl').read_text(),'inventory-example')
+        vm.execute((EXAMPLE/'run.bsl').read_text(encoding='utf-8'),'inventory-example')
         self.assertEqual(output,['After issue: Notebook, Main warehouse, 7',
             'After refused issue: 7','After unpost: 10','After repost: 8'])
         vm.close();context.close()
         with closing(SQLiteDBContext(self.path)) as reopened:
             lines=[]
             with closing(Interpreter(database_context=reopened,output=lines.append)) as fresh:
-                fresh.execute((EXAMPLE/'reopen.bsl').read_text())
+                fresh.execute((EXAMPLE/'reopen.bsl').read_text(encoding='utf-8'))
             self.assertEqual(lines,['P1, W1, 8','Turnovers: P1, W1, receipt 10, expense 2, net 8'])
     def test_cli_preflight_create_execute_and_reopen(self):
         def cli(*args):
@@ -84,6 +86,69 @@ class InventoryScenarioTests(unittest.TestCase):
                 value=foreign.execute('P.Ref')
                 vm.register_function('ForeignRef',lambda:value)
                 with self.assertRaises(BSLRuntimeError):vm.execute('D=Documents.Receipt.CreateDocument();L=D.Lines.Add();L.Product=ForeignRef();')
+    def test_same_database_different_family_is_not_coerced(self):
+        context,vm,_=self.make(EXAMPLE/'source')
+        vm.execute('D=Documents.Receipt.CreateDocument(); L=D.Lines.Add(); R=D.RegisterRecords.Stock.Add();')
+        with closing(Interpreter(database_context=context,output=lambda text:None)) as other:
+            for expression in ('Catalogs.Products.EmptyRef()','Catalogs.Warehouses.EmptyRef()'):
+                value=other.execute(expression)
+                vm.register_function('ForeignRef',lambda:value)
+                for target in ('D.Warehouse','L.Product','R.Product'):
+                    with self.subTest(expression=expression,target=target),self.assertRaises(BSLRuntimeError):
+                        vm.execute(target+'=ForeignRef();')
+    def test_forged_references_are_not_coerced(self):
+        _,vm,_=self.make(EXAMPLE/'source')
+        vm.execute('D=Documents.Receipt.CreateDocument(); L=D.Lines.Add(); R=D.RegisterRecords.Stock.Add();')
+        valid=vm.execute('Catalogs.Products.EmptyRef()')
+        candidates=(BSLCatalogReference(valid.value_type,valid.reference_uuid),
+            replace(valid,value_type=replace(valid.value_type,metadata_uuid=uuid4())),
+            replace(valid,metadata=object()),replace(valid,read_member=lambda ref,name:None),
+            replace(valid,get_object=None))
+        for value in candidates:
+            vm.register_function('ForeignRef',lambda:value)
+            for target in ('D.Warehouse','L.Product','R.Product'):
+                with self.subTest(target=target),self.assertRaises(BSLRuntimeError):vm.execute(target+'=ForeignRef();')
+    def test_wrong_empty_target_converts_but_other_value_types_do_not(self):
+        _,vm,_=self.make(EXAMPLE/'source')
+        vm.execute('D=Documents.Receipt.CreateDocument(); L=D.Lines.Add(); R=D.RegisterRecords.Stock.Add();'
+            'D.Warehouse=Catalogs.Products.EmptyRef(); L.Product=Catalogs.Warehouses.EmptyRef(); R.Product=Catalogs.Warehouses.EmptyRef();')
+        self.assertTrue(vm.execute('(D.Warehouse=Catalogs.Warehouses.EmptyRef() And L.Product=Catalogs.Products.EmptyRef() And R.Product=Catalogs.Products.EmptyRef())'))
+        for value in ('Undefined','Null','0','""','Documents.Receipt.EmptyRef()','Catalogs.Products.CreateItem()'):
+            for target in ('D.Warehouse','L.Product','R.Product'):
+                with self.subTest(target=target,value=value),self.assertRaises(BSLRuntimeError):vm.execute(target+'='+value+';')
+    def test_staged_reference_is_visible_without_early_acceptance(self):
+        _,vm,_=self.make(EXAMPLE/'source')
+        vm.execute('BeginTransaction(); C=Catalogs.Products.CreateItem(); C.Code="A"; C.Write();'
+            'Before=C.Ref; Alias=C.Ссылка; WasNew=C.IsNew(); RollbackTransaction();')
+        self.assertFalse(vm.execute('Before.IsEmpty()'))
+        self.assertEqual(vm.execute('Before'),vm.execute('Alias'))
+        self.assertTrue(vm.execute('WasNew'))
+        self.assertTrue(vm.execute('C.Ref.IsEmpty()'))
+        vm.execute('BeginTransaction(); C.Write(); Staged=C.Ref; CommitTransaction();')
+        self.assertEqual(vm.execute('Staged'),vm.execute('C.Ref'))
+        self.assertFalse(vm.execute('C.IsNew()'))
+    def test_staged_reference_never_bypasses_owner_or_uncertain_state(self):
+        context,vm,_=self.make(EXAMPLE/'source')
+        from yadinassi import database_transactions as transactions
+        def inspect():
+            obj=vm.execute('C')
+            transaction=transactions.current(context.backend)
+            token=transactions._execution.set(object())
+            try:
+                with self.assertRaises(BackendError):obj.get_member('Ref')
+            finally:transactions._execution.reset(token)
+            transaction.unit.state='uncertain'
+            try:
+                with self.assertRaises(BackendError):obj.get_member('Ref')
+            finally:transaction.unit.state='open'
+            participants=transaction.participants
+            transaction.participants=()
+            try:
+                with self.assertRaises(BackendError):obj.get_member('Ref')
+            finally:transaction.participants=participants
+        vm.register_function('InspectStaged',inspect,returns_value=False)
+        vm.execute('BeginTransaction(); C=Catalogs.Products.CreateItem(); C.Code="A"; C.Write();'
+            'InspectStaged(); RollbackTransaction();')
     def test_polymorphic_recorder_remains_refused(self):
         _,vm,_=self.make(EXAMPLE/'source')
         with self.assertRaises(BSLRuntimeError):
