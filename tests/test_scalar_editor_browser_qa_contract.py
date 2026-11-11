@@ -246,7 +246,7 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
             'independent_typed_readback', 'catalog_rpc_plan', 'restart_rpc_plan', 'invalid_draft_rpc_plan', 'total_rpc_plan',
             'evidence_input_offscreen', 'evidence_input_clipped', 'evidence_viewport_missing',
             'reopened_checkbox_changed', 'reference_not_typed', 'reopened_lines_missing',
-            'reopened_product_column_missing', 'reopened_product_not_typed'])
+            'reopened_product_column_missing', 'reopened_product_not_typed', 'save_reply_not_saved'])
         self.assertIn("fixed.find(code=>message===code||message.startsWith(code+'\\n'))", helper)
         self.assertNotIn('return message', helper)
         self.requires('report.failure={phase,code:stepFailureCode(error)', "phase='document_write'",
@@ -255,6 +255,45 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
                       "phase='document_reopen_line_dates'", "phase='document_reopen_quantities'",
                       "phase='document_reopen_references'", "phase='document_reopen_reference_snapshots'",
                       "phase='document_reopen_evidence'", "phase='document_restart_rpc_count'")
+
+    def test_response_wait_covers_click_and_real_fetch_without_extending_global_budget(self):
+        self.requires('const rpcFetchMs=35000,rpcReplyMs=rpcFetchMs+10000+5000',
+                      'route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0})',
+                      'predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)})',
+                      'context.setDefaultTimeout(10000)', 'startedAt+220000', 'startedAt+240000')
+        attachment = self.source.split("if(new URL(target).pathname==='/attachment'){", 1)[1].split(
+            "if(new URL(target).pathname==='/rpc'){", 1)[0]
+        self.assertIn('route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0})', attachment)
+        transport = (ROOT / 'frontend/form/src/attachment.mjs').read_text(encoding='utf-8')
+        self.assertIn('setTimeout(() => controller.abort(), 35000)', transport)
+        helper = self.source.split('const save=async(name,control,status)=>{', 1)[1].split('const saveProduct=', 1)[0]
+        self.assertLess(helper.index('const reply=replyFor'), helper.index('await action(name).click()'))
+        self.assertLess(helper.index('reply.catch(()=>{})'), helper.index('await action(name).click()'))
+        self.assertEqual(helper.count('await action(name).click()'), 1)
+        self.assertEqual(helper.count('await reply'), 1)
+        self.assertIn("await value(status,'saved')", helper)
+
+    def test_save_receipt_flags_and_status_are_closed_and_do_not_infer_success_from_admission(self):
+        self.requires("packet.params.session===save.session&&packet.params.request.method==='form.event'",
+                      "packet.params.request.params.event==='command'&&packet.params.request.params.control===save.control",
+                      "requestAdmitted:false,bodyAccepted:false,deliveryCompleted:false,responseMatched:false,status:'not_received'",
+                      "if(!matchesSave(packet,saving))return false", 'diagnostic.responseMatched=true;return true',
+                      'saving.diagnostic.status=diagnosticSaveStatus(result.result)',
+                      "assert.equal(diagnostic.status,'saved','save_reply_not_saved')")
+        status = self.source.split('function diagnosticSaveStatus(result){', 1)[1].split('const exactKeys=', 1)[0]
+        self.assertIn("const items=result.form?.result?.state?.items", status)
+        self.assertIn("items.find(item=>item?.name==='StatusLabel')", status)
+        self.assertIn("['saved','unchanged','rejected','uncertain','committed']", status)
+        self.assertIn(".find(allowed=>allowed===value.value)??'other':'other'", status)
+        self.assertNotIn('return value', status.replace("return value?.type==='String'?", ''))
+        rpc = self.source.split("if(new URL(target).pathname==='/rpc'){", 1)[1].split('page=await context.newPage()', 1)[0]
+        self.assertLess(rpc.index('requestAdmitted=true'), rpc.index('await route.fetch'))
+        self.assertLess(rpc.index('checkReply(result,packet,stage)'), rpc.index('bodyAccepted=true'))
+        self.assertLess(rpc.index('bodyAccepted=true'), rpc.index('await route.fulfill({response})'))
+        self.assertLess(rpc.index('await route.fulfill({response})'), rpc.index('deliveryCompleted=true'))
+        helper = self.source.split('const save=async(name,control,status)=>{', 1)[1].split('const saveProduct=', 1)[0]
+        self.assertEqual(set(re.findall(r"stage[:=]'([^']+)'", helper)),
+                         {'click_command', 'await_response', 'await_saved_field', 'await_idle', 'complete'})
 
     def test_natural_exit_and_verified_cleanup_precede_final_artifacts(self):
         close = self.source.split('const ordinaryShutdown=async()=>{', 1)[1].split('const referenceValue=', 1)[0]

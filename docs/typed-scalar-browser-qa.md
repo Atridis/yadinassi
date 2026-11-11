@@ -63,6 +63,16 @@ unchanged; all other refusals remain fatal. Neither business nor attachment
 requests are retried. Work is bounded to 220 seconds, followed by a separate
 20-second verified-cleanup reserve.
 
+Each intercepted business fetch uses the existing production transport's
+35-second bound. The browser response observer is registered before the click
+and allows 50 seconds: the click's existing 10-second bound plus that fetch and
+a 5-second response-delivery reserve.
+Both waits are clipped to the remaining global work budget. A 10-second
+observer or 15-second business fetch could otherwise impose an artificial
+cutoff below the production transport's deadline. Production still aborts its
+own request after 35 seconds; attachment fetches retain their 15-second bound.
+This is not a retry and does not extend the acquisition or cleanup deadlines.
+
 ## Safety and evidence
 
 All network traffic is restricted to the current exact loopback origin and the
@@ -101,12 +111,19 @@ PNGs are capped at 4 MiB each and the report at 64 KiB. Failure diagnostics use
 fixed phase/stage/status/refusal labels only. Separate phases identify typed
 audit, restart, reopen, exact field checks, reference snapshots and evidence
 capture. Known assertion codes match their fixed first line only; any appended
-actual/expected diff is discarded. No database, raw
+actual/expected diff is discarded. The current or last Save helper records its
+fixed command/stage and separate booleans for request admission, body acceptance
+by the wire checker, completed response delivery and a matching browser response.
+Its verified StatusLabel is reduced to `saved`, `unchanged`, `rejected`,
+`uncertain`, `committed` or `other`, with `not_received` before body acceptance.
+Admission alone never implies a completed response. Both that verified status
+and the visible field must be exactly `saved`; body acceptance alone also does
+not imply that the frontend accepted or rendered it. No database, raw
 request/reply, DOM dump, exception text, URL, capability, identity, trace, video,
 profile or source contents are exported. Process ownership, group disappearance
 and owned-directory removal are verified; cleanup failure prevents PASS.
 
-Preparation and static contracts are not browser evidence. The 25 new offline
+Preparation and static contracts are not browser evidence. The 27 new offline
 contract tests and mechanically adjusted legacy route contracts require their
 own exact-count notice before execution. Real Chromium acquisition is a separate
 four-scenario run on the exact reviewed route.

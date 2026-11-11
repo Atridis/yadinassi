@@ -12,6 +12,7 @@ import {allowedRequest,childEnvironment,ownBrowserPid,
 const startedAt=performance.now();
 const workDeadline=startedAt+220000;
 const totalDeadline=startedAt+240000;
+const rpcFetchMs=35000,rpcReplyMs=rpcFetchMs+10000+5000; // Transport, preceding click, delivery reserve.
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
@@ -42,7 +43,7 @@ function stepFailureCode(error){
     'independent_typed_readback','catalog_rpc_plan','restart_rpc_plan','invalid_draft_rpc_plan','total_rpc_plan',
     'evidence_input_offscreen','evidence_input_clipped','evidence_viewport_missing',
     'reopened_checkbox_changed','reference_not_typed','reopened_lines_missing',
-    'reopened_product_column_missing','reopened_product_not_typed'];
+    'reopened_product_column_missing','reopened_product_not_typed','save_reply_not_saved'];
   return fixed.find(code=>message===code||message.startsWith(code+'\n'))??
     (error?.name==='TimeoutError'?'browser_step_timeout':'unclassified_step');
 }
@@ -256,6 +257,16 @@ async function commitInput(name,text){
 const wireEvents=[];
 let wireFailure=false;
 let businessWire=null;
+let pendingSave=null;
+const matchesSave=(packet,save)=>Boolean(save&&packet.method==='application.form'&&
+  packet.params.session===save.session&&packet.params.request.method==='form.event'&&
+  packet.params.request.params.event==='command'&&packet.params.request.params.control===save.control);
+function diagnosticSaveStatus(result){
+  const items=result.form?.result?.state?.items;
+  const value=Array.isArray(items)?items.find(item=>item?.name==='StatusLabel')?.value:undefined;
+  return value?.type==='String'?['saved','unchanged','rejected','uncertain','committed']
+    .find(allowed=>allowed===value.value)??'other':'other';
+}
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
 function checkEditor(editor,type){
   assert.ok(editor&&typeof editor==='object'&&!Array.isArray(editor),'editor_object');
@@ -586,8 +597,10 @@ async function main(){
       const stage=value=>{wireStage=value;business.stage=value;};
       try{
         const packet=checkRequest(route.request());
+        const saving=matchesSave(packet,pendingSave)?pendingSave:null;
+        if(saving)saving.diagnostic.requestAdmitted=true;
         stage('rpc_fetch');
-        const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
         httpStatus=diagnosticStatus(response.status());stage('reply_budget');
         const bytes=await response.body();assert.ok(bytes.length<=131072,'rpc_reply_budget');
         assert.ok(!/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i.test(bytes.toString('utf8')),'persistent_uuid_in_reply');
@@ -601,7 +614,10 @@ async function main(){
           await bounded(gate.released,remaining(5000),'held_write_timeout');
         }
         checkReply(result,packet,stage);
-        stage('delivery');return await route.fulfill({response});
+        if(saving){saving.diagnostic.bodyAccepted=true;saving.diagnostic.status=diagnosticSaveStatus(result.result);}
+        stage('delivery');await route.fulfill({response});
+        if(saving)saving.diagnostic.deliveryCompleted=true;
+        return;
       }catch{
         // Preserve the first failure before aborting. An in-flight RPC failing
         // because another route or cleanup stopped the host is not its cause.
@@ -621,7 +637,7 @@ async function main(){
     const banner=document.querySelector('.browser-ownership');
     return banner?.dataset.role==='writer'&&banner.nextElementSibling?.inert===false;
   },null,{timeout:remaining(10000)});
-  const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(10000)});
+  const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
   const refReply=kind=>replyFor(packet=>packet.method==='application.reference'&&packet.params.action.action===kind);
   const begin=async label=>{const reply=refReply('begin');await action('Choose '+label).click();await reply;await picker().waitFor();await idle();};
   const filter=async code=>{
@@ -634,8 +650,23 @@ async function main(){
   };
   const select=async(label,code,title)=>{await begin(label);await filter(code);await apply(code,title);};
   const save=async(name,control,status)=>{
-    const reply=replyFor(packet=>packet.params?.request?.params?.control===control);
-    await action(name).click();await reply;await value(status,'saved');await idle();
+    const diagnostic={command:control==='WriteButton'?'document_write':'product_save',stage:'click_command',
+      requestAdmitted:false,bodyAccepted:false,deliveryCompleted:false,responseMatched:false,status:'not_received'};
+    report.saveDiagnostic=diagnostic;
+    const saving={session:appState.active,control,diagnostic};pendingSave=saving;
+    const reply=replyFor(packet=>{
+      if(!matchesSave(packet,saving))return false;
+      diagnostic.responseMatched=true;return true;
+    });
+    // Observe rejection even if the click itself fails before awaiting reply.
+    // This does not retry, resolve or replace the original waiting promise.
+    reply.catch(()=>{});
+    try{
+      await action(name).click();diagnostic.stage='await_response';await reply;
+      diagnostic.stage='await_saved_field';
+      assert.equal(diagnostic.status,'saved','save_reply_not_saved');
+      await value(status,'saved');diagnostic.stage='await_idle';await idle();diagnostic.stage='complete';
+    }finally{if(pendingSave===saving)pendingSave=null;}
   };
   const saveProduct=()=>save('Save record','SaveButton','Save status');
   const writeDocument=()=>save('Write document','WriteButton','Write status');
