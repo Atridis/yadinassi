@@ -179,8 +179,8 @@ class SessionParameterNativeAcquisitionTests(unittest.TestCase):
         launcher=types.SimpleNamespace(TEMPLATES=ROOT/'integrational_tests/launcher_1c',read_result=object(),run_process=object(),build_epf=object())
         before=dict(vars(launcher))
         platform=types.SimpleNamespace(timeout=120,command=lambda mode:['/owned/1cv8',mode])
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);source=root/'probe.bsl';source.write_bytes(route.program(None,'a'*32))
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            root=Path(directory).resolve();source=root/'probe.bsl';source.write_bytes(route.program(None,'a'*32))
             expected=suite.full.generated_module(source.read_bytes());case=root/'case';output=root/'wire'
             with mock.patch.object(suite.full,'run_process') as process, mock.patch.object(suite.full,'require_zero_result') as result, mock.patch.object(suite.full,'require_epf') as epf, mock.patch.object(suite.full,'validate_case_request') as request, mock.patch.object(suite.full,'read_native_result',return_value=(['ok'],'')):
                 suite.run_owned_case(launcher,platform,source,root/'Launcher.epf',case,output,expected)
@@ -193,8 +193,8 @@ class SessionParameterNativeAcquisitionTests(unittest.TestCase):
     def test_adapter_source_mismatch_precedes_process(self):
         import types
         suite=self.adapter();launcher=types.SimpleNamespace(TEMPLATES=ROOT/'integrational_tests/launcher_1c')
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);source=root/'probe.bsl';source.write_bytes(b'Message("wrong");')
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            root=Path(directory).resolve();source=root/'probe.bsl';source.write_bytes(b'Message("wrong");')
             with mock.patch.object(suite.full,'run_process') as process, self.assertRaises(suite.full.FullError):
                 suite.run_owned_case(launcher,None,source,None,root/'case',root/'wire',b'expected')
             process.assert_not_called()
@@ -228,8 +228,8 @@ class SessionParameterNativeAcquisitionTests(unittest.TestCase):
         source=(ROOT/'scripts/native_1c_bootstrap/session_parameter_suite.py').read_text()
         self.assertNotIn('xwininfo',source);self.assertNotIn('xprop',source)
         suite=self.adapter()
-        with tempfile.TemporaryDirectory() as temporary:
-            base=Path(temporary);stage=base/('stage2-'+'b'*32)
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as temporary:
+            base=Path(temporary).resolve();stage=base/('stage2-'+'b'*32)
             target=stage/'injected/Ext/SessionModule.bsl';target.parent.mkdir(parents=True)
             expected=suite.inject_modules.render_module(ROOT/'scripts/native_1c_bootstrap/modules/SessionModule.bsl','a'*32,'NativeSmoke',str(stage))
             target.write_bytes(expected)

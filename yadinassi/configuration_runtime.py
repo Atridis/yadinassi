@@ -124,6 +124,8 @@ class ConfigurationApplication:
         self._session_owner=None
         from .session_parameters import BSLSessionParameters
         self.session_parameters=BSLSessionParameters(self,configuration.session_parameters)
+        from .temporary_storage import ApplicationTemporaryStorage
+        self.temporary_storage=ApplicationTemporaryStorage(self)
         self._events = {}
         self._common_routines = {}
         self._declared_routines = {id(n): n for n in self._program if type(n) is ast.Routine}
@@ -487,7 +489,7 @@ class ConfigurationApplication:
                 raise TypeError('application cancellation requires Boolean')
             if cancel.get_member('Cancel'):
                 self.state = 'cancelled'
-                self.session_parameters.close()
+                self.temporary_storage.close();self.session_parameters.close()
                 self.interpreter.close()
                 return False
             self._invoke('start')
@@ -496,7 +498,7 @@ class ConfigurationApplication:
             return True
         except BaseException:
             self.state = 'failed'
-            self.session_parameters.close()
+            self.temporary_storage.close();self.session_parameters.close()
             self.interpreter.close()
             raise
 
@@ -511,7 +513,7 @@ class ConfigurationApplication:
         if self.state == 'closed':
             return True
         if force or self.state != 'running' or self.side == 'server':
-            self.session_parameters.close()
+            self.temporary_storage.close();self.session_parameters.close()
             self.interpreter.close()
             self.state = 'closed'
             return True
@@ -528,12 +530,12 @@ class ConfigurationApplication:
             self.state = 'exiting'
             self._invoke('exit')
             self.interpreter.ensure_complete()
-            self.session_parameters.close()
+            self.temporary_storage.close();self.session_parameters.close()
             self.interpreter.close()
             self.state = 'closed'
             return True
         except BaseException:
             self.state = 'failed'
-            self.session_parameters.close()
+            self.temporary_storage.close();self.session_parameters.close()
             self.interpreter.close()
             raise

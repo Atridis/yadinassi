@@ -51,7 +51,7 @@ def bind(stage,inputs,modules,*,observed=True):
 def source_provenance():
     # Exercise the real source inventory/aggregate hashing. Installed dependency
     # availability is irrelevant to this byte budget, so supply pinned versions.
-    # Current union: 222 runtime, project/native and packaged renderer files.
+    # Current union: 223 runtime, project/native and packaged renderer files.
     # Includes explicit session declaration and application-state modules.
     # Includes accumulation source/storage/profile, posting facade/compiler/query modules,
     # and seven exact reference/posting UI source modules.
@@ -60,7 +60,7 @@ def source_provenance():
     # Independent provenance checks bind the source additions and reject byte drift.
     with mock.patch.object(full.importlib.metadata,'version',side_effect=lambda name:full.DEPENDENCIES[name]):
         result=full.interpreter_provenance(ROOT)
-    if result['source_file_count'] != 222:
+    if result['source_file_count'] != 223:
         raise AssertionError(('Unexpected runtime inventory',result['source_file_count']))
     return result
 

@@ -215,3 +215,5 @@ tests/fixtures/native_session_parameters_43052415203.json -text
 scripts/temporary_storage_behavior/** text eol=lf
 scripts/native_1c_bootstrap/temporary_storage_suite.py text eol=lf
 scripts/native_1c_temporary_storage_probe.sh text eol=lf
+yadinassi/temporary_storage.py text eol=lf
+tests/fixtures/native_temporary_storage_43056863128.json -text

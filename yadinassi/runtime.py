@@ -239,6 +239,11 @@ class Interpreter:
         self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
+        from . import temporary_storage
+        self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
+        self.register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
+        self.register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
+        self.register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
         self.register_function("Вычислить", _eval_marker, "Eval")
         self.register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
         self.register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
@@ -1113,6 +1118,15 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        from . import temporary_storage
+        temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
+        if temporary_call:
+            if self._configuration_runtime is None:
+                raise ValueError('temporary storage requires an explicit application')
+            self._configuration_runtime.temporary_storage.authorize(self)
+            count=len(node.arguments)
+            if not (1<=count<=2 if function.function is temporary_storage.put_marker else count==1):
+                raise TypeError('temporary storage function arity')
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
@@ -1175,6 +1189,8 @@ class Interpreter:
             else:
                 value = (yield from self._visit(argument))
             values.append(value)
+        if temporary_call:
+            return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
