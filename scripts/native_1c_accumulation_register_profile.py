@@ -255,7 +255,7 @@ PHASES=('prerequisites','inputs','install','build','redump','enterprise','marker
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified'}
 HASH_FIELDS={'source_sha256','module_sha256','module_verified_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details','partial_observations','case_diagnostics','incomplete'}
+    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details','partial_observations','case_diagnostics','install_diagnostics','incomplete'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -281,6 +281,9 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(fixture.valid_diagnostic(stage['redump_diagnostic']))
         require(stage['configuration_validation']==fixture.VALIDATION_MODE)
         require(stage['native_error_category'] in SMOKE.DIAGNOSTICS.CATEGORIES)
+        require(type(stage['install_diagnostics']) is list and len(stage['install_diagnostics'])<=2)
+        require(all(route.valid_install_diagnostic(v) for v in stage['install_diagnostics']))
+        if stage['status']=='ok':require(stage['install_diagnostics']==[])
         require(type(stage['incomplete']) is bool)
         require(type(stage['partial_observations']) is list and len(stage['partial_observations'])<=route.COUNT)
         last=0

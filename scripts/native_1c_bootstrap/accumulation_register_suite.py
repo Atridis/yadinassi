@@ -16,7 +16,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        partial_observations=[],case_diagnostics=[],incomplete=True,native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        partial_observations=[],case_diagnostics=[],install_diagnostics=[],incomplete=True,native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -65,8 +65,16 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         full.absent(root);root.mkdir(mode=0o700)
         baseline=full.client_process_baseline(nonce)
         def designer(label,args):
-            full.run_process(platform.command('DESIGNER')+args+['/Out',str(root/(label+'.log')),
-                '/DumpResult',str(root/(label+'.result'))],root,root/(label+'-console.log'),120,require_clean_tree=True)
+            try:
+                full.run_process(platform.command('DESIGNER')+args+['/Out',str(root/(label+'.log')),
+                    '/DumpResult',str(root/(label+'.result'))],root,root/(label+'-console.log'),120,require_clean_tree=True)
+            except Exception:
+                for name in (label+'.log',label+'-console.log'):
+                    try:
+                        raw=full.secure_bytes(root/name,65536,allow_empty=True)
+                        report['install_diagnostics'].append(route.install_diagnostic(diagnostics.native_text(raw),label))
+                    except Exception:pass
+                raise
             if not full.native_processes_quiet(platform.executable):raise full.FullError('process_failed')
         before=root/'before';before.mkdir()
         designer('before',['/DumpConfigToFiles',str(before),'-Format','Hierarchical'])

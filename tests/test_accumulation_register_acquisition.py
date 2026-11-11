@@ -42,11 +42,11 @@ class AccumulationAcquisitionTests(unittest.TestCase):
             self.assertIn('--read-only',command)
             self.assertEqual(command[command.index('--network')+1],'none')
     def test_no_runtime_parity_comparison(self):
-        source=(ROOT/'scripts/native_1c_accumulation_register_profile.py').read_text()
+        source=(ROOT/'scripts/native_1c_accumulation_register_profile.py').read_text(encoding='utf-8')
         self.assertIn("'runtime_parity_accepted':False",source)
         self.assertIn('comparison=None',source)
     def test_only_new_workflow_and_closed_branch(self):
-        workflow=(ROOT/'.github/workflows/native-1c-accumulation-register.yml').read_text()
+        workflow=(ROOT/'.github/workflows/native-1c-accumulation-register.yml').read_text(encoding='utf-8')
         self.assertIn("head.ref == 'codex/accumulation-balance-registers'",workflow)
         self.assertNotIn('pull_request_target',workflow)
         self.assertIn('persist-credentials: false',workflow)
@@ -117,7 +117,7 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         self.assertIn(b'For CaseNo = 1 To 16 Do'+statements,program)
     def test_native_error_diagnostic_is_finite_vocabulary(self):
         self.assertIn('compile_error',host.SMOKE.DIAGNOSTICS.CATEGORIES)
-        source=(ROOT/'scripts/native_1c_bootstrap/accumulation_register_suite.py').read_text()
+        source=(ROOT/'scripts/native_1c_bootstrap/accumulation_register_suite.py').read_text(encoding='utf-8')
         self.assertIn("diagnostics.summarize_text(result['error'])['category']",source)
         self.assertNotIn("report['native_error_text']",source)
     def test_failure_diagnostic_reports_only_owned_frames_and_progress(self):
@@ -197,3 +197,26 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         values=['case'+str(n) for n in range(1,17)]
         stage={'record_count':16,'incomplete':True,'partial_observations':list(map(list,enumerate(values,1)))}
         with self.assertRaises(ValueError):host.validate_observation_binding(stage,route.canonical(values))
+
+    def test_install_diagnostic_retains_owned_identifiers(self):
+        value=route.install_diagnostic('Error: invalid property EnableTotalsSplitting of AccumulationRegister.OwnedAccumulationRows','load')
+        self.assertTrue(route.valid_install_diagnostic(value))
+        self.assertIn('owned:EnableTotalsSplitting',value['tokens']);self.assertIn('invalid',value['tokens'])
+    def test_install_diagnostic_redacts_arbitrary_text_and_values(self):
+        value=route.install_diagnostic('private123 /private/path secret=Amount\nPrivatePerson 555 9999','update')
+        self.assertTrue(route.valid_install_diagnostic(value))
+        for raw in ('private','PrivatePerson','555','9999','owned:Amount'):self.assertNotIn(raw,str(value))
+    def test_install_diagnostic_is_bounded(self):
+        value=route.install_diagnostic('Error invalid '*300,'load')
+        self.assertEqual(len(value['tokens']),96);self.assertTrue(value['truncated'])
+        self.assertTrue(route.valid_install_diagnostic(value))
+        with self.assertRaises(ValueError):route.install_diagnostic('x'*65537,'load')
+    def test_install_diagnostic_rejects_unknown_output(self):
+        value=route.install_diagnostic('Error','load');value['tokens']=['arbitrary']
+        self.assertFalse(route.valid_install_diagnostic(value))
+        with self.assertRaises(ValueError):route.install_diagnostic('error','arbitrary')
+    def test_install_failure_capture_is_guarded_and_not_raw(self):
+        source=(ROOT/'scripts/native_1c_bootstrap/accumulation_register_suite.py').read_text(encoding='utf-8')
+        self.assertIn('full.secure_bytes(root/name,65536,allow_empty=True)',source)
+        self.assertIn('route.install_diagnostic(diagnostics.native_text(raw),label)',source)
+        self.assertIn("if stage['status']=='ok':require(stage['install_diagnostics']==[])",(ROOT/'scripts/native_1c_accumulation_register_profile.py').read_text(encoding='utf-8'))

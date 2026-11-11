@@ -100,3 +100,57 @@ def parse_attempt(raw,nonce):
             if len(parts)!=2 or not parts[0].isdigit() or not last<int(parts[0])<=COUNT:raise ValueError('order')
             canonical([parts[1]]*COUNT);last=int(parts[0]);observations.append([last,parts[1]])
     return observations,errors
+
+# Designer failures occur before the observer and cannot use its error marker.
+# Keep only this fixed vocabulary and source-owned identifiers, never log text,
+# paths, arbitrary tokens, numeric values, credentials or quoted user data.
+INSTALL_LABELS=('before','load','update','after')
+INSTALL_WORDS={
+    'error':('error','ошибка','ошибки'), 'invalid':('invalid','недопустимый','недопустимое','недопустимая','неверное','неверный'),
+    'unknown':('unknown','неизвестный','неизвестное','неизвестная'),
+    'not':('not','не'), 'found':('found','найден','найдена','найдено','обнаружено'),
+    'must':('must','должен','должна','должно'), 'required':('required','требуется','необходимо'),
+    'cannot':('cannot','невозможно','нельзя'), 'only':('only','только'),
+    'name':('name','имя','имени','наименование'), 'field':('field','поле','поля'),
+    'attribute':('attribute','атрибут','атрибута','реквизит','реквизита'),
+    'element':('element','элемент','элемента'), 'type':('type','тип','типа'),
+    'value':('value','значение','значения'), 'property':('property','свойство','свойства'),
+    'register':('register','регистр','регистра'), 'resource':('resource','ресурс','ресурса'),
+    'dimension':('dimension','измерение','измерения'), 'document':('document','документ','документа'),
+    'accumulation':('accumulation','накопления'), 'information':('information','сведений'),
+    'configuration':('configuration','конфигурация','конфигурации'),
+    'duplicate':('duplicate','дублируется','дублирование'), 'reserved':('reserved','зарезервировано','зарезервированное'),
+    'syntax':('syntax','синтаксическая','синтаксические'), 'expected':('expected','ожидается'),
+    'identifier':('identifier','идентификатор','идентификатора'), 'module':('module','модуль','модуля'),
+    'rights':('rights','право','права','прав'), 'role':('role','роль','роли'),
+    'read':('read','чтение'), 'write':('write','запись'), 'update':('update','изменение','обновление'),
+    'load':('load','загрузка','загрузки'), 'failed':('failed','ошибкой'),
+}
+INSTALL_IDENTIFIERS=frozenset(('OwnedAccumulationDoc','OwnedAccumulationRows','AccumulationRegister',
+    'Record','Manager','Selection','List','RecordSet','RecordKey','RegisterType','Balance',
+    'RegisterRecords','EnableTotalsSplitting','DataLockControlMode','UseInTotals',
+    'Amount','Quantity','Item','Warehouse','Note','Period','Active','RecordType',
+    'AppendRows','Input','Set','Rows','First','Replacement','PersistedCount','Posting','Cancel','PostingMode'))
+_INSTALL_TOKENS=frozenset(INSTALL_WORDS)|frozenset('owned:'+v for v in INSTALL_IDENTIFIERS)|{'redacted','line_break'}
+
+def install_diagnostic(text,label):
+    if type(text) is not str or len(text)>65536 or label not in INSTALL_LABELS:
+        raise ValueError('install diagnostic input')
+    aliases={word:token for token,words in INSTALL_WORDS.items() for word in words}
+    identities={word.casefold():'owned:'+word for word in INSTALL_IDENTIFIERS}
+    # Remove credential-bearing lines before matching even fixed vocabulary.
+    text=re.sub(r'^.*(?:password|passwd|token|secret|authorization|cookie|пароль|токен|секрет)\s*[:=].*$',
+                ' ',text,flags=re.I|re.M)
+    tokens=[]
+    for word in re.findall(r'\r\n|\r|\n|[^\W\d_]+(?:_[^\W\d_]+)*',text,re.UNICODE):
+        token='line_break' if word in ('\r','\n','\r\n') else identities.get(word.casefold(),aliases.get(word.casefold(),'redacted'))
+        if token not in ('redacted','line_break') or not tokens or tokens[-1]!=token:tokens.append(token)
+    return {'step':label,'tokens':tokens[:96] if len(tokens)<=96 else tokens[:48]+tokens[-48:],
+            'truncated':len(tokens)>96}
+
+def valid_install_diagnostic(value):
+    return (type(value) is dict and set(value)=={'step','tokens','truncated'}
+        and type(value['step']) is str and value['step'] in INSTALL_LABELS
+        and type(value['truncated']) is bool and type(value['tokens']) is list
+        and len(value['tokens'])<=96 and (not value['truncated'] or len(value['tokens'])==96)
+        and all(type(v) is str and v in _INSTALL_TOKENS for v in value['tokens']))

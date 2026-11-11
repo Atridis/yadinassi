@@ -1,5 +1,7 @@
 """No native execution: source/transport/isolation contract checks only."""
 import json
+import os
+from unittest import mock
 from pathlib import Path
 import sys
 import tempfile
@@ -10,6 +12,15 @@ from document_posting_behavior import fixture,route
 import native_1c_document_posting_profile as host
 
 class PostingAcquisitionTests(unittest.TestCase):
+    def setUp(self):
+        # Static fixtures only, matching the other native profile tests.
+        # This is not a Windows containment/security proof.
+        if os.name == 'nt':
+            from test_native_1c_full_host import read_synthetic_file
+            patcher = mock.patch.object(host.FULL, 'read_regular', side_effect=read_synthetic_file)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def wire(self):
         prefix='POST|'+'a'*32+'|'
         return (prefix+'entered\n'+''.join(prefix+str(n)+'|0|0|0,0|before:0;\n' for n in range(1,15))+prefix+'completed\n').encode()
