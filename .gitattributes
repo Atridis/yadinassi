@@ -166,3 +166,8 @@ yadinassi/ui/assets/reference-workspace/* text eol=lf
 scripts/document_posting_behavior/** text eol=lf
 scripts/native_1c_bootstrap/document_posting_suite.py text eol=lf
 scripts/native_1c_posting_probe.sh text eol=lf
+
+# Source-bound isolated accumulation acquisition has the same byte contract.
+scripts/accumulation_register_behavior/** text eol=lf
+scripts/native_1c_bootstrap/accumulation_register_suite.py text eol=lf
+scripts/native_1c_accumulation_probe.sh text eol=lf

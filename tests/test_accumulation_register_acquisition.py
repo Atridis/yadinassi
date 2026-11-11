@@ -1,5 +1,7 @@
 """No native execution: source/transport/isolation contract checks only."""
 import json
+import os
+from unittest import mock
 from pathlib import Path
 import sys
 import tempfile
@@ -10,6 +12,15 @@ from accumulation_register_behavior import fixture,route
 import native_1c_accumulation_register_profile as host
 
 class AccumulationAcquisitionTests(unittest.TestCase):
+    def setUp(self):
+        # Static fixtures only, matching the other native profile tests.
+        # This is not a Windows containment/security proof.
+        if os.name == 'nt':
+            from test_native_1c_full_host import read_synthetic_file
+            patcher = mock.patch.object(host.FULL, 'read_regular', side_effect=read_synthetic_file)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def wire(self):
         prefix='ACC|'+'a'*32+'|'
         return (prefix+'entered\n'+''.join(prefix+str(n)+'|0|0|0,0|before:0;\n' for n in range(1,17))+prefix+'completed\n').encode()
@@ -32,6 +43,12 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         from yadinassi.syntax.parser import parse
         parse(route.program(setup,'a'*32).decode())
         parse(assets['ObjectModule.bsl'].decode())
+    def test_source_bound_packet_has_cross_platform_byte_pins(self):
+        attributes=(ROOT/'.gitattributes').read_text(encoding='utf-8').splitlines()
+        for path in ('scripts/accumulation_register_behavior/**',
+                     'scripts/native_1c_bootstrap/accumulation_register_suite.py',
+                     'scripts/native_1c_accumulation_probe.sh'):
+            self.assertIn(path+' text eol=lf',attributes)
     def test_authored_child_order_matches_designer_220_sequence(self):
         # MDClasses 2.20 AccumulationRegisterChildObjects: Resource*,
         # Attribute*, Dimension*. Semantic projection alone sorts these groups.
