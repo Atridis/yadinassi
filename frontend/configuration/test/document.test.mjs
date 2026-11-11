@@ -76,8 +76,9 @@ test('capacity message explains bounded refusal and keeps the catalog controls l
   await app.ready;
   all(env.document.root).find(node=>node.dataset.recordKey==='record-1').emit('click');
   buttons(env.document).find(node=>node.textContent==='Open selected').emit('click');
-  await app.client.tail;await Promise.resolve();await Promise.resolve();
-  assert.equal(app.client.terminal,false);assert.equal(app.mounts.size,0);
+  // Await the same deduplicated opening, including its real finally/repaint.
+  await app.openForm(1,'record-1');
+  assert.equal(app.client.pending,0);assert.equal(app.client.terminal,false);assert.equal(app.mounts.size,0);
   assert.ok(all(env.document.root).some(node=>node.textContent.includes('Nothing was opened or changed.')));
   assert.equal(buttons(env.document).find(node=>node.textContent==='New document').disabled,false);
 });
