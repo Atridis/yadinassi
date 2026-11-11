@@ -10,7 +10,7 @@ const text = (value, max) => typeof value === 'string' && value.length <= max * 
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
-const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
+const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','report_unavailable','report_busy','invalid_record','object_required','save_recovery_required',
   'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired','input_pending','input_refused','input_retired','input_stale'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
