@@ -157,6 +157,7 @@ const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url())
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null,lastApplicationResult=null;
 async function command(title,control){
+  report.commandStage='bind_session';
   const index=await panels().evaluateAll(nodes=>nodes.findIndex(node=>!node.hidden));
   assert.equal(lastApplicationState?.sessions.length,await panels().count(),'session_panel_binding');
   const session=lastApplicationState?.sessions[index]?.id;
@@ -164,13 +165,16 @@ async function command(title,control){
   const reply=replyFor(packet=>packet.method==='application.form'&&packet.params.session===session&&
     packet.params.request.method==='form.event'&&packet.params.request.params.event==='command'&&
     packet.params.request.params.control===control);
-  await action(title).click();const data=await (await reply).json();
+  report.commandStage='click';await action(title).click();
+  report.commandStage='await_response';const response=await reply;
+  report.commandStage='read_response';const data=await response.json();
+  report.commandStage='verify_response';
   const errors=[null,'invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused','retired_session'];
   const safeError=code=>errors.includes(code)?code:'unexpected_protocol_code';
   report.lastCommand={sessionMatches:data.result.session===session,applicationError:safeError(data.result.error),formError:safeError(data.result.form?.result?.error)};
   assert.equal(data.result.session,session,'command_session_changed');
   assert.equal(data.result.error,null,'application_command_failed');
-  assert.equal(data.result.form.result.error,null,'form_command_failed');await idle();
+  assert.equal(data.result.form.result.error,null,'form_command_failed');report.commandStage='await_idle';await idle();report.commandStage='completed';
 }
 async function closeForm(){const reply=formReply('close');await action('Close form').click();await reply;await idle();}
 async function naturalStop(){
@@ -557,6 +561,12 @@ catch(error){
     'refused_close_completed','refused_child_retired','navigation_flushed_sibling','retained_input_replaced','real_close_not_observed',
     'exact_raw_copy_missing','copy_not_selectable','locked_input_enabled','locked_refresh_enabled','locked_command_enabled','locked_close_enabled','locked_intent_replayed'];
   report.assertion=fixedAssertions.includes(assertion)?assertion:'unclassified_step';
+  report.failureClass=['AssertionError','TimeoutError','TypeError','Error'].includes(error?.name)?error.name:'other';
+  const reason=String(error?.message||'');
+  report.observerFailure=/No resource with given identifier|No data found for resource/.test(reason)?'response_body_unavailable':
+    /Target page, context or browser has been closed/.test(reason)?'browser_closed':
+    /strict mode violation/.test(reason)?'ambiguous_locator':
+    /Cannot read properties/.test(reason)?'missing_observer_value':'unclassified';
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};

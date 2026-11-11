@@ -78,6 +78,7 @@ class ConfigurationResultsBrowserContractTests(unittest.TestCase):
             "assert.equal(update.form.id,1)","'callback','additional_parameters','_form_target','enrollment'")
 
     def test_real_delayed_accept_double_click_and_exact_result(self):
+        self.contains("report.commandStage='bind_session'","report.commandStage='read_response'","report.commandStage='completed'","'response_body_unavailable'","'ambiguous_locator'")
         self.contains('await repeatClick(action(\'Use value\'))','control.click();control.click();',
             'delayed={arrived,wait}',"completion(actual.result,'Selected once')",'gate.arrived();await bounded(gate.wait',
             "'busy_accept_enabled'","'retirement_before_response_delivery'", "['Completion count: 1']", "'completion_count_or_additional_changed'")
