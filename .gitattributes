@@ -161,3 +161,8 @@ tests/fixtures/property_transfer/*provenance.json -text
 # Reference-choice workspace uses the same byte-exact renderer contract.
 frontend/reference-workspace/** text eol=lf
 yadinassi/ui/assets/reference-workspace/* text eol=lf
+
+# Source-bound isolated posting acquisition must retain identical bytes on Windows.
+scripts/document_posting_behavior/** text eol=lf
+scripts/native_1c_bootstrap/document_posting_suite.py text eol=lf
+scripts/native_1c_posting_probe.sh text eol=lf
