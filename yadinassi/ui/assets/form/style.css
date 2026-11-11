@@ -23,3 +23,5 @@
 .layout-page { border: 0; padding: 0; }
 .layout-group[hidden], .group-title[hidden], .page-tab[hidden] { display: none; }
 @media (max-width: 640px) { .orientation-horizontal { flex-direction: column; } .orientation-horizontal > * { flex-basis: auto; width: 100%; } }
+
+.draft-recovery-value { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

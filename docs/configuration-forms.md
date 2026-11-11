@@ -193,7 +193,10 @@ blur), or explicitly Refresh to discard it. This avoids silently replaying a
 hidden page's OnChange while acting on another page. Inactive, detached and
 replaced DOM controls are fenced before dispatch; no intent is queued for later
 page reactivation. Page switches are disabled while an event or reference picker
-is in flight. An authoritative change that removes, rebinds, disables, hides or
+is in flight. A transport/outcome lock still permits local page inspection and
+exposes retained raw scalar/cell drafts as selectable, whitespace-preserving
+copy-only text. It never clears the lock, flushes a draft or retries an intent.
+An authoritative change that removes, rebinds, disables, hides or
 supersedes a pending edit preserves its raw text in copy-only recovery rather
 than retargeting it. Existing transport-uncertainty locks remain unchanged.
 

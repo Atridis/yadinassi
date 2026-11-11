@@ -831,7 +831,7 @@ function createFormView(document, root, handlers) {
       const selected = pageSelections.get(item.parent)?.name === item.name;
       control.tab.textContent = item.title || item.name; control.tab.hidden = !item.visible;
       control.tab.setAttribute('aria-selected', String(selected)); control.tab.tabIndex = selected ? 0 : -1;
-      control.tab.disabled = model.paused || model.busy || model.locked || !active || !item.enabled || !isDisplayed(parent?.item);
+      control.tab.disabled = model.paused || model.busy || !active || !item.enabled || !isDisplayed(parent?.item);
       const index = current.items.filter(page => page.parent === item.parent && page.layoutKind === 'page').findIndex(page => page.name === item.name);
       if (parent.tabbar.children[index] !== control.tab) parent.tabbar.insertBefore(control.tab, parent.tabbar.children[index] || null);
       control.row.hidden = !selected || !item.visible || current.kind === 'closed';
@@ -1098,9 +1098,17 @@ function createFormView(document, root, handlers) {
         hint.hidden = !hint.textContent;
       }
     }
-    recovered.hidden = recovery.size === 0;
-    recovered.replaceChildren(element('p', '', 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'),
-      ...Array.from(recovery.values(), draft => element('p', '', draft.label + ': ' + String(draft.value))));
+    // A locked transport never authorizes a send. Local page inspection and
+    // selectable raw-text recovery still work, without clearing any draft/lock.
+    const lockedDrafts = model.locked && !model.busy ? [
+      ...Array.from(drafts, ([name, draft]) => ({label: name, value: draft.value})),
+      ...Array.from(cellDrafts.values(), draft => ({label: draft.control + ', row ' + draft.row + ', ' + draft.column, value: draft.value})),
+    ] : [];
+    recovered.hidden = recovery.size === 0 && lockedDrafts.length === 0;
+    recovered.replaceChildren(element('p', '', recovery.size
+      ? 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'
+      : 'These unsubmitted inputs are retained while editing is locked. Copy any text you need before Refresh state discards them. Switching pages does not send or retry anything.'),
+      ...[...recovery.values(), ...lockedDrafts].map(draft => element('p', 'draft-recovery-value', draft.label + ': ' + String(draft.value))));
     const nextMessages = current?.messages || [];
     // Rebuild only the bounded message list, never input nodes or host-supplied markup.
     messages.replaceChildren(...nextMessages.map(message => element('p', '', message)));

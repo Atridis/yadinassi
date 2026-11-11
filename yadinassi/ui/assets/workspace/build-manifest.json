@@ -6,19 +6,19 @@
     "build.mjs": "5f5caff72050701c95db35f7c5758acba9f922fbb63bc57ee3ae1af4781de8a1",
     "src/index.html": "b159965b523792ed66c6d67fa0052346a6eb1f0c2bf4a89a2ab8632c06757d68",
     "src/style.css": "e5893a6b91446536ac01d57b832b54162e9a6d6a304da70a1bf1685b4f74d6e9",
-    "../form/src/style.css": "33c3f57f1897d14a919068c866a30099d40466162c0c8534c105f48a90647dc4",
+    "../form/src/style.css": "5a95e8762dc6a5902bce060f7e8b2286fa57c5b3240cef534e3a10f6c70e761a",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "../form/src/client.mjs": "951055cec3e38619f029e1e8695ee2e885edee925fbcdf192b5b0a29a5d43f10",
     "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
-    "../form/src/view.mjs": "9d30c07aaabc45e60e4a33e0e6e587529f380dc0ca16a43417e741b0a05bb7ad",
+    "../form/src/view.mjs": "6d74959ea81af2eb96fd9cb52cd1f56beb1e34f0fa5f5c0797ef213f91850907",
     "../form/src/app.mjs": "617924421e8c5a6ae36425be70f91a3135d0bc292e2715cbe7e86264a8545dad",
     "src/client.mjs": "dd09c60da7b84622768466bc58222027efcdd7101177b0fc4537ca73baba55e3",
     "src/app.mjs": "d4f01f63e7988621e7a64ca0a72d44507fc54a0c7afd0d3093a76cdfc80f78f2"
   },
   "outputs": {
-    "app.js": "5196c8af4b100009e2c94464f380aa805f735138f6d8be7e41d0c6388cebff40",
+    "app.js": "f61abd66f67f3a91b210c0403e6814cfac8bda54e8ec05e3719182d56b48ba5a",
     "index.html": "b159965b523792ed66c6d67fa0052346a6eb1f0c2bf4a89a2ab8632c06757d68",
-    "style.css": "abe14d8fc574a586416fae7f1dbd6c0d545091afadea4bec118dfc2f04b2af92",
+    "style.css": "760286dcb5ebd07e828a16ee9f228033abf11225c47a1be5496b07ab7a1c2ad7",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

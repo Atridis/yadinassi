@@ -24,6 +24,8 @@
 .layout-group[hidden], .group-title[hidden], .page-tab[hidden] { display: none; }
 @media (max-width: 640px) { .orientation-horizontal { flex-direction: column; } .orientation-horizontal > * { flex-basis: auto; width: 100%; } }
 
+.draft-recovery-value { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+
 .reference-workspace { max-width: 1200px; margin: auto; padding: 24px; }
 .reference-workspace nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .reference-workspace [hidden] { display: none !important; }

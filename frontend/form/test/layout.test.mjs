@@ -189,3 +189,40 @@ test('group titles are text-only and do not expose a native CurrentPage command'
   assert.equal(all(document.root).some(node => node.tagName === 'SCRIPT'), false);
   assert.equal(view.isAvailable('Sections'), false);
 });
+
+test('transport-locked pages expose selectable exact scalar and cell drafts without losing page state', () => {
+  const {document, view, calls} = setup(); const snapshot = layout(); snapshot.items.splice(5, 0, {...table({controlId: 30}), parent: 'First'});
+  view.render(model(snapshot)); edit(document, 'Name', '  raw name  ');
+  const cell = input(document, 'Quantity, row 1'); cell.value = '  invalid decimal  '; cell.emit('input');
+  tab(document, 'Second').emit('click'); edit(document, 'Notes', '  hidden note  ');
+  view.render(model(snapshot, {locked: true, transportFailed: true}));
+  const copies = all(document.root).filter(node => node.className === 'draft-recovery-value');
+  assert.ok(copies.some(node => node.textContent === 'Name:   raw name  '));
+  assert.ok(copies.some(node => node.textContent === 'Notes:   hidden note  '));
+  assert.ok(copies.some(node => node.textContent === 'Lines, row 1, Quantity:   invalid decimal  '));
+  tab(document, 'First').emit('click'); assert.equal(tab(document, 'First').getAttribute('aria-selected'), 'true');
+  assert.equal(input(document, 'Name').value, '  raw name  '); assert.equal(cell.value, '  invalid decimal  ');
+  assert.equal(input(document, 'Name').disabled, true); assert.deepEqual(calls, []); assert.equal(view.hasDrafts(), true);
+  tab(document, 'Second').emit('click'); assert.equal(input(document, 'Notes').value, '  hidden note  ');
+});
+
+test('lost response permits copy-only page inspection but no change, command, close or reference retry', async () => {
+  const requests = []; let references = 0; const snapshot = layout();
+  snapshot.items.splice(8, 0, {...field('Product', {type: 'FormCatalogRef', scope: 'a'.repeat(32), target: 1, key: null, text: ''}, {controlId: 20}), parent: 'Second'});
+  const env = environment(async (_, options) => {
+    const request = JSON.parse(options.body); requests.push(request);
+    if (request.params.event === 'change') throw Error('lost real response');
+    return response(reply(request, snapshot));
+  });
+  const app = mountForm(env, env.document.root, {onReference: async () => { references++; }}); await app.ready;
+  edit(env.document, 'Name', 'uncertain first'); tab(env.document, 'Second').emit('click'); edit(env.document, 'Notes', 'retained second');
+  tab(env.document, 'First').emit('click'); await app.run('change', 'Name'); assert.equal(app.client.locked, true);
+  tab(env.document, 'Second').emit('click'); assert.equal(tab(env.document, 'Second').getAttribute('aria-selected'), 'true');
+  assert.equal(input(env.document, 'Notes').value, 'retained second'); assert.equal(app.client.locked, true);
+  assert.ok(env.document.root.textContent.includes('Notes: retained second'));
+  await app.run('change', 'Notes'); await app.run('command', 'SaveSecond'); await app.run('close');
+  await app.reference({action: 'begin', control: 'Product', row: null, column: null});
+  input(env.document, 'Name').emit('blur'); input(env.document, 'Notes').emit('keydown', {key: 'Enter'});
+  assert.equal(requests.length, 2); assert.equal(references, 0); assert.equal(app.client.locked, true);
+  assert.equal(buttons(env.document).find(node => node.getAttribute('aria-label') === 'Choose Product').disabled, true);
+});
