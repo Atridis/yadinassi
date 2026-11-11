@@ -626,15 +626,15 @@ async function main(){
   const noWrites=()=>assert.equal(wireEvents.filter(e=>e.event!=='close').length,0,'unexpected_form_write');
   const unchanged=()=>{checkpoint('audit_compare');assert.deepEqual(inventoryFixture('audit'),initialAudit,'readonly_audit_changed');};
   let owner=null,ownerPanel=null,ownerSessions=null;
-  const assertRaw=async(pending=false)=>{
+  const assertRaw=async()=>{
     assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).inputValue(),'RAW DRAFT','draft_changed');noWrites();
     assert.ok(lastApplicationState.sessions.some(s=>s.id===owner),'owner_identity_changed');
-    assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).isEditable(),!pending,'capacity_locked');
+    assert.equal(await ownerPanel.getByLabel('Description',{exact:true}).isEditable(),true,'capacity_locked');
   };
   const returnOwner=async(pending=false)=>{
     checkpoint('owner_return');const index=lastApplicationState.sessions.findIndex(s=>s.id===owner);
     assert.ok(index>=0,'owner_identity_changed');await tabs().getByRole('button').nth(index).click();if(!pending)await flushPaint();
-    assert.equal(await ownerPanel.isVisible(),true,'owner_not_visible');await assertRaw(pending);
+    assert.equal(await ownerPanel.isVisible(),true,'owner_not_visible');await assertRaw();
   };
   const capacity=async(result,expectedSessions)=>{
     checkpoint('capacity_assert');assert.equal(result.error,'form_capacity','capacity_not_known');
@@ -716,9 +716,12 @@ async function main(){
     checkpoint('open_click');await repeatClick(catalog().getByRole('button',{name:'Open selected',exact:true}));
     checkpoint('delay_wait');await bounded(arrival,remaining(10000),'late_refusal_not_observed');
     assert.equal(businessEvents.length,before+1,'duplicate_open_rpc');
+    // A real tab navigation repaints controls while the reply is held. Raw
+    // fields remain locally editable; pending application RPCs stay fenced.
+    await returnOwner(true);await assertRaw();
     assert.equal(await catalog().getByRole('button',{name:'Open selected',exact:true}).isDisabled(),true,'busy_not_fenced');
     assert.equal(await reportPanel().getByRole('button',{name:'Show saved stock',exact:true}).isDisabled(),true,'busy_not_fenced');
-    await returnOwner(true);await assertRaw(true);checkpoint('delay_release');release();
+    checkpoint('delay_release');release();
     const response=await reply,result=deliveredReply(response).result;await flushPaint();
     await capacity(result,ownerSessions);assert.equal(businessEvents.length,before+1,'duplicate_open_rpc');
     assert.equal(await ownerPanel.isVisible(),true,'late_reply_changed_owner');await assertRaw();

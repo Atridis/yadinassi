@@ -123,10 +123,12 @@ class ObjectFormPreflightBrowserContractTests(unittest.TestCase):
     def test_busy_and_late_reply_keep_owner(self):
         self.contains("'Open selected',exact:true}).isDisabled(),true,'busy_not_fenced'",
             "'Show saved stock',exact:true}).isDisabled(),true,'busy_not_fenced'",
-            "await returnOwner(true);await assertRaw(true);checkpoint('delay_release');release()",
+            "checkpoint('delay_release');release()",
             "ownerPanel.isVisible(),true,'late_reply_changed_owner'")
         self.assertIn('if(!pending)await flushPaint()', self.source)
-        self.contains('const assertRaw=async(pending=false)', "isEditable(),!pending,'capacity_locked'", 'await assertRaw(pending)', 'pending.catch(()=>{});return pending;')
+        self.contains("isEditable(),true,'capacity_locked'", 'pending.catch(()=>{});return pending;')
+        pending=self.source.split('let arrived,release;',1)[1]
+        self.assertLess(pending.index('await returnOwner(true);await assertRaw();'), pending.index("isDisabled(),true,'busy_not_fenced'"))
 
     def test_small_document_open_and_close_without_refusal_allocation(self):
         self.contains("const smallOpen=async(expectedSession)", "selectNumber('R1')",
