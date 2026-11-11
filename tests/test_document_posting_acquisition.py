@@ -102,3 +102,18 @@ class PostingAcquisitionTests(unittest.TestCase):
         expected=self.metadata();actual=dict(expected);name='InformationRegisters/OwnedPostingRows.xml'
         actual[name]=actual[name].replace(b'</ChildObjects>',b'<Attribute uuid="extra"><Properties><Name>Extra</Name><Type/></Properties></Attribute></ChildObjects>')
         with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_observation_declarations_precede_entered_marker(self):
+        program=route.program(None,'a'*32)
+        self.assertLess(program.index(b'Function TraceOf'),program.index(b'|entered'))
+        self.assertLess(program.index(b'Function Snapshot'),program.index(b'|entered'))
+        self.assertLess(program.index(b'|entered'),program.index(b'For CaseNo = 1'))
+    def test_observation_program_retains_exact_source_segments(self):
+        program=route.program(None,'a'*32)
+        declarations,statements=route.source().split(b'For CaseNo = 1 To 12 Do')
+        self.assertIn(declarations,program)
+        self.assertIn(b'For CaseNo = 1 To 12 Do'+statements,program)
+    def test_native_error_diagnostic_is_finite_vocabulary(self):
+        self.assertIn('compile_error',host.SMOKE.DIAGNOSTICS.CATEGORIES)
+        source=(ROOT/'scripts/native_1c_bootstrap/document_posting_suite.py').read_text()
+        self.assertIn("diagnostics.summarize_text(result['error'])['category']",source)
+        self.assertNotIn("report['native_error_text']",source)

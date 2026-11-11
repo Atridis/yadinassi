@@ -7,6 +7,7 @@ import stat
 import sys
 import full_suite as full
 import run_stage
+import diagnostics
 from document_posting_behavior import fixture, route
 
 
@@ -15,7 +16,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -123,6 +124,12 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         report.update(status='ok',failure_kind='none',failure_phase='final',witness_verified=True,
             output_sha256=full.digest(canonical),output_size=len(canonical),record_count=12)
     except Exception as error:
+        if phase=='enterprise':
+            try:
+                result=full.strict_json(full.secure_bytes(root/'case/result.json',full.MAX_RESULT))
+                if type(result) is dict and type(result.get('error')) is str and len(result['error'])<=16384:
+                    report['native_error_category']=diagnostics.summarize_text(result['error'])['category']
+            except Exception:pass
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics

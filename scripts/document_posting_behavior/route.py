@@ -18,8 +18,12 @@ def source():
 
 def program(setup,nonce):
     if type(nonce) is not str or re.fullmatch('[0-9a-f]{32}',nonce) is None:raise ValueError('nonce')
-    prefix=('Procedure PostingEmit(N,V)\nMessage("POST|'+nonce+'|"+String(N)+"|"+V);\nEndProcedure\nMessage("POST|'+nonce+'|entered");\n').encode()
-    return prefix+source()+('Message("POST|'+nonce+'|completed");\n').encode()
+    prefix=('Procedure PostingEmit(N,V)\nMessage("POST|'+nonce+'|"+String(N)+"|"+V);\nEndProcedure\n').encode()
+    body=source();marker=b'For CaseNo = 1 To 12 Do'
+    if body.count(marker)!=1:raise ValueError('source body boundary')
+    declarations,statements=body.split(marker)
+    entered=('Message("POST|'+nonce+'|entered");\n').encode()
+    return prefix+declarations+entered+marker+statements+('Message("POST|'+nonce+'|completed");\n').encode()
 
 def canonical(values):
     if type(values) is not list or len(values)!=COUNT or any(type(v) is not str or len(v)>512 or re.fullmatch(r'[A-Za-z0-9,;:| .-]+',v) is None for v in values):raise ValueError('observations')
