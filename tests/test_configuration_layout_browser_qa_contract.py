@@ -120,6 +120,9 @@ class ConfigurationLayoutBrowserContractTests(unittest.TestCase):
         self.contains('const actual=await auditResponse(response)', 'dropNextChange=false',
             "'real_change_not_completed'", "return await route.abort('failed')", 'report.realReplyDroppedAfterConfirmedChange=true',
             "'exact_raw_copy_missing'", "'copy_not_selectable'", "'locked_intent_replayed'",
+            "phase='layout_fault_await_global_lock'", "phase='layout_fault_idle'", "phase='layout_fault_select_local_notes'",
+            "phase='layout_fault_copy_readonly'", "phase='layout_fault_suppressed_actions'", "phase='layout_fault_screenshot'",
+            "'locked_layout_inspection_unavailable'", "'locked_outer_open_enabled'", "'locked_outer_close_enabled'",
             "'NotesInput:   retained note  '", 'getComputedStyle(node).userSelect', "new KeyboardEvent('keydown'")
         self.assertEqual(self.source.count('dropNextChange=true'), 1)
         self.assertNotIn('route.fulfill({json:', self.source)

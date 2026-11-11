@@ -492,17 +492,25 @@ async function main(){
     phase='layout_fault_copy_recovery';
     await field('First name').fill('  uncertain first  ');await layoutTab('Notes').click();await field('Notes').fill('  retained note  ');
     await layoutTab('Identity').click();dropNextChange=true;await field('First name').press('Enter');
-    await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
-    await idle();assert.equal(report.realReplyDroppedAfterConfirmedChange,true,'real_loss_not_observed');
-    const before=businessEvents.length;await layoutTab('Notes').click();await selected('Notes');await value('Notes','  retained note  ');
+    phase='layout_fault_await_global_lock';await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
+    phase='layout_fault_idle';await idle();assert.equal(report.realReplyDroppedAfterConfirmedChange,true,'real_loss_not_observed');
+    await screenshot(screenshots[3]); // Bounded failure evidence is not a passing flow.
+    assert.deepEqual(await page.locator('.browser-ownership + div').evaluate(node=>({inert:node.inert,inspection:node.dataset.inspection,disabled:node.getAttribute('aria-disabled')})),
+      {inert:false,inspection:'true',disabled:'false'},'locked_layout_inspection_unavailable');
+    phase='layout_fault_select_local_notes';const before=businessEvents.length;await layoutTab('Notes').click();await selected('Notes');await value('Notes','  retained note  ');
+    phase='layout_fault_copy_readonly';
     assert.equal(await field('Notes').isDisabled(),true,'locked_input_enabled');
     const copy=active().locator('.draft-recovery-value');
     assert.ok((await copy.allTextContents()).includes('NotesInput:   retained note  '),'exact_raw_copy_missing');
     assert.equal(await copy.first().evaluate(node=>getComputedStyle(node).userSelect),'text','copy_not_selectable');
+    phase='layout_fault_suppressed_actions';
+    assert.equal(await entries().getByRole('button').evaluateAll(nodes=>nodes.every(node=>node.disabled)),true,'locked_outer_open_enabled');
+    assert.equal(await button('Close application').isDisabled(),true,'locked_outer_close_enabled');
+    await button('Close application').evaluate(node=>node.click());
     await field('Notes').evaluate(node=>{node.dispatchEvent(new Event('blur'));node.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));});
     await action('Build summary').evaluate(node=>node.click());await action('Close form').evaluate(node=>node.click());
     await layoutTab('Identity').click();await selected('Identity');await layoutTab('Notes').click();await selected('Notes');
-    await screenshot(screenshots[3]);assert.equal(businessEvents.length,before,'locked_intent_replayed');
+    phase='layout_fault_screenshot';await screenshot(screenshots[3]);assert.equal(businessEvents.length,before,'locked_intent_replayed');
     assert.equal(await action('Build summary').isDisabled(),true);assert.equal(await action('Close form').isDisabled(),true);
     report.acceptance={nestedGroups:true,retainedDrafts:true,hiddenPageFlushFence:true,focusSelection:true,
       inheritedReadOnly:true,busyPageFence:true,independentInstances:true,visibilityFallback:true,keyboardTabs:true,
@@ -526,7 +534,8 @@ catch(error){
   report.rpcRequests=rpc;report.businessRpc=businessEvents.length;
   const assertion=String(error?.message||'').split('\n',1)[0];
   const fixedAssertions=['session_panel_binding','active_session_missing','command_session_changed','application_command_failed','form_command_failed',
-    'page_selection','hidden_draft_dispatched','focus_selection_not_retained','instance_navigation_dispatched','narrow_horizontal_overflow'];
+    'page_selection','hidden_draft_dispatched','focus_selection_not_retained','instance_navigation_dispatched','narrow_horizontal_overflow',
+    'locked_layout_inspection_unavailable','locked_outer_open_enabled','locked_outer_close_enabled','locked_intent_replayed','exact_raw_copy_missing','copy_not_selectable'];
   report.assertion=fixedAssertions.includes(assertion)?assertion:'unclassified_step';
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&

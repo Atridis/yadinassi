@@ -159,6 +159,8 @@ export function mountForm(environment, root, options = {}) {
   if (browserHost?.enabled) {
     client = new FormClient(browserHost.transport); token = 'attached';
     browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+    browserHost.setInspectionAllowed(() => Boolean(client.locked && !busy && !client.busy && !options.referenceActive?.() &&
+      client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
   return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};

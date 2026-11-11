@@ -224,3 +224,14 @@ source-bound 1C observation with a two-page form: record child own flags before,
 during and after a parent visibility/enabled/readOnly toggle, capture which
 controls remain interactive, and record event traces when switching with an
 uncommitted edit. Do not reinterpret this renderer policy as that evidence.
+
+
+Attachment-protected layout views opt into local read-only inspection only after
+all retained clients are locked, all business requests are idle and no picker is
+open. The wrapper remembers the generation in which this DOM was writable;
+observer, generation/identity change, pagehide or closure revokes that inspection
+grant. Busy/reconciling temporarily blocks it. Inspection only exposes local
+page navigation and retained copy text. It never changes attachment.writable,
+RPC refusal, takeover authority, the transport lock or queued-intent fencing.
+Legacy consumers remain inert by default, and a failing inspection predicate
+also leaves content inert. Disabled business inputs and actions remain disabled.

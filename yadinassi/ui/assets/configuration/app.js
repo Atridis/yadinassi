@@ -640,7 +640,7 @@ function createBrowserHost(environment, root) {
   const launch = readBrowserLaunch(environment);
   if (!launch.enabled) return {enabled: false, content: root, instance: documentInstance(environment),
     transport: createTransport(environment.fetch.bind(environment), launch.launcher), launcher: launch.launcher,
-    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, notify() {}};
+    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, setInspectionAllowed() {}, notify() {}};
   const document = environment.document, banner = document.createElement('section'), description = document.createElement('p'),
     detail = document.createElement('p'), actions = document.createElement('div'), takeover = document.createElement('button'),
     check = document.createElement('button'), content = document.createElement('div');
@@ -648,10 +648,23 @@ function createBrowserHost(environment, root) {
   description.setAttribute('role', 'status'); description.setAttribute('aria-live', 'polite');
   takeover.type = check.type = 'button'; takeover.textContent = 'Take control'; check.textContent = 'Check connection';
   actions.append(takeover, check); banner.append(description, detail, actions); root.replaceChildren(banner, content);
+  let inspectionAllowed = () => false, inspectionWriter = null;
   const attachment = new BrowserAttachment(environment, launch, () => paint());
   function paint() {
     const writable = attachment.writable;
-    content.inert = !writable; content.setAttribute('aria-disabled', String(!writable));
+    if (writable) inspectionWriter = {attachment: attachment.info.attachment, generation: attachment.info.generation};
+    else if (attachment.suspended || attachment.info?.role !== 'writer' || attachment.info?.closed ||
+        attachment.info?.attachment !== inspectionWriter?.attachment || attachment.info?.generation !== inspectionWriter?.generation) inspectionWriter = null;
+    // DOM inspection is not writer authority. Opt-in only after the consumer
+    // has locked all business controls; the transport gate remains unchanged.
+    let inspection = false;
+    try {
+      inspection = !writable && Boolean(inspectionWriter) && attachment.info?.role === 'writer' && !attachment.info.closed &&
+        !attachment.suspended && !attachment.reconciling && !attachment.busy && !attachment.rpcActive &&
+        (attachment.businessUnknown || attachment.uncertain()) && inspectionAllowed() === true;
+    } catch { inspection = false; }
+    content.inert = !(writable || inspection); content.setAttribute('aria-disabled', String(!(writable || inspection)));
+    content.dataset.inspection = String(inspection);
     banner.dataset.role = attachment.info?.role || 'connecting';
     description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
       : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
@@ -666,7 +679,8 @@ function createBrowserHost(environment, root) {
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
   return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
-    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); }, notify: paint,
+    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
+    setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
 }
 
@@ -1341,6 +1355,8 @@ function mountForm(environment, root, options = {}) {
   if (browserHost?.enabled) {
     client = new FormClient(browserHost.transport); token = 'attached';
     browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+    browserHost.setInspectionAllowed(() => Boolean(client.locked && !busy && !client.busy && !options.referenceActive?.() &&
+      client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
   return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
@@ -1783,6 +1799,10 @@ function mountApplication(environment, root, exchange = null) {
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
+  browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
+    !pickerBusy && !client.state?.choice && mounts.size &&
+    [...mounts.values()].every(entry => entry.mount?.client?.locked && !entry.mount.client.busy) &&
+    [...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group'))));
   const resume = async () => {
     if (client.terminal) throw Error('Unknown previous outcome');
     const retained = new Set(mounts.keys());
