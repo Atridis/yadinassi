@@ -188,3 +188,17 @@ def valid_install_diagnostic(value):
         and type(value['truncated']) is bool and type(value['tokens']) is list
         and len(value['tokens'])<=96 and (not value['truncated'] or len(value['tokens'])==96)
         and all(type(v) is str and v in _INSTALL_TOKENS for v in value['tokens']))
+
+
+def partial_values(messages,nonce):
+    """Bounded observations preceding failure; never manufactures completion."""
+    if type(nonce) is not str or re.fullmatch('[0-9a-f]{32}',nonce) is None:raise ValueError('nonce')
+    if type(messages) is not list or len(messages)>50:raise ValueError('messages')
+    prefix='TMP|'+nonce+'|'
+    if not messages or messages[0]!=prefix+'entered':return []
+    result=[]
+    for number,message in enumerate(messages[1:],1):
+        if number>COUNT or type(message) is not str or len(message)>8192 or not message.startswith(prefix+str(number)+'|'):break
+        value=json.loads(message[len(prefix+str(number)+'|'):]);canonical([value]*COUNT)
+        result.append([number,value])
+    return result

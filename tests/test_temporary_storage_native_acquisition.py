@@ -25,6 +25,7 @@ class TemporaryStorageNativeAcquisitionTests(unittest.TestCase):
         return (prefix+'entered\n'+''.join(prefix+str(n)+'|"value"\n' for n in range(1,17))+prefix+'completed\n').encode()
     def test_wire_roundtrip(self):
         self.assertEqual(route.parse_wire(self.wire(),'a'*32),['value']*16)
+        self.assertEqual(route.partial_values(self.wire().decode().splitlines()[:4],'a'*32),[[1,'value'],[2,'value'],[3,'value']])
         self.assertEqual(route.parse_attempt(self.wire(),'a'*32),([[i,'value'] for i in range(1,17)],[]))
     def test_invalid_nonce_order_and_extra_lines(self):
         for raw,nonce in [(self.wire(),'b'*32),(self.wire().replace(b'|2|',b'|3|'),'a'*32),(self.wire()+b'extra\n','a'*32)]:

@@ -180,6 +180,12 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
                 if type(result) is dict and type(result.get('error')) is str and len(result['error'])<=16384:
                     report['native_error_category']=diagnostics.summarize_text(result['error'])['category']
                     report['native_error_details']=route.failure_details(result,nonce)
+                    report['entered']=report['native_error_details']['entered']
+                    report['partial_observations']=route.partial_values(result['messages'],nonce)
+                    details=report['native_error_details']
+                    report['case_diagnostics'].append(dict(case=min(details['cases']+1,route.COUNT),
+                        stage='read',category=report['native_error_category'],details=details,
+                        context=diagnostics.rendered_context(result['error'],'managed_marker')))
             except Exception:pass
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
