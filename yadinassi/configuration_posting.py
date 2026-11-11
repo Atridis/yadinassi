@@ -86,7 +86,7 @@ def import_posting_configuration(files,*,posting_runtime=None):
         schemas.append(RecorderRegisterSchema(register.identity,owners,register.declared_fields,register.name,len(register.dimensions)))
     source=tuple((path,files[path]) for path in sorted(files))
     digest=sha256(b''.join(path.encode()+b'\0'+sha256(raw).digest() for path,raw in source)).hexdigest()
-    return PostingConfiguration(identity,name,source,tuple(documents),tuple(schemas),tuple(handlers),PROFILE,digest)
+    return PostingConfiguration(identity,name,source,tuple(sorted(documents,key=lambda d:str(d.identity))),tuple(schemas),tuple(handlers),PROFILE,digest)
 
 
 def canonical(config):
