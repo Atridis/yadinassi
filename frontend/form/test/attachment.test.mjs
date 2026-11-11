@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {BROWSER_PROTOCOL, RESUME_KEY, AttachmentRefusal, documentInstance, readBrowserLaunch, BrowserAttachment, createBrowserHost} from '../src/attachment.mjs';
-import {FormClient} from '../src/client.mjs';
+import {FormClient,validateSnapshot} from '../src/client.mjs';
 import {EditorClient} from '../../catalog/src/client.mjs';
 import {WorkspaceClient} from '../../workspace/src/client.mjs';
 import {ApplicationClient} from '../../configuration/src/client.mjs';
 import {ReferenceClient} from '../../reference-workspace/src/client.mjs';
 import {mountForm} from '../src/app.mjs';
 import {environment, all} from './fake-dom.mjs';
-import {state, reply, response, field, button, deferred} from './fixtures.mjs';
+import {state, reply, response, field, button, deferred, pageLayout} from './fixtures.mjs';
 
 const launcher = 'l'.repeat(43), credential = 'c'.repeat(43), resume = 'r'.repeat(43);
 const status = (extra = {}) => ({protocol:BROWSER_PROTOCOL,attachment:'attachment-1',role:'writer',generation:1,
@@ -234,4 +234,63 @@ test('ownership reconciliation keeps orphaned invalid cell input as copy-only da
   assert.throws(()=>view.changes(),{code:'draft_changed'});
   view.clearDrafts();view.render(model(state(1,{items:[table({tableId:2}),button()]})));
   assert.equal(view.hasDrafts(),false);assert.equal(env.document.root.textContent.includes('raw invalid cell'),false);
+});
+
+
+test('inspection opt-in is fail-closed and never grants writer transport or takeover authority', async () => {
+  const {env,requests}=browser(path=>path==='/attachment'?response(issued()):Promise.reject(Error('lost')));
+  const host=createBrowserHost(env,env.document.root);await host.start(async()=>{});
+  await assert.rejects(host.transport(hello));host.notify();
+  assert.equal(host.content.inert,true);assert.equal(host.attachment.writable,false);
+  host.setInspectionAllowed(()=>true);assert.equal(host.content.inert,false);assert.equal(host.content.dataset.inspection,'true');
+  const count=requests.length;await assert.rejects(host.transport(hello),{code:'not_writer'});await host.attachment.takeover();
+  assert.equal(requests.length,count);assert.equal(host.attachment.businessUnknown,true);
+  host.setInspectionAllowed(()=>{throw Error('predicate failure');});assert.equal(host.content.inert,true);
+  host.setInspectionAllowed(()=>1);assert.equal(host.content.inert,true);
+  host.setInspectionAllowed(()=>true);
+  for(const key of ['reconciling','busy','rpcActive']){
+    host.attachment[key]=true;host.notify();assert.equal(host.content.inert,true,key);
+    host.attachment[key]=false;host.notify();assert.equal(host.content.inert,false,key);
+  }
+  host.attachment.adopt(status({generation:2}));assert.equal(host.content.inert,true);
+  host.attachment.adopt(status({generation:2}));assert.equal(host.content.inert,true,'status cannot revive old DOM inspection');
+  host.attachment.dispose();
+});
+
+test('attached layout loss allows only local draft inspection after lock and revokes it for picker or ownership transitions', async () => {
+  const snapshot=pageLayout();validateSnapshot(snapshot);let picker=false;
+  const {env,requests}=browser((path,request)=>path==='/attachment'?response(issued()):
+    request.params.event==='change'?Promise.reject(Error('lost response')):response(reply(request,snapshot)));
+  const app=mountForm(env,env.document.root,{referenceActive:()=>picker});await app.ready;
+  const input=name=>all(env.document.root).find(node=>node.tagName==='INPUT'&&node.getAttribute('aria-label')===name);
+  const tab=name=>all(env.document.root).find(node=>node.getAttribute('role')==='tab'&&node.textContent===name);
+  input('Name').value='uncertain first';input('Name').emit('input');tab('Second').emit('click');
+  input('Notes').value='  raw second  ';input('Notes').emit('input');tab('First').emit('click');
+  await app.run('change','Name');const count=requests.length;
+  assert.equal(app.client.locked,true);assert.equal(app.browserHost.attachment.writable,false);assert.equal(app.browserHost.content.inert,false);
+  tab('Second').emit('click');assert.equal(tab('Second').getAttribute('aria-selected'),'true');
+  assert.equal(input('Notes').value,'  raw second  ');assert.equal(input('Notes').disabled,true);
+  assert.ok(env.document.root.textContent.includes('Notes:   raw second  '));
+  await app.run('change','Notes');await app.run('command','SaveSecond');await app.run('close');await app.refresh();
+  assert.equal(requests.length,count);assert.equal(app.client.locked,true);
+  picker=true;app.repaint();app.browserHost.notify();assert.equal(app.browserHost.content.inert,true);assert.equal(tab('First').disabled,true);
+  picker=false;app.repaint();app.browserHost.notify();assert.equal(app.browserHost.content.inert,false);
+  app.browserHost.attachment.adopt(status({role:'observer',generation:2}));
+  assert.equal(app.browserHost.content.inert,true);assert.equal(input('Notes').value,'  raw second  ');assert.equal(requests.length,count);
+  app.browserHost.attachment.dispose();
+});
+
+
+test('observer closed and pagehide transitions permanently revoke the retained inspection grant', async () => {
+  for(const transition of ['observer','closed','pagehide']){
+    const {env}=browser((path,body)=>path==='/attachment'?response(body.action==='attach'?issued():status({role:'observer',generation:2})):Promise.reject(Error('lost')));
+    const host=createBrowserHost(env,env.document.root);await host.start(async()=>{});
+    await assert.rejects(host.transport(hello));host.setInspectionAllowed(()=>true);assert.equal(host.content.inert,false);
+    if(transition==='pagehide')await host.attachment.detach();
+    else host.attachment.adopt(status(transition==='observer'?{role:'observer',generation:2}:{closed:true}));
+    host.notify();assert.equal(host.content.inert,true,transition);
+    if(transition!=='closed'){host.attachment.suspended=false;host.attachment.adopt(status({generation:3}));}
+    host.setInspectionAllowed(()=>true);assert.equal(host.content.inert,true,'no stale grant revival');
+    host.attachment.dispose();
+  }
 });
