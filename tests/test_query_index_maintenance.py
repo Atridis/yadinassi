@@ -21,7 +21,8 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / 'database.sqlite'
-        self.configuration = import_configuration(configuration_files())
+        self.files = configuration_files()
+        self.configuration = import_configuration(self.files)
         backend = SQLiteCatalogBackend.create(self.path, self.configuration)
         self.schemas, self.layout = backend._schemas, backend._layout
         self.storage, self.version = backend.storage_version, backend.format_version
@@ -166,7 +167,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         upgrade(self.path, upgrade_plan(self.path, maintenance=True), maintenance=True)
         plan = prepare(self.path, maintenance=True)
         apply(self.path, plan, maintenance=True)
-        target = import_configuration(append_field(configuration_files()))
+        target = import_configuration(append_field(self.files))
         update(self.path, update_plan(self.path, target, maintenance=True), maintenance=True)
         backend = SQLiteCatalogBackend(self.path, read_only=True)
         try:

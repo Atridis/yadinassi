@@ -126,10 +126,18 @@ class InnerPredicatePushdownTests(unittest.TestCase):
         self.assertEqual(query.execute()._rows,())
 
     def test_overflow_decimal_literal_is_not_hidden_by_other_filter(self):
-        with self.assertRaisesRegex(ValueError,'range exceeded'):
+        with self.assertRaisesRegex(ValueError,'outside supported bounds'):
             self.execute('SELECT P.Code FROM Catalog.Products AS P '
                 'JOIN Catalog.Products AS Q ON P.Ref=Q.Ref '
                 'WHERE P.Amount<100000000000000000000000000000000000000 AND P.Code="absent"')
+
+    def test_overflow_decimal_parameter_keeps_runtime_failure_order(self):
+        query=BSLQuery(self.vm._catalogs,'SELECT P.Code FROM Catalog.Products AS P '
+            'JOIN Catalog.Products AS Q ON P.Ref=Q.Ref '
+            'WHERE P.Amount<&Limit AND P.Code="absent"')
+        query.set_parameter('Limit',Decimal('1e38'))
+        with self.assertRaisesRegex(ValueError,'range exceeded'):
+            query.execute()
 
     def test_late_bind_error_still_fails_before_any_scan(self):
         with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('scan')):

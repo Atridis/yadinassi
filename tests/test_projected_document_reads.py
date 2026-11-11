@@ -126,7 +126,7 @@ class BatchedPostedReadTests(unittest.TestCase):
     make=posting.PostingQueryRuntimeTests.make
 
     def test_cold_validation_and_projection_do_not_do_per_document_posted_reads(self):
-        vm,context=self.make()
+        vm,context=self.make('')
         vm.execute('For I=1 To 5 Do O=Documents.OwnedPostingDoc.CreateDocument();O.Number=String(I);O.Write();EndDo;')
         schema=context.backend._document_schemas[0]
         with closing(context.backend.begin_query_read()) as view:
@@ -139,7 +139,7 @@ class BatchedPostedReadTests(unittest.TestCase):
         self.assertEqual(len(joins),2)
 
     def test_hidden_corrupt_posted_state_still_refuses_nonposted_projection(self):
-        vm,context=self.make()
+        vm,context=self.make('')
         vm.execute('O=Documents.OwnedPostingDoc.CreateDocument();O.Number="1";O.Write();')
         schema=context.backend._document_schemas[0]
         with closing(context.backend.begin_query_read()) as view:
