@@ -2436,14 +2436,20 @@ function mountApplication(environment, root, exchange = null) {
     ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
       client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
-    if (client.terminal) throw Error('Unknown previous outcome');
-    const retained = new Set(mounts.keys());
-    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
-    for (const [id,entry] of mounts) {
-      if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
-      if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
+    try {
+      if (client.terminal) throw Error('Unknown previous outcome');
+      const retained = new Set(mounts.keys());
+      const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
+      for (const [id,entry] of mounts) {
+        if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+        if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
+      }
+      return result;
+    } finally {
+      // Reconciliation paints while the hello request is still pending.
+      // Recompute controls after it settles; ownership and error gates remain.
+      paint();
     }
-    return result;
   };
   paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
   return {ready,client,mounts,show,pending,openForm,browserHost};
