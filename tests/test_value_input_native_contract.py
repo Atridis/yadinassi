@@ -3,8 +3,11 @@ import ast
 import hashlib
 import importlib.util
 import os
+import json
+import re
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -14,6 +17,8 @@ sys.path.insert(0, str(ROOT / 'scripts/native_1c_bootstrap'))
 import value_input_packet as packet
 from value_input_packet import route
 import value_input_controller as controller
+import value_inputs_suite as suite
+import native_1c_value_inputs_profile as profile
 
 
 def records():
@@ -62,7 +67,7 @@ class ValueInputNativeContracts(unittest.TestCase):
         code=route.module().decode('utf-8')
         self.assertEqual(code.count('InputDone('),1)
         self.assertIn('New CallbackDescription("InputDone", ThisObject, Shared)',code)
-        self.assertIn('Items.ShowChooseItem(Callback, Title, ExpectedItem)',code)
+        self.assertIn('ProbeItems.ShowChooseItem(Callback, ProbeTitle, ExpectedItem)',code)
 
     def test_unique_nonce_titles_and_eight_fixed_plans(self):
         self.assertEqual(len(controller.PLANS),8)
@@ -180,3 +185,138 @@ class ValueInputNativeContracts(unittest.TestCase):
                 self.assertLess(events.index(('key',1,0)),events.index(('ungrab',)))
                 display.x.XUngrabServer.assert_called_once()
                 self.assertEqual(display.sync.call_count,2)
+
+
+    def test_authored_names_do_not_shadow_managed_form_context(self):
+        code = route.module().decode('utf-8')
+        names = [name.strip().casefold() for group in re.findall(r'\bVar\s+([^;]+);', code)
+                 for name in group.split(',')]
+        self.assertNotIn('items', names)
+        self.assertNotIn('title', names)
+        self.assertIn('probeitems', names)
+        self.assertIn('Var ProbeTitle;', code)
+        self.assertNotRegex(code, r'\b(?:Items|Title)\s*=')
+
+    def test_controller_known_codes_are_closed(self):
+        for reason in packet.OWNERSHIP_REASONS:
+            with self.subTest(reason=reason):
+                error = controller.ControllerFailure(controller.OwnershipError(reason), 'drive', 2)
+                self.assertTrue(packet.valid_controller_diagnostic(error.diagnostic))
+                self.assertEqual(error.diagnostic['code'], reason.lower().replace(' ', '_'))
+                self.assertEqual(str(error), 'process_failed')
+
+    def test_controller_unknown_errors_never_export_messages(self):
+        for error, code in ((RuntimeError('/private/nonce title'), 'unexpected_exception'),
+                            (controller.OwnershipError('/private/nonce title'), 'unexpected_exception'),
+                            (OSError('/private/nonce title'), 'os_error'),
+                            (controller.full.FullError('invalid_input'), 'runner_error')):
+            with self.subTest(code=code):
+                failure = controller.ControllerFailure(error, 'display', 0)
+                self.assertEqual(failure.diagnostic['code'], code)
+                self.assertNotIn('/private', json.dumps(failure.diagnostic))
+                self.assertNotIn('nonce', str(failure))
+
+    def test_controller_diagnostic_refuses_open_shapes(self):
+        good = {'phase': 'poll', 'code': 'input_deadline', 'completed_actions': 2}
+        self.assertTrue(packet.valid_controller_diagnostic(good))
+        for value in (None, {}, {**good, 'title': 'hidden'}, {**good, 'code': 'raw title'},
+                      {**good, 'phase': '/private/path'}, {**good, 'completed_actions': True},
+                      {**good, 'completed_actions': -1}, {**good, 'completed_actions': 9}):
+            with self.subTest(value=value):
+                self.assertFalse(packet.valid_controller_diagnostic(value))
+
+    def _controller_run(self, *, identity=None, find=None, drive=None, stop=None, close=None, display_error=None, success=False):
+        nonce = 'a' * 32
+        directory = Path('/tmp/onec-smoke') / ('stage3-' + nonce)
+        display = mock.Mock()
+        display.find.side_effect = find
+        display.find.return_value = 9
+        display.drive.side_effect = drive
+        display.close.side_effect = close
+        child = mock.Mock(pid=77, returncode=0)
+        child.poll.return_value = None
+        if success:
+            child.poll.side_effect = [None] * 8 + [0, 0]
+        process = mock.Mock()
+        process.__enter__ = mock.Mock(return_value=child)
+        process.__exit__ = mock.Mock(return_value=False)
+        with mock.patch.object(controller.full, 'absent'), \
+             mock.patch.object(Path, 'resolve', return_value=Path('/native')), \
+             mock.patch.object(Path, 'open', mock.mock_open()), \
+             mock.patch.object(controller, 'Display', return_value=display, side_effect=display_error), \
+             mock.patch.object(controller.subprocess, 'Popen', return_value=process), \
+             mock.patch.object(controller, 'process_identity', return_value=(77, 77, 123), side_effect=identity), \
+             mock.patch.object(controller.full, '_stop_group', side_effect=stop) as stopper, \
+             mock.patch.object(controller, 'os', SimpleNamespace(name='posix', killpg=mock.Mock(side_effect=ProcessLookupError))), \
+             mock.patch.object(controller.time, 'sleep'):
+            try:
+                result = controller.run_owned(['/native', '/C', str(directory/'request.json')], directory, directory/'console.log', nonce)
+            except controller.ControllerFailure as error:
+                return error, display, stopper
+            return result, display, stopper
+
+    def test_controller_display_failure_has_safe_phase(self):
+        error, display, stopper = self._controller_run(display_error=OSError('missing /private/library'))
+        self.assertEqual(error.diagnostic, {'phase': 'display', 'code': 'os_error', 'completed_actions': 0})
+        stopper.assert_not_called()
+        display.find.assert_not_called()
+
+    def test_controller_identity_failure_preserves_phase_after_cleanup(self):
+        error, display, stopper = self._controller_run(identity=controller.OwnershipError('process identity'))
+        self.assertEqual(error.diagnostic, {'phase': 'identity', 'code': 'process_identity', 'completed_actions': 0})
+        stopper.assert_called_once()
+        display.close.assert_called_once()
+        display.drive.assert_not_called()
+
+    def test_controller_poll_failure_never_delivers_keys(self):
+        error, display, stopper = self._controller_run(find=controller.OwnershipError('ambiguous owned window'))
+        self.assertEqual(error.diagnostic, {'phase': 'poll', 'code': 'ambiguous_owned_window', 'completed_actions': 0})
+        display.drive.assert_not_called()
+        stopper.assert_called_once()
+
+    def test_controller_drive_failure_retains_completed_count(self):
+        error, display, stopper = self._controller_run(drive=[None, controller.OwnershipError('focus outside owned dialog')])
+        self.assertEqual(error.diagnostic, {'phase': 'drive', 'code': 'focus_outside_owned_dialog', 'completed_actions': 1})
+        self.assertEqual(display.drive.call_count, 2)
+        stopper.assert_called_once()
+
+    def test_controller_cleanup_failure_has_distinct_phase(self):
+        error, display, stopper = self._controller_run(identity=RuntimeError('identity'), stop=OSError('/private/cleanup'))
+        self.assertEqual(error.diagnostic, {'phase': 'process_cleanup', 'code': 'os_error', 'completed_actions': 0})
+        display.close.assert_called_once()
+
+    def test_controller_display_cleanup_failure_has_distinct_phase(self):
+        error, display, stopper = self._controller_run(identity=RuntimeError('identity'), close=OSError('/private/display'))
+        self.assertEqual(error.diagnostic, {'phase': 'display_cleanup', 'code': 'os_error', 'completed_actions': 0})
+        stopper.assert_called_once()
+
+    def test_controller_success_still_requires_all_eight_owned_actions(self):
+        result, display, stopper = self._controller_run(success=True)
+        self.assertEqual(result, 8)
+        self.assertEqual(display.drive.call_count, 8)
+        display.close.assert_called_once()
+        stopper.assert_not_called()
+
+    def _failed_envelope(self, diagnostic):
+        nonce = 'a' * 32
+        stage = suite.empty_report(nonce)
+        stage.update(status='failed', failure_kind='process_failed', failure_phase='enterprise', controller_diagnostic=diagnostic)
+        report = {'status': 'stage3_failed', 'native_tests_completed': False, 'stage3': stage}
+        value = {'schema': profile.SCHEMA, 'profile': profile.PROFILE, 'nonce': nonce, 'report': report, 'outputs': []}
+        return json.dumps(value).encode('utf-8'), nonce
+
+    def test_host_exports_only_validated_controller_diagnostic(self):
+        diagnostic = {'phase': 'poll', 'code': 'input_deadline', 'completed_actions': 2}
+        raw, nonce = self._failed_envelope(diagnostic)
+        with self.assertRaises(profile.FormError) as context:
+            profile.validate_envelope(raw, nonce, {}, validator=lambda data, **kwargs: json.loads(data))
+        self.assertEqual(str(context.exception), 'form_native_failed')
+        self.assertEqual(context.exception.native_failure['controller_diagnostic'], diagnostic)
+
+    def test_host_refuses_unbounded_controller_diagnostic(self):
+        for diagnostic in ({'phase': 'poll', 'code': 'raw secret', 'completed_actions': 0},
+                           {'phase': 'poll', 'code': 'input_deadline', 'completed_actions': 0, 'title': 'raw'}):
+            with self.subTest(diagnostic=diagnostic):
+                raw, nonce = self._failed_envelope(diagnostic)
+                with self.assertRaisesRegex(profile.FormError, 'form_report_invalid'):
+                    profile.validate_envelope(raw, nonce, {}, validator=lambda data, **kwargs: json.loads(data))

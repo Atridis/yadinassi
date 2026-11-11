@@ -45,3 +45,23 @@ The stage publishes only fixed counts/booleans and bounded typed result codes.
 It exports no window text, PID, display credentials or arbitrary process output.
 Native success still requires review of the recorded semantics before a runtime
 claim. No workflow or native execution is enabled by this document alone.
+
+
+## Failed acquisition diagnostics
+
+The first eight-flow attempt reached Enterprise after Designer build and exact
+executable BSL redump verification, but exported no observations. Its closed
+report stated `enterprise/unexpected_failure`, with no valid entered/completed
+markers. That evidence does not identify the original controller exception and
+does not establish native input semantics. Module-level `Items` and unqualified
+`Title` were removed as managed-form context collisions: the packet now retains
+`ProbeItems` and explicitly declares a local `ProbeTitle`.
+
+Controller failures now export only a closed phase, fixed reason code and the
+number of completed owned actions (0–8). Unknown exceptions become
+`unexpected_exception`; operating-system errors become `os_error`, without their
+messages. The host validates the exact diagnostic shape before retaining it in a
+failed report. No window titles, process identifiers, file paths, arbitrary logs,
+credentials or input text are exported. These diagnostics do not relax the
+existing PID/session/start-time, display, focus, source or cleanup guards and do
+not turn an unsuccessful acquisition into observations.

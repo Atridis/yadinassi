@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import full_suite as full
+from value_input_packet import OWNERSHIP_REASONS, valid_controller_diagnostic
 
 MAX_WINDOWS = 512
 MAX_DEPTH = 8
@@ -24,6 +25,29 @@ PLANS = (('Control_L+a', 'e', 'd', 'i', 't', 'e', 'd', 'Return'),
 
 class OwnershipError(ValueError):
     pass
+
+
+class ControllerFailure(full.FullError):
+    """Closed evidence only; the original exception is never serialized."""
+    def __init__(self, error, phase, completed):
+        code = 'unexpected_exception'
+        kind = 'unexpected_failure'
+        if type(error) is OwnershipError:
+            reason = error.args[0] if len(error.args) == 1 else None
+            if type(reason) is str and reason in OWNERSHIP_REASONS:
+                code = reason.lower().replace(' ', '_')
+                kind = 'process_failed'
+        elif isinstance(error, OSError):
+            code = 'os_error'
+        elif isinstance(error, full.FullError):
+            code = 'runner_error'
+            kind = error.kind
+        diagnostic = {'phase': phase, 'code': code, 'completed_actions': completed}
+        if not valid_controller_diagnostic(diagnostic):
+            diagnostic = {'phase': 'preflight', 'code': 'unexpected_exception', 'completed_actions': 0}
+            kind = 'unexpected_failure'
+        self.diagnostic = diagnostic
+        super().__init__(kind)
 
 
 def process_identity(pid):
@@ -223,33 +247,40 @@ class Display:
             time.sleep(0.03)
 
 
-def run_owned(command, directory, log, nonce):
+def _run_owned(command, directory, log, nonce, state):
     if (os.name != 'posix' or not re.fullmatch('[0-9a-f]{32}',nonce)
             or directory != Path('/tmp/onec-smoke') / ('stage3-' + nonce)
             or command.count('/C') != 1 or command[command.index('/C')+1] != str(directory/'request.json')):
         raise full.FullError('invalid_input')
     full.absent(log)
     executable = Path(command[0]).resolve(strict=True)
+    state['phase'] = 'display'
     display = Display()
     completed = 0
     try:
+        state['phase'] = 'launch'
         with log.open('xb') as output, subprocess.Popen(command,cwd=directory,
                 stdin=subprocess.DEVNULL,stdout=output,stderr=subprocess.STDOUT,
                 start_new_session=True) as child:
             try:
+                state['phase'] = 'identity'
                 identity = process_identity(child.pid)
                 if identity[:2] != (child.pid,child.pid): raise OwnershipError('session identity')
                 deadline = time.monotonic() + 120
                 for _ in range(MAX_POLLS):
+                    state['phase'] = 'poll'
                     if child.poll() is not None: break
                     if time.monotonic() >= deadline: raise OwnershipError('input deadline')
                     if completed < len(PLANS):
                         title = (TITLES[completed]+nonce).encode('ascii')
                         window = display.find(title)
                         if window is not None:
+                            state['phase'] = 'drive'
                             display.drive(window,title,child.pid,identity,executable,PLANS[completed])
                             completed += 1
+                            state['completed'] = completed
                     time.sleep(0.05)
+                state['phase'] = 'exit'
                 if child.poll() is None or child.returncode != 0 or completed != 8:
                     raise OwnershipError('incomplete owned input execution')
                 # A normally exiting leader must not leave detached descendants.
@@ -261,8 +292,22 @@ def run_owned(command, directory, log, nonce):
                         raise OwnershipError('surviving input process')
                     time.sleep(0.02)
             except BaseException:
+                failed_phase = state['phase']
+                state['phase'] = 'process_cleanup'
                 full._stop_group(child)
+                state['phase'] = failed_phase
                 raise
     finally:
+        failed_phase = state['phase']
+        state['phase'] = 'display_cleanup'
         display.close()
+        state['phase'] = failed_phase
     return completed
+
+
+def run_owned(command, directory, log, nonce):
+    state = {'phase': 'preflight', 'completed': 0}
+    try:
+        return _run_owned(command, directory, log, nonce, state)
+    except Exception as error:
+        raise ControllerFailure(error, state['phase'], state['completed']) from None

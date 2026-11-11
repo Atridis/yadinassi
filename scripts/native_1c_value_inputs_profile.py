@@ -11,7 +11,7 @@ import shutil
 import sys
 import tempfile
 import uuid
-from value_input_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available
+from value_input_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available, valid_controller_diagnostic
 
 ROOT=Path(__file__).resolve().parents[1]
 PROFILE='managed-value_inputs-v1'
@@ -236,7 +236,7 @@ PHASES=('prerequisites','inputs','build','redump','enterprise','markers','final'
 FLAGS={'entered','completed','process_exited','quiet','witness_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','roundtrip_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','redump_projection','input_actions','input_ownership_verified'}
+    'input_sha256','output_size','record_count','controller_diagnostic','process_diagnostics','redump_projection','input_actions','input_ownership_verified'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -261,12 +261,16 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
         projection=stage['redump_projection'];require(projection is None)
+        diagnostic=stage['controller_diagnostic']
+        require(diagnostic is None or valid_controller_diagnostic(diagnostic))
+        require(diagnostic is None or stage['status']=='failed' and stage['failure_phase']=='enterprise')
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
             error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet')}
             if projection is not None:error.native_failure['redump_projection']=projection
+            if diagnostic is not None:error.native_failure['controller_diagnostic']=dict(diagnostic)
             raise error
         require(projection is None)
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')

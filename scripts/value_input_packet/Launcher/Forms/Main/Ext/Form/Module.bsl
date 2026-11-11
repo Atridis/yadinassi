@@ -1,6 +1,6 @@
 // Real owned input windows only; completion procedures are never called by the probe.
 &AtClient
-Var Flow, Shared, Calls, Returned, Identity, ValueMatch, Request, Records, Turns, Events, Items, ExpectedItem;
+Var Flow, Shared, Calls, Returned, Identity, ValueMatch, Request, Records, Turns, Events, ProbeItems, ExpectedItem;
 
 &AtClient
 Procedure OwnerOpen(Cancel)
@@ -17,6 +17,7 @@ EndProcedure
 
 &AtClient
 Procedure NextInput() Export
+ Var ProbeTitle;
  Flow = Flow + 1;
  If Flow > 8 Then
   Marker(Request.completed, "completed", Records);
@@ -24,21 +25,21 @@ Procedure NextInput() Export
  EndIf;
  Shared = New Structure("Seen", 0); Calls = 0; Turns = 0;
  Returned = "pending"; Identity = 0; ValueMatch = 0; Events = "start,";
- Title = "YADINASSI-VI0" + String(Flow) + "-" + Request.nonce;
+ ProbeTitle = "YADINASSI-VI0" + String(Flow) + "-" + Request.nonce;
  Callback = New CallbackDescription("InputDone", ThisObject, Shared);
  If Flow = 6 Or Flow = 7 Then
-  Items = New ValueList;
-  Items.Add("first", "First");
-  ExpectedItem = Items.Add("second", "Second");
-  Items.ShowChooseItem(Callback, Title, ExpectedItem);
+  ProbeItems = New ValueList;
+  ProbeItems.Add("first", "First");
+  ExpectedItem = ProbeItems.Add("second", "Second");
+  ProbeItems.ShowChooseItem(Callback, ProbeTitle, ExpectedItem);
  ElsIf Flow = 2 Then
-  ShowInputValue(Callback, 12.5, Title, Type("Number"));
+  ShowInputValue(Callback, 12.5, ProbeTitle, Type("Number"));
  ElsIf Flow = 3 Then
-  ShowInputValue(Callback, Date(2024, 2, 3, 4, 5, 6), Title, Type("Date"));
+  ShowInputValue(Callback, Date(2024, 2, 3, 4, 5, 6), ProbeTitle, Type("Date"));
  ElsIf Flow = 4 Then
-  ShowInputValue(Callback, True, Title, Type("Boolean"));
+  ShowInputValue(Callback, True, ProbeTitle, Type("Boolean"));
  Else
-  ShowInputValue(Callback, "seed", Title, Type("String"));
+  ShowInputValue(Callback, "seed", ProbeTitle, Type("String"));
  EndIf;
  Events = Events + "returned,";
  AttachIdleHandler("ObserveInput", 1, True);
@@ -75,7 +76,7 @@ Procedure ObserveInput() Export
  EndIf;
  Events = Events + "finish,";
  Records = Records + "VI" + String(Flow) + "=1;" + Returned + ";" + String(Shared.Seen) + ";" + String(Identity) + ";" + String(ValueMatch) + ";" + Events + "|";
- Items = Undefined; ExpectedItem = Undefined;
+ ProbeItems = Undefined; ExpectedItem = Undefined;
  AttachIdleHandler("NextInput", 1, True);
 EndProcedure
 

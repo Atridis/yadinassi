@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parent
 MAX_SOURCE = 16384
 MAX_OUTPUT = 4096
 COUNT = 8
-PACKET_HASHES = {'Launcher/Ext/ObjectModule.bsl': 'ce374bb1fcaa576083528b13c364059bb10cdd833534a73f66719b3fab5995fe', 'Launcher/Forms/Main/Ext/Form/Module.bsl': '73dfe578c67599b5ce1431c7a7860b611fc46356d64a1c1d254373c9fd6f162e', 'Launcher/Forms/Main/Ext/Form.xml': '06bb1943fcc9ab460baa9a143717b24e53f14d684ad8023c9f386b7a742d3de5', 'Launcher/Forms/Main.xml': 'b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2', 'Launcher.xml': '719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd'}
+PACKET_HASHES = {'Launcher/Ext/ObjectModule.bsl': 'ce374bb1fcaa576083528b13c364059bb10cdd833534a73f66719b3fab5995fe', 'Launcher/Forms/Main/Ext/Form/Module.bsl': '978ef2ab36713f2570891af6de925f12e326feb4af5ab2146801b07eb291c894', 'Launcher/Forms/Main/Ext/Form.xml': '06bb1943fcc9ab460baa9a143717b24e53f14d684ad8023c9f386b7a742d3de5', 'Launcher/Forms/Main.xml': 'b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2', 'Launcher.xml': '719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd'}
 SOURCE_SHA256 = hashlib.sha256(b''.join(p.encode()+b'\0'+bytes.fromhex(h) for p,h in sorted(PACKET_HASHES.items()))).hexdigest()
 FORM_SHA256 = hashlib.sha256(b''.join(p.encode()+b'\0'+bytes.fromhex(h) for p,h in sorted(PACKET_HASHES.items()) if p.endswith('.xml'))).hexdigest()
 
@@ -39,3 +39,27 @@ def parse_records(raw):
 def require_available(records):
     if type(records) is not tuple or len(records)!=COUNT:raise ValueError('incomplete observation')
     return records
+
+
+# The only controller details permitted in published acquisition failures.
+# Never publish arbitrary exception messages, titles, process IDs or paths.
+CONTROLLER_PHASES = frozenset(('preflight', 'display', 'launch', 'identity',
+    'poll', 'drive', 'exit', 'process_cleanup', 'display_cleanup'))
+OWNERSHIP_REASONS = (
+    'process identity', 'private display required', 'private authority required',
+    'private display unavailable', 'XTest unavailable', 'window changed',
+    'window property limit', 'window property shape', 'window tree limit',
+    'ambiguous owned window', 'owned window changed', 'window PID unavailable',
+    'window process mismatch', 'focus outside owned dialog', 'key unavailable',
+    'chord budget', 'key budget', 'key delivery failed', 'key release failed',
+    'session identity', 'input deadline', 'incomplete owned input execution',
+    'surviving input process')
+CONTROLLER_CODES = frozenset(reason.lower().replace(' ', '_') for reason in OWNERSHIP_REASONS) | frozenset((
+    'os_error', 'runner_error', 'unexpected_exception'))
+
+
+def valid_controller_diagnostic(value):
+    return (type(value) is dict and set(value) == {'phase', 'code', 'completed_actions'}
+        and type(value['phase']) is str and value['phase'] in CONTROLLER_PHASES
+        and type(value['code']) is str and value['code'] in CONTROLLER_CODES
+        and type(value['completed_actions']) is int and 0 <= value['completed_actions'] <= COUNT)
