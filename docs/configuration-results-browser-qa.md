@@ -59,3 +59,9 @@ private callback objects, paths, process IDs, environment values, raw errors,
 browser storage/profile, database files and native material are never artifacts.
 Review every screenshot along with the exact source-bound result before claiming
 visual acceptance. Preparing this route does not run tests or acquire a browser.
+
+Command assertions use the exact bounded response bytes already audited by the
+route, keyed to and compared with the delivered browser request. They do not
+read the same body again through CDP after delivery, when Chromium may have
+evicted it. This observer change does not retry RPCs, synthesize responses or
+replace the response with current DOM/application state.

@@ -156,6 +156,10 @@ const childTab=()=>tabs().getByRole('button',{name:'Choose result',exact:true});
 const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null,lastApplicationResult=null;
+// Keep the already audited real bytes until this exact delivered command is
+// observed. Chromium can evict a response body before a later CDP read; never
+// issue another RPC or substitute current UI state for that response.
+const observedCommands=new Map();
 async function command(title,control){
   report.commandStage='bind_session';
   const index=await panels().evaluateAll(nodes=>nodes.findIndex(node=>!node.hidden));
@@ -167,7 +171,10 @@ async function command(title,control){
     packet.params.request.params.control===control);
   report.commandStage='click';await action(title).click();
   report.commandStage='await_response';const response=await reply;
-  report.commandStage='read_response';const data=await response.json();
+  report.commandStage='read_response';const packet=response.request().postDataJSON();
+  const observed=observedCommands.get(packet.id);observedCommands.delete(packet.id);
+  assert.ok(observed,'audited_command_missing');
+  assert.deepEqual(observed.packet,packet,'audited_command_mismatch');const data=observed.actual;
   report.commandStage='verify_response';
   const errors=[null,'invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused','retired_session'];
   const safeError=code=>errors.includes(code)?code:'unexpected_protocol_code';
@@ -432,6 +439,10 @@ async function main(){
         const event=packet.method==='application.form'?packet.params.request.params:null;
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
         const actual=await auditResponse(response,packet);
+        if(event?.event==='command'){
+          assert.ok(observedCommands.size<96,'audited_command_budget');
+          observedCommands.set(packet.id,{packet,actual});
+        }
         if(dropNextClose&&event?.event==='command'&&event.control==='AcceptButton'){
           dropNextClose=false;
           assert.equal(actual.result.error,null,'dropped_application_failed');
@@ -516,7 +527,7 @@ async function main(){
     await closeForm();await countPanels(1);await closeForm();await countPanels(0);await naturalStop();report.naturalShutdown=true;
   });
   await scenario(scenarioNames[3],async()=>{
-    phase='results_fault_host_start';await startHost();await page.goto(url);await writer();await countPanels(1);
+    phase='results_fault_host_start';observedCommands.clear();await startHost();await page.goto(url);await writer();await countPanels(1);
     await openOwner();await countPanels(2);await field('Owner value').fill('  raw copy after loss  ');await ownerTabs().first().click();
     await choose();await countPanels(3);
     phase='results_drop_confirmed_close';dropNextClose=true;await action('Use value').click();

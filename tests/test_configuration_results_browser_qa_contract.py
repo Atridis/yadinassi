@@ -79,6 +79,10 @@ class ConfigurationResultsBrowserContractTests(unittest.TestCase):
 
     def test_real_delayed_accept_double_click_and_exact_result(self):
         self.contains("report.commandStage='bind_session'","report.commandStage='read_response'","report.commandStage='completed'","'response_body_unavailable'","'ambiguous_locator'")
+        self.contains('const actual=await auditResponse(response,packet)','observedCommands.set(packet.id,{packet,actual})',
+            "assert.deepEqual(observed.packet,packet,'audited_command_mismatch')",'observedCommands.delete(packet.id)',
+            "observedCommands.size<96,'audited_command_budget'",'observedCommands.clear();await startHost()')
+        self.assertNotIn('await response.json()',self.source)
         self.contains('await repeatClick(action(\'Use value\'))','control.click();control.click();',
             'delayed={arrived,wait}',"completion(actual.result,'Selected once')",'gate.arrived();await bounded(gate.wait',
             "'busy_accept_enabled'","'retirement_before_response_delivery'", "['Completion count: 1']", "'completion_count_or_additional_changed'")
