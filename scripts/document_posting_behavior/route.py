@@ -7,8 +7,8 @@ PROFILE='document-posting-observation-v1'
 SCHEMA='native-1c-document-posting-v1'
 STAGE_SCHEMA='native-1c-document-posting-stage-v1'
 COUNT=12
-MAX_OUTPUT=16384
-SOURCE_SHA256='405c94d686297f96488673f8d6bd8f7279b891d6ef6c0829744c4f316db0850d'
+MAX_OUTPUT=131072
+SOURCE_SHA256='b1e887188b65a77836578520e94c30cc92b34aac8d3fbda438e48819eec9401e'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')
@@ -19,6 +19,10 @@ def source():
 def program(setup,nonce):
     if type(nonce) is not str or re.fullmatch('[0-9a-f]{32}',nonce) is None:raise ValueError('nonce')
     prefix=('Procedure PostingEmit(N,V)\nMessage("POST|'+nonce+'|"+String(N)+"|"+V);\nEndProcedure\n').encode()
+    prefix+=('Procedure PostingDiagnostic(N,Stage,Details)\n'
+        'If StrLen(Details)>4096 Then Details=Left(Details,2048)+Right(Details,2048); EndIf;\n'
+        'Writer=New JSONWriter; Writer.SetString(); WriteJSON(Writer,Details); Encoded=Writer.Close();\n'
+        'Message("POST|'+nonce+'|error|"+String(N)+"|"+Stage+"|"+Encoded);\nEndProcedure\n').encode()
     body=source();marker=b'For CaseNo = 1 To 12 Do'
     if body.count(marker)!=1:raise ValueError('source body boundary')
     declarations,statements=body.split(marker)
@@ -76,3 +80,23 @@ def valid_failure_details(value):
             f[0] in ('TestModule','OwnedPostingDoc') and type(f[1]) is int and 1<=f[1]<=512 for f in value['frames']) and
         type(value['apis']) is list and len(value['apis'])<=len(ERROR_APIS) and all(type(a) is str and a in ERROR_APIS.values() for a in value['apis']) and
         type(value['codes']) is list and len(value['codes'])<=len(ERROR_CODES) and all(type(c) is str and c in ERROR_CODES for c in value['codes']))
+
+
+STAGES=('setup','seed','write','readback','query')
+def parse_attempt(raw,nonce):
+    if type(raw) is not bytes or not 0<len(raw)<=MAX_OUTPUT:raise ValueError('wire')
+    lines=raw.decode('utf-8').splitlines();prefix='POST|'+nonce+'|'
+    if len(lines)>40 or not lines or lines[0]!=prefix+'entered' or lines[-1]!=prefix+'completed':raise ValueError('markers')
+    observations=[];errors=[];last=0
+    for line in lines[1:-1]:
+        if line.startswith(prefix+'error|'):
+            parts=line[len(prefix+'error|'):].split('|',2)
+            if len(parts)!=3 or not parts[0].isdigit() or not 1<=int(parts[0])<=12 or parts[1] not in STAGES:raise ValueError('diagnostic')
+            text=json.loads(parts[2])
+            if type(text) is not str or len(text)>4096 or len(errors)>=24:raise ValueError('diagnostic')
+            errors.append((int(parts[0]),parts[1],text))
+        else:
+            parts=line[len(prefix):].split('|',1) if line.startswith(prefix) else []
+            if len(parts)!=2 or not parts[0].isdigit() or not last<int(parts[0])<=12:raise ValueError('order')
+            canonical([parts[1]]*12);last=int(parts[0]);observations.append([last,parts[1]])
+    return observations,errors

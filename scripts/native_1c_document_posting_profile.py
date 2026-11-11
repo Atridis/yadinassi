@@ -255,7 +255,7 @@ PHASES=('prerequisites','inputs','install','build','redump','enterprise','marker
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified'}
 HASH_FIELDS={'source_sha256','module_sha256','module_verified_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details'}
+    'input_sha256','output_size','record_count','process_diagnostics','redump_diagnostic','configuration_validation','native_error_category','native_error_details','partial_observations','case_diagnostics','incomplete'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -281,6 +281,18 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(fixture.valid_diagnostic(stage['redump_diagnostic']))
         require(stage['configuration_validation']==fixture.VALIDATION_MODE)
         require(stage['native_error_category'] in SMOKE.DIAGNOSTICS.CATEGORIES)
+        require(type(stage['incomplete']) is bool)
+        require(type(stage['partial_observations']) is list and len(stage['partial_observations'])<=12)
+        last=0
+        for observation in stage['partial_observations']:
+            require(type(observation) is list and len(observation)==2 and type(observation[0]) is int and last<observation[0]<=12)
+            route.canonical([observation[1]]*12);last=observation[0]
+        require(type(stage['case_diagnostics']) is list and len(stage['case_diagnostics'])<=24)
+        for diagnostic in stage['case_diagnostics']:
+            require(type(diagnostic) is dict and set(diagnostic)=={'case','stage','category','details','context'})
+            require(type(diagnostic['case']) is int and 1<=diagnostic['case']<=12 and diagnostic['stage'] in route.STAGES)
+            require(diagnostic['category'] in SMOKE.DIAGNOSTICS.CATEGORIES and route.valid_failure_details(diagnostic['details']))
+            SMOKE.DIAGNOSTICS.validate_rendered_context(diagnostic['context'],{'managed_marker':'error'})
         require(stage['native_error_details'] is None or route.valid_failure_details(stage['native_error_details']))
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
         if stage['status']!='ok':
@@ -305,7 +317,7 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(base64.b64encode(data).decode()==item['data_b64'])
         require(len(data)==item['size']==stage['output_size'] and FULL.digest(data)==item['sha256']==stage['output_sha256'])
         parse_output(data)
-        require(stage['record_count']==12)
+        require(stage['record_count']==12 and stage['incomplete'] is False and len(stage['partial_observations'])==12)
         return report,data
     except DocumentPostingError:raise
     except Exception:raise DocumentPostingError('document_posting_report_invalid') from None

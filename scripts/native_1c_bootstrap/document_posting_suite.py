@@ -16,7 +16,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        partial_observations=[],case_diagnostics=[],incomplete=True,native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -112,7 +112,16 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         messages,_=full.read_native_result(case/'result.json')
         raw=full.secure_bytes(output,route.MAX_OUTPUT)
         if raw!=full.serialize_messages(messages):raise full.FullError('output_mismatch')
-        values=route.parse_wire(raw,nonce);report['entered']=report['completed']=True
+        observations,errors=route.parse_attempt(raw,nonce)
+        report['entered']=True;report['partial_observations']=observations
+        for number,stage,text in errors:
+            details=route.failure_details({'messages':[],'error':text},nonce)
+            category=diagnostics.summarize_text(text)['category']
+            context=diagnostics.rendered_context(text,'managed_marker')
+            report['case_diagnostics'].append(dict(case=number,stage=stage,category=category,details=details,context=context))
+        report['incomplete']=len(observations)!=12
+        if report['incomplete']:raise full.FullError('invalid_result')
+        values=[v for _,v in observations];report['completed']=True
         if not report['quiet'] or report['process_diagnostics']['reason']!='none':raise full.FullError('process_failed')
         if full.secure_bytes(case/'src/TestModule/Ext/ObjectModule.bsl',route.MAX_OUTPUT+3)!=module:raise full.FullError('module_mismatch')
         report['module_verified_sha256']=full.digest(module)
@@ -141,7 +150,7 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
 def finish_report(report,nonce,root,*,quiet,bus_cleanup_failed):
     suite=empty_report(nonce);outputs=[]
     try:
-        suite=full.strict_json(full.secure_bytes(root.parent/'stage3-report.json',full.MAX_STAGE_REPORT))
+        suite=full.strict_json(full.secure_bytes(root.parent/'stage3-report.json',32768))
         if type(suite) is not dict or suite.get('schema')!=route.STAGE_SCHEMA or suite.get('profile')!=route.PROFILE or suite.get('nonce')!=nonce:
             raise full.FullError('invalid_result')
         if not quiet or bus_cleanup_failed:raise full.FullError('process_failed')
@@ -172,7 +181,7 @@ def main(args):
         report=run_suite(launcher,platform,launchers[0],run_stage.ROOT/('stage3-'+nonce),run_stage.INPUTS,nonce)
     except Exception:pass
     raw=json.dumps(report,sort_keys=True,separators=(',',':')).encode()
-    if len(raw)>full.MAX_STAGE_REPORT:return 1
+    if len(raw)>32768:return 1
     with (run_stage.ROOT/'stage3-report.json').open('xb') as stream:stream.write(raw)
     return 0 if report['status']=='ok' else 1
 

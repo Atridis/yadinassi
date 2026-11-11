@@ -131,3 +131,22 @@ class PostingAcquisitionTests(unittest.TestCase):
         value=route.failure_details({'messages':[],'error':''},'a'*32)
         value['apis']=['arbitrary'];self.assertFalse(route.valid_failure_details(value))
         with self.assertRaises(ValueError):route.failure_details({'messages':[],'error':'x'*16385},'a'*32)
+    def test_partial_cases_retained_with_setup_failure(self):
+        p='POST|'+'a'*32+'|'
+        raw=(p+'entered\n'+p+'1|0|0|0,0|before:0;\n'+p+'error|4|seed|"private error"\n'+p+'completed\n').encode()
+        observations,errors=route.parse_attempt(raw,'a'*32)
+        self.assertEqual(observations,[[1,'0|0|0,0|before:0;']]);self.assertEqual(errors,[(4,'seed','private error')])
+    def test_case_diagnostic_json_cannot_inject_protocol_lines(self):
+        p='POST|'+'a'*32+'|'
+        raw=(p+'entered\n'+p+'error|4|seed|'+json.dumps('line1\nline2')+'\n'+p+'completed\n').encode()
+        observations,errors=route.parse_attempt(raw,'a'*32)
+        self.assertEqual(observations,[]);self.assertEqual(errors[0][2],'line1\nline2')
+    def test_all_case_observations_remain_ordered(self):
+        observations,errors=route.parse_attempt(self.wire(),'a'*32)
+        self.assertEqual(len(observations),12);self.assertEqual(errors,[])
+        with self.assertRaises(ValueError):route.parse_attempt(self.wire().replace(b'|2|0|',b'|1|0|'),'a'*32)
+    def test_observer_uses_detailed_error_and_distinct_phases(self):
+        source=route.source().decode()
+        for stage in ('setup','seed','write','readback','query'):self.assertIn('"'+stage+'"',source)
+        self.assertIn('DetailedErrorDescription(ErrorInfo())',source)
+        self.assertIn('If OuterTransaction Then RollbackTransaction()',source)
