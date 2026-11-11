@@ -117,3 +117,17 @@ class PostingAcquisitionTests(unittest.TestCase):
         source=(ROOT/'scripts/native_1c_bootstrap/document_posting_suite.py').read_text()
         self.assertIn("diagnostics.summarize_text(result['error'])['category']",source)
         self.assertNotIn("report['native_error_text']",source)
+    def test_failure_diagnostic_reports_only_owned_frames_and_progress(self):
+        value=route.failure_details({'messages':['POST|'+'a'*32+'|entered','POST|'+'a'*32+'|1|x'],
+            'error':'{Обработка.TestModule.МодульОбъекта(19)} Ошибка при вызове метода контекста (Execute) Ошибка в запросе'},'a'*32)
+        self.assertEqual(value['frames'],[['TestModule',19]])
+        self.assertEqual(value['apis'],['execute']);self.assertEqual(value['cases'],1)
+        self.assertIn('query',value['codes']);self.assertTrue(route.valid_failure_details(value))
+    def test_failure_diagnostic_never_exports_arbitrary_error(self):
+        value=route.failure_details({'messages':[],'error':'private-secret /private/path {OtherModule(12)} (UnknownAPI)'},'a'*32)
+        self.assertNotIn('private',str(value));self.assertEqual(value['frames'],[])
+        self.assertEqual(value['apis'],[]);self.assertTrue(route.valid_failure_details(value))
+    def test_failure_diagnostic_limits_reject_unknown_values(self):
+        value=route.failure_details({'messages':[],'error':''},'a'*32)
+        value['apis']=['arbitrary'];self.assertFalse(route.valid_failure_details(value))
+        with self.assertRaises(ValueError):route.failure_details({'messages':[],'error':'x'*16385},'a'*32)

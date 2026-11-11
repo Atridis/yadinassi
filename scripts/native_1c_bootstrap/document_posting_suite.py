@@ -16,7 +16,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
+        native_error_details=None,native_error_category="none",configuration_validation=fixture.VALIDATION_MODE,redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -129,6 +129,7 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
                 result=full.strict_json(full.secure_bytes(root/'case/result.json',full.MAX_RESULT))
                 if type(result) is dict and type(result.get('error')) is str and len(result['error'])<=16384:
                     report['native_error_category']=diagnostics.summarize_text(result['error'])['category']
+                    report['native_error_details']=route.failure_details(result,nonce)
             except Exception:pass
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
