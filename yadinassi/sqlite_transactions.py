@@ -12,7 +12,7 @@ from .sqlite_registers import RegisterView
 MAX_OPERATIONS = 256
 MAX_BYTES = 16 * 1024 * 1024
 KINDS = ('catalog_create','catalog_update','document_create','document_update',
-         'register_write','register_delete','register_set','recorder_replace','document_set_posted')
+         'register_write','register_delete','register_set','recorder_replace','accumulation_replace','document_set_posted')
 
 
 def _storage():
@@ -34,20 +34,34 @@ def _recorder_port(view):
     return RecorderMovementPort(view._connection,view.database_id,view.configuration_generation,schemas)
 
 
+def _accumulation_port(view):
+    # Separate canonical source profile, never inferred from table existence.
+    schemas=getattr(view._backend,'_accumulation_schemas',None)
+    if type(schemas) is not tuple or not schemas:raise BackendError('unsupported')
+    from .sqlite_accumulation_movements import AccumulationMovementPort
+    return AccumulationMovementPort(view._connection,view.database_id,view.configuration_generation,schemas,
+                                    active_only=True)
+
+
+def _posting_port(view):
+    return _accumulation_port(view) if view._backend.format_version==14 else _recorder_port(view)
+
+
 def _describe(view, request):
     if type(request) is not TransactionRequest or request.kind not in KINDS:
         raise BackendError('invalid_input')
     kind,draft,expected = request.kind,request.draft,request.expected
     if kind=='document_set_posted':
         if expected is not None:raise BackendError('invalid_input')
-        port=_recorder_port(view)
+        port=_posting_port(view)
         from .sqlite_document_posting_state import describe_posted
         described=describe_posted(view.database_id,view.configuration_generation,draft)
         if draft.recorder.document_id not in {d for schema in port.schemas.values() for d in schema.recorder_documents}:raise BackendError('unsupported')
         return described
-    if kind=='recorder_replace':
+    if kind in ('recorder_replace','accumulation_replace'):
         if expected is not None:raise BackendError('invalid_input')
-        return _recorder_port(view).describe(draft)
+        port=_recorder_port(view) if kind=='recorder_replace' else _accumulation_port(view)
+        return port.describe(draft)
     if kind.endswith('_create') and expected is not None: raise BackendError('invalid_input')
     if kind.endswith('_update') and expected is None: raise BackendError('invalid_input')
     if kind.startswith('catalog_'):
@@ -106,7 +120,7 @@ class UnitOfWork:
         if len(self._requests) >= MAX_OPERATIONS: raise BackendError('unsupported')
         view = self._view
         digest,size,identity = _describe(view,request)
-        if identity in self._identities and request.kind!='recorder_replace': raise BackendError('unsupported')
+        if identity in self._identities and request.kind not in ('recorder_replace','accumulation_replace'): raise BackendError('unsupported')
         if self._bytes + size > MAX_BYTES: raise BackendError('unsupported')
         index = len(self._requests); child = _child(self.operation_id,index)
         kind,draft,expected = request.kind,request.draft,request.expected
@@ -115,6 +129,7 @@ class UnitOfWork:
         if view._backend.storage_version >= 7: tables.append('document_commit_receipt')
         if view._backend.storage_version >= 8: tables.append('information_register_receipt')
         if getattr(view._backend,'_recorder_schemas',None):tables.extend(('recorder_movement_receipt','document_posting_receipt'))
+        if getattr(view._backend,'_accumulation_schemas',None):tables.extend(('accumulation_movement_receipt','document_posting_receipt'))
         if any(view._connection.execute('SELECT 1 FROM '+table+' WHERE operation_id=?',(str(child),)).fetchone() for table in tables): raise BackendError('conflict')
         # Outer savepoint includes child receipt, state allocation and every
         # underlying mutation; failed staging never leaves a receipt orphan.
@@ -145,6 +160,9 @@ class UnitOfWork:
             elif kind=='recorder_replace':
                 result=_recorder_port(view).replace(child,draft)
                 bound,payload=view._connection.execute('SELECT request_hash,outcome_json FROM recorder_movement_receipt WHERE operation_id=?',(str(child),)).fetchone()
+            elif kind=='accumulation_replace':
+                result=_accumulation_port(view).replace(child,draft)
+                bound,payload=view._connection.execute('SELECT request_hash,outcome_json FROM accumulation_movement_receipt WHERE operation_id=?',(str(child),)).fetchone()
             else:
                 port = RegisterView(view)
                 if kind == 'register_set': port.write_set(draft)
@@ -178,12 +196,15 @@ class UnitOfWork:
         finally:self._savepoint_depth-=1
 
     def read_document_posted(self,key):
-        self._open();_recorder_port(self._view)
+        self._open();_posting_port(self._view)
         from .sqlite_document_posting_state import read_posted
         return read_posted(self._view._connection,self._view.database_id,key)
 
     def read_recorder(self,register_id,key):
         self._open();return _recorder_port(self._view).read(register_id,key)
+
+    def read_accumulation(self,register_id,key):
+        self._open();return _accumulation_port(self._view).read(register_id,key)
 
     def read_catalog(self, key):
         self._open(); return self._view.read_catalog(key)
@@ -248,7 +269,7 @@ def resolve(backend, operation, requests):
         if type(bindings) is not list or len(bindings) != len(requests): raise BackendError('conflict')
         for index,request in enumerate(requests):
             digest,size,identity = _describe(view,request); total += size
-            if (identity in identities and request.kind!='recorder_replace') or total > MAX_BYTES: raise BackendError('invalid_input')
+            if (identity in identities and request.kind not in ('recorder_replace','accumulation_replace')) or total > MAX_BYTES: raise BackendError('invalid_input')
             identities.add(identity)
             entry = bindings[index]
             if type(entry) is not list or len(entry) != 5 or any(type(x) is not str for x in entry): raise BackendError('integrity')
@@ -265,6 +286,9 @@ def resolve(backend, operation, requests):
             elif request.kind=='recorder_replace':
                 _recorder_port(view)
                 exists=view._connection.execute('SELECT 1 FROM recorder_movement_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
+            elif request.kind=='accumulation_replace':
+                _accumulation_port(view)
+                exists=view._connection.execute('SELECT 1 FROM accumulation_movement_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             else:
                 exists = view._connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             if not exists: raise BackendError('integrity')
@@ -295,6 +319,10 @@ def resolve(backend, operation, requests):
             borrowed=backend.begin_read()
             try:result=_recorder_port(borrowed).resolve(child,draft)
             finally:borrowed.close()
+        elif kind=='accumulation_replace':
+            borrowed=backend.begin_read()
+            try:result=_accumulation_port(borrowed).resolve(child,draft)
+            finally:borrowed.close()
         elif kind == 'register_set': result = backend.resolve_register_set(child,draft)
         else: result = backend.resolve_register_write(child,draft,expected,kind == 'register_delete')
         if result is None: raise BackendError('integrity')
@@ -302,5 +330,5 @@ def resolve(backend, operation, requests):
     return tuple(results)
 
 
-for _method in ('stage','read_catalog','read_document','read_register','read_document_posted','read_recorder','commit'):
+for _method in ('stage','read_catalog','read_document','read_register','read_document_posted','read_recorder','read_accumulation','commit'):
     setattr(UnitOfWork,_method,_storage()._boundary(getattr(UnitOfWork,_method)))

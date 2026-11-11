@@ -61,8 +61,10 @@ class BSLDocuments(BSLObject):
         backend = self._context.backend
         from .sqlite_catalog import SQLiteCatalogBackend
         if type(backend) is not SQLiteCatalogBackend: return None
-        configuration = backend.posting_configuration
-        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration): return None
+        from .configuration_accumulation import AccumulationConfiguration
+        configuration = backend.accumulation_configuration
+        if configuration is None: configuration = backend.posting_configuration
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration): return None
         if self._posting_runtime is None:
             from .document_posting import PostingRuntime
             self._posting_runtime = PostingRuntime(self, configuration)

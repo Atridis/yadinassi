@@ -317,12 +317,13 @@ class _Parser:
         if self.peek() != '.':
             alias = self.take('name') if self.accept('as') else family
             return Source(family, alias, temporary=True)
-        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ', 'informationregister', 'регистрсведений'):
+        if family.casefold() not in ('catalog', 'справочник', 'document', 'документ', 'informationregister', 'регистрсведений', 'accumulationregister', 'регистрнакопления'):
             raise ValueError('Unsupported query source family')
         self.take('.')
         catalog = self.take('name')
         section = self.take('name') if self.accept('.') else None
         source_family = ('document' if family.casefold() in ('document', 'документ') else
+                         'accumulation_register' if family.casefold() in ('accumulationregister', 'регистрнакопления') else
                          'information_register' if family.casefold() in ('informationregister', 'регистрсведений') else 'catalog')
         boundary = None
         if source_family == 'information_register' and section is not None:
@@ -330,6 +331,17 @@ class _Parser:
             if section.casefold() not in names: raise ValueError('Unsupported information-register virtual source')
             section=names[section.casefold()]
             self.take('('); self.take('&'); boundary=Parameter(self.take('name')); self.take(')')
+        if source_family == 'accumulation_register' and section is not None:
+            names = {'balance': 'balance', 'остатки': 'balance',
+                     'turnovers': 'turnovers', 'обороты': 'turnovers'}
+            if section.casefold() not in names:
+                raise ValueError('Unsupported accumulation-register virtual source')
+            section = names[section.casefold()]
+            self.take('('); self.take('&'); start = Parameter(self.take('name'))
+            boundary = (start,)
+            if section == 'turnovers':
+                self.take(','); self.take('&'); boundary += (Parameter(self.take('name')),)
+            self.take(')')
         alias = self.take('name') if self.accept('as') else (section or catalog)
         return Source(catalog, alias, section, family=source_family, period_boundary=boundary)
 

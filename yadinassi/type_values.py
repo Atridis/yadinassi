@@ -54,6 +54,7 @@ from .type_qualifiers import (
     BSLDateQualifiers, BSLNumberQualifiers, BSLStringQualifiers,
 )
 from .values import BSLArray, BSLFixedArray, BSLNull, BSLType
+from .accumulation_movements import AccumulationDirection
 from .value_trees import (BSLValueTree, BSLValueTreeColumnCollection, BSLValueTreeColumn,
                           BSLValueTreeRow, BSLValueTreeRowCollection)
 from .value_tables import (BSLValueTable, BSLValueTableColumnCollection,
@@ -67,6 +68,7 @@ from .callbacks import BSLCallbackDescription
 
 
 _VALUE_TYPES = (
+    (AccumulationDirection, BSLType.ACCUMULATION_RECORD_TYPE, "AccumulationRecordType"),
     (BSLOpenSSLSecureConnection, BSLType.OPENSSL_SECURE_CONNECTION, "OpenSSLSecureConnection"),
     (BSLFileCertificationAuthorityCertificates, BSLType.FILE_CA_CERTIFICATES, "FileCertificationAuthorityCertificates"),
     (BSLOSCertificationAuthorityCertificates, BSLType.OS_CA_CERTIFICATES, "OSCertificationAuthorityCertificates"),

@@ -3,6 +3,7 @@
 An await always suspends, even for scalars and settled promises. Only the host
 execution boundary pumps the FIFO; calling a routine never pumps other tasks.
 """
+import builtins
 from collections import deque
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -26,6 +27,70 @@ class ExecutionContext:
 @dataclass(frozen=True)
 class AwaitRequest:
     value: Any
+
+
+@dataclass(frozen=True)
+class _HostFault:
+    """Traceback-free failure value. Every host/Await delivery gets a new error.
+
+    Never store exception instances, arbitrary exception attributes or mutable
+    argument payloads: these can own caller frames even after task cleanup.
+    """
+    kind: type
+    args: tuple
+    cause: object = None
+    context: object = None
+    suppress_context: bool = False
+    notes: tuple = ()
+
+    @classmethod
+    def capture(cls, error, seen=()):
+        if type(error) is cls:
+            return error
+        def argument(value, depth=0):
+            if type(value) in (str, bytes, int, float, bool, type(None)):
+                return value
+            if type(value) is tuple and depth < 8:
+                return tuple(argument(item, depth + 1) for item in value)
+            # Do not invoke an arbitrary host object's repr/str on cleanup.
+            return '<host argument: ' + type.__getattribute__(type(value), '__name__') + '>'
+        seen = (*seen, id(error))
+        def chain(item):
+            return (None if item is None or id(item) in seen or len(seen) >= 8
+                    else cls.capture(item, seen))
+        # Direct base descriptors bypass subclass getattribute/property hooks.
+        attributes = BaseException.__dict__['__dict__'].__get__(error)
+        notes = attributes.get('__notes__', ())
+        return cls(type(error), tuple(argument(arg) for arg in BaseException.args.__get__(error)),
+                   chain(BaseException.__cause__.__get__(error)),
+                   chain(BaseException.__context__.__get__(error)),
+                   BaseException.__suppress_context__.__get__(error),
+                   tuple(note for note in notes if type(note) is str)
+                   if type(notes) in (tuple, list) else ())
+
+    def deliver(self):
+        # Bypass custom __init__/__new__/copy/reduce callbacks. Specialized
+        # builtin exceptions (e.g. OSError) require their own C allocator.
+        name = type.__getattribute__(self.kind, '__name__')
+        if getattr(builtins, name, None) is self.kind:
+            try:
+                error = self.kind(*self.args)
+            except (TypeError, ValueError):
+                # Sanitized payloads may not satisfy a specialized allocator
+                # (e.g. ExceptionGroup's list of child exception objects).
+                error = RuntimeError(name, *self.args)
+        else:
+            try:
+                error = BaseException.__new__(self.kind, *self.args)
+            except TypeError:
+                error = RuntimeError(name, *self.args)
+        BaseException.args.__set__(error, self.args if type(error) is self.kind else (name, *self.args))
+        BaseException.__cause__.__set__(error, None if self.cause is None else self.cause.deliver())
+        BaseException.__context__.__set__(error, None if self.context is None else self.context.deliver())
+        BaseException.__suppress_context__.__set__(error, self.suppress_context)
+        if self.notes:
+            BaseException.__dict__['__dict__'].__get__(error)['__notes__'] = list(self.notes)
+        return error
 
 
 class Promise:
@@ -53,7 +118,7 @@ class Promise:
 
     @property
     def result(self):
-        return self._result
+        return self._result.deliver() if self._state == 'failed' else self._result
 
 
 @dataclass(eq=False)
@@ -112,6 +177,8 @@ class Scheduler:
     def _settle(self, promise, state, value):
         if promise.state != 'pending':
             return
+        if state == 'failed':
+            value = _HostFault.capture(value)
         if state == 'rejected':
             # BSL source diagnostics live in the error/info snapshot, not in
             # Python frames. Reusing a rejection must not retain prior tasks.
@@ -149,7 +216,7 @@ class Scheduler:
                     return
                 cursor = cursor._adopting
             promise._adopting = value
-            self._listen(value, lambda source: self._settle(promise, source.state, source.result))
+            self._listen(value, lambda source: self._settle(promise, source.state, source._result))
         else:
             self._settle(promise, 'fulfilled', value)
 
@@ -207,7 +274,7 @@ class Scheduler:
             return
         with self._scope(task):
             try:
-                if isinstance(error, BSLRuntimeError):
+                if issubclass(type(error), BSLRuntimeError):
                     # A promise can be awaited repeatedly. Python appends a
                     # new delivery traceback to the same exception otherwise.
                     error.__traceback__ = None

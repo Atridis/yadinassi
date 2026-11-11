@@ -35,7 +35,8 @@ S=Catalogs.Products.Select();N=0;While S.Next() Do N=N+1;EndDo;Message(N);'''),[
         self.assertEqual(self.execute('''P=Catalogs.Products.CreateItem();P.Code="10";P.Write();A=P.Ref.GetObject();B=P.Ref.GetObject();A.Text="first";A.Write();B.Text="stale";
 Try B.Write();Except Message("conflict");EndTry;Message(B.Text);Message(P.Ref.Text);'''),['conflict','stale','first'])
     def test_documents_registers_and_object_codec_not_falsely_admitted(self):
-        for code in ('Message(Metadata.Documents.Count());','Message(Metadata.InformationRegisters.Count());',
+        self.assertEqual(self.execute('Message(Metadata.Documents.Count());Message(Metadata.InformationRegisters.Count());'),['0','0'])
+        for code in ('Documents.Orders.CreateDocument();','InformationRegisters.Rows.CreateRecordSet();',
                      'P=Catalogs.Products.CreateItem();Message(ValueToStringInternal(P));'):
             with self.subTest(code=code),self.assertRaises(Exception):self.execute(code)
 

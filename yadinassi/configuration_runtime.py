@@ -345,6 +345,7 @@ class ConfigurationApplication:
         interpreter._require_family()
         interpreter._configuration_runtime = self
         interpreter._metadata._common_modules = self._metadata
+        interpreter._metadata._configuration_name = self.configuration.name
         interpreter.user_messages._before_publish = self.check_messages
 
     def check_messages(self):

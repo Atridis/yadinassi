@@ -67,11 +67,9 @@ class CatalogMetadataRuntimeTests(unittest.TestCase):
                     'Metadata.Catalogs[Истина]', 'Metadata.Catalogs["Absent"]',
                     'Metadata.Catalogs.DifferentCatalog.Name = "Changed";',
                     'Metadata.Catalogs[0] = Undefined;', 'Metadata.Catalogs = Undefined;',
-                    'Metadata.Catalogs.DifferentCatalog.Attributes',
                     'Metadata.Catalogs.DifferentCatalog.FullName(1)',
                     'String(Metadata)', 'String(Metadata.Catalogs)',
-                    'String(Metadata.Catalogs[0])',
-                    'Для Каждого X Из Metadata.Catalogs Цикл КонецЦикла;')
+                    'String(Metadata.Catalogs[0])')
         for text in failures:
             with self.subTest(text=text), self.assertRaises(BSLRuntimeError): runtime.execute(text)
         self.assertEqual(runtime.execute('Metadata.Catalogs[0].Name'), 'DifferentCatalog')

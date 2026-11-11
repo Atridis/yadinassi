@@ -314,3 +314,15 @@ Preact 11.1.1 (https://preactjs.com/), MIT, bundled optional catalog renderer.
 Complete license: yadinassi/ui/assets/catalog/LICENSE.txt and frontend/catalog/PREACT-LICENSE.txt.
 Build tool esbuild 0.28.2 is not a runtime dependency; its license is retained
 in frontend/catalog/ESBUILD-LICENSE.txt.
+
+
+Native accumulation-register XML from vanessa-opensource/add and its contributors.
+Upstream commit: 2deeed6636dfbb84f42ae625fd40c8ab662bb64e.
+License: MPL-2.0, applies to the two copied XML files and their modified XML
+derivative scripts/accumulation_register_behavior/AccumulationRegister.xml.
+Complete original license, sources, provenance and modification notice:
+scripts/accumulation_register_behavior/public_source/vanessa_add/.
+Reproducible source-only adaptation: scripts/accumulation_register_behavior/native_source.py.
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, you can obtain
+one at https://mozilla.org/MPL/2.0/.
