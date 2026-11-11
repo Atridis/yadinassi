@@ -92,6 +92,11 @@ class InventoryPeriodPreparationTests(unittest.TestCase):
         source=route.source().split(b'ElsIf CaseNo=14 Then')[1]
         self.assertIn(b'Date(9999,12,31,23,59,59)',source)
         self.assertNotIn(b'EndAt+1',source)
+        self.assertIn(b'ExtremeWrite="refused"',source)
+        self.assertIn(b'ExtremeWrite="accepted"',source)
+        self.assertIn(b'Stage="control_write"',source)
+        self.assertEqual(source.count(b'query-refused'),3)
+        self.assertLess(source.index(b'RollbackTransaction()'),source.index(b'Stage="control_write"'))
     def test_case13_has_transaction_rollback(self):
         source=route.source().split(b'ElsIf CaseNo=13 Then')[1].split(b'ElsIf CaseNo=14 Then')[0]
         self.assertIn(b'BeginTransaction()',source)

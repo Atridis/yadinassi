@@ -84,8 +84,18 @@ Function ObserveCase(CaseNo,Stage)
         Try P2=Item("q"+Code); D=Move(Code,P2,W,StartAt,5,10); Inside=Statement(P2,StartAt,EndAt); RollbackTransaction(); Except RollbackTransaction(); Raise; EndTry;
         Stage="query"; Return Inside+"|"+Statement(P2,StartAt,EndAt);
     ElsIf CaseNo=14 Then
-        StartAt=Date(9999,12,31); EndAt=Date(9999,12,31,23,59,59); D=Move(Code,P,W,EndAt,5,10);
-        Stage="query"; Return Statement(P,StartAt,EndAt)+"|"+Statement(P,StartAt,EndAt,"Day")+"|"+Statement(P,StartAt,EndAt,"Month");
+        StartAt=Date(9999,12,31); EndAt=Date(9999,12,31,23,59,59);
+        // This older writer boundary is observed, not granted by the new query.
+        // Roll back either outcome so query-only probes have identical input.
+        BeginTransaction(); ExtremeWrite="refused";
+        Try D=Move(Code,P,W,EndAt,5,10); ExtremeWrite="accepted"; Except EndTry;
+        RollbackTransaction();
+        Stage="control_write"; D=Move("carry"+Code,P,W,Date(2024,1,1),5,10);
+        Stage="query";
+        Try Plain=Statement(P,StartAt,EndAt); Except Plain="query-refused"; EndTry;
+        Try Days=Statement(P,StartAt,EndAt,"Day"); Except Days="query-refused"; EndTry;
+        Try Months=Statement(P,StartAt,EndAt,"Month"); Except Months="query-refused"; EndTry;
+        Return "write:"+ExtremeWrite+"|"+Plain+"|"+Days+"|"+Months;
     EndIf;
     Stage="query"; Return Statement(P,StartAt,EndAt);
 EndFunction

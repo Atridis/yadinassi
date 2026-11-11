@@ -26,3 +26,18 @@ or alternate image path. The copied isolation harness keeps the pinned image,
 non-root networkless container, no host database, exact source/host/runtime
 binding, install + UpdateDBCfg + material redump, bounded output and process /
 container cleanup gates. Publishing the branch alone does not trigger capture.
+
+## Boundary clarification after the first acquisition
+
+Run 43052158206 verified material installation and cleanup and retained groups
+1–13 as partial observations, but group14 failed in the older document Write
+before its query ran. Its bounded diagnostic identifies the Write API and native
+error frame; the raw error text was not retained. It does not establish a general
+year cutoff. The full capture was not accepted and is not a parity golden.
+
+The corrected group14 observes extreme Write as a caught result in a transaction
+that is always rolled back, checks an ordinary-date control write, and separately
+records plain/Day/Month query-only outcomes at the maximum host Date. Query refusal
+is an observation, not missing output. Existing writer semantics are not expanded
+or silently tightened by this new query block. Runtime replay must distinguish
+that independent writer observation from the new virtual-table parity scope.

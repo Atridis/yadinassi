@@ -8,7 +8,7 @@ SCHEMA='native-1c-inventory-period-v1'
 STAGE_SCHEMA='native-1c-inventory-period-stage-v1'
 COUNT=14
 MAX_OUTPUT=131072
-SOURCE_SHA256='035693778851cab5fb3ca53542df24fb1f9cb4d35ff8fcbc94abddb2c318b4e5'
+SOURCE_SHA256='0fd878e042ad033b8bd3cc9919f9301757e1808e93a9660bd83710441f1629fc'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')
