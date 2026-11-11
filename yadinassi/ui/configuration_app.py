@@ -52,10 +52,14 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False):
-    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects)) > 1:
+def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False):
+    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application)) > 1:
         raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
+    if business_application:
+        from ..configuration_business_profile import import_business_configuration
+        imported = import_business_configuration(files)
+        return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents)
     if application_host:
         if catalog_objects:
             raise ValueError('application host is a separate explicit profile')
@@ -78,16 +82,20 @@ def _definitions(configuration):
             enumerate(sorted(configuration.forms.items()), 1)}
 
 
-def _runtime(configuration, side, **kwargs):
+def _runtime(configuration, side, *, business_application=False, **kwargs):
     from ..configuration_application_profile import import_application_configuration
     from ..configuration_runtime import ConfigurationApplication
-    return ConfigurationApplication(import_application_configuration(dict(configuration.source_files)),
-                                    side=side, **kwargs)
+    if business_application:
+        from ..configuration_business_profile import import_business_configuration
+        imported = import_business_configuration(dict(configuration.source_files))
+    else:
+        imported = import_application_configuration(dict(configuration.source_files))
+    return ConfigurationApplication(imported, side=side, **kwargs)
 
 
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False):
         self.configuration = configuration
         self.definitions = _definitions(configuration)
         self.database = database
@@ -102,12 +110,12 @@ class ConfigurationBroker:
         self.record_context = None
         self.application = None
         self.application_invocation = None
-        if application_host:
+        if application_host or business_application:
             if bind_interpreter is not None:
                 raise ValueError('application owns its interpreter family')
             context = None if database is None else SQLiteDBContext(database)
             try:
-                self.application = _runtime(configuration, 'server', database_context=context, output=lambda value: None)
+                self.application = _runtime(configuration, 'server', business_application=business_application, database_context=context, output=lambda value: None)
                 self.record_context = context
                 if self.application.server_endpoints:
                     self.application_invocation = InvocationServer.from_handlers(
@@ -342,7 +350,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -354,17 +362,19 @@ class ConfigurationProcess(FormProcess):
             command += ['--catalog-objects']
         if application_host:
             command += ['--application-host']
+        if business_application:
+            command += ['--business-application']
         if document_objects:
             command += ['--document-objects']
         self._start(command, environment)
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False, document_objects=False):
+                  application_host=False, document_objects=False, business_application=False):
     broker = None
     try:
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host, document_objects=document_objects), database, application_host=application_host)
+            application_host=application_host, document_objects=document_objects, business_application=business_application), database, application_host=application_host, business_application=business_application)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -394,7 +404,7 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
 class ConfigurationController:
     """Several forms, one serialized application queue; no nested event dispatch."""
     def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None,
-                 application_host=False):
+                 application_host=False, business_application=False):
         self.configuration = configuration
         self.definitions = _definitions(configuration)
         self.names = {definition.name.casefold(): entry for entry, definition in self.definitions.items()}
@@ -414,11 +424,11 @@ class ConfigurationController:
         self.application = None
         self.application_messages = []
         self._dispatch_active = False
-        if application_host:
+        if application_host or business_application:
             if bind_interpreter is not None:
                 raise ValueError('application owns its interpreter family')
             service = HostFunction('OpenForm', self._application_open_form, returns_value=False)
-            self.application = _runtime(configuration, 'client', output=self._application_message,
+            self.application = _runtime(configuration, 'client', business_application=business_application, output=self._application_message,
                 host_services={'OpenForm': service, 'ОткрытьФорму': service},
                 server_exchange=lambda raw: encode_line(self._call('applicationInvoke', payload=decode_line(raw))))
 
@@ -787,23 +797,24 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
     parser.add_argument('--document-objects', action='store_true', help='Explicit non-posting document Object forms with bounded sections')
+    parser.add_argument('--business-application', action='store_true', help='Explicit mixed catalog/document application profile')
     parser.add_argument('--application-host', action='store_true', help='Explicit application/CommonModules and declared forms profile')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if sum((args.catalog_objects, args.application_host, args.document_objects)) > 1:
+    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application)) > 1:
         parser.error('choose one explicit configuration source profile')
-    if args.document_objects and args.f is None:
-        parser.error('--document-objects requires --f with an existing explicitly created database')
+    if (args.document_objects or args.business_application) and args.f is None:
+        parser.error('document applications require --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
     process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
-        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects)
-        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
+        process = ConfigurationProcess(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
-            browser_session=args.browser_session or args.application_host or args.document_objects, idle_close=controller.idle_close)
+            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:
