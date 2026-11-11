@@ -82,7 +82,10 @@ def manager(documents, source, parameters):
     if len(matches) != 1:
         raise ValueError('Unknown accumulation-register source')
     _boundaries(source, parameters)  # Validate before opening a read lease.
-    return AccumulationQueryManager(documents, matches[0])
+    from .accumulation_query_conditions import bind_condition
+    result = AccumulationQueryManager(documents, matches[0])
+    result.condition = bind_condition(result, source, parameters)
+    return result
 
 
 def field(manager, expression, source):
@@ -164,6 +167,16 @@ def load(manager, columns, view, budget, source, parameters):
     boundaries = _boundaries(source, parameters)
     rows, groups = [], {}
     periodicity = _periodicity(source)
+    # The explicit source-condition surface has measured dependency-sensitive
+    # grouping. Columns include every bound SELECT/WHERE/ON/GROUP/HAVING/ORDER
+    # dependency, not just the final projection. Condition-only dimensions do
+    # not request output groups. Keep older unconditioned sources unchanged.
+    dimensions = (tuple(f for f in schema.dimensions
+                        if any(column.field == f.identity for column in columns))
+                  if source.virtual_condition is not None else schema.dimensions)
+    scalar_balance = (source.virtual_condition is not None and not dimensions
+                      and not periodicity
+                      and source.section in ('balance', 'balance_and_turnovers'))
     reducer = (StatementReducer(schema, boundaries[0], boundaries[1], periodicity,
                                 combined=source.section == 'balance_and_turnovers')
                if source.section == 'balance_and_turnovers' or periodicity else None)
@@ -192,8 +205,12 @@ def load(manager, columns, view, budget, source, parameters):
                     values['recorder'] = manager._documents_by_id[key.document_id]._ref(key.record_id)
                 rows.append(tuple(values[column.field] for column in columns))
                 continue
+            # Explicit source conditions are applied only after every source
+            # row's complete validation/charge, before any grouping/reduction.
+            if not manager.condition.matches(values):
+                continue
             if reducer is not None:
-                dims = tuple(values[f.identity] for f in schema.dimensions)
+                dims = tuple(values[f.identity] for f in dimensions)
                 reducer.add(dims, tuple(_dimension_key(value) for value in dims), row)
                 continue
             if source.section == 'balance':
@@ -201,14 +218,14 @@ def load(manager, columns, view, budget, source, parameters):
                     continue
             elif not boundaries[0] <= row.period <= boundaries[1]:
                 continue
-            dims = tuple(values[f.identity] for f in schema.dimensions)
+            dims = tuple(values[f.identity] for f in dimensions)
             group_key = tuple(_dimension_key(value) for value in dims)
             group = groups.setdefault(group_key, (dims, [], []))
             group[1].append(row.resources)
             group[2].append(1 if row.direction is AccumulationDirection.RECEIPT else -1)
     if reducer is not None:
         for dims, period, totals in reducer.rows(syntax.MAX_ROWS):
-            values = dict(zip((f.identity for f in schema.dimensions), dims))
+            values = dict(zip((f.identity for f in dimensions), dims))
             if period is not None:
                 values['period'] = _from_parts((period.year, period.month, period.day,
                     period.hour, period.minute, period.second))
@@ -223,13 +240,15 @@ def load(manager, columns, view, budget, source, parameters):
             if budget[0] > _MAX_CELLS or budget[1] > _MAX_RESULT_TEXT:
                 raise ValueError('Query period result resource limit exceeded')
             rows.append(tuple(values[column.field] for column in columns))
+        if not rows and scalar_balance:
+            rows.append(_zero_balance_row(schema, columns, source, budget))
         return rows
     for dims, vectors, weights in groups.values():
         vectors, weights = tuple(vectors), tuple(weights)
         net = _sum_resource_vectors(schema, vectors, weights)
         if source.section == 'balance' and all(value == 0 for value in net):
             continue
-        values = dict(zip((f.identity for f in schema.dimensions), dims))
+        values = dict(zip((f.identity for f in dimensions), dims))
         suffix = 'balance' if source.section == 'balance' else 'turnover'
         totals = {suffix: net}
         if source.section == 'turnovers':
@@ -243,4 +262,28 @@ def load(manager, columns, view, budget, source, parameters):
                 _check_number(value, (38, resource.qualifiers[1], 'Any'))
                 values[(resource.identity, name)] = value
         rows.append(tuple(values[column.field] for column in columns))
+    if not rows and scalar_balance:
+        rows.append(_zero_balance_row(schema, columns, source, budget))
     return rows
+
+
+def _zero_balance_row(schema, columns, source, budget):
+    """Native filter12 case9: dimensionless Balance/B&T has a zero aggregate.
+
+    Called only after the full physical/logical scan and charge succeeded. It
+    does not invent a reference, period bucket, or a Turnovers occurrence.
+    """
+    from .queries import _MAX_CELLS
+    from .query_sources import _check_number
+    vector = _sum_resource_vectors(schema, (), ())
+    suffixes = (('balance',) if source.section == 'balance' else
+                ('openingbalance', 'receipt', 'expense', 'turnover', 'closingbalance'))
+    values = {}
+    for resource, value in zip(schema.resources, vector):
+        _check_number(value, (38, resource.qualifiers[1], 'Any'))
+        for suffix in suffixes:
+            values[(resource.identity, suffix)] = value
+    budget[0] += len(values)
+    if budget[0] > _MAX_CELLS:
+        raise ValueError('Query result resource limit exceeded')
+    return tuple(values[column.field] for column in columns)

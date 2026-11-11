@@ -226,3 +226,6 @@ scripts/inventory_filter_behavior/** text eol=lf
 scripts/native_1c_inventory_filter_profile.py text eol=lf
 scripts/native_1c_inventory_filter_probe.sh text eol=lf
 scripts/native_1c_bootstrap/inventory_filter_suite.py text eol=lf
+
+# Immutable native filter capture is byte-hashed on every platform.
+tests/fixtures/native_inventory_filter/* -text

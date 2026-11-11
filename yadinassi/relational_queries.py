@@ -137,7 +137,7 @@ class _Plan:
         self._membership_sets = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived),
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived, query.virtual_condition),
                         *(join.source for join in query.joins))
         self.derived_plans = {}
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
