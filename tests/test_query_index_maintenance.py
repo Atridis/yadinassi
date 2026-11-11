@@ -65,7 +65,7 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
     def test_modified_known_index_is_refused(self):
         db = self.open()
         for ddl in self.bundle: db.execute(ddl)
-        ddl = self.bundle[-1]; db.execute('DROP INDEX "' + _index_name(ddl) + '"')
+        ddl = next(ddl for ddl in self.bundle if 'yadinassi_casefold_v1' in ddl); db.execute('DROP INDEX "' + _index_name(ddl) + '"')
         db.execute(ddl.replace('yadinassi_casefold_v1', 'BINARY'))
         with self.assertRaises(BackendError): admit_query_indexes(db, (), self.bundle)
 
@@ -191,4 +191,30 @@ class QueryIndexMaintenanceTests(unittest.TestCase):
         finally: backend.close()
         backend=SQLiteCatalogBackend(self.path,read_only=True)
         try: self.assertFalse(backend._query_indexes)
+        finally: backend.close()
+
+    def test_raw_rowid_change_invalidates_exact_maintenance_plan(self):
+        plan=prepare(self.path,maintenance=True)
+        with sqlite3.connect(self.path) as db:
+            db.execute('UPDATE configuration_file SET rowid=rowid+100')
+        with self.assertRaisesRegex(BackendError,'conflict'):
+            apply(self.path,plan,maintenance=True)
+        self.assertEqual(resolve(self.path,plan,maintenance=True),'uncertain')
+
+    def test_configuration_rebuild_schema_budget_failure_rolls_back_before_commit(self):
+        from yadinassi.sqlite_migration_plan import prepare as upgrade_plan, apply as upgrade
+        from yadinassi.sqlite_configuration_update import prepare as update_plan, apply as update
+        from test_configuration_evolution import append_field
+        upgrade(self.path,upgrade_plan(self.path,maintenance=True),maintenance=True)
+        apply(self.path,prepare(self.path,maintenance=True),maintenance=True)
+        plan=update_plan(self.path,import_configuration(append_field(self.files)),maintenance=True)
+        before=_fingerprint(self.open())
+        with patch('yadinassi.sqlite_query_indexes.check_index_bundle_budget',side_effect=BackendError('unsupported')) as guard:
+            with self.assertRaisesRegex(BackendError,'unsupported'): update(self.path,plan,maintenance=True)
+        self.assertEqual(guard.call_count,1)
+        self.assertEqual(_fingerprint(self.open()),before)
+        backend=SQLiteCatalogBackend(self.path,read_only=True)
+        try:
+            self.assertEqual(backend.format_version,11)
+            self.assertTrue(backend._query_indexes)
         finally: backend.close()

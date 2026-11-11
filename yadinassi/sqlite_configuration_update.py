@@ -122,7 +122,7 @@ def apply(path, plan, *, maintenance=False):
     from .sqlite_catalog import _json, _schema_data, _encode, _View, _MAX_DATABASE_BYTES
     from .sqlite_catalog_layout import quote_identifier as q, catalog_ddl, encode_columns
     from .sqlite_query_indexes import (catalog_query_index_ddls, read_index_bundle_ddls,
-                                       admit_query_indexes, _index_name)
+                                       admit_query_indexes, _index_name, check_index_bundle_budget)
     from .sqlite_transaction_profile import profile_index_ddls
     from .sqlite_configuration_history import DDL, encode_files, digest, receipt_rows, validate
     from types import SimpleNamespace
@@ -206,6 +206,7 @@ def apply(path, plan, *, maintenance=False):
             validator._validated_sources.clear()
             validator._validate_scan_scalars(schema.identity,schema)
         validate(db,candidate)
+        check_index_bundle_budget(db,())
         if db.execute('PRAGMA page_count').fetchone()[0]*page_size>_MAX_DATABASE_BYTES:raise BackendError('unsupported')
         db.execute('PRAGMA user_version=12')
         committing=True;db.execute('COMMIT');db.close();db=None

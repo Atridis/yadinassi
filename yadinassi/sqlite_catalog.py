@@ -111,6 +111,16 @@ def _read_owner(value):
 
 
 def _close_owned_connection(owner):
+    if owner._connection is None and owner._backend._active is owner:
+        # An interruption may land between the successful lease's detach
+        # assignments. The still-active owner exclusively owns this exact idle
+        # handle until publication completes; recover it for physical retirement.
+        handle = getattr(owner, '_read_handle', None) or owner._backend._read_handle
+        if handle is not None:
+            owner._connection = handle.connection
+            owner._read_handle = handle
+        else:
+            owner._backend._active = None
     if owner._connection is not None:
         # Ownership stays with this owner until physical close succeeds. A
         # failed/replaced lease is never returned to the retained read slot.
@@ -1298,6 +1308,9 @@ class SQLiteCatalogBackend:
         view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return DocumentView(view)
         except BaseException as error:
+            # A wrapper never admitted successfully; retain the original
+            # physical-cleanup/poisoned-owner contract, not normal lease reuse.
+            _retire_read_handle(view)
             try: view.close()
             except BaseException as cleanup_error:
                 if _interruption(cleanup_error) and not _interruption(error): raise
@@ -1329,6 +1342,9 @@ class SQLiteCatalogBackend:
         view = self.begin_read() if operation_id is None else self._begin(operation_id)
         try: return RegisterView(view)
         except BaseException as error:
+            # A wrapper never admitted successfully; retain the original
+            # physical-cleanup/poisoned-owner contract, not normal lease reuse.
+            _retire_read_handle(view)
             try: view.close()
             except BaseException as cleanup:
                 if _interruption(cleanup) and not _interruption(error): raise

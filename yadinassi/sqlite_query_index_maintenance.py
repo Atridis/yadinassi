@@ -96,7 +96,9 @@ def _fingerprint(db, *, exclude=()):
                       '(' + '+'.join(sizes) + ')>16777216 LIMIT 1').fetchone():
             raise BackendError('unsupported')
         keys = [column[1] for column in sorted(columns, key=lambda c: c[5]) if column[5]] or [c[1] for c in columns]
-        for row in db.execute('SELECT * FROM ' + quote_identifier(table) +
+        # Canonical tables use rowid storage. UUID aliases intentionally retain
+        # rowid as a query tie-break, so it is part of exact maintenance state.
+        for row in db.execute('SELECT rowid,* FROM ' + quote_identifier(table) +
                               ' ORDER BY ' + ','.join(quote_identifier(key) for key in keys)):
             digest.update(b'R')
             for cell in row:

@@ -53,6 +53,8 @@ class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
 
     @contextmanager
     def connection_fault(self, **faults):
+        # Factory probes must not silently reuse a previously validated reader.
+        self.backend._close_idle_read_handle()
         def connect(*args, **kwargs):
             connection = AdmissionFaultConnection(self.real_connect(*args, **kwargs), **faults)
             self.connections.append(connection)
@@ -169,6 +171,9 @@ class SQLiteCatalogSectionAdmissionCleanupTests(unittest.TestCase):
                     with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
                     with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_write(uuid4())
                 finally: view.close()
+                # Read-close releases the transaction; explicit retirement is
+                # the physical-close boundary for the next factory probe.
+                self.backend._close_idle_read_handle()
                 self.assertEqual(connection.close_calls, 1)
                 self.assertIsNone(view._connection)
                 self.assert_persisted_unchanged()

@@ -176,7 +176,7 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         except PermissionError:
             self.skipTest('platform prevents replacing an open SQLite file')
         with self.assertRaisesRegex(BackendError, 'schema_changed'): self.scan()
-        self.assertFalse(self.backend._read_handle.proofs)
+        self.assertTrue(self.backend._read_handle is None or not self.backend._read_handle.proofs)
 
     def test_one_active_contract_is_not_changed_by_retention(self):
         self.seed(2); self.scan()
@@ -222,3 +222,58 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         self.assertEqual(errors, [])
         result[0].close()
         self.assertEqual(len(self.scan().rows), 2)
+
+    def test_interrupted_detach_recovers_exact_handle_and_releases_owner(self):
+        self.seed(2)
+        for attribute in ('_connection','_read_handle'):
+            with self.subTest(attribute=attribute):
+                view=self.backend.begin_read(); connection=view._connection
+                view.scan_catalog_values(self.product.identity,CatalogScanRequest(),('code',))
+                fired=[]
+                def assign(owner,name,value):
+                    object.__setattr__(owner,name,value)
+                    if owner is view and name==attribute and value is None and not fired:
+                        fired.append(True)
+                        raise KeyboardInterrupt()
+                with patch.object(_View,'__setattr__',assign):
+                    with self.assertRaises(KeyboardInterrupt):view.close()
+                self.assertEqual(fired,[True])
+                self.assertIsNone(self.backend._active)
+                self.assertIsNone(self.backend._read_handle)
+                with self.assertRaises(sqlite3.ProgrammingError):connection.execute('SELECT 1')
+                view.close()
+                self.assertEqual(len(self.scan().rows),2)
+
+    def test_retained_proof_counts_and_owner_identities_are_bounded(self):
+        from yadinassi.sqlite_read_handles import _bounded_proofs, MAX_PROOFS, MAX_OWNER_IDENTITIES
+        facts={('fact',i):() for i in range(MAX_PROOFS+10)}
+        self.assertEqual(len(_bounded_proofs(facts)),MAX_PROOFS)
+        owners=frozenset(str(i).zfill(36) for i in range(MAX_OWNER_IDENTITIES))
+        retained=_bounded_proofs({'all':owners,'extra':frozenset({'one'}),'mutable':[],
+                                  'bool':(True,),'bytes':b'x','cost':(1,2,3)})
+        self.assertEqual(retained,{'all':owners,'cost':(1,2,3)})
+
+    def test_document_wrapper_failure_physically_retires_and_keeps_failed_close_owner(self):
+        self.seed(2);self.backend._close_idle_read_handle()
+        original=self.backend._connect; proxies=[]
+        def connect(**kwargs):
+            raw=original(**kwargs)
+            proxy=AdmissionFaultConnection(raw,close_error=sqlite3.OperationalError('close failed'))
+            kwargs['_owner']._connection=proxy
+            proxies.append(proxy)
+            return proxy
+        failure=MemoryError('wrapper admission')
+        try:
+            with patch.object(self.backend,'_connect',connect), \
+                    patch('yadinassi.sqlite_catalog.DocumentView',side_effect=failure):
+                with self.assertRaises(MemoryError) as caught:self.backend.begin_query_read()
+            self.assertIs(caught.exception,failure)
+            self.assertIsNone(self.backend._read_handle)
+            self.assertIsNotNone(self.backend._active)
+            self.assertIs(self.backend._active._connection,proxies[0])
+            self.assertTrue(self.backend._active._closed)
+            with self.assertRaisesRegex(BackendError,'busy'):self.backend.begin_read()
+        finally:
+            for proxy in proxies:proxy.disable_faults()
+            if self.backend._active is not None:self.backend._active.close()
+        self.assertEqual(len(self.scan().rows),2)

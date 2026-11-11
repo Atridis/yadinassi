@@ -46,7 +46,7 @@ def _index_name(ddl):
 
 
 def canonical_index_ddls(ddls):
-    if type(ddls) is not tuple or len(ddls) > 2048:
+    if type(ddls) is not tuple or len(ddls) > 4096:
         raise BackendError('invalid_input')
     named = [(_index_name(ddl), ddl) for ddl in ddls]
     if len({name for name, _ in named}) != len(named):
@@ -77,6 +77,12 @@ def read_index_bundle_ddls(storage_version, schemas, layout, *, format_version):
             result.append('CREATE INDEX ' + quote_identifier(name) + ' ON ' + table +
                           '(' + field + ' COLLATE yadinassi_casefold_v1,'
                           'record_id COLLATE yadinassi_uuid_v1)')
+            # Public exact lookups retain codepoint equality. Code already has
+            # its UNIQUE BINARY autoindex; only Description needs this addition.
+            if field == 'description':
+                binary = 'query_exact_binary_' + schema.identity.hex + '_' + field + '_v1'
+                result.append('CREATE INDEX ' + quote_identifier(binary) + ' ON ' + table +
+                              '(' + field + ' COLLATE BINARY,record_id COLLATE yadinassi_uuid_v1)')
     if storage_version >= 7:
         if format_version not in (11, 12, 13, 14):
             result.append('CREATE INDEX document_query_order_v1 ON document_record(document_id,date,number,record_id)')

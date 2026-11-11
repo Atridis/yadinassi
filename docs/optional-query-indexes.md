@@ -5,13 +5,18 @@ without it remain readable. Admission accepts precisely the baseline or baseline
 plus the entire known bundle, including exact names and SQL. Partial, altered,
 or unknown indexes are refused, never repaired while reading.
 
-The bundle indexes catalog code and description using `yadinassi_casefold_v1`,
-then logical UUID order (SQLite supplies the final rowid tie-break). Bare layouts
+The bundle indexes catalog code and description with `yadinassi_casefold_v1` for
+Query and adds BINARY description equality for public exact lookup, then logical
+UUID order. Public FindByCode keeps the existing UNIQUE BINARY code autoindex (SQLite supplies the final rowid tie-break). Bare layouts
 also receive the existing catalog UUID-order indexes. Document layouts receive
 a casefold-number query index and, when not mandatory already, the date-order
 index. This does not change BINARY FindByNumber semantics or ambiguity refusal.
 No format/user_version or configuration-generation increment is introduced.
-Index availability does not eliminate cold integrity validation.
+Index availability does not eliminate cold integrity validation. For public
+FindByCode, the new saving is connection-local validation reuse: the first
+1000-row lookup still validates 1000 scalars, while ten unchanged warm lookups
+perform zero scalar-source decodes and use the existing UNIQUE code index. New
+indexes serve casefold Query predicates and exact Description lookup instead.
 
 ## Explicit maintenance
 
@@ -28,7 +33,7 @@ state = resolve(path, plan, maintenance=True)
 
 Preparation is read-only and deterministic. Its plan binds database identity,
 configuration generation, format, schema cookie, file device/inode, complete
-logical schema/data fingerprint, and the exact closed index declarations. Apply
+schema/data/rowid fingerprint, and the exact closed index declarations. Apply
 regenerates the plan, then checks again under an exclusive transaction. The
 bundle is installed atomically. Plans containing arbitrary SQL cannot authorize
 execution. Existing owners detect the changed schema; reopen them after apply.
@@ -51,3 +56,7 @@ The older base-to-v11 format plan is deliberately refused when this optional
 bundle is already installed, because its mandatory UUID/order additions overlap.
 Choose the format migration first, then install this bundle. This is an explicit
 supported-order boundary, never an implicit drop/rebuild during open.
+
+External SQLite writers must register the versioned collations before modifying
+indexed values. The owned writer does so already; optional indexes do not grant
+generic tools permission to substitute a different comparison implementation.
