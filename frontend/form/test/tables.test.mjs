@@ -161,32 +161,33 @@ test('keyed table rows and cells retain identity, drafts, focus and selection th
   assert.deepEqual(view.changes(), [{control: 'Lines', row: 2, column: 'Description', value: {type: 'String', value: 'Pending row two'}}]);
 });
 
-test('deleting a row discards only its drafts and preserves surviving keyed cells', () => {
+test('deleting a row keeps its drafts copy-only and preserves surviving keyed cells', () => {
   const {view, document} = create(); view.render(model(tableState()));
   const removed = edit(cell(document, 1), 'Remove draft'), kept = edit(cell(document, 2), 'Keep draft');
   view.render(model(tableState(1, table({rows: [table().rows[1]]}))));
   assert.equal(document.root.contains(removed), false); assert.equal(cell(document, 2), kept); assert.equal(kept.value, 'Keep draft');
-  assert.deepEqual(view.changes(), [{control: 'Lines', row: 2, column: 'Description', value: {type: 'String', value: 'Keep draft'}}]);
+  assert.ok(document.root.textContent.includes('Remove draft')); assert.throws(() => view.changes(), {code: 'draft_changed'});
 });
 
-test('changed authoritative cell discards only the stale draft while other cells survive', () => {
+test('changed authoritative cell recovers the stale draft while other cells survive', () => {
   const {view, document} = create(); view.render(model(tableState()));
   edit(cell(document, 1), 'Stale'); edit(cell(document, 2), 'Still pending');
   const changed = replaceCell(replaceCell(table(), 1, 'Description', {type: 'String', value: 'Server effect'}),
     2, 'Description', {value: 'Second', type: 'String'});
   view.render(model(tableState(1, changed)));
   assert.equal(cell(document, 1).value, 'Server effect'); assert.equal(cell(document, 2).value, 'Still pending');
-  assert.equal(view.changes().length, 1);
+  assert.ok(document.root.textContent.includes('Stale')); assert.throws(() => view.changes(), {code: 'draft_changed'});
 });
 
 test('replacing control or table identity prevents same-name draft retargeting', () => {
   for (const patch of [{controlId: 2}, {tableId: 2}]) {
     const {view, document} = create(); view.render(model(tableState())); const original = edit(cell(document), 'Old identity');
-    view.render(model(tableState(1, table(patch)))); assert.notEqual(cell(document), original); assert.equal(view.hasDrafts(), false);
+    view.render(model(tableState(1, table(patch)))); assert.notEqual(cell(document), original); assert.equal(view.hasDrafts(), true);
+    assert.ok(document.root.textContent.includes('Old identity')); assert.throws(() => view.changes(), {code: 'draft_changed'});
   }
 });
 
-test('column reorder preserves drafts by name and retyping one column drops only its cells', () => {
+test('column reorder preserves drafts by name and retyping recovers incompatible input', () => {
   const {view, document} = create(); view.render(model(tableState()));
   const original = edit(cell(document), 'Pending'); edit(cell(document, 1, 'Quantity'), '12.50');
   const initial = table(); const reordered = {...initial, columns: [initial.columns[1], initial.columns[0], initial.columns[2]],
@@ -194,7 +195,8 @@ test('column reorder preserves drafts by name and retyping one column drops only
   view.render(model(tableState(1, reordered))); assert.equal(cell(document), original); assert.equal(view.changes().length, 2);
   const retyped = {...reordered, columns: [column('Quantity'), ...reordered.columns.slice(1)],
     rows: reordered.rows.map(row => ({...row, values: [{type: 'String', value: 'Host text'}, ...row.values.slice(1)]}))};
-  view.render(model(tableState(2, retyped))); assert.equal(view.changes().length, 1); assert.equal(cell(document), original);
+  view.render(model(tableState(2, retyped))); assert.throws(() => view.changes(), {code: 'draft_changed'}); assert.equal(cell(document), original);
+  assert.ok(document.root.textContent.includes('12.50')); assert.equal(original.value, 'Pending');
   assert.equal(cell(document, 1, 'Quantity').value, 'Host text');
 });
 
@@ -211,8 +213,9 @@ test('table dates and empty scalars remain exact display-only values', () => {
 test('read-only table blocks cells but session locks also disable selection', () => {
   const {view, document} = create(); view.render(model(tableState())); edit(cell(document), 'Pending');
   view.render(model(tableState(1, table({readOnly: true}))));
-  assert.equal(view.hasDrafts(), false); assert.equal(cell(document).readOnly, true); assert.equal(cell(document, 1, 'Active').disabled, true);
-  assert.equal(select(document, 2).disabled, false);
+  assert.equal(view.hasDrafts(), true); assert.equal(cell(document).readOnly, true); assert.equal(cell(document, 1, 'Active').disabled, true);
+  assert.equal(select(document, 2).disabled, true); assert.ok(document.root.textContent.includes('Pending'));
+  view.clearDrafts(); view.render(model(tableState(1, table({readOnly: true})))); assert.equal(select(document, 2).disabled, false);
   view.render(model(tableState(2), {locked: true, outcomeUnknown: true}));
   assert.ok(buttons(document).filter(node => node.dataset.formAction === 'select').every(node => node.disabled));
   assert.ok(all(document.root).filter(node => node.tagName === 'INPUT').every(node => node.disabled));
@@ -281,7 +284,8 @@ test('handler deleting a later draft row stops flush without retargeting or runn
     {state: {...current, revision: 1, items: [table({rows: [{...table().rows[0], values: [request.params.value, ...table().rows[0].values.slice(1)]}]}), button()]}} : null);
   await app.ready; edit(cell(env.document, 1), 'Edited first'); edit(cell(env.document, 2), 'Deleted'); await app.run('command', 'Run');
   assert.equal(requests.length, 2); assert.equal(cell(env.document, 2), undefined);
-  assert.ok(env.document.root.textContent.includes('pending edit')); assert.equal(app.view.hasDrafts(), false);
+  assert.ok(env.document.root.textContent.includes('pending edit')); assert.equal(app.view.hasDrafts(), true);
+  assert.ok(env.document.root.textContent.includes('Deleted')); assert.throws(() => app.view.changes(), {code: 'draft_changed'});
 });
 
 test('handler changing another pending cell stops stale flush and preserves unaffected drafts', async () => {
@@ -289,7 +293,8 @@ test('handler changing another pending cell stops stale flush and preserves unaf
     {state: {...current, revision: 1, items: [replaceCell(replaceCell(table(), 1, 'Description', request.params.value), 1, 'Quantity', {type: 'Number', value: '10'}), button()]}} : null);
   await app.ready; edit(cell(env.document, 1), 'Edited first'); edit(cell(env.document, 1, 'Quantity'), '2.00'); edit(cell(env.document, 2), 'Keep');
   await app.run('command', 'Run'); assert.equal(requests.length, 2); assert.equal(cell(env.document, 1, 'Quantity').value, '10');
-  assert.equal(cell(env.document, 2).value, 'Keep'); assert.equal(app.view.changes().length, 1);
+  assert.equal(cell(env.document, 2).value, 'Keep'); assert.throws(() => app.view.changes(), {code: 'draft_changed'});
+  assert.ok(env.document.root.textContent.includes('2.00'));
 });
 
 test('handler errors adopt accepted cell effects and retain unaffected row drafts for new intent', async () => {
@@ -305,6 +310,7 @@ test('stale cell rejection adopts authoritative value and never sends queued sel
     {state: tableState(9, replaceCell(table(), 1, 'Description', {type: 'String', value: 'Other client'})), error: 'stale_revision'} : null);
   await app.ready; edit(cell(env.document), 'Stale'); await app.run('select', 'Lines', 2);
   assert.equal(requests.length, 2); assert.equal(cell(env.document).value, 'Other client'); assert.equal(app.client.snapshot.revision, 9);
+  assert.ok(env.document.root.textContent.includes('Stale')); assert.equal(app.view.hasDrafts(), true);
 });
 
 test('lost cell response locks edits and selection until read-only refresh without replay', async () => {
@@ -350,7 +356,7 @@ test('independent tables with equal row IDs preserve separate drafts and flush l
     {control: 'Other', row: 1, column: 'Description', value: {type: 'String', value: 'Second table'}},
   ]);
   view.render(model(state(1, {items: [other]})));
-  assert.equal(view.changes().length, 1); assert.equal(view.changes()[0].control, 'Other');
+  assert.throws(() => view.changes(), {code: 'draft_changed'}); assert.ok(document.root.textContent.includes('First table'));
   assert.equal(cell(document), inputs[1]); assert.equal(inputs[1].value, 'Second table');
 });
 

@@ -1,4 +1,4 @@
-import {FormError, editable, tableCell, scalarText, typedInput, scalarEqual, LIMITS} from './client.mjs';
+import {FormError, editable, tableCell, scalarText, inputHint, typedInput, scalarEqual, LIMITS} from './client.mjs';
 
 // DOM identity belongs to a retained view, never to a host control or table ID.
 // BigInt keeps allocation monotonic without wrapping or reusing retired prefixes.
@@ -42,11 +42,16 @@ export function createFormView(document, root, handlers) {
   const footer = element('footer', 'page-footer', 'Changes are handled by the host. Refresh reads state only and never repeats a command.');
   main.append(header, error, lock, recovered, panel, footer); root.replaceChildren(main);
   const controls = new Map(); const drafts = new Map(), cellDrafts = new Map(), recovery = new Map();
-  let ownershipRead = false;
-  const remember = (key, label, draft) => { if (ownershipRead && draft) recovery.set(key, {label, value: draft.value}); };
+  const remember = (key, label, draft) => { if (draft) recovery.set(key, {label, value: draft.value}); };
+  // Snapshot IDs fence replaced controls. Legacy snapshots without IDs still
+  // bind to the exact visible type, editor and baseline, never just raw text.
+  const binding = item => JSON.stringify([item.value.type, item.controlId ?? null, item.view,
+    item.editor ? Object.keys(item.editor).sort().map(key => [key, item.editor[key]]) : null]);
+  const draftFor = (item, value) => ({value, base: {...item.value}, binding: binding(item)});
+  const matches = (item, draft) => editable(item) && draft.binding === binding(item) && scalarEqual(item.value, draft.base);
   let current = null, isBusy = false, focusMemory = null, actionPointer = false;
   let serial = 0;
-  const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value) === input;
+  const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value, item.editor) === input;
   const captureFocus = () => {
     const node = document.activeElement;
     if (!node || !root.contains(node)) return null;
@@ -101,23 +106,24 @@ export function createFormView(document, root, handlers) {
       // Its change intent flushes all pending fields before applying the toggle.
       if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
+      const live = () => controls.get(item.name)?.input === input;
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
-        if (isBusy || !editable(active)) return;
+        if (!live() || isBusy || recovery.size || !editable(active)) return;
         const value = input.type === 'checkbox' ? input.checked : input.value;
         if (sameValue(active, value)) drafts.delete(item.name);
-        else drafts.set(item.name, {type: active.value.type, value});
+        else drafts.set(item.name, draftFor(active, value));
       });
       input.addEventListener('change', () => {
-        if (input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
+        if (live() && input.type === 'checkbox' && !isBusy && editable(controls.get(item.name)?.item)) handlers.action('toggle', item.name);
       });
       input.addEventListener('blur', event => {
         // Commands and checkbox activations own their serialized flush path.
-        if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
+        if (live() && input.type !== 'checkbox' && !isBusy && !actionPointer &&
             !event.relatedTarget?.closest('[data-form-action]')) handlers.change(item.name);
       });
       input.addEventListener('keydown', event => {
-        if (event.key === 'Enter' && !event.isComposing && input.type !== 'checkbox') {
+        if (live() && event.key === 'Enter' && !event.isComposing && input.type !== 'checkbox') {
           event.preventDefault(); handlers.change(item.name);
         }
       });
@@ -159,22 +165,24 @@ export function createFormView(document, root, handlers) {
     const locator = {control: name, row: rowId, column: column.name};
     const key = cellKey(name, controlId, tableId, rowId, column.name);
     const currentCell = () => tableCell(controls.get(name)?.item, rowId, column.name);
+    const live = () => controls.get(name)?.item.tableId === tableId && controls.get(name)?.item.controlId === controlId &&
+      controls.get(name)?.rows.get(rowId)?.cells.get(column.name)?.input === input;
     input.addEventListener('input', () => {
       const active = currentCell();
-      if (isBusy || controls.get(name)?.item.tableId !== tableId || controls.get(name)?.item.controlId !== controlId || !editable(active)) return;
+      if (!live() || isBusy || recovery.size || !editable(active)) return;
       const value = input.type === 'checkbox' ? input.checked : input.value;
       if (sameValue(active, value)) cellDrafts.delete(key);
-      else cellDrafts.set(key, {...locator, controlId, tableId, type: active.value.type, value, base: active.value});
+      else cellDrafts.set(key, {...locator, controlId, tableId, ...draftFor(active, value)});
     });
     input.addEventListener('change', () => {
-      if (input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
+      if (live() && input.type === 'checkbox' && !isBusy && editable(currentCell())) handlers.action('toggle', locator);
     });
     input.addEventListener('blur', event => {
-      if (input.type !== 'checkbox' && !isBusy && !actionPointer &&
+      if (live() && input.type !== 'checkbox' && !isBusy && !actionPointer &&
           !event.relatedTarget?.closest('[data-form-action]')) handlers.change(locator);
     });
     input.addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.isComposing && input.type !== 'checkbox') {
+      if (live() && event.key === 'Enter' && !event.isComposing && input.type !== 'checkbox') {
         event.preventDefault(); handlers.change(locator);
       }
     });
@@ -237,10 +245,8 @@ export function createFormView(document, root, handlers) {
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
         input.setAttribute('aria-describedby', control.help.id);
         input.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
-        input.title = value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
-          : ['Null', 'Undefined'].includes(value.type) ? 'Typed empty value · read-only'
-          : readOnly ? 'Read-only' : value.type === 'Number' ? 'Exact decimal · use a decimal point (.)' : '';
-        const draft = cellDrafts.get(cell.key), text = draft ? draft.value : value.type === 'Boolean' ? value.value : scalarText(value);
+        input.title = inputHint(field);
+        const draft = cellDrafts.get(cell.key), text = draft ? draft.value : value.type === 'Boolean' ? value.value : scalarText(value, field.editor);
         if (input.type === 'checkbox') input.checked = text === true;
         else if (input.value !== text) input.value = text;
         input.maxLength = value.type === 'Number' ? 144 : LIMITS.text;
@@ -248,19 +254,24 @@ export function createFormView(document, root, handlers) {
       });
     });
   }
-  function reconcileCells() {
+  function reconcileDrafts() {
+    for (const [name, draft] of drafts) {
+      const item = current?.items.find(item => item.name === name);
+      if (!matches(item, draft)) { remember('field:' + name, name, draft); drafts.delete(name); }
+    }
     for (const [key, draft] of cellDrafts) {
       const item = current?.items.find(item => item.name === draft.control);
       const cell = tableCell(item, draft.row, draft.column);
-      if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !editable(cell) || cell.value.type !== draft.type ||
-          !scalarEqual(cell.value, draft.base)) { remember(key, draft.control + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key); }
+      if (item?.tableId !== draft.tableId || item?.controlId !== draft.controlId || !matches(cell, draft)) {
+        remember(key, draft.control + ', row ' + draft.row + ', ' + draft.column, draft); cellDrafts.delete(key);
+      }
     }
   }
   function render(model) {
     const savedFocus = captureFocus();
     if (model.busy && !isBusy) focusMemory = savedFocus;
     const wasBusy = isBusy; isBusy = model.busy; current = model.snapshot;
-    reconcileCells();
+    reconcileDrafts();
     const active = current?.kind === 'form' && current.lifecycle === 'open';
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
@@ -308,15 +319,12 @@ export function createFormView(document, root, handlers) {
         input.setAttribute('aria-label', caption.textContent);
         row.className = 'field' + (item.value.type === 'Boolean' ? ' checkbox-field' : '') + (readOnly ? ' read-only' : '');
         const draft = drafts.get(item.name);
-        const value = draft?.type === item.value.type ? draft.value : item.value.type === 'Boolean' ? item.value.value : scalarText(item.value);
+        const value = draft ? draft.value : item.value.type === 'Boolean' ? item.value.value : scalarText(item.value, item.editor);
         if (input.type === 'checkbox') input.checked = value === true;
         else if (input.value !== value) input.value = value;
         input.maxLength = item.value.type === 'Number' ? 144 : LIMITS.text;
         input.inputMode = item.value.type === 'Number' ? 'decimal' : 'text';
-        hint.textContent = item.value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : item.value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
-          : ['Null', 'Undefined'].includes(item.value.type) ? 'Typed empty value · read-only'
-          : readOnly ? 'Read-only' : item.value.type === 'Number' ? 'Exact decimal · use a decimal point (.)'
-          : item.value.type === 'Boolean' ? '' : 'Applied when you leave the field or run a command';
+        hint.textContent = inputHint(item);
         hint.hidden = !hint.textContent;
       }
     }
@@ -346,8 +354,19 @@ export function createFormView(document, root, handlers) {
         cellDrafts.delete(cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column));
       }
     },
-    beginOwnershipReconcile() { ownershipRead = true; },
-    endOwnershipReconcile() { ownershipRead = false; },
+    recover(change) {
+      if (!Object.hasOwn(change, 'row')) {
+        remember('field:' + change.control, change.control, drafts.get(change.control)); drafts.delete(change.control);
+      } else {
+        const item = current?.items.find(item => item.name === change.control);
+        const key = cellKey(change.control, item?.controlId, item?.tableId, change.row, change.column);
+        remember(key, change.control + ', row ' + change.row + ', ' + change.column, cellDrafts.get(key)); cellDrafts.delete(key);
+      }
+    },
+    // Kept for the attachment host's existing lifecycle API. Reconciliation
+    // protects raw inputs on every authoritative update, not only takeovers.
+    beginOwnershipReconcile() {},
+    endOwnershipReconcile() {},
     clearDrafts() { drafts.clear(); cellDrafts.clear(); recovery.clear(); },
     hasDrafts() { return drafts.size + cellDrafts.size + recovery.size > 0; },
     changes(only) {

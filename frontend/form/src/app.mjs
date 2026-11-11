@@ -33,10 +33,24 @@ export function mountForm(environment, root, options = {}) {
   }
   async function sendChange(change) {
     const before = client.snapshot;
-    try { await client.event(Object.hasOwn(change, 'row') ? 'cell' : 'change', change); }
+    let accepted = false;
+    try { await client.event(Object.hasOwn(change, 'row') ? 'cell' : 'change', change); accepted = true; }
+    catch (caught) {
+      // event_failed can mean assignment failed before OnChange (e.g. an
+      // aggregate budget). Only consume a visibly completed target change.
+      if (caught?.code === 'event_failed' && client.snapshot !== before && !client.transportFailed) {
+        const oldItem = before.items.find(item => item.name === change.control);
+        const newItem = client.snapshot.items.find(item => item.name === change.control);
+        const oldField = Object.hasOwn(change, 'row') ? tableCell(oldItem, change.row, change.column) : oldItem;
+        const newField = Object.hasOwn(change, 'row') ? tableCell(newItem, change.row, change.column) : newItem;
+        accepted = Boolean(newField && oldItem.controlId === newItem.controlId && oldItem.tableId === newItem.tableId &&
+          !scalarEqual(newField.value, oldField.value));
+        if (!accepted) view.recover(change);
+      }
+      throw caught;
+    }
     finally {
-      // An authoritative error snapshot can include effects completed before failure.
-      if (client.snapshot !== before && !client.transportFailed) view.accept(change);
+      if (accepted && client.snapshot !== before && !client.transportFailed) view.accept(change);
       paint();
     }
   }
@@ -85,7 +99,7 @@ export function mountForm(environment, root, options = {}) {
       }
     }
     catch (caught) { showError(caught); paint(); return; }
-    if (['change', 'toggle'].includes(event) && !changes.length) return;
+    if (['change', 'toggle'].includes(event) && !changes.length) { paint(); return; }
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {
