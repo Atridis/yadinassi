@@ -425,12 +425,41 @@ class ConfigurationBroker:
                 return {'error': 'invalid_record'}
             if definition.catalog_schema is not None or definition.document_schema is not None:
                 self._catalog(entry)
-            self.allocated += 1
-            sid = 'form-' + str(self.allocated)
             context = self._open_context()
             server = nocontext = None
             try:
                 definition = self.definitions[entry]
+                opened = None
+                if definition.document_schema is not None and reference is not None:
+                    from ..configuration_document import _read_form_document, _FormCapacityError
+                    # The record-list context may predate a file replacement.
+                    # Classify capacity only after this new context proves the
+                    # exact source and profile, without installing root services.
+                    context.require_active(tabular_sections=True)
+                    backend = context.backend
+                    if backend.export_configuration() != dict(self.configuration.source_files):
+                        raise ValueError('configuration/database source mismatch')
+                    if self.inventory_application:
+                        from ..inventory_host_operations import _source_configuration
+                        if _source_configuration(backend) != self.posting_configuration:
+                            raise ValueError('inventory form source mismatch')
+                    elif self.posting_application:
+                        from ..configuration_posting_application import PostingApplicationConfiguration
+                        if (type(backend.posting_configuration) is not PostingApplicationConfiguration
+                                or backend.posting_configuration != self.posting_configuration):
+                            raise ValueError('posting form source mismatch')
+                    elif (getattr(backend, 'posting_configuration', None) is not None
+                            or getattr(backend, 'accumulation_configuration', None) is not None):
+                        raise ValueError('ordinary form cannot activate posting source')
+                    try:
+                        opened = _read_form_document(context, definition, reference)
+                    except _FormCapacityError:
+                        # No interpreter, root service, journal or form identity
+                        # exists yet. Only this known preflight refusal is safe.
+                        context.close()
+                        return {'error': 'form_capacity'}
+                self.allocated += 1
+                sid = 'form-' + str(self.allocated)
                 owned = None
                 if definition.catalog_schema is not None:
                     from ..configuration_catalog import CatalogObjectSession
@@ -446,14 +475,15 @@ class ConfigurationBroker:
                     if self.inventory_application:
                         from ..inventory_application_sessions import InventoryDocumentSession
                         owned = InventoryDocumentSession(context, definition.document_schema,
-                            self.posting_configuration, definition.name, key=reference)
+                            self.posting_configuration, definition.name, key=reference, _opened=opened)
                     elif self.posting_application:
                         from ..configuration_posting_document import PostingDocumentSession
                         owned = PostingDocumentSession(context, definition.document_schema,
-                            self.posting_configuration, definition.name, key=reference)
+                            self.posting_configuration, definition.name, key=reference, _opened=opened)
                     else:
                         owned = DocumentObjectSession(context, definition.document_schema,
-                            dict(self.configuration.source_files), key=reference, reference_fields=self.reference_application)
+                            dict(self.configuration.source_files), key=reference, reference_fields=self.reference_application,
+                            _opened=opened)
                 if owned is not None:
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned,
@@ -1147,7 +1177,7 @@ class ConfigurationController:
             elif operation == 'create':
                 if 'error' in result:
                     _keys(result, 'error')
-                    if result['error'] not in ('capacity', 'invalid_record'):
+                    if result['error'] not in ('capacity', 'form_capacity', 'invalid_record'):
                         raise ValueError('invalid capacity refusal')
                 else:
                     _keys(result, 'session entry')

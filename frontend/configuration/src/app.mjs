@@ -383,7 +383,9 @@ export function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
-    status = result.error ? `Application: ${result.error}` : '';
+    status = result.error === 'form_capacity'
+      ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
+      : result.error ? `Application: ${result.error}` : '';
     const fresh = []; let removedActive = false;
     for (const [id, entry] of mounts) if (!client.state.sessions.some(session => session.id === id)) {
       entry.panel.remove(); entry.tab.remove(); mounts.delete(id); if (active === id) { active = null; removedActive = true; }

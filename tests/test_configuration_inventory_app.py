@@ -174,3 +174,144 @@ class InventoryApplicationTests(unittest.TestCase):
             with closing(ConfigurationController(forms,process.exchange,inventory_application=True)) as app:
                 result=app.exchange({'jsonrpc':'2.0','id':1,'method':'application.hello','params':{'protocol':PROTOCOL}})['result']
                 self.assertIsNone(result['error']);self.assertEqual(len(result['state']['entries']),4)
+
+
+    def seed_saved_lines(self, count):
+        with closing(SQLiteDBContext(self.path)) as context:
+            with closing(Interpreter(database_context=context, output=lambda value:None)) as vm:
+                vm.execute('D=Documents.Receipt.CreateDocument();D.Number="CAP";'
+                    'D.Date=Date(2026,1,1);D.Warehouse=Catalogs.Warehouses.FindByCode("W1");'
+                    'For I=1 To '+str(count)+' Do L=D.Lines.Add();'
+                    'L.Product=Catalogs.Products.FindByCode("P1");L.Quantity=1;L.Amount=10;EndDo;D.Write();')
+        entry=self.app.names['document.receipt.form.card']
+        listing=self.rpc('catalog',entry=entry)['state']['catalog']
+        return entry,listing['rows'][0]['key']
+
+    def open_saved_result(self, entry, record, request='capacity-probe'):
+        return self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.openRecord',
+            'params':{'entry':entry,'record':record,'request':request}})['result']
+
+    def test_oversized_saved_document_refuses_before_form_or_root_and_keeps_sibling(self):
+        sid=self.open('Catalog.Warehouses.Form.Card')
+        self.event(sid,'change',control='DescriptionInput',value='Authoritative sibling draft')
+        revision=self.app.sessions[sid][0].session.revision
+        entry,record=self.seed_saved_lines(52)
+        before=self.path.read_bytes();allocated=self.broker.allocated
+        from yadinassi.configuration_forms import FormDefinition
+        create=FormDefinition.create_server
+        with patch('yadinassi.inventory_application_sessions.InventoryRootOperations') as root, patch(
+                'yadinassi.configuration_forms.FormDefinition.create_server',autospec=True,side_effect=create) as server:
+            for request in ('capacity-probe','capacity-probe','another-capacity-probe'):
+                result=self.open_saved_result(entry,record,request)
+                self.assertEqual(result['error'],'form_capacity');self.assertIsNone(result['session'])
+                self.assertFalse(result['state']['uncertain'])
+            root.assert_not_called()
+            self.assertTrue(all(call.kwargs.get('_validate_only') is True for call in server.call_args_list))
+        self.assertEqual(self.path.read_bytes(),before)
+        self.assertEqual(self.broker.allocated,allocated)
+        self.assertEqual(self.app.sessions[sid][0].session.revision,revision)
+        self.assertEqual(self.app.active,sid)
+        self.assertEqual(len(self.cards()[0].tabular_sections[0].rows),52)
+        projection=self.rpc('report',report='StockBalance',at='2026-11-12T00:00:00',start=None,end=None)
+        self.assertEqual(projection['state']['report']['rows'],[])
+        self.assertEqual(self.path.read_bytes(),before)
+        self.open('Document.Issue.Form.Card',request='small-form-after-refusal')
+
+    def test_saved_document_at_row_limit_opens_complete_same_revision(self):
+        entry,record=self.seed_saved_lines(32);card=self.cards()[0]
+        result=self.open_saved_result(entry,record)
+        self.assertIsNone(result['error']);sid=result['session']
+        self.assertEqual(self.broker.objects[sid].object._revision,card.revision)
+        table=next(i for i in self.app.sessions[sid][0]._snapshot()['items'] if i['kind']=='table')
+        self.assertEqual(len(table['rows']),32)
+        self.event(sid,'close');self.assertFalse(self.app.uncertain)
+
+    def test_open_preflight_preserves_unknown_failure_as_uncertain(self):
+        from yadinassi.ui.local_app import LocalTransportError
+        entry,record=self.seed_saved_lines(1)
+        with patch('yadinassi.configuration_document._read_form_document',side_effect=ValueError('unknown failure')):
+            with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
+        self.assertTrue(self.app.uncertain)
+
+    def test_oversized_open_checks_new_context_exact_source_before_capacity(self):
+        from yadinassi.ui.local_app import LocalTransportError
+        entry,record=self.seed_saved_lines(52)
+        original=self.broker._open_context
+        def other_source():
+            context=original()
+            actual=context.backend.export_configuration
+            context.backend.export_configuration=lambda:dict(actual(), **{'extra.bsl':b'// mismatched source'})
+            return context
+        with patch.object(self.broker,'_open_context',side_effect=other_source), patch(
+                'yadinassi.configuration_document._read_form_document') as read:
+            with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
+            read.assert_not_called()
+        self.assertTrue(self.app.uncertain)
+
+    def test_preflight_reuses_pinned_card_instead_of_rereading_after_admission(self):
+        from yadinassi.configuration_document import _read_form_document
+        entry,record=self.seed_saved_lines(1);card=self.cards()[0]
+        def captured(context,definition,key):
+            opened=_read_form_document(context,definition,key)
+            # Any later read_document on this owner would substitute a different
+            # snapshot. Metadata/source read leases remain permitted.
+            begin=context.backend.begin_document_read
+            def no_record_read():
+                view=begin()
+                view.read_document=lambda key:(_ for _ in ()).throw(AssertionError('unexpected record reread'))
+                return view
+            context.backend.begin_document_read=no_record_read
+            return opened
+        with patch('yadinassi.configuration_document._read_form_document',side_effect=captured):
+            result=self.open_saved_result(entry,record)
+        self.assertIsNone(result['error'])
+        self.assertEqual(self.broker.objects[result['session']].object._revision,card.revision)
+
+    def test_concurrent_growth_keeps_open_snapshot_and_rejects_stale_write(self):
+        from yadinassi.configuration_document import _read_form_document
+        from yadinassi.unique_identifiers import BSLUUID
+        entry,record=self.seed_saved_lines(1)
+        def grow_after_read(context,definition,key):
+            opened=_read_form_document(context,definition,key)
+            with closing(SQLiteDBContext(self.path)) as other:
+                with closing(Interpreter(database_context=other,output=lambda value:None)) as vm:
+                    vm.variables['savedkey']=BSLUUID(str(key.record_id))
+                    vm.execute('D=Documents.Receipt.GetRef(SavedKey).GetObject();'
+                        'L=D.Lines.Add();L.Product=Catalogs.Products.FindByCode("P1");'
+                        'L.Quantity=2;L.Amount=20;D.Write();')
+            return opened
+        with patch('yadinassi.configuration_document._read_form_document',side_effect=grow_after_read):
+            result=self.open_saved_result(entry,record)
+        self.assertIsNone(result['error']);sid=result['session']
+        self.assertEqual(len(self.broker.objects[sid].image().sections[0][1]),1)
+        self.assertEqual(len(self.cards()[0].tabular_sections[0].rows),2)
+        self.event(sid,control='WriteButton')
+        self.assertEqual(self.app.posting_states[sid]['state'],'rejected')
+        self.assertEqual(len(self.cards()[0].tabular_sections[0].rows),2)
+
+    def test_oversized_open_checks_exact_profile_not_only_same_source(self):
+        from yadinassi.ui.local_app import LocalTransportError
+        entry,record=self.seed_saved_lines(52)
+        original=self.broker._open_context
+        def wrong_profile():
+            context=original();context.backend.accumulation_configuration=validated_core(self.config)
+            return context
+        with patch.object(self.broker,'_open_context',side_effect=wrong_profile), patch(
+                'yadinassi.configuration_document._read_form_document') as read:
+            with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
+            read.assert_not_called()
+        self.assertTrue(self.app.uncertain)
+
+    def test_failed_cleanup_never_returns_safe_capacity(self):
+        from yadinassi.ui.local_app import LocalTransportError
+        entry,record=self.seed_saved_lines(52)
+        original=self.broker._open_context
+        def broken_close():
+            context=original();close=context.close
+            def fail():
+                close();raise RuntimeError('cleanup failed')
+            context.close=fail
+            return context
+        with patch.object(self.broker,'_open_context',side_effect=broken_close):
+            with self.assertRaises(LocalTransportError):self.open_saved_result(entry,record)
+        self.assertTrue(self.app.uncertain);self.assertEqual(self.broker.allocated,0)
