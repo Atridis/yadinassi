@@ -59,9 +59,19 @@ class ConfigurationLayoutBrowserContractTests(unittest.TestCase):
     def test_bounded_no_retry_no_privileged_fixture(self):
         self.contains('startedAt+220000', 'startedAt+240000', 'if(rpc>=96)', 'attachmentRequests<=96',
             'maxRetries:0', 'maxRedirects:0', "'late_reply_gate_timeout'", "'natural_shutdown_timeout'",
-            "'examples/configuration-forms/layouts'")
+            "'examples/configuration-forms/layouts'),'--browser-session']", "phase='layout_host_start'", "phase='layout_writer_attach'")
         for forbidden in ('page.waitForTimeout(', 'fixtureCode', 'SQLite', '--posting-application', '--document-objects', 'writeFileSync'):
             self.assertNotIn(forbidden, self.source)
+
+    def test_plain_launcher_explicitly_enables_attachment_protocol(self):
+        launch = self.source.split('async function startHost(){', 1)[1].split('const button=', 1)[0]
+        self.assertIn("const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-forms/layouts'),'--browser-session'];", launch)
+        self.assertIn('const parse=applicationLaunchReader()', launch)
+        self.assertEqual(launch.count("'--browser-session'"), 1)
+        self.contains("phase='layout_host_start';await startHost()",
+            "phase='layout_writer_attach';await page.goto(url);await writer()",
+            "phase='layout_fault_host_start';await startHost()",
+            "phase='layout_fault_writer_attach';await page.goto(url);await writer()")
 
     def test_owned_temporary_paths_and_source_binding(self):
         self.contains('const temporary=process.env.RUNNER_TEMP', 'path.isAbsolute(temporary)',

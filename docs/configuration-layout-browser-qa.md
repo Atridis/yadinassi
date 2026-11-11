@@ -18,7 +18,9 @@ has occurred merely because the route is present.
 
 The harness rejects a dirty checkout and binds commit, tree and all relevant
 runtime, renderer, fixture, harness, contract, workflow and documentation bytes.
-It launches only its own host and browser process groups; it uses an owned
+The plain configuration launcher explicitly uses `--browser-session` so its
+attachment URL and writer-generation protocol match the harness. It launches
+only its own host and browser process groups; it uses an owned
 runner temporary directory and restores the parent TMPDIR after browser launch.
 The request origin/path and payload admission, attachment-generation checks,
 96 RPC / 96 attachment ceilings, no retries, 220-second work deadline and

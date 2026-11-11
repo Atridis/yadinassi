@@ -128,7 +128,7 @@ function applicationAllowedRequest(target){
 }
 async function startHost(){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-forms/layouts')];
+  const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-forms/layouts'),'--browser-session'];
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=applicationLaunchReader();let settled=false;
   url=await bounded(new Promise((resolve,reject)=>{
@@ -412,21 +412,23 @@ async function main(){
   };
   const selected=async name=>assert.equal(await layoutTab(name).getAttribute('aria-selected'),'true','page_selection');
   await scenario(scenarioNames[0],async()=>{
-    await startHost();await page.goto(url);await writer();await openForm();await countPanels(1);
+    phase='layout_host_start';await startHost();
+    phase='layout_writer_attach';await page.goto(url);await writer();
+    phase='layout_open_first';await openForm();await countPanels(1);
     const first=field('First name'),firstId=await first.getAttribute('id');
     await first.fill('  Ada draft  ');await first.evaluate(node=>node.setSelectionRange(2,5));
-    const before=businessEvents.length;await layoutTab('Notes').click();await selected('Notes');
+    phase='layout_hidden_draft_fence';const before=businessEvents.length;await layoutTab('Notes').click();await selected('Notes');
     await action('Build summary').click();await idle();
     await active().getByRole('alert').filter({hasText:'Unsubmitted inputs are on another page.'}).waitFor();
     await action('Close form').click();await idle();
     assert.equal(businessEvents.length,before,'hidden_draft_dispatched');assert.equal(await panels().count(),1);
-    await layoutTab('Identity').click();await selected('Identity');
+    phase='layout_focus_restore';await layoutTab('Identity').click();await selected('Identity');
     assert.equal(await first.getAttribute('id'),firstId,'input_replaced');await value('First name','  Ada draft  ');
     assert.deepEqual(await first.evaluate(node=>({focused:document.activeElement===node,start:node.selectionStart,end:node.selectionEnd})),
       {focused:true,start:2,end:5},'focus_selection_not_retained');
     const names=active().locator('.orientation-horizontal').filter({has:page.getByLabel('First name',{exact:true})});
     assert.equal(await names.count(),1,'horizontal_group_missing');
-    await screenshot(screenshots[0]);await command('Build summary','ApplyIdentity');
+    phase='layout_initial_summary';await screenshot(screenshots[0]);await command('Build summary','ApplyIdentity');
     await value('Summary','  Ada draft   : ');
   });
   await scenario(scenarioNames[1],async()=>{
@@ -459,7 +461,9 @@ async function main(){
     await naturalStop();report.naturalShutdown=true;
   });
   await scenario(scenarioNames[3],async()=>{
-    await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await openForm();
+    await page.close();page=await context.newPage();phase='layout_fault_host_start';await startHost();
+    phase='layout_fault_writer_attach';await page.goto(url);await writer();await openForm();
+    phase='layout_fault_copy_recovery';
     await field('First name').fill('  uncertain first  ');await layoutTab('Notes').click();await field('Notes').fill('  retained note  ');
     await layoutTab('Identity').click();dropNextChange=true;await field('First name').press('Enter');
     await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
