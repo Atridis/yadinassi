@@ -20,6 +20,7 @@
 .page-tabs { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line, #dce3e7); padding-bottom: 8px; margin-bottom: 16px; }
 .page-tab { overflow-wrap: anywhere; white-space: normal; }
 .page-tab[aria-selected="true"] { background: #173f39; color: white; border-color: #173f39; }
+.page-tab[aria-selected="true"]:hover:not(:disabled) { background: #0e332e; color: white; border-color: #0e332e; }
 .layout-page { border: 0; padding: 0; }
 .layout-group[hidden], .group-title[hidden], .page-tab[hidden] { display: none; }
 @media (max-width: 640px) { .orientation-horizontal { flex-direction: column; } .orientation-horizontal > * { flex-basis: auto; width: 100%; } }

@@ -10,12 +10,12 @@
     "src/view.mjs": "6d74959ea81af2eb96fd9cb52cd1f56beb1e34f0fa5f5c0797ef213f91850907",
     "src/app.mjs": "617924421e8c5a6ae36425be70f91a3135d0bc292e2715cbe7e86264a8545dad",
     "src/index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
-    "src/style.css": "5a95e8762dc6a5902bce060f7e8b2286fa57c5b3240cef534e3a10f6c70e761a"
+    "src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5"
   },
   "outputs": {
     "app.js": "93098c490f205881e8648862c0a132dab2d038b661cf63518d427c78caa7fb47",
     "index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
-    "style.css": "5a95e8762dc6a5902bce060f7e8b2286fa57c5b3240cef534e3a10f6c70e761a",
+    "style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

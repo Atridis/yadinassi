@@ -6,7 +6,7 @@
     "build.mjs": "2937d4293ace257058be1c94ce691c1700a0d69590bf636287a715d4d1588669",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "src/style.css": "2356466fb05c55827553590767c925cca82c00da538579ffdd04191292a33804",
-    "../form/src/style.css": "5a95e8762dc6a5902bce060f7e8b2286fa57c5b3240cef534e3a10f6c70e761a",
+    "../form/src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "../form/src/client.mjs": "951055cec3e38619f029e1e8695ee2e885edee925fbcdf192b5b0a29a5d43f10",
     "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
@@ -18,7 +18,7 @@
   "outputs": {
     "app.js": "b0255d37be2b333ea2dcae89ad07133846d9c20be7700ad542318d670941607f",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "style.css": "46f9f9f44a5e0e8cca1ce08e3b897dea61e613d262ea4f6064329bdb39c09c39",
+    "style.css": "816034083658c9204169113d6ea81f89925e1a63632e07a2783f4a5527c9e676",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

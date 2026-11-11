@@ -148,7 +148,8 @@ const entries=()=>page.getByRole('navigation',{name:'Declared forms',exact:true}
 const tabs=()=>page.getByRole('navigation',{name:'Open forms',exact:true});
 const panels=()=>page.locator('.configuration-form-panels > section');
 const active=()=>page.locator('.configuration-form-panels > section:not([hidden])');
-const field=name=>active().getByLabel(name,{exact:true});
+// Page panels and editors may share a label; constrain exact labels to inputs.
+const field=name=>active().locator('input').and(active().getByLabel(name,{exact:true}));
 const action=name=>active().getByRole('button',{name,exact:true});
 const layoutTab=name=>active().getByRole('tab',{name,exact:true});
 const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
@@ -252,6 +253,24 @@ async function scenario(name,fn){
  check();phase=name;const start=businessEvents.length,index=scenarioNames.indexOf(name);
  await fn();check();assert.deepEqual(businessEvents.slice(start),businessPlan[index],'business_rpc_plan_changed');
  results.push({name,status:'PASS',businessRpc:businessEvents.length-start});
+}
+async function selectedHoverContrast(){
+  const selected=layoutTab('Identity');await selected.hover();
+  // Wait for the known transition endpoint, not an arbitrary sleep or a transient dark frame.
+  await page.waitForFunction(id=>{
+    const node=document.getElementById(id);if(!node)return false;
+    const style=getComputedStyle(node);
+    return style.color==='rgb(255, 255, 255)'&&style.backgroundColor==='rgb(14, 51, 46)';
+  },await selected.getAttribute('id'),{timeout:remaining(10000)});
+  const colors=await selected.evaluate(node=>{const style=getComputedStyle(node);return [style.color,style.backgroundColor];});
+  const luminance=color=>{
+    const match=/^rgb\((\d+), (\d+), (\d+)\)$/.exec(color);assert.ok(match,'tab_color_format');
+    const channels=match.slice(1).map(Number);assert.ok(channels.every(value=>value>=0&&value<=255));
+    const linear=channels.map(value=>{const c=value/255;return c<=0.04045?c/12.92:((c+0.055)/1.055)**2.4;});
+    return linear[0]*0.2126+linear[1]*0.7152+linear[2]*0.0722;
+  };
+  const values=colors.map(luminance);const contrast=(Math.max(...values)+0.05)/(Math.min(...values)+0.05);
+  assert.ok(contrast>=4.5,'selected_tab_hover_contrast');report.selectedTabHoverContrast=Math.round(contrast*100)/100;
 }
 async function screenshot(name){
   assert.ok(screenshots.includes(name),'unexpected_screenshot');
@@ -428,6 +447,7 @@ async function main(){
       {focused:true,start:2,end:5},'focus_selection_not_retained');
     const names=active().locator('.orientation-horizontal').filter({has:page.getByLabel('First name',{exact:true})});
     assert.equal(await names.count(),1,'horizontal_group_missing');
+    phase='layout_hover_contrast';await selectedHoverContrast();
     phase='layout_initial_summary';await screenshot(screenshots[0]);await command('Build summary','ApplyIdentity');
     await value('Summary','  Ada draft   : ');
   });
@@ -444,20 +464,21 @@ async function main(){
     assert.equal(await field('First name').evaluate(node=>node.readOnly),false,'child_flag_not_restored');
   });
   await scenario(scenarioNames[2],async()=>{
-    await openForm();await countPanels(2);await layoutTab('Notes').click();await field('Notes').fill('Sibling draft');
-    const before=businessEvents.length;await tabs().getByRole('button').nth(0).click();await selected('Identity');
+    phase='layout_second_open';await openForm();await countPanels(2);
+    phase='layout_second_notes_draft';await layoutTab('Notes').click();await field('Notes').fill('Sibling draft');
+    phase='layout_return_first_instance';const before=businessEvents.length;await tabs().getByRole('button').nth(0).click();await selected('Identity');
     assert.equal(businessEvents.length,before,'instance_navigation_dispatched');
-    await layoutTab('Identity').focus();await layoutTab('Identity').press('End');await selected('Notes');
-    await command('Show/hide notes page','ToggleNotesButton');await selected('Identity');
+    phase='layout_keyboard_end';await layoutTab('Identity').focus();await layoutTab('Identity').press('End');await selected('Notes');
+    phase='layout_hide_page';await command('Show/hide notes page','ToggleNotesButton');await selected('Identity');
     assert.equal(await active().getByRole('tab',{name:'Notes',exact:true}).count(),0,'hidden_page_tab_exposed');
-    await command('Show/hide notes page','ToggleNotesButton');await selected('Identity');
-    await layoutTab('Identity').focus();await layoutTab('Identity').press('ArrowRight');await selected('Notes');
-    await page.setViewportSize({width:390,height:844});
+    phase='layout_show_page';await command('Show/hide notes page','ToggleNotesButton');await selected('Identity');
+    phase='layout_keyboard_next';await layoutTab('Identity').focus();await layoutTab('Identity').press('ArrowRight');await selected('Notes');
+    phase='layout_narrow';await page.setViewportSize({width:390,height:844});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'narrow_horizontal_overflow');
     await screenshot(screenshots[2]);await page.setViewportSize({width:1100,height:850});
-    await tabs().getByRole('button').nth(1).click();await selected('Notes');await value('Notes','Sibling draft');
-    await commitInput('Notes','Sibling draft');await command('Build summary','ApplyNotes');await value('Summary',' : Sibling draft');
-    await closeForm();await countPanels(1);await selected('Notes');await closeForm();await countPanels(0);
+    phase='layout_return_second_instance';await tabs().getByRole('button').nth(1).click();await selected('Notes');await value('Notes','Sibling draft');
+    phase='layout_apply_second_draft';await commitInput('Notes','Sibling draft');await command('Build summary','ApplyNotes');await value('Summary',' : Sibling draft');
+    phase='layout_natural_close';await closeForm();await countPanels(1);await selected('Notes');await closeForm();await countPanels(0);
     await naturalStop();report.naturalShutdown=true;
   });
   await scenario(scenarioNames[3],async()=>{
@@ -497,7 +518,7 @@ catch(error){
   failed=true;report.status='FAIL';
   // Fixed, bounded flags/counts only. Never record DOM text, field contents,
   // response bodies, exception strings, database identifiers or capability URLs.
-  report.rpcRequests=rpc;
+  report.rpcRequests=rpc;report.businessRpc=businessEvents.length;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
   report.failure={phase,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};

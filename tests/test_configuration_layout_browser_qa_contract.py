@@ -99,6 +99,22 @@ class ConfigurationLayoutBrowserContractTests(unittest.TestCase):
             "press('End')", "press('ArrowRight')", 'width:390,height:844', "'narrow_horizontal_overflow'",
             "await value('Notes','Sibling draft')", "await value('Summary',' : Sibling draft')")
 
+    def test_editor_selector_excludes_same_named_accessible_page_panel(self):
+        self.contains("const field=name=>active().locator('input').and(active().getByLabel(name,{exact:true}))",
+            "phase='layout_second_notes_draft'", "phase='layout_return_first_instance'",
+            "phase='layout_keyboard_end'", "phase='layout_narrow'", 'report.businessRpc=businessEvents.length')
+        self.assertNotIn("const field=name=>active().getByLabel(", self.source)
+        view = (ROOT / 'frontend/form/src/view.mjs').read_text(encoding='utf-8')
+        self.assertIn("row.setAttribute('role', 'tabpanel')", view)
+        self.assertIn("row.setAttribute('aria-labelledby', result.tab.id)", view)
+
+    def test_selected_hover_observes_final_computed_contrast(self):
+        self.contains('await selected.hover()', "style.backgroundColor==='rgb(14, 51, 46)'",
+            "style.color==='rgb(255, 255, 255)'", "contrast>=4.5,'selected_tab_hover_contrast'",
+            'report.selectedTabHoverContrast=Math.round(contrast*100)/100', "phase='layout_hover_contrast'")
+        css = (ROOT / 'frontend/form/src/style.css').read_text(encoding='utf-8')
+        self.assertIn('.page-tab[aria-selected="true"]:hover:not(:disabled) { background: #0e332e; color: white; border-color: #0e332e; }', css)
+
     def test_real_completed_response_loss_and_copy_only_no_retry(self):
         self.contains('const actual=await auditResponse(response)', 'dropNextChange=false',
             "'real_change_not_completed'", "return await route.abort('failed')", 'report.realReplyDroppedAfterConfirmedChange=true',
