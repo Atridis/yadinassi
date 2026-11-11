@@ -14,7 +14,8 @@ jobs:
       github.repository_owner_id == '30860798' && github.actor == 'Atridis' &&
       github.actor_id == '30860798' && github.triggering_actor == 'Atridis' &&
       github.event.pull_request.head.repo.full_name == 'Atridis/yadinassi' &&
-      github.event.pull_request.head.ref == 'codex/db-inventory-references' &&
+      (github.event.pull_request.head.ref == 'codex/db-inventory-references' ||
+       github.event.pull_request.head.ref == 'codex/explicit-profile-import') &&
       github.event.pull_request.base.ref == 'main'
     permissions:
       contents: read
