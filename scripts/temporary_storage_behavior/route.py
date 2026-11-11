@@ -8,7 +8,7 @@ SCHEMA='native-1c-temporary_storage-v1'
 STAGE_SCHEMA='native-1c-temporary_storage-stage-v1'
 COUNT=16
 MAX_OUTPUT=131072
-SOURCE_SHA256='dc09cda31cba58b520301c6f05767b4d1352606472725070ba3f77f316765a30'
+SOURCE_SHA256='a5d1cdce77f24f6801a55328812fc442c3978e5daae13fdebef807b355f520e7'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

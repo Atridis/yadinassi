@@ -35,7 +35,8 @@ Function ObserveCase(CaseNo, Stage)
         Try Value = GetFromTempStorage("not-a-storage-url"); Return "value:"+String(Value=Undefined); Except Return "error"; EndTry;
     EndIf;
     If CaseNo = 10 Then
-        Try DeleteFromTempStorage("not-a-storage-url"); Return "deleted"; Except Return "error"; EndTry;
+        Address=PutToTempStorage(Base64Value("AAEC"),Owner);
+        Return Base64String(GetFromTempStorage(Address));
     EndIf;
     If CaseNo = 11 Then
         Address=PutToTempStorage("without-owner"); Return GetFromTempStorage(Address);
