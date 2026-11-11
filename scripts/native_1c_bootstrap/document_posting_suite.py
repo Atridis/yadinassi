@@ -15,7 +15,7 @@ def empty_report(nonce):
         failure_kind='prerequisites_failed',failure_phase='prerequisites',input_sha256={},
         source_sha256=None,module_sha256=None,module_verified_sha256=None,
         output_sha256=None,output_size=None,record_count=None,
-        process_diagnostics=full.empty_process_diagnostics(),
+        redump_diagnostic=[],process_diagnostics=full.empty_process_diagnostics(),
         **{k:False for k in ('entered','completed','process_exited','quiet','witness_verified','config_verified')})
 
 
@@ -79,7 +79,9 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         designer('update',['/UpdateDBCfg'])
         phase='redump';after=root/'after';after.mkdir()
         designer('after',['/DumpConfigToFiles',str(after),'-Format','Hierarchical'])
-        fixture.verify_redump(expected,dump_files(after));report['config_verified']=True
+        actual=dump_files(after)
+        report['redump_diagnostic']=fixture.redump_diagnostic(expected,actual)
+        fixture.verify_redump(expected,actual);report['config_verified']=True
         program_path=root/'observe.bsl';program_path.write_bytes(source)
         case=root/'case';output=root/'wire.out'
         launcher.read_result=full.read_native_result

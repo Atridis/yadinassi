@@ -38,3 +38,53 @@ def prepare(files):
     _files(expected);return setup,expected
 
 verify_redump=original.verify_redump
+
+
+def redump_diagnostic(expected, actual):
+    """Bounded metadata-only differences; never a substitute for verification.
+
+    Text/attribute values are exposed only for the two source-owned metadata
+    objects and only as short ASCII tokens. No modules, logs or database rows.
+    """
+    import re
+    import hashlib
+    owned={'Documents/OwnedPostingDoc.xml','InformationRegisters/OwnedPostingRows.xml'}
+    result=[]
+    def token(value):
+        if re.fullmatch(r'[A-Za-z0-9_.:{}/\-]{0,64}',value):return value
+        return 'sha256:'+hashlib.sha256(value.encode()).hexdigest()[:16]
+    def add(value):
+        if len(result)<12:result.append(value[:120])
+    def flattened(raw):
+        root,_=original._xml(raw);out={}
+        def visit(node,path):
+            name=node.tag.rsplit('}',1)[-1];path=path+'/'+name
+            out[path]=(token((node.text or '').strip()),tuple(sorted((token(k),token(v)) for k,v in node.attrib.items())))
+            counts={}
+            for child in node:
+                name=child.tag.rsplit('}',1)[-1];counts[name]=counts.get(name,0)+1
+                visit(child,path+'['+str(counts[name])+']')
+        visit(root,'');return out
+    for name in sorted(set(expected)|set(actual)):
+        label=name if name in owned or name=='Configuration.xml' else 'file-sha256:'+hashlib.sha256(name.encode()).hexdigest()[:16]
+        if name not in expected or name not in actual:
+            add(label+(': added' if name not in expected else ': missing'));continue
+        if name=='ConfigDumpInfo.xml':continue
+        try:
+            if name.endswith('.xml'):
+                if original._signature(expected[name])==original._signature(actual[name]):continue
+                add(label+': XML differs')
+                if name in owned:
+                    left,right=flattened(expected[name]),flattened(actual[name])
+                    for key in sorted(set(left)|set(right)):
+                        if left.get(key)!=right.get(key):
+                            add(key.removeprefix('/MetaDataObject')+': '+str(left.get(key))+' -> '+str(right.get(key)))
+            elif expected[name].decode('utf-8-sig').replace('\r\n','\n')!=actual[name].decode('utf-8-sig').replace('\r\n','\n'):
+                add(label+': content differs')
+        except (ValueError,UnicodeError):add(label+': invalid XML or encoding')
+    return result
+
+
+def valid_diagnostic(value):
+    return (type(value) is list and len(value)<=12 and all(type(v) is str and
+        len(v)<=120 and all(32<=ord(c)<=126 for c in v) for v in value))

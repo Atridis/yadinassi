@@ -48,3 +48,25 @@ class PostingAcquisitionTests(unittest.TestCase):
         self.assertNotIn('pull_request_target',workflow)
         self.assertIn('persist-credentials: false',workflow)
         self.assertIn('native_1c_ci_policy.py bind',workflow)
+    def test_redump_diagnostic_does_not_accept_different_xml(self):
+        name='Documents/OwnedPostingDoc.xml'
+        expected={name:b'<Metadata><Posting>Deny</Posting></Metadata>'}
+        actual={name:b'<Metadata><Posting>Allow</Posting></Metadata>'}
+        self.assertTrue(fixture.redump_diagnostic(expected,actual))
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_redump_diagnostic_never_exports_module_text(self):
+        value=fixture.redump_diagnostic({'secret/Ext/ObjectModule.bsl':b'private'}, {'secret/Ext/ObjectModule.bsl':b'changed'})
+        self.assertNotIn('private',str(value));self.assertNotIn('secret',str(value))
+        self.assertTrue(fixture.valid_diagnostic(value))
+    def test_redump_diagnostic_bounded_and_text_redacted(self):
+        name='Documents/OwnedPostingDoc.xml'
+        expected={name:b'<Metadata><Text>old text</Text></Metadata>'}
+        actual={name:b'<Metadata><Text>private text</Text></Metadata>'}
+        value=fixture.redump_diagnostic(expected,actual)
+        self.assertNotIn('private text',str(value));self.assertTrue(fixture.valid_diagnostic(value))
+        self.assertFalse(fixture.valid_diagnostic(['x'*121]))
+        self.assertFalse(fixture.valid_diagnostic(['x']*13))
+    def test_equal_redump_diagnostic_empty(self):
+        files={'Documents/OwnedPostingDoc.xml':b'<Metadata><Posting>Allow</Posting></Metadata>'}
+        self.assertEqual(fixture.redump_diagnostic(files,files),[])
+        self.assertTrue(fixture.verify_redump(files,files))
