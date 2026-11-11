@@ -219,3 +219,8 @@ tests/fixtures/native_inventory_reference/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Exact owned configuration XDTO package observation inputs.
+scripts/configuration_xdto_behavior/** text eol=lf
+scripts/configuration_xdto_behavior/Package.bin -text
+scripts/native_1c_configuration_xdto_probe.sh text eol=lf
