@@ -42,7 +42,8 @@ const businessEvents=[];
 const diagnosticPhases=['command_binding','command_click','command_wait','command_read','command_outcome','command_idle',
  'fixture_create','fixture_audit','audit_catalogs','audit_document_count',
  'audit_document_posted','audit_document_quantity','audit_no_movements',
- 'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan'];
+ 'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan',
+ 'report_tab','report_fill','report_click','report_wait','report_read','report_assert','report_done'];
 const diagnosticReasons=['session_panel_binding','active_session_missing','command_session_changed',
  'command_outcome_count','posting_outcome','audit_catalogs','audit_document_count',
  'audit_document_posted','audit_document_quantity','write_created_movements',
@@ -51,7 +52,8 @@ const diagnosticReasons=['session_panel_binding','active_session_missing','comma
  'late_reply_changed_owner','duplicate_open_rpc','duplicate_write_rpc','duplicate_post_rpc',
  'duplicate_write_revision','shortage_changed_persisted_state','shortage_not_rejected',
  'resource_value','report_refused','balance_not_exclusive','unsaved_draft_changed_persistence',
- 'audited_reply_missing','audited_reply_request','audited_reply_origin','audited_reply_budget','audited_reply_duplicate','audited_reply_id'];
+ 'audited_reply_missing','audited_reply_request','audited_reply_origin','audited_reply_budget','audited_reply_duplicate','audited_reply_id',
+ 'report_html_period','report_period_request','report_period_result'];
 const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
  (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
 const checkpoint=label=>{assert.ok(diagnosticPhases.includes(label),'invalid_diagnostic_phase');phase=label;};
@@ -616,22 +618,33 @@ async function main(){
     const reply=formReply('command','AddLineButton');await action('Add line').click();await reply;await idle();
     await choose('Product, row 1','P1','Widget');await commitInput('Quantity, row 1',quantity);await commitInput('Amount, row 1',amount);
   };
+  // Native datetime-local uses the shortest normalized HTML spelling: zero
+  // seconds are omitted. The application restores exact whole seconds on wire.
+  const fillPeriod=async(locator,value)=>{
+    const html=value.endsWith(':00')?value.slice(0,-3):value;
+    await locator.fill(html);assert.equal(await locator.inputValue(),html,'report_html_period');
+  };
   const showReport=async(view,bounds={})=>{
-    await page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock '+view,exact:true}).click();
-    const panel=reportPanel();
-    if(view==='Balance')await panel.getByLabel('Balance before moment (exclusive)',{exact:true}).fill(bounds.at||'2026-11-11T12:00:01');
+    const expected={report:'Stock'+view,at:view==='Balance'?(bounds.at||'2026-11-11T12:00:01'):null,
+      start:view==='Turnovers'?'2026-11-11T12:00:00':null,end:view==='Turnovers'?'2026-11-11T12:00:00':null};
+    checkpoint('report_tab');await page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock '+view,exact:true}).click();
+    const panel=reportPanel();checkpoint('report_fill');
+    if(view==='Balance')await fillPeriod(panel.getByLabel('Balance before moment (exclusive)',{exact:true}),expected.at);
     if(view==='Turnovers'){
-      await panel.getByLabel('From moment (inclusive)',{exact:true}).fill('2026-11-11T12:00:00');
-      await panel.getByLabel('Through moment (inclusive)',{exact:true}).fill('2026-11-11T12:00:00');
+      await fillPeriod(panel.getByLabel('From moment (inclusive)',{exact:true}),expected.start);
+      await fillPeriod(panel.getByLabel('Through moment (inclusive)',{exact:true}),expected.end);
     }
-    const reply=replyFor(p=>p.method==='application.report');await panel.getByRole('button',{name:'Show saved stock',exact:true}).click();
-    const result=deliveredReply(await reply).result;assert.equal(result.error,null,'report_refused');await idle();
+    const reply=replyFor(p=>p.method==='application.report');checkpoint('report_click');await panel.getByRole('button',{name:'Show saved stock',exact:true}).click();
+    checkpoint('report_wait');const response=await reply;checkpoint('report_read');
+    assert.deepEqual(response.request().postDataJSON().params,expected,'report_period_request');
+    const result=deliveredReply(response).result;assert.equal(result.error,null,'report_refused');await idle();checkpoint('report_assert');
+    assert.deepEqual(Object.fromEntries(['report','at','start','end'].map(k=>[k,result.state.report[k]])),expected,'report_period_result');
     assert.equal(result.state.report.report,'Stock'+view);assert.equal(result.state.report.view,view);
     assert.equal(await panel.locator('table tbody tr').count(),result.state.report.rows.length,'report_dom_rows');
     assert.equal(await panel.locator('table button,table input,table select').count(),0,'report_not_readonly');
     if(view==='Balance')await panel.getByText('Displayed balance before '+(bounds.at||'2026-11-11T12:00:01')+' (exclusive). Editing the controls does not change this result until Show saved stock.',{exact:true}).waitFor();
     if(view==='Turnovers')assert.equal(result.state.report.start,result.state.report.end,'inclusive_single_second');
-    return result.state.report;
+    checkpoint('report_done');return result.state.report;
   };
   const reportNumber=(projection,name,expected)=>{
     assert.equal(projection.rows.length,1,'expected_one_stock_group');
@@ -700,7 +713,7 @@ async function main(){
   await scenario(scenarioNames[3],async()=>{
     await value('Document number','R1');await closeForm();await countPanels(0);const before=inventoryFixture('audit');
     await naturalStop();await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await idle();
-    await catalogEntry('Issue card');await openNumber('I1');await value('Warehouse','Main warehouse');await value('Product, row 1','Widget');await value('Quantity, row 1','3.25');
+    await catalogEntry('Issue card');await openNumber('I1');await value('Warehouse','Main warehouse');await value('Product, row 1','Widget');await value('Quantity, row 1','3.250');
     reportNumber(await showReport('Balance'),'QuantityBalance','7.250');assert.deepEqual(inventoryFixture('audit'),before,'reopen_mutated_database');
     await screenshot(screenshots[3]);await closeForm();await countPanels(0);await naturalStop();assert.deepEqual(inventoryFixture('audit'),before,'shutdown_mutated_database');
     report.acceptance={storedSourceLauncher:true,explicitFullForms15:true,core15Denied:true,typedCatalogChoices:true,
@@ -728,7 +741,9 @@ catch(error){
   const observerMessage=typeof error?.message==='string'?error.message:'';
   report.observerFailure=/No resource with given identifier|No data found for resource/.test(observerMessage)?'response_body_unavailable':
     /Target page, context or browser has been closed/.test(observerMessage)?'browser_closed':
-    /strict mode violation/.test(observerMessage)?'ambiguous_locator':'unclassified';
+    /strict mode violation/.test(observerMessage)?'ambiguous_locator':
+    /Malformed value/.test(observerMessage)?'malformed_input':
+    /Input of type .* cannot be filled|Element is not an <input>/.test(observerMessage)?'unsupported_input':'unclassified';
   report.failure={phase,scenario:activeScenario,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':diagnosticReason(error)};
 }

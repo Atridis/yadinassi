@@ -79,7 +79,9 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
     def test_periods_are_explicit_and_unsaved_values_excluded(self):
         self.contains("'balance_not_exclusive'", "'inclusive_single_second'",
             "'2026-11-11T12:00:00'", "'2026-11-11T12:00:01'", "'unsaved_draft_changed_persistence'",
-            "'mutating_path_retained_report'", "await value('Quantity, row 1','99')")
+            "'mutating_path_retained_report'", "await value('Quantity, row 1','99')",
+            "value.endsWith(':00')?value.slice(0,-3):value", "'report_html_period'",
+            "'report_period_request'", "'report_period_result'", "await value('Quantity, row 1','3.250')")
 
     def test_readonly_report_cells_never_expose_capabilities(self):
         self.contains("exactKeys(projection,'report view at start end columns rows')",
@@ -166,7 +168,9 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
             "checkpoint('audit_document_quantity')", "checkpoint('screenshot_storage')",
             'scenario:activeScenario', "report.lastCommandOutcome=['saved','rejected','uncertain','committed']",
             "checkpoint('command_click')", "checkpoint('command_wait')", "checkpoint('command_read')",
-            'report.failureClass=', 'report.observerFailure=', "'response_body_unavailable'")
+            'report.failureClass=', 'report.observerFailure=', "'response_body_unavailable'",
+            "checkpoint('report_tab')", "checkpoint('report_fill')", "checkpoint('report_click')",
+            "checkpoint('report_wait')", "checkpoint('report_read')", "'malformed_input'", "'unsupported_input'")
         for forbidden in ('report.url', 'report.headers', 'report.response', 'report.stack', 'console.log(error'):
             self.assertNotIn(forbidden, self.source)
 

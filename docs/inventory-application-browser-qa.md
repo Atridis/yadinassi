@@ -130,3 +130,14 @@ response body a second time. They still inspect the original response, not curre
 UI state, and issue no extra fetch or retry. Additional closed click/wait/read
 stages, exception classes and observer categories preserve uncertainty rather
 than asserting that CDP body eviction was demonstrated by the previous artifacts.
+
+After the exact-request observer correction, scenario 1 passed with its screenshot.
+The next acquisition stopped after a saved Post, before the first report RPC.
+Report tab/fill/click/wait/read/assert stages and closed malformed/unsupported
+input categories now distinguish that seam. Native datetime-local inputs are
+filled using normalized HTML values (zero seconds omitted); the actual request
+and response must still carry the exact original 19-character whole-second
+boundaries, including 12:00:00. No browser state is injected. The persisted reopen
+quantity assertion uses the declared scale-three spelling 3.250, consistent with
+the observed stored receipt quantity 10.500. No report numeric assertion, period
+meaning, runtime behavior, request count or time limit is relaxed.
