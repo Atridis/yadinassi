@@ -8,7 +8,7 @@ SCHEMA='native-1c-document-posting-v1'
 STAGE_SCHEMA='native-1c-document-posting-stage-v1'
 COUNT=12
 MAX_OUTPUT=131072
-SOURCE_SHA256='b1e887188b65a77836578520e94c30cc92b34aac8d3fbda438e48819eec9401e'
+SOURCE_SHA256='e9457b3f757cf12d847dbb8799542e22df5bb7009e68cd8dca443ddf27f08198'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

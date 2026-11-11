@@ -24,13 +24,13 @@ For CaseNo = 1 To 12 Do
             ElsIf CaseNo = 6 Then O.Write(DocumentWriteMode.UndoPosting);
             Else O.Write(DocumentWriteMode.Posting); EndIf;
         Except
-            Failed = True; PostingDiagnostic(CaseNo, Stage, DetailedErrorDescription(ErrorInfo()));
+            Failed = True; PostingDiagnostic(CaseNo, Stage, ПодробноеПредставлениеОшибки(ИнформацияОбОшибке()));
         EndTry;
         If OuterTransaction Then RollbackTransaction(); OuterTransaction = False; EndIf;
         If CaseNo = 10 Then
             CancelTrace = TraceOf(O); O.Number = "101"; O.AdditionalProperties.Insert("Trace", "");
             Try O.Write(DocumentWriteMode.Posting);
-            Except Failed = True; PostingDiagnostic(CaseNo, Stage, DetailedErrorDescription(ErrorInfo())); EndTry;
+            Except Failed = True; PostingDiagnostic(CaseNo, Stage, ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())); EndTry;
         EndIf;
         Stage = "readback";
         Persisted = O.Ref.GetObject(); PostedValue = "missing";
@@ -38,7 +38,7 @@ For CaseNo = 1 To 12 Do
         Stage = "query"; Rows = Snapshot(O.Ref);
         PostingEmit(CaseNo, String(Number(Failed)) + "|" + PostedValue + "|" + Rows + "|" + CancelTrace + TraceOf(O));
     Except
-        Details = DetailedErrorDescription(ErrorInfo());
+        Details = ПодробноеПредставлениеОшибки(ИнформацияОбОшибке());
         If OuterTransaction Then RollbackTransaction(); OuterTransaction = False; EndIf;
         PostingDiagnostic(CaseNo, Stage, Details);
     EndTry;

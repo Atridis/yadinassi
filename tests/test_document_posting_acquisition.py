@@ -148,5 +148,5 @@ class PostingAcquisitionTests(unittest.TestCase):
     def test_observer_uses_detailed_error_and_distinct_phases(self):
         source=route.source().decode()
         for stage in ('setup','seed','write','readback','query'):self.assertIn('"'+stage+'"',source)
-        self.assertIn('DetailedErrorDescription(ErrorInfo())',source)
+        self.assertIn('ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())',source)
         self.assertIn('If OuterTransaction Then RollbackTransaction()',source)
