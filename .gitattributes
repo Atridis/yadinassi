@@ -219,3 +219,9 @@ tests/fixtures/native_inventory_reference/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Exact owned common-template observation inputs.
+scripts/common_template_behavior/** text eol=lf
+scripts/common_template_behavior/OwnedText.txt -text
+scripts/common_template_behavior/OwnedBinary.bin -text
+scripts/native_1c_common_template_probe.sh text eol=lf
