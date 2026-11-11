@@ -47,6 +47,7 @@ class DocumentCard:
     deletion_mark: bool
     values: tuple
     tabular_sections: tuple[TabularSectionRows, ...] = ()
+    posted: bool = False
 
 
 @dataclass(frozen=True, slots=True)

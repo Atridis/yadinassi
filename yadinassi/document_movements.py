@@ -19,6 +19,8 @@ class RecorderRegisterSchema:
     identity: UUID
     recorder_documents: tuple[UUID, ...]
     fields: tuple[FieldSchema, ...]
+    name: str = ""
+    dimension_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

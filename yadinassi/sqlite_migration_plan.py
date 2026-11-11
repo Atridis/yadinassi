@@ -110,6 +110,9 @@ def prepare(path, *, maintenance=False, migration_id=None):
     try:
         version = backend.format_version
         if version not in BASE_VERSIONS: raise BackendError('unsupported')
+        # Source-activation grants are bound to their exact storage profile.
+        # Do not commit an additive format the grant cannot subsequently open.
+        if backend.activation_issues: raise BackendError('unsupported')
         database = backend.database_id
         indexes = profile_index_ddls(version,backend._schemas,backend._layout)
         schema_version = backend._sqlite_schema_version
