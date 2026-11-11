@@ -10,6 +10,7 @@ import sys
 from uuid import UUID, uuid4
 from pathlib import Path
 from functools import wraps, cmp_to_key
+from threading import RLock
 from contextlib import contextmanager
 from dataclasses import replace
 
@@ -30,7 +31,7 @@ from . import sqlite_hierarchy as hierarchy_storage
 from .sqlite_hierarchy import HIERARCHY_DDL
 from . import sqlite_transaction_profile as transaction_profile
 from .sqlite_query_indexes import register_query_collations
-from .sqlite_read_handles import ReadHandle
+from .sqlite_read_handles import ReadHandle, reserve_owner, lifecycle
 from .catalog_qualifiers import normalize_field, normalize_string, validate_string, bound_number
 from .sqlite_catalog_layout import (REGISTRY_DDL, MIGRATION_MARKER_DDL, build_layout, save_layout, load_layout, quote_identifier,
                                     catalog_ddl, index_ddls, encode_columns, decode_columns)
@@ -149,6 +150,7 @@ class _PendingConnection:
         self._closed=True; self._scan_cursor=None
         self._read_handle=None
 
+    @lifecycle
     def close(self):
         _close_owned_connection(self)
         # Failure before sqlite3.connect returned did not acquire a handle.
@@ -433,6 +435,7 @@ class SQLiteCatalogBackend:
         self.path = _private_parent(os.path.abspath(raw))
         self._closed = False
         self._active = None
+        self._owner_lock = RLock()
         self._read_handle = None
         self._file_identity = self._check_file()
         connection = self._connect()
@@ -517,9 +520,12 @@ class SQLiteCatalogBackend:
             actual = {name: sql for name,sql in connection.execute("SELECT name,sql FROM sqlite_master WHERE type='table' AND lower(substr(name,1,7)) != 'sqlite_'")}
             if actual != expected or connection.execute("SELECT 1 FROM sqlite_master WHERE type IN ('trigger','view') LIMIT 1").fetchone():
                 raise BackendError('unsupported')
-            actual_indexes = tuple(row[0] for row in connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name"))
             expected_indexes = transaction_profile.profile_index_ddls(self.storage_version,self._schemas,self._layout) if self.format_version in (11, 12, 13, 14) else ()
-            if self.storage_version >= 2 and actual_indexes != expected_indexes: raise BackendError('unsupported')
+            from .sqlite_query_indexes import read_index_bundle_ddls, admit_query_indexes
+            self._query_indexes = (admit_query_indexes(connection, expected_indexes,
+                read_index_bundle_ddls(self.storage_version,self._schemas,self._layout,
+                                       format_version=self.format_version))
+                if self.storage_version >= 2 else False)
             if self.format_version in (11, 12): transaction_profile.validate_marker(connection)
             if self.storage_version == 10:
                 if connection.execute('SELECT COUNT(*) FROM catalog_hierarchy').fetchone()[0] > _MAX_ROWS * len(schemas): raise BackendError('unsupported')
@@ -642,12 +648,12 @@ class SQLiteCatalogBackend:
 
     @classmethod
     @_boundary
-    def create(cls, path, configuration, *, activate=True, _source_profile=None):
+    def create(cls, path, configuration, *, activate=True, query_indexes=False, _source_profile=None):
         """Create only a new owned file, atomically import admitted XML and code."""
         from .configuration_xml import ConfigurationImport, ConfigurationFile, ConfigurationModule
         if type(configuration) is not ConfigurationImport or type(configuration.catalogs) is not tuple or type(configuration.files) is not tuple or type(configuration.modules) is not tuple or type(configuration.activation_issues) is not tuple:
             raise BackendError('invalid_input')
-        if type(activate) is not bool: raise BackendError('invalid_input')
+        if type(activate) is not bool or type(query_indexes) is not bool: raise BackendError('invalid_input')
         if _source_profile is not None and (type(_source_profile) is not str or _source_profile not in (*_DEMO_SOURCE_ISSUES, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE, DOCUMENT_FORMS_PROFILE, BUSINESS_PROFILE, REFERENCE_PROFILE) or not activate): raise BackendError('unsupported')
         if _source_profile is None and _source_profile_for_issues(configuration.activation_issues) is not None: raise BackendError('unsupported')
         if activate and configuration.activation_issues and _source_profile is None: raise BackendError('unsupported')
@@ -710,6 +716,7 @@ class SQLiteCatalogBackend:
                            5 if INERT_SOURCE_ISSUE in configuration.activation_issues else
                            4 if any(s.numbering != 'explicit' for s in schemas) else
                            3 if section_count else 2)
+        if query_indexes and storage_version == 5: raise BackendError('unsupported')
         if storage_version == 10 and (_source_profile is not None or INERT_SOURCE_ISSUE in configuration.activation_issues): raise BackendError('unsupported')
         identities = {s.identity for s in schemas}
         if len(identities) != len(schemas): raise BackendError('invalid_input')
@@ -800,6 +807,12 @@ class SQLiteCatalogBackend:
                 for schema in schemas:
                     for section in schema.tabular_sections:
                         connection.execute(section_ddl(schema, section, layout, sections_layout))
+            if query_indexes:
+                from .sqlite_query_indexes import read_index_bundle_ddls, check_index_bundle_budget
+                bundle=read_index_bundle_ddls(storage_version,schemas,layout,format_version=storage_version)
+                check_index_bundle_budget(connection,bundle)
+                for statement in bundle:
+                    connection.execute(statement)
             for f in files:
                 connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)', (f.path,f.kind,f.content,hashlib.sha256(f.content).hexdigest()))
             connection.execute('PRAGMA application_id=%d' % _APPLICATION_ID)
@@ -1339,14 +1352,15 @@ class SQLiteCatalogBackend:
             return RegisterView(raw).resolve_set(operation_id, draft)
         finally: raw.close()
 
+    @lifecycle
     def _begin(self, operation_id, *, _receipt_only=False):
         if _receipt_only and operation_id is not None: raise BackendError('unsupported')
         if self._closed: raise BackendError('closed')
         if self.storage_version == 5 or not self.activated: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
         pending = _PendingConnection(self)
+        reserve_owner(self, pending)
         try:
-            self._active = pending
             self._check_file()
             if operation_id is not None and self._read_handle is not None:
                 # Even a failed/uncertain writer must never reuse prior facts.
@@ -1595,6 +1609,7 @@ class SQLiteCatalogBackend:
             if view is not None: view.close()
             else: connection.close()
 
+    @lifecycle
     def _close_idle_read_handle(self):
         if self._active is not None: raise BackendError('busy')
         if self._read_handle is not None:
@@ -1604,6 +1619,7 @@ class SQLiteCatalogBackend:
             pending._read_handle = self._read_handle
             pending.close()
 
+    @lifecycle
     def close(self):
         if self._active is not None:
             _close_owned_connection(self._active)
@@ -2563,6 +2579,7 @@ class _View:
         return revisions
 
     def rollback(self): self.close()
+    @lifecycle
     def close(self):
         handle = self._read_handle
         if (self._closed or handle is None or self._poisoned
@@ -2595,7 +2612,7 @@ class _View:
             raise
 
 # The document port shares the same closed storage error boundary.
-for _document_method in ('_validate_query_source','documents','document_schema','read_document','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
+for _document_method in ('_validate_query_source','documents','document_schema','read_document','read_document_values','select_documents','scan_documents','scan_document_values','find_document_number','registers','register_schema','scan_register','periodic_records','create','update','commit','resolve'):
     setattr(DocumentView, _document_method, _boundary(getattr(DocumentView, _document_method)))
 
 install_boundaries(_boundary)

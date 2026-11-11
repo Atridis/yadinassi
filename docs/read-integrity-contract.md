@@ -34,3 +34,34 @@ unsupported; no read operation installs indexes or performs schema maintenance.
 Sequential host-thread handoff of an idle readonly connection is permitted;
 concurrent operations on one backend remain unsupported. Connection retention
 is not a new concurrent-query API or an implicit transaction spanning BSL calls.
+
+## Validation scopes and projections
+
+Catalog source proofs cover the same scalar/owner checks as before. Document
+`document-coarse` proofs cover only SQL shape and source byte/count bounds; they
+are not scalar or section proofs. `document-record` proves one complete selected
+record, including sections and Posted state; `document-full` proves every record
+and carries Query's original-source budget totals. A point field getter and
+BINARY FindByNumber require coarse plus selected-record validation, not unrelated
+full semantic validation. Query and Select require full-source validation.
+Only a matching scope can satisfy a later request on the same pinned epoch.
+
+A warm document field read projects the requested header payload without
+constructing a partial card. A custom field needs header JSON, not section JSON.
+Read/write transaction adapters keep their existing path and never borrow a
+readonly proof. Select filters and bounds materialization in SQL but keeps full
+detached matching cards, so selection.GetObject still uses that snapshot.
+Posted state is joined during source validation/projection, not fetched once per
+document. Neither a range nor an unrequested field hides corrupt data within
+its original validation scope.
+
+INNER join filtering uses already-bound source-local conjunctions only when
+all joins are INNER and the entire WHERE/ON region is proven total. Arithmetic,
+OR, outer joins, derived sources and unsupported source families stay on the
+existing path. The original WHERE/ON remain residuals, and all original source
+integrity/budget checks still run. This is not join reordering or a limit bypass.
+
+Recorder scans merge two ordered streams on the same caller-owned snapshot:
+partition revisions (including empty partitions) and movements. Declaration,
+FK, row/byte budgets, canonical decoding and exact snapshot hashes remain.
+The batch reader never begins, commits or closes the borrowed transaction.

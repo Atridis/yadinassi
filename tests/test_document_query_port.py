@@ -242,7 +242,7 @@ class DocumentQueryPortTests(unittest.TestCase):
             self.assertEqual(len(view._view._scan_cursor), 2)
             request = replace(request, continuation=page.continuation)
         self.assertEqual(numbers, [str(i).zfill(9) for i in range(1, 6)])
-        self.assertEqual(sum('ORDER BY date,number,record_id' in sql for sql in statements), 1)
+        self.assertEqual(sum('ORDER BY r.date,r.number,r.record_id' in sql for sql in statements), 1)
         self.assertIsNone(view._view._document_scan_stream)
         self.assertIsNone(view._view._document_scan_lookahead)
 

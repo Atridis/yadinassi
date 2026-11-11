@@ -4,7 +4,39 @@ The owning backend permits one active view/writer. A retained handle is readonly
 its transaction ends at every lease boundary. Proofs never move to a different
 sqlite connection, even when paths, generations and data_version numbers match.
 """
+from functools import wraps
 from .catalog_backend import BackendError
+
+
+def lifecycle(function):
+    """Serialize only ownership transitions; never queue concurrent operations.
+
+    Views themselves are not a thread-safe API. Reentrancy is needed for the
+    existing nested cleanup paths; a foreign transition fails busy immediately.
+    """
+    @wraps(function)
+    def call(owner, *args, **kwargs):
+        backend = getattr(owner, '_backend', owner)
+        lock = getattr(backend, '_owner_lock', None)
+        if lock is None: return function(owner, *args, **kwargs)
+        if not lock.acquire(blocking=False): raise BackendError('busy')
+        try: return function(owner, *args, **kwargs)
+        finally: lock.release()
+    return call
+
+
+def reserve_owner(backend, owner):
+    """Atomically reserve, never queue SQL operations on an already owned handle."""
+    with backend._owner_lock:
+        if backend._closed: raise BackendError('closed')
+        if backend._active is not None: raise BackendError('busy')
+        try:
+            backend._active = owner
+        except BaseException:
+            # This reservation has no connection yet. An interrupted attribute
+            # publication must not strand an empty owner or touch another view.
+            if backend._active is owner: backend._active = None
+            raise
 
 MAX_PROOFS = 2048
 MAX_OWNER_IDENTITIES = 10000

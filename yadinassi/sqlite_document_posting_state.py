@@ -20,11 +20,16 @@ def read_posted(connection,database_id,key):
     if not connection.in_transaction:raise BackendError('closed')
     row=connection.execute('SELECT r.revision,p.document_revision,p.posted FROM document_record r LEFT JOIN document_posting_state p ON p.document_id=r.document_id AND p.record_id=r.record_id WHERE r.document_id=? AND r.record_id=?',(str(key.document_id),str(key.record_id))).fetchone()
     if row is None:return None
-    revision,state_revision,posted=row
+    return decode_posted(*row)
+
+
+def decode_posted(revision, state_revision, posted):
+    """Same validation for a point read and an owned batch LEFT JOIN."""
     if type(revision) is not int or not 1<=revision<2**63:raise BackendError('integrity')
     if state_revision is None and posted is None:return False
     if type(state_revision) is not int or not 1<=state_revision<=revision or type(posted) is not int or posted not in (0,1):raise BackendError('integrity')
     return bool(posted)
+
 
 
 

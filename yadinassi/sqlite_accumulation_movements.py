@@ -191,10 +191,19 @@ class AccumulationMovementPort:
             raise BackendError('unsupported')
         if not revision and count:
             raise BackendError('integrity')
-        rows = []
-        for line, period, active, direction, raw in self.connection.execute(
+        from contextlib import closing
+        with closing(self.connection.execute(
                 'SELECT line_number,period,active,direction,values_json FROM accumulation_movement '
-                'WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number', key):
+                'WHERE register_id=? AND document_id=? AND record_id=? ORDER BY line_number', key)) as source:
+            return self._decoded_partition(schema, recorder, revision, source)
+
+    def _decoded_partition(self, schema, recorder, revision, source):
+        """Same canonical occurrence decoder for point reads and batch scans."""
+        if type(revision) is not int or not 0 <= revision < 2**63:
+            raise BackendError('integrity')
+        rows = []
+        for line, period, active, direction, raw in source:
+            if len(rows) >= MAX_MOVEMENT_ROWS: raise BackendError('unsupported')
             if (type(line) is not int or line != len(rows) + 1 or type(period) is not str
                     or len(period) != 14 or type(active) is not int or active not in (0, 1)
                     or type(direction) is not str or type(raw) is not str):
@@ -214,20 +223,23 @@ class AccumulationMovementPort:
                                                     AccumulationDirection(direction), *groups))
             except (ValueError, TypeError, RecursionError):
                 raise BackendError('integrity') from None
+        if revision == 0 and rows: raise BackendError('integrity')
         rows = tuple(rows)
         try:
-            validate_replacement(schema, AccumulationReplacement(register_id, recorder, rows, '0' * 64),
+            validate_replacement(schema, AccumulationReplacement(schema.identity, recorder, rows, '0' * 64),
                                  self.database_id)
         except BackendError:
             raise BackendError('integrity') from None
         if self.active_only and any(row.active is not True for row in rows):
             raise BackendError('unsupported')
         encoded = self._encoded(schema, rows)
-        return AccumulationPartition(register_id, recorder, revision, rows,
+        return AccumulationPartition(schema.identity, recorder, revision, rows,
                                      self._snapshot(schema, recorder, revision, encoded))
 
     def scan(self, register_id):
-        """Bounded raw occurrences only, without aggregation or source access."""
+        """Bounded raw occurrences from two streams on the borrowed snapshot."""
+        from contextlib import closing
+        from .sqlite_partition_scan import ordered_partitions, recorder_key
         if type(register_id) is not UUID or not register_id.int:
             raise BackendError('invalid_input')
         schema = self.schemas.get(register_id)
@@ -235,20 +247,36 @@ class AccumulationMovementPort:
             raise BackendError('unsupported')
         self._require(register_id, DocumentKey(self.database_id, schema.recorder_documents[0], UUID(int=1)))
         validate_database_budget(self.connection)
+        args = (str(register_id),)
+        # Aggregate limits before fetching any payload, preserving the point
+        # port's per-partition (not per-register) configurable bounds.
+        oversized = self.connection.execute(
+            'SELECT 1 FROM accumulation_movement WHERE register_id=? '
+            'GROUP BY document_id,record_id HAVING COUNT(*)>? OR '
+            'SUM(length(CAST(values_json AS BLOB))+length(CAST(period AS BLOB))'
+            '+length(CAST(direction AS BLOB))+64)>? OR '
+            'MAX(length(CAST(values_json AS BLOB))+length(CAST(period AS BLOB))'
+            '+length(CAST(direction AS BLOB))+64)>? LIMIT 1',
+            (*args, MAX_MOVEMENT_ROWS, MAX_BYTES, MAX_ROW_BYTES)).fetchone()
+        if oversized:
+            raise BackendError('unsupported')
         for table in ('accumulation_register_document', 'accumulation_partition', 'accumulation_movement'):
             if self.connection.execute('PRAGMA foreign_key_check(' + table + ')').fetchone():
                 raise BackendError('integrity')
         result = []
-        for document, record in self.connection.execute(
-                'SELECT document_id,record_id FROM accumulation_partition WHERE register_id=? '
-                'ORDER BY document_id,record_id', (str(register_id),)):
-            try:
-                key = DocumentKey(self.database_id, UUID(document), UUID(record))
-                if not key.document_id.int or not key.record_id.int or (str(key.document_id), str(key.record_id)) != (document, record):
-                    raise ValueError('noncanonical identity')
-            except (ValueError, TypeError, AttributeError):
-                raise BackendError('integrity') from None
-            result.append((key, self.read(register_id, key)))
+        with closing(self.connection.execute(
+                'SELECT document_id,record_id,revision FROM accumulation_partition WHERE register_id=? '
+                'ORDER BY document_id,record_id', args)) as metadata:
+            with closing(self.connection.execute(
+                    'SELECT document_id,record_id,line_number,period,active,direction,values_json '
+                    'FROM accumulation_movement WHERE register_id=? '
+                    'ORDER BY document_id,record_id,line_number', args)) as movements:
+                for document,record,revision,raw_rows in ordered_partitions(
+                        metadata,movements,max_partitions=MAX_DATABASE_PARTITIONS,max_rows=MAX_DATABASE_ROWS):
+                    key = recorder_key(self.database_id,document,record)
+                    if type(revision) is not int or not 1 <= revision < 2**63:
+                        raise BackendError('integrity')
+                    result.append((key,self._decoded_partition(schema,key,revision,raw_rows)))
         return tuple(result)
 
     def describe(self, request):

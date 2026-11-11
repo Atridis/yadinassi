@@ -109,7 +109,10 @@ def prepare(path, *, maintenance=False, migration_id=None):
     backend = SQLiteCatalogBackend(path,read_only=True)
     try:
         version = backend.format_version
-        if version not in BASE_VERSIONS: raise BackendError('unsupported')
+        if version not in BASE_VERSIONS or backend._query_indexes: raise BackendError('unsupported')
+        # Install the optional bundle after the format migration. Its UUID/order
+        # indexes overlap this older plan's mandatory additions; never prepare
+        # an additive plan that would later attempt duplicate CREATE INDEX.
         # Source-activation grants are bound to their exact storage profile.
         # Do not commit an additive format the grant cannot subsequently open.
         if backend.activation_issues: raise BackendError('unsupported')

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
-from threading import Thread
+from threading import Event, Thread
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -195,3 +195,30 @@ class ReadHandleLifecycleTests(unittest.TestCase):
         self.assertEqual(errors, [])
         self.assertEqual(len(results[0].rows), 1)
         self.assertIs(self.backend._read_handle, handle)
+
+    def test_concurrent_begin_cannot_take_or_close_reserved_handle(self):
+        self.seed(2)
+        self.backend._close_idle_read_handle()
+        entered = Event(); release = Event(); result = []; errors = []
+        original = self.backend._connect
+        def connect(**kwargs):
+            entered.set()
+            if not release.wait(5): raise RuntimeError('test release timeout')
+            return original(**kwargs)
+        def first():
+            try: result.append(self.backend.begin_read())
+            except BaseException as error: errors.append(error)
+        with patch.object(self.backend, '_connect', connect):
+            thread = Thread(target=first); thread.start()
+            try:
+                self.assertTrue(entered.wait(5))
+                reserved = self.backend._active
+                with self.assertRaisesRegex(BackendError, 'busy'): self.backend.begin_read()
+                with self.assertRaisesRegex(BackendError, 'busy'): self.backend.close()
+                with self.assertRaisesRegex(BackendError, 'busy'): self.backend._close_idle_read_handle()
+                self.assertIs(self.backend._active, reserved)
+            finally:
+                release.set(); thread.join()
+        self.assertEqual(errors, [])
+        result[0].close()
+        self.assertEqual(len(self.scan().rows), 2)
