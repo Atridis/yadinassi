@@ -121,6 +121,11 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
     def test_diagnostics_do_not_export_arbitrary_text(self):
         value=route.install_diagnostic('password=secret\nBroken OwnedStatus private-token-19282','load')
         self.assertTrue(route.valid_install_diagnostic(value));self.assertNotIn('secret',str(value));self.assertNotIn('private-token',str(value))
+        diagnostic=route.install_diagnostic('Имя не соответствует имени файла; ChoiceMode BothWays; secret=hidden','load')
+        self.assertNotIn('hidden',str(diagnostic))
+        diagnostic=route.install_diagnostic('Имя не соответствует имени файла; ChoiceMode BothWays','load')
+        self.assertIn('match',diagnostic['tokens']);self.assertIn('owned:ChoiceMode',diagnostic['tokens'])
+        self.assertTrue(route.valid_install_diagnostic(diagnostic))
 
     def test_native_only_not_runtime_parity(self):
         text=(ROOT/'scripts/native_1c_enumeration_profile.py').read_text()

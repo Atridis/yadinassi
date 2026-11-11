@@ -150,9 +150,15 @@ INSTALL_WORDS={
     'sequence':('sequence','последовательность','последовательности'),
     'found':('found','найден','найдена','найдено','обнаружено','обнаружен','обнаружена'),
     'name':('name','names','имя','имени','имен','наименование'),
+    'match':('match','matches','matching','соответствует','соответствовать','совпадает','совпадать'),
+    'specified':('specified','указано','указан','указана','указанное','указанный','задан','задано'),
+    'schema':('schema','схема','схемы'),
+    'valid':('valid','допустимый','допустимое','допустимым'),
+    'contains':('contains','contain','содержит','содержать'),
+    'description':('description','описание','описания'),
 
 }
-INSTALL_IDENTIFIERS=frozenset(('OwnedStatus','Enum','EnumValue','Active','Closed','EnumRef','EnumManager','EnumList','Name','MetaDataObject','Configuration','InternalInfo','Properties','ChildObjects','GeneratedType','TypeId','ValueId','Synonym','Read'))
+INSTALL_IDENTIFIERS=frozenset(('OwnedStatus','Enum','EnumValue','Active','Closed','EnumRef','EnumManager','EnumList','Name','MetaDataObject','Configuration','InternalInfo','Properties','ChildObjects','GeneratedType','TypeId','ValueId','Synonym','Read','UseStandardCommands','Characteristics','QuickChoice','ChoiceMode','BothWays','DefaultListForm','DefaultChoiceForm','AuxiliaryListForm','AuxiliaryChoiceForm','ListPresentation','ExtendedListPresentation','Explanation','ChoiceHistoryOnInput','Auto'))
 _INSTALL_TOKENS=frozenset(INSTALL_WORDS)|frozenset('owned:'+v for v in INSTALL_IDENTIFIERS)|{'redacted','line_break'}
 
 def install_diagnostic(text,label,*,exit_code=None,source_root_present=None,configuration_present=None):
