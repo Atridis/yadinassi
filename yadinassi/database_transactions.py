@@ -91,6 +91,10 @@ def execution(backend):
         _execution.reset(token)
 
 
+def require_admission():
+    if not _admission_allowed.get(): raise BackendError('unsupported')
+
+
 def begin(backend):
     from .sqlite_catalog import SQLiteCatalogBackend
     if (not _admission_allowed.get() or type(backend) is not SQLiteCatalogBackend
@@ -107,6 +111,7 @@ def begin(backend):
 
 
 def commit(backend):
+    if not _admission_allowed.get(): raise BackendError('unsupported')
     if backend is not _execution_backend.get(): raise BackendError('unsupported')
     transaction = _registered(backend) if backend is not None else None
     if transaction is None: raise BackendError('unsupported')
@@ -118,6 +123,7 @@ def commit(backend):
 
 
 def rollback(backend):
+    if not _admission_allowed.get(): raise BackendError('unsupported')
     transaction = current(backend) if backend is not None else None
     if transaction is None: raise BackendError('unsupported')
     transaction.rollback()
@@ -144,7 +150,7 @@ class Transaction:
         if getattr(participant, attr) is not None: raise BackendError('uncertain_commit')
         # Allocate registration before any SQL, then freeze before stage. If SQL
         # fails the host savepoint restores it and the edit buffer stays usable.
-        participants = (*self.participants, (participant, attr))
+        participants = (*self.participants, (participant, attr, len(self.unit.requests)))
         setattr(participant, attr, pending)
         try: self.unit.stage(TransactionRequest(kind, draft, expected))
         except BaseException:
@@ -152,10 +158,26 @@ class Transaction:
             raise
         self.participants = participants
 
+    @contextmanager
+    def savepoint(self):
+        """One document lifecycle may own several journal entries atomically."""
+        self._open()
+        before = self.participants
+        try:
+            with self.unit.savepoint():
+                yield
+        except BaseException:
+            for participant, attr, _ in self.participants[len(before):]:
+                if hasattr(participant, '_rollback_pending'): participant._rollback_pending()
+                else: setattr(participant, attr, None)
+            self.participants = before
+            raise
+
     def _prepare(self):
         """Validate and allocate all acceptance images BEFORE the durable commit."""
         prepared = []
-        for (participant, attr), outcome in zip(self.participants, self.unit._results):
+        for participant, attr, index in self.participants:
+            outcome = self.unit._results[index]
             shadow = object.__new__(type(participant))
             shadow.__dict__ = participant.__dict__.copy()
             sections = tuple(getattr(participant, '_sections', {}).values())
@@ -203,7 +225,9 @@ class Transaction:
         self._install()
 
     def _unlock(self):
-        for participant, attr in self.participants: setattr(participant, attr, None)
+        for participant, attr, _ in self.participants:
+            if hasattr(participant, '_rollback_pending'): participant._rollback_pending()
+            else: setattr(participant, attr, None)
 
     def rollback(self):
         if self.leases: raise BackendError('unsupported')

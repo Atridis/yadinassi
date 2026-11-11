@@ -93,9 +93,17 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 raise ValueError('Document query sources require document context')
             documents._metadata._snapshot()
         if registers_needed:
-            if information_registers is None:
-                raise ValueError('Information-register query sources require register context')
-            information_registers._metadata._snapshot()
+            from .sqlite_catalog import SQLiteCatalogBackend
+            from .configuration_posting import PostingConfiguration
+            context = documents._context if documents is not None else None
+            backend = context.backend if context is not None else None
+            posting = backend.posting_configuration if type(backend) is SQLiteCatalogBackend else None
+            if type(posting) is PostingConfiguration:
+                documents._metadata._snapshot()
+            else:
+                if information_registers is None:
+                    raise ValueError('Information-register query sources require register context')
+                information_registers._metadata._snapshot()
         if composite: catalogs._metadata._snapshot()
         if manager._closed:
             raise ValueError('Temporary table manager is closed')

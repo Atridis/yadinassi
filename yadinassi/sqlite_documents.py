@@ -207,16 +207,26 @@ class DocumentView:
         return ([[str(identity),supplied.get(identity,[])] for identity in sorted(definitions,key=str)] if writing else
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
+    def _posted_value(self, key):
+        if self._view._backend.format_version != 13: return False
+        from .sqlite_document_posting_state import read_posted
+        return read_posted(self._connection, self.database_id, key)
+
     def _card(self, schema, row):
         record, revision, number, date, mark, values, sections = row
         identity = UUID(record); _storage()._uuid(identity)
         if str(identity) != record or type(revision) is not int or not 1 <= revision < 2**63: raise BackendError('integrity')
         validate_string(number,schema.number_length)
         if not number or type(mark) is not int or mark not in (0,1): raise BackendError('integrity')
-        return DocumentCard(DocumentKey(self.database_id,schema.identity,identity),
+        key = DocumentKey(self.database_id,schema.identity,identity)
+        extra = {}
+        if self._view._backend.format_version == 13:
+            from .sqlite_document_posting_state import read_posted
+            extra['posted'] = read_posted(self._connection, self.database_id, key)
+        return DocumentCard(key,
             DocumentRevision(self.database_id,self.configuration_generation,schema.identity,identity,str(revision)),
             number,_storage()._decode(['d',date],_DATE_FIELD,self.database_id),bool(mark),
-            self._values(schema.fields,json.loads(values)),self._sections(schema,json.loads(sections)))
+            self._values(schema.fields,json.loads(values)),self._sections(schema,json.loads(sections)), **extra)
 
     def read_document(self, key):
         schema = self._key(key); self._preflight(schema)
@@ -336,7 +346,7 @@ class DocumentView:
                     values = (dict(zip((d.identity for d in definitions), self._values(definitions, json.loads(payload))))
                               if payload is not None else {})
                     values.update(ref=key, number=number, date=_storage()._decode(['d', date], _DATE_FIELD, self.database_id),
-                                  deletion_mark=bool(mark), posted=False)
+                                  deletion_mark=bool(mark), posted=self._posted_value(key))
                     output.append(DocumentValueRow(key, tuple(values[f] for f in fields)))
                 else:
                     contents = next(item[1] for item in json.loads(payload) if item[0] == str(section_id))

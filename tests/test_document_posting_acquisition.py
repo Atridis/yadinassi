@@ -1,0 +1,179 @@
+"""No native execution: source/transport/isolation contract checks only."""
+import json
+import os
+from unittest import mock
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
+from document_posting_behavior import fixture,route
+import native_1c_document_posting_profile as host
+
+class PostingAcquisitionTests(unittest.TestCase):
+    def setUp(self):
+        # Static fixtures only, matching the other native profile tests.
+        # This is not a Windows containment/security proof.
+        if os.name == 'nt':
+            from test_native_1c_full_host import read_synthetic_file
+            patcher = mock.patch.object(host.FULL, 'read_regular', side_effect=read_synthetic_file)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def wire(self):
+        prefix='POST|'+'a'*32+'|'
+        return (prefix+'entered\n'+''.join(prefix+str(n)+'|0|0|0,0|before:0;\n' for n in range(1,15))+prefix+'completed\n').encode()
+    def test_exact_fourteen_observations(self):
+        values=route.parse_wire(self.wire(),'a'*32)
+        self.assertEqual(len(values),14)
+        self.assertEqual(json.loads(route.canonical(values)),values)
+    def test_wrong_nonce_refused(self):
+        with self.assertRaises(ValueError):route.parse_wire(self.wire(),'b'*32)
+    def test_reordered_case_refused(self):
+        with self.assertRaises(ValueError):route.parse_wire(self.wire().replace(b'|2|0|',b'|3|0|'),'a'*32)
+    def test_unbounded_observation_refused(self):
+        with self.assertRaises(ValueError):route.canonical(['x'*513]*14)
+    def test_extra_output_refused(self):
+        with self.assertRaises(ValueError):route.parse_wire(self.wire()+b'noise\n','a'*32)
+    def test_source_fixture_hashes(self):
+        setup,assets=fixture.load_saved()
+        self.assertEqual(assets['generated/observe.bsl'],route.source())
+        self.assertIn(b'RecorderSubordinate',assets['InformationRegister.xml'])
+    def test_distinct_staged_route_and_readonly_isolation(self):
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            destination=Path(directory)/'inputs'
+            hashes=host.stage_inputs(ROOT,destination,host.SMOKE)
+            command=host.container_command(destination,hashes,'onec-document-posting-'+'a'*32,'a'*32,host.SMOKE)
+            self.assertIn('--document-posting-suite',command)
+            self.assertNotIn('--catalog-object-suite',command)
+            self.assertIn('--read-only',command)
+            self.assertEqual(command[command.index('--network')+1],'none')
+    def test_no_runtime_parity_comparison(self):
+        source=(ROOT/'scripts/native_1c_document_posting_profile.py').read_text()
+        self.assertIn("'runtime_parity_accepted':False",source)
+        self.assertIn('comparison=None',source)
+    def test_only_new_workflow_and_closed_branch(self):
+        workflow=(ROOT/'.github/workflows/native-1c-document-posting.yml').read_text()
+        self.assertIn("head.ref == 'codex/document-posting-movements'",workflow)
+        self.assertNotIn('pull_request_target',workflow)
+        self.assertIn('persist-credentials: false',workflow)
+        self.assertIn('native_1c_ci_policy.py bind',workflow)
+    def test_redump_diagnostic_does_not_accept_different_xml(self):
+        name='Documents/OwnedPostingDoc.xml'
+        expected={name:b'<Metadata><Posting>Deny</Posting></Metadata>'}
+        actual={name:b'<Metadata><Posting>Allow</Posting></Metadata>'}
+        self.assertTrue(fixture.redump_diagnostic(expected,actual))
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_redump_diagnostic_never_exports_module_text(self):
+        value=fixture.redump_diagnostic({'secret/Ext/ObjectModule.bsl':b'private'}, {'secret/Ext/ObjectModule.bsl':b'changed'})
+        self.assertNotIn('private',str(value));self.assertNotIn('secret',str(value))
+        self.assertTrue(fixture.valid_diagnostic(value))
+    def test_redump_diagnostic_bounded_and_text_redacted(self):
+        name='Documents/OwnedPostingDoc.xml'
+        expected={name:b'<Metadata><Text>old text</Text></Metadata>'}
+        actual={name:b'<Metadata><Text>private text</Text></Metadata>'}
+        value=fixture.redump_diagnostic(expected,actual)
+        self.assertNotIn('private text',str(value));self.assertTrue(fixture.valid_diagnostic(value))
+        self.assertFalse(fixture.valid_diagnostic(['x'*141]))
+        self.assertFalse(fixture.valid_diagnostic(['x']*13))
+    def test_equal_redump_diagnostic_empty(self):
+        files={'Other.xml':b'<Metadata><Posting>Allow</Posting></Metadata>'}
+        self.assertEqual(fixture.redump_diagnostic(files,files),[])
+        self.assertTrue(fixture.verify_redump(files,files))
+    def metadata(self):
+        _,assets=fixture.load_saved()
+        return {'Documents/OwnedPostingDoc.xml':assets['Document.xml'],
+            'InformationRegisters/OwnedPostingRows.xml':assets['InformationRegister.xml'],
+            'Documents/OwnedPostingDoc/Ext/ObjectModule.bsl':assets['ObjectModule.bsl']}
+    def test_semantic_metadata_accepts_designer_ui_defaults(self):
+        expected=self.metadata();actual=dict(expected);name='Documents/OwnedPostingDoc.xml'
+        actual[name]=actual[name].replace(b'<Name>OwnedPostingDoc</Name>',b'<Name>OwnedPostingDoc</Name><AuxiliaryChoiceForm/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>')
+        self.assertTrue(fixture.verify_redump(expected,actual))
+    def test_semantic_metadata_rejects_changed_posting_or_recorder(self):
+        expected=self.metadata();name='Documents/OwnedPostingDoc.xml'
+        for before,after in [(b'<Posting>Allow',b'<Posting>Deny'),(b'InformationRegister.OwnedPostingRows',b'InformationRegister.Other')]:
+            actual=dict(expected);actual[name]=actual[name].replace(before,after)
+            with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_changed_field_types(self):
+        expected=self.metadata();actual=dict(expected);name='InformationRegisters/OwnedPostingRows.xml'
+        actual[name]=actual[name].replace(b'<v8:Digits>10',b'<v8:Digits>12')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_changed_identity(self):
+        expected=self.metadata();actual=dict(expected);name='Documents/OwnedPostingDoc.xml'
+        actual[name]=actual[name].replace(b'dcd6cc18',b'dcd6cc19')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_handler_and_extra_executable(self):
+        expected=self.metadata();actual=dict(expected)
+        actual['Documents/OwnedPostingDoc/Ext/ObjectModule.bsl']+=b'\n//changed'
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+        actual=dict(expected);actual['Ext/SessionModule.bsl']=b'//unknown'
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_semantic_metadata_rejects_extra_user_field(self):
+        expected=self.metadata();actual=dict(expected);name='InformationRegisters/OwnedPostingRows.xml'
+        actual[name]=actual[name].replace(b'</ChildObjects>',b'<Attribute uuid="extra"><Properties><Name>Extra</Name><Type/></Properties></Attribute></ChildObjects>')
+        with self.assertRaises(ValueError):fixture.verify_redump(expected,actual)
+    def test_observation_declarations_precede_entered_marker(self):
+        program=route.program(None,'a'*32)
+        self.assertLess(program.index(b'Function TraceOf'),program.index(b'|entered'))
+        self.assertLess(program.index(b'Function Snapshot'),program.index(b'|entered'))
+        self.assertLess(program.index(b'|entered'),program.index(b'For CaseNo = 1'))
+    def test_observation_program_retains_exact_source_segments(self):
+        program=route.program(None,'a'*32)
+        declarations,statements=route.source().split(b'For CaseNo = 1 To 14 Do')
+        self.assertIn(declarations,program)
+        self.assertIn(b'For CaseNo = 1 To 14 Do'+statements,program)
+    def test_native_error_diagnostic_is_finite_vocabulary(self):
+        self.assertIn('compile_error',host.SMOKE.DIAGNOSTICS.CATEGORIES)
+        source=(ROOT/'scripts/native_1c_bootstrap/document_posting_suite.py').read_text()
+        self.assertIn("diagnostics.summarize_text(result['error'])['category']",source)
+        self.assertNotIn("report['native_error_text']",source)
+    def test_failure_diagnostic_reports_only_owned_frames_and_progress(self):
+        value=route.failure_details({'messages':['POST|'+'a'*32+'|entered','POST|'+'a'*32+'|1|x'],
+            'error':'{Обработка.TestModule.МодульОбъекта(19)} Ошибка при вызове метода контекста (Execute) Ошибка в запросе'},'a'*32)
+        self.assertEqual(value['frames'],[['TestModule',19]])
+        self.assertEqual(value['apis'],['execute']);self.assertEqual(value['cases'],1)
+        self.assertIn('query',value['codes']);self.assertTrue(route.valid_failure_details(value))
+    def test_failure_diagnostic_never_exports_arbitrary_error(self):
+        value=route.failure_details({'messages':[],'error':'private-secret /private/path {OtherModule(12)} (UnknownAPI)'},'a'*32)
+        self.assertNotIn('private',str(value));self.assertEqual(value['frames'],[])
+        self.assertEqual(value['apis'],[]);self.assertTrue(route.valid_failure_details(value))
+    def test_failure_diagnostic_limits_reject_unknown_values(self):
+        value=route.failure_details({'messages':[],'error':''},'a'*32)
+        value['apis']=['arbitrary'];self.assertFalse(route.valid_failure_details(value))
+        with self.assertRaises(ValueError):route.failure_details({'messages':[],'error':'x'*16385},'a'*32)
+    def test_partial_cases_retained_with_setup_failure(self):
+        p='POST|'+'a'*32+'|'
+        raw=(p+'entered\n'+p+'1|0|0|0,0|before:0;\n'+p+'error|4|seed|"private error"\n'+p+'completed\n').encode()
+        observations,errors=route.parse_attempt(raw,'a'*32)
+        self.assertEqual(observations,[[1,'0|0|0,0|before:0;']]);self.assertEqual(errors,[(4,'seed','private error')])
+    def test_case_diagnostic_json_cannot_inject_protocol_lines(self):
+        p='POST|'+'a'*32+'|'
+        raw=(p+'entered\n'+p+'error|4|seed|'+json.dumps('line1\nline2')+'\n'+p+'completed\n').encode()
+        observations,errors=route.parse_attempt(raw,'a'*32)
+        self.assertEqual(observations,[]);self.assertEqual(errors[0][2],'line1\nline2')
+    def test_all_case_observations_remain_ordered(self):
+        observations,errors=route.parse_attempt(self.wire(),'a'*32)
+        self.assertEqual(len(observations),14);self.assertEqual(errors,[])
+        with self.assertRaises(ValueError):route.parse_attempt(self.wire().replace(b'|2|0|',b'|1|0|'),'a'*32)
+    def test_observer_uses_detailed_error_and_distinct_phases(self):
+        source=route.source().decode()
+        for stage in ('setup','seed','write','readback','query'):self.assertIn('"'+stage+'"',source)
+        self.assertIn('ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())',source)
+        self.assertIn('If OuterTransaction Then RollbackTransaction()',source)
+    def test_cases_have_disjoint_seed_dimensions_not_assumed_recorder_uniqueness(self):
+        handler=(ROOT/'scripts/document_posting_behavior/ObjectModule.bsl').read_text()
+        self.assertIn('Number(Number) * 100 + Mode',handler)
+        self.assertIn('Number(Number) * 100 + 99',handler)
+        self.assertIn('Number(Number) * 100 + 88',handler)
+    def test_absent_document_is_observed_by_query_not_arbitrary_error_swallowing(self):
+        source=route.source().decode()
+        self.assertIn('FROM Document.OwnedPostingDoc',source)
+        self.assertIn('If Not S.Next() Then Return "missing"',source)
+        self.assertNotIn('GetObject()',source)
+    def test_collision_control_pair_differs_in_dimension_identity(self):
+        handler=(ROOT/'scripts/document_posting_behavior/ObjectModule.bsl').read_text()
+        self.assertIn('If Mode = 13 Then Row.Key = 303',handler)
+        self.assertIn('If Mode = 14 Then Row.Key = 1403',handler)
+        self.assertIn('Or Mode = 13 Or Mode = 14 Then Set.Write = True',handler)
+        self.assertEqual(route.COUNT,14)
