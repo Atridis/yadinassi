@@ -41,7 +41,10 @@ def require(condition,reason='form_report_invalid'):
 
 
 def staged_files(smoke=SMOKE):
-    return {**smoke.STAGED_FILES,
+    return {**{k:v for k,v in smoke.STAGED_FILES.items() if k not in (
+                'scripts/native_1c_smoke_probe.sh', 'scripts/native_1c_bootstrap/run_stage.py')},
+            'scripts/native_1c_form_results_probe.sh':'probe.sh',
+            'scripts/native_1c_bootstrap/run_form_results_stage.py':'bootstrap/run_stage.py',
             'scripts/native_1c_bootstrap/full_suite.py':'bootstrap/full_suite.py',
             'scripts/native_1c_bootstrap/form_results_suite.py':'bootstrap/form_results_suite.py',
             **{'scripts/form_results_packet/'+name:'bootstrap/form_results_packet/'+name

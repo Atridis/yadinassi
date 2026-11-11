@@ -9,7 +9,10 @@ PROFILE='managed-form-results-v1'
 SCHEMA='native-1c-form-results-v1'
 STAGE_SCHEMA='native-1c-form-results-stage-v1'
 INPUT_FILES={
-    **{k:v for k,v in full.INPUT_FILES.items() if not k.startswith('integrational_tests/tests/')},
+    **{k:v for k,v in full.INPUT_FILES.items() if not k.startswith('integrational_tests/tests/') and k not in (
+        'scripts/native_1c_smoke_probe.sh', 'scripts/native_1c_bootstrap/run_stage.py')},
+    'scripts/native_1c_form_results_probe.sh':'probe.sh',
+    'scripts/native_1c_bootstrap/run_form_results_stage.py':'bootstrap/run_stage.py',
     'scripts/native_1c_bootstrap/form_results_suite.py':'bootstrap/form_results_suite.py',
     **{'scripts/form_results_packet/'+name:'bootstrap/form_results_packet/'+name
        for name in ('__init__.py','route.py',*PACKET_HASHES)},

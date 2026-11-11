@@ -9,6 +9,7 @@ const result = () => ({protocol:'yadinassi-configuration-app/3', state:{sessions
 test('legacy acquisition admits only the empty owned-result extension', () => {
   checkUnownedApplicationCapability(result());
   checkUnownedApplicationCapability({...result(),dialogCapability:'yadinassi-owned-dialog/1',dialogs:[]});
+  checkUnownedApplicationCapability({...result(),inputCapability:'yadinassi-owned-input/1',inputs:[]});
   const legacy=result();delete legacy.updates;
   checkUnownedApplicationCapability(legacy);
 });
@@ -19,7 +20,7 @@ test('legacy acquisition rejects unsolicited owner updates and ownership', () =>
   }
 });
 test('legacy acquisition keeps closed envelope and session inventories', () => {
-  for(const mutate of [v=>v.dialogs=[],v=>Object.assign(v,{dialogCapability:'unknown',dialogs:[]}),
+  for(const mutate of [v=>v.inputs=[],v=>Object.assign(v,{inputCapability:'unknown',inputs:[]}),v=>Object.assign(v,{inputCapability:'yadinassi-owned-input/1',inputs:[{}]}),v=>v.dialogs=[],v=>Object.assign(v,{dialogCapability:'unknown',dialogs:[]}),
     v=>Object.assign(v,{dialogCapability:'yadinassi-owned-dialog/1',dialogs:[{}]}),v=>v.callback='private',v=>v.state.sessions[0].result='private',
     v=>delete v.state.sessions[0].blocked,v=>v.updates=null]) {
     const value=result();mutate(value);assert.throws(()=>checkUnownedApplicationCapability(value));

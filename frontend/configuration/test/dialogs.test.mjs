@@ -99,7 +99,7 @@ async function mounted({lose=false,error=null}={}){
       await held.promise;if(lose)throw Error('lost after execution');dialogs=[];revision++;value='confirmed';
       Object.assign(extra,{session:'form-1',error:error?'completion_failed':null,form:reply({id:1},form(revision,value),error)});
     }
-    return envelope(request,dialogs,extra);
+    return {...envelope(request,dialogs,extra),result:{...envelope(request,dialogs,extra).result,inputCapability:'yadinassi-owned-input/1',inputs:[]}};
   });await app.ready;await app.mounts.get('form-1').mount.ready;
   const owner=app.mounts.get('form-1'),input=all(owner.panel).find(n=>n.tagName==='INPUT');
   // A sibling/retained raw draft is never implicitly sent by an answer.

@@ -1,4 +1,5 @@
 from weakref import WeakValueDictionary
+from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -1106,6 +1107,12 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        from .value_lists import _ChooseItemMarker
+        choosing = type(function.function) is _ChooseItemMarker
+        if choosing:
+            if self._configuration_runtime is None:
+                raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+            self._configuration_runtime.require_value_selection(self)
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
@@ -1168,6 +1175,8 @@ class Interpreter:
             else:
                 value = (yield from self._visit(argument))
             values.append(value)
+        if choosing:
+            return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
@@ -1552,6 +1561,10 @@ class Interpreter:
             promise = self._scheduler.start(owner._async_body(function, bindings),
                                             procedure=not function.is_function)
             return promise if function.is_function else None
+        input_call = (nullcontext() if self._configuration_runtime is None else
+                      self._configuration_runtime.input_call(self, owner,
+                          not crossing and caller_side == 'client' and function.execution_context == 'client'
+                          and function.module_context))
         previous = owner.locals
         # Fresh server module initialization precedes formal parameter storage.
         # One cleanup boundary encloses BOTH initializer and routine execution.
@@ -1561,26 +1574,27 @@ class Interpreter:
         from .database_transactions import admission
         with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                if crossing:
-                    for initializer in owner.server_initializers:
-                        yield from owner.block(initializer.body)
-                    owner.locals = bindings
-                result = None
-                try:
-                    (yield from owner.block(function.body))
-                except _Return as returned:
-                    result = returned.value
-                if crossing:
-                    # Validate the entire outgoing packet before touching caller
-                    # storage. Escaping errors never reach this normal-return path.
-                    packet = self._copy_context_packet(
-                        [result] + [bindings[name] for name, _ in copyback])
-                    result = packet[0]
-                    # Every output/result gets an independent per-occurrence copy.
-                    # Publish only after the whole packet validates and allocates.
-                    for (_, reference), value in zip(copyback, packet[1:]):
-                        reference.set(value)
-                return result
+                with input_call:
+                    if crossing:
+                        for initializer in owner.server_initializers:
+                            yield from owner.block(initializer.body)
+                        owner.locals = bindings
+                    result = None
+                    try:
+                        (yield from owner.block(function.body))
+                    except _Return as returned:
+                        result = returned.value
+                    if crossing:
+                        # Validate the entire outgoing packet before touching caller
+                        # storage. Escaping errors never reach this normal-return path.
+                        packet = self._copy_context_packet(
+                            [result] + [bindings[name] for name, _ in copyback])
+                        result = packet[0]
+                        # Every output/result gets an independent per-occurrence copy.
+                        # Publish only after the whole packet validates and allocates.
+                        for (_, reference), value in zip(copyback, packet[1:]):
+                            reference.set(value)
+                    return result
             finally:
                 owner._module_context_stack.pop()
                 owner._context_stack.pop()

@@ -73,7 +73,7 @@ class ConfigurationResultsBrowserContractTests(unittest.TestCase):
         self.assertNotIn('build.mjs',self.source)
 
     def test_owner_graph_and_completion_envelope_are_observed(self):
-        self.contains("assert.equal(result.dialogCapability,'yadinassi-owned-dialog/1')","assert.deepEqual(result.dialogs,[],'unexpected_dialog')","exactKeys(result,'protocol state error session form updates dialogCapability dialogs')","exactKeys(item,'id entry title owner blocked')",
+        self.contains("assert.equal(result.dialogCapability,'yadinassi-owned-dialog/1')","assert.deepEqual(result.dialogs,[],'unexpected_dialog')","exactKeys(result,'protocol state error session form updates dialogCapability dialogs inputCapability inputs')","exactKeys(item,'id entry title owner blocked')",
             "'owner_pause_graph'","'owner_identity_graph'","'update_requires_retired_child'","exactKeys(update,'session form')",
             "assert.equal(update.form.id,1)","'callback','additional_parameters','_form_target','enrollment'")
 

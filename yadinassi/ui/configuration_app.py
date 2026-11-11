@@ -22,6 +22,8 @@ from ..structures import BSLStructure, BSLFixedStructure
 from ..values import HostFunction
 from ..form_dialogs import (DIALOG_CAPABILITY, MAX_DIALOGS, MAX_DIALOG_TEXT, MAX_DIALOG_TITLE,
     QuestionDialogMode, DialogReturnCode, OwnedDialog, dialog_text)
+from ..form_value_input import (INPUT_CAPABILITY, MAX_INPUTS, ScalarInputSpec,
+    ValueListSelection, OwnedInput, scalar_descriptor)
 from .form_app import FormController, FormProcess, PROTOCOL as FORM_PROTOCOL
 from .local_app import LocalTransportError, LocalUIServer, _Handler
 from .protocol import decode_line, encode_line, MAX_LINE_BYTES, MAX_COUNTER
@@ -520,6 +522,9 @@ class ConfigurationController:
         self.dialogs = {}
         self.owner_dialogs = {}
         self._dialog_capability = False
+        self.inputs = {}
+        self.owner_inputs = {}
+        self._input_capability = False
         self._close_requests = {}
         self._current_form_sid = None
         self._completion_owner = None
@@ -543,10 +548,13 @@ class ConfigurationController:
             service = HostFunction('OpenForm', self._application_open_form, returns_value=False)
             query = HostFunction('ShowQueryBox', self._application_show_question, returns_value=False)
             warning = HostFunction('ShowMessageBox', self._application_show_warning, returns_value=False)
+            value_input = HostFunction('ShowInputValue', self._application_show_input, returns_value=False)
             self.application = _runtime(configuration, 'client', business_application=business_application, reference_application=reference_application, output=self._application_message,
                 host_services={'OpenForm': service, 'ОткрытьФорму': service,
                     'ShowQueryBox': query, 'ПоказатьВопрос': query,
-                    'ShowMessageBox': warning, 'ПоказатьПредупреждение': warning},
+                    'ShowMessageBox': warning, 'ПоказатьПредупреждение': warning,
+                    'ShowInputValue': value_input, 'ПоказатьВводЗначения': value_input},
+                value_selection_service=self._application_choose_item,
                 server_exchange=lambda raw: encode_line(self._call('applicationInvoke', payload=decode_line(raw))))
 
     def _application_message(self, value):
@@ -578,6 +586,94 @@ class ConfigurationController:
                 raise ValueError('warning timeout is unsupported')
         self._queue_dialog(callback, 'warning', text, title, ('dismiss',))
 
+    def _input_owner(self, callback, caller=None):
+        sid = self._current_form_sid
+        controller = self.sessions.get(sid, (None, None))[0]
+        session = None if controller is None else controller.session
+        if (not self._input_capability or not self._dispatch_active or self.uncertain
+                or self.application is None or self.application.state != 'running'
+                or self.posting_application or self._completion_owner is not None or session is None
+                or session.interpreter.execution_context != 'client'
+                or not session._busy or session.state != 'open' or session._event_phase is not None
+                or session._completion_active or session._owned_form_enrollment is None
+                or self._owner_blocked(sid) or sid in self._close_requests or self.choice is not None):
+            raise ValueError('input requires a negotiated live owner client event')
+        if self.application.input_origin(caller) is not session.interpreter:
+            raise ValueError('input origin is not the current owning form')
+        if caller is not None and caller is not session.interpreter:
+            # Same-context source CommonModules may delegate. Independent child,
+            # server and retired VMs do not inherit the active form's authority.
+            if not any(side == 'client' and module.interpreter is caller
+                       for (_, side), module in self.application._modules.items()):
+                raise ValueError('input caller is not the current form or its common module')
+        _, target = session.interpreter.callback_target(callback)
+        if target is not session.interpreter or callback.module is not session.form or callback._form_target is None:
+            raise ValueError('input callback must target the current self-form')
+        if len(self.owner_inputs) >= MAX_FORMS or len(self.inputs) >= MAX_INPUTS:
+            raise ValueError('input capacity exhausted')
+        return sid, session
+
+    def _queue_input(self, sid, session, callback, kind, public, **values):
+        ticket = token_hex(16)
+        if (ticket in self.inputs or ticket in self.dialogs
+                or any(ticket == record.ticket for record in (*self.owner_inputs.values(), *self.owner_dialogs.values()))):
+            raise ValueError('input ticket collision')
+        image = encode_line(public)
+        if len(image) + sum(len(record.image) for record in self.owner_inputs.values()) > MAX_LINE_BYTES // 2:
+            raise ValueError('pending input image budget exhausted')
+        self.owner_inputs[sid] = OwnedInput(ticket, sid, callback, session._owned_form_enrollment,
+            session.interpreter._family_owner._family_generation, kind, image, **values)
+
+    def _application_show_input(self, *arguments):
+        if not 2 <= len(arguments) <= 4:
+            raise TypeError('ShowInputValue requires two to four arguments')
+        callback, initial = arguments[:2]
+        sid, session = self._input_owner(callback)
+        prompt = arguments[2] if len(arguments) > 2 else None
+        descriptor = arguments[3] if len(arguments) > 3 else None
+        prompt = dialog_text('' if prompt is None else prompt, MAX_DIALOG_TEXT)
+        spec = ScalarInputSpec.capture(scalar_descriptor(initial, descriptor), initial)
+        self._queue_input(sid, session, callback, 'input',
+            dict(spec.public(), kind='input', title='', text=prompt), spec=spec)
+
+    def _application_choose_item(self, caller, source, *arguments):
+        if not 1 <= len(arguments) <= 3:
+            raise TypeError('ShowChooseItem requires one to three arguments')
+        callback = arguments[0]
+        sid, session = self._input_owner(callback, caller)
+        title = arguments[1] if len(arguments) > 1 else None
+        initial = arguments[2] if len(arguments) > 2 else None
+        title = dialog_text('' if title is None else title, MAX_DIALOG_TITLE)
+        selection = ValueListSelection.capture(source)
+        try:
+            public = dict(selection.public(), kind='choice', title=title, initial=selection.initial_choice(initial))
+            self._queue_input(sid, session, callback, 'choice', public, selection=selection, source_lease=source)
+        except BaseException:
+            if selection.state == 'pending': selection.cancel()
+            raise
+
+    def _settle_input_event(self, sid, previous, success):
+        record = self.owner_inputs.get(sid)
+        if record is None or record is previous:
+            return
+        if not success:
+            self.owner_inputs.pop(sid, None)
+            record.finish('cancelled')
+            return
+        try:
+            self.inputs[record.ticket] = record
+            record.state = 'open'
+        except BaseException:
+            record.state = 'uncertain'
+            self._lock()
+            raise
+
+    def _owner_blocked(self, sid):
+        return sid in self.owner_children or sid in self.owner_dialogs or sid in self.owner_inputs
+
+    def _owner_block_error(self, sid):
+        return 'input_pending' if sid in self.owner_inputs else 'dialog_pending' if sid in self.owner_dialogs else 'owned_child_open'
+
     def _queue_dialog(self, callback, kind, text, title, choices):
         # No invisible requests in a legacy renderer and no application-start,
         # idle, server, closing or reentrant completion activation.
@@ -590,7 +686,7 @@ class ConfigurationController:
                 or session.interpreter.execution_context != 'client'
                 or not session._busy or session.state != 'open' or session._event_phase is not None
                 or session._completion_active or session._owned_form_enrollment is None
-                or sid in self.owner_children or sid in self.owner_dialogs
+                or self._owner_blocked(sid)
                 or sid in self._close_requests or self.choice is not None):
             raise ValueError('dialog requires a negotiated live owner client event')
         _, target = session.interpreter.callback_target(callback, form_arity=2 if kind == 'question' else 1)
@@ -629,7 +725,7 @@ class ConfigurationController:
             *arguments, *([None] * (7 - len(arguments))))
         if (not self._dispatch_active or self.uncertain or self.application is None
                 or self.application.state not in ('starting', 'running') or self._completion_owner is not None
-                or self._current_form_sid in self.owner_dialogs):
+                or self._current_form_sid in self.owner_dialogs or self._current_form_sid in self.owner_inputs):
             raise ValueError('OpenForm requires an active application client event')
         if any(value is not None for value in (uniqueness, window, navigation)):
             raise ValueError('OpenForm window/uniqueness/navigation options are unsupported')
@@ -676,12 +772,20 @@ class ConfigurationController:
         previous = self._current_form_sid
         sid = next((sid for sid, (value, _) in self.sessions.items() if value is controller), None)
         previous_dialog = self.owner_dialogs.get(sid)
+        previous_input = self.owner_inputs.get(sid)
         self._current_form_sid = sid
+        # FormSession's trusted event entry executes its declared body directly;
+        # nested BSL routines then extend this same task-local chain. No VM
+        # fields, callback data or authority are copied into another activation.
+        origin = (nullcontext() if self.application is None else
+                  self.application.input_call(controller.session.interpreter,
+                      controller.session.interpreter, True))
         try:
-            with scope:
+            with scope, origin:
                 response = controller.exchange(request)
         except BaseException as exc:
             self._settle_dialog_event(sid, previous_dialog, False)
+            self._settle_input_event(sid, previous_input, False)
             self._drop_pending_after(queued_before)
             self._close_requests.pop(sid, None)
             if not isinstance(exc, Exception):
@@ -693,6 +797,7 @@ class ConfigurationController:
             self._drop_pending_after(queued_before)
             self._close_requests.pop(sid, None)
         self._settle_dialog_event(sid, previous_dialog, response['result']['error'] is None)
+        self._settle_input_event(sid, previous_input, response['result']['error'] is None)
         return response
 
     def idle_close(self):
@@ -820,6 +925,12 @@ class ConfigurationController:
                 record.finish('cancelled')
             else:
                 record.state = 'uncertain'
+        for sid, record in tuple(self.owner_inputs.items()):
+            if record.state == 'queued':
+                self.owner_inputs.pop(sid, None)
+                record.finish('cancelled')
+            else:
+                record.state = 'uncertain'
         for controller, _ in self.sessions.values():
             controller.session.uncertain = True
 
@@ -934,6 +1045,10 @@ class ConfigurationController:
             session._owned_form_enrollment = object()
             session._allow_host_sync = True
             session._owned_close = lambda result: self._request_owned_close(sid, result)
+            for key in ('showinputvalue', 'показатьвводзначения'):
+                if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.variables:
+                    raise ValueError('reserved input service alias')
+                session.reserved_names.add(key)
             for alias in ('Close', 'Закрыть'):
                 key = alias.casefold()
                 if (key in interpreter.routines or key in interpreter.server_routines
@@ -966,7 +1081,7 @@ class ConfigurationController:
         owned = self.owned_results.get(sid)
         controller = self.sessions.get(sid, (None, None))[0]
         if (owned is None or owned.state != 'open' or controller is None
-                or sid != self._current_form_sid or sid in self.owner_children or sid in self.owner_dialogs
+                or sid != self._current_form_sid or self._owner_blocked(sid)
                 or self.uncertain or self._completion_owner is not None or sid in self._close_requests):
             raise ValueError('owned child Close unavailable')
         self._close_requests[sid] = freeze_result(value)
@@ -1089,14 +1204,14 @@ class ConfigurationController:
             raise
         return owned
 
-    def _deliver_completed_form(self, owned, updates, *, dialog=False):
+    def _deliver_completed_form(self, owned, updates, *, dialog=False, typed=False):
         if owned is None or owned.state != 'retired' or self.uncertain:
             return None
         parent = self.sessions.get(owned.owner, (None, None))[0]
-        owners = self.owner_dialogs if dialog else self.owner_children
+        owners = self.owner_inputs if typed else self.owner_dialogs if dialog else self.owner_children
         if (parent is None or parent.session.closed
                 or parent.session._owned_form_enrollment is not owned.enrollment
-                or dialog and parent.session.interpreter._family_owner._family_generation != owned.generation):
+                or (dialog or typed) and parent.session.interpreter._family_owner._family_generation != owned.generation):
             owned.finish('owner_retired')
             owners.pop(owned.owner, None)
             return 'retired_session'
@@ -1110,7 +1225,7 @@ class ConfigurationController:
         self._current_form_sid = owned.owner
         failed = False
         try:
-            value = owned.result if dialog else result_value(owned.result)
+            value = owned.result if dialog or typed else result_value(owned.result)
             with self.application.event_messages(session._record_message):
                 session.synchronize_owned()
                 try:
@@ -1132,7 +1247,7 @@ class ConfigurationController:
         finally:
             self._completion_owner = None
             self._current_form_sid = previous
-            if not dialog or owned.state != 'uncertain':
+            if not (dialog or typed) or owned.state != 'uncertain':
                 owners.pop(owned.owner, None)
             if owned.state in ('failed', 'delivered'):
                 owned.finish(owned.state)
@@ -1188,13 +1303,76 @@ class ConfigurationController:
             elif self.uncertain: form['result']['error'] = 'outcome_unknown'
         return sid, form, error
 
+    def _answer_input(self, params, updates):
+        action = params.get('action')
+        if type(action) is not str or action not in ('accept', 'choose', 'cancel'):
+            raise ValueError('invalid input action')
+        _keys(params, 'session ticket action' + (' value' if action == 'accept' else ' choice' if action == 'choose' else ''))
+        sid, ticket = params['session'], params['ticket']
+        if (not self._input_capability or type(sid) is not str or type(ticket) is not str
+                or len(ticket) != 32):
+            raise ValueError('invalid negotiated input answer')
+        record = self.inputs.get(ticket)
+        error = None
+        if record is None or record.owner != sid:
+            error = 'input_refused'
+        elif record.state != 'open':
+            error = 'input_retired'
+        elif (sid not in self.sessions or self.owner_inputs.get(sid) is not record
+                or self.sessions[sid][0].session._owned_form_enrollment is not record.enrollment
+                or self.application.interpreter._family_generation != record.generation):
+            record.finish('owner_retired')
+            if self.owner_inputs.get(sid) is record: self.owner_inputs.pop(sid, None)
+            error = 'retired_session'
+        elif action != 'cancel' and (action == 'accept') != (record.kind == 'input'):
+            error = 'input_refused'
+        else:
+            try:
+                if action == 'cancel':
+                    value = None
+                    if record.selection is not None: record.selection.cancel()
+                elif action == 'accept':
+                    value = record.spec.decode(params['value'])
+                else:
+                    value = record.selection.take(params['choice'])
+                record.result = value
+                record.state = 'retired'
+            except (TypeError, ValueError):
+                if record.selection is not None and record.selection.state == 'stale':
+                    record.finish('stale')
+                    self.owner_inputs.pop(sid, None)
+                    error = 'input_stale'
+                else:
+                    error = 'input_refused'
+            except BaseException:
+                record.state = 'uncertain'
+                self._lock()
+                raise
+            if error is None:
+                try:
+                    error = self._deliver_completed_form(record, updates, typed=True)
+                except Exception:
+                    error = 'outcome_unknown' if self.uncertain else 'completion_failed'
+                if not self.uncertain and self.catalog is not None:
+                    projection = self._call('catalog', payload={'entry': self.catalog['entry']})
+                    projection_error = projection.get('error')
+                    self.catalog = None if projection_error else projection
+                    error = error or projection_error
+        form = None
+        if sid in self.sessions:
+            form = self._form_exchange(self.sessions[sid][0], {
+                'jsonrpc':'2.0','id':1,'method':'form.snapshot','params':{}})
+            if error == 'completion_failed': form['result']['error'] = 'event_failed'
+            elif self.uncertain: form['result']['error'] = 'outcome_unknown'
+        return sid, form, error
+
     def _finish_owned_close(self, sid, form):
         controller = self.sessions[sid][0]
         raw = self._close_requests.pop(sid, None)
         if raw is None or form['result']['error'] is not None or controller.session.uncertain:
             return form, None
-        if sid in self.owner_children:
-            return form, 'owned_child_open'
+        if self._owner_blocked(sid):
+            return form, self._owner_block_error(sid)
         if not self._call('guardClose', sid)['allowed']:
             return form, 'save_recovery_required'
         closed = self._form_exchange(controller, {'jsonrpc':'2.0','id':form['id'],
@@ -1210,7 +1388,7 @@ class ConfigurationController:
                                       'form' if definition.catalog_schema is None else 'catalog-object')} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title,
                               **({'owner': self.owned_results[sid].owner if sid in self.owned_results else None,
-                                  'blocked': sid in self.owner_children or self._dialog_capability and sid in self.owner_dialogs}
+                                  'blocked': self._owner_blocked(sid)}
                                  if self.application is not None else {})}
                              for sid, (controller, entry) in self.sessions.items()],
                 'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
@@ -1238,13 +1416,18 @@ class ConfigurationController:
                 error = 'outcome_unknown'
             elif method == 'application.hello':
                 requested_dialogs = params.get('dialogCapability') == DIALOG_CAPABILITY
-                expected = {'protocol': PROTOCOL, **({'dialogCapability': DIALOG_CAPABILITY} if requested_dialogs else {})}
+                requested_input = params.get('inputCapability') == INPUT_CAPABILITY
+                expected = {'protocol': PROTOCOL, **({'dialogCapability': DIALOG_CAPABILITY} if requested_dialogs else {}),
+                            **({'inputCapability': INPUT_CAPABILITY} if requested_input else {})}
                 if params != expected:
                     raise ValueError('invalid application handshake')
                 if self.opened and requested_dialogs != self._dialog_capability:
                     raise ValueError('dialog negotiation is immutable')
+                if self.opened and requested_input != self._input_capability:
+                    raise ValueError('input negotiation is immutable')
                 if not self.opened:
                     self._dialog_capability = requested_dialogs
+                    self._input_capability = requested_input
                     self.opened = True
                     self._call('hello', payload={'source': self.configuration.source_sha256})
                     if self.application is not None:
@@ -1295,10 +1478,10 @@ class ConfigurationController:
                     sid, form, error = self._open(entry, {}, record)
                     self.operations[token] = (intent, sid, error)
             elif method == 'application.reference':
-                if params.get('session') in self.owner_children or params.get('session') in self.owner_dialogs:
+                if self._owner_blocked(params.get('session')):
                     _keys(params, 'session revision action')
                     sid = params['session']
-                    error = 'dialog_pending' if sid in self.owner_dialogs else 'owned_child_open'
+                    error = self._owner_block_error(sid)
                     form = self._form_exchange(self.sessions[sid][0], {
                         'jsonrpc':'2.0','id':1,'method':'form.snapshot','params':{}})
                     form['result']['error'] = 'busy'
@@ -1319,7 +1502,7 @@ class ConfigurationController:
                 else:
                     controller, entry = self.sessions[sid]
                     nested_request = params['request']
-                    owner_blocked = (sid in self.owner_children or sid in self.owner_dialogs) and (
+                    owner_blocked = self._owner_blocked(sid) and (
                         type(nested_request) is not dict or nested_request.get('method') not in ('form.hello', 'form.snapshot'))
                     if (self.choice is not None and self.choice['session'] == sid
                             and (type(nested_request) is not dict or nested_request.get('method') not in ('form.hello', 'form.snapshot'))):
@@ -1334,7 +1517,7 @@ class ConfigurationController:
                                or ((self.definitions[entry].catalog_schema is not None or self.definitions[entry].document_schema is not None or self.application is not None)
                                   and not self._call('guardClose', sid)['allowed'])))
                     if blocked:
-                        error = ('dialog_pending' if sid in self.owner_dialogs else 'owned_child_open') if owner_blocked else 'save_recovery_required'
+                        error = self._owner_block_error(sid) if owner_blocked else 'save_recovery_required'
                         form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
                             'method': 'form.snapshot', 'params': {}})
                         form['result']['error'] = 'busy'
@@ -1376,6 +1559,8 @@ class ConfigurationController:
                             error = error or projection_error
             elif method == 'application.answerDialog':
                 sid, form, error = self._answer_dialog(params, updates)
+            elif method == 'application.answerInput':
+                sid, form, error = self._answer_input(params, updates)
             elif method == 'application.recoverPosting':
                 _keys(params, 'session receipt')
                 sid = params['session']
@@ -1428,7 +1613,11 @@ class ConfigurationController:
                       **({'dialogCapability': DIALOG_CAPABILITY,
                           'dialogs': [record.public() for record in self.owner_dialogs.values()
                                       if record.state in ('open', 'uncertain')]}
-                         if self._dialog_capability else {})}
+                         if self._dialog_capability else {}),
+                      **({'inputCapability': INPUT_CAPABILITY,
+                          'inputs': [record.public() for record in self.owner_inputs.values()
+                                     if record.state in ('open', 'uncertain')]}
+                         if self._input_capability else {})}
             response = {'jsonrpc': '2.0', 'id': request['id'], 'result': result}
             try:
                 encode_line(response)
@@ -1445,7 +1634,7 @@ class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference',
-               'application.recoverPosting', 'application.answerDialog')
+               'application.recoverPosting', 'application.answerDialog', 'application.answerInput')
 
 
 def main(argv=None):

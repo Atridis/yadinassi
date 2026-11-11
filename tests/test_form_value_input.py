@@ -8,13 +8,13 @@ import weakref
 
 from yadinassi.dates import BSLDate, MAX_TICKS, TICKS_PER_SECOND
 from yadinassi.form_value_input import (ScalarInputSpec, ValueListSelection,
-    MAX_CHOICES, MAX_SELECTION_BYTES)
+    MAX_CHOICES, MAX_SELECTION_BYTES, scalar_descriptor, OwnedInput)
 from yadinassi.type_descriptions import BSLTypeDescription
 from yadinassi.type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
     BSLDateQualifiers, BSLAllowedSign, BSLAllowedLength, BSLDateFractions)
 from yadinassi.ui.protocol import encode_value, CatalogRef
 from yadinassi.value_lists import BSLValueList, BSLValueListItem
-from yadinassi.values import BSLArray, NULL
+from yadinassi.values import BSLArray, BSLType, NULL
 
 D = Decimal
 TD = BSLTypeDescription
@@ -41,6 +41,22 @@ def choices(*values):
 
 
 class ScalarInputTests(unittest.TestCase):
+    def test_descriptor_inference_uses_only_exact_scalar_initial(self):
+        for value, kind in [('x', BSLType.STRING), (D(1), BSLType.NUMBER),
+                            (True, BSLType.BOOLEAN), (BSLDate(0), BSLType.DATE)]:
+            self.assertEqual(scalar_descriptor(value).types, (kind,))
+        for value in (None, NULL, 1, object(), BSLArray()):
+            with self.assertRaises(ValueError): scalar_descriptor(value)
+
+    def test_type_and_description_binding_do_not_coerce_initial(self):
+        for kind in (BSLType.STRING, BSLType.NUMBER, BSLType.BOOLEAN, BSLType.DATE):
+            self.assertEqual(scalar_descriptor(None, kind).types, (kind,))
+        descriptor = number()
+        self.assertIs(scalar_descriptor(None, descriptor), descriptor)
+        for kind in (BSLType.TYPE, BSLType.UNDEFINED, BSLType.NULL):
+            with self.assertRaises(ValueError): scalar_descriptor(None, kind)
+        with self.assertRaises(TypeError): scalar_descriptor('x', 'String')
+
     def test_all_four_exact_scalar_types_roundtrip(self):
         for kind, value in [('String', 'plain'), ('Number', D('1.2300')),
                             ('Boolean', False), ('Date', BSLDate(TICKS_PER_SECOND))]:
@@ -237,6 +253,41 @@ class ValueListSelectionTests(unittest.TestCase):
         self.assertEqual(selection.state, 'consumed')
         original.set_member('Value', 'after callback')
         self.assertEqual(source.items[1].value, 'after callback')
+
+    def test_initial_selection_is_exact_identity_not_value(self):
+        source, selection, rows = self.pending('same', 'same')
+        self.assertEqual(selection.initial_choice(source.items[1]), rows[1]['choice'])
+        self.assertIsNone(selection.initial_choice(None))
+        foreign = choices('same')
+        for value in (foreign.items[0], D(0), 'same', object()):
+            with self.assertRaises(ValueError): selection.initial_choice(value)
+        self.assertEqual(selection.state, 'pending')
+
+    def test_initial_selection_rechecks_snapshot(self):
+        source, selection, _ = self.pending(); item = source.items[0]
+        item.presentation = 'changed'
+        with self.assertRaises(ValueError): selection.initial_choice(item)
+        self.assertEqual(selection.state, 'stale')
+
+    def test_owned_receipt_holds_source_through_result_delivery_and_releases(self):
+        source, selection, rows = self.pending()
+        item = source.items[0]; source_ref = weakref.ref(source)
+        receipt = OwnedInput('a'*32, 'owner', object(), object(), 0, 'choice',
+                             b'{"kind":"choice"}', selection=selection, source_lease=source)
+        receipt.result = selection.take(rows[0]['choice']); del source; gc.collect()
+        self.assertIsNotNone(source_ref()); self.assertEqual(item.get_id(), D(0))
+        receipt.finish('delivered'); gc.collect()
+        self.assertIsNone(source_ref()); self.assertIsNone(receipt.result)
+        self.assertIsNone(receipt.selection); self.assertIsNone(receipt.callback)
+
+    def test_unconsumed_owned_receipt_cancel_releases_selection(self):
+        _, selection, _ = self.pending()
+        receipt = OwnedInput('a'*32, 'owner', object(), object(), 0, 'choice',
+                             b'{"kind":"choice"}', selection=selection)
+        first = receipt.public(); first['kind'] = 'changed'
+        self.assertEqual(receipt.public()['kind'], 'choice')
+        receipt.finish('cancelled')
+        self.assertEqual(selection.state, 'cancelled'); self.assertEqual(receipt.image, b'')
 
     def test_duplicate_scalar_values_remain_distinct_item_choices(self):
         source, selection, rows = self.pending('same', 'same')

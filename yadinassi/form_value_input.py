@@ -22,6 +22,8 @@ from .values import BSLType
 MAX_CHOICES = 128
 MAX_SELECTION_BYTES = 32768
 MAX_PRESENTATION = 1024
+INPUT_CAPABILITY = 'yadinassi-owned-input/1'
+MAX_INPUTS = 256
 _TOKEN = re.compile(r'[0-9a-f]{32}\Z')
 _SCALARS = {BSLType.STRING: str, BSLType.NUMBER: Decimal,
             BSLType.BOOLEAN: bool, BSLType.DATE: BSLDate}
@@ -227,6 +229,61 @@ class ValueListSelection:
         self._retire('consumed')
         return item
 
+    def initial_choice(self, item):
+        """Host-only identity lookup, never a browser-supplied index or handle."""
+        self.require_current()
+        if item is None:
+            return None
+        if type(item) is BSLValueListItem:
+            for choice, original in self._choices:
+                if item is original:
+                    return choice
+        raise ValueError('initial item is not in the exact selection')
+
     def cancel(self):
         self._pending()
         self._retire('cancelled')
+
+
+def scalar_descriptor(initial, descriptor=None):
+    """Closed documented binding; no inference from Undefined or arbitrary values."""
+    if descriptor is None:
+        for kind, value_type in _SCALARS.items():
+            if type(initial) is value_type:
+                return BSLTypeDescription(kind.value)
+        raise ValueError('an explicit scalar descriptor is required')
+    if type(descriptor) is BSLType:
+        if not any(descriptor is kind for kind in _SCALARS):
+            raise ValueError('a scalar Type is required')
+        return BSLTypeDescription(descriptor.value)
+    if type(descriptor) is not BSLTypeDescription:
+        raise TypeError('exact Type or TypeDescription required')
+    return descriptor
+
+
+@dataclass(slots=True)
+class OwnedInput:
+    """Host-lifetime receipt; public image never contains a BSL capability."""
+    ticket: str
+    owner: str
+    callback: object
+    enrollment: object
+    generation: int
+    kind: str
+    image: bytes
+    spec: object = None
+    selection: object = None
+    source_lease: object = None
+    state: str = 'queued'
+    result: object = None
+
+    def public(self):
+        return dict(decode_line(self.image), ticket=self.ticket, owner=self.owner)
+
+    def finish(self, state):
+        self.state = state
+        if self.selection is not None and self.selection.state == 'pending':
+            self.selection.cancel()
+        self.callback = self.enrollment = self.result = None
+        self.spec = self.selection = self.source_lease = None
+        self.image = b''

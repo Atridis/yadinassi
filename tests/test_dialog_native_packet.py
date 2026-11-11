@@ -71,16 +71,16 @@ class DialogNativeTests(unittest.TestCase):
             self.assertNotIn('NextDialog(',body);self.assertNotIn('ShowQueryBox(',body)
 
     def test_exact_workflow_route(self):
-        s=(ROOT/'.github/workflows/native-1c-dialogs.yml').read_text()
+        s=(ROOT/'.github/workflows/native-1c-dialogs.yml').read_text(encoding='utf-8')
         self.assertIn('codex/configuration-dialogs',s)
         self.assertIn('native_1c_dialogs_profile.py --execute-approved-image --export-native-outputs',s)
         self.assertNotIn('workflow_dispatch:',s);self.assertNotIn('pull_request_target:',s)
         self.assertLess(s.index('native_1c_ci_policy.py bind'),s.index('GHCR_TOKEN:'))
 
     def test_dedicated_selector(self):
-        s=(ROOT/'scripts/native_1c_dialogs_probe.sh').read_text()
+        s=(ROOT/'scripts/native_1c_dialogs_probe.sh').read_text(encoding='utf-8')
         self.assertIn('[ "$1" = --dialogs-suite ] && [ "$2" = --invocation-nonce ] || exit 2',s)
-        t=(ROOT/'scripts/native_1c_bootstrap/run_dialogs_stage.py').read_text()
+        t=(ROOT/'scripts/native_1c_bootstrap/run_dialogs_stage.py').read_text(encoding='utf-8')
         self.assertIn("if len(arguments)!=3 or arguments[0]!='--dialogs-suite':return 2",t)
 
     def test_envelope_with_real_host_and_suite(self):
@@ -104,11 +104,11 @@ class DialogNativeTests(unittest.TestCase):
         self.assertEqual(host.validate_envelope(json.dumps(value).encode(),nonce,hashes)[1],raw)
 
     def test_host_isolation_and_parity_limit(self):
-        s=(ROOT/'scripts/native_1c_dialogs_profile.py').read_text()
+        s=(ROOT/'scripts/native_1c_dialogs_profile.py').read_text(encoding='utf-8')
         for v in ("'--network', 'none'","'--read-only'","'--cap-drop', 'ALL'","'runtime_parity_accepted':False","'acceptance_status':'not_evaluated'"):self.assertIn(v,s)
 
     def test_source_and_epf_witnesses(self):
-        s=(ROOT/'scripts/native_1c_bootstrap/dialogs_suite.py').read_text()
+        s=(ROOT/'scripts/native_1c_bootstrap/dialogs_suite.py').read_text(encoding='utf-8')
         self.assertEqual(s.count('full.digest(full.secure_bytes(epf,full.MAX_OUTPUT))!=epf_digest'),2)
         self.assertIn('route.validate_executable_redump(dumped_files)',s)
         self.assertGreaterEqual(s.count('route.validate_redump(_dump_files(src))'),3)

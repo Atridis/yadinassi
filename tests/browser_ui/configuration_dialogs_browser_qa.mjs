@@ -219,7 +219,7 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol dialogCapability');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    exactKeys(packet.params,'protocol dialogCapability inputCapability');assert.equal(packet.params.inputCapability,'yadinassi-owned-input/1');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
     assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.answerDialog'){
     exactKeys(packet.params,'session ticket answer');
@@ -266,7 +266,8 @@ async function auditResponse(response,packet){
   const text=body.toString('utf8');const decoded=JSON.parse(text);
   const result=decoded.result,state=result?.state;
   exactKeys(decoded,'jsonrpc id result');assert.equal(decoded.jsonrpc,'2.0');assert.equal(decoded.id,packet.id);
-  exactKeys(result,'protocol state error session form updates dialogCapability dialogs');
+  exactKeys(result,'protocol state error session form updates dialogCapability dialogs inputCapability inputs');
+  assert.equal(result.inputCapability,'yadinassi-owned-input/1');assert.deepEqual(result.inputs,[],'unexpected_input');
   assert.equal(result.dialogCapability,'yadinassi-owned-dialog/1');assert.ok(Array.isArray(result.dialogs)&&result.dialogs.length<=8,'dialog_bound');
   const tickets=new Set(),owners=new Set();
   for(const dialog of result.dialogs){

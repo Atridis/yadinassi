@@ -1387,7 +1387,77 @@ if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
 
 return {mountForm};
 })();
+const __configurationInputs = (() => {
+const {FormError, validateScalar, validateSnapshot, typedInput, scalarEqual, scalarText} = __formClient;
+
+const INPUT_CAPABILITY = 'yadinassi-owned-input/1';
+const keys = (v,names) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join() === [...names].sort().join();
+const token = v => typeof v === 'string' && /^[0-9a-f]{32}$/.test(v);
+const text = (v,max) => typeof v === 'string' && [...v].length <= max &&
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(v) && !/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(v);
+const scalar = value => {
+  validateScalar(value);
+  if (!['String','Number','Boolean','Date'].includes(value.type)) throw new FormError('transport');
+};
+/** Reuse the closed form scalar editor contract, without adding a real control. */
+function inputField(input) {
+  scalar(input.value);
+  const boolean = input.value.type === 'Boolean';
+  if (boolean && (!keys(input.editor,['kind']) || input.editor.kind !== 'boolean')) throw new FormError('transport');
+  const field = {name:'Input',kind:'field',title:'Value',visible:true,enabled:true,readOnly:false,
+    view:boolean ? 'checkbox' : 'input',value:input.value,...(boolean ? {} : {editor:input.editor})};
+  validateSnapshot({kind:'form',revision:0,lifecycle:'open',title:'Input',uncertain:false,items:[field],messages:[]});
+  return field;
+}
+function validateInputs(result, sessions, dialogOwners, dialogTickets) {
+  const owners = new Set(), tickets = new Set();
+  if (result.inputCapability !== INPUT_CAPABILITY || !Array.isArray(result.inputs) || result.inputs.length > 8 ||
+      !Object.hasOwn(result,'updates') && result.inputs.length) throw new FormError('transport');
+  for (const input of result.inputs) {
+    const fields = input?.kind === 'input' ? ['ticket','owner','kind','title','text','value','editor']
+      : ['ticket','owner','kind','title','choices','initial'];
+    if (!keys(input,fields) || !['input','choice'].includes(input.kind) || !token(input.ticket) ||
+        tickets.has(input.ticket) || dialogTickets.has(input.ticket) || !sessions.has(input.owner) ||
+        owners.has(input.owner) || dialogOwners.has(input.owner) || !text(input.title,256) ||
+        result.state.choice?.session === input.owner || result.state.entries.find(e => e.id === result.state.sessions.find(s => s.id === input.owner).entry).kind === 'posting-document') throw new FormError('transport');
+    if (input.kind === 'input') {
+      if (!text(input.text,4096)) throw new FormError('transport');
+      inputField(input);
+    } else {
+      if (!Array.isArray(input.choices) || input.choices.length > 128 ||
+          new TextEncoder().encode(JSON.stringify({choices:input.choices})).length > 32768) throw new FormError('transport');
+      const choices = new Set();
+      for (const row of input.choices) {
+        if (!keys(row,['choice','value','presentation']) || !token(row.choice) || choices.has(row.choice) || !text(row.presentation,1024)) throw new FormError('transport');
+        scalar(row.value); choices.add(row.choice);
+      }
+      if (input.initial !== null && !choices.has(input.initial)) throw new FormError('transport');
+    }
+    owners.add(input.owner); tickets.add(input.ticket);
+  }
+  return owners;
+}
+function validInputAnswer(params, inputs) {
+  const input = inputs.find(value => value.owner === params?.session && value.ticket === params?.ticket);
+  if (!input) return false;
+  if (params.action === 'cancel') return keys(params,['session','ticket','action']);
+  if (params.action === 'choose') return input.kind === 'choice' && keys(params,['session','ticket','action','choice']) && input.choices.some(row => row.choice === params.choice);
+  if (params.action !== 'accept' || input.kind !== 'input' || !keys(params,['session','ticket','action','value'])) return false;
+  try {
+    scalar(params.value);
+    const field = inputField(input);
+    if (params.value.type !== input.value.type) return false;
+    // Reuse qualifier parsing for strings/numbers/booleans. Dates are checked
+    // by the same editor validation without a timezone-dependent conversion.
+    if (params.value.type === 'Date') { inputField({...input,value:params.value}); return scalarEqual(typedInput(field,scalarText(params.value,input.editor)),params.value); }
+    return scalarEqual(typedInput(field,params.value.value),params.value);
+  } catch { return false; }
+}
+
+return {INPUT_CAPABILITY, inputField, validateInputs, validInputAnswer};
+})();
 const __configurationClient = (() => {
+const {INPUT_CAPABILITY, validateInputs, validInputAnswer} = __configurationInputs;
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
 const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/3';
@@ -1400,7 +1470,7 @@ const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired','input_pending','input_refused','input_retired','input_stale'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
   (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
@@ -1419,10 +1489,11 @@ function validateApplicationReply(reply, request, previous) {
   const result = reply.result, state = result?.state;
   const ownedResults = Object.hasOwn(result || {}, 'updates');
   const dialogCapability = Object.hasOwn(result || {}, 'dialogCapability');
+  const inputCapability = Object.hasOwn(result || {}, 'inputCapability');
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
-  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
+  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : []),...(inputCapability ? ['inputCapability','inputs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
@@ -1479,11 +1550,12 @@ function validateApplicationReply(reply, request, previous) {
       dialogOwners.add(dialog.owner); dialogTickets.add(dialog.ticket);
     }
   }
+  const inputOwners = inputCapability ? validateInputs(result,sessions,dialogOwners,dialogTickets) : new Set();
   if (ownedResults) {
     const nodes = new Map(state.sessions.map(value => [value.id,value]));
     for (const session of state.sessions) {
       const children = state.sessions.filter(value => value.owner === session.id);
-      if (children.length > 1 || children.length && dialogOwners.has(session.id) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id))) throw new FormError('transport');
+      if (children.length > 1 || children.length && (dialogOwners.has(session.id) || inputOwners.has(session.id)) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id) || inputOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
       if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
       while (owner !== null) {
@@ -1531,18 +1603,18 @@ function validateApplicationReply(reply, request, previous) {
       owners.add(item.session);
     }
   }
-  if (['application.form','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
+  if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
-        ['application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && nested.id !== 1 ||
+        ['application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
         !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -1551,6 +1623,7 @@ class ApplicationClient {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
     this.ownedResults = null; this.dialogCapability = null; this.dialogs = []; this.retiredDialogs = new Set();
+    this.inputCapability = null; this.inputs = []; this.retiredInputs = new Set();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
@@ -1559,14 +1632,14 @@ class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if (this.dialogs.length && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
-        const error = new FormError('dialog_pending'); error.preDispatch = true; throw error;
+        const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
       if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
           (method === 'application.reference' || method === 'application.recoverPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
-        const error = new FormError(this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
+        const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
@@ -1580,6 +1653,9 @@ class ApplicationClient {
       if (method === 'application.answerDialog' && (!keys(params,['session','ticket','answer']) ||
           !this.dialogs.some(d => d.owner === params.session && d.ticket === params.ticket && d.choices.includes(params.answer)))) {
         const error = new FormError('dialog_refused'); error.preDispatch = true; throw error;
+      }
+      if (method === 'application.answerInput' && !validInputAnswer(params,this.inputs)) {
+        const error = new FormError('input_refused'); error.preDispatch = true; throw error;
       }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {
@@ -1595,6 +1671,16 @@ class ApplicationClient {
         }
         for (const dialog of this.dialogs) if (!nextDialogs.some(d => d.ticket === dialog.ticket)) this.retiredDialogs.add(dialog.ticket);
         if (this.retiredDialogs.size > 256) throw new FormError('transport');
+        const inputNegotiated = Object.hasOwn(result,'inputCapability');
+        if (method === 'application.hello' && inputNegotiated !== (params?.inputCapability === INPUT_CAPABILITY) ||
+            this.inputCapability !== null && this.inputCapability !== inputNegotiated) throw new FormError('transport');
+        const nextInputs = result.inputs || [];
+        for (const input of nextInputs) {
+          const previous = this.inputs.find(value => value.ticket === input.ticket);
+          if (this.retiredInputs.has(input.ticket) || previous && JSON.stringify(previous) !== JSON.stringify(input)) throw new FormError('transport');
+        }
+        for (const input of this.inputs) if (!nextInputs.some(value => value.ticket === input.ticket)) this.retiredInputs.add(input.ticket);
+        if (this.retiredInputs.size > 256) throw new FormError('transport');
         const owned = Object.hasOwn(result,'updates');
         if (this.ownedResults !== null && this.ownedResults !== owned) throw new FormError('transport');
         if (result.state.catalog) {
@@ -1614,7 +1700,7 @@ class ApplicationClient {
           if (this.retired.has(update.session) || revision < (this.formRevisions.get(update.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(update.session,revision);
         }
-        this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs;
+        this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs; this.inputCapability = inputNegotiated; this.inputs = nextInputs;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
@@ -1640,7 +1726,8 @@ class ApplicationClient {
 return {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, validateApplicationReply, ApplicationClient};
 })();
 const __configurationApp = (() => {
-const {FormError, createTransport, takeSessionCapability} = __formClient;
+const {INPUT_CAPABILITY, inputField, validInputAnswer} = __configurationInputs;
+const {FormError, createTransport, takeSessionCapability, scalarText, inputHint, typedInput} = __formClient;
 const {mountForm} = __formApp;
 const {createBrowserHost, documentInstance} = __browserAttachment;
 const {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} = __configurationClient;
@@ -1670,7 +1757,14 @@ function mountApplication(environment, root, exchange = null) {
   dialogText.id = `question-text-${instance}`; dialog.setAttribute('aria-describedby',dialogText.id);
   dialogStatus.setAttribute('role','status'); dialogActions.className = 'dialog-commands';
   dialog.append(dialogTitle,dialogText,dialogStatus,dialogActions);
-  const dialogModal = () => Boolean(client?.dialogs?.length && !client.terminal);
+  const dialogModal = () => Boolean((client?.dialogs?.length || client?.inputs?.length) && !client.terminal);
+  let inputBusy = false, inputTicket = null, inputReturn = null, inputControl = null, inputSelected = null, inputRows = [], inputError = '', inputNeedsFocus = false, inputInitialText = null;
+  const inputDialog = el('section'), inputTitle = el('h2'), inputText = el('p'), inputStatus = el('p'), inputBody = el('div'), inputActions = el('div');
+  inputDialog.className = 'configuration-dialog configuration-value-input'; inputDialog.hidden = true; inputDialog.setAttribute('role','dialog');
+  inputTitle.id = `input-title-${instance}`; inputStatus.id = `input-status-${instance}`;
+  inputDialog.setAttribute('aria-labelledby',inputTitle.id); inputDialog.setAttribute('aria-describedby',inputStatus.id);
+  inputStatus.setAttribute('role','status'); inputActions.className = 'dialog-commands'; inputBody.className = 'typed-input-body';
+  inputDialog.append(inputTitle,inputText,inputBody,inputStatus,inputActions);
 
   let pickerBusy = false, pickerTicket = null, pickerReturn = null;
   const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
@@ -1687,7 +1781,7 @@ function mountApplication(environment, root, exchange = null) {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(dialogBusy || client.dialogs.length || pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(inputBusy || client.inputs.length || dialogBusy || client.dialogs.length || pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
     if (userNavigation && (client.state?.choice || dialogModal())) return;
     if (userNavigation) navigation++;
@@ -1725,7 +1819,7 @@ function mountApplication(environment, root, exchange = null) {
     if (event.key === 'Escape') { event.preventDefault(); choose({action:'cancel'}); }
     if (event.key !== 'Tab') return;
     const descendants = node => [node,...Array.from(node.children || []).flatMap(descendants)];
-    const nodes = descendants(picker).filter(node => ['BUTTON','INPUT'].includes(node.tagName) && !node.disabled && !node.closest('[hidden]'));
+    const nodes = descendants(picker).filter(node => ['BUTTON','INPUT','TEXTAREA'].includes(node.tagName) && !node.disabled && !node.closest('[hidden]'));
     const index = nodes.indexOf(document.activeElement);
     if (nodes.length && (event.shiftKey && index <= 0 || !event.shiftKey && (index < 0 || index === nodes.length - 1))) {
       event.preventDefault(); nodes[event.shiftKey ? nodes.length - 1 : 0].focus();
@@ -1808,6 +1902,101 @@ function mountApplication(environment, root, exchange = null) {
     }
     const target = [...dialogActions.children].find(node => node.dataset.dialogAnswer === prior) || dialogActions.children[0];
     if (!target?.disabled && (fresh || dialog.contains(document.activeElement) || document.activeElement === document.body)) target.focus({preventScroll:true});
+  }
+  async function answerInput(owner, ticket, action) {
+    if (inputBusy || client.pending || client.terminal || client.state?.uncertain ||
+        !client.inputs.some(value => value.owner === owner && value.ticket === ticket)) return;
+    inputBusy = true; inputError = ''; paint();
+    try {
+      const result = await client.request('application.answerInput',{session:owner,ticket,...action});
+      if (result.error) inputError = result.error === 'input_refused' ? 'This answer was refused. Review the value before confirming.'
+        : result.error === 'input_stale' ? 'The source list changed. Nothing was selected.' : 'The completion did not finish normally. Review the owner form.';
+    } catch (error) {
+      inputError = error?.preDispatch ? 'Enter a supported value within the field limits.' : 'The answer outcome may be unknown. No action will be repeated.';
+    } finally { inputBusy = false; paint(); }
+  }
+  function confirmInput(owner, ticket) {
+    const value = client.inputs.find(item => item.owner === owner && item.ticket === ticket);
+    if (!value || ticket !== inputTicket || inputBusy || client.pending || client.terminal) return;
+    let action;
+    try {
+      action = value.kind === 'choice' ? {action:'choose',choice:inputSelected} : {
+        action:'accept',value:value.value.type === 'String' && inputControl.value === inputInitialText ? {...value.value} : typedInput(inputField(value),value.value.type === 'Boolean' ? inputControl.checked : inputControl.value)};
+      if (!validInputAnswer({session:owner,ticket,...action},client.inputs)) throw Error('Invalid input');
+    } catch { inputError = 'Enter a supported value within the field limits.'; paint(); return; }
+    return answerInput(owner,ticket,action);
+  }
+  inputDialog.addEventListener('keydown',event => {
+    const value = client.inputs[0]; if (!value || inputDialog.hidden) return;
+    if (event.key === 'Escape') { event.preventDefault(); answerInput(value.owner,value.ticket,{action:'cancel'}); return; }
+    if (event.key === 'Enter' && !event.isComposing && !event.shiftKey && event.target === inputControl && (inputControl.tagName !== 'TEXTAREA' || event.ctrlKey || event.metaKey)) {
+      event.preventDefault(); confirmInput(value.owner,value.ticket); return;
+    }
+    if (event.key !== 'Tab' || client.terminal) return;
+    const descendants = node => [node,...Array.from(node.children || []).flatMap(descendants)];
+    const nodes = descendants(inputDialog).filter(node => ['BUTTON','INPUT','TEXTAREA'].includes(node.tagName) && !node.disabled && !node.closest('[hidden]'));
+    const index = nodes.indexOf(document.activeElement);
+    if (nodes.length && (event.shiftKey && index <= 0 || !event.shiftKey && (index < 0 || index === nodes.length - 1))) {
+      event.preventDefault(); nodes[event.shiftKey ? nodes.length - 1 : 0].focus();
+    }
+  });
+  function drawInput() {
+    const value = client.inputs[0]; inputDialog.hidden = !value || client.dialogs.length > 0;
+    inputDialog.setAttribute('aria-modal',String(Boolean(value && !client.terminal && !inputDialog.hidden)));
+    inputDialog.dataset.locked = String(client.terminal);
+    if (!value) {
+      inputTicket = null; inputControl = null; inputRows = []; inputNeedsFocus = false; inputBody.replaceChildren(); inputActions.replaceChildren();
+      if (inputReturn && !client.terminal) {
+        if (document.body.contains(inputReturn) && !inputReturn.disabled) inputReturn.focus({preventScroll:true});
+        inputReturn = null;
+      }
+      return;
+    }
+    const fresh = inputTicket !== value.ticket;
+    if (fresh) {
+      inputTicket = value.ticket; inputReturn = document.activeElement; inputError = ''; inputNeedsFocus = true; inputSelected = value.initial;
+      inputBody.replaceChildren(); inputActions.replaceChildren(); inputControl = null; inputRows = [];
+      if (value.kind === 'input') {
+        const label = el('label','Value'); inputControl = el(value.value.type === 'String' ? 'textarea' : 'input'); inputControl.dataset.valueInput = 'scalar';
+        inputControl.setAttribute('aria-label',value.text || 'Value'); inputControl.autocomplete = 'off';
+        if (value.value.type === 'Boolean') { inputControl.type = 'checkbox'; inputControl.checked = value.value.value; }
+        else { if (value.value.type !== 'String') inputControl.type = 'text'; else inputControl.rows = 3; inputControl.value = scalarText(value.value,value.editor);
+          inputControl.spellcheck = false; if (value.value.type === 'Number') inputControl.inputMode = 'decimal'; }
+        inputInitialText = inputControl.value;
+        const hint = el('p',value.value.type === 'String' ? 'Enter keeps a line break. Ctrl+Enter confirms. Unchanged text preserves its original line endings.' : inputHint(inputField(value))); inputControl.setAttribute('aria-describedby',inputStatus.id);
+        inputControl.addEventListener('input',() => { inputError = ''; inputStatus.textContent = hint.textContent; });
+        label.append(inputControl); inputBody.append(label,hint);
+      } else {
+        const group = el('div'); group.setAttribute('role','radiogroup'); group.setAttribute('aria-label',value.title || 'Choose a value');
+        for (const row of value.choices) {
+          const label = el('label'), radio = el('input'); radio.type = 'radio'; radio.name = `input-choice-${instance}`;
+          radio.dataset.valueChoice = row.choice; radio.checked = inputSelected === row.choice;
+          radio.setAttribute('aria-label',row.presentation || scalarText(row.value));
+          radio.addEventListener('change',() => {
+            if (client.terminal || inputBusy || client.pending || inputTicket !== value.ticket || !client.inputs.some(i => i.ticket === value.ticket)) return;
+            inputSelected = row.choice; inputError = ''; paint();
+          });
+          label.append(radio,el('span',row.presentation || scalarText(row.value))); group.append(label); inputRows.push(radio);
+        }
+        if (!value.choices.length) group.append(el('p','No choices are available. Cancel to continue.'));
+        inputBody.append(group);
+      }
+      const accept = button('OK',inputActions,() => confirmInput(value.owner,value.ticket)); accept.dataset.inputAction = 'accept';
+      const cancelInput = button('Cancel',inputActions,() => answerInput(value.owner,value.ticket,{action:'cancel'})); cancelInput.dataset.inputAction = 'cancel';
+    }
+    const disabled = Boolean(inputBusy || client.pending || client.terminal || client.state.uncertain);
+    inputTitle.textContent = value.title || (value.kind === 'input' ? 'Enter a value' : 'Choose a value');
+    inputText.textContent = value.kind === 'input' ? value.text : 'Choose one item and confirm. Cancel returns no value.';
+    inputStatus.textContent = client.terminal ? 'The outcome may be unknown. Retained input is copy-only; no answer will be repeated.'
+      : inputBusy || client.pending ? 'Sending answer…' : inputError || 'The owner form is paused. Cancel does not submit the input.';
+    if (inputControl) { inputControl.readOnly = disabled; inputControl.disabled = value.value.type === 'Boolean' && disabled; }
+    for (const radio of inputRows) { radio.checked = radio.dataset.valueChoice === inputSelected; radio.disabled = disabled; }
+    for (const node of inputActions.children) node.disabled = disabled || node.dataset.inputAction === 'accept' && value.kind === 'choice' && inputSelected === null;
+    if (inputNeedsFocus && !disabled && !inputDialog.hidden) {
+      const target = inputControl || inputRows.find(row => row.checked) || inputRows[0] || inputActions.children[1];
+      target.focus({preventScroll:true});
+      if (document.activeElement === target) inputNeedsFocus = false;
+    }
   }
   function reconcileSelection() {
     const catalog = client.state?.catalog;
@@ -1894,7 +2083,7 @@ function mountApplication(environment, root, exchange = null) {
     for (const [id,entry] of mounts) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
-      entry.ownerNotice.textContent = client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
+      entry.ownerNotice.textContent = client.inputs.some(value => value.owner === id) ? 'This form is paused for an input answer. Pending text is retained.' : client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
       if (client.terminal) entry.mount?.lock();
       else entry.mount?.repaint();
     }
@@ -1914,7 +2103,7 @@ function mountApplication(environment, root, exchange = null) {
         postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
       }
     }
-    drawCatalog(); drawPicker(); drawDialog();
+    drawCatalog(); drawPicker(); drawDialog(); drawInput();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -1938,7 +2127,7 @@ function mountApplication(environment, root, exchange = null) {
       panel.insertBefore(ownerNotice, panel.children[0] || null);
     }
     try {
-      if (request?.method === 'application.answerDialog' && result.form) {
+      if (['application.answerDialog','application.answerInput'].includes(request?.method) && result.form) {
         const target = mounts.get(result.session);
         if (!target?.mount) throw Error('Retired dialog owner');
         target.mount.adoptExternal(result.form);
@@ -1976,7 +2165,7 @@ function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker,dialog); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
@@ -1989,14 +2178,14 @@ function mountApplication(environment, root, exchange = null) {
   const resume = async () => {
     if (client.terminal) throw Error('Unknown previous outcome');
     const retained = new Set(mounts.keys());
-    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY});
+    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
     for (const [id,entry] of mounts) {
       if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
       if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
     }
     return result;
   };
-  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY});
+  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
   return {ready,client,mounts,show,pending,openForm,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));
