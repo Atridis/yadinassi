@@ -84,6 +84,13 @@ class Membership:
 
 
 @dataclass(frozen=True, slots=True)
+class VirtualMembership:
+    """Closed virtual-table array argument, not ordinary relational IN."""
+    field: object
+    values: object
+
+
+@dataclass(frozen=True, slots=True)
 class Hierarchy:
     field: object
     root: object
@@ -386,8 +393,15 @@ class _Parser:
                 self.take(')')
             else:
                 field = Field((self.take('name'),))
-                self.take('='); self.take('&')
-                terms.append(Comparison(field, 'eq', Parameter(self.take('name'))))
+                if self.accept('in'):
+                    # Native typed12 case4: the parentheses are required for
+                    # both Array and FixedArray. No lists/literals/subquery.
+                    self.take('('); self.take('&')
+                    terms.append(VirtualMembership(field, Parameter(self.take('name'))))
+                    self.take(')')
+                else:
+                    self.take('='); self.take('&')
+                    terms.append(Comparison(field, 'eq', Parameter(self.take('name'))))
                 self.comparisons += 1
                 if self.comparisons > 128:
                     raise ValueError('Query predicate budget exceeded')
@@ -616,7 +630,7 @@ def walk_nodes(value):
     """Walk only closed grammar nodes, including nested membership sources."""
     from dataclasses import fields
     node_types = (Field, Aggregate, NullLiteral, Expression, Source, Destroy, Join,
-                  Parameter, Periodicity, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
+                  Parameter, Periodicity, Comparison, Membership, VirtualMembership, Hierarchy, Predicate, Projection, Order, Select, Union)
     if type(value) is tuple:
         for item in value: yield from walk_nodes(item)
     elif type(value) in node_types:

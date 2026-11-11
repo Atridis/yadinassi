@@ -289,10 +289,16 @@ class BSLQuery(BSLObject):
             return execute_package(statements, self._catalogs, dict(self._parameters),
                                    self._temp_tables_manager, self._documents, self._information_registers).items[-1]
         from . import relational_queries
+        # One immutable parameter snapshot per direct Execute, never at
+        # SetParameter and never again per virtual source. Ordinary IN retains
+        # its separate package/enum refusal path above.
+        parameters = dict(self._parameters)
+        if any(type(node) is syntax.VirtualMembership for node in syntax.walk_nodes(query)):
+            parameters = relational_queries.snapshot_parameters(parameters)
         if relational_queries.required(query):
-            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents, self._information_registers)
+            return relational_queries.execute(query, self._catalogs, parameters, self._documents, self._information_registers)
         # The fast scan and relational/package paths share the exact same binder.
-        plan = relational_queries._Plan(query, self._catalogs, dict(self._parameters))
+        plan = relational_queries._Plan(query, self._catalogs, parameters)
         if plan.enum_binding is not None:return plan.execute()
         manager, section = plan.managers[0], plan.sections[0]
         columns = plan.columns

@@ -112,31 +112,31 @@ class InventoryEnumQueryTests(unittest.TestCase):
         self.assertTrue(self.vm.execute('Rejected'))
         self.assertTrue(self.vm.execute('Inside'))
 
-    def test_catalog_condition_does_not_expand_exact_enum_profile(self):
+    def test_measured_catalog_condition_has_explicit_enum_profile_grant(self):
         self.seed_document()
         self.assertEqual(self.context.backend.format_version,16)
-        start=self.vm.execute('Date(2024,1,1)');end=self.vm.execute('Date(2024,3,31,23,59,59)')
+        start=self.vm.execute('Date(2024,1,1)')
+        end=self.vm.execute('Date(2024,3,31,23,59,59)')
         product=self.vm.execute('P.Ref')
-        for suffix,column in (
-                ('Balance(&EndAt,Product=&P)','QuantityBalance'),
-                ('Turnovers(&StartAt,&EndAt,,Product=&P)','QuantityTurnover'),
-                ('Turnovers(&StartAt,&EndAt,Month,Product=&P)','QuantityTurnover'),
-                ('BalanceAndTurnovers(&StartAt,&EndAt,,,Product=&P)','QuantityClosingBalance'),
-                ('BalanceAndTurnovers(&StartAt,&EndAt,Month,,Product=&P)','QuantityClosingBalance')):
-            with self.subTest(source=suffix),mock.patch.object(self.context.backend,'begin_query_read') as opened:
-                with self.assertRaisesRegex(ValueError,'Filtered accumulation sources are unsupported'):
-                    self.query('SELECT '+column+' FROM AccumulationRegister.Stock.'+suffix,
-                        P=product,StartAt=start,EndAt=end)
-                opened.assert_not_called()
+        for suffix,column,count in (
+                ('Balance(&EndAt,Product=&P)','QuantityBalance',1),
+                ('Turnovers(&StartAt,&EndAt,,Product=&P)','QuantityTurnover',1),
+                ('Turnovers(&StartAt,&EndAt,Month,Product=&P)','QuantityTurnover',1),
+                ('BalanceAndTurnovers(&StartAt,&EndAt,,,Product=&P)','QuantityClosingBalance',1),
+                ('BalanceAndTurnovers(&StartAt,&EndAt,Month,,Product=&P)','QuantityClosingBalance',2)):
+            with self.subTest(source=suffix):
+                self.assertEqual(self.query('SELECT '+column+' FROM AccumulationRegister.Stock.'+suffix,
+                    P=product,StartAt=start,EndAt=end)._rows,((Decimal(9),),)*count)
             self.assertIsNone(self.context.backend._active)
 
-    def test_enum_condition_is_not_ordinary_enum_where(self):
+    def test_enum_condition_is_not_ordinary_enum_membership(self):
         self.seed_document();end=self.vm.execute('Date(2024,3,31,23,59,59)')
-        with mock.patch.object(self.context.backend,'begin_query_read') as opened:
-            with self.assertRaisesRegex(ValueError,'Filtered accumulation sources are unsupported'):
-                self.query('SELECT QuantityBalance FROM AccumulationRegister.Stock.Balance(&EndAt,Unit=&U)',
-                    U=self.piece,EndAt=end)
-            opened.assert_not_called()
+        self.assertEqual(self.query('SELECT QuantityBalance FROM '
+            'AccumulationRegister.Stock.Balance(&EndAt,Unit=&U)',
+            U=self.piece,EndAt=end)._rows,((Decimal(5),),))
+        values=self.vm.execute('New Array');values.items.append(self.piece)
+        with self.assertRaises(ValueError):
+            self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN (&Units)',Units=values)
         self.assertEqual(self.query('SELECT Unit,SUM(QuantityBalance) AS N '
             'FROM AccumulationRegister.Stock.Balance(&EndAt) WHERE Unit=&U GROUP BY Unit',
             U=self.piece,EndAt=end)._rows,((self.piece,Decimal(5)),))

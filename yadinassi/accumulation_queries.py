@@ -65,7 +65,7 @@ class AccumulationQueryManager:
         return self._documents_by_id[self._schema.recorder_documents[0]]._logical(field, value)
 
 
-def manager(documents, source, parameters):
+def manager(documents, source, parameters, *, condition_budget=None):
     from .configuration_accumulation import AccumulationConfiguration
     from .configuration_accumulation_references import InventoryConfiguration
     from .configuration_inventory_application import InventoryApplicationConfiguration
@@ -79,11 +79,6 @@ def manager(documents, source, parameters):
     config = backend.accumulation_configuration
     if type(config) not in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration):
         raise ValueError('Accumulation query requires the accumulation profile')
-    # The measured CatalogRef filter grant does not include enum-bearing
-    # inventory. Keep format16 unconditioned until this composition is measured.
-    if (type(config) is InventoryEnumConfiguration
-            and source.virtual_condition is not None):
-        raise ValueError('Filtered accumulation sources are unsupported for the enum inventory profile')
     matches = [schema for schema in config.registers
                if schema.name.casefold() == source.catalog.casefold()]
     if len(matches) != 1:
@@ -91,7 +86,8 @@ def manager(documents, source, parameters):
     _boundaries(source, parameters)  # Validate before opening a read lease.
     from .accumulation_query_conditions import bind_condition
     result = AccumulationQueryManager(documents, matches[0])
-    result.condition = bind_condition(result, source, parameters)
+    result.condition = bind_condition(result, source, parameters,
+        typed=type(config) is InventoryEnumConfiguration, budget=condition_budget)
     return result
 
 
@@ -171,6 +167,9 @@ def load(manager, columns, view, budget, source, parameters):
     if (config is None or schema not in config.registers or
             manager.documents._context.backend is not owner._backend):
         raise BackendError('schema_changed')
+    from .accumulation_query_conditions import TypedDimensionCondition
+    if type(manager.condition) is TypedDimensionCondition:
+        manager.condition.require_live()
     boundaries = _boundaries(source, parameters)
     rows, groups = [], {}
     periodicity = _periodicity(source)
@@ -249,7 +248,8 @@ def load(manager, columns, view, budget, source, parameters):
                 raise ValueError('Query period result resource limit exceeded')
             rows.append(tuple(values[column.field] for column in columns))
         if not rows and scalar_balance:
-            rows.append(_zero_balance_row(schema, columns, source, budget))
+            rows.append(_zero_balance_row(schema, columns, source, budget,
+                enum_domain=owner._backend._enum_domain))
         return rows
     for dims, vectors, weights in groups.values():
         vectors, weights = tuple(vectors), tuple(weights)
@@ -271,11 +271,12 @@ def load(manager, columns, view, budget, source, parameters):
                 values[(resource.identity, name)] = value
         rows.append(tuple(values[column.field] for column in columns))
     if not rows and scalar_balance:
-        rows.append(_zero_balance_row(schema, columns, source, budget))
+        rows.append(_zero_balance_row(schema, columns, source, budget,
+            enum_domain=owner._backend._enum_domain))
     return rows
 
 
-def _zero_balance_row(schema, columns, source, budget):
+def _zero_balance_row(schema, columns, source, budget, *, enum_domain=None):
     """Native filter12 case9: dimensionless Balance/B&T has a zero aggregate.
 
     Called only after the full physical/logical scan and charge succeeded. It
@@ -283,7 +284,7 @@ def _zero_balance_row(schema, columns, source, budget):
     """
     from .queries import _MAX_CELLS
     from .query_sources import _check_number
-    vector = _sum_resource_vectors(schema, (), ())
+    vector = _sum_resource_vectors(schema, (), (), enum_domain=enum_domain)
     suffixes = (('balance',) if source.section == 'balance' else
                 ('openingbalance', 'receipt', 'expense', 'turnover', 'closingbalance'))
     values = {}

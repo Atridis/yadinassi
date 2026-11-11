@@ -150,6 +150,7 @@ class _Plan:
                         *(join.source for join in query.joins))
         self.derived_plans = {}
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
+        condition_budget = [0, 0]
         for index, source in enumerate(self.sources):
             if source.derived is not None:
                 from .query_sources import _UnionPlan
@@ -175,7 +176,8 @@ class _Plan:
                 manager = documents.get_index(source.catalog)
             elif source.family == 'accumulation_register':
                 from .accumulation_queries import manager as accumulation_manager
-                manager = accumulation_manager(documents, source, self.parameters)
+                manager = accumulation_manager(documents, source, self.parameters,
+                    condition_budget=condition_budget)
             elif source.family == 'information_register':
                 from .recorder_queries import manager as recorder_manager
                 manager = recorder_manager(documents, source.catalog)

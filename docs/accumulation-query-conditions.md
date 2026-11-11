@@ -4,6 +4,10 @@ This block adds typed dimension parameters to the existing Balance, Turnovers
 and BalanceAndTurnovers sources. It does not add SQL, UI reports, a storage
 format, migration, write authority or automatic WHERE pushdown.
 
+This page describes the original reference-profile contract. Exact format16 has
+a separate [typed scalar/reference/enum condition grant](typed-virtual-dimension-predicates.md).
+The older profiles do not acquire that grant implicitly.
+
 ```bsl
 AccumulationRegister.Stock.Balance(&At, Product=&Product AND Warehouse=&Warehouse)
 AccumulationRegister.Stock.Turnovers(&StartAt,&EndAt,, Product=&Product)

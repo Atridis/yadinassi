@@ -57,7 +57,7 @@ class DimensionConditionGrammarTests(unittest.TestCase):
 
     def test_unsupported_predicates_are_not_general_expressions(self):
         for condition in ('Product=&P OR Warehouse=&W', 'NOT Product=&P',
-                          'Product<> &P', 'Product IN (&P)', 'R.Product=&P',
+                          'Product<> &P', 'Product IN &P', 'R.Product=&P',
                           'Product=Warehouse', 'Product="P"', 'Product=&P+1',
                           '&P=Product', 'Product IS NULL', 'Product=&P AND'):
             with self.subTest(condition=condition), self.assertRaises(ValueError):
