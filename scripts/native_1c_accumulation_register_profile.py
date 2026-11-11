@@ -316,8 +316,7 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         data=base64.b64decode(item['data_b64'],validate=True)
         require(base64.b64encode(data).decode()==item['data_b64'])
         require(len(data)==item['size']==stage['output_size'] and FULL.digest(data)==item['sha256']==stage['output_sha256'])
-        parse_output(data)
-        require(stage['record_count']==route.COUNT and stage['incomplete'] is False and len(stage['partial_observations'])==route.COUNT)
+        validate_observation_binding(stage,data)
         return report,data
     except AccumulationRegisterError:raise
     except Exception:raise AccumulationRegisterError('accumulation_register_report_invalid') from None
@@ -327,6 +326,14 @@ def parse_output(raw):
     require(type(raw) is bytes and 0<len(raw)<=MAX_OUTPUT)
     values=FULL.strict_json(raw,MAX_OUTPUT)
     require(route.canonical(values)==raw)
+    return values
+
+
+def validate_observation_binding(stage,data):
+    """Report and exported evidence must describe the same ordered values."""
+    values=parse_output(data)
+    require(stage['record_count']==route.COUNT and stage['incomplete'] is False)
+    require(stage['partial_observations']==[[index,value] for index,value in enumerate(values,1)])
     return values
 
 

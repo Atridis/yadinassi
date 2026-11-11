@@ -8,7 +8,7 @@ SCHEMA='native-1c-accumulation-register-v1'
 STAGE_SCHEMA='native-1c-accumulation-register-stage-v1'
 COUNT=16
 MAX_OUTPUT=131072
-SOURCE_SHA256='65397639051b2af443a6af1df53652c57915717d931558393e3dc94954c55bbb'
+SOURCE_SHA256='10c0d64ebe8c5a17d7ba161ddc2f73b8e11a24447e91d7d370822eb08bdc34c0'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

@@ -46,7 +46,7 @@ Function Turnovers(Item, StartAt, EndAt)
 EndFunction
 Function Qualifiers(Source, Field)
     Q = New Query("SELECT R." + Field + " AS V FROM AccumulationRegister.OwnedAccumulationRows." + Source + " AS R");
-    Q.SetParameter("At", Date(2024,1,2)); Q.SetParameter("From", Date(2024,1,1)); Q.SetParameter("To", Date(2024,1,2));
+    Q.SetParameter("At", Date(2024,1,2)); Q.SetParameter("StartAt", Date(2024,1,1)); Q.SetParameter("EndAt", Date(2024,1,2));
     Table = Q.Execute().Unload(); Description = Table.Columns.Find("V").ValueType;
     N = Description.NumberQualifiers;
     Return Numeric(N.Digits) + "," + Numeric(N.FractionDigits) + "," + Numeric(Number(N.AllowedSign = AllowedSign.Any));
@@ -56,14 +56,14 @@ Function ObserveCase(CaseNo, Stage)
     Rows = New Array; Item = "c" + String(CaseNo); Stage = "setup";
     If CaseNo = 1 Then
         Stage = "query";
-        Return Balance("absent",At) + "|" + Turnovers("absent",StartAt,At) + "|" + Qualifiers("Balance(&At)","AmountBalance") + "|" + Qualifiers("Balance(&At)","QuantityBalance") + "|" + Qualifiers("Turnovers(&From,&To)","AmountTurnover") + "|" + Qualifiers("Turnovers(&From,&To)","AmountReceipt") + "|" + Qualifiers("Turnovers(&From,&To)","AmountExpense");
+        Return Balance("absent",At) + "|" + Turnovers("absent",StartAt,At) + "|" + Qualifiers("Balance(&At)","AmountBalance") + "|" + Qualifiers("Balance(&At)","QuantityBalance") + "|" + Qualifiers("Turnovers(&StartAt,&EndAt)","AmountTurnover") + "|" + Qualifiers("Turnovers(&StartAt,&EndAt)","AmountReceipt") + "|" + Qualifiers("Turnovers(&StartAt,&EndAt)","AmountExpense");
     ElsIf CaseNo = 2 Or CaseNo = 3 Then
         Item = "shared"; AddRow(Rows,Item,1,2,1,T);
         If CaseNo = 2 Then AddRow(Rows,Item,1,3,2,T); EndIf;
         O = DocumentOf(CaseNo,Rows); Defaults = "";
         If CaseNo = 2 Then
             Set = O.RegisterRecords.OwnedAccumulationRows; R = Set.Add();
-            Defaults = Numeric(Number(R.Active)) + "," + Numeric(Number(R.RecordType=AccumulationRecordType.Receipt)) + "," + Numeric(Number(R.Period=Date(1,1,1))) + "," + Numeric(R.LineNumber); Set.Clear();
+            Defaults = Numeric(Number(R.Active)) + "," + Numeric(Number(R.RecordType=AccumulationRecordType.Receipt)) + "," + Numeric(Year(R.Period)) + ":" + Numeric(Month(R.Period)) + ":" + Numeric(Day(R.Period)) + ":" + Numeric(Hour(R.Period)) + ":" + Numeric(Minute(R.Period)) + ":" + Numeric(Second(R.Period)) + "," + Numeric(R.LineNumber); Set.Clear();
         EndIf;
         Failed = TryPost(O,CaseNo,Stage); Stage = "query";
         Return Failed + "|" + Defaults + "|" + Raw(O.Ref) + "|" + Balance(Item,At) + "|" + Turnovers(Item,StartAt,At);
@@ -97,7 +97,7 @@ Function ObserveCase(CaseNo, Stage)
     EndIf;
     If CaseNo = 16 Then BeginTransaction(); EndIf;
     Failed = TryPost(O,CaseNo,Stage);
-    If CaseNo = 16 Then RollbackTransaction(); EndIf;
+    If CaseNo = 16 Then RollbackTransaction(); BeginTransaction(); EndIf;
     Stage = "readback"; State = Posted(O.Ref); RawValue = Raw(O.Ref); Inside = ""; O.AdditionalProperties.Property("Inside",Inside);
     Stage = "query";
     If CaseNo = 6 Then
@@ -115,7 +115,9 @@ Function ObserveCase(CaseNo, Stage)
         O.Write(DocumentWriteMode.UndoPosting); Stage = "query";
         Return Failed + "|" + Ordinary + "|" + Posted(O.Ref) + "," + Raw(O.Ref) + "|" + Balance(Item,At);
     EndIf;
-    Return Failed + "|" + State + "|" + RawValue + "|" + Inside + "|" + Balance(Item,At) + "|" + Turnovers(Item,StartAt,At);
+    Result = Failed + "|" + State + "|" + RawValue + "|" + Inside + "|" + Balance(Item,At) + "|" + Turnovers(Item,StartAt,At);
+    If CaseNo = 16 Then RollbackTransaction(); EndIf;
+    Return Result;
 EndFunction
 For CaseNo = 1 To 16 Do
     Stage = "setup";

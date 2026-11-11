@@ -29,6 +29,9 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         setup,assets=fixture.load_saved()
         self.assertEqual(assets['generated/observe.bsl'],route.source())
         self.assertIn(b'<RegisterType>Balance</RegisterType>',assets['AccumulationRegister.xml'])
+        from yadinassi.syntax.parser import parse
+        parse(route.program(setup,'a'*32).decode())
+        parse(assets['ObjectModule.bsl'].decode())
     def test_distinct_staged_route_and_readonly_isolation(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
             destination=Path(directory)/'inputs'
@@ -44,7 +47,7 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         self.assertIn('comparison=None',source)
     def test_only_new_workflow_and_closed_branch(self):
         workflow=(ROOT/'.github/workflows/native-1c-accumulation-register.yml').read_text()
-        self.assertIn("head.ref == 'codex/accumulation-register-movements'",workflow)
+        self.assertIn("head.ref == 'codex/accumulation-balance-registers'",workflow)
         self.assertNotIn('pull_request_target',workflow)
         self.assertIn('persist-credentials: false',workflow)
         self.assertIn('native_1c_ci_policy.py bind',workflow)
@@ -181,3 +184,16 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         self.assertIn('AccumulationRecordType.Expense',source)
     def test_native_host_accepts_bounded_larger_source(self):
         self.assertLess(len(route.program(None,'a'*32)),32768)
+    def test_exported_values_match_report_observations(self):
+        values=['case'+str(n) for n in range(1,17)]
+        stage={'record_count':16,'incomplete':False,'partial_observations':list(map(list,enumerate(values,1)))}
+        self.assertEqual(host.validate_observation_binding(stage,route.canonical(values)),values)
+    def test_contradictory_report_and_artifact_are_refused(self):
+        values=['case'+str(n) for n in range(1,17)]
+        stage={'record_count':16,'incomplete':False,'partial_observations':list(map(list,enumerate(values,1)))}
+        stage['partial_observations'][7][1]='different'
+        with self.assertRaises(ValueError):host.validate_observation_binding(stage,route.canonical(values))
+    def test_incomplete_evidence_cannot_be_exported_as_complete(self):
+        values=['case'+str(n) for n in range(1,17)]
+        stage={'record_count':16,'incomplete':True,'partial_observations':list(map(list,enumerate(values,1)))}
+        with self.assertRaises(ValueError):host.validate_observation_binding(stage,route.canonical(values))
