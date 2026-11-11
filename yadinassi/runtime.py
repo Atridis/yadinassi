@@ -189,6 +189,7 @@ class Interpreter:
         self._metadata = BSLMetadata(database_context)
         self._catalogs = BSLCatalogs(self._metadata._catalogs, database_context)
         self._documents = BSLDocuments(self._metadata._documents, database_context, self._catalogs)
+        self._documents._interpreter = self
         self._information_registers = BSLInformationRegisters(self._metadata._information_registers, database_context, self._catalogs, self._documents)
         self._xdto_factory = BSLXDTOFactory()
         if family_owner is not None:
@@ -631,10 +632,14 @@ class Interpreter:
         begin(self._transaction_backend())
 
     def _commit_transaction(self):
+        if not getattr(self, '_transaction_activation_allowed', True):
+            raise ValueError('Transaction control is unavailable in this activation')
         from .database_transactions import commit
         commit(self._transaction_backend())
 
     def _rollback_transaction(self):
+        if not getattr(self, '_transaction_activation_allowed', True):
+            raise ValueError('Transaction control is unavailable in this activation')
         from .database_transactions import rollback
         rollback(self._transaction_backend())
 
@@ -816,6 +821,10 @@ class Interpreter:
             return self._self_module
         if name in ("регистрысведений", "informationregisters"):
             return self._information_registers
+        if name in ("documentwritemode", "режимзаписидокумента"):
+            if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
+            from .document_posting_values import DOCUMENT_WRITE_MODES
+            return DOCUMENT_WRITE_MODES
         if name in ("документы", "documents"):
             return self._documents
         if name in ("справочники", "catalogs"):
