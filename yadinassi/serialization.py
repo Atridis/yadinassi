@@ -103,7 +103,7 @@ _UNSUPPORTED_CODEC_TYPES = frozenset({
     BSLType.OPENSSL_SECURE_CONNECTION, BSLType.FILE_CA_CERTIFICATES,
     BSLType.OS_CA_CERTIFICATES, BSLType.INTERNET_PROXY,
     BSLType.FORM_TABLE, BSLType.FORM_DATA_COLLECTION, BSLType.FORM_DATA_COLLECTION_ITEM,
-    BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
+    BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_GROUP, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
     BSLType.XDTO_FACTORY, BSLType.XDTO_OBJECT, BSLType.XDTO_VALUE, BSLType.XDTO_LIST, BSLType.XDTO_VALUE_TYPE, BSLType.XDTO_OBJECT_TYPE, BSLType.XDTO_PROPERTY, BSLType.XDTO_PROPERTIES, BSLType.XDTO_PACKAGE, BSLType.XDTO_PACKAGES, BSLType.XML_FORM,
     BSLType.DOM_DOCUMENT, BSLType.DOM_ELEMENT, BSLType.DOM_ATTRIBUTE, BSLType.DOM_TEXT, BSLType.DOM_CDATA, BSLType.DOM_COMMENT, BSLType.DOM_PI, BSLType.DOM_FRAGMENT, BSLType.DOM_NODE_LIST, BSLType.DOM_ELEMENT_LIST, BSLType.DOM_ATTRIBUTE_MAP, BSLType.DOM_NODE_TYPE, BSLType.DOM_BUILDER, BSLType.DOM_WRITER,
     BSLType.DATA_HASHING, BSLType.HASH_FUNCTION,
@@ -184,6 +184,8 @@ def _number(value: Decimal) -> str:
 
 def _require_representable_description(value: BSLTypeDescription) -> None:
     """Never silently erase settings for types absent from the Pattern."""
+    if type(value.types) is not tuple or any(type(kind) is not BSLType for kind in value.types):
+        raise ValueError("Сериализация metadata-bound ОписаниеТипов пока не поддерживается")
     if value._query_scalar is not None:
         raise ValueError("Сериализация nullable описания колонки запроса пока не поддерживается")
     if BSLType.UUID in value.types:

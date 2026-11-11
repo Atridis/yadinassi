@@ -1,4 +1,4 @@
-"""Activation-owned database helpers; reference ownership is never relaxed."""
+"""VM-local helpers with shared family/context metadata and isolated external roots."""
 from pathlib import Path
 import unittest
 
@@ -42,7 +42,8 @@ class RuntimeContextBindingTests(unittest.TestCase):
     def test_imported_query_type_reference_and_temporary_tables_share_child_owner(self):
         child = self.load()
         self.assertTrue(self.vm.execute('Helper.Check()'))
-        self.assertIsNot(child._catalogs._metadata, self.vm._catalogs._metadata)
+        self.assertIs(child._catalogs._metadata, self.vm._catalogs._metadata)
+        self.assertIsNot(child._catalogs, self.vm._catalogs)
         self.assertIs(self.vm.functions['type'].function.__self__, self.vm)
 
     def test_nested_import_and_cached_module_use_their_own_binding(self):
@@ -99,18 +100,40 @@ class RuntimeContextBindingTests(unittest.TestCase):
 
     def test_same_database_foreign_snapshot_still_rejected_for_field_and_query(self):
         child = self.load()
-        child.variables['foreign'] = self.vm.execute('Catalogs.Categories.EmptyRef()')
+        independent = Interpreter(database_context=self.context)
+        self.addCleanup(independent.close)
+        child.variables['foreign'] = independent.execute('Catalogs.Categories.EmptyRef()')
         for code in ('P=Catalogs.Products.CreateItem();P.Category=Foreign;',
                      'P=Catalogs.Products.CreateItem();FillPropertyValues(P,New Structure("Category",Foreign));',
                      'Q=New Query("SELECT Ref FROM Catalog.Categories WHERE Ref=&R");Q.SetParameter("R",Foreign);Q.Execute();'):
             with self.subTest(code=code), self.assertRaisesRegex(Exception, 'same database|foreign|snapshot'):
                 child.execute(code)
 
-    def test_parent_temporary_table_manager_still_rejected_by_child_query(self):
+    def test_independent_root_temporary_table_manager_rejected_by_child_query(self):
         child = self.load()
-        child.variables['foreign'] = self.vm.execute('New TempTablesManager')
+        independent = Interpreter(database_context=self.context)
+        self.addCleanup(independent.close)
+        child.variables['foreign'] = independent.execute('New TempTablesManager')
         with self.assertRaises(Exception):
             child.execute('Q=New Query("SELECT Ref FROM Catalog.Categories");Q.TempTablesManager=Foreign;Q.Execute();')
+
+    def test_same_family_reference_flows_through_assignment_fill_and_query(self):
+        child = self.load()
+        child.variables['shared'] = self.vm.execute('Catalogs.Categories.EmptyRef()')
+        for code in ('P=Catalogs.Products.CreateItem();P.Category=Shared;',
+                     'P=Catalogs.Products.CreateItem();FillPropertyValues(P,New Structure("Category",Shared));',
+                     'Q=New Query("SELECT Ref FROM Catalog.Categories WHERE Ref=&R");Q.SetParameter("R",Shared);Q.Execute();'):
+            with self.subTest(code=code): child.execute(code)
+
+    def test_same_family_temporary_table_manager_can_be_used_by_child(self):
+        child = self.load()
+        manager = self.vm.execute('New TempTablesManager')
+        child.variables['shared'] = manager
+        try:
+            child.execute('Q=New Query("SELECT Ref INTO Prepared FROM Catalog.Categories; SELECT Ref FROM Prepared");'
+                          'Q.TempTablesManager=Shared;R=Q.Execute();')
+            self.assertEqual(len(child.variables['r']._rows), 1)
+        finally: manager.close()
 
     def test_common_modules_client_server_and_global_keep_context_owned_helpers(self):
         for flags in ({}, SERVER, {'Global': 'true'}):

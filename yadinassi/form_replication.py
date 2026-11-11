@@ -8,7 +8,7 @@ from decimal import Decimal, localcontext
 from threading import Lock
 
 from .form_model import (BSLClientApplicationForm, BSLFormAttribute, BSLFormField,
-    BSLFormButton, BSLFormCommand, BSLFormTable, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
+    BSLFormButton, BSLFormCommand, BSLFormTable, BSLFormGroup, BSLFormFieldView, MAX_ATTRIBUTES, MAX_ITEMS,
     MAX_COMMANDS, MAX_TOTAL_TEXT, MAX_ALLOCATED, name, scalar, text)
 from .form_runtime import FormSession, MAX_SOURCE
 from .invocation import (InvocationBinding, InvocationPort, InvocationError,
@@ -165,7 +165,7 @@ def _pack_state(session, handlers):
              kind.string_qualifiers.allowed_length.value, kind.date_qualifiers.date_fractions.value],
             attribute.title, key in form._static, _encode_form_scalar(form._data[key])])
     return {'attributes': attributes, 'tables': pack_tables(form), 'title': form.title,
-        'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'field',
+        'items': [[item.name, 'button' if type(item) is BSLFormButton else 'table' if type(item) is BSLFormTable else 'group' if type(item) is BSLFormGroup else 'field',
             item.title, item.visible, item.enabled, item.read_only,
             item.command_name if type(item) is BSLFormButton else item.data_path,
             0 if type(item) is BSLFormButton else _handler_id(item.action, handlers),
@@ -177,7 +177,8 @@ def _pack_state(session, handlers):
             for command in form.commands._values.values()],
         'actions': {event: _handler_id(handler, handlers)
             for event, handler in form.actions.items() if event != 'oncreateatserver'},
-        'allocated': session._allocated, 'lifecycle': session.state}
+        'allocated': session._allocated, 'lifecycle': session.state,
+        **({'layout': [list(row) for row in form._layout]} if form._layout else {})}
 
 
 def _unpack_state(packet, session, handlers):
@@ -195,7 +196,8 @@ def _unpack_state(packet, session, handlers):
 
 def _unpack_state_candidate(packet, session, handlers):
     """Validate an entire detached candidate before touching live client state."""
-    _keys(packet, 'attributes tables title items commands actions allocated lifecycle')
+    _keys(packet, 'attributes tables title items commands actions allocated lifecycle' +
+        (' layout' if type(packet) is dict and 'layout' in packet else ''))
     candidate = BSLClientApplicationForm(session)
     candidate.title = text(packet['title'], 1024)
     allocated = _integer(packet['allocated'], 0, MAX_ALLOCATED)
@@ -262,10 +264,10 @@ def _unpack_state_candidate(packet, session, handlers):
             raise ValueError('duplicate form identity')
         identities.add(identity)
         key = name(item_name).casefold()
-        if key in candidate.items._values or kind not in ('field', 'button', 'table'):
+        if key in candidate.items._values or kind not in ('field', 'button', 'table', 'group'):
             raise ValueError('invalid form item')
         _booleans([visible, enabled, readonly])
-        item = (BSLFormButton if kind == 'button' else BSLFormTable if kind == 'table' else BSLFormField)(candidate, item_name)
+        item = (BSLFormButton if kind == 'button' else BSLFormTable if kind == 'table' else BSLFormGroup if kind == 'group' else BSLFormField)(candidate, item_name)
         item._replica_id = identity
         item.title = text(title, 1024)
         item.visible, item.enabled, item.read_only = visible, enabled, readonly
@@ -276,7 +278,10 @@ def _unpack_state_candidate(packet, session, handlers):
         text(path, 128)
         if path:
             name(path)
-        if kind == 'button':
+        if kind == 'group':
+            if path or type(action) is not int or action != 0 or view != 'InputField':
+                raise ValueError('group cannot bind data or events')
+        elif kind == 'button':
             if action != 0 or type(action) is not int or view != 'InputField':
                 raise ValueError('invalid button')
             if path and path.casefold() not in candidate.commands._values:
@@ -298,6 +303,14 @@ def _unpack_state_candidate(packet, session, handlers):
             item.data_path = path
             item.action = _handler_name(action, handlers, 1)
         candidate.items._values[key] = item
+    if 'layout' in packet:
+        from .form_layout import install_layout
+        install_layout(candidate, packet['layout'])
+    elif any(type(item) is BSLFormGroup for item in candidate.items._values.values()):
+        raise ValueError('group requires admitted layout')
+    previous_layout = getattr(getattr(session, 'form', None), '_layout', ())
+    if previous_layout and previous_layout != candidate._layout:
+        raise ValueError('configuration layout is immutable')
     if type(packet['actions']) is not dict or len(packet['actions']) > 3:
         raise ValueError('invalid form lifecycle bindings')
     for event, endpoint in packet['actions'].items():
@@ -332,6 +345,7 @@ def _install_state(session, decoded):
         destination._values = values
     form._attributes, form._data, form._static = candidate._attributes, candidate._data, candidate._static
     form.title, form.actions = candidate.title, candidate.actions
+    form._layout, form._layout_parents = candidate._layout, candidate._layout_parents
     session._allocated = allocated
     return lifecycle
 

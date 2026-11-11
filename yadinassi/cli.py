@@ -112,9 +112,10 @@ def repl(interpreter: Interpreter) -> int:
             print(error, file=sys.stderr)
             had_error = True
         except KeyboardInterrupt:
-            interpreter.close()
             if not interactive:
+                interpreter.close()
                 return 130
+            interpreter.cancel_pending()
             print("\nИсполнение прервано.")
 
 

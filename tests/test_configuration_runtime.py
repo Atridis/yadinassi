@@ -1,4 +1,4 @@
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import ExitStack, redirect_stdout, redirect_stderr
 from dataclasses import replace
 from io import StringIO
 from pathlib import Path
@@ -316,14 +316,14 @@ class ConfigurationRuntimeStorageTests(unittest.TestCase):
     def test_create_reopen_does_not_execute_and_explicit_start_does(self):
         files = module_files([CLIENT], application='Message("start");')
         config = import_configuration(files, module_runtime=MODULE_RUNTIME)
-        with tempfile.TemporaryDirectory() as temp:
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as owners:
             path = Path(temp)/'owned.sqlite'
             context = SQLiteDBContext.create(path, config); context.close()
             context = SQLiteDBContext(path)
-            self.addCleanup(context.close)
+            owners.callback(context.close)
             output = []
             app = ConfigurationApplication.from_database(context, output=output.append)
-            self.addCleanup(app.close, force=True)
+            owners.callback(app.close, force=True)
             self.assertEqual(output, []); app.start(); app.execute('Message(Tools.Double(3));')
             self.assertEqual(output, ['start', '6'])
             self.assertEqual(context.backend.export_configuration(), files)

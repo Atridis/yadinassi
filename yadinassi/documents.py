@@ -147,8 +147,25 @@ class BSLDocumentManager(BSLObject):
         try: return view.read_document(self._key(record))
         finally: view.close()
     def _read_member(self,ref,name):
-        card = self._read(ref.reference_uuid)
-        return _field(self._defaults(ref) if card is None else self._fields(card),name)
+        from .sqlite_documents import DocumentView
+        key = _name(name)
+        standard = {'number':'number','date':'date','deletionmark':'deletion_mark','posted':'posted','ref':'ref'}
+        definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
+        view = self._view()
+        try:
+            if (type(view) is DocumentView and view._view._operation_id is None
+                    and (key in standard or definition is not None)):
+                field = standard[key] if key in standard else definition.identity
+                row = view.read_document_values(self._key(ref.reference_uuid),(field,))
+                if row is None: return _field(self._defaults(ref),name)
+                value = row.values[0]
+                if definition is not None: return self._logical(definition,value)
+                if key=='date': return _date_from_datetime(value)
+                if key=='ref': return self._ref(value.record_id)
+                return value
+            card = view.read_document(self._key(ref.reference_uuid))
+            return _field(self._defaults(ref) if card is None else self._fields(card),name)
+        finally: view.close()
     def _get_object(self,ref):
         card = self._read(ref.reference_uuid)
         return None if card is None else BSLDocumentObject(self,card)

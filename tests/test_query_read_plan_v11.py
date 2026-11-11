@@ -88,7 +88,7 @@ class MigratedDocumentReadTests(unittest.TestCase):
         with patch.object(view, '_card', side_effect=AssertionError('full-card materialization')):
             page = view.scan_document_values(schema.identity, DocumentScanRequest(), ('number',))
         self.assertEqual(page.rows[0].values, ('A',))
-        scans = [q for q in sql if 'ORDER BY date,number,record_id' in q]
+        scans = [q for q in sql if 'ORDER BY r.date,r.number,r.record_id' in q]
         self.assertTrue(scans)
         self.assertTrue(all('sections_json' not in q and 'values_json' not in q for q in scans))
         plan = view._connection.execute('EXPLAIN QUERY PLAN '+scans[-1]).fetchall()

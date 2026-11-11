@@ -16,6 +16,7 @@ const ERROR_MESSAGES = Object.freeze({
   transport: 'Connection interrupted or response invalid. The outcome may be unknown. Refresh state before another action; do not repeat the action.',
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
+  draft_hidden: 'Unsubmitted inputs are on another page. Return to that page and apply them before running this action.',
   draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
@@ -177,20 +178,25 @@ function validateSnapshot(state) {
       new Set(state.discardCommands).size !== state.discardCommands.length)) throw new FormError('transport');
   const names = new Set(), tables = new Map(), controlIds = new Set(); let cells = 0;
   for (const item of state.items) {
-    const table = item?.kind === 'table';
-    const shape = table ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'tableId', 'columns', 'rows', 'currentRow']
+    const table = item?.kind === 'table', group = item?.kind === 'group';
+    const shape = group ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'parent', 'layoutKind', 'orientation', 'showTitle'] : table ? ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'controlId', 'tableId', 'columns', 'rows', 'currentRow']
       : ['name', 'kind', 'title', 'visible', 'enabled', 'readOnly', 'view', 'value'];
+    if (!group && record(item) && Object.hasOwn(item, 'parent')) shape.push('parent');
     if (item?.kind === 'field' && Object.hasOwn(item, 'editor')) shape.push('editor');
     if (item?.kind === 'field' && Object.hasOwn(item, 'controlId')) shape.push('controlId');
     if (!keys(item, shape) || !validText(item.name) || !item.name.length || names.has(item.name) ||
-        !validText(item.title) || !['field', 'button', 'table'].includes(item.kind) ||
+        !validText(item.title) || !['field', 'button', 'table', 'group'].includes(item.kind) ||
         ['visible', 'enabled', 'readOnly'].some(name => typeof item[name] !== 'boolean')) throw new FormError('transport');
     names.add(item.name);
     if (Object.hasOwn(item, 'controlId')) {
       if (!integer(item.controlId) || !item.controlId || item.controlId > LIMITS.controlIds || controlIds.has(item.controlId)) throw new FormError('transport');
       controlIds.add(item.controlId);
     }
-    if (table) {
+    if (group) {
+      if (!['group', 'pages', 'page'].includes(item.layoutKind) || !['vertical', 'horizontal'].includes(item.orientation) ||
+          typeof item.showTitle !== 'boolean' || item.layoutKind === 'pages' && (item.orientation !== 'vertical' || !item.showTitle))
+        throw new FormError('transport');
+    } else if (table) {
       if (!integer(item.tableId) || !item.tableId || !Array.isArray(item.columns) || !item.columns.length ||
           item.columns.length > LIMITS.columns || !Array.isArray(item.rows) || item.rows.length > LIMITS.rows)
         throw new FormError('transport');
@@ -228,6 +234,23 @@ function validateSnapshot(state) {
       }
     }
   }
+  const nested = state.items.some(item => item.kind === 'group');
+  const ancestors = new Map(), depths = new Map(), pageCounts = new Map();
+  for (const item of state.items) {
+    if (!nested) { if (Object.hasOwn(item, 'parent')) throw new FormError('transport'); continue; }
+    if (!Object.hasOwn(item, 'parent') || !validText(item.parent)) throw new FormError('transport');
+    const parent = ancestors.get(item.parent);
+    if (item.parent && (!parent || parent.kind !== 'group') ||
+        (item.layoutKind === 'page') !== (parent?.layoutKind === 'pages')) throw new FormError('transport');
+    if (parent && (!parent.visible && item.visible || !parent.enabled && item.enabled || parent.readOnly && !item.readOnly))
+      throw new FormError('transport');
+    const depth = (depths.get(item.parent) || 0) + 1;
+    if (depth > 8) throw new FormError('transport');
+    if (item.layoutKind === 'pages') pageCounts.set(item.name, 0);
+    if (item.layoutKind === 'page') pageCounts.set(item.parent, pageCounts.get(item.parent) + 1);
+    ancestors.set(item.name, item); depths.set(item.name, depth);
+  }
+  if ([...pageCounts.values()].some(count => count === 0)) throw new FormError('transport');
   if ((state.discardCommands || []).some(name => !state.items.some(item => item.name === name && item.kind === 'button')))
     throw new FormError('transport');
   if (new TextEncoder().encode(JSON.stringify(state)).length > LIMITS.bytes) throw new FormError('transport');
@@ -617,7 +640,7 @@ function createBrowserHost(environment, root) {
   const launch = readBrowserLaunch(environment);
   if (!launch.enabled) return {enabled: false, content: root, instance: documentInstance(environment),
     transport: createTransport(environment.fetch.bind(environment), launch.launcher), launcher: launch.launcher,
-    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, notify() {}};
+    start: async callback => { try { return await callback(); } catch { return false; } }, setPending() {}, setInspectionAllowed() {}, notify() {}};
   const document = environment.document, banner = document.createElement('section'), description = document.createElement('p'),
     detail = document.createElement('p'), actions = document.createElement('div'), takeover = document.createElement('button'),
     check = document.createElement('button'), content = document.createElement('div');
@@ -625,10 +648,23 @@ function createBrowserHost(environment, root) {
   description.setAttribute('role', 'status'); description.setAttribute('aria-live', 'polite');
   takeover.type = check.type = 'button'; takeover.textContent = 'Take control'; check.textContent = 'Check connection';
   actions.append(takeover, check); banner.append(description, detail, actions); root.replaceChildren(banner, content);
+  let inspectionAllowed = () => false, inspectionWriter = null;
   const attachment = new BrowserAttachment(environment, launch, () => paint());
   function paint() {
     const writable = attachment.writable;
-    content.inert = !writable; content.setAttribute('aria-disabled', String(!writable));
+    if (writable) inspectionWriter = {attachment: attachment.info.attachment, generation: attachment.info.generation};
+    else if (attachment.suspended || attachment.info?.role !== 'writer' || attachment.info?.closed ||
+        attachment.info?.attachment !== inspectionWriter?.attachment || attachment.info?.generation !== inspectionWriter?.generation) inspectionWriter = null;
+    // DOM inspection is not writer authority. Opt-in only after the consumer
+    // has locked all business controls; the transport gate remains unchanged.
+    let inspection = false;
+    try {
+      inspection = !writable && Boolean(inspectionWriter) && attachment.info?.role === 'writer' && !attachment.info.closed &&
+        !attachment.suspended && !attachment.reconciling && !attachment.busy && !attachment.rpcActive &&
+        (attachment.businessUnknown || attachment.uncertain()) && inspectionAllowed() === true;
+    } catch { inspection = false; }
+    content.inert = !(writable || inspection); content.setAttribute('aria-disabled', String(!(writable || inspection)));
+    content.dataset.inspection = String(inspection);
     banner.dataset.role = attachment.info?.role || 'connecting';
     description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
       : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
@@ -643,7 +679,8 @@ function createBrowserHost(environment, root) {
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
   return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
-    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); }, notify: paint,
+    setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
+    setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
 }
 
@@ -701,7 +738,8 @@ function createFormView(document, root, handlers) {
     item.editor ? Object.keys(item.editor).sort().map(key => [key, item.editor[key]]) : null]);
   const draftFor = (item, value) => ({value, base: {...item.value}, binding: binding(item)});
   const matches = (item, draft) => editable(item) && draft.binding === binding(item) && scalarEqual(item.value, draft.base);
-  let current = null, isBusy = false, focusMemory = null, actionPointer = false;
+  let current = null, isBusy = false, focusMemory = null, actionPointer = false, lastModel = null;
+  const pageSelections = new Map(), pageFocus = new Map();
   let serial = 0;
   const sameValue = (item, input) => item.value.type === 'Boolean' ? item.value.value === input : scalarText(item.value, item.editor) === input;
   const captureFocus = () => {
@@ -723,6 +761,96 @@ function createFormView(document, root, handlers) {
   main.addEventListener('pointerdown', event => { actionPointer = Boolean(event.target.closest('[data-form-action]')); });
   const releasePointer = () => { setTimeout(() => { actionPointer = false; }, 0); };
   main.addEventListener('pointerup', releasePointer); main.addEventListener('pointercancel', () => { actionPointer = false; });
+  const isDisplayed = item => {
+    if (!item || !item.visible) return false;
+    let node = item;
+    while (node) {
+      if (node.layoutKind === 'page' && pageSelections.get(node.parent)?.name !== node.name) return false;
+      node = node.parent ? current?.items.find(item => item.name === node.parent) : null;
+    }
+    return true;
+  };
+  const available = target => {
+    const item = current?.items.find(item => item.name === (typeof target === 'string' ? target : target?.control));
+    return Boolean(item && item.kind !== 'group' && item.enabled && isDisplayed(item));
+  };
+  function reconcilePages() {
+    const names = new Set();
+    for (const item of current?.items || []) if (item.layoutKind === 'pages') {
+      names.add(item.name);
+      const pages = current.items.filter(page => page.layoutKind === 'page' && page.parent === item.name && page.visible);
+      const old = pageSelections.get(item.name);
+      const selected = old?.id === item.controlId && pages.find(page => page.name === old.name && page.enabled);
+      const next = selected || pages.find(page => page.enabled) || pages[0];
+      pageSelections.set(item.name, {id: item.controlId, name: next?.name || null});
+    }
+    for (const name of pageSelections.keys()) if (!names.has(name)) pageSelections.delete(name);
+    for (const [name, saved] of pageFocus) if (!current?.items.some(item => item.name === name && item.controlId === saved.id)) pageFocus.delete(name);
+  }
+  function selectPage(name, keyboard = false) {
+    const page = controls.get(name), pages = controls.get(page?.item.parent);
+    if (!page?.tab || page.tab.disabled || isBusy || !isDisplayed(pages?.item)) return;
+    const old = pageSelections.get(pages.item.name)?.name;
+    if (old === name) return;
+    const previous = controls.get(old), saved = captureFocus();
+    if (previous?.row.contains(saved?.node)) pageFocus.set(old, {...saved, id: previous.item.controlId});
+    pageSelections.set(pages.item.name, {id: pages.item.controlId, name});
+    render(lastModel);
+    page.tab.focus({preventScroll: true});
+    const remembered = pageFocus.get(name);
+    if (!keyboard && remembered && page.row.contains(remembered.node) && !remembered.node.disabled) {
+      remembered.node.focus({preventScroll: true});
+      restoreFocus(remembered);
+    }
+  }
+  function makeGroup(item) {
+    const row = element('section', 'layout-group'), heading = element('h2', 'group-title'), content = element('div', 'group-content');
+    row.id = idPrefix + 'group-' + ++serial;
+    heading.id = row.id + '-title'; row.setAttribute('aria-labelledby', heading.id);
+    row.append(heading);
+    const result = {row, heading, content, item};
+    if (item.layoutKind === 'pages') {
+      result.tabbar = element('div', 'page-tabs'); result.tabbar.setAttribute('role', 'tablist'); row.append(result.tabbar);
+    }
+    if (item.layoutKind === 'page') {
+      result.tab = element('button', 'page-tab'); result.tab.type = 'button'; result.tab.dataset.formAction = 'page';
+      result.tab.id = row.id + '-tab'; result.tab.setAttribute('role', 'tab'); result.tab.setAttribute('aria-controls', row.id);
+      row.setAttribute('role', 'tabpanel'); row.setAttribute('aria-labelledby', result.tab.id);
+      result.tab.addEventListener('pointerdown', event => {
+        // Keep the current editor/selection until the local page switch owns it.
+        event.preventDefault();
+      });
+      result.tab.addEventListener('click', () => { if (controls.get(item.name) === result) selectPage(item.name); });
+      result.tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || result.tab.disabled) return;
+        const tabs = [...controls.values()].filter(control => control.item.parent === item.parent && control.tab && !control.tab.hidden && !control.tab.disabled);
+        const index = tabs.indexOf(result);
+        if (index < 0 || !tabs.length) return;
+        event.preventDefault();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        selectPage(tabs[next].item.name, true); tabs[next].tab.focus({preventScroll: true});
+      });
+    }
+    row.append(content); return result;
+  }
+  function renderGroup(control, model, active) {
+    const item = control.item;
+    control.row.className = 'layout-group layout-' + item.layoutKind;
+    control.content.className = 'group-content orientation-' + item.orientation;
+    control.heading.textContent = item.title || item.name;
+    control.heading.hidden = !item.showTitle || item.layoutKind === 'page';
+    if (control.tabbar) control.tabbar.setAttribute('aria-label', item.title || item.name);
+    if (control.tab) {
+      const parent = controls.get(item.parent);
+      const selected = pageSelections.get(item.parent)?.name === item.name;
+      control.tab.textContent = item.title || item.name; control.tab.hidden = !item.visible;
+      control.tab.setAttribute('aria-selected', String(selected)); control.tab.tabIndex = selected ? 0 : -1;
+      control.tab.disabled = model.paused || model.busy || !active || !item.enabled || !isDisplayed(parent?.item);
+      const index = current.items.filter(page => page.parent === item.parent && page.layoutKind === 'page').findIndex(page => page.name === item.name);
+      if (parent.tabbar.children[index] !== control.tab) parent.tabbar.insertBefore(control.tab, parent.tabbar.children[index] || null);
+      control.row.hidden = !selected || !item.visible || current.kind === 'closed';
+    }
+  }
   function referenceActions(parent, locator) {
     if (!handlers.reference) return null;
     const group = element('span', 'reference-actions');
@@ -749,7 +877,7 @@ function createFormView(document, root, handlers) {
     input.id = id;
     if (item.kind === 'button') {
       input.type = 'button'; input.dataset.formAction = 'command'; input.className = 'primary';
-      input.addEventListener('click', () => handlers.action('command', item.name));
+      input.addEventListener('click', () => { if (controls.get(item.name)?.input === input && !input.disabled && available(item.name)) handlers.action('command', item.name); });
       row.append(input);
     } else {
       row.htmlFor = id; hint.id = id + '-hint'; input.setAttribute('aria-describedby', hint.id);
@@ -758,7 +886,7 @@ function createFormView(document, root, handlers) {
       // Its change intent flushes all pending fields before applying the toggle.
       if (input.type === 'checkbox') row.dataset.formAction = input.dataset.formAction = 'toggle';
       input.autocomplete = 'off'; input.spellcheck = false;
-      const live = () => controls.get(item.name)?.input === input;
+      const live = () => controls.get(item.name)?.input === input && available(item.name);
       input.addEventListener('input', () => {
         const active = controls.get(item.name)?.item;
         if (!live() || isBusy || recovery.size || !editable(active)) return;
@@ -817,7 +945,7 @@ function createFormView(document, root, handlers) {
     const locator = {control: name, row: rowId, column: column.name};
     const key = cellKey(name, controlId, tableId, rowId, column.name);
     const currentCell = () => tableCell(controls.get(name)?.item, rowId, column.name);
-    const live = () => controls.get(name)?.item.tableId === tableId && controls.get(name)?.item.controlId === controlId &&
+    const live = () => available(name) && controls.get(name)?.item.tableId === tableId && controls.get(name)?.item.controlId === controlId &&
       controls.get(name)?.rows.get(rowId)?.cells.get(column.name)?.input === input;
     input.addEventListener('input', () => {
       const active = currentCell();
@@ -920,10 +1048,11 @@ function createFormView(document, root, handlers) {
     }
   }
   function render(model) {
+    lastModel = model;
     const savedFocus = captureFocus();
     if (model.busy && !isBusy) focusMemory = savedFocus;
     const wasBusy = isBusy; isBusy = model.busy; current = model.snapshot;
-    reconcileDrafts();
+    reconcilePages(); reconcileDrafts();
     const active = current?.kind === 'form' && current.lifecycle === 'open';
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
@@ -944,20 +1073,23 @@ function createFormView(document, root, handlers) {
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
       : current.kind === 'closed' ? 'This form is ' + current.lifecycle + '. You can close this tab.' : 'No visible controls.';
     const names = new Set((current?.items || []).map(item => item.name));
-    for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
-    let fieldIndex = 0, actionIndex = 0;
+    for (const [name, control] of controls) if (!names.has(name)) { remember('field:' + name, name, drafts.get(name)); control.row.remove(); control.tab?.remove(); controls.delete(name); drafts.delete(name); discardTable(name); }
+    const nested = current?.items.some(item => item.kind === 'group');
+    fields.className = 'fields' + (nested ? ' nested-layout' : '');
+    const positions = new Map();
     for (const item of current?.items || []) {
       let control = controls.get(item.name);
-      if (control && (control.item.kind !== item.kind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
-        remember('field:' + item.name, item.name, drafts.get(item.name)); control.row.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
+      if (control && (control.item.kind !== item.kind || control.item.layoutKind !== item.layoutKind || control.item.value?.type !== item.value?.type || control.item.tableId !== item.tableId || control.item.controlId !== item.controlId)) {
+        remember('field:' + item.name, item.name, drafts.get(item.name)); control.row.remove(); control.tab?.remove(); controls.delete(item.name); drafts.delete(item.name); discardTable(item.name); control = null;
       }
-      if (!control) { control = item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
+      if (!control) { control = item.kind === 'group' ? makeGroup(item) : item.kind === 'table' ? makeTable(item) : makeControl(item); controls.set(item.name, control); }
       control.item = item;
       const {row, caption, input, hint} = control;
-      const parent = item.kind === 'button' ? actions : fields;
-      const position = item.kind === 'button' ? actionIndex++ : fieldIndex++;
+      const parent = item.parent ? controls.get(item.parent).content : !nested && item.kind === 'button' ? actions : fields;
+      const position = positions.get(parent) || 0; positions.set(parent, position + 1);
       if (parent.children[position] !== row) parent.insertBefore(row, parent.children[position] || null);
       row.hidden = !item.visible || current.kind === 'closed';
+      if (item.kind === 'group') { renderGroup(control, model, active); continue; }
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
       if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
@@ -980,18 +1112,27 @@ function createFormView(document, root, handlers) {
         hint.hidden = !hint.textContent;
       }
     }
-    recovered.hidden = recovery.size === 0;
-    recovered.replaceChildren(element('p', '', 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'),
-      ...Array.from(recovery.values(), draft => element('p', '', draft.label + ': ' + String(draft.value))));
+    // A locked transport never authorizes a send. Local page inspection and
+    // selectable raw-text recovery still work, without clearing any draft/lock.
+    const lockedDrafts = model.locked && !model.busy ? [
+      ...Array.from(drafts, ([name, draft]) => ({label: name, value: draft.value})),
+      ...Array.from(cellDrafts.values(), draft => ({label: draft.control + ', row ' + draft.row + ', ' + draft.column, value: draft.value})),
+    ] : [];
+    recovered.hidden = recovery.size === 0 && lockedDrafts.length === 0;
+    recovered.replaceChildren(element('p', '', recovery.size
+      ? 'These inputs no longer match the host state and were not applied. Copy any text you need, then use Refresh state to discard them and continue.'
+      : 'These unsubmitted inputs are retained while editing is locked. Copy any text you need before Refresh state discards them. Switching pages does not send or retry anything.'),
+      ...[...recovery.values(), ...lockedDrafts].map(draft => element('p', 'draft-recovery-value', draft.label + ': ' + String(draft.value))));
     const nextMessages = current?.messages || [];
     // Rebuild only the bounded message list, never input nodes or host-supplied markup.
     messages.replaceChildren(...nextMessages.map(message => element('p', '', message)));
     messages.hidden = !nextMessages.length;
-    actions.hidden = !current || current.kind === 'closed' || !current.items.some(item => item.kind === 'button' && item.visible);
+    actions.hidden = nested || !current || current.kind === 'closed' || !current.items.some(item => item.kind === 'button' && item.visible);
     if (!model.busy) { restoreFocus(wasBusy ? focusMemory : savedFocus); focusMemory = null; }
   }
   return {
     render,
+    isAvailable: available,
     focusReference(locator) {
       const control = controls.get(locator.control);
       const target = locator.row === null ? control?.reference?.choose : control?.rows?.get(locator.row)?.cells.get(locator.column)?.reference?.choose;
@@ -1024,6 +1165,9 @@ function createFormView(document, root, handlers) {
     changes(only) {
       if (recovery.size) throw new FormError('draft_changed');
       const changes = [];
+      if (only !== undefined && !available(only)) return changes;
+      if (only === undefined && ([...drafts.keys()].some(name => !available(name)) ||
+          [...cellDrafts.values()].some(draft => !available(draft.control)))) throw new FormError('draft_hidden');
       for (const item of current?.items || []) {
         if (item.kind === 'table') {
           for (const row of item.rows) for (const column of item.columns) {
@@ -1119,6 +1263,7 @@ function mountForm(environment, root, options = {}) {
     const reference = event === 'reference';
     if (reference && !options.onReference) return;
     const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
+    if ((['change', 'toggle', 'command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) return;
     let target;
     if (referenceStart) {
       try { target = referenceTarget(name); } catch (caught) { showError(caught); paint(); return; }
@@ -1162,6 +1307,7 @@ function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
+      if ((['command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) throw new FormError('draft_changed');
       if (reference) {
         if (referenceStart) {
           const latest = referenceTarget(name);
@@ -1209,6 +1355,8 @@ function mountForm(environment, root, options = {}) {
   if (browserHost?.enabled) {
     client = new FormClient(browserHost.transport); token = 'attached';
     browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
+    browserHost.setInspectionAllowed(() => Boolean(client.locked && !busy && !client.busy && !options.referenceActive?.() &&
+      client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
   return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};

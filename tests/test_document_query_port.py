@@ -182,8 +182,9 @@ class DocumentQueryPortTests(unittest.TestCase):
         view.close()
         self.assertIsNone(view._view._scan_cursor)
         self.assertIsNone(self.context.backend._active)
-        with self.assertRaisesRegex(sqlite3.ProgrammingError, 'closed'):
-            connection.execute('SELECT 1')
+        self.assertFalse(connection.in_transaction)
+        self.assertIsNone(view._connection)
+        self.assertIs(connection, self.context.backend._read_handle.connection)
         with self.assertRaisesRegex(BackendError, 'closed'):
             view.scan_documents(self.schema.identity, DocumentScanRequest(1, page.continuation))
         self.assertEqual(len(self.view().scan_documents(self.schema.identity, DocumentScanRequest()).rows), 3)
@@ -241,7 +242,7 @@ class DocumentQueryPortTests(unittest.TestCase):
             self.assertEqual(len(view._view._scan_cursor), 2)
             request = replace(request, continuation=page.continuation)
         self.assertEqual(numbers, [str(i).zfill(9) for i in range(1, 6)])
-        self.assertEqual(sum('ORDER BY date,number,record_id' in sql for sql in statements), 1)
+        self.assertEqual(sum('ORDER BY r.date,r.number,r.record_id' in sql for sql in statements), 1)
         self.assertIsNone(view._view._document_scan_stream)
         self.assertIsNone(view._view._document_scan_lookahead)
 

@@ -17,3 +17,13 @@ export const table = (extra = {}) => ({name: 'Lines', kind: 'table', title: 'Ord
   rows: [{id: 1, values: [{type: 'String', value: 'First'}, {type: 'Number', value: '1.00'}, {type: 'Boolean', value: true}]},
     {id: 2, values: [{type: 'String', value: 'Second'}, {type: 'Number', value: '2.00'}, {type: 'Boolean', value: false}]}],
   currentRow: null, ...extra});
+
+/** Minimal declared page graph shared by wrapper integration tests. */
+export const pageLayout = () => {
+  const group = (name, parent, layoutKind, controlId) => ({name, parent, kind:'group', layoutKind, controlId,
+    title:name, orientation:'vertical', showTitle:true, visible:true, enabled:true, readOnly:false});
+  return state(0,{items:[group('Sections','','pages',10),group('First','Sections','page',11),
+    {...field('Name',undefined,{controlId:12}),parent:'First'}, {...button('SaveFirst'),parent:'First'},
+    group('Second','Sections','page',14), {...field('Notes',{type:'String',value:''},{controlId:15}),parent:'Second'},
+    {...button('SaveSecond'),parent:'Second'}]});
+};
