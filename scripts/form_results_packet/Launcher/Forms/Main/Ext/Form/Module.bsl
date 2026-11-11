@@ -1,14 +1,21 @@
 // Closed acquisition only. Five real owned form lifecycles, never direct event calls.
+&AtClient
 Var Request, Flow, Shared, CompletionCount, ResultKind, ResultMatches, WaitTurns, Records;
 
 &AtClient
 Procedure OwnerOpen(Cancel)
- Reader = New JSONReader; Reader.OpenFile(ПараметрЗапуска);
- Request = ReadJSON(Reader); Reader.Close();
- Flow = 0; Records = "";
- SaveJSON(Request.trace, New Structure("nonce,events", Request.nonce, New Array));
- Marker(Request.entered, "entered", "");
- AttachIdleHandler("NextFlow", 1, True);
+ Try
+  Reader = New JSONReader; Reader.OpenFile(ПараметрЗапуска);
+  Request = ReadJSON(Reader); Reader.Close();
+  // Establish entry before trace setup, so absent entry is not a trace failure.
+  Marker(Request.entered, "entered", "");
+  Flow = 0; Records = "";
+  SaveJSON(Request.trace, New Structure("nonce,events", Request.nonce, New Array));
+  AttachIdleHandler("NextFlow", 1, True);
+ Except
+  // Never export ErrorDescription or private paths; failed markers remain closed.
+  ЗавершитьРаботуСистемы(Ложь);
+ EndTry;
 EndProcedure
 
 &AtClient

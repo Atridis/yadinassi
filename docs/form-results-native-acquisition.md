@@ -92,3 +92,10 @@ while retaining executable module/source/EPF integrity and all sandbox, timeout,
 process census, marker and cleanup guards. It does not prove XML roundtrip
 parity, runtime parity, or arbitrary third-party form safety. Historical native
 routes and goldens remain unchanged.
+
+The second attempt passed build and executable redump but timed out before any
+verified entry marker. This is not successful lifecycle evidence. Static review
+found unqualified owner module variables used only from client handlers, unlike
+the existing explicit client-variable probe. Owner state now declares AtClient;
+entry is emitted before trace setup, and startup exceptions terminate without
+exporting error text. Whether this resolves the native timeout is unmeasured.

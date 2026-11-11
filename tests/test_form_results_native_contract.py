@@ -174,3 +174,16 @@ class NativeFormResultsContractTests(unittest.TestCase):
                 self.assertEqual(suite.route.validate_executable_redump(files),suite.route.module_digest())
                 (root/'Unknown.bsl').write_bytes(b'code')
                 with self.assertRaises(suite.full.FullError):suite._dump_executable_files(root)
+
+    def test_owner_state_explicitly_client_context(self):
+        source=self.read('scripts/form_results_packet/Launcher/Forms/Main/Ext/Form/Module.bsl')
+        self.assertIn('&AtClient\nVar Request, Flow, Shared, CompletionCount, ResultKind, ResultMatches, WaitTurns, Records;',source)
+
+    def test_owner_entry_precedes_trace_and_startup_failure_exits(self):
+        source=self.read('scripts/form_results_packet/Launcher/Forms/Main/Ext/Form/Module.bsl')
+        owner=source.split('Procedure OwnerOpen(Cancel)',1)[1].split('EndProcedure',1)[0]
+        self.assertLess(owner.index('Marker(Request.entered'),owner.index('SaveJSON(Request.trace'))
+        self.assertIn('Try',owner)
+        self.assertIn('Except',owner)
+        self.assertIn('ЗавершитьРаботуСистемы(Ложь)',owner)
+        self.assertNotIn('ErrorDescription(',owner)
