@@ -36,3 +36,23 @@ persistence, two-recorder receipts/issues, reference grouping/JOIN/equality,
 identity despite equal or renamed descriptions, repost/ordinary write/unpost,
 explicit movement write/query rollback and enclosing transaction rollback. The
 old scalar observer remains unchanged. No semantic claim precedes that evidence.
+
+## Runnable stock example
+
+The owned example uses public BSL and separate CLI invocations; it does not need
+browser forms. Run once against a fresh file:
+
+```console
+python -m yadinassi --check-xml examples/inventory_reference/source --source-profile accumulation-reference-v1 --report-json
+python -m yadinassi --create-db inventory.sqlite --import-xml examples/inventory_reference/source --source-profile accumulation-reference-v1
+python -m yadinassi --f inventory.sqlite examples/inventory_reference/run.bsl
+python -m yadinassi --f inventory.sqlite examples/inventory_reference/reopen.bsl
+```
+
+The scenario posts a receipt of 10 and an issue of 3, refuses a second issue of
+100, unposts the first issue, then reposts it with quantity 2. The final reopened
+balance is 8. The negative-stock rule lives in the example's Issue handler,
+which explicitly writes its movements and queries the same transaction. This
+is not a universal 1C rule, cost accounting, or prevention of every possible
+backdated oversell: the example checks the balance one second after its own
+Date. Production applications must author the business policy they require.

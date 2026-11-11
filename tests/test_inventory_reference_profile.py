@@ -176,11 +176,11 @@ class InventoryRuntimeTests(unittest.TestCase):
         self.seed(); self.document(); self.document('Issue','2',3)
         table=self.query('SELECT P.Description AS Product, B.QuantityBalance AS Quantity FROM '
             'AccumulationRegister.Stock.Balance(&At) AS B INNER JOIN Catalog.Products AS P ON B.Product=P.Ref')
-        self.assertEqual(table.count(),Decimal(1)); self.assertEqual(table.get_index(Decimal(0)).get_member('Quantity'),Decimal(7))
+        self.assertEqual(len(table.rows),1); self.assertEqual(table.get_index(Decimal(0)).get_member('Quantity'),Decimal(7))
     def test_rename_does_not_change_group(self):
         self.seed(); self.document(); self.vm.execute('P.Description="Renamed"; P.Write();')
         table=self.query('SELECT B.QuantityBalance AS Quantity FROM AccumulationRegister.Stock.Balance(&At) AS B')
-        self.assertEqual(table.count(),Decimal(1)); self.assertEqual(table.get_index(Decimal(0)).get_member('Quantity'),Decimal(10))
+        self.assertEqual(len(table.rows),1); self.assertEqual(table.get_index(Decimal(0)).get_member('Quantity'),Decimal(10))
     def test_unpost_removes_only_own_partition(self):
         self.seed(); receipt=self.document(); issue=self.document('Issue','2',3)
         self.vm.execute('D.Write(DocumentWriteMode.UndoPosting);')
@@ -192,12 +192,18 @@ class InventoryRuntimeTests(unittest.TestCase):
         with self.assertRaises(BackendError): self.rows(obj)
     def test_orphan_document_detected(self):
         self.seed(); self.document()
+        self.vm.execute('D.Ref.GetObject(); D.Ref.GetObject();')
         table=self.backend._layout.table_name(self.config.catalogs[1].identity)
         self.sql('DELETE FROM "'+table+'"')
         with self.assertRaises(BSLRuntimeError): self.vm.execute('D.Ref.GetObject()')
     def test_outer_transaction_catalog_and_post_rollback(self):
-        self.vm.execute('BeginTransaction();'); self.seed(); obj=self.document()
-        self.vm.execute('RollbackTransaction();')
+        self.vm.execute('BeginTransaction();'
+            'P=Catalogs.Products.CreateItem(); P.Code="1"; P.Description="Product"; P.Write();'
+            'W=Catalogs.Warehouses.CreateItem(); W.Code="1"; W.Description="Warehouse"; W.Write();'
+            'D=Documents.Receipt.CreateDocument(); D.Number="1"; D.Date=Date(2024,1,1);'
+            'D.Warehouse=W.Ref; L=D.Lines.Add(); L.Product=P.Ref; L.Quantity=10; L.Amount=25;'
+            'D.Write(DocumentWriteMode.Posting); RollbackTransaction();')
+        obj=self.vm.execute('D')
         self.assertEqual(self.rows(obj),())
         for table in ('document_record','accumulation_movement','unit_of_work_receipt'):
             self.assertEqual(self.sql('SELECT COUNT(*) FROM '+table),[(0,)])

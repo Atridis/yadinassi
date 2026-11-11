@@ -9,9 +9,10 @@ python -m yadinassi --create-db application.sqlite --import-xml owned-source --s
 python -m yadinassi --f application.sqlite application.bsl
 ```
 
-The four explicit choices are `legacy` (the unchanged default grant),
-`document-recorder-scalar-v1`, `document-recorder-forms-v1`, and
-`accumulation-balance-scalar-v1`. They are not fallback candidates. Selecting a
+The five explicit choices are `legacy` (the unchanged default grant),
+`document-recorder-scalar-v1`, `document-recorder-forms-v1`,
+`accumulation-balance-scalar-v1`, and fresh-only format 15
+`accumulation-reference-v1`. They are not fallback candidates. Selecting a
 profile never strips unknown files or changes its original source digests,
 canonical schema, transaction permissions or stored activation issues.
 
@@ -24,7 +25,7 @@ invocation reads the source again. In-process creation reimports the exact
 retained bytes rather than rereading a changed directory.
 
 Creation remains exclusive and fresh-only. `--inactive`, numbering and common
-module options retain their legacy scope; they cannot weaken the three newer
+module options retain their legacy scope; they cannot weaken the newer
 grants. There is no migration, automatic index installation, application startup
 or handler execution during import. Opening/ordinary script execution is a
 separate action. Accumulation does not inherit the posting forms host grant.
@@ -56,3 +57,7 @@ Local validation covers 266 focused tests and 1337 regressions both normally and
 with Python optimization, including four real CLI create/reopen/byte-exact export
 routes, lifecycle/query use, source refusal, and actual uncertain-create recovery.
 This host workflow introduces no new native semantics or acquisition cases.
+
+The separate [inventory-reference contract](inventory-reference-contract.md) adds
+typed catalog identities without granting forms, enums or migrations. Its new
+native reference observations are independent of the earlier scalar baseline.

@@ -220,7 +220,7 @@ def _document(raw, name, declarations, used, *, targets=None):
         if auto not in ('true', 'false'):
             _fail('unsupported document numbering')
         length = xml._int(props, 'NumberLength', 1, 9)
-        targets = _recorder_targets(props, namespaces, declarations)
+        recorders = _recorder_targets(props, namespaces, declarations)
         fields = []
         sections = []
         names = set(xml._DOCUMENT_RESERVED) | {
@@ -251,7 +251,7 @@ def _document(raw, name, declarations, used, *, targets=None):
         if len(fields) > 64 or len(sections) > 16:
             _fail('document field bound')
         return (DocumentSchema(identity, name, length, tuple(fields), tuple(sections),
-                               'decimal_v1' if auto == 'true' else 'explicit'), targets)
+                               'decimal_v1' if auto == 'true' else 'explicit'), recorders)
 
 
 def _register(raw, name, owners, used, *, targets=None):

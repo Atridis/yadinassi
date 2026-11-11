@@ -136,6 +136,8 @@ def validate_schema(schema):
             field.name.encode('utf-8')
             identities.add(field.identity)
             names.add(field.name.casefold())
+            if type(field.kind) is not str:
+                raise BackendError('unsupported')
             reference = (schema.value_profile == 'catalog_reference_v1' and field.kind == 'catalog_ref')
             if reference:
                 _uuid(field.target_catalog_id)
@@ -250,7 +252,9 @@ def validate_replacement(schema, request, database_id):
                 raise BackendError('invalid_input')
             for value, field in zip(values, fields):
                 if field.kind == 'catalog_ref':
-                    if (type(value) is not CatalogKey or value.database_id != database_id
+                    if (type(value) is not CatalogKey
+                            or any(type(identity) is not UUID for identity in (value.database_id, value.catalog_id, value.record_id))
+                            or value.database_id != database_id
                             or value.catalog_id != field.target_catalog_id
                             or type(value.record_id) is not UUID):
                         raise BackendError('invalid_input')
