@@ -570,12 +570,13 @@ class SQLiteCatalogBackend:
                 self._recorder_schemas = self.posting_configuration.registers
             if self.format_version == 14:
                 from .sqlite_accumulation_profile import admit
-                self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self.accumulation_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True,
+                    _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             if self.format_version == 15:
                 from .sqlite_inventory_profile import admit
                 self.accumulation_configuration = admit(connection, self.database_id, self._schemas,
-                    self._document_schemas, validate_rows=True)
+                    self._document_schemas, validate_rows=True, _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
@@ -1378,11 +1379,13 @@ class SQLiteCatalogBackend:
                         raise BackendError('schema_changed')
                 if self.format_version == 14:
                     from .sqlite_accumulation_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas) != self.accumulation_configuration:
+                    if admit(connection, self.database_id, self._document_schemas,
+                             _prepared=self._prepared_source) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 if self.format_version == 15:
                     from .sqlite_inventory_profile import admit
-                    if admit(connection, self.database_id, self._schemas, self._document_schemas) != self.accumulation_configuration:
+                    if admit(connection, self.database_id, self._schemas, self._document_schemas,
+                             _prepared=self._prepared_source) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
                 if handle is not None:
