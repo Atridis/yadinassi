@@ -29,10 +29,11 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertEqual(self.source.count('await scenario(scenarioNames['), 4)
         self.contains('results.map(row=>row.name),scenarioNames', 'total:4')
 
-    def test_exact_forty_eight_business_requests(self):
+    def test_exact_forty_nine_business_requests(self):
         plan = json.loads(self.source.split('const businessPlan=', 1)[1].split(';', 1)[0].replace("'", '"'))
-        self.assertEqual([len(row) for row in plan], [8, 21, 13, 6])
-        self.assertEqual(sum(map(len, plan)), 48)
+        self.assertEqual([len(row) for row in plan], [8, 21, 14, 6])
+        self.assertEqual(sum(map(len, plan)), 49)
+        self.assertEqual(plan[2][9:12], ['change:DescriptionInput', 'change:DescriptionInput', 'command:SaveButton'])
         self.contains('businessEvents.slice(start),businessPlan[index]', "'business_rpc_plan_changed'",
             "businessEvents.push('setup:'+packet.params.action)", "businessEvents.push('page')",
             "businessEvents.push('report:'+packet.params.periodicity)")
@@ -81,6 +82,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertIn('sha256(database.read_bytes()).digest()==before', audit)
         self.assertIn('fingerprint.append(repr(card))', audit)
         self.assertIn('snap.source_digest', audit)
+        self.assertIn("'databaseSha256':before.hex()", audit)
 
     def test_audit_checks_real_typed_saved_rows(self):
         self.contains('type(card.key) is CatalogKey', 'type(card.key) is DocumentKey',
@@ -122,16 +124,26 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             "'persistent_uuid_in_request'", "'persistent_uuid_leak'", "'private_host_envelope_leak'")
 
     def test_raw_unsent_draft_survives_report_focus_without_form_event(self):
-        self.contains("field('Document number').fill('RAW DRAFT')", "await value('Document number','RAW DRAFT')",
+        self.contains("field('Description').fill('RAW DRAFT')", "await value('Description','RAW DRAFT')",
             "wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change'",
             "getByLabel('From moment (inclusive)',{exact:true}).click()", 'await assertRaw();')
         self.assertGreaterEqual(self.source.count('await assertRaw();'), 5)
+        scenario = self.source.split('await scenario(scenarioNames[2],async()=>{', 1)[1].split('await scenario(scenarioNames[3]', 1)[0]
+        for item in ("name:'Warehouses card'", "name:'W1',exact:true", "value('Description','Main warehouse')",
+                     "commitInput('Description','Edited')", "commitInput('Description','Main warehouse')",
+                     "formReply('command','SaveButton')", "action('Save record').click()",
+                     "saved.session,owner,'late_owner_changed'", "value('Status','unchanged');unchanged()"):
+            self.assertIn(item, scenario)
+        self.assertNotIn("name:'Receipt card'", scenario)
+        self.assertNotIn('Document number', scenario)
+        self.assertIn('MAX_TABLE_ROWS=32', self.docs)
+        self.assertIn('unchanged', self.docs)
 
     def test_retired_dom_actions_cannot_retarget(self):
         self.contains('const retiredChoice=', "checkpoint('retired_choice');await clickRetired(retiredChoice)",
             'const retiredPage=', "checkpoint('retired_page');await clickRetired(retiredPage)",
             'await handle.evaluate(node=>node.click())', "'retired_dom_dispatched'",
-            "commitInput('Document number','Edited')", 'lastApplicationState.reportSetup,null')
+            "commitInput('Description','Edited')", 'lastApplicationState.reportSetup,null')
         for forbidden in ('dispatchEvent(', 'setContent(', 'page.addInitScript(', 'evaluateOnNewDocument'):
             self.assertNotIn(forbidden, self.source)
 
@@ -146,7 +158,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.contains('const observedReplies=new Map()', 'observedReplies.clear()', 'observedReplies.delete(packet.id)',
             "assert.deepEqual(observed.packet,packet,'audited_reply_request')",
             "assert.equal(observed.origin,origin,'audited_reply_origin')", 'observedReplies.set(packet.id,{packet,actual:decoded,origin})',
-            'await auditResponse(response,packet)', 'const reportIdle=()=>page.waitForFunction', 'return n&&!n.disabled;')
+            'await auditResponse(response,packet,trace)', 'const reportIdle=()=>page.waitForFunction', 'return n&&!n.disabled;')
         self.assertNotIn('.json()', self.source)
         self.assertNotIn('page.waitForTimeout(', self.source)
 
@@ -191,7 +203,17 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.contains('const diagnosticPhases=', 'const diagnosticReasons=', 'scenario:activeScenario',
             'report.failureClass=', 'report.observerFailure=', "'malformed_input'", "'unsupported_input'",
             "'capability_leak'", "'capability_not_removed'", "'only_resume_storage'", "'unexpected_artifact'",
-            'resultSha256:sha256(raw)', 'sha256:sha256(bytes)', "{flag:'wx'}")
+            'resultSha256:sha256(raw)', 'sha256:sha256(bytes)', "{flag:'wx'}",
+            "const wireStages=['request','fetch','status','body','json','projection','privacy','observer','delivery']",
+            'const wireReasons=', 'if(report.wire)return;', "wireDiagnostic(trace,error);abort()",
+            "wireStages.includes(trace.stage)?trace.stage:'other'", "wireMethods.includes(trace.method)?trace.method:'other'",
+            'requestBytes:byteCount(trace.requestBytes,65536),replyBytes:byteCount(trace.replyBytes,262144),reason',
+            "'invalid_json'", "'wire_timeout'", "'wire_step_failed'")
+        diagnostic = self.source.split('function wireDiagnostic(trace,error){', 1)[1].split('const exactKeys=', 1)[0]
+        for forbidden in ('packet', 'headers', 'postData', 'error.stack', 'actual:', 'expected:', '...trace'):
+            self.assertNotIn(forbidden, diagnostic)
+        self.assertNotIn('reason:message', diagnostic)
+        self.assertNotIn('reason:error', diagnostic)
         for item in ('report.url', 'report.headers', 'report.response', 'report.stack', 'console.log(error'):
             self.assertNotIn(item, self.source)
 

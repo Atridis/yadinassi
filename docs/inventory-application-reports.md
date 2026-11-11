@@ -219,3 +219,8 @@ focus into date/filter inputs must not flush an unsent form input or execute its
 OnChange handler. The saved report excludes raw drafts. Native behavioural
 measurements cover the underlying period reducer, not this browser pagination
 or chooser extension.
+
+The 50-row report page is not an editable form table. Existing object-form
+tables retain their independent 32-row bound. The browser acceptance fixture
+reads 52 saved movement groups but probes unsent editing on a small Warehouse
+card; it does not claim that its 52-line source document can be opened for editing.

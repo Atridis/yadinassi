@@ -114,6 +114,14 @@ Posted and movements in one root operation. Undo posting clears its movements.
 An Issue that exceeds available stock is refused by the example's authored
 handler. Catalog save refreshes the selected list without replacing sibling drafts.
 
+Object forms currently admit at most 32 rows per table. Storage and read-only
+report limits are separate: a valid saved document can exceed this form bound.
+Opening such a document is refused without truncating its lines; the current
+creation-failure path locks the UI connection. Copy unsaved sibling edits before
+closing that host and reopening the base. A nonterminal, preflight capacity
+message is a follow-up UX task, not
+implemented by the statement paging extension.
+
 Document close compares the complete authoritative typed image and pending
 receipt, not the example's local Dirty flag. An uncertain or committed-but-not-
 refreshed operation stays locked and uses its original receipt; the UI never

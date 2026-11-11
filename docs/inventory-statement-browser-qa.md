@@ -14,6 +14,11 @@ exact `examples/configuration-inventory-application` source and explicit
 is posted through `InventoryRootOperations`; quantities are 1–52 and amounts
 10–520. These are explicitly setup writes, never credited as browser actions.
 No SQL writes, fake handlers, report service seed or fabricated responses are used.
+The existing editable-form boundary is `MAX_TABLE_ROWS=32`. This setup document
+intentionally exceeds it to exercise detached report pagination, which has a
+separate bound. The acquisition never tries to open the 52-line Receipt as an
+editable form and does not raise that limit. Raw-draft lifecycle checks use the
+small existing Warehouse `W1` sibling instead.
 Raw core15 without the forms grant is separately confirmed unable to launch UI.
 
 The real host starts twice using only `python -m yadinassi --ui --f <owned database>`.
@@ -33,21 +38,25 @@ No external configuration directory or grant flag is passed to either launch.
    differs from All for both dimensions. Exact absent code returns zero choices,
    not an arbitrary fallback. Browser projections expose only labels and local
    choice/setup tokens, never persistent identities.
-3. **13 requests:** catalog/open saved Receipt; leave its number as a raw unsent
-   draft; prepare/read/page and exercise date, periodicity and chooser controls.
+3. **14 requests:** catalog/open saved Warehouse `W1`; leave its Description as
+   a raw unsent `RAW DRAFT`; prepare/read/page and exercise date, periodicity and chooser controls.
    No form OnChange request is allowed until the two explicit lifecycle changes.
    Hold one real fetched page response before delivery, with repeated click and
    disabled controls, then release it once to the same owner. Captured retired
    chooser/page elements are clicked after cancellation/form mutation and must
-   send no request. The two explicit number changes (`Edited`, then `R1`) update
-   only the form; they retire setup/pages and never write the document.
+   send no request. Two explicit Description changes (`Edited`, then the original
+   `Main warehouse`) retire setup/pages. One explicit **Save record** command then
+   must display exactly `unchanged`, clearing the source-authored Dirty flag before
+   real close. The command is not concealed as a read: independent audit proves
+   unchanged saved data, revisions and database file bytes. Reports themselves
+   never save or write.
 4. **6 requests:** close form and naturally exit the host, launch a new host,
    prepare new setup, read None after the receipt moment and fetch its second page,
    then naturally exit again. New setup/snapshot/cursors cannot reuse prior tokens.
    Opening now equals closing; receipt and expense are zero. No unknown-commit or
    host-lost receipt recovery is inferred from this restart.
 
-Exactly **48 business RPCs** are required. Only ordinary application/form
+Exactly **49 business RPCs** are required. Only ordinary application/form
 hello/snapshot reads are excluded from that plan, not setup/page requests. The
 hard cap remains 180 total RPCs. No retry, skipped assertion or cap extension is
 used to accommodate a slow or failing stage.
@@ -61,7 +70,8 @@ CatalogKey/DocumentKey, DateTime, Decimal and accumulation direction types and
 creates a private-state fingerprint. Persistent keys are hashed in process, not
 published. Audits before browser work, after each flow and around restart must
 match exactly, including card/document revisions and all source/schema identities.
-Each audit also proves the database file bytes did not change during that audit.
+Each audit also proves the database file bytes did not change during that audit;
+its file SHA256 is compared with the initial audit across all flows and restart.
 It does not execute `InventoryReports`, Query, BSL or a posting handler.
 
 Reports, choices and pages never write. The tests distinguish UI drafts from
@@ -93,9 +103,13 @@ pinned Playwright 1.64.1 lock/install route without modifying system security.
 source fixture, helper, contracts and standalone route. `manifest.json` binds that
 result and the four PNG hashes. Files use exclusive creation, so stale evidence
 cannot be silently overwritten. Diagnostics use closed phase/reason/class labels,
-not raw exceptions, paths, responses, credentials or identifiers.
+not raw exceptions, paths, responses, credentials or identifiers. On wire failure,
+the first cause is retained before cleanup: closed request/fetch/status/body/json/
+projection/privacy/observer/delivery stage, allowlisted method/status/reason and
+capped byte counts only. Concurrent attachment failure cannot overwrite it. No
+packet, body, headers, assertion actual/expected or exception string is exported.
 
 Screenshots: `statement-pages.png`, `statement-filters.png`,
 `statement-fences.png`, `statement-reopened.png`.
 
-Fixture SHA256: `70642129ad79ccef64e44750e99e1b8e3c74a52422fe828f36ca525ce9609d42`
+Fixture SHA256: `48092d41dc960d2b711443ad588b5e8b43fa94a8b8af93300fc708973dd6d8fa`

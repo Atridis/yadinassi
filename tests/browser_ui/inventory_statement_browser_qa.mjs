@@ -29,7 +29,7 @@ const businessPlan=[
   'setup:empty','report:None','setup:clear','report:None','setup:empty','report:None',
   'setup:clear','report:None','setup:begin','setup:filter','setup:cancel'],
  ['catalog','openRecord','setup:open','report:None','page','setup:begin','setup:filter','setup:cancel',
-  'report:None','change:NumberInput','change:NumberInput','setup:open','report:None'],
+  'report:None','change:DescriptionInput','change:DescriptionInput','command:SaveButton','setup:open','report:None'],
  ['close:','close','setup:open','report:None','page','close']
 ];
 const businessEvents=[];
@@ -45,7 +45,7 @@ const diagnosticReasons=['business_rpc_plan_changed','owned_fixture_failed','own
  'report_typed_totals','report_page_identity','report_page_order','report_saved_labels','typed_seed_audit',
  'too_many_partial','exact_choice_mismatch','cancel_changed_selection','explicit_empty_mismatch','excluded_filter_rows',
  'draft_changed','unexpected_form_change','retired_dom_dispatched','duplicate_page_rpc','busy_not_fenced','late_owner_changed',
- 'readonly_audit_changed','restarted_ticket_reused','restarted_page_reused','source_binding_changed',
+ 'unchanged_save_required','readonly_audit_changed','restarted_ticket_reused','restarted_page_reused','source_binding_changed',
  'capability_not_removed','only_resume_storage','browser_cookies_not_empty'];
 const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
  (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
@@ -271,6 +271,7 @@ try:
     assert quantity==Decimal(1378) and amount==Decimal(13780)
     result={'catalogs':54,'documents':1,'movements':52,'quantity':str(quantity),'amount':str(amount),
      'fingerprint':sha256('\n'.join(fingerprint).encode()).hexdigest(),'sourceDigest':snap.source_digest,
+     'databaseSha256':before.hex(),
      'dayTicks':str(_date_from_datetime(datetime(2026,11,11)).ticks),
      'monthTicks':str(_date_from_datetime(datetime(2026,11,1)).ticks)}
   assert sha256(database.read_bytes()).digest()==before
@@ -331,15 +332,42 @@ async function commitInput(name,text){
 }
 const wireEvents=[];
 let wireFailure=false;
+// Retain only the first failed wire check. Concurrent attachment activity must
+// not overwrite the original RPC failure, and no arbitrary packet is exported.
+const wireStages=['request','fetch','status','body','json','projection','privacy','observer','delivery'];
+const wireMethods=['attachment','application.hello','application.snapshot','application.catalog',
+ 'application.open','application.openRecord','application.form','application.close',
+ 'application.reportSetup','application.report','application.reportPage'];
+const wireReasons=['wire_keys','writer_credential','writer_attachment','writer_generation','wire_budget',
+ 'persistent_uuid_in_request','unissued_setup','unissued_chooser','unissued_row','unissued_snapshot','unissued_page',
+ 'fixed_exact_code','fixed_period','wire_event','wire_revision','opaque_row','declared_column','scalar_only',
+ 'typed_date','scalar_value_only','rpc_status','reply_budget','audited_reply_id','too_many_partial',
+ 'page_budget','report_cell_budget','persistent_uuid_leak','private_host_envelope_leak',
+ 'audited_reply_budget','audited_reply_duplicate','attachment_budget','attachment_reply_budget',
+ 'unexpected_heartbeat_refusal','heartbeat_busy_budget','attachment_refused','late_reply_gate_timeout'];
+function wireDiagnostic(trace,error){
+  wireFailure=true;
+  if(report.wire)return; // Preserve the first cause before fail-closed cleanup.
+  const message=typeof error?.message==='string'?error.message:'';
+  const reason=wireReasons.find(code=>message===code||message.startsWith(code+'\n'))||
+    (error?.name==='SyntaxError'?'invalid_json':error?.name==='TimeoutError'?'wire_timeout':'wire_step_failed');
+  const byteCount=(value,cap)=>Number.isSafeInteger(value)&&value>=0?Math.min(value,cap+1):null;
+  report.wire={stage:wireStages.includes(trace.stage)?trace.stage:'other',
+    method:wireMethods.includes(trace.method)?trace.method:'other',
+    status:[200,400,403,409,500,503].includes(trace.status)?trace.status:trace.status===null?null:'other',
+    requestBytes:byteCount(trace.requestBytes,65536),replyBytes:byteCount(trace.replyBytes,262144),reason};
+}
 const exactKeys=(value,names)=>assert.deepEqual(Object.keys(value).sort(),names.split(' ').filter(Boolean).sort(),'wire_keys');
-function checkRequest(request){
+function checkRequest(request,trace){
   const headers=request.headers();
   assert.match(headers['x-yadinassi-session']||'',/^[A-Za-z0-9_-]{43}$/,'writer_credential');
   assert.match(headers['x-yadinassi-attachment']||'',/^attachment-[1-9][0-9]*$/,'writer_attachment');
   assert.match(headers['x-yadinassi-generation']||'',/^[0-9]{1,16}$/,'writer_generation');
-  const raw=request.postData();assert.ok(raw&&Buffer.byteLength(raw)<=65536,'wire_budget');
+  const raw=request.postData();trace.requestBytes=typeof raw==='string'?Buffer.byteLength(raw):null;
+  assert.ok(raw&&Buffer.byteLength(raw)<=65536,'wire_budget');
   assert.ok(!/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}/i.test(raw),'persistent_uuid_in_request');
-  const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
+  const packet=JSON.parse(raw);trace.method=wireMethods.includes(packet?.method)?packet.method:'other';
+  exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
     exactKeys(packet.params,'protocol dialogCapability inputCapability');assert.equal(packet.params.inputCapability,'yadinassi-owned-input/1');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
@@ -407,10 +435,12 @@ function checkRequest(request){
   }
   return packet;
 }
-async function auditResponse(response,packet){
-  assert.equal(response.status(),200,'rpc_status');
-  const body=await response.body();assert.ok(body.length<=262144,'reply_budget');
-  const text=body.toString('utf8');const decoded=JSON.parse(text);
+async function auditResponse(response,packet,trace){
+  trace.stage='status';trace.status=response.status();assert.equal(response.status(),200,'rpc_status');
+  trace.stage='body';const body=await response.body();trace.replyBytes=body.length;
+  assert.ok(body.length<=262144,'reply_budget');
+  trace.stage='json';const text=body.toString('utf8');const decoded=JSON.parse(text);
+  trace.stage='projection';
   exactKeys(decoded,'jsonrpc id result');assert.equal(decoded.jsonrpc,'2.0');
   assert.equal(decoded.id,packet.id,'audited_reply_id');
   lastApplicationState=decoded.result?.state;
@@ -432,10 +462,11 @@ async function auditResponse(response,packet){
       else exactKeys(cell,cell.type==='Date'?'type ticks':'type value');
     }
   }
+  trace.stage='privacy';
   assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text),'persistent_uuid_leak');
   for(const key of ['operation_id','database_id','record_id','expected_revision','expanded_requests','source_files'])
     assert.ok(!text.includes('"'+key+'"'),'private_host_envelope_leak');
-  assert.ok(observedReplies.size<180,'audited_reply_budget');
+  trace.stage='observer';assert.ok(observedReplies.size<180,'audited_reply_budget');
   assert.ok(!observedReplies.has(packet.id),'audited_reply_duplicate');
   observedReplies.set(packet.id,{packet,actual:decoded,origin});
 }
@@ -551,21 +582,24 @@ async function main(){
     const target=route.request().url();
     if(aborted||!applicationAllowedRequest(target))return route.abort();
     if(new URL(target).pathname==='/attachment'){
+      const trace={stage:'request',method:'attachment',status:null,requestBytes:null,replyBytes:null};
       try{
         assert.ok(++attachmentRequests<=96,'attachment_budget');
-        const request=route.request(),body=request.postDataJSON();
+        const request=route.request();trace.requestBytes=Buffer.byteLength(request.postData()||'');
+        const body=request.postDataJSON();
         if(body.action==='attach'){exactKeys(body,'action instance');assert.match(body.instance,/^[0-9a-f]{32}$/);}
         else{exactKeys(body,'action generation pending');assert.ok(['status','heartbeat','detach','takeover'].includes(body.action));assert.ok(Number.isSafeInteger(body.generation)&&body.generation>=0);assert.equal(typeof body.pending,'boolean');}
-        const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
-        const bytes=await response.body();assert.ok(bytes.length<=8192,'attachment_reply_budget');
-        const value=JSON.parse(bytes.toString('utf8'));
+        trace.stage='fetch';const response=await route.fetch({timeout:remaining(15000),maxRedirects:0,maxRetries:0});
+        trace.status=response.status();trace.stage='body';const bytes=await response.body();trace.replyBytes=bytes.length;
+        assert.ok(bytes.length<=8192,'attachment_reply_budget');
+        trace.stage='json';const value=JSON.parse(bytes.toString('utf8'));trace.stage='projection';
         if(body.action==='heartbeat'&&response.status()===409){
           exactKeys(value,'protocol error');assert.equal(value.protocol,'yadinassi-browser-attachment/1');
           assert.equal(value.error,'busy','unexpected_heartbeat_refusal');
           assert.ok(++report.heartbeatBusy<=attachmentRequests,'heartbeat_busy_budget');
-          return await route.fulfill({response}); // Deliver exact refusal; never retry.
+          trace.stage='delivery';return await route.fulfill({response}); // Deliver exact refusal; never retry.
         }
-        assert.equal(response.status(),200,'attachment_refused');
+        trace.stage='status';assert.equal(response.status(),200,'attachment_refused');trace.stage='projection';
         exactKeys(value,'protocol attachment role generation leaseSeconds graceSeconds recovery closed'+(body.action==='attach'?' credential resume':''));
         assert.equal(value.protocol,'yadinassi-browser-attachment/1');
         assert.match(value.attachment,/^attachment-[1-9][0-9]*$/);
@@ -576,24 +610,25 @@ async function main(){
         if(body.action==='attach'){
           for(const token of [value.credential,value.resume]){assert.match(token,/^[A-Za-z0-9_-]{43}$/);tokens.push(token);}
         }
-        return await route.fulfill({response});
-      }catch{if(host&&host.exitCode===null&&!aborted){wireFailure=true;abort();}return route.abort().catch(()=>{});}
+        trace.stage='delivery';return await route.fulfill({response});
+      }catch(error){if(host&&host.exitCode===null&&!aborted){wireDiagnostic(trace,error);abort();}return route.abort().catch(()=>{});}
     }
     if(new URL(target).pathname==='/rpc'){
       if(rpc>=180){abort();return route.abort().catch(()=>{});}
       rpc++;
+      const trace={stage:'request',method:'other',status:null,requestBytes:null,replyBytes:null};
       try{
-        checkRequest(route.request());
-        const packet=route.request().postDataJSON();
+        const packet=checkRequest(route.request(),trace);
+        trace.stage='fetch';
         if(delayed&&packet.method==='application.reportPage'){
           const gate=delayed;delayed=null;
           const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
-          await auditResponse(response,packet);gate.arrived();await bounded(gate.wait,remaining(10000),'late_reply_gate_timeout');
-          return await route.fulfill({response});
+          await auditResponse(response,packet,trace);gate.arrived();await bounded(gate.wait,remaining(10000),'late_reply_gate_timeout');
+          trace.stage='delivery';return await route.fulfill({response});
         }
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
-        await auditResponse(response,packet);return await route.fulfill({response});
-      }catch{wireFailure=true;abort();return route.abort().catch(()=>{});}
+        await auditResponse(response,packet,trace);trace.stage='delivery';return await route.fulfill({response});
+      }catch(error){wireDiagnostic(trace,error);abort();return route.abort().catch(()=>{});}
     }
     return route.continue();
   });
@@ -680,7 +715,7 @@ async function main(){
       assert.equal(quantity,1378n,'report_typed_totals');assert.equal(amount,13780n,'report_typed_totals');}
   };
   const unchanged=()=>{checkpoint('audit_compare');assert.deepEqual(inventoryFixture('audit'),initialAudit,'readonly_audit_changed');};
-  const assertRaw=async()=>{await value('Document number','RAW DRAFT');assert.equal(wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change');};
+  const assertRaw=async()=>{await value('Description','RAW DRAFT');assert.equal(wireEvents.filter(e=>e.event==='change').length,0,'unexpected_form_change');};
   const clickRetired=async handle=>{
     const count=businessEvents.length;await handle.evaluate(node=>node.click());await flushPaint();
     assert.equal(businessEvents.length,count,'retired_dom_dispatched');await handle.dispose();
@@ -711,11 +746,13 @@ async function main(){
     unchanged();await reportPanel().scrollIntoViewIfNeeded();await screenshot(screenshots[1]);
   });
   await scenario(scenarioNames[2],async()=>{
-    let reply=replyFor(p=>p.method==='application.catalog');await entries().getByRole('button',{name:'Receipt card',exact:true}).click();await reply;await idle();
-    await catalog().locator('tbody tr').filter({has:page.getByRole('cell',{name:'R1',exact:true})}).getByRole('checkbox').check();
+    // MAX_TABLE_ROWS=32 bounds editable forms, not the detached 52-row report.
+    // Exercise drafts on the existing small sibling card, never the seed Receipt.
+    let reply=replyFor(p=>p.method==='application.catalog');await entries().getByRole('button',{name:'Warehouses card',exact:true}).click();await reply;await idle();
+    await catalog().locator('tbody tr').filter({has:page.getByRole('cell',{name:'W1',exact:true})}).getByRole('checkbox').check();
     reply=replyFor(p=>p.method==='application.openRecord');await catalog().getByRole('button',{name:'Open selected',exact:true}).click();
-    const opened=deliveredReply(await reply).result;const owner=opened.session;await idle();await value('Document number','R1');
-    assert.match(owner,/^form-[1-9][0-9]*$/);checkpoint('draft_focus');await field('Document number').fill('RAW DRAFT');
+    const opened=deliveredReply(await reply).result;const owner=opened.session;await idle();await value('Description','Main warehouse');
+    assert.match(owner,/^form-[1-9][0-9]*$/);checkpoint('draft_focus');await field('Description').fill('RAW DRAFT');
     await reportPanel().getByLabel('From moment (inclusive)',{exact:true}).click();await assertRaw();
     await prepareStatement();const first=await showStatement();await assertRaw();
     let arrived,release;const arrival=new Promise(resolve=>arrived=resolve),wait=new Promise(resolve=>release=resolve);
@@ -728,9 +765,14 @@ async function main(){
     await begin('Product');await search('P002');const retiredChoice=await choicePanel().getByRole('button',{name:'Product 002',exact:true}).elementHandle();
     await cancel();checkpoint('retired_choice');await clickRetired(retiredChoice);await assertRaw();
     await showStatement();const retiredPage=await reportButton('Next saved page').elementHandle();
-    await commitInput('Document number','Edited');assert.equal(lastApplicationState.report,null);assert.equal(lastApplicationState.reportSetup,null);
-    checkpoint('retired_page');await clickRetired(retiredPage);await commitInput('Document number','R1');
-    await prepareStatement();await showStatement();unchanged();await field('Document number').scrollIntoViewIfNeeded();await screenshot(screenshots[2]);
+    await commitInput('Description','Edited');assert.equal(lastApplicationState.report,null);assert.equal(lastApplicationState.reportSetup,null);
+    checkpoint('retired_page');await clickRetired(retiredPage);await commitInput('Description','Main warehouse');
+    // The source's Changed handler retains Dirty until its explicit Save. The
+    // restored card must take the genuine unchanged path, not write/discard it.
+    reply=formReply('command','SaveButton');await action('Save record').click();
+    const saved=deliveredReply(await reply).result;assert.equal(saved.session,owner,'late_owner_changed');
+    assert.equal(saved.error,null,'unchanged_save_required');await idle();await value('Status','unchanged');unchanged();
+    await prepareStatement();await showStatement();unchanged();await field('Description').scrollIntoViewIfNeeded();await screenshot(screenshots[2]);
   });
   await scenario(scenarioNames[3],async()=>{
     const previousSetup=lastApplicationState.reportSetup.ticket,previousPage=lastApplicationState.report.page;
@@ -746,7 +788,7 @@ async function main(){
     report.acceptance={storedSourceLauncher:true,explicitFullForms15:true,core15Denied:true,
       typedSetupBeforeBrowser:true,oneCatalogTransaction:true,oneReceiptPost:true,real52Rows:true,dayMonthNone:true,
       sameSnapshotPages:true,exactTypedSums:true,sourceGrantedFilters:true,tooManyRequiresCode:true,emptyDistinctFromAll:true,
-      labelsNotCapabilities:true,rawDraftPreserved:true,retiredDomDenied:true,realResponseDelay:true,noReplay:true,
+      labelsNotCapabilities:true,smallSiblingDraft:true,unchangedSave:true,rawDraftPreserved:true,retiredDomDenied:true,realResponseDelay:true,noReplay:true,
       naturalRestart:true,independentTypedAudit:true,reportWrites:false,restartReceiptRecovery:false,nativeWindowParity:false};
     report.audit={unchanged:true,fingerprint:initialAudit.fingerprint,sourceDigest:initialAudit.sourceDigest};
   });
