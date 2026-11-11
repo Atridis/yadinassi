@@ -16,7 +16,7 @@ from .syntax import ast
 
 
 _RESERVED = frozenset(('thisobject', 'этотобъект', 'metadata', 'метаданные',
-    'catalogs', 'справочники', 'documents', 'документы', 'informationregisters',
+    'enums', 'перечисления', 'catalogs', 'справочники', 'documents', 'документы', 'informationregisters',
     'регистрысведений', 'chars', 'символы', 'openform', 'открытьформу'))
 _EVENTS = {
     'before_start': (('beforestart', 'передначаломработысистемы'), 1),
@@ -352,6 +352,9 @@ class ConfigurationApplication:
             raise ValueError('configuration module must belong to this scheduler family')
         interpreter._require_family()
         interpreter._configuration_runtime = self
+        from .enumerations import BSLEnumerations
+        if interpreter._metadata._enumerations is None:
+            interpreter._metadata._enumerations = BSLEnumerations(self.configuration.enumerations)
         interpreter._metadata._common_modules = self._metadata
         interpreter._metadata._configuration_name = self.configuration.name
         interpreter.user_messages._before_publish = self.check_messages

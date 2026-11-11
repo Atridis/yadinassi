@@ -84,7 +84,20 @@ class InventoryReferencePreparationTests(unittest.TestCase):
             with self.assertRaises(ValueError):host.validate_inputs(stage,hashes,host.SMOKE)
     def test_workflow_is_separate_branch_and_no_dispatch(self):
         source=(ROOT/'.github/workflows/native-1c-inventory-reference.yml').read_text(encoding='utf-8')
-        self.assertIn("head.ref == 'codex/db-inventory-references'",source)
+        condition=source.split('    if: >-\n',1)[1].split('    permissions:',1)[0]
+        expected=("github.repository == 'Atridis/yadinassi' && github.repository_id == '359770628' && "
+            "github.repository_owner_id == '30860798' && github.actor == 'Atridis' && "
+            "github.actor_id == '30860798' && github.triggering_actor == 'Atridis' && "
+            "github.event.pull_request.head.repo.full_name == 'Atridis/yadinassi' && "
+            "(github.event.pull_request.head.ref == 'codex/db-inventory-references' || "
+            "github.event.pull_request.head.ref == 'codex/explicit-profile-import') && "
+            "github.event.pull_request.base.ref == 'main'")
+        self.assertEqual(' '.join(condition.split()),expected)
+        self.assertIn('ref: ${{ github.sha }}',source)
+        self.assertIn('persist-credentials: false',source)
+        self.assertIn('fetch-depth: 2',source)
+        self.assertLess(source.index('python3 -I -B scripts/native_1c_ci_policy.py bind'),
+                        source.index('GHCR_TOKEN:'))
         self.assertNotIn('workflow_dispatch',source)
         self.assertIn('Observe twelve cases',source)
 
