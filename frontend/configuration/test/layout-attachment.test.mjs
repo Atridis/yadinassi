@@ -12,6 +12,33 @@ const issued={protocol:BROWSER_PROTOCOL,attachment:'attachment-1',role:'writer',
 const initial=()=>({kind:'application',lifecycle:'forms',messages:[],exitWarning:'',title:'Layouts',
   entries:[{id:1,title:'Layout',kind:'form'}],sessions:[],active:null,uncertain:false,catalog:null});
 
+test('attachment hello settles report controls without a preliminary catalog request and preserves uncertainty gates',async()=>{
+  for(const uncertain of [false,true]){
+    const requests=[];
+    const state={...initial(),uncertain,reports:[{id:'StockBalance',title:'Stock Balance',view:'Balance'}],report:null};
+    const env=environment(async(path,options)=>{
+      const request=JSON.parse(options.body);
+      if(path==='/attachment')return response(issued);
+      requests.push(request.method);
+      return response({jsonrpc:'2.0',id:request.id,result:{protocol:APPLICATION_PROTOCOL,
+        dialogCapability:'yadinassi-owned-dialog/1',dialogs:[],inputCapability:'yadinassi-owned-input/1',inputs:[],
+        state,error:null,session:null,form:null}});
+    });
+    env.location.hash='#session='+'l'.repeat(43)+'&attachment=1';env.crypto={getRandomValues(bytes){bytes.fill(7);return bytes;}};
+    const storage=new Map();env.sessionStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
+    env.setInterval=()=>1;env.clearInterval=()=>{};
+    const app=mountApplication(env,env.document.root);await app.ready;
+    const navigation=all(env.document.root).find(node=>node.getAttribute('aria-label')==='Declared stock reports');
+    const reportButton=navigation.children.find(node=>node.tagName==='BUTTON');
+    const show=all(env.document.root).find(node=>node.tagName==='BUTTON'&&node.textContent==='Show saved stock');
+    assert.deepEqual(requests,['application.hello']);assert.equal(app.client.pending,0);
+    assert.equal(reportButton.disabled,uncertain);assert.equal(show.disabled,uncertain);
+    assert.equal(app.browserHost.attachment.writable,!uncertain);
+    assert.equal(app.browserHost.content.inert,uncertain);
+    app.browserHost.attachment.dispose();
+  }
+});
+
 test('real attachment wrapper permits locked layout inspection but no outer Open Close edits commands or replay',async()=>{
   let state=initial();const requests=[];const form=pageLayout();validateSnapshot(form);
   const env=environment(async(path,options)=>{

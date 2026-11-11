@@ -15,10 +15,10 @@
     "src/reports.mjs": "52fca3bd4b48a2aa38d6ab0315ac023c4aa85543830b23cf7e7fe79ce59d3404",
     "src/inputs.mjs": "148477775055311dd8176ad4a28d5a38acd56fa4d9bac0230328111f8bad8086",
     "src/client.mjs": "8b490041232a0c7bba199f6708f6c22cf0129f5f3e95552005a2a20febd012dd",
-    "src/app.mjs": "abb78f8550c993f10ea57959ec957ed8e0fa7d5b9a6c07db655ba8c09988693c"
+    "src/app.mjs": "340a673faef0c77572470236a02a281b3c2b68738c5072436d890d86ad661661"
   },
   "outputs": {
-    "app.js": "550389809d1a69391fae4df757c359207ec6a25f2e7cb25cb41c376a62f615be",
+    "app.js": "10aebdf1ac78fa0d8f2fa61eccddc9da6d1975599b0611eba24bc9e154a3cf19",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "style.css": "867369e89d0e736db8175a1f2e5886150bf9bd18c772aa2467e14c9497397aaa",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
