@@ -143,6 +143,8 @@ class BSLType(Enum):
     KEY_AND_VALUE = "КлючИЗначение"
     TYPE = "Тип"
     ROUND_MODE = "РежимОкругления"
+    QUESTION_DIALOG_MODE = "РежимДиалогаВопрос"
+    DIALOG_RETURN_CODE = "КодВозвратаДиалога"
     ROUND_MODES = "ПеречислениеРежимОкругления"
     XML_STRING_PROCESSING_MANAGER = "МенеджерОбработкиСтрокиXML"
     SEARCH_DIRECTION = "НаправлениеПоиска"

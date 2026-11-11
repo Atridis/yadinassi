@@ -3,22 +3,22 @@
   "dependencies": {},
   "sources": {
     "package.json": "699b2d0ff157a672f20773c17f90165db7789f2eb0f7b884fe76f16080189ded",
-    "build.mjs": "2937d4293ace257058be1c94ce691c1700a0d69590bf636287a715d4d1588669",
+    "build.mjs": "39205ba6829fd545f3f28ff5381abd8c1f352ba4ddfbef603fe4e9bbe1e51311",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "src/style.css": "2356466fb05c55827553590767c925cca82c00da538579ffdd04191292a33804",
+    "src/style.css": "5dffb98699c105b1296b00579e86ab28456494e7634446fe82e64aba1254d584",
     "../form/src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "../form/src/client.mjs": "474812f53bc3f102297485f0b841c4587d46e6ee5a5985f22d7e21924d062c7d",
     "../form/src/attachment.mjs": "3f6d3a33ce2b68e99a1e19939c6d92af437e9993877faa9eec4d9c9429f4e8f0",
     "../form/src/view.mjs": "762297959c54c3e69cb4c33e80b9aaf7e46275ffa10ab68e6a4e63b6ae9dbcf3",
     "../form/src/app.mjs": "dcfd190e3c408ac1977c80157dd3307e205a1ae189340571be13c168ed67fbd8",
-    "src/client.mjs": "baa185635396f19b0373b96112695f67f60411eaa69e7a44664d022fdbcbcbe8",
-    "src/app.mjs": "e472c601b5b307517ab128a056b344aab1ac1fe2911094dee3f548fc0c7c99e1"
+    "src/client.mjs": "c27250fd70bd778600e044723136005615a79507ae65e5b37613c904ef724534",
+    "src/app.mjs": "a7a6b839fc9236f91a5a805351a7a363f74fbeb31543cefd23cae272a080367a"
   },
   "outputs": {
-    "app.js": "0e1613131d888400829e67172d7b976aa485394eebb910e897a09ce4dcec4403",
+    "app.js": "086d36e026ffc53a5d7b0b8fbb1df5d8a3c404bab1914787e1995bd4f58e1371",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
-    "style.css": "816034083658c9204169113d6ea81f89925e1a63632e07a2783f4a5527c9e676",
+    "style.css": "4b1b0dab919e27d96bc67f0997f536a232b60bbe9a419a436ea998409440914b",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
   }
 }

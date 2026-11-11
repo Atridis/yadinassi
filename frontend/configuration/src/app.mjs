@@ -1,7 +1,7 @@
 import {FormError, createTransport, takeSessionCapability} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
 import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs';
-import {APPLICATION_PROTOCOL, ApplicationClient} from './client.mjs';
+import {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} from './client.mjs';
 
 export function mountApplication(environment, root, exchange = null) {
   const browserHost = exchange ? null : createBrowserHost(environment, root);
@@ -21,6 +21,15 @@ export function mountApplication(environment, root, exchange = null) {
   exitWarning.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
+  let dialogBusy = false, dialogTicket = null, dialogReturn = null;
+  const dialog = el('section'), dialogTitle = el('h2'), dialogText = el('p'), dialogStatus = el('p'), dialogActions = el('div');
+  dialog.className = 'configuration-dialog'; dialog.hidden = true; dialog.setAttribute('role','dialog');
+  dialogTitle.id = `question-title-${instance}`; dialog.setAttribute('aria-labelledby',dialogTitle.id);
+  dialogText.id = `question-text-${instance}`; dialog.setAttribute('aria-describedby',dialogText.id);
+  dialogStatus.setAttribute('role','status'); dialogActions.className = 'dialog-commands';
+  dialog.append(dialogTitle,dialogText,dialogStatus,dialogActions);
+  const dialogModal = () => Boolean(client?.dialogs?.length && !client.terminal);
+
   let pickerBusy = false, pickerTicket = null, pickerReturn = null;
   const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
   const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
@@ -36,9 +45,9 @@ export function mountApplication(environment, root, exchange = null) {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(dialogBusy || client.dialogs.length || pickerBusy || client.state?.choice || client.state?.posting?.some(item => ['uncertain','committed'].includes(item.state)) || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
-    if (userNavigation && client.state?.choice) return;
+    if (userNavigation && (client.state?.choice || dialogModal())) return;
     if (userNavigation) navigation++;
     active = id;
     for (const [key, entry] of mounts) {
@@ -83,7 +92,7 @@ export function mountApplication(environment, root, exchange = null) {
   function drawPicker() {
     const choice = client.state?.choice;
     picker.hidden = !choice;
-    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice);
+    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice || dialogModal());
     for (const entry of mounts.values()) entry.mount?.repaint();
     if (!choice) {
       pickerTicket = null;
@@ -112,6 +121,52 @@ export function mountApplication(environment, root, exchange = null) {
     if (newTicket || !disabled && picker.contains(document.activeElement) && document.activeElement.disabled) pickerCode.focus({preventScroll:true});
     if (!disabled && document.activeElement === document.body) pickerCode.focus({preventScroll:true});
   }
+  async function answerDialog(owner, ticket, answer) {
+    if (dialogBusy || client.pending || client.terminal || client.state?.uncertain ||
+        !client.dialogs.some(value => value.owner === owner && value.ticket === ticket && value.choices.includes(answer))) return;
+    dialogBusy = true; paint();
+    try { await perform('application.answerDialog',{session:owner,ticket,answer}); }
+    finally { dialogBusy = false; paint(); }
+  }
+  dialog.addEventListener('keydown',event => {
+    // There is no implicit timeout/default/Escape outcome in this profile.
+    if (event.key === 'Escape') { event.preventDefault(); return; }
+    if (event.key !== 'Tab') return;
+    const nodes = Array.from(dialogActions.children).filter(node => !node.disabled);
+    const index = nodes.indexOf(document.activeElement);
+    if (nodes.length && (event.shiftKey && index <= 0 || !event.shiftKey && (index < 0 || index === nodes.length - 1))) {
+      event.preventDefault(); nodes[event.shiftKey ? nodes.length - 1 : 0].focus();
+    }
+  });
+  function drawDialog() {
+    const value = client.dialogs[0]; dialog.hidden = !value;
+    dialog.setAttribute('aria-modal',String(Boolean(value && !client.terminal)));
+    dialog.dataset.locked = String(client.terminal);
+    if (!value) {
+      dialogTicket = null;
+      if (dialogReturn && !client.terminal) {
+        if (document.body.contains(dialogReturn) && !dialogReturn.disabled) dialogReturn.focus({preventScroll:true});
+        dialogReturn = null;
+      }
+      return;
+    }
+    const fresh = dialogTicket !== value.ticket;
+    if (fresh) { dialogTicket = value.ticket; dialogReturn = document.activeElement; }
+    dialogTitle.textContent = value.title || (value.kind === 'question' ? 'Question' : 'Message');
+    dialogText.textContent = value.text;
+    dialogStatus.textContent = client.terminal ? 'The outcome may be unknown. No answer will be repeated. Retained form text can be copied.'
+      : dialogBusy || client.pending ? 'Sending answer…' : 'Choose a button to continue. The owner form is paused.';
+    const prior = document.activeElement?.dataset?.dialogAnswer;
+    dialogActions.replaceChildren();
+    for (const answer of value.choices) {
+      const node = button(({ok:'OK',cancel:'Cancel',yes:'Yes',no:'No',dismiss:'Continue'})[answer],dialogActions,
+        () => answerDialog(value.owner,value.ticket,answer));
+      node.dataset.dialogAnswer = answer;
+      node.disabled = Boolean(dialogBusy || client.pending || client.terminal || client.state.uncertain);
+    }
+    const target = [...dialogActions.children].find(node => node.dataset.dialogAnswer === prior) || dialogActions.children[0];
+    if (!target?.disabled && (fresh || dialog.contains(document.activeElement) || document.activeElement === document.body)) target.focus({preventScroll:true});
+  }
   function reconcileSelection() {
     const catalog = client.state?.catalog;
     if (!catalog || selectedEntry !== catalog.entry) selectedRecords.clear();
@@ -128,7 +183,7 @@ export function mountApplication(environment, root, exchange = null) {
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
     const posting = entry.kind === 'posting-document', document = posting || entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
-    const unavailable = () => Boolean(client.state?.choice) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
+    const unavailable = () => Boolean(client.state?.choice || dialogModal()) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
     const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
     const openSelected = () => {
       // Resolve from the live set and latest projection, never a captured row
@@ -185,7 +240,7 @@ export function mountApplication(environment, root, exchange = null) {
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
     title.textContent = client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
-    const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice);
+    const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
@@ -197,7 +252,7 @@ export function mountApplication(environment, root, exchange = null) {
     for (const [id,entry] of mounts) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
-      entry.ownerNotice.textContent = blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
+      entry.ownerNotice.textContent = client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
       if (client.terminal) entry.mount?.lock();
       else entry.mount?.repaint();
     }
@@ -217,7 +272,7 @@ export function mountApplication(environment, root, exchange = null) {
         postingPanel.append(el('p','Recovery uses this host’s saved receipt. It never repeats posting handlers. Keep this application open.'));
       }
     }
-    drawCatalog(); drawPicker();
+    drawCatalog(); drawPicker(); drawDialog();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -233,7 +288,7 @@ export function mountApplication(environment, root, exchange = null) {
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
         businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
-        referenceActive: () => Boolean(client.state?.choice),
+        referenceActive: () => Boolean(client.state?.choice || dialogModal()),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
       // mountForm creates its own root content. Attach the owner notice after
@@ -241,6 +296,11 @@ export function mountApplication(environment, root, exchange = null) {
       panel.insertBefore(ownerNotice, panel.children[0] || null);
     }
     try {
+      if (request?.method === 'application.answerDialog' && result.form) {
+        const target = mounts.get(result.session);
+        if (!target?.mount) throw Error('Retired dialog owner');
+        target.mount.adoptExternal(result.form);
+      }
       for (const update of result.updates || []) {
         const target = mounts.get(update.session);
         if (!target?.mount) throw Error('Retired completion owner');
@@ -262,7 +322,7 @@ export function mountApplication(environment, root, exchange = null) {
     finally { paint(); }
   }
   function openForm(entry, record = null) {
-    if (client.state?.choice) return Promise.resolve();
+    if (client.state?.choice || dialogModal()) return Promise.resolve();
     const key = `${entry}:${record ?? ''}`;
     if (openings.has(key)) return openings.get(key);
     const token = `open-${instance}-${++openToken}`; intents.set(token,navigation);
@@ -274,7 +334,7 @@ export function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,picker,dialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
@@ -287,14 +347,14 @@ export function mountApplication(environment, root, exchange = null) {
   const resume = async () => {
     if (client.terminal) throw Error('Unknown previous outcome');
     const retained = new Set(mounts.keys());
-    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL});
+    const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY});
     for (const [id,entry] of mounts) {
       if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
       if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
     }
     return result;
   };
-  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL});
+  paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY});
   return {ready,client,mounts,show,pending,openForm,browserHost};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));

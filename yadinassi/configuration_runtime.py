@@ -107,8 +107,9 @@ class ConfigurationApplication:
         for name, function in (host_services or {}).items():
             if type(name) is not str or type(function) is not HostFunction:
                 raise TypeError('named HostFunction services required')
-            if side == 'server' and name.casefold() in ('openform', 'открытьформу'):
-                raise ValueError('OpenForm is client-only')
+            if side == 'server' and name.casefold() in ('openform', 'открытьформу',
+                    'showquerybox', 'показатьвопрос', 'showmessagebox', 'показатьпредупреждение'):
+                raise ValueError('form host services are client-only')
             if name.casefold() in self.interpreter.functions:
                 raise ValueError('host service conflicts with existing function')
             self.interpreter.functions[name.casefold()] = function
@@ -411,9 +412,10 @@ class ConfigurationApplication:
 
     def check_host_service(self, function, caller):
         self.require_open()
-        if function.name.casefold() in ('openform', 'открытьформу'):
+        if function.name.casefold() in ('openform', 'открытьформу',
+                'showquerybox', 'показатьвопрос', 'showmessagebox', 'показатьпредупреждение'):
             if caller.execution_context != 'client' or self.side == 'server' or self.state not in ('starting', 'running'):
-                raise ValueError('OpenForm requires an active client application event')
+                raise ValueError('form host service requires an active client application event')
 
     def check_call(self, routine, caller):
         self.require_open()

@@ -1,6 +1,7 @@
 import {FormError, validateSnapshot, PROTOCOL as FORM_PROTOCOL} from '../../form/src/client.mjs';
 
 export const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/3';
+export const DIALOG_CAPABILITY = 'yadinassi-owned-dialog/1';
 const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
@@ -9,7 +10,7 @@ const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
   (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
@@ -27,10 +28,11 @@ export function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
   const ownedResults = Object.hasOwn(result || {}, 'updates');
+  const dialogCapability = Object.hasOwn(result || {}, 'dialogCapability');
   const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
-  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
+  if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
@@ -72,11 +74,26 @@ export function validateApplicationReply(reply, request, previous) {
     if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
     sessions.add(session.id);
   }
+  const dialogOwners = new Set(), dialogTickets = new Set();
+  if (dialogCapability) {
+    if (result.dialogCapability !== DIALOG_CAPABILITY || !Array.isArray(result.dialogs) || result.dialogs.length > 8 ||
+        !ownedResults && result.dialogs.length) throw new FormError('transport');
+    for (const dialog of result.dialogs) {
+      if (!keys(dialog,['ticket','owner','kind','title','text','choices']) || !opaque(dialog.ticket) || dialogTickets.has(dialog.ticket) ||
+          !sessions.has(dialog.owner) || dialogOwners.has(dialog.owner) || !['question','warning'].includes(dialog.kind) ||
+          !text(dialog.title,256) || !text(dialog.text,4096) || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(dialog.title + dialog.text) ||
+          !(dialog.kind === 'warning' ? JSON.stringify(dialog.choices) === '["dismiss"]'
+            : ['["ok"]','["ok","cancel"]','["yes","no"]','["yes","no","cancel"]'].includes(JSON.stringify(dialog.choices))) ||
+          state.entries.find(e => e.id === state.sessions.find(s => s.id === dialog.owner).entry).kind === 'posting-document' ||
+          state.choice?.session === dialog.owner) throw new FormError('transport');
+      dialogOwners.add(dialog.owner); dialogTickets.add(dialog.ticket);
+    }
+  }
   if (ownedResults) {
     const nodes = new Map(state.sessions.map(value => [value.id,value]));
     for (const session of state.sessions) {
       const children = state.sessions.filter(value => value.owner === session.id);
-      if (children.length > 1 || session.blocked !== (children.length === 1)) throw new FormError('transport');
+      if (children.length > 1 || children.length && dialogOwners.has(session.id) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
       if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
       while (owner !== null) {
@@ -124,18 +141,18 @@ export function validateApplicationReply(reply, request, previous) {
       owners.add(item.session);
     }
   }
-  if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
+  if (['application.form','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
-        ['application.reference','application.recoverPosting'].includes(request.method) && nested.id !== 1 ||
+        ['application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
         !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (['application.form','application.reference','application.recoverPosting'].includes(request.method) && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -143,7 +160,7 @@ export class ApplicationClient {
   constructor(exchange, changed = () => {}, failed = () => {}) {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
-    this.ownedResults = null;
+    this.ownedResults = null; this.dialogCapability = null; this.dialogs = []; this.retiredDialogs = new Set();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
   request(method, params) {
@@ -153,7 +170,7 @@ export class ApplicationClient {
       if (this.state?.sessions.some(value => value.id === params?.session && value.blocked) &&
           (method === 'application.reference' || method === 'application.recoverPosting' ||
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
-        const error = new FormError('owned_child_open'); error.preDispatch = true; throw error;
+        const error = new FormError(this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
@@ -164,10 +181,24 @@ export class ApplicationClient {
           !this.state?.posting?.some(item => item.session === params.session && item.receipt === params.receipt && ['uncertain','committed'].includes(item.state)))) {
         const error = new FormError('unavailable'); error.preDispatch = true; throw error;
       }
+      if (method === 'application.answerDialog' && (!keys(params,['session','ticket','answer']) ||
+          !this.dialogs.some(d => d.owner === params.session && d.ticket === params.ticket && d.choices.includes(params.answer)))) {
+        const error = new FormError('dialog_refused'); error.preDispatch = true; throw error;
+      }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
         result = validateApplicationReply(await this.exchange(request),request,this.state);
+        const negotiated = Object.hasOwn(result,'dialogCapability');
+        if (method === 'application.hello' && negotiated !== (params?.dialogCapability === DIALOG_CAPABILITY) ||
+            this.dialogCapability !== null && this.dialogCapability !== negotiated) throw new FormError('transport');
+        const nextDialogs = result.dialogs || [];
+        for (const dialog of nextDialogs) {
+          const previous = this.dialogs.find(d => d.ticket === dialog.ticket);
+          if (this.retiredDialogs.has(dialog.ticket) || previous && JSON.stringify(previous) !== JSON.stringify(dialog)) throw new FormError('transport');
+        }
+        for (const dialog of this.dialogs) if (!nextDialogs.some(d => d.ticket === dialog.ticket)) this.retiredDialogs.add(dialog.ticket);
+        if (this.retiredDialogs.size > 256) throw new FormError('transport');
         const owned = Object.hasOwn(result,'updates');
         if (this.ownedResults !== null && this.ownedResults !== owned) throw new FormError('transport');
         if (result.state.catalog) {
@@ -187,7 +218,7 @@ export class ApplicationClient {
           if (this.retired.has(update.session) || revision < (this.formRevisions.get(update.session) ?? 0)) throw new FormError('transport');
           this.formRevisions.set(update.session,revision);
         }
-        this.ownedResults = owned;
+        this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
       if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }

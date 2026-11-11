@@ -396,11 +396,13 @@ class FormSession:
             raise ValueError('Close(result) requires an active owned child command')
         self._owned_close(result)
 
-    def dispatch_completion(self, description, result, *, revision):
+    def dispatch_completion(self, description, result, *, revision, result_argument=True):
         """Trusted queued event. Never callable by a browser-selected handler."""
         if self._owned_form_enrollment is None or self.state != 'open':
             raise ValueError('owned live form required')
-        routine, owner = self.interpreter.callback_target(description)
+        if type(result_argument) is not bool:
+            raise ValueError('explicit completion argument contract required')
+        routine, owner = self.interpreter.callback_target(description, form_arity=2 if result_argument else 1)
         if owner is not self.interpreter or description.module is not self.form:
             raise ValueError('completion target differs from owner')
         self._begin(revision)
@@ -408,7 +410,8 @@ class FormSession:
         try:
             with target_context(self.interpreter.native_target), localcontext():
                 self.interpreter._scheduler.run_inline(
-                    self.interpreter.dispatch_callback(description, result, routine.token))
+                    self.interpreter.dispatch_callback(description, result, routine.token,
+                                                       result_argument=result_argument))
         finally:
             self._completion_active = False
             self.revision += 1; self._busy = False; self._gate.release()

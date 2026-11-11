@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {APPLICATION_PROTOCOL,ApplicationClient,validateApplicationReply} from '../src/client.mjs';
-import {mountApplication} from '../src/app.mjs';
+import {mountApplication} from './application-fixtures.mjs';
 import {environment,all} from '../../form/test/fake-dom.mjs';
 import {state,reply,field,button,deferred} from '../../form/test/fixtures.mjs';
 const node=(id,owner=null,blocked=false)=>({id,entry:1,title:id,owner,blocked});

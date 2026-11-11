@@ -841,6 +841,12 @@ class Interpreter:
             return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ('questiondialogmode', 'режимдиалогавопрос'):
+            from .form_dialogs import QUESTION_DIALOG_MODES
+            return QUESTION_DIALOG_MODES
+        if name in ('dialogreturncode', 'кодвозвратадиалога'):
+            from .form_dialogs import DIALOG_RETURN_CODES
+            return DIALOG_RETURN_CODES
         if name in ("форматдатыjson", "jsondateformat"):
             return JSON_DATE_FORMATS
         if name in ("вариантзаписидатыjson", "jsondatewritingvariant"):
@@ -1243,8 +1249,10 @@ class Interpreter:
         # Only the owned form interpreter overrides this closed enrollment seam.
         return None
 
-    def callback_target(self, description):
+    def callback_target(self, description, *, form_arity=2):
         """Validate a value capability without executing or creating source."""
+        if type(form_arity) is not int or form_arity not in (1, 2):
+            raise ValueError('unsupported sealed form callback arity')
         self._require_callback_context()
         if type(description) is not BSLCallbackDescription:
             raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
@@ -1259,8 +1267,8 @@ class Interpreter:
             routine = owner.routines.get(description.procedure_name.casefold())
             if (routine is None or not routine.exported or routine.is_function or routine.is_async
                     or routine.is_dual or not routine.module_context or routine.execution_context != 'client'
-                    or len(routine.parameters) != 2):
-                raise ValueError('form completion requires an exported synchronous two-argument client procedure')
+                    or len(routine.parameters) != form_arity):
+                raise ValueError('form completion requires an exported synchronous client procedure with the granted arity')
             return routine, owner
         module = self._callback_module(description.module)
         if module is None or not description.procedure_name:
@@ -1270,13 +1278,18 @@ class Interpreter:
             raise ValueError('Обработчик оповещения должен выполняться на клиенте')
         return routine, module.interpreter
 
-    def dispatch_callback(self, description, result, token):
+    def dispatch_callback(self, description, result, token, *, result_argument=True):
         """Shared value-based dispatch; host callers still own event admission."""
-        routine, owner = self.callback_target(description)
+        if type(result_argument) is not bool:
+            raise ValueError('explicit callback argument contract required')
+        routine, owner = self.callback_target(description, form_arity=2 if result_argument else 1)
+        if not result_argument and description._form_target is None:
+            raise ValueError('one-argument completion requires a sealed form target')
         if description._form_target is not None:
             if not owner._form_session._busy or owner._form_session.interpreter is not self:
                 raise ValueError('form callback requires its owning trusted event')
-        arguments = [ast.Literal(token, result), ast.Literal(token, description.additional_parameters)]
+        values = ([result] if result_argument else []) + [description.additional_parameters]
+        arguments = [ast.Literal(token, value) for value in values]
         return (yield from self.call_routine(routine, arguments, owner, require_value=False))
 
     def _run_callback(self, node):

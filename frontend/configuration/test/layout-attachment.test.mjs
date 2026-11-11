@@ -17,7 +17,7 @@ test('real attachment wrapper permits locked layout inspection but no outer Open
   const env=environment(async(path,options)=>{
     const request=JSON.parse(options.body);requests.push({path,request});
     if(path==='/attachment')return response(issued);
-    const result={protocol:APPLICATION_PROTOCOL,state,error:null,session:null,form:null};
+    const result={protocol:APPLICATION_PROTOCOL,dialogCapability:'yadinassi-owned-dialog/1',dialogs:[],state,error:null,session:null,form:null};
     if(request.method==='application.open'){
       state={...state,active:'form-1',sessions:[{id:'form-1',entry:1,title:'Layout'}]};
       Object.assign(result,{state,session:'form-1',form:reply({id:1},form)});
@@ -64,7 +64,7 @@ test('real attachment permits copy-only navigation between flat owned-capability
   const env=environment(async(path,options)=>{
     const request=JSON.parse(options.body);requests.push({path,request});
     if(path==='/attachment')return response(issued);
-    const result={protocol:APPLICATION_PROTOCOL,state,error:null,session:null,form:null,updates:[]};
+    const result={protocol:APPLICATION_PROTOCOL,dialogCapability:'yadinassi-owned-dialog/1',dialogs:[],state,error:null,session:null,form:null,updates:[]};
     if(request.method==='application.open'){
       const id=`form-${state.sessions.length+1}`;
       state={...state,active:id,sessions:[...state.sessions,{id,entry:1,title:'Flat form',owner:null,blocked:false}]};
