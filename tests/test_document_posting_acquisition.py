@@ -12,17 +12,17 @@ import native_1c_document_posting_profile as host
 class PostingAcquisitionTests(unittest.TestCase):
     def wire(self):
         prefix='POST|'+'a'*32+'|'
-        return (prefix+'entered\n'+''.join(prefix+str(n)+'|0|0|0,0|before:0;\n' for n in range(1,13))+prefix+'completed\n').encode()
-    def test_exact_twelve_observations(self):
+        return (prefix+'entered\n'+''.join(prefix+str(n)+'|0|0|0,0|before:0;\n' for n in range(1,15))+prefix+'completed\n').encode()
+    def test_exact_fourteen_observations(self):
         values=route.parse_wire(self.wire(),'a'*32)
-        self.assertEqual(len(values),12)
+        self.assertEqual(len(values),14)
         self.assertEqual(json.loads(route.canonical(values)),values)
     def test_wrong_nonce_refused(self):
         with self.assertRaises(ValueError):route.parse_wire(self.wire(),'b'*32)
     def test_reordered_case_refused(self):
         with self.assertRaises(ValueError):route.parse_wire(self.wire().replace(b'|2|0|',b'|3|0|'),'a'*32)
     def test_unbounded_observation_refused(self):
-        with self.assertRaises(ValueError):route.canonical(['x'*513]*12)
+        with self.assertRaises(ValueError):route.canonical(['x'*513]*14)
     def test_extra_output_refused(self):
         with self.assertRaises(ValueError):route.parse_wire(self.wire()+b'noise\n','a'*32)
     def test_source_fixture_hashes(self):
@@ -64,7 +64,7 @@ class PostingAcquisitionTests(unittest.TestCase):
         actual={name:b'<Metadata><Text>private text</Text></Metadata>'}
         value=fixture.redump_diagnostic(expected,actual)
         self.assertNotIn('private text',str(value));self.assertTrue(fixture.valid_diagnostic(value))
-        self.assertFalse(fixture.valid_diagnostic(['x'*121]))
+        self.assertFalse(fixture.valid_diagnostic(['x'*141]))
         self.assertFalse(fixture.valid_diagnostic(['x']*13))
     def test_equal_redump_diagnostic_empty(self):
         files={'Other.xml':b'<Metadata><Posting>Allow</Posting></Metadata>'}
@@ -109,9 +109,9 @@ class PostingAcquisitionTests(unittest.TestCase):
         self.assertLess(program.index(b'|entered'),program.index(b'For CaseNo = 1'))
     def test_observation_program_retains_exact_source_segments(self):
         program=route.program(None,'a'*32)
-        declarations,statements=route.source().split(b'For CaseNo = 1 To 12 Do')
+        declarations,statements=route.source().split(b'For CaseNo = 1 To 14 Do')
         self.assertIn(declarations,program)
-        self.assertIn(b'For CaseNo = 1 To 12 Do'+statements,program)
+        self.assertIn(b'For CaseNo = 1 To 14 Do'+statements,program)
     def test_native_error_diagnostic_is_finite_vocabulary(self):
         self.assertIn('compile_error',host.SMOKE.DIAGNOSTICS.CATEGORIES)
         source=(ROOT/'scripts/native_1c_bootstrap/document_posting_suite.py').read_text()
@@ -143,10 +143,26 @@ class PostingAcquisitionTests(unittest.TestCase):
         self.assertEqual(observations,[]);self.assertEqual(errors[0][2],'line1\nline2')
     def test_all_case_observations_remain_ordered(self):
         observations,errors=route.parse_attempt(self.wire(),'a'*32)
-        self.assertEqual(len(observations),12);self.assertEqual(errors,[])
+        self.assertEqual(len(observations),14);self.assertEqual(errors,[])
         with self.assertRaises(ValueError):route.parse_attempt(self.wire().replace(b'|2|0|',b'|1|0|'),'a'*32)
     def test_observer_uses_detailed_error_and_distinct_phases(self):
         source=route.source().decode()
         for stage in ('setup','seed','write','readback','query'):self.assertIn('"'+stage+'"',source)
         self.assertIn('ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())',source)
         self.assertIn('If OuterTransaction Then RollbackTransaction()',source)
+    def test_cases_have_disjoint_seed_dimensions_not_assumed_recorder_uniqueness(self):
+        handler=(ROOT/'scripts/document_posting_behavior/ObjectModule.bsl').read_text()
+        self.assertIn('Number(Number) * 100 + Mode',handler)
+        self.assertIn('Number(Number) * 100 + 99',handler)
+        self.assertIn('Number(Number) * 100 + 88',handler)
+    def test_absent_document_is_observed_by_query_not_arbitrary_error_swallowing(self):
+        source=route.source().decode()
+        self.assertIn('FROM Document.OwnedPostingDoc',source)
+        self.assertIn('If Not S.Next() Then Return "missing"',source)
+        self.assertNotIn('GetObject()',source)
+    def test_collision_control_pair_differs_in_dimension_identity(self):
+        handler=(ROOT/'scripts/document_posting_behavior/ObjectModule.bsl').read_text()
+        self.assertIn('If Mode = 13 Then Row.Key = 303',handler)
+        self.assertIn('If Mode = 14 Then Row.Key = 1403',handler)
+        self.assertIn('Or Mode = 13 Or Mode = 14 Then Set.Write = True',handler)
+        self.assertEqual(route.COUNT,14)

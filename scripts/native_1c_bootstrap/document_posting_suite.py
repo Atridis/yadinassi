@@ -119,7 +119,7 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
             category=diagnostics.summarize_text(text)['category']
             context=diagnostics.rendered_context(text,'managed_marker')
             report['case_diagnostics'].append(dict(case=number,stage=stage,category=category,details=details,context=context))
-        report['incomplete']=len(observations)!=12
+        report['incomplete']=len(observations)!=route.COUNT
         if report['incomplete']:raise full.FullError('invalid_result')
         values=[v for _,v in observations];report['completed']=True
         if not report['quiet'] or report['process_diagnostics']['reason']!='none':raise full.FullError('process_failed')
@@ -131,7 +131,7 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         canonical=route.canonical(values)
         with (root/'document-posting.out').open('xb') as stream:stream.write(canonical)
         report.update(status='ok',failure_kind='none',failure_phase='final',witness_verified=True,
-            output_sha256=full.digest(canonical),output_size=len(canonical),record_count=12)
+            output_sha256=full.digest(canonical),output_size=len(canonical),record_count=route.COUNT)
     except Exception as error:
         if phase=='enterprise':
             try:

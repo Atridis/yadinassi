@@ -45,3 +45,16 @@ Metadata syntax was inspected read-only in public XML at
 https://github.com/vanessa-opensource/add/tree/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/lib/CF/83xdd
 (specifically Document RegisterRecords and RecorderSubordinate properties).
 Fixture identities, modules and scalar observation data are newly authored.
+
+## Acquisition extension: collision/control
+
+Cases 1–12 use disjoint case-scoped dimensions so setup does not assume that
+recorder ownership implies global dimension-key independence. Case 13 then
+intentionally writes dimension 303 already owned by case 3, while case 14 uses
+an otherwise equivalent marked movement with the unique dimension 1403. Both
+outcomes are recorded, not asserted in the measurement route. A failed write
+with successful readback is an observation, not a fabricated successful write.
+Missing documents are observed through a bounded Posted-by-Ref query, not by
+assuming GetObject returns Undefined or treating arbitrary read errors as absent.
+
+Roundtrip validation is a material semantic projection, not byte XML parity.

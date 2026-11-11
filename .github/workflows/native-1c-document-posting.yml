@@ -39,7 +39,7 @@ jobs:
           python-version: '3.12.10'
       - name: Install pinned host dependencies
         run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
-      - name: Observe twelve cases in a fresh isolated owned infobase
+      - name: Observe fourteen cases in a fresh isolated owned infobase
         id: posting
         env:
           GHCR_USER: ${{ github.actor }}

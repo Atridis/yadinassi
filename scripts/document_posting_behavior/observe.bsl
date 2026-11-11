@@ -7,7 +7,13 @@ Function Snapshot(Reference)
     Total = 0; If S.Total <> Null Then Total = S.Total; EndIf;
     Return String(S.N) + "," + String(Total);
 EndFunction
-For CaseNo = 1 To 12 Do
+Function PostedSnapshot(Reference)
+    Q = New Query("SELECT D.Posted AS Posted FROM Document.OwnedPostingDoc AS D WHERE D.Ref = &Recorder");
+    Q.SetParameter("Recorder", Reference); S = Q.Execute().Select();
+    If Not S.Next() Then Return "missing"; EndIf;
+    Return String(Number(S.Posted));
+EndFunction
+For CaseNo = 1 To 14 Do
     Failed = False; CancelTrace = ""; Stage = "setup"; OuterTransaction = False;
     Try
         O = Documents.OwnedPostingDoc.CreateDocument(); O.Number = String(CaseNo); O.Date = Date(2024,1,1);
@@ -33,8 +39,7 @@ For CaseNo = 1 To 12 Do
             Except Failed = True; PostingDiagnostic(CaseNo, Stage, ПодробноеПредставлениеОшибки(ИнформацияОбОшибке())); EndTry;
         EndIf;
         Stage = "readback";
-        Persisted = O.Ref.GetObject(); PostedValue = "missing";
-        If Persisted <> Undefined Then PostedValue = String(Number(Persisted.Posted)); EndIf;
+        PostedValue = PostedSnapshot(O.Ref);
         Stage = "query"; Rows = Snapshot(O.Ref);
         PostingEmit(CaseNo, String(Number(Failed)) + "|" + PostedValue + "|" + Rows + "|" + CancelTrace + TraceOf(O));
     Except

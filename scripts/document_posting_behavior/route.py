@@ -1,4 +1,4 @@
-"""Exactly twelve bounded raw scalar observations, no expected behavior."""
+"""Exactly fourteen bounded raw scalar observations, no expected behavior."""
 from pathlib import Path
 import hashlib
 import json
@@ -6,9 +6,9 @@ import re
 PROFILE='document-posting-observation-v1'
 SCHEMA='native-1c-document-posting-v1'
 STAGE_SCHEMA='native-1c-document-posting-stage-v1'
-COUNT=12
+COUNT=14
 MAX_OUTPUT=131072
-SOURCE_SHA256='e9457b3f757cf12d847dbb8799542e22df5bb7009e68cd8dca443ddf27f08198'
+SOURCE_SHA256='40b054364e056134aeb0a8b9350d94b7d21dc887f554cb9336a79860a97f1bf4'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')
@@ -23,7 +23,7 @@ def program(setup,nonce):
         'If StrLen(Details)>4096 Then Details=Left(Details,2048)+Right(Details,2048); EndIf;\n'
         'Writer=New JSONWriter; Writer.SetString(); WriteJSON(Writer,Details); Encoded=Writer.Close();\n'
         'Message("POST|'+nonce+'|error|"+String(N)+"|"+Stage+"|"+Encoded);\nEndProcedure\n').encode()
-    body=source();marker=b'For CaseNo = 1 To 12 Do'
+    body=source();marker=b'For CaseNo = 1 To 14 Do'
     if body.count(marker)!=1:raise ValueError('source body boundary')
     declarations,statements=body.split(marker)
     entered=('Message("POST|'+nonce+'|entered");\n').encode()
@@ -59,11 +59,11 @@ def failure_details(result,nonce):
     if type(result) is not dict or set(result)!={'messages','error'} or type(result['error']) is not str or len(result['error'])>16384:
         raise ValueError('invalid failure envelope')
     text=result['error'];messages=result['messages'];prefix='POST|'+nonce+'|'
-    if type(messages) is not list or len(messages)>14 or any(type(m) is not str or len(m)>1024 for m in messages):
+    if type(messages) is not list or len(messages)>16 or any(type(m) is not str or len(m)>1024 for m in messages):
         raise ValueError('invalid failure messages')
     entered=bool(messages and messages[0]==prefix+'entered');cases=0
     for n,message in enumerate(messages[1:],1):
-        if n>12 or not message.startswith(prefix+str(n)+'|'):break
+        if n>COUNT or not message.startswith(prefix+str(n)+'|'):break
         cases=n
     frames=[]
     for match in re.finditer(r'\{([^{}\r\n]{1,200})\(([0-9]{1,3})(?:,\s*[0-9]{1,3})?\)\}',text):
@@ -75,7 +75,7 @@ def failure_details(result,nonce):
 
 def valid_failure_details(value):
     return (type(value) is dict and set(value)=={'entered','cases','frames','apis','codes'} and
-        type(value['entered']) is bool and type(value['cases']) is int and 0<=value['cases']<=12 and
+        type(value['entered']) is bool and type(value['cases']) is int and 0<=value['cases']<=COUNT and
         type(value['frames']) is list and len(value['frames'])<=4 and all(type(f) is list and len(f)==2 and
             f[0] in ('TestModule','OwnedPostingDoc') and type(f[1]) is int and 1<=f[1]<=512 for f in value['frames']) and
         type(value['apis']) is list and len(value['apis'])<=len(ERROR_APIS) and all(type(a) is str and a in ERROR_APIS.values() for a in value['apis']) and
@@ -86,17 +86,17 @@ STAGES=('setup','seed','write','readback','query')
 def parse_attempt(raw,nonce):
     if type(raw) is not bytes or not 0<len(raw)<=MAX_OUTPUT:raise ValueError('wire')
     lines=raw.decode('utf-8').splitlines();prefix='POST|'+nonce+'|'
-    if len(lines)>40 or not lines or lines[0]!=prefix+'entered' or lines[-1]!=prefix+'completed':raise ValueError('markers')
+    if len(lines)>42 or not lines or lines[0]!=prefix+'entered' or lines[-1]!=prefix+'completed':raise ValueError('markers')
     observations=[];errors=[];last=0
     for line in lines[1:-1]:
         if line.startswith(prefix+'error|'):
             parts=line[len(prefix+'error|'):].split('|',2)
-            if len(parts)!=3 or not parts[0].isdigit() or not 1<=int(parts[0])<=12 or parts[1] not in STAGES:raise ValueError('diagnostic')
+            if len(parts)!=3 or not parts[0].isdigit() or not 1<=int(parts[0])<=COUNT or parts[1] not in STAGES:raise ValueError('diagnostic')
             text=json.loads(parts[2])
             if type(text) is not str or len(text)>4096 or len(errors)>=24:raise ValueError('diagnostic')
             errors.append((int(parts[0]),parts[1],text))
         else:
             parts=line[len(prefix):].split('|',1) if line.startswith(prefix) else []
-            if len(parts)!=2 or not parts[0].isdigit() or not last<int(parts[0])<=12:raise ValueError('order')
-            canonical([parts[1]]*12);last=int(parts[0]);observations.append([last,parts[1]])
+            if len(parts)!=2 or not parts[0].isdigit() or not last<int(parts[0])<=COUNT:raise ValueError('order')
+            canonical([parts[1]]*COUNT);last=int(parts[0]);observations.append([last,parts[1]])
     return observations,errors
