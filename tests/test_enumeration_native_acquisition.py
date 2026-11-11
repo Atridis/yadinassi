@@ -151,8 +151,8 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         launcher=types.SimpleNamespace(TEMPLATES=ROOT/'integrational_tests/launcher_1c',read_result=object(),run_process=object(),build_epf=object())
         before=dict(vars(launcher))
         platform=types.SimpleNamespace(timeout=120,command=lambda mode:['/owned/1cv8',mode])
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);source=root/'probe.bsl';source.write_bytes(route.program(None,'a'*32))
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            root=Path(directory).resolve();source=root/'probe.bsl';source.write_bytes(route.program(None,'a'*32))
             expected=suite.full.generated_module(source.read_bytes());case=root/'case';output=root/'wire'
             with mock.patch.object(suite.full,'run_process') as process, mock.patch.object(suite.full,'require_zero_result') as result, mock.patch.object(suite.full,'require_epf') as epf, mock.patch.object(suite.full,'validate_case_request') as request, mock.patch.object(suite.full,'read_native_result',return_value=(['ok'],'')):
                 suite.run_owned_case(launcher,platform,source,root/'Launcher.epf',case,output,expected)
@@ -165,8 +165,8 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
     def test_adapter_source_mismatch_precedes_process(self):
         import types
         suite=self.adapter();launcher=types.SimpleNamespace(TEMPLATES=ROOT/'integrational_tests/launcher_1c')
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);source=root/'probe.bsl';source.write_bytes(b'Message("wrong");')
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
+            root=Path(directory).resolve();source=root/'probe.bsl';source.write_bytes(b'Message("wrong");')
             with mock.patch.object(suite.full,'run_process') as process, self.assertRaises(suite.full.FullError):
                 suite.run_owned_case(launcher,None,source,None,root/'case',root/'wire',b'expected')
             process.assert_not_called()
@@ -199,7 +199,7 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
         suite=self.adapter();events=[];child=mock.MagicMock()
         child.wait.side_effect=suite.subprocess.TimeoutExpired('private command',120)
         process=mock.MagicMock();process.__enter__.return_value=child
-        with tempfile.TemporaryDirectory() as directory, mock.patch.object(suite,'os',SimpleNamespace(name='posix')), mock.patch.object(suite.subprocess,'Popen',return_value=process), mock.patch.object(suite,'timeout_witness',side_effect=lambda p:events.append('witness') or {}), mock.patch.object(suite.full,'_stop_group',side_effect=lambda p:events.append('stop')):
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory, mock.patch.object(suite,'os',SimpleNamespace(name='posix')), mock.patch.object(suite.subprocess,'Popen',return_value=process), mock.patch.object(suite,'timeout_witness',side_effect=lambda p:events.append('witness') or {}), mock.patch.object(suite.full,'_stop_group',side_effect=lambda p:events.append('stop')):
             with self.assertRaises(suite.full.FullError) as error:
                 suite.run_designer_process(['owned','DESIGNER'],Path(directory),Path(directory)/'out',120,report={})
         self.assertEqual(error.exception.kind,'timeout');self.assertEqual(events,['witness','stop'])
