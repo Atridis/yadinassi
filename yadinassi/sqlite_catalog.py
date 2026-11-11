@@ -401,6 +401,8 @@ class SQLiteCatalogBackend:
         self.path = _private_parent(os.path.abspath(raw))
         self._closed = False
         self._active = None
+        from .prepared_source import PreparedSource
+        self._prepared_source = PreparedSource()
         self._check_file()
         connection = self._connect()
         try:
@@ -506,7 +508,8 @@ class SQLiteCatalogBackend:
             self._recorder_schemas = ()
             if self.format_version == 13:
                 from .sqlite_posting_profile import admit
-                self.posting_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True)
+                self.posting_configuration = admit(connection, self.database_id, self._document_schemas, validate_rows=True,
+                    _prepared=self._prepared_source)
                 self._recorder_schemas = self.posting_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
             _uuid(self.database_id)
@@ -858,12 +861,16 @@ class SQLiteCatalogBackend:
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
         if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES:
             raise BackendError('integrity')
-        files = {}; entries = []
+        files = {}; entries = []; source_entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
-            files[path] = content; entries.append((path, kind))
-        try: imported = import_document_forms_configuration(files)
-        except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+            files[path] = content; entries.append((path, kind)); source_entries.append((path, kind, digest))
+        prepared_key = ('document_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info[0]), tuple(source_entries))
+        imported = self._prepared_source.lookup(prepared_key)
+        if imported is None:
+            try: imported = import_document_forms_configuration(files)
+            except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
         if (tuple((f.path, f.kind) for f in imported.files) != tuple(entries) or
                 imported.activation_issues != self.activation_issues or
                 (str(imported.config_uuid), imported.name) != (info[0][1], info[0][3]) or
@@ -891,6 +898,7 @@ class SQLiteCatalogBackend:
         if not admitting and identity != self._document_form_identity:
             raise BackendError('schema_changed')
         if admitting: self._document_form_identity = identity
+        self._prepared_source.remember(prepared_key, imported)
         return imported
 
     def _business_source_snapshot(self, connection, *, admitting=False):
@@ -914,17 +922,23 @@ class SQLiteCatalogBackend:
         count, total = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(content)),0) FROM configuration_file').fetchone()
         if not 1 <= count <= _MAX_FILES or total > _MAX_CONFIG_BYTES:
             raise BackendError('integrity')
-        files = {}; entries = []
+        files = {}; entries = []; source_entries = []
         for path, kind, content, digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file ORDER BY path'):
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
-            files[path] = content; entries.append((path, kind))
-        try:
-            if _source_profile_for_issues(self.activation_issues) == REFERENCE_PROFILE:
-                from .configuration_reference_profile import reference_configuration
-                imported, catalogs = reference_configuration(files)
-            else:
-                imported, catalogs = business_configuration(files)
-        except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+            files[path] = content; entries.append((path, kind)); source_entries.append((path, kind, digest))
+        prepared_key = ('business_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info[0]), tuple(source_entries))
+        prepared = self._prepared_source.lookup(prepared_key)
+        if prepared is None:
+            try:
+                if _source_profile_for_issues(self.activation_issues) == REFERENCE_PROFILE:
+                    from .configuration_reference_profile import reference_configuration
+                    imported, catalogs = reference_configuration(files)
+                else:
+                    imported, catalogs = business_configuration(files)
+            except (ValueError, TypeError, BSLError): raise BackendError('integrity') from None
+        else:
+            imported, catalogs = prepared
         if (tuple((f.path, f.kind) for f in imported.files) != tuple(entries) or
                 imported.activation_issues != self.activation_issues or
                 (str(imported.config_uuid), imported.name) != (info[0][1], info[0][3]) or
@@ -954,6 +968,7 @@ class SQLiteCatalogBackend:
             raise BackendError('schema_changed')
         if admitting: self._business_form_identity = identity
         self._check_sequences(connection, self._schemas)
+        self._prepared_source.remember(prepared_key, (imported, catalogs))
         return imported, catalogs, info[0], imported.activation_issues[0].rsplit(':', 1)[1]
 
     @_boundary
@@ -1046,8 +1061,15 @@ class SQLiteCatalogBackend:
             if hashlib.sha256(content).hexdigest() != digest: raise BackendError('integrity')
             files[path] = content
             entries.append([path, kind, len(content), digest])
-        try: imported, catalogs = _demo_configuration(files, self._demo_profile())
-        except ValueError: raise BackendError('schema_changed') from None
+        prepared_key = ('catalog_forms', self.database_id, self.format_version,
+            self.storage_version, self._sqlite_schema_version, tuple(info),
+            self._demo_profile(), tuple(tuple(entry) for entry in entries))
+        prepared = self._prepared_source.lookup(prepared_key)
+        if prepared is None:
+            try: imported, catalogs = _demo_configuration(files, self._demo_profile())
+            except ValueError: raise BackendError('schema_changed') from None
+        else:
+            imported, catalogs = prepared
         if (info[1], info[3]) != (str(imported.config_uuid), imported.name): raise BackendError('schema_changed')
         if imported.activation_issues != self.activation_issues: raise BackendError('schema_changed')
         if tuple((f.path, f.kind) for f in imported.files) != tuple((e[0], e[1]) for e in entries): raise BackendError('integrity')
@@ -1059,6 +1081,7 @@ class SQLiteCatalogBackend:
         manifest = hashlib.sha256(_json([self._demo_profile(), entries]).encode('utf-8')).hexdigest()
         if not admitting and (imported.config_uuid != self._demo_configuration_id or manifest != self._demo_manifest):
             raise BackendError('schema_changed')
+        self._prepared_source.remember(prepared_key, (imported, catalogs))
         return imported, catalogs, info, manifest
 
     def _inert_source_snapshot(self, connection, *, admitting=False):
@@ -1318,7 +1341,8 @@ class SQLiteCatalogBackend:
                     else: self._demo_source_snapshot(connection)
                 if self.format_version == 13:
                     from .sqlite_posting_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas) != self.posting_configuration:
+                    if admit(connection, self.database_id, self._document_schemas,
+                             _prepared=self._prepared_source) != self.posting_configuration:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
             except sqlite3.OperationalError:
@@ -1507,8 +1531,11 @@ class SQLiteCatalogBackend:
             else: connection.close()
 
     def close(self):
-        if self._active is not None: self._active.close()
-        self._closed = True
+        try:
+            if self._active is not None: self._active.close()
+            self._closed = True
+        finally:
+            self._prepared_source.clear()
 
 
 class _View:
