@@ -115,39 +115,8 @@ def _runtime(configuration, side, *, business_application=False, reference_appli
 
 
 def _validate_report_projection(result, configuration, request):
-    _keys(result, 'report view at start end columns rows')
-    grant = next((r for r in configuration.reports if r.name == request['report']), None)
-    if (grant is None or result['view'] != grant.view
-            or any(result[k] != request[k] for k in ('report','at','start','end'))
-            or type(result['columns']) is not list or not 1 <= len(result['columns']) <= 32
-            or type(result['rows']) is not list or len(result['rows']) > 1000
-            or len(result['rows']) * len(result['columns']) > 25000):
-        raise ValueError('invalid report projection')
-    from ..inventory_application_reports import _columns
-    schema = next(s for s in configuration.registers if s.identity == grant.register_id)
-    kinds = {'string':'String', 'number':'Number', 'boolean':'Boolean', 'datetime':'Date',
-        'catalog_ref':'Catalog', 'document_ref':'Document', 'accumulation_direction':'String'}
-    expected = [{'name':c.name, 'type':kinds[c.kind]} for c in _columns(schema, grant.view)]
-    if result['columns'] != expected:
-        raise ValueError('report columns differ from exact admitted register')
-    for column in result['columns']:
-        _keys(column, 'name type')
-        if (type(column['name']) is not str or len(column['name']) > 128
-                or column['type'] not in ('String','Number','Boolean','Date','Catalog','Document')):
-            raise ValueError('invalid report column')
-    for row in result['rows']:
-        if type(row) is not list or len(row) != len(result['columns']):
-            raise ValueError('invalid report row')
-        for value, column in zip(row, result['columns']):
-            if type(value) is not dict or value.get('type') != column['type']:
-                raise ValueError('invalid typed report cell')
-            if column['type'] in ('Catalog','Document'):
-                _keys(value, 'type text')
-                if type(value['text']) is not str or len(value['text']) > 1152:
-                    raise ValueError('invalid report presentation')
-            else:
-                if _encode_scalar(_decode_scalar(value)) != value:
-                    raise ValueError('noncanonical report scalar')
+    from .report_protocol import validate_projection
+    validate_projection(result, configuration, request)
 
 
 class ConfigurationBroker:
@@ -173,6 +142,9 @@ class ConfigurationBroker:
         self.bind_interpreter = bind_interpreter
         self.sessions = {}
         self.allocated = 0
+        from .report_pages import ReportPages
+        self._report_pages = ReportPages()
+        self._report_controls = None
         self.ready = False
         self.objects = {}
         self.records = {}
@@ -279,6 +251,56 @@ class ConfigurationBroker:
         self.projections[entry] = result
         return result
 
+    def _report_service(self):
+        from ..inventory_application_reports import InventoryReports
+        if not self.inventory_application or self.database is None:
+            raise ValueError('explicit inventory report grant required')
+        if self.record_context is None: self.record_context = self._open_context()
+        if not hasattr(self, '_inventory_reports'):
+            self._inventory_reports = InventoryReports(self.record_context, self.posting_configuration)
+        return self._inventory_reports
+
+    def _report_controls_service(self):
+        from .inventory_report_controls import InventoryReportControls
+        if self._report_controls is None:
+            self._report_controls = InventoryReportControls(self._report_service(), self.posting_configuration)
+        return self._report_controls
+
+    def _report_busy(self):
+        return (any(o.pending_commit or o.pending_refresh for o in self.objects.values())
+                or any(getattr(s, '_reference_choice', None) is not None and
+                    (s._reference_choice.active or s._reference_choice.uncertain)
+                    for s, _, _ in self.sessions.values()))
+
+    def _clear_report(self):
+        self._report_pages.clear()
+        if self._report_controls is not None: self._report_controls.clear()
+
+    def _report_setup(self, payload):
+        self._report_pages.clear()
+        if self._report_busy(): return {'error': 'report_busy'}
+        try:
+            result = self._report_controls_service().action(payload)
+            from .report_protocol import validate_setup
+            validate_setup(result, self.posting_configuration, payload['report'])
+            if len(encode_line(result)) > MAX_LINE_BYTES // 2:
+                raise ValueError('bounded report setup required')
+            return result
+        except Exception:
+            self._clear_report()
+            return {'error': 'report_unavailable'}
+
+    def _report_page(self, payload):
+        _keys(payload, 'snapshot cursor')
+        if self._report_busy():
+            self._report_pages.clear()
+            return {'error': 'report_busy'}
+        try:
+            return self._report_pages.read(payload['snapshot'], payload['cursor'])
+        except ValueError:
+            self._report_pages.clear()
+            return {'error': 'report_unavailable'}
+
     def _report(self, payload):
         from datetime import datetime
         from ..inventory_application_reports import InventoryReports
@@ -286,13 +308,14 @@ class ConfigurationBroker:
         from ..catalog_backend import CatalogKey
         from ..document_backend import DocumentKey
         from ..dates import _date_from_datetime
-        _keys(payload, 'report at start end')
+        grant = next((r for r in self.posting_configuration.reports if r.name == payload.get('report')), None) if self.inventory_application else None
+        statement = grant is not None and grant.view == 'BalanceAndTurnovers'
+        _keys(payload, 'report at start end' + (' periodicity setup' if statement else ''))
+        self._report_pages.clear()
+        if not statement and self._report_controls is not None: self._report_controls.clear()
         if not self.inventory_application or self.database is None:
             raise ValueError('explicit inventory report grant required')
-        if (any(o.pending_commit or o.pending_refresh for o in self.objects.values())
-                or any(getattr(s, '_reference_choice', None) is not None and
-                    (s._reference_choice.active or s._reference_choice.uncertain)
-                    for s, _, _ in self.sessions.values())):
+        if self._report_busy():
             return {'error':'report_busy'}
         try:
             def boundary(value):
@@ -303,13 +326,12 @@ class ConfigurationBroker:
                 if parsed.tzinfo is not None or parsed.microsecond or parsed.isoformat(timespec='seconds') != value:
                     raise ValueError('canonical report boundary required')
                 return parsed
-            if self.record_context is None: self.record_context = self._open_context()
-            service = getattr(self, '_inventory_reports', None)
-            if service is None:
-                service = InventoryReports(self.record_context, self.posting_configuration)
-                self._inventory_reports = service
+            service = self._report_service()
+            controls = self._report_controls_service() if statement else None
+            filters = controls.resolve(payload['report'], payload['setup']) if statement else ()
             result = service.read(payload['report'], at=boundary(payload['at']),
-                start=boundary(payload['start']), end=boundary(payload['end']))
+                start=boundary(payload['start']), end=boundary(payload['end']),
+                periodicity=payload.get('periodicity'), filters=filters)
             labels = dict(result.labels)
             kinds = {'string':'String', 'number':'Number', 'boolean':'Boolean', 'datetime':'Date',
                 'catalog_ref':'Catalog', 'document_ref':'Document', 'accumulation_direction':'String'}
@@ -322,7 +344,12 @@ class ConfigurationBroker:
                 return _encode_scalar(value)
             projection = {**payload, 'view':result.view,
                 'columns':[{'name':c.name, 'type':kinds[c.kind]} for c in result.columns],
-                'rows':[[cell(v) for v in row] for row in result.rows]}
+                'rows':[[cell(v) for v in row] for row in result.rows],
+                **({'filters': controls.display(result)} if statement else {})}
+            if statement:
+                from .report_protocol import validate_projection
+                validate_projection(projection, self.posting_configuration, payload, paged=False)
+                return self._report_pages.install(projection)
             # Reserve the rest of the envelope for immutable entries/sessions.
             # A bounded refusal is not a partial/truncated successful report.
             if len(encode_line(projection)) > MAX_LINE_BYTES // 2:
@@ -347,6 +374,17 @@ class ConfigurationBroker:
             return {'source': self.configuration.source_sha256}
         if not self.ready:
             raise ValueError('configuration handshake required')
+        if operation not in ('report', 'reportSetup', 'reportPage'):
+            self._clear_report()
+        if operation == 'reportReset':
+            if sid or payload != {}: raise ValueError('invalid report reset')
+            return {}
+        if operation == 'reportSetup':
+            if sid: raise ValueError('report has no form session')
+            return self._report_setup(payload)
+        if operation == 'reportPage':
+            if sid: raise ValueError('report has no form session')
+            return self._report_page(payload)
         if operation == 'applicationInvoke':
             if sid or self.application_invocation is None:
                 raise ValueError('application invocation is unavailable')
@@ -680,6 +718,7 @@ class ConfigurationController:
         self.active = None
         self.catalog = None
         self.report = None
+        self.report_setup = None
         self.choice = None
         self._reference_action = None
         self._reference_changed = None
@@ -1065,6 +1104,7 @@ class ConfigurationController:
         return self.names[name.casefold()]
 
     def _lock(self):
+        self.report = self.report_setup = None
         self.uncertain = True
         self._drop_pending_after(0)
         for sid, record in tuple(self.owner_dialogs.items()):
@@ -1149,13 +1189,22 @@ class ConfigurationController:
                             raise ValueError('invalid catalog record')
                         seen.add(key)
                     self.catalog_versions[result['entry']] = result['version']
-            elif operation == 'report':
+            elif operation in ('report', 'reportSetup', 'reportPage'):
                 if 'error' in result:
                     _keys(result, 'error')
                     if result['error'] not in ('report_busy','report_unavailable'):
                         raise ValueError('invalid report refusal')
                 else:
-                    _validate_report_projection(result, self.posting_configuration, payload)
+                    if operation == 'reportSetup':
+                        from .report_protocol import validate_setup
+                        validate_setup(result, self.posting_configuration, payload['report'])
+                    elif operation == 'reportPage':
+                        from .report_protocol import validate_next_page
+                        validate_next_page(result, self.report, payload, self.posting_configuration)
+                    else:
+                        _validate_report_projection(result, self.posting_configuration, payload)
+            elif operation == 'reportReset':
+                if result != {}: raise ValueError('invalid report reset result')
             elif operation == 'posting':
                 _keys(result, 'form posting')
                 state = result['posting']
@@ -1537,6 +1586,7 @@ class ConfigurationController:
         return closed, None
 
     def _state(self):
+        from .report_protocol import declarations, has_statements
         return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
                 'entries': [{'id': entry, 'title': definition.title,
                              'kind': ('posting-document' if definition.posting_application else 'document-object' if definition.document_schema is not None else
@@ -1549,8 +1599,9 @@ class ConfigurationController:
                 'active': self.active, 'uncertain': self.uncertain, 'catalog': self.catalog,
                 **({'choice': self.choice} if self.reference_application else {}),
                 **({'posting': list(self.posting_states.values())} if self.posting_application else {}),
-                **({'reports':[{'id':r.name,'title':r.register+' '+r.view,'view':r.view} for r in self.posting_configuration.reports],
-                    'report':self.report} if self.inventory_application else {}),
+                **({'reports':declarations(self.posting_configuration), 'report':self.report,
+                    **({'reportSetup':self.report_setup} if has_statements(self.posting_configuration) else {})}
+                   if self.inventory_application else {}),
                 'lifecycle': 'forms' if self.application is None else self.application.state,
                 'messages': list(self.application_messages),
                 'exitWarning': '' if self.application is None else self.application.last_exit_warning}
@@ -1565,8 +1616,10 @@ class ConfigurationController:
                     or not 1 <= request['id'] <= MAX_COUNTER or type(request['params']) is not dict):
                 raise ValueError('invalid renderer request')
             method, params = request['method'], request['params']
-            if self.inventory_application and method not in ('application.hello','application.snapshot','application.catalog','application.report'):
-                self.report = None
+            if self.inventory_application and method not in ('application.hello','application.snapshot','application.report','application.reportSetup','application.reportPage'):
+                if method != 'application.catalog' or self.report is not None and 'page' in self.report:
+                    self.report = None
+                self.report_setup = None
             error = None; sid = None; form = None
             updates = []; retained_before = set(self.sessions)
             if self.closed:
@@ -1605,16 +1658,36 @@ class ConfigurationController:
                         sid, form, error = self._open(self.initial_entry, {})
             elif not self.opened:
                 raise ValueError('application handshake required')
-            elif method == 'application.report':
-                _keys(params, 'report at start end')
+            elif method in ('application.report', 'application.reportSetup', 'application.reportPage'):
                 if not self.inventory_application:
                     raise ValueError('inventory report grant required')
-                if self.choice is not None or any(p['state'] in ('uncertain','committed') for p in self.posting_states.values()):
+                if (self.choice is not None or any(p['state'] in ('uncertain','committed') for p in self.posting_states.values())
+                        or any(r.state in ('open','uncertain') for r in (*self.owner_dialogs.values(), *self.owner_inputs.values()))):
                     error = 'report_busy'; self.report = None
+                elif (method == 'application.reportPage' and
+                      (self.report is None or 'page' not in self.report or
+                       params.get('snapshot') != self.report['page']['snapshot'] or
+                       params.get('cursor') not in (self.report['page']['cursor'], self.report['page']['previous'], self.report['page']['next']) or
+                       params.get('cursor') is None)):
+                    error = 'report_unavailable'
+                elif (method == 'application.reportSetup' and params.get('action') != 'open' and
+                      (self.report_setup is None or params.get('ticket') != self.report_setup['ticket'] or
+                       params.get('report') != self.report_setup['report'])):
+                    error = 'report_unavailable'
+                elif (method == 'application.report' and 'setup' in params and
+                      (self.report_setup is None or params['setup'] != self.report_setup['ticket'] or
+                       params.get('report') != self.report_setup['report'])):
+                    error = 'report_unavailable'; self.report = None
                 else:
-                    projected = self._call('report', payload=params)
+                    operation = method.removeprefix('application.')
+                    projected = self._call(operation, payload=params)
                     error = projected.get('error')
-                    self.report = None if error else projected
+                    if operation == 'reportSetup':
+                        self.report_setup = None if error else projected
+                        self.report = None
+                    else:
+                        self.report = None if error else projected
+                        if operation == 'report' and (error or 'page' not in projected): self.report_setup = None
             elif method == 'application.catalog':
                 _keys(params, 'entry')
                 entry = params['entry']
@@ -1794,10 +1867,14 @@ class ConfigurationController:
                 # A readonly report can fit in isolation but overflow beside a
                 # retained large catalog. Refuse that whole projection, never
                 # truncate it or lock otherwise sound editing sessions.
-                if (self.inventory_application and self.report is not None
+                if (self.inventory_application and (self.report is not None or self.report_setup is not None)
                         and type(failure) is UIError and failure.code == 'message_limit'):
                     self.report = None
                     result['state']['report'] = None
+                    if self.report_setup is not None:
+                        self.report_setup = None
+                        result['state']['reportSetup'] = None
+                        self._call('reportReset')
                     result['error'] = result['error'] or 'report_unavailable'
                     try:
                         encode_line(response)
@@ -1817,7 +1894,8 @@ class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference',
-               'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report')
+               'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
+               'application.reportSetup', 'application.reportPage')
 
 
 def main(argv=None):

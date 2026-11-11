@@ -12,8 +12,10 @@ from uuid import UUID
 
 from . import database_transactions as transactions
 from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
-from .catalog_backend import BackendError, CatalogKey
-from .configuration_inventory_application import InventoryApplicationConfiguration, PROFILE, canonical
+from .catalog_backend import (BackendError, CatalogKey, CatalogComparison,
+    CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision)
+from .configuration_inventory_application import (
+    InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS, canonical)
 from .document_backend import DocumentKey
 
 MAX_INPUT_ROWS = 10000
@@ -24,6 +26,28 @@ MAX_CELLS = 25000
 MAX_LABELS = 2000
 MAX_LABEL_LENGTH = 1152
 UNAVAILABLE = '[Unavailable record]'
+MAX_CHOICES = 32
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryReportChoice:
+    key: CatalogKey
+    code: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryReportChoices:
+    database_id: UUID
+    configuration_generation: int
+    source_digest: str
+    report: str
+    dimension: str
+    dimension_id: UUID
+    catalog_id: UUID
+    code: str
+    rows: tuple[InventoryReportChoice, ...]
+    error: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +58,14 @@ class InventoryReportColumn:
     field_id: UUID | None = None
     role: str = 'standard'
     target_catalog_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryReportFilter:
+    """Trusted host input, not a browser key or a durable selection capability."""
+    dimension_id: UUID
+    key: CatalogKey
+    configuration_generation: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +81,8 @@ class InventoryReportResult:
     columns: tuple[InventoryReportColumn, ...]
     rows: tuple[tuple, ...]
     labels: tuple[tuple[CatalogKey | DocumentKey, str], ...]
+    periodicity: str | None = None
+    filters: tuple[InventoryReportFilter, ...] = ()
 
 
 def _date(value):
@@ -62,9 +96,9 @@ def _boundaries(view, at, start, end):
         return ()
     if view == 'Balance' and start is end is None:
         return (_date(at),)
-    if view == 'Turnovers' and at is None:
+    if view in ('Turnovers', 'BalanceAndTurnovers') and at is None:
         start, end = _date(start), _date(end)
-        if start <= end:
+        if start <= end and (view != 'BalanceAndTurnovers' or 1900 <= start.year <= end.year <= 2099):
             return start, end
     raise BackendError('invalid_input')
 
@@ -82,7 +116,7 @@ def _dimension(value):
     raise BackendError('integrity')
 
 
-def _columns(schema, view):
+def _columns(schema, view, periodicity=None):
     def field(f, role):
         return InventoryReportColumn(f.name, f.kind, f.qualifiers, f.identity, role, f.target_catalog_id)
     dimensions = tuple(field(f, 'dimension') for f in schema.dimensions)
@@ -94,16 +128,22 @@ def _columns(schema, view):
                 InventoryReportColumn('Active', 'boolean'), *dimensions,
                 *(field(f, 'resource') for f in schema.resources),
                 *(field(f, 'attribute') for f in schema.attributes))
-    suffixes = ('Balance',) if view == 'Balance' else ('Turnover', 'Receipt', 'Expense')
+    if view == 'BalanceAndTurnovers':
+        if periodicity not in ('None', 'Day', 'Month'):
+            raise BackendError('invalid_input')
+        if periodicity != 'None':
+            dimensions += (InventoryReportColumn('Period', 'datetime', ('DateTime',)),)
+        suffixes = ('OpeningBalance', 'Receipt', 'Expense', 'ClosingBalance')
+    else:
+        suffixes = ('Balance',) if view == 'Balance' else ('Turnover', 'Receipt', 'Expense')
     # (field_id, role) is the identity, not a potentially colliding display name.
     return dimensions + tuple(InventoryReportColumn(f.name + suffix, 'number',
         (38, f.qualifiers[1], 'Any'), f.identity, suffix.lower())
         for suffix in suffixes for f in schema.resources)
 
 
-def _rows(port, schema, view, boundaries):
-    from .query_sources import _check_number
-    rows, groups = [], {}
+def _source_rows(port, schema):
+    """Charge all occurrences before period or catalog-dimension exclusion."""
     count = cells = text = 0
     for recorder, partition in port.scan(schema.identity):
         for row in partition.rows:
@@ -115,21 +155,29 @@ def _rows(port, schema, view, boundaries):
                 raise BackendError('unsupported')
             if row.active is not True:
                 raise BackendError('unsupported')
-            if view == 'Movements':
-                rows.append((row.period, recorder, Decimal(row.line_number), row.direction,
-                             row.active, *values))
-                if len(rows) > MAX_ROWS:
-                    raise BackendError('unsupported')
+            yield recorder, row
+
+
+def _rows(port, schema, view, boundaries):
+    from .query_sources import _check_number
+    rows, groups = [], {}
+    for recorder, row in _source_rows(port, schema):
+        values = row.dimensions + row.resources + row.attributes
+        if view == 'Movements':
+            rows.append((row.period, recorder, Decimal(row.line_number), row.direction,
+                         row.active, *values))
+            if len(rows) > MAX_ROWS:
+                raise BackendError('unsupported')
+            continue
+        if view == 'Balance':
+            if row.period >= boundaries[0]:
                 continue
-            if view == 'Balance':
-                if row.period >= boundaries[0]:
-                    continue
-            elif not boundaries[0] <= row.period <= boundaries[1]:
-                continue
-            key = tuple(_dimension(value) for value in row.dimensions)
-            group = groups.setdefault(key, (row.dimensions, [], []))
-            group[1].append(row.resources)
-            group[2].append(1 if row.direction is AccumulationDirection.RECEIPT else -1)
+        elif not boundaries[0] <= row.period <= boundaries[1]:
+            continue
+        key = tuple(_dimension(value) for value in row.dimensions)
+        group = groups.setdefault(key, (row.dimensions, [], []))
+        group[1].append(row.resources)
+        group[2].append(1 if row.direction is AccumulationDirection.RECEIPT else -1)
     if view == 'Movements':
         rows.sort(key=lambda r: (r[0], r[1].document_id.int, r[1].record_id.int, r[2]))
     else:
@@ -159,9 +207,86 @@ def _rows(port, schema, view, boundaries):
     return tuple(rows)
 
 
-def _labels(owner, configuration, rows):
+def _statement_options(grant, periodicity, filters, binding):
+    if type(filters) is not tuple or len(filters) > MAX_REPORT_FILTERS:
+        raise BackendError('invalid_input')
+    if grant.view != 'BalanceAndTurnovers':
+        if periodicity is not None or filters:
+            raise BackendError('invalid_input')
+        return ()
+    if type(periodicity) is not str or periodicity not in grant.periodicities:
+        raise BackendError('invalid_input')
+    declared = {f.dimension_id: f for f in grant.filters}
+    selected = {}
+    for value in filters:
+        if (type(value) is not InventoryReportFilter or type(value.dimension_id) is not UUID
+                or type(value.key) is not CatalogKey
+                or any(type(part) is not UUID for part in
+                       (value.key.database_id, value.key.catalog_id, value.key.record_id))
+                or type(value.configuration_generation) is not int):
+            raise BackendError('invalid_input')
+        field = declared.get(value.dimension_id)
+        if (field is None or value.dimension_id in selected
+                or value.key.catalog_id != field.catalog_id or value.key.database_id != binding[0]):
+            raise BackendError('invalid_input')
+        if value.configuration_generation != binding[1]:
+            raise BackendError('schema_changed')
+        selected[value.dimension_id] = value
+    # Canonical source order, independent of caller's tuple ordering.
+    return tuple(selected[f.dimension_id] for f in grant.filters if f.dimension_id in selected)
+
+
+def _filter_labels(owner, filters):
+    labels = {}
+    for value in filters:
+        if value.key in labels:
+            continue
+        if not value.key.record_id.int:
+            labels[value.key] = UNAVAILABLE
+            continue
+        card = owner.read_catalog(value.key)
+        if card is None:
+            raise BackendError('invalid_input')
+        labels[value.key] = UNAVAILABLE if card.deletion_mark else card.description or card.code
+    return tuple(labels.items())
+
+
+def _statement_rows(port, schema, boundaries, periodicity, filters):
+    from .accumulation_periods import StatementReducer
+    from .query_sources import _check_number
+    reducer = StatementReducer(schema, *boundaries,
+        None if periodicity == 'None' else periodicity.lower(), combined=True)
+    indices = {field.identity: i for i, field in enumerate(schema.dimensions)}
+    selected = tuple((indices[value.dimension_id], value.key) for value in filters)
+    for _, row in _source_rows(port, schema):
+        if any(row.dimensions[index] != key for index, key in selected):
+            continue
+        reducer.add(row.dimensions, tuple(_dimension(v) for v in row.dimensions), row)
+    rows = []
+    try:
+        for dims, period, totals in reducer.rows(MAX_ROWS):
+            vectors = tuple(totals[name] for name in ('openingbalance','receipt','expense','closingbalance'))
+            for vector in vectors:
+                for field, value in zip(schema.resources, vector):
+                    _check_number(value, (38, field.qualifiers[1], 'Any'))
+            row = dims + (() if period is None else (period,)) + tuple(v for vector in vectors for v in vector)
+            if (len(rows) + 1) * len(row) > MAX_CELLS:
+                raise BackendError('unsupported')
+            rows.append(row)
+    except (ValueError, TypeError):
+        raise BackendError('unsupported') from None
+    width = len(schema.dimensions)
+    rows.sort(key=lambda row: (tuple(_dimension(v) for v in row[:width]),
+                              () if periodicity == 'None' else (row[width],)))
+    return tuple(rows)
+
+
+def _labels(owner, configuration, rows, known=()):
     from .sqlite_documents import DocumentView
-    keys = set()
+    known = dict(known)
+    keys = set(known)
+    if len(keys) > MAX_LABELS:
+        raise BackendError('unsupported')
     for row in rows:
         for value in row:
             if type(value) in (CatalogKey, DocumentKey):
@@ -175,7 +300,9 @@ def _labels(owner, configuration, rows):
     names = {s.identity: s.name for s in configuration.documents}
     labels, size = [], 0
     for key in sorted(keys, key=order):
-        if type(key) is CatalogKey:
+        if key in known:
+            label = known[key]
+        elif type(key) is CatalogKey:
             card = owner.read_catalog(key)
             label = UNAVAILABLE if card is None or card.deletion_mark else card.description or card.code
         else:
@@ -234,7 +361,74 @@ class InventoryReports:
                 or (b.database_id, b.configuration_generation) != self._binding):
             raise BackendError('schema_changed')
 
-    def read(self, report_name, *, at=None, start=None, end=None):
+    def choices(self, report_name, dimension_name, code=''):
+        """One admitted snapshot of exact-code choices, never a write grant.
+
+        A continuation refuses the entire candidate list. No cursor, connection
+        or persistent identity is intended for direct browser serialization.
+        """
+        self._admit()
+        if type(report_name) is not str or type(dimension_name) is not str or type(code) is not str:
+            raise BackendError('invalid_input')
+        grant = next((r for r in self._configuration.reports if r.name == report_name), None)
+        field = None if grant is None else next((f for f in grant.filters if f.dimension == dimension_name), None)
+        if grant is None or grant.view != 'BalanceAndTurnovers' or field is None:
+            raise BackendError('unsupported')
+        schema = next(s for s in self._configuration.catalogs if s.identity == field.catalog_id)
+        try:
+            if '\x00' in code or len(code.encode('utf-16-le')) // 2 > schema.code_length:
+                raise BackendError('invalid_input')
+        except UnicodeError:
+            raise BackendError('invalid_input') from None
+        terms = (CatalogComparison('deletion_mark', 'eq', False),)
+        if code:
+            terms += (CatalogComparison('code', 'eq', code),)
+        request = CatalogScanRequest(predicate=terms[0] if len(terms) == 1 else CatalogPredicate('and', terms),
+                                     order=(CatalogOrder('code'),), page_size=MAX_CHOICES)
+        from .sqlite_inventory_profile import admit
+        owner = self._backend.begin_read()
+        try:
+            if (owner.database_id, owner.configuration_generation) != self._binding:
+                raise BackendError('schema_changed')
+            current = admit(owner._connection, owner.database_id,
+                            self._configuration.catalogs, self._configuration.documents)
+            if current != self._configuration:
+                raise BackendError('schema_changed')
+            page = owner.scan_catalog(field.catalog_id, request)
+            if (type(page) is not CatalogPage or type(page.cards) is not tuple or len(page.cards) > MAX_CHOICES
+                    or page.continuation is not None and (type(page.continuation) is not str
+                        or len(page.continuation) != 32 or any(c not in '0123456789abcdef' for c in page.continuation))):
+                raise BackendError('integrity')
+            seen = set()
+            for card in page.cards:
+                if (type(card) is not CatalogCard or type(card.key) is not CatalogKey
+                        or any(type(v) is not UUID for v in (card.key.database_id,card.key.catalog_id,card.key.record_id))
+                        or (card.key.database_id,card.key.catalog_id) != (owner.database_id,field.catalog_id)
+                        or not card.key.record_id.int or card.key in seen or card.deletion_mark is not False
+                        or type(card.revision) is not Revision or type(card.revision.configuration_generation) is not int
+                        or card.revision.configuration_generation != owner.configuration_generation
+                        or type(card.code) is not str or type(card.description) is not str
+                        or len(card.code.encode('utf-16-le')) // 2 > schema.code_length
+                        or len(card.description.encode('utf-16-le')) // 2 > schema.description_length
+                        or '\x00' in card.code or '\x00' in card.description):
+                    raise BackendError('integrity')
+                seen.add(card.key)
+            rows = () if page.continuation is not None else tuple(
+                InventoryReportChoice(card.key, card.code, card.description) for card in page.cards)
+            result = InventoryReportChoices(*self._binding, current.source_digest, grant.name,
+                field.dimension, field.dimension_id, field.catalog_id, code, rows,
+                'too_many_matches' if page.continuation is not None else None)
+        except BackendError:
+            raise
+        except sqlite3.Error:
+            raise BackendError('storage_error') from None
+        except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+            raise BackendError('integrity') from None
+        finally:
+            owner.close()
+        return result
+
+    def read(self, report_name, *, at=None, start=None, end=None, periodicity=None, filters=()):
         self._admit()
         if type(report_name) is not str:
             raise BackendError('invalid_input')
@@ -242,8 +436,9 @@ class InventoryReports:
         if grant is None:
             raise BackendError('unsupported')
         boundaries = _boundaries(grant.view, at, start, end)
+        filters = _statement_options(grant, periodicity, filters, self._binding)
         schema = next(s for s in self._configuration.registers if s.identity == grant.register_id)
-        columns = _columns(schema, grant.view)
+        columns = _columns(schema, grant.view, periodicity)
         from .sqlite_inventory_profile import admit
         from .sqlite_transactions import _accumulation_port
         owner = self._backend.begin_read()
@@ -256,15 +451,20 @@ class InventoryReports:
                             self._configuration.catalogs, self._configuration.documents)
             if current != self._configuration:
                 raise BackendError('schema_changed')
-            rows = _rows(_accumulation_port(owner), schema, grant.view, boundaries)
+            known = _filter_labels(owner, filters)
+            port = _accumulation_port(owner)
+            rows = (_statement_rows(port, schema, boundaries, periodicity, filters)
+                    if grant.view == 'BalanceAndTurnovers'
+                    else _rows(port, schema, grant.view, boundaries))
             if len(rows) * len(columns) > MAX_CELLS:
                 raise BackendError('unsupported')
-            labels = _labels(owner, self._configuration, rows)
+            labels = _labels(owner, self._configuration, rows, known)
             if (sum(len(v) for row in rows for v in row if type(v) is str)
                     + sum(len(label) for _, label in labels) > MAX_TEXT):
                 raise BackendError('unsupported')
             result = InventoryReportResult(*self._binding, current.source_digest,
-                grant.name, grant.register_id, grant.register, grant.view, boundaries, columns, rows, labels)
+                grant.name, grant.register_id, grant.register, grant.view, boundaries, columns, rows, labels,
+                periodicity, filters)
         except BackendError:
             raise
         except sqlite3.Error:

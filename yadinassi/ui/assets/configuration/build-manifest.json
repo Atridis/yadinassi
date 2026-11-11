@@ -3,7 +3,7 @@
   "dependencies": {},
   "sources": {
     "package.json": "699b2d0ff157a672f20773c17f90165db7789f2eb0f7b884fe76f16080189ded",
-    "build.mjs": "9856ca3a9e5ef2543eb8e590813b8467404b997fa17744398e775755f29a3328",
+    "build.mjs": "1a4ac590ad29b920693c7a2af8856d2abe4fd7b3175aee5cef95f4d969adb5e9",
     "src/index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "src/style.css": "a10a39d0afc69d8bf509dcdf4b8af55f936c270b7d50960f6409fbc5599a4686",
     "../form/src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
@@ -12,13 +12,13 @@
     "../form/src/attachment.mjs": "3f6d3a33ce2b68e99a1e19939c6d92af437e9993877faa9eec4d9c9429f4e8f0",
     "../form/src/view.mjs": "762297959c54c3e69cb4c33e80b9aaf7e46275ffa10ab68e6a4e63b6ae9dbcf3",
     "../form/src/app.mjs": "dcfd190e3c408ac1977c80157dd3307e205a1ae189340571be13c168ed67fbd8",
-    "src/reports.mjs": "52fca3bd4b48a2aa38d6ab0315ac023c4aa85543830b23cf7e7fe79ce59d3404",
+    "src/reports.mjs": "25fbd3948e96053feeecb2354e0e34cbedcdbcb938b23320d6e92e1d55b5f19d",
     "src/inputs.mjs": "148477775055311dd8176ad4a28d5a38acd56fa4d9bac0230328111f8bad8086",
-    "src/client.mjs": "8b490041232a0c7bba199f6708f6c22cf0129f5f3e95552005a2a20febd012dd",
-    "src/app.mjs": "abb78f8550c993f10ea57959ec957ed8e0fa7d5b9a6c07db655ba8c09988693c"
+    "src/client.mjs": "db4b8599d93a46d255d787953f4bbde5191ec309ab455a1abaddf48a169593df",
+    "src/app.mjs": "c8dd310a42df19b5409df490f27cccfef90305a9402caa3e800818f95f3fca6e"
   },
   "outputs": {
-    "app.js": "550389809d1a69391fae4df757c359207ec6a25f2e7cb25cb41c376a62f615be",
+    "app.js": "00ffe0ef1198b9c9de610e2e0e47a1c505e768e0182980f5d34a13fda796a18b",
     "index.html": "80e9bb6ea04266d416de30ed9c141ebe1a2576b5f39e0a4bcb5935593f07c79d",
     "style.css": "867369e89d0e736db8175a1f2e5886150bf9bd18c772aa2467e14c9497397aaa",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

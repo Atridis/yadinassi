@@ -119,7 +119,8 @@ class InventoryApplicationSourceTests(unittest.TestCase):
     def test_reports_bind_exact_uuid_name_and_closed_views(self):
         config=self.load();register=config.registers[0]
         self.assertEqual([(r.name,r.register,r.register_id,r.view) for r in config.reports],
-            [('Stock'+view,register.name,register.identity,view) for view in ('Movements','Balance','Turnovers')])
+            [('Stock'+view,register.name,register.identity,view) for view in ('Movements','Balance','Turnovers')]
+            + [('StockStatement',register.name,register.identity,'BalanceAndTurnovers')])
 
     def test_missing_manifest_refused(self):
         files=source();del files[MANIFEST];self.refused(files)

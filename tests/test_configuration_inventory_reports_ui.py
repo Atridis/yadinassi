@@ -22,9 +22,10 @@ class InventoryReportUITests(unittest.TestCase):
 
     def test_manifest_reports_are_not_form_or_write_capabilities(self):
         state=self.app._state()
-        self.assertEqual({r['view'] for r in state['reports']},{'Movements','Balance','Turnovers'})
+        self.assertEqual({r['view'] for r in state['reports']},{'Movements','Balance','Turnovers','BalanceAndTurnovers'})
         self.assertIsNone(state['report']);self.assertEqual(len(state['entries']),4)
-        self.assertTrue(all(set(r)=={'id','title','view'} for r in state['reports']))
+        self.assertTrue(all(set(r)=={'id','title','view'} for r in state['reports'] if r['view']!='BalanceAndTurnovers'))
+        self.assertIsNone(state['reportSetup'])
 
     def test_posted_balance_preserves_decimal_and_reference_labels(self):
         sid=self.prepare();self.event(sid,control='PostButton')

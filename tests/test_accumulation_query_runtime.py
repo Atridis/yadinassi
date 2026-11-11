@@ -330,7 +330,7 @@ class AccumulationQueryRuntimeTests(unittest.TestCase):
 
     def test_unsupported_virtual_signatures_fail_closed(self):
         for suffix in ('.Balance()', '.Balance(&At,)', '.Balance(&At,&Filter)', '.Turnovers(&A)',
-                       '.Turnovers(&A,&B,Month)', '.BalanceAndTurnovers(&A,&B)', '.SliceLast(&At)'):
+                       '.Turnovers(&A,&B,Week)', '.BalanceAndTurnovers(&A)', '.SliceLast(&At)'):
             with self.subTest(suffix=suffix), self.assertRaises(ValueError):
                 syntax.parse_package('SELECT Item FROM ' + REG + suffix)
 

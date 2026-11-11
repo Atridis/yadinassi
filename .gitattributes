@@ -255,5 +255,13 @@ scripts/native_1c_inventory_reference_profile.py text eol=lf
 # Immutable native evidence must never be normalized by checkout or readers.
 tests/fixtures/native_inventory_reference/* -text
 
+# Independent period statement acquisition bytes.
+scripts/inventory_period_behavior/** text eol=lf
+scripts/native_1c_inventory_period_profile.py text eol=lf
+scripts/native_1c_inventory_period_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_period_suite.py text eol=lf
+# Independent native period capture is immutable on every checkout.
+tests/fixtures/native_inventory_period/* -text
+
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text

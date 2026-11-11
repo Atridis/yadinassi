@@ -126,3 +126,14 @@ come from one snapshot. Unsaved form inputs are not included, report reading
 does not resolve an operation, and pending receipts block reports. Changing form
 state clears an old projection; changing period controls never relabels the old
 result. Large results are refused as a whole, not silently truncated.
+
+## Explicit period statement grant
+
+The example additionally declares `StockStatement` (`BalanceAndTurnovers`) with
+source-bound `None`, `Day`, `Month` periodicities and exact Product/Warehouse
+catalog-dimension filter identities. The original three report declarations
+remain unchanged and remain valid without this extension. Only the new report
+accepts these closed children; no profile, database format, posting command or
+BSL authority is widened. See [the report contract](inventory-application-reports.md#source-declared-stock-statements)
+for typed filters, same-lease admission, date bounds, sparse rows and detached
+read-only results.
