@@ -190,6 +190,8 @@ class FormController:
                 session.form._attributes[path.casefold()].value_type, values.get(path.casefold()))
             item = {'name': name, 'kind': kind, 'title': title, 'visible': visible,
                 'enabled': enabled, 'readOnly': read_only, 'view': view, 'value': value}
+            if kind == 'field':
+                item['controlId'] = session.form.items._values[name.casefold()]._replica_id
             editor = None if kind == 'button' else self._editor_description(
                 session.form._attributes[path.casefold()].value_type)
             if editor is not None:

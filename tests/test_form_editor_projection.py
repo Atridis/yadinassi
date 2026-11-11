@@ -45,7 +45,7 @@ EndProcedure
 '''
 
 
-def pair():
+def pair(*, client_source=CLIENT, server_source=SERVER, endpoints=None, bindings=()):
     kinds = {
         'When': description('Date'),
         'Day': description('Date', parts=BSLDateFractions.DATE),
@@ -56,10 +56,10 @@ def pair():
     }
     schema = FormTableSchema('Lines', tuple(FormTableColumn(name, kinds[name])
         for name in ('When', 'Day', 'Clock', 'Code', 'Amount')))
-    server = ReplicatedFormServer(SERVER, {}, handlers=HANDLERS,
+    server = ReplicatedFormServer(server_source, {} if endpoints is None else endpoints, handlers=HANDLERS,
         attributes=tuple(BSLFormAttribute(name, kind) for name, kind in kinds.items()),
         tables=(schema,), bindings={'OnCreateAtServer': 'Create'})
-    controller = FormController(ClientPackage(CLIENT, HANDLERS, ()), server.exchange)
+    controller = FormController(ClientPackage(client_source, HANDLERS, bindings), server.exchange)
     controller.exchange({'jsonrpc':'2.0','id':1,'method':'form.hello','params':{'protocol':PROTOCOL}})
     return controller, server
 
@@ -167,3 +167,30 @@ class EditorProjectionFlowTests(unittest.TestCase):
                 'event':'change','revision':self.controller.session.revision,'control':'WhenField',
                 'value':{'type':'Date','ticks':'0'},'editor':{'kind':'date','parts':'time'}}})
         self.assertEqual(before,self.controller.session.snapshot())
+
+    def test_scalar_and_table_controls_have_distinct_stable_identities(self):
+        items=self.controller._snapshot()['items']
+        identities=[item['controlId'] for item in items]
+        self.assertEqual(len(identities),len(set(identities)))
+        self.assertTrue(all(type(value) is int and 1<=value<=1024 for value in identities))
+        before=self.item('WhenField')['controlId']
+        self.assertIsNone(change(self.controller,'WhenField',BSLDate(0))['error'])
+        self.assertEqual(self.item('WhenField')['controlId'],before)
+
+    def test_same_named_replacement_field_gets_a_new_identity(self):
+        source=SERVER+'''&AtServer
+Procedure Replace()
+    Items.Delete(Items.WhenField);
+    F = Items.Add("WhenField", Type("FormField")); F.DataPath = "When";
+    F.SetAction("OnChange", "Changed");
+EndProcedure
+'''
+        client=CLIENT.replace('Changes = Changes + 1;', 'ReplaceAtServer(); Changes = Changes + 1;')
+        controller,_=pair(client_source=client,server_source=source,endpoints={1:'Replace'},
+            bindings=(InvocationBinding('ReplaceAtServer',1,(),False),))
+        before=next(i for i in controller._snapshot()['items'] if i['name']=='WhenField')
+        self.assertIsNone(change(controller,'WhenField',BSLDate(0))['error'])
+        after=next(i for i in controller._snapshot()['items'] if i['name']=='WhenField')
+        self.assertNotEqual(before['controlId'],after['controlId'])
+        self.assertEqual(before['editor'],after['editor'])
+        self.assertEqual(before['value'],after['value'])
