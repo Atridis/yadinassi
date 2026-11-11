@@ -178,6 +178,8 @@ def resolve(backend, operation, requests):
     if type(requests) is not tuple or not 1 <= len(requests) <= MAX_OPERATIONS: raise BackendError('invalid_input')
     view = backend.begin_read()
     try:
+        from .sqlite_configuration_history import bind
+        bind(view, 'unit', operation)
         if view._connection.execute("SELECT 1 FROM unit_of_work_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(request_hash)!=64 OR typeof(outcomes_json)!='text' OR length(CAST(outcomes_json AS BLOB))>?)",(str(operation),MAX_BYTES)).fetchone(): raise BackendError('integrity')
         row = view._connection.execute('SELECT request_hash,outcomes_json FROM unit_of_work_receipt WHERE operation_id=?',(str(operation),)).fetchone()
         if row is None: return None

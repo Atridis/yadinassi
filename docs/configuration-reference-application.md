@@ -1,7 +1,6 @@
 # Typed references in a configuration application
 
-Development checkpoint, not a completed acceptance claim. This separate source
-profile adds single-target CatalogRef fields to catalogs, document headers and
+This separate source profile adds single-target CatalogRef fields to catalogs, document headers and
 scalar document sections in the owned application host. Historical scalar
 profiles do not acquire reference admission or profile-conversion authority.
 
@@ -64,11 +63,15 @@ ownership, uncertain-write recovery, or independent child transaction denial.
 
 ## Validation status
 
-The combined regression passed 1566 Python cases normally and the same 1566
-with optimization, including legacy scalar forms, typed storage, callback errors
-and source provenance. The unchanged frontend passed 293 JS checks. Four real
-Chromium acceptance flows are still being verified: catalog selection passed,
-but the document flow remains blocked on QA attachment-response validation.
-This is not a full validation or native reference-form parity claim.
+The combined reference/additive regression passed 1631 Python cases normally
+and the same 1631 with optimization, including legacy scalar forms, typed
+storage, callback errors, source provenance and refusal of additive-update
+authority for this profile. The unchanged frontend passed 293 JS checks.
+Four real Chromium acceptance flows passed on the reference source: catalog
+selection and typed empty values; document header/row references with durable
+restart; retained picker and submitted sibling draft after reload; repeated
+Apply and late navigation fencing with ordinary owned shutdown. The separately
+bound browser run is repeated for the additive integration before promotion.
+These targeted checks are not a full CI or native reference-form parity claim.
 Client references support identity equality, presentation and IsEmpty only;
 client TypeOf/TypeDescription and reference-object access are not claimed.
