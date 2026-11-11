@@ -34,6 +34,19 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-perfor
 const cleanupRemaining=max=>Math.max(1,Math.min(max,totalDeadline-performance.now()));
 const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',timeout:remaining(5000),maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']}).trim();
 
+// AssertionError may append an actual/expected diff. Match only a known first
+// line and emit the allowlisted label, never any suffix from the exception.
+function stepFailureCode(error){
+  const message=typeof error?.message==='string'?error.message:'';
+  const fixed=['ordinary_host_exit_timeout','ordinary_host_exit_failed','owned_group_cleanup_unverified',
+    'independent_typed_readback','catalog_rpc_plan','restart_rpc_plan','invalid_draft_rpc_plan','total_rpc_plan',
+    'evidence_input_offscreen','evidence_input_clipped','evidence_viewport_missing',
+    'reopened_checkbox_changed','reference_not_typed','reopened_lines_missing',
+    'reopened_product_column_missing','reopened_product_not_typed'];
+  return fixed.find(code=>message===code||message.startsWith(code+'\n'))??
+    (error?.name==='TimeoutError'?'browser_step_timeout':'unclassified_step');
+}
+
 // Only fixed labels leave this process. Never export raw launch errors, paths,
 // command arguments, environment values, process IDs or assertion actual/expected.
 function launchFailureCode(error){
@@ -653,10 +666,35 @@ async function main(){
     assert.equal(await field(label).isEditable(),true,'date_not_editable');
   };
   const visibleInShot=async labels=>{
+    const viewport=page.viewportSize();assert.ok(viewport,'evidence_viewport_missing');
     for(const label of labels){
       const box=await field(label).boundingBox();
-      assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=1440&&box.y+box.height<=1100,'evidence_input_offscreen');
+      assert.ok(box&&box.width>0&&box.height>0&&box.x>=0&&box.y>=0&&
+        box.x+box.width<=viewport.width&&box.y+box.height<=viewport.height,'evidence_input_offscreen');
+      // An input can be inside the viewport but outside a narrower table's
+      // scrollport. Require the whole control to survive ancestor clipping.
+      const unclipped=await field(label).evaluate(input=>{
+        const rect=input.getBoundingClientRect(),clips=value=>['auto','scroll','hidden','clip'].includes(value);
+        for(let parent=input.parentElement;parent;parent=parent.parentElement){
+          const style=getComputedStyle(parent),bounds=parent.getBoundingClientRect();
+          const left=bounds.left+parent.clientLeft,top=bounds.top+parent.clientTop;
+          if(clips(style.overflowX)&&(rect.left<left||rect.right>left+parent.clientWidth))return false;
+          if(clips(style.overflowY)&&(rect.top<top||rect.bottom>top+parent.clientHeight))return false;
+        }
+        return true;
+      });
+      assert.equal(unclipped,true,'evidence_input_clipped');
     }
+  };
+  const captureEvidence=async(name,labels)=>{
+    // Real scrolling only: expose the table column, then anchor the topmost
+    // requested field. "If needed" alone leaves a visible header near the
+    // bottom while the rows remain below it. Do not resize or rewrite the UI.
+    for(const label of labels)await field(label).scrollIntoViewIfNeeded();
+    await field(labels[0]).evaluate(input=>input.scrollIntoView({block:'start',inline:'nearest',behavior:'instant'}));
+    // Keep the safe, allowlisted screenshot if its visibility check fails.
+    // Such an image is diagnostic evidence only; the scenario still fails.
+    await screenshot(name);await visibleInShot(labels);
   };
   const blockedIntents=async()=>{
     const before=rpc;
@@ -673,8 +711,8 @@ async function main(){
     await commitInput('Product code','P2');await commitInput('Product title','Scalar product');await commitInput('Unit price','7.25');
     await hasDateEditor('Available since');await commitInput('Available since','2024-02-29T23:45:17');
     await saveProduct();fixture('leap');
-    await value('Available since','2024-02-29T23:45:17');await field('Available since').scrollIntoViewIfNeeded();
-    await visibleInShot(['Available since','Unit price']);await screenshot(screenshots[0]);
+    await value('Available since','2024-02-29T23:45:17');
+    await captureEvidence(screenshots[0],['Unit price','Available since']);
     phase='catalog_lossless_number_and_string_preflight';const before=rpc;
     await field('Unit price').fill('7.251');await action('Save record').click();await idle();
     assert.equal(rpc,before,'price_precision_sent_rpc');assert.equal(await field('Unit price').inputValue(),'7.251');
@@ -704,17 +742,27 @@ async function main(){
     phase='document_close_saved';await closeForm(1);
     phase='document_close_welcome';await closeForm(0);
     phase='document_ordinary_shutdown';await ordinaryShutdown();
-    phase='independent_typed_datetime_audit_and_restart';fixture('first');
+    phase='independent_typed_datetime_audit';fixture('first');
+    phase='document_restart';
     await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await countPanels(1);await idle();
+    phase='document_reopen_catalog';
     await entries().getByRole('button',{name:'Non-posting order',exact:true}).click();await openNumber('D1');
-    await value('Order date and time','2024-03-10T02:30:00');await value('DeliveryDate, row 1','2024-11-03T01:30:00');
-    await value('DeliveryDate, row 2','2024-03-31T02:30:00');await value('Quantity, row 1','3.25');await value('Quantity, row 2','2.50');
-    await value('Product, row 1','Scalar product');await value('Category','Category One');assert.equal(await field('Checked, row 1').isChecked(),true);
+    phase='document_reopen_header';await value('Order date and time','2024-03-10T02:30:00');
+    phase='document_reopen_line_dates';await value('DeliveryDate, row 1','2024-11-03T01:30:00');await value('DeliveryDate, row 2','2024-03-31T02:30:00');
+    phase='document_reopen_quantities';await value('Quantity, row 1','3.25');await value('Quantity, row 2','2.50');
+    phase='document_reopen_references';await value('Product, row 1','Scalar product');await value('Category','Category One');
+    assert.equal(await field('Checked, row 1').isChecked(),true,'reopened_checkbox_changed');
+    phase='document_reopen_reference_snapshots';
     firstOrder=appState.active;firstCategory=structuredClone(referenceValue(firstOrder,'CategoryInput'));
-    const grid=snapshots.get(firstOrder).items.find(item=>item.name==='LinesTable');
-    firstProduct=structuredClone(grid.rows[0].values[grid.columns.findIndex(column=>column.name==='Product')]);
-    await field('Order date and time').scrollIntoViewIfNeeded();await visibleInShot(['Order date and time','DeliveryDate, row 1','DeliveryDate, row 2']);
-    await screenshot(screenshots[1]);assert.equal(rpc,plannedRPC[0]+plannedRPC[1],'restart_rpc_plan');
+    const grid=snapshots.get(firstOrder)?.items.find(item=>item.name==='LinesTable');
+    assert.ok(grid?.rows?.length===2,'reopened_lines_missing');
+    const productColumn=grid.columns.findIndex(column=>column.name==='Product');
+    assert.ok(productColumn>=0,'reopened_product_column_missing');
+    firstProduct=structuredClone(grid.rows[0].values[productColumn]);
+    assert.equal(firstProduct?.type,'FormCatalogRef','reopened_product_not_typed');
+    phase='document_reopen_evidence';
+    await captureEvidence(screenshots[1],['Order date and time','DeliveryDate, row 1','DeliveryDate, row 2']);
+    phase='document_restart_rpc_count';assert.equal(rpc,plannedRPC[0]+plannedRPC[1],'restart_rpc_plan');
   });
   await scenario(scenarioNames[2],async()=>{
     phase='dirty_sibling_and_invalid_date_tab_retention';await catalog().getByRole('button',{name:'New document',exact:true}).click();
@@ -725,8 +773,7 @@ async function main(){
     await action('Close form').click();await idle();assert.equal(rpc,before,'invalid_close_sent_rpc');
     await switchOrder(1);await value('Note','Sibling draft');await switchOrder(0);
     await value('Order date and time','2024-02-30T02:30:00');assert.equal(rpc,before,'tab_switch_submitted_draft');
-    await field('Order date and time').scrollIntoViewIfNeeded();await visibleInShot(['Order date and time','DeliveryDate, row 1']);
-    await screenshot(screenshots[2]);
+    phase='invalid_date_evidence';await captureEvidence(screenshots[2],['Order date and time','DeliveryDate, row 1']);
     const dates=countEvent('change','DateInput');await commitInput('Order date and time','2024-03-10T02:30:01');
     assert.equal(countEvent('change','DateInput'),dates+1,'corrected_date_sent_twice');
     phase='isolated_negative_quantity_preflight';const negative=rpc;
@@ -763,7 +810,7 @@ async function main(){
     phase='dirty_sibling_refuses_close_then_saves';
     const refusal=replyFor(packet=>packet.params?.request?.params?.event==='close');await action('Close form').click();await refusal;await idle();
     assert.equal(await panels().count(),3,'dirty_sibling_closed');await value('Note','Sibling draft');
-    await field('Note').scrollIntoViewIfNeeded();await screenshot(screenshots[3]);
+    await captureEvidence(screenshots[3],['Note']);
     await writeDocument();await closeForm(2);await switchOrder(0);await closeForm(1);await closeForm(0);await ordinaryShutdown();
     phase='final_independent_datetime_and_sibling_audit';fixture('final');
     assert.equal(rpc,plannedRPC.reduce((sum,value)=>sum+value,0),'total_rpc_plan');
@@ -789,10 +836,7 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
-  const failureCode=['ordinary_host_exit_timeout','ordinary_host_exit_failed','owned_group_cleanup_unverified',
-    'independent_typed_readback','catalog_rpc_plan','restart_rpc_plan','invalid_draft_rpc_plan','total_rpc_plan']
-    .find(code=>error?.message===code)??(error?.name==='TimeoutError'?'browser_step_timeout':'unclassified_step');
-  report.failure={phase,code:failureCode,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
+  report.failure={phase,code:stepFailureCode(error),reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':'step_failed'};
 }
 finally{

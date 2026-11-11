@@ -205,10 +205,56 @@ class ScalarEditorBrowserContractTests(unittest.TestCase):
         self.requires("const screenshots=['scalar-product.png','scalar-document.png','scalar-invalid.png','scalar-independent.png']",
                       "await hasDateEditor('Available since')", "await hasDateEditor('Order date and time')",
                       "await hasDateEditor('DeliveryDate, row 1')", "'date_not_editable'", "'evidence_input_offscreen'",
-                      "await visibleInShot(['Order date and time','DeliveryDate, row 1','DeliveryDate, row 2'])",
-                      "await visibleInShot(['Order date and time','DeliveryDate, row 1'])", 'await screenshot(screenshots[2])')
+                      "await captureEvidence(screenshots[0],['Unit price','Available since'])",
+                      "await captureEvidence(screenshots[1],['Order date and time','DeliveryDate, row 1','DeliveryDate, row 2'])",
+                      "await captureEvidence(screenshots[2],['Order date and time','DeliveryDate, row 1'])",
+                      "await captureEvidence(screenshots[3],['Note'])")
         self.assertNotIn('page.setContent', self.source)
         self.assertNotIn('page.addInitScript', self.source)
+
+    def test_evidence_scrolls_real_inputs_and_keeps_failed_capture_without_claiming_pass(self):
+        helper = self.source.split('const captureEvidence=async(name,labels)=>{', 1)[1].split('const blockedIntents=', 1)[0]
+        self.assertIn('for(const label of labels)await field(label).scrollIntoViewIfNeeded()', helper)
+        anchor = "field(labels[0]).evaluate(input=>input.scrollIntoView({block:'start',inline:'nearest',behavior:'instant'}))"
+        self.assertIn(anchor, helper)
+        self.assertLess(helper.index('scrollIntoViewIfNeeded()'), helper.index(anchor))
+        self.assertLess(helper.index(anchor), helper.index('await screenshot(name)'))
+        self.assertLess(helper.index('await screenshot(name)'), helper.index('await visibleInShot(labels)'))
+        for forbidden in ('catch', '.focus(', '.fill(', '.click(', '.style', 'setViewportSize', 'fullPage:', 'clip:'):
+            self.assertNotIn(forbidden, helper)
+        self.assertIn("async function scenario(name,fn){check();phase=name;await fn();check();results.push({name,status:'PASS'});}", self.source)
+
+    def test_evidence_rejects_viewport_and_nested_scrollport_clipping(self):
+        helper = self.source.split('const visibleInShot=async labels=>{', 1)[1].split('const captureEvidence=', 1)[0]
+        for required in ('const viewport=page.viewportSize()', 'box.width>0&&box.height>0',
+                         'box.x+box.width<=viewport.width&&box.y+box.height<=viewport.height',
+                         "['auto','scroll','hidden','clip'].includes(value)",
+                         'parent=input.parentElement;parent;parent=parent.parentElement',
+                         'bounds.left+parent.clientLeft', 'bounds.top+parent.clientTop',
+                         'rect.left<left||rect.right>left+parent.clientWidth',
+                         'rect.top<top||rect.bottom>top+parent.clientHeight',
+                         "assert.equal(unclipped,true,'evidence_input_clipped')"):
+            self.assertIn(required, helper)
+        self.assertNotIn('report.', helper)
+        self.assertNotIn('1440', helper)
+        self.assertNotIn('1100', helper)
+
+    def test_step_diagnostics_allowlist_codes_and_distinguish_reopen_from_evidence(self):
+        helper = self.source.split('function stepFailureCode(error){', 1)[1].split('// Only fixed labels', 1)[0]
+        fixed = re.findall(r"'([^']+)'", helper.split('const fixed=[', 1)[1].split('];', 1)[0])
+        self.assertEqual(fixed, ['ordinary_host_exit_timeout', 'ordinary_host_exit_failed', 'owned_group_cleanup_unverified',
+            'independent_typed_readback', 'catalog_rpc_plan', 'restart_rpc_plan', 'invalid_draft_rpc_plan', 'total_rpc_plan',
+            'evidence_input_offscreen', 'evidence_input_clipped', 'evidence_viewport_missing',
+            'reopened_checkbox_changed', 'reference_not_typed', 'reopened_lines_missing',
+            'reopened_product_column_missing', 'reopened_product_not_typed'])
+        self.assertIn("fixed.find(code=>message===code||message.startsWith(code+'\\n'))", helper)
+        self.assertNotIn('return message', helper)
+        self.requires('report.failure={phase,code:stepFailureCode(error)', "phase='document_write'",
+                      "phase='document_close_saved'", "phase='independent_typed_datetime_audit'",
+                      "phase='document_restart'", "phase='document_reopen_catalog'", "phase='document_reopen_header'",
+                      "phase='document_reopen_line_dates'", "phase='document_reopen_quantities'",
+                      "phase='document_reopen_references'", "phase='document_reopen_reference_snapshots'",
+                      "phase='document_reopen_evidence'", "phase='document_restart_rpc_count'")
 
     def test_natural_exit_and_verified_cleanup_precede_final_artifacts(self):
         close = self.source.split('const ordinaryShutdown=async()=>{', 1)[1].split('const referenceValue=', 1)[0]

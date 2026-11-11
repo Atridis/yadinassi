@@ -87,14 +87,26 @@ Only these artifacts are allowed:
 - `scalar-invalid.png`, showing retained invalid calendar text with the table.
 - `scalar-independent.png`, showing the dirty sibling after refused Close.
 
-Date/table inputs must be inside the screenshot viewport, not merely present in
-hidden navigation. PNGs are capped at 4 MiB each and the report at 64 KiB. Failure
-diagnostics use fixed phase/stage/status/refusal labels only. No database, raw
+Date/table inputs must be wholly inside the unchanged 1440×1100 viewport and
+inside every clipping ancestor, including the table's horizontal scrollport.
+Evidence capture uses ordinary scrolling to reveal the requested table column,
+then aligns the topmost requested field with the top of the viewport. It does
+not focus inputs, change drafts, resize the viewport or rewrite the UI. Merely
+scrolling a header "if needed" is insufficient when it is already visible near
+the bottom and the rows are still below the viewport. The safe screenshot is
+taken before the visibility assertion so that a framing failure retains useful
+diagnostic pixels; the assertion still fails the scenario and the run.
+
+PNGs are capped at 4 MiB each and the report at 64 KiB. Failure diagnostics use
+fixed phase/stage/status/refusal labels only. Separate phases identify typed
+audit, restart, reopen, exact field checks, reference snapshots and evidence
+capture. Known assertion codes match their fixed first line only; any appended
+actual/expected diff is discarded. No database, raw
 request/reply, DOM dump, exception text, URL, capability, identity, trace, video,
 profile or source contents are exported. Process ownership, group disappearance
 and owned-directory removal are verified; cleanup failure prevents PASS.
 
-Preparation and static contracts are not browser evidence. The 22 new offline
+Preparation and static contracts are not browser evidence. The 25 new offline
 contract tests and mechanically adjusted legacy route contracts require their
 own exact-count notice before execution. Real Chromium acquisition is a separate
 four-scenario run on the exact reviewed route.
