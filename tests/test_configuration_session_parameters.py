@@ -163,3 +163,30 @@ EndProcedure'''
         self.assertTrue(app.execute('(Metadata.FindByFullName("SessionParameter.Flag")=Metadata.SessionParameters.Flag)'))
         self.assertEqual(app.execute('Metadata.SessionParameters.Flag.FullName()'),'ПараметрСеанса.Flag')
         with self.assertRaises(BSLRuntimeError):app.execute('Metadata.SessionParameters.Flag.Name="Other";')
+
+    def test_native_sixteen_case_replay(self):
+        import hashlib,json
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[1]
+        raw=(root/'tests/fixtures/native_session_parameters_43052415203.json').read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),'060e950d8cd29765bbc3f2c5f534333d953647aa6c54dbd93e941d882ee06e06')
+        source=(root/'scripts/session_parameter_behavior/observe.bsl').read_bytes()
+        self.assertEqual(hashlib.sha256(source).hexdigest(),'3228c91147c125d1998f53362c9704b11a7738976955161254cf647636bb8f08')
+        declarations=source.decode().split('For CaseNo = 1 To 16 Do')[0]
+        # A by-value remote wrapper preserves the original case declarations.
+        declarations+='\nFunction Run(Val CaseNo) Export Stage="read"; Return ObserveCase(CaseNo,Stage); EndFunction'
+        files=module_files((('NativeCases',declarations,SERVER),))
+        parameters=sorted((root/'scripts/session_parameter_behavior').glob('Owned*.xml'))
+        self.assertEqual(len(parameters),13)
+        for parameter in parameters:
+            name=parameter.stem
+            files['Configuration.xml']=files['Configuration.xml'].replace(b'</ChildObjects>',
+                ('<SessionParameter>'+name+'</SessionParameter></ChildObjects>').encode())
+            files['SessionParameters/'+name+'.xml']=parameter.read_bytes()
+        files['Ext/SessionModule.bsl']=(root/'scripts/session_parameter_behavior/SessionModule.bsl').read_bytes()
+        app=self.application(files)
+        actual=[]
+        for case in range(1,17):
+            with self.subTest(case=case):
+                actual.append(app.execute('NativeCases.Run('+str(case)+')'))
+        self.assertEqual(actual,json.loads(raw))

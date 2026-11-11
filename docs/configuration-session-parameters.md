@@ -1,7 +1,8 @@
-# Explicit application session parameters (provisional)
+# Explicit application session parameters
 
-This coherent language block is under implementation. Local contract tests are
-not native evidence; the owned sixteen-case acquisition is prepared separately.
+The owned sixteen-case acquisition passed on native 1C 8.3.27.1508 in run
+`43052415203`. Its source-bound scalar observations are preserved as an immutable
+test fixture. Local lifecycle/security tests supplement that native evidence.
 
 The existing explicit `managed-client-server-v1` application profile admits
 bounded `SessionParameter` declarations and `Ext/SessionModule.bsl`. Import,
@@ -39,11 +40,12 @@ These metadata objects are read-only; they grant no access to session state.
 
 Boolean, bounded String, bounded Number and DateTime declarations are admitted.
 Other types, composites, mutable collections and references remain rejected.
-The current local assignment policy accepts exact scalar values already within
-their declaration constraints. Undefined, coercion and truncation/rounding await
-the prepared native observation; do not treat the provisional policy as native
-parity. Partial assignments made before a handler error are not silently rolled
-back by a second transaction mechanism.
+The measured scalar assignment policy accepts exact values already within their
+declaration constraints. Excess number fraction digits and string length are
+rejected rather than silently rounded/truncated. Array-to-Boolean and Undefined
+assignments are rejected without overwriting the existing value. Partial
+assignments made before a handler error persist; they are not silently rolled
+back by a second transaction mechanism. Other coercions remain unclaimed.
 
 This is a **trusted explicit host** profile, not an ACL or privilege-mode
 implementation. It does not simulate privileged mode, impersonation, RLS,

@@ -1,6 +1,7 @@
 # Owned scalar session parameter observation
 
-One isolated, source-bound acquisition. No native answers have been obtained yet.
+Source-bound acquisition completed in run `43052415203` on 1C 8.3.27.1508.
+The exact sixteen strings are retained in the immutable native fixture.
 The sixteen cases are ordered; state intentionally persists within one fresh
 enterprise process. Startup happens before the external observer executes.
 
@@ -13,8 +14,8 @@ enterprise process. Startup happens before the external observer executes.
 7. Handler leaves a parameter unset: observe failure and invocation count.
 8. Boolean assignment/read.
 9. Date-time assignment/read equality.
-10. Number precision normalization.
-11. String length normalization.
+10. Number precision acceptance/rejection (observed rejection).
+11. String length acceptance/rejection (observed rejection).
 12. Array assigned to Boolean: record acceptance/error and retained value.
 13. Undefined assignment: record acceptance/error and subsequent read/lazy reset.
 14. Handler raises after writing another parameter.

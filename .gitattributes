@@ -207,3 +207,6 @@ scripts/native_1c_session_parameter_probe.sh text eol=lf
 # Explicit session declarations and application runtime source.
 yadinassi/configuration_session_parameters.py text eol=lf
 yadinassi/session_parameters.py text eol=lf
+
+# Immutable native session observations.
+tests/fixtures/native_session_parameters_43052415203.json -text
