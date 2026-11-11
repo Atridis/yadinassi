@@ -97,6 +97,13 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
             'await bounded(gate.wait', 'await route.fulfill({response})', "'late_reply_changed_owner'",
             "'duplicate_open_rpc'", "'duplicate_write_rpc'", "'duplicate_write_revision'",
             'control.click();control.click();')
+        self.contains('const observedReplies=new Map()', 'observedReplies.clear()',
+            'const packet=response.request().postDataJSON()', 'observedReplies.delete(packet.id)',
+            "assert.deepEqual(observed.packet,packet,'audited_reply_request')",
+            "assert.equal(observed.origin,origin,'audited_reply_origin')",
+            'observedReplies.set(packet.id,{packet,actual:decoded,origin})',
+            "observedReplies.size<180,'audited_reply_budget'", 'await auditResponse(response,packet)')
+        self.assertNotIn('.json()', self.source)
         self.assertNotIn('page.waitForTimeout(', self.source)
 
     def test_natural_exit_and_second_host_are_required(self):
@@ -157,7 +164,9 @@ class InventoryApplicationBrowserContractTests(unittest.TestCase):
             "'unexpected_artifact'", 'resultSha256:sha256(raw)', 'sha256:sha256(bytes)',
             'const diagnosticPhases=', 'const diagnosticReasons=', 'diagnosticReasons.find(code=>error?.message===code||',
             "checkpoint('audit_document_quantity')", "checkpoint('screenshot_storage')",
-            'scenario:activeScenario', "report.lastCommandOutcome=['saved','rejected','uncertain','committed']")
+            'scenario:activeScenario', "report.lastCommandOutcome=['saved','rejected','uncertain','committed']",
+            "checkpoint('command_click')", "checkpoint('command_wait')", "checkpoint('command_read')",
+            'report.failureClass=', 'report.observerFailure=', "'response_body_unavailable'")
         for forbidden in ('report.url', 'report.headers', 'report.response', 'report.stack', 'console.log(error'):
             self.assertNotIn(forbidden, self.source)
 

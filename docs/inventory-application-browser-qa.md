@@ -117,3 +117,16 @@ audit-assertion and screenshot stages. Only exact allowlisted assertion reasons
 and the closed command-outcome vocabulary can enter the result; no raw assertion
 actual/expected values, subprocess errors or storage values are exported. The
 request plan, acquisition bounds and required assertions remain unchanged.
+
+The second acquisition again stopped at 27 RPCs, before the command-outcome
+checkpoint, and therefore before the audit. Its closed diagnostic does not prove
+the exact browser exception. The stock observer now follows the established
+layout/value-input acquisition pattern: retain each bounded, already audited real
+response and consume it only after the exact matching browser request is delivered.
+Bindings include the entire request, response ID and current launch origin; the
+map is bounded by the existing 180-RPC ceiling and cleared only for a new host.
+The command, report, shortage and dirty-close checks no longer ask CDP to read a
+response body a second time. They still inspect the original response, not current
+UI state, and issue no extra fetch or retry. Additional closed click/wait/read
+stages, exception classes and observer categories preserve uncertainty rather
+than asserting that CDP body eviction was demonstrated by the previous artifacts.

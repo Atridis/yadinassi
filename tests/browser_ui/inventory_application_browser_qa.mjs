@@ -39,7 +39,7 @@ const businessPlan=[
 const businessEvents=[];
 // Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
 // storage, environment and subprocess stderr never become artifact strings.
-const diagnosticPhases=['command_binding','command_outcome','command_idle',
+const diagnosticPhases=['command_binding','command_click','command_wait','command_read','command_outcome','command_idle',
  'fixture_create','fixture_audit','audit_catalogs','audit_document_count',
  'audit_document_posted','audit_document_quantity','audit_no_movements',
  'screenshot_capability','screenshot_storage','screenshot_cookies','screenshot_capture','business_plan'];
@@ -50,7 +50,8 @@ const diagnosticReasons=['session_panel_binding','active_session_missing','comma
  'owned_fixture_failed','owned_fixture_timeout','business_rpc_plan_changed',
  'late_reply_changed_owner','duplicate_open_rpc','duplicate_write_rpc','duplicate_post_rpc',
  'duplicate_write_revision','shortage_changed_persisted_state','shortage_not_rejected',
- 'resource_value','report_refused','balance_not_exclusive','unsaved_draft_changed_persistence'];
+ 'resource_value','report_refused','balance_not_exclusive','unsaved_draft_changed_persistence',
+ 'audited_reply_missing','audited_reply_request','audited_reply_origin','audited_reply_budget','audited_reply_duplicate','audited_reply_id'];
 const diagnosticReason=error=>diagnosticReasons.find(code=>error?.message===code||typeof error?.message==='string'&&error.message.startsWith(code+'\n')) ||
  (error?.name==='TimeoutError'?'browser_operation_timeout':'step_failed');
 const checkpoint=label=>{assert.ok(diagnosticPhases.includes(label),'invalid_diagnostic_phase');phase=label;};
@@ -156,6 +157,7 @@ function applicationAllowedRequest(target){
 }
 async function startHost(){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
+  observedReplies.clear(); // A new real host has a new origin/request-ID space.
   const args=['-m','yadinassi','--ui','--f',path.join(owned,'stock.sqlite')];
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=applicationLaunchReader();let settled=false;
@@ -281,6 +283,19 @@ function inventoryFixture(operation){
 const replyFor=predicate=>page.waitForResponse(response=>new URL(response.url()).pathname==='/rpc'&&response.status()===200&&predicate(response.request().postDataJSON()),{timeout:remaining(rpcReplyMs)});
 const formReply=(event,control)=>replyFor(packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event&&(!control||packet.params.request.params.control===control));
 let lastApplicationState=null;
+// Keep already audited real responses until the matching delivered request is
+// observed. Do not ask CDP to retrieve an evictable body a second time. This is
+// not current UI state, a synthesized response, another fetch or an RPC retry.
+const observedReplies=new Map();
+function deliveredReply(response){
+  const packet=response.request().postDataJSON();
+  const observed=observedReplies.get(packet.id);observedReplies.delete(packet.id);
+  assert.ok(observed,'audited_reply_missing');
+  assert.deepEqual(observed.packet,packet,'audited_reply_request');
+  assert.equal(new URL(response.url()).origin,observed.origin,'audited_reply_origin');
+  assert.equal(observed.origin,origin,'audited_reply_origin');
+  return observed.actual;
+}
 async function command(title,control,state='saved'){
  checkpoint('command_binding');
  // DOM panel insertion order follows the source-bound application sessions.
@@ -292,7 +307,9 @@ async function command(title,control,state='saved'){
  const reply=replyFor(packet=>packet.method==='application.form'&&packet.params.session===session&&
    packet.params.request.method==='form.event'&&packet.params.request.params.event==='command'&&
    packet.params.request.params.control===control);
- await action(title).click();const data=await (await reply).json();checkpoint('command_outcome');
+ checkpoint('command_click');await action(title).click();
+ checkpoint('command_wait');const response=await reply;
+ checkpoint('command_read');const data=deliveredReply(response);checkpoint('command_outcome');
  assert.equal(data.result.session,session,'command_session_changed');
  const outcomes=data.result.state.posting.filter(item=>item.session===session);
  assert.equal(outcomes.length,1,'command_outcome_count');
@@ -401,10 +418,12 @@ function checkRequest(request){
   }
   return packet;
 }
-async function auditResponse(response){
+async function auditResponse(response,packet){
   assert.equal(response.status(),200,'rpc_status');
   const body=await response.body();assert.ok(body.length<=262144,'reply_budget');
   const text=body.toString('utf8');const decoded=JSON.parse(text);
+  exactKeys(decoded,'jsonrpc id result');assert.equal(decoded.jsonrpc,'2.0');
+  assert.equal(decoded.id,packet.id,'audited_reply_id');
   lastApplicationState=decoded.result?.state;
   if(lastApplicationState?.report){
     const projection=lastApplicationState.report;
@@ -418,6 +437,9 @@ async function auditResponse(response){
   assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text),'persistent_uuid_leak');
   for(const key of ['operation_id','database_id','record_id','expected_revision','expanded_requests','source_files'])
     assert.ok(!text.includes('"'+key+'"'),'private_host_envelope_leak');
+  assert.ok(observedReplies.size<180,'audited_reply_budget');
+  assert.ok(!observedReplies.has(packet.id),'audited_reply_duplicate');
+  observedReplies.set(packet.id,{packet,actual:decoded,origin});
 }
 async function repeatClick(locator){await locator.evaluate(control=>{control.click();control.click();});}
 async function scenario(name,fn){
@@ -563,11 +585,11 @@ async function main(){
         if(delayed&&packet.method==='application.openRecord'){
           const gate=delayed;delayed=null;
           const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
-          await auditResponse(response);gate.arrived();await bounded(gate.wait,remaining(10000),'late_reply_gate_timeout');
+          await auditResponse(response,packet);gate.arrived();await bounded(gate.wait,remaining(10000),'late_reply_gate_timeout');
           return await route.fulfill({response});
         }
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
-        await auditResponse(response);return await route.fulfill({response});
+        await auditResponse(response,packet);return await route.fulfill({response});
       }catch{wireFailure=true;abort();return route.abort().catch(()=>{});}
     }
     return route.continue();
@@ -603,7 +625,7 @@ async function main(){
       await panel.getByLabel('Through moment (inclusive)',{exact:true}).fill('2026-11-11T12:00:00');
     }
     const reply=replyFor(p=>p.method==='application.report');await panel.getByRole('button',{name:'Show saved stock',exact:true}).click();
-    const result=(await (await reply).json()).result;assert.equal(result.error,null,'report_refused');await idle();
+    const result=deliveredReply(await reply).result;assert.equal(result.error,null,'report_refused');await idle();
     assert.equal(result.state.report.report,'Stock'+view);assert.equal(result.state.report.view,view);
     assert.equal(await panel.locator('table tbody tr').count(),result.state.report.rows.length,'report_dom_rows');
     assert.equal(await panel.locator('table button,table input,table select').count(),0,'report_not_readonly');
@@ -650,11 +672,11 @@ async function main(){
   await scenario(scenarioNames[2],async()=>{
     const before=inventoryFixture('audit'),posts=businessEvents.filter(e=>e==='command:PostButton').length;
     let reply=formReply('command','PostButton');await repeatClick(action('Post document'));
-    const result=(await (await reply).json()).result;await idle();
+    const result=deliveredReply(await reply).result;await idle();
     assert.equal(result.state.posting.find(p=>p.session===result.session).state,'rejected','shortage_not_rejected');
     assert.equal(businessEvents.filter(e=>e==='command:PostButton').length,posts+1,'duplicate_post_rpc');
     assert.deepEqual(inventoryFixture('audit'),before,'shortage_changed_persisted_state');
-    reply=formReply('close');await action('Close form').click();const refused=(await (await reply).json()).result;await idle();
+    reply=formReply('close');await action('Close form').click();const refused=deliveredReply(await reply).result;await idle();
     assert.equal(refused.error,'save_recovery_required','dirty_close_not_refused');await countPanels(1);await value('Quantity, row 1','99');
     const panelsBefore=await panels().count(),rpcBefore=businessEvents.length;
     await button('Close application').click();await page.getByText('Close each form, including hidden tabs, before closing the application.',{exact:true}).waitFor();await idle();
@@ -702,6 +724,11 @@ catch(error){
   // response bodies, exception strings, database identifiers or capability URLs.
   report.rpcRequests=rpc;
   if(phase==='sandbox_launch'&&report.launch)report.launch.failure=launchFailureCode(error);
+  report.failureClass=['AssertionError','TimeoutError','TypeError','SyntaxError','Error'].includes(error?.name)?error.name:'other';
+  const observerMessage=typeof error?.message==='string'?error.message:'';
+  report.observerFailure=/No resource with given identifier|No data found for resource/.test(observerMessage)?'response_body_unavailable':
+    /Target page, context or browser has been closed/.test(observerMessage)?'browser_closed':
+    /strict mode violation/.test(observerMessage)?'ambiguous_locator':'unclassified';
   report.failure={phase,scenario:activeScenario,reason:wireFailure?'wire_contract':aborted?'deadline_or_rpc_budget':phase==='sandbox_launch'&&
     /Operation not permitted|No usable sandbox|Failed to move to new namespace/i.test(String(error?.message))?'sandbox_start_denied':diagnosticReason(error)};
 }
