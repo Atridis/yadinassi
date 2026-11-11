@@ -32,6 +32,17 @@ class AccumulationAcquisitionTests(unittest.TestCase):
         from yadinassi.syntax.parser import parse
         parse(route.program(setup,'a'*32).decode())
         parse(assets['ObjectModule.bsl'].decode())
+    def test_authored_child_order_matches_designer_220_sequence(self):
+        # MDClasses 2.20 AccumulationRegisterChildObjects: Resource*,
+        # Attribute*, Dimension*. Semantic projection alone sorts these groups.
+        # https://github.com/yellow-hammer/namespace-forest/blob/0023896332406bdc163f746daaf91756d26a54bd/schemas/designer/2.20/v8.1c.ru-8.3-MDClasses.xsd#L111-L119
+        from xml.etree import ElementTree as ET
+        _,assets=fixture.load_saved()
+        root=ET.fromstring(assets['AccumulationRegister.xml'])
+        namespace='{http://v8.1c.ru/8.3/MDClasses}'
+        children=root.find(namespace+'AccumulationRegister/'+namespace+'ChildObjects')
+        self.assertEqual([child.tag.removeprefix(namespace) for child in children],
+                         ['Resource','Resource','Attribute','Dimension','Dimension'])
     def test_distinct_staged_route_and_readonly_isolation(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as directory:
             destination=Path(directory)/'inputs'

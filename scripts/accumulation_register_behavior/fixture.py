@@ -9,7 +9,7 @@ from . import route
 MAX_FILE=original.MAX_FILE
 MAX_TOTAL=original.MAX_TOTAL
 _files=original._files
-ASSET_HASHES={'Document.xml': 'e7a73a70869292aa6034d2b0aa12f8df1d3ef9bbb802403ab9a6063fd2ad29da', 'AccumulationRegister.xml': '3113eeecadea9a2b5a72fb59eac5a4adb361a611666ac7e24fb79404c61be0b6', 'ObjectModule.bsl': '9e86fc375520fb8f774ff8ff7db46a3a7343aeccf48d2494116f4a80c9b13133'}
+ASSET_HASHES={'Document.xml': 'e7a73a70869292aa6034d2b0aa12f8df1d3ef9bbb802403ab9a6063fd2ad29da', 'AccumulationRegister.xml': 'dbc670763140778ea4549a78035b28aaac8fd2215c3aa4d595df5cba1509833a', 'ObjectModule.bsl': '9e86fc375520fb8f774ff8ff7db46a3a7343aeccf48d2494116f4a80c9b13133'}
 
 def load_saved():
     import hashlib
