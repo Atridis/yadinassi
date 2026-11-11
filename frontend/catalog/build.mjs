@@ -11,7 +11,7 @@ await build({entryPoints:[path.join(root,'src/app.jsx')],outfile:path.join(targe
   legalComments:'eof',banner:{js:'/* Yadinassi optional catalog renderer. Preact MIT license: LICENSE.txt. Built from frontend/catalog. */'}});
 for (const name of ['index.html','style.css']) await copyFile(path.join(root,'src',name),path.join(target,name));
 await copyFile(path.join(root,'PREACT-LICENSE.txt'),path.join(target,'LICENSE.txt'));
-const files=['package.json','package-lock.json','build.mjs','src/app.jsx','src/client.mjs','src/presentation.mjs','src/index.html','src/style.css'];
+const files=['package.json','package-lock.json','build.mjs','src/app.jsx','src/client.mjs','src/presentation.mjs','src/index.html','src/style.css','../form/src/attachment.mjs','../form/src/client.mjs'];
 const hashes={};
 for (const name of files) hashes[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
 const outputs={};

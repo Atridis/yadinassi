@@ -13,7 +13,8 @@ import webbrowser
 
 from ..database_context import SQLiteDBContext
 from ..form_replication import ReplicatedFormServer, ReplicatedFormSession
-from ..invocation import InvocationError, _decode_scalar
+from ..invocation import InvocationError
+from ..form_replication import _decode_form_scalar
 from .form_package import load_client, load_server
 from .local_app import RuntimeBridge, LocalTransportError, LocalUIServer, _Handler, EXCHANGE_TIMEOUT
 from .protocol import encode_line, encode_value, decode_value, decode_line, MAX_LINE_BYTES, MAX_COUNTER
@@ -103,9 +104,11 @@ def serve_runtime(directory, database=None, *, input_stream=None, output_stream=
 
 class FormController:
     """One logical client session shared by renderer reattachments, not reloads."""
-    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None):
+    def __init__(self, package, exchange, *, parameters=None, bind_interpreter=None,
+                 interpreter_factory=None):
         self.session = ReplicatedFormSession(package.source, exchange,
-            handlers=package.handlers, bindings=package.bindings, parameters=parameters)
+            handlers=package.handlers, bindings=package.bindings, parameters=parameters,
+            interpreter_factory=interpreter_factory)
         if bind_interpreter is not None:
             bind_interpreter(self.session.interpreter)
         self._gate = Lock()
@@ -206,7 +209,7 @@ class FormController:
                             or event == 'cell' and (row is None or type(params['column']) is not str)):
                         raise ValueError('invalid table event')
                 value = (decode_value(params['value']) if event == 'cell' else
-                         _decode_scalar(params['value']) if event == 'change' else None)
+                         _decode_form_scalar(params['value']) if event == 'change' else None)
                 if self.session.uncertain:
                     error = 'outcome_unknown'
                 elif params['revision'] != self.session.revision:
@@ -245,6 +248,7 @@ def main(argv=None):
     parser.add_argument('package', metavar='PACKAGE_DIRECTORY')
     parser.add_argument('--f', metavar='SQLITE_FILE', help='Existing SQLite database, opened only by the server process')
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--browser-session', action='store_true')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.runtime:
@@ -254,7 +258,7 @@ def main(argv=None):
         package = load_client(args.package)
         process = FormProcess(args.package, args.f)
         controller = FormController(package, process.exchange)
-        server = LocalUIServer(controller, handler=FormHandler)
+        server = LocalUIServer(controller, handler=FormHandler, browser_session=args.browser_session)
         print('Yadinassi replicated form — local client and separate server process.')
         print('Open this per-launch URL (do not share it):')
         print(server.launch_url, flush=True)

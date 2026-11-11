@@ -1,13 +1,15 @@
 import {h,render,Fragment} from 'preact';
 import {useEffect,useRef,useState} from 'preact/hooks';
 import {EditorClient,typedInput,readBoundedJSON,takeSessionCapability,
-  rowDraftKey,editorDraft,reconcileDraft,hasDraftChanges,flushDraft} from './client.mjs';
+  rowDraftKey,editorDraft,reconcileDraft,hasDraftChanges,flushDraft,orphanedDraft} from './client.mjs';
+import {createBrowserHost, AttachmentRefusal} from '../../form/src/attachment.mjs';
 import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation,isDeletionMarked,selectedReference,createSelectionModel} from './presentation.mjs';
 
-let token=takeSessionCapability(location,history);
+const browserHost=createBrowserHost(window,document.getElementById('app'));
+let token=browserHost.launcher;
 // The capability is memory-only: never store it with the presentation preference.
 // Reopen the launch URL after a page reload to reattach without replaying writes.
-const transport=async request=>readBoundedJSON(await fetch('/rpc',{method:'POST',cache:'no-store',
+const transport=browserHost.enabled?browserHost.transport:async request=>readBoundedJSON(await fetch('/rpc',{method:'POST',cache:'no-store',
   credentials:'omit',headers:{'Content-Type':'application/x-ndjson','X-Yadinassi-Session':token||''},
   body:JSON.stringify(request)+'\n'}));
 const client=new EditorClient(transport);
@@ -22,10 +24,13 @@ function App(){
   const [snapshot,setSnapshot]=useState(null),[draft,setDraft]=useState(()=>editorDraft()),[busy,setBusy]=useState(false),
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
+  const [recoveredDraft,setRecoveredDraft]=useState(null);
+  const draftRef=useRef(draft),recoveryRef=useRef(null);draftRef.current=draft;recoveryRef.current=recoveredDraft;
+  const inputBlocked=busy||Boolean(recoveredDraft);
   const [selection,setSelection]=useState({catalog:null,records:[]});
   const selectionModel=useRef(null);
   if(!selectionModel.current)selectionModel.current=createSelectionModel();
-  const gate=useRef(false),actionPointer=useRef(false);
+  const gate=useRef(false),actionPointer=useRef(false),lifecycle=useRef({pending:false,unknown:false});
   const apply=(preserveDraft=false,acceptedControl)=>{if(client.snapshot){setSnapshot(client.snapshot);setSelection(selectionModel.current.reconcile(client.snapshot));setPreview(previous=>workspacePreview(previous,client.snapshot));
     setDraft(previous=>preserveDraft?reconcileDraft(client.snapshot.state.editor,previous,acceptedControl):editorDraft(client.snapshot.state.editor));}};
   const changeField=(control,value)=>setDraft(previous=>({...previous,fields:{...previous.fields,[control]:value}}));
@@ -40,29 +45,40 @@ function App(){
   const changeTheme=value=>{setTheme(value);rememberTheme(window,value);};
   const editor=snapshot?.state?.editor;
   const localDirty=hasDraftChanges(editor,draft);
+  lifecycle.current={pending:Boolean(recoveredDraft)||localDirty||editor?.dirty||editor?.editingLocked||busy||client.uncertain,unknown:client.uncertain||Boolean(editor?.editingLocked)};
   useEffect(()=>{
     const connect=()=>{
-      if(gate.current)return;
+      if(gate.current)throw new AttachmentRefusal('busy');
+      if(browserHost.enabled&&client.uncertain)throw Error('Unknown previous outcome');
       gate.current=true;setBusy(true);setError('');
-      const previousEditor=client.snapshot?.state?.editor?.editorId;
-      const sync=()=>apply(Boolean(previousEditor)&&previousEditor===client.snapshot?.state?.editor?.editorId);
-      client.hello().then(sync).catch(e=>{sync();setError(e.message);}).finally(()=>{gate.current=false;setBusy(false);});
+      const originalEditor=client.snapshot?.state?.editor,previousEditor=originalEditor?.editorId,originalDraft=draftRef.current;
+      const sync=()=>{
+        if(browserHost.enabled){const orphaned=orphanedDraft(originalEditor,client.snapshot?.state?.editor,originalDraft);
+          if(orphaned){recoveryRef.current=orphaned;setRecoveredDraft(orphaned);}}
+        apply(Boolean(previousEditor)&&previousEditor===client.snapshot?.state?.editor?.editorId);
+      };
+      return client.hello().then(sync).catch(e=>{sync();setError(e.message);if(browserHost.enabled)throw e;}).finally(()=>{gate.current=false;setBusy(false);});
     };
     const reattach=()=>{
       const incoming=takeSessionCapability(location,history);
       if(incoming){token=incoming;connect();}
     };
+    if(browserHost.enabled){
+      browserHost.setPending(()=>lifecycle.current.pending,()=>lifecycle.current.unknown);
+      browserHost.start(connect);return()=>browserHost.attachment.dispose();
+    }
     addEventListener('hashchange',reattach);
     if(token)connect();
     else setError('Session capability missing. Reopen the URL printed by the launcher to reconnect.');
     return()=>removeEventListener('hashchange',reattach);
   },[]);
+  useEffect(()=>{browserHost.notify();},[localDirty,busy,snapshot,error,recoveredDraft]);
   useEffect(()=>{
-    const warn=event=>{if(localDirty||editor?.dirty||editor?.editingLocked||busy){event.preventDefault();event.returnValue='';}};
+    const warn=event=>{if(recoveredDraft||localDirty||editor?.dirty||editor?.editingLocked||busy||client.uncertain){event.preventDefault();event.returnValue='';}};
     addEventListener('beforeunload',warn);return()=>removeEventListener('beforeunload',warn);
-  },[localDirty,editor?.dirty,editor?.editingLocked,busy]);
+  },[localDirty,editor?.dirty,editor?.editingLocked,busy,recoveredDraft]);
   async function run(event,values={},flush=false){
-    if(gate.current||client.uncertain)return;
+    if(gate.current||recoveryRef.current||client.uncertain||browserHost.enabled&&!browserHost.attachment.writable)return;
     if(event==='checkCard'&&!listCheckPresentation(client.snapshot).available)return;
     if(['addRow','deleteRow','changeRow'].includes(event)&&(!editor||editor.editingLocked||editor.sourceStale))return;
     gate.current=true;setBusy(true);setError('');
@@ -104,7 +120,7 @@ function App(){
   }
   const state=snapshot?.state;
   const listCheck=listCheckPresentation(snapshot);
-  const navigationLocked=busy||client.uncertain||Boolean(editor);
+  const navigationLocked=inputBlocked||client.uncertain||Boolean(editor);
   const catalogs=editor?preview.catalogs:state?.catalogs||[];
   const list=editor?preview.list:state?.list;
   const selected=selectedReference(selection,list);
@@ -140,9 +156,13 @@ function App(){
       <div class="header-actions"><span class="badge connection">Local SQLite</span>
       <label class="theme-control"><span>Theme</span><select aria-label="Color theme" value={theme}
         onChange={e=>changeTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
-      {snapshot&&state.kind!=='closed'&&<button data-editor-action="close" class="quiet" disabled={busy||client.uncertain||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
+      {snapshot&&state.kind!=='closed'&&<button data-editor-action="close" class="quiet" disabled={inputBlocked||client.uncertain||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
     </header>
     <p class="scope">{editor?.originalForm?'Imported name-validation handlers · local host form adapter · no native parity claim':'Auto-generated editor · bounded references and tabular rows · no imported 1C forms'}</p>
+    {recoveredDraft&&<section class="notice warning" role="status"><strong>Unsubmitted input from an earlier editor</strong>
+      <p>These inputs were not applied to the current record. Copy anything you need before dismissing them.</p>
+      {Object.entries(recoveredDraft.fields).concat(Object.entries(recoveredDraft.rows)).map(([name,value])=><p>{name}: {String(value)}</p>)}
+      <button disabled={busy} onClick={()=>{recoveryRef.current=null;setRecoveredDraft(null);}}>Dismiss recovered inputs</button></section>}
     {error&&<section role="alert" class="notice error"><strong>Action not completed</strong><span>{error}</span>
       {client.uncertain&&token&&<button disabled={busy} onClick={resync}>Resynchronize — do not repeat Save</button>}</section>}
     {!snapshot&&<section class="panel empty">{busy?'Opening database…':'Use the host launcher to select a supported SQLite file.'}</section>}
@@ -179,7 +199,7 @@ function App(){
           <span>{Math.min(list.offset+1,list.total)}–{Math.min(list.offset+list.limit,list.total)} of {list.total}</span>
           <button disabled={navigationLocked||list.offset+list.limit>=list.total} onClick={()=>run('page',{offset:list.offset+list.limit,limit:list.limit})}>Next →</button></footer>
       </>:<div class="empty"><h2>{editor?editor.catalogName:'Choose a catalog'}</h2><p>{editor?'List unavailable. Resolve the save outcome or return to records.':'Open a record or create a new one. Changes are only persisted after Save.'}</p></div>}</section>
-    {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button data-editor-action="back" class="quiet back" disabled={busy||client.uncertain||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
+    {editor&&<section class="panel editor" aria-label="Record editor"><div class="section-head"><div><button data-editor-action="back" class="quiet back" disabled={inputBlocked||client.uncertain||editor.editingLocked} onClick={()=>run('closeCard',{},true)}>← Back to records</button>
       <h2>{editor.isNew?'New record':'Edit record'} <span class="muted">/ {editor.catalogName}</span></h2></div>
       <span class={'badge '+((localDirty||editor.dirty)?'dirty':'saved')}>{editor.editingLocked?'Outcome pending':localDirty||editor.dirty?'Unsaved changes':editor.saveState==='saved'?'Saved':'No unsaved changes'}</span></div>
       {editor.status&&(!localDirty||editor.error)&&<div role="status" class={'notice '+(editor.error?'error':'success')}>{editor.status}</div>}
@@ -189,14 +209,14 @@ function App(){
         <div class="fields">{editor.fields.filter(field=>field.visible).map(field=><label key={field.control} class={field.kind==='boolean'?'check-field':'field'}>
           <span>{field.title||field.name}</span>
           {field.kind==='catalog_ref'?<select aria-label={field.name} value={draft.fields[field.control]}
-            disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
+            disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>changeField(field.control,e.currentTarget.value)}>
             {field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
-          </select>:field.kind==='boolean'?<input aria-label={field.title||field.name} aria-describedby={field.name==='DeletionMark'?'deletion-mark-note':undefined} type="checkbox" checked={draft.fields[field.control]===true} disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
+          </select>:field.kind==='boolean'?<input aria-label={field.title||field.name} aria-describedby={field.name==='DeletionMark'?'deletion-mark-note':undefined} type="checkbox" checked={draft.fields[field.control]===true} disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onChange={e=>changeField(field.control,e.currentTarget.checked)}/>:
           <input aria-label={field.name} type={field.kind==='datetime'?'datetime-local':'text'} step={field.kind==='datetime'?'1':undefined}
             inputMode={field.kind==='number'?'decimal':undefined} value={draft.fields[field.control]??''}
-            disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
+            disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onInput={e=>changeField(field.control,e.currentTarget.value)}
             onBlur={e=>commitImportedField(field,e.currentTarget.value,e.relatedTarget)}/>}
           {field.kind==='number'&&<small>Exact decimal · decimal point “.”</small>}
@@ -209,32 +229,32 @@ function App(){
           {editor.sections.map(section=><section key={section.name} class="tabular-section" aria-label={section.title||section.name}>
             <div class="tabular-head"><div><h4>{section.title||section.name}</h4><span class="muted">{section.rowCount??section.rows.length} rows</span></div>
               {section.readOnly?<span class="badge">Read-only</span>:<button data-editor-action="add-row" type="button"
-                aria-label={'Add row to '+(section.title||section.name)} disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||!section.canAdd}
+                aria-label={'Add row to '+(section.title||section.name)} disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||!section.canAdd}
                 onClick={()=>run('addRow',{section:section.name},true)}>+ Add row</button>}</div>
             {section.readOnly?<p class="section-readonly">Rows are preserved and cannot be edited here. {sectionReason(section.reason)}</p>:
               section.rows.length?<div class="table-scroll"><table class="section-rows"><thead><tr><th scope="col">#</th><th scope="col">{section.rows[0].field.name}</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead><tbody>
                 {section.rows.map(row=><tr key={row.id}><td class="code">{row.number}</td><td>
                   <select aria-label={(section.title||section.name)+' row '+row.number+': '+row.field.name}
                     value={draft.rows[rowDraftKey(section.name,row.id)]??row.field.inputText}
-                    disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale||row.field.readOnly}
+                    disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||row.field.readOnly}
                     onChange={e=>changeRow(section.name,row.id,e.currentTarget.value)}>
                     {!row.field.choices.some(choice=>choice.value===row.field.inputText)&&
                       <option value={row.field.inputText}>Unavailable reference · {row.field.inputText}</option>}
                     {row.field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
                   </select></td><td><button data-editor-action="delete-row" type="button"
                     aria-label={'Delete row '+row.number+' from '+(section.title||section.name)}
-                    disabled={busy||client.uncertain||editor.editingLocked||editor.sourceStale}
+                    disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale}
                     onClick={()=>run('deleteRow',{section:section.name,row:row.id},true)}>Delete</button></td></tr>)}
               </tbody></table></div>:<p class="section-empty">No rows. Add a row to select a reference.</p>}
           </section>)}
           <p class="section-note">Row editing is limited to records with at most 32 total rows. Changes are saved with the record.</p>
         </section>}
-        <div class="editor-actions"><button data-editor-action="discard" type="button" disabled={busy||client.uncertain||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
-          <button data-editor-action="save" type="submit" class="primary" disabled={busy||client.uncertain||(editor.sourceStale&&!editor.editingLocked)}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
+        <div class="editor-actions"><button data-editor-action="discard" type="button" disabled={inputBlocked||client.uncertain||editor.editingLocked} onClick={()=>run('command',{control:'CancelButton'})}>Discard &amp; return</button>
+          <button data-editor-action="save" type="submit" class="primary" disabled={inputBlocked||client.uncertain||(editor.sourceStale&&!editor.editingLocked)}>{busy?'Working…':editor.editingLocked?'Resolve save outcome':'Save changes'}</button></div>
       </form>
     </section>}
     </div>}
     <footer class="app-footer">Runtime-owned form state · exact typed values · changes stay on this computer</footer>
   </main>;
 }
-render(<App/>,document.getElementById('app'));
+render(<App/>,browserHost.content);

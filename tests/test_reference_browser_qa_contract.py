@@ -16,11 +16,11 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
     def test_third_route_is_exact_and_preserves_two_existing_routes(self):
         source = self.workflow()
         trigger = source.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed]')
         for branch, harness in [('ui', 'demo_kind'), ('form', 'form'), ('reference', 'reference'), ('configuration', 'configuration')]:
             self.assertEqual(source.count(f"if: github.ref == 'refs/heads/codex/{branch}-browser-reviewed'"), 1)
             self.assertEqual(source.count(f'run: node tests/browser_ui/{harness}_browser_qa.mjs'), 1)
-        self.assertIn("|| github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || 'configuration-browser-reviewed' }}", source)
+        self.assertIn("|| github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || 'configuration-browser-reviewed' }}", source)
         for forbidden in ('pull_request:', 'workflow_dispatch:', 'schedule:', 'sudo ', 'sysctl ', 'container:', 'secrets.', 'write', '--with-deps'):
             self.assertNotIn(forbidden, source)
         self.assertIn('permissions:\n  contents: read', source)
@@ -40,7 +40,7 @@ class ReferenceBrowserQAContractTests(unittest.TestCase):
         self.assertEqual(re.findall(r'uses: (\S+)', source), [
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
-            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 4])
+            *['actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9'] * 5])
         self.assertIn('npm ci --prefix tests/browser_ui --ignore-scripts --no-audit --no-fund', source)
         self.assertIn('install chromium --no-shell', source)
 

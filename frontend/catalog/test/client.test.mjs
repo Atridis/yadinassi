@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {EditorClient, PROTOCOL, typedInput, readBoundedJSON, takeSessionCapability, rowDraftKey, editorDraft, reconcileDraft, hasDraftChanges, draftEvents, flushDraft} from '../src/client.mjs';
+import {EditorClient, PROTOCOL, typedInput, readBoundedJSON, takeSessionCapability, rowDraftKey, editorDraft, reconcileDraft, hasDraftChanges, draftEvents, flushDraft, orphanedDraft} from '../src/client.mjs';
 const snapshot=revision=>({protocol:PROTOCOL,formId:'catalog-editor',revision,state:{kind:'catalogs'},capabilities:{}});
 const success=(request,revision=0)=>({jsonrpc:'2.0',id:request.id,result:snapshot(revision)});
 
@@ -153,6 +153,9 @@ test('resync fills added rows, retains input by identity and never retargets a d
   assert.deepEqual(merged,{fields:{InputDescription:'Changed'},rows:{[key(second)]:selected,[key(third)]:empty}});
   assert.equal(draft.rows[key(first)],selected);
   assert.deepEqual(editorDraft(fresh).rows,{[key(second)]:empty,[key(third)]:empty});
+  assert.deepEqual(orphanedDraft(current,fresh,draft),{fields:{},rows:{[key(first)]:selected}});
+  assert.deepEqual(orphanedDraft(current,{...fresh,editorId:'another'},draft),draft);
+  assert.equal(orphanedDraft(current,current,editorDraft(current)),null);
 });
 
 test('all inputs are validated before a flush sends its first request',async()=>{

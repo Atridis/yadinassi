@@ -142,6 +142,56 @@ class _ObjectInterpreter(Interpreter):
         raise ValueError('catalog preparation: context crossing forbidden')
 
 
+
+def validate_catalog_object_source(source, schema):
+    """Pure conservative admission for the existing bounded preparation VM.
+
+    Every branch is inspected; validation never runs a handler or writes data.
+    Runtime receiver/type/budget guards remain authoritative at each Write.
+    """
+    from dataclasses import fields
+    if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
+        raise ValueError('catalog preparation: source limit')
+    program = parse(source)
+    if not program or any(type(n) is not ast.Routine or n.is_async or n.is_dual
+            or n.execution_context != 'client' or not n.module_context for n in program):
+        raise ValueError('catalog preparation: plain routines required')
+    entries = [n for n in program if n.name.casefold() == 'передзаписью']
+    if (len(entries) != 1 or entries[0].is_function or len(entries[0].parameters) != 1
+            or entries[0].parameters[0].by_value or entries[0].parameters[0].default is not None):
+        raise ValueError('catalog preparation: BeforeWrite reference parameter required')
+    members = _ALIASES | {f.name.casefold() for f in schema.fields}
+    functions = {'сокрлп', 'стрдлина', 'значениезаполнено', 'строка', 'формат'}
+    routines = {n.name.casefold() for n in program}
+    if len(routines) != len(program) or routines & (members | _SELF | functions):
+        raise ValueError('catalog preparation: routine collision')
+    allowed = (ast.Routine, ast.Parameter, ast.Literal, ast.Name, ast.Attribute,
+        ast.Call, ast.New, ast.Assign, ast.If, ast.Return, ast.ExpressionStatement,
+        ast.Binary, ast.Unary, ast.ForEach, ast.Continue)
+    def inspect(value):
+        if isinstance(value, (list, tuple)):
+            for item in value: inspect(item)
+        elif isinstance(value, ast.Node):
+            if type(value) not in allowed:
+                raise ValueError('catalog preparation: unsupported node')
+            if type(value) is ast.New and value.name.casefold() not in ('соответствие', 'сообщениепользователю'):
+                raise ValueError('catalog preparation: unsupported constructor')
+            if type(value) is ast.Attribute and value.name.casefold() not in members | _MESSAGE_FIELDS | _METHODS:
+                raise ValueError('catalog preparation: unavailable member')
+            if type(value) is ast.Call:
+                callee = value.callee
+                if type(callee) is ast.Name and callee.name.casefold() not in functions | routines:
+                    raise ValueError('catalog preparation: unavailable call')
+                if type(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
+                    raise ValueError('catalog preparation: unavailable method')
+                if type(callee) not in (ast.Name, ast.Attribute):
+                    raise ValueError('catalog preparation: indirect call forbidden')
+            for field in fields(value):
+                if field.name != 'token': inspect(getattr(value, field.name))
+    inspect(program)
+    return None
+
+
 def prepare_catalog_object(source, receiver, *, cancel=False):
     """Call ПередЗаписью on an explicit disposable object; return (cancel, messages).
 

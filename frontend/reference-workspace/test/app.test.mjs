@@ -173,3 +173,15 @@ test('failed child hello locks the owner and keeps the failed child visible with
   assert.equal(app.client.terminal,true); assert.equal(owner.fieldset.disabled,true); assert.equal(app.mounts.size,2);
   await childEntry(app).mount.refresh(); assert.equal(hellos,1);
 });
+
+test('fresh reference document restores retained owner and child from hello without a new open', async () => {
+  const original=await opened();await choose(original.app);
+  const {mountReferenceWorkspace}=await import('../src/app.mjs');
+  const {environment}=await import('../../form/test/fake-dom.mjs');
+  const env=environment(),before=original.requests.length;
+  const restored=mountReferenceWorkspace(env,env.document.root,original.exchange);await restored.ready;await restored.settled();
+  assert.equal(restored.mounts.size,2);assert.ok(ownerEntry(restored));assert.ok(childEntry(restored));
+  assert.equal(ownerEntry(restored).fieldset.disabled,true);
+  const resumed=original.requests.slice(before);assert.equal(resumed[0].method,'workspace.hello');
+  assert.ok(resumed.slice(1).every(request=>request.method==='workspace.form'&&request.params.request.method==='form.hello'));
+});
