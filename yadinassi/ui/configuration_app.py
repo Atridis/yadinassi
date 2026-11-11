@@ -539,16 +539,24 @@ class ConfigurationController:
             raise ValueError('reference form action required')
         if not controller._gate.acquire(blocking=False): raise ValueError('form busy')
         session = controller.session
-        begun = False; error = None
+        begun = False; error = None; queued_before = len(self.pending)
         try:
             session._begin(params['revision']); begun = True
             self._reference_changed = None
             self._reference_action = (sid, params['action'])
-            session._request('call', binding)
-            changed = self._reference_changed
-            if changed is not None:
-                item = session.form.items._values[changed['control'].casefold()]
-                if item.action: session._invoke(item.action, 'client', [item])
+            scope = (nullcontext() if self.application is None else
+                     self.application.event_messages(session._record_message))
+            with scope:
+                session._request('call', binding)
+                changed = self._reference_changed
+                if changed is not None:
+                    item = session.form.items._values[changed['control'].casefold()]
+                    if changed['row'] is not None:
+                        # Match ordinary cell dispatch: CurrentData identifies
+                        # the changed row, not the previously selected sibling.
+                        item._table()._lookup_id(changed['row'])
+                        item.current_row = changed['row']
+                    if item.action: session._invoke(item.action, 'client', [item])
         except Exception:
             if session.uncertain or self.uncertain:
                 self._lock(); error = 'outcome_unknown'
@@ -559,6 +567,10 @@ class ConfigurationController:
             if begun:
                 session.revision += 1; session._busy = False; session._gate.release()
             controller._gate.release()
+        if error is not None:
+            # Preserve the known applied value, but discard only opens queued
+            # by the failed event, just like the ordinary form dispatch path.
+            while len(self.pending) > queued_before: self.pending.pop()
         return sid, {'jsonrpc':'2.0','id':1,'result':{
             'protocol':FORM_PROTOCOL, 'state':controller._snapshot(), 'error':error}}, error
 
@@ -832,6 +844,13 @@ class ConfigurationController:
                     self.operations[token] = (intent, sid, error)
             elif method == 'application.reference':
                 sid, form, error = self._reference_request(params)
+                # OnChange may synchronously persist an object even if a later
+                # callback statement fails. Reconcile, never replay that write.
+                if not self.uncertain and self.catalog is not None:
+                    projection = self._call('catalog', payload={'entry': self.catalog['entry']})
+                    projection_error = projection.get('error')
+                    self.catalog = None if projection_error else projection
+                    error = error or projection_error
             elif method == 'application.form':
                 _keys(params, 'session request')
                 sid = params['session']
@@ -840,7 +859,8 @@ class ConfigurationController:
                 else:
                     controller, entry = self.sessions[sid]
                     nested_request = params['request']
-                    if self.choice is not None and self.choice['session'] == sid:
+                    if (self.choice is not None and self.choice['session'] == sid
+                            and (type(nested_request) is not dict or nested_request.get('method') not in ('form.hello', 'form.snapshot'))):
                         raise ValueError('finish reference selection first')
                     closing = (type(nested_request) is dict and nested_request.get('method') == 'form.event'
                                and type(nested_request.get('params')) is dict and nested_request['params'].get('event') == 'close')

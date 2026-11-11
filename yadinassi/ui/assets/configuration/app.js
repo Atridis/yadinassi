@@ -5,6 +5,7 @@ const PROTOCOL = 'yadinassi-form-ui/1';
 const LIMITS = Object.freeze({bytes: 131072, text: 8192, controls: 128, messages: 64,
   counter: 2147483647, discardCommands: 64, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
 const ERROR_MESSAGES = Object.freeze({
+  reference_refused: 'The reference selection was refused. Review the current value and choose again.',
   invalid_request: 'The host rejected this request. The displayed state is authoritative.',
   stale_revision: 'The form changed elsewhere. Review the latest state before another action.',
   event_failed: 'The handler returned an error. Completed changes are shown below.',
@@ -72,6 +73,13 @@ function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
+    case 'FormCatalogRef':
+      if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
+          typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
+          Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
+          (value.key === null || typeof value.key === 'string' && /^[0-9a-f]{32}$/.test(value.key)) &&
+          validText(value.text, 4096) && [...value.text].length <= 1024) return value;
+      break;
     case 'Date':
       if (keys(value, ['type', 'ticks']) && typeof value.ticks === 'string' && value.ticks.length <= 19 &&
           /^(?:0|[1-9][0-9]*)$/.test(value.ticks) && BigInt(value.ticks) <= BigInt(LIMITS.dateTicks)) return value;
@@ -114,7 +122,7 @@ function validateSnapshot(state) {
       const columns = new Set(), rows = new Set();
       for (const column of item.columns) {
         if (!keys(column, ['name', 'title', 'type', 'readOnly']) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         columns.add(column.name);
       }
@@ -147,6 +155,7 @@ function validateSnapshot(state) {
 }
 function scalarText(value) {
   validateScalar(value);
+  if (value.type === 'FormCatalogRef') return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -176,6 +185,9 @@ function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 function scalarEqual(left, right) {
+  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+    return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
+      left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
 }
 class FormClient {
@@ -196,25 +208,29 @@ class FormClient {
       let reply;
       try {
         reply = await this.exchange({jsonrpc: '2.0', id, method, params});
-        if (!keys(reply, ['jsonrpc', 'id', 'result']) || reply.jsonrpc !== '2.0' || reply.id !== id ||
-            !keys(reply.result, ['protocol', 'state', 'error']) || reply.result.protocol !== PROTOCOL ||
-            !(reply.result.error === null || ['invalid_request', 'stale_revision', 'event_failed', 'closed',
-              'outcome_unknown', 'busy', 'request_limit'].includes(reply.result.error))) throw new FormError('transport');
-        validateSnapshot(reply.result.state);
-        if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
       } catch (error) {
         if (error?.preDispatch === true) throw error;
-        this.transportFailed = true;
-        throw new FormError('transport');
+        this.transportFailed = true; throw new FormError('transport');
       }
-      // Even a failed handler can have completed effects. Adopt its whole snapshot first.
-      this.snapshot = reply.result.state;
-      this.transportFailed = false;
-      this.outcomeUnknown ||= this.snapshot.uncertain || reply.result.error === 'outcome_unknown';
-      this.exhausted ||= reply.result.error === 'request_limit';
-      if (reply.result.error !== null) throw new FormError(reply.result.error);
-      return this.snapshot;
+      return this.adopt(reply, id);
     } finally { this.busy = false; }
+  }
+  /** Adopt a host reference result without fabricating a form event or consuming its request ID. */
+  adopt(reply, expectedId = 1) {
+    try {
+      if (!keys(reply, ['jsonrpc', 'id', 'result']) || reply.jsonrpc !== '2.0' || reply.id !== expectedId ||
+          !keys(reply.result, ['protocol', 'state', 'error']) || reply.result.protocol !== PROTOCOL ||
+          !(reply.result.error === null || ['invalid_request', 'stale_revision', 'event_failed', 'closed',
+            'outcome_unknown', 'busy', 'request_limit', 'reference_refused'].includes(reply.result.error))) throw new FormError('transport');
+      validateSnapshot(reply.result.state);
+      if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
+    } catch { this.transportFailed = true; throw new FormError('transport'); }
+    // Authoritative failures can contain completed effects, including presentation changes.
+    this.snapshot = reply.result.state; this.transportFailed = false;
+    this.outcomeUnknown ||= this.snapshot.uncertain || reply.result.error === 'outcome_unknown';
+    this.exhausted ||= reply.result.error === 'request_limit';
+    if (reply.result.error !== null) throw new FormError(reply.result.error);
+    return this.snapshot;
   }
   hello() { return this.request('form.hello', {protocol: PROTOCOL}); }
   resync() { return this.request('form.snapshot', {}); }
@@ -594,8 +610,25 @@ function createFormView(document, root, handlers) {
   main.addEventListener('pointerdown', event => { actionPointer = Boolean(event.target.closest('[data-form-action]')); });
   const releasePointer = () => { setTimeout(() => { actionPointer = false; }, 0); };
   main.addEventListener('pointerup', releasePointer); main.addEventListener('pointercancel', () => { actionPointer = false; });
+  function referenceActions(parent, locator) {
+    if (!handlers.reference) return null;
+    const group = element('span', 'reference-actions');
+    const choose = element('button', 'quiet', 'Choose'), clear = element('button', 'quiet', 'Clear');
+    for (const [node, action] of [[choose, 'begin'], [clear, 'clear']]) {
+      node.type = 'button'; node.dataset.formAction = 'reference';
+      node.addEventListener('click', () => { if (!node.disabled) handlers.reference({action, ...locator}); });
+    }
+    group.append(choose, clear); parent.append(group); return {group, choose, clear};
+  }
+  function paintReference(actions, field, label, disabled) {
+    if (!actions) return;
+    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
+    actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
+    actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
+  }
   function makeControl(item) {
-    const row = element(item.kind === 'button' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -634,7 +667,8 @@ function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    return {row, caption, input, hint, item};
+    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
   function discardTable(name) {
@@ -688,11 +722,12 @@ function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    return {cell, input, type: column.type, key};
+    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {
     const item = control.item;
-    const disabled = recovery.size > 0 || model.busy || model.locked || !active || !item.enabled || !item.visible;
+    const disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active || !item.enabled || !item.visible;
     control.heading.textContent = item.title || item.name;
     control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
     control.scroll.setAttribute('aria-label', item.title || item.name);
@@ -737,6 +772,7 @@ function createFormView(document, root, handlers) {
         if (!cell) { cell = makeCell(control, data.id, column); cell.valueType = value.type; row.cells.set(column.name, cell); }
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
+        paintReference(cell.reference, field, (column.title || column.name) + ', row ' + data.id, disabled);
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
         if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
         else delete input.dataset.formAction;
@@ -745,7 +781,7 @@ function createFormView(document, root, handlers) {
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
         input.setAttribute('aria-describedby', control.help.id);
         input.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
-        input.title = value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
+        input.title = value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
           : ['Null', 'Undefined'].includes(value.type) ? 'Typed empty value · read-only'
           : readOnly ? 'Read-only' : value.type === 'Number' ? 'Exact decimal · use a decimal point (.)' : '';
         const draft = cellDrafts.get(cell.key), text = draft ? draft.value : value.type === 'Boolean' ? value.value : scalarText(value);
@@ -777,8 +813,8 @@ function createFormView(document, root, handlers) {
       : current.lifecycle === 'failed' ? 'Failed' : 'Closed';
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
-    refresh.disabled = model.busy || !model.connected || model.exhausted;
-    close.disabled = recovery.size > 0 || model.busy || model.locked || !active;
+    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted;
+    close.disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
@@ -806,7 +842,8 @@ function createFormView(document, root, handlers) {
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
       if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
-      input.disabled = (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
+      paintReference(control.reference, item, item.title || item.name, recovery.size > 0 || model.paused || model.busy || model.locked || !active);
+      input.disabled = model.paused || (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
         (item.kind === 'button' && item.readOnly) || (input.type === 'checkbox' && readOnly);
       input.readOnly = readOnly;
       if (item.kind === 'button') input.textContent = item.title || item.name;
@@ -820,7 +857,7 @@ function createFormView(document, root, handlers) {
         else if (input.value !== value) input.value = value;
         input.maxLength = item.value.type === 'Number' ? 144 : LIMITS.text;
         input.inputMode = item.value.type === 'Number' ? 'decimal' : 'text';
-        hint.textContent = item.value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
+        hint.textContent = item.value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : item.value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
           : ['Null', 'Undefined'].includes(item.value.type) ? 'Typed empty value · read-only'
           : readOnly ? 'Read-only' : item.value.type === 'Number' ? 'Exact decimal · use a decimal point (.)'
           : item.value.type === 'Boolean' ? '' : 'Applied when you leave the field or run a command';
@@ -839,6 +876,12 @@ function createFormView(document, root, handlers) {
   }
   return {
     render,
+    focusReference(locator) {
+      const control = controls.get(locator.control);
+      const target = locator.row === null ? control?.reference?.choose : control?.rows?.get(locator.row)?.cells.get(locator.column)?.reference?.choose;
+      if (!target || target.disabled || target.closest('[hidden]')) return false;
+      target.focus({preventScroll: true}); return true;
+    },
     accept(change) {
       if (typeof change === 'string') drafts.delete(change);
       else if (!Object.hasOwn(change, 'row')) drafts.delete(change.control);
@@ -880,7 +923,7 @@ function createFormView(document, root, handlers) {
 return {createFormView};
 })();
 const __formApp = (() => {
-const {FormClient, FormError, createTransport, takeSessionCapability} = __formClient;
+const {FormClient, FormError, tableCell, scalarEqual, createTransport, takeSessionCapability} = __formClient;
 const {createFormView} = __formView;
 const {createBrowserHost, AttachmentRefusal} = __browserAttachment;
 
@@ -890,9 +933,10 @@ function mountForm(environment, root, options = {}) {
   root = browserHost?.content || root;
   let client = null, token = browserHost?.launcher || null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
+    reference: options.onReference ? action => run('reference', action) : null,
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
-  const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
+  const paint = () => view.render({paused: Boolean(options.referenceActive?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
   const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
@@ -921,9 +965,23 @@ function mountForm(environment, root, options = {}) {
       paint();
     }
   }
+  function referenceTarget(action) {
+    const item = client.snapshot.items.find(item => item.name === action.control);
+    const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
+    if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
+        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+    return {value: field.value, controlId: item.controlId, tableId: item.tableId};
+  }
   async function run(event, name, row) {
     if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
-    if (busy || !client || client.locked) return;
+    if (busy || !client || client.locked || options.referenceActive?.() && event !== 'reference') return;
+    const reference = event === 'reference';
+    if (reference && !options.onReference) return;
+    const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
+    let target;
+    if (referenceStart) {
+      try { target = referenceTarget(name); } catch (caught) { showError(caught); paint(); return; }
+    }
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
     if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
@@ -940,7 +998,8 @@ function mountForm(environment, root, options = {}) {
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try {
-      changes = view.changes(event === 'change' ? name : undefined);
+      // A picker cancellation must not validate unrelated raw filter text or drafts.
+      changes = reference && !referenceStart ? [] : view.changes(event === 'change' ? name : undefined);
       if (event === 'toggle') {
         // Validate every draft first, then apply the newly activated checkbox
         // last, even when declaration order puts it before the field just left.
@@ -962,7 +1021,17 @@ function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
-      if (event === 'command') await client.event('command', {control: name});
+      if (reference) {
+        if (referenceStart) {
+          const latest = referenceTarget(name);
+          if (latest.controlId !== target.controlId || latest.tableId !== target.tableId || !scalarEqual(latest.value, target.value))
+            throw new FormError('draft_changed');
+        }
+        let nested;
+        try { nested = await options.onReference({revision: client.snapshot.revision, action: name}); }
+        catch (caught) { if (caught?.preDispatch !== true) client.transportFailed = true; throw caught; }
+        client.adopt(nested);
+      } else if (event === 'command') await client.event('command', {control: name});
       else if (event === 'select') await client.event('select', {control: name, row});
       else if (event === 'close') await client.event('close');
     } catch (caught) { showError(caught); }
@@ -976,7 +1045,7 @@ function mountForm(environment, root, options = {}) {
     finally { finish(); view.endOwnershipReconcile(); }
   }
   async function refresh() {
-    if (busy || !client || options.transport && client.transportFailed) return;
+    if (busy || !client || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -1001,7 +1070,7 @@ function mountForm(environment, root, options = {}) {
     browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, run, reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -1016,18 +1085,34 @@ const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/3';
 const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
 const integer = value => Number.isSafeInteger(value) && value > 0;
-const text = (value, max) => typeof value === 'string' && value.length <= max;
+const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused'];
+const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
+const locator = value => text(value.control,128) && value.control.length > 0 &&
+  (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
+function referenceAction(action, state, session) {
+  if (!Object.hasOwn(state || {}, 'choice') || !state.sessions.some(value => value.id === session)) return false;
+  if (['begin','clear'].includes(action?.action))
+    return state.choice === null && keys(action,['action','control','row','column']) && locator(action);
+  if (state.choice?.session !== session || action?.ticket !== state.choice.ticket) return false;
+  if (action.action === 'cancel') return keys(action,['action','ticket']);
+  if (action.action === 'filter') return keys(action,['action','ticket','code']) && text(action.code,64);
+  return action.action === 'apply' && keys(action,['action','ticket','choice']) && opaque(action.choice) &&
+    state.choice.error === null && state.choice.rows.some(row => row.choice === action.choice);
+}
 function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
+  const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
+  if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
-      !keys(state,['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning']) || !['application','closed'].includes(state.kind) ||
+      !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
       !Array.isArray(state.messages) || state.messages.length > 64 || state.messages.some(message => !text(message,4096)) || !text(state.exitWarning,4096) ||
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
@@ -1039,6 +1124,7 @@ function validateApplicationReply(reply, request, previous) {
         !['form','catalog-object','document-object'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
+  if (previous && Object.hasOwn(previous,'choice') !== Object.hasOwn(state,'choice')) throw new FormError('transport');
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
@@ -1063,17 +1149,31 @@ function validateApplicationReply(reply, request, previous) {
     sessions.add(session.id);
   }
   if (!(state.active === null || sessions.has(state.active)) || state.kind === 'closed' && sessions.size) throw new FormError('transport');
-  if (request.method === 'application.form' && result.session !== request.params.session) throw new FormError('transport');
+  if (Object.hasOwn(state,'choice') && state.choice !== null) {
+    const choice = state.choice;
+    if (!keys(choice,['session','ticket','control','row','column','title','code','rows','error']) ||
+        !sessions.has(choice.session) || !opaque(choice.ticket) || !locator(choice) || !text(choice.title,1024) || !text(choice.code,64) ||
+        ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length > 32 ||
+        choice.error === 'too_many_matches' && choice.rows.length) throw new FormError('transport');
+    const tokens = new Set();
+    for (const row of choice.rows) {
+      if (!keys(row,['choice','code','description']) || !opaque(row.choice) || tokens.has(row.choice) ||
+          !text(row.code,64) || !text(row.description,1024)) throw new FormError('transport');
+      tokens.add(row.choice);
+    }
+  }
+  if (['application.form','application.reference'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
+        request.method === 'application.reference' && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
-        !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit'].includes(nested.result.error))) throw new FormError('transport');
+        !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (request.method === 'application.form' && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -1087,6 +1187,11 @@ class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
+          !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
+          !referenceAction(params.action,this.state,params.session))) {
+        const error = new FormError('reference_refused'); error.preDispatch = true; throw error;
+      }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
@@ -1111,6 +1216,11 @@ class ApplicationClient {
     this.tail = operation.catch(() => {});
     return operation.finally(() => { this.pending--; });
   }
+  async reference(session, revision, action) {
+    const result = await this.request('application.reference',{session,revision,action});
+    if (!result.form) { this.lock(); throw new FormError('transport'); }
+    return result.form;
+  }
   async form(session, request) {
     const result = await this.request('application.form',{session,request});
     // A queued child opening can fail while the originating form event has a
@@ -1123,7 +1233,7 @@ class ApplicationClient {
 return {APPLICATION_PROTOCOL, validateApplicationReply, ApplicationClient};
 })();
 const __configurationApp = (() => {
-const {createTransport, takeSessionCapability} = __formClient;
+const {FormError, createTransport, takeSessionCapability} = __formClient;
 const {mountForm} = __formApp;
 const {createBrowserHost, documentInstance} = __browserAttachment;
 const {APPLICATION_PROTOCOL, ApplicationClient} = __configurationClient;
@@ -1145,13 +1255,24 @@ function mountApplication(environment, root, exchange = null) {
   exitWarning.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
+  let pickerBusy = false, pickerTicket = null, pickerReturn = null;
+  const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
+  const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
+  picker.className = 'panel reference-picker'; picker.setAttribute('role','dialog'); picker.setAttribute('aria-modal','true'); picker.hidden = true;
+  pickerTitle.id = `reference-title-${instance}`; picker.setAttribute('aria-labelledby',pickerTitle.id);
+  pickerCode.type = 'text'; pickerCode.maxLength = 64; pickerCode.autocomplete = 'off'; pickerCode.spellcheck = false;
+  pickerCode.setAttribute('aria-label','Exact code'); codeLabel.append(pickerCode);
+  pickerHelp.textContent = 'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
+  pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
+  picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(pickerBusy || client.state?.choice || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
+    if (userNavigation && client.state?.choice) return;
     if (userNavigation) navigation++;
     active = id;
     for (const [key, entry] of mounts) {
@@ -1163,6 +1284,66 @@ function mountApplication(environment, root, exchange = null) {
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
     workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+  }
+  async function choose(action, ticket = client.state?.choice?.ticket) {
+    const choice = client.state?.choice;
+    if (!choice || choice.ticket !== ticket || pickerBusy || client.pending || client.terminal || client.state.uncertain) return;
+    const entry = mounts.get(choice.session); if (!entry?.mount) return;
+    if (action.action === 'filter' && (typeof action.code !== 'string' || [...action.code].length > 64 ||
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.code))) {
+      status = 'Enter an exact code of at most 64 characters.'; paint(); return;
+    }
+    // Do not route cancellation through native form validation or raw code parsing.
+    pickerBusy = true; paint();
+    try { await entry.mount.reference({...action,ticket}); }
+    finally { pickerBusy = false; paint(); }
+  }
+  const filter = button('Find exact code',pickerActions,() => choose({action:'filter',code:pickerCode.value}));
+  const cancel = button('Cancel selection',pickerActions,() => choose({action:'cancel'}));
+  pickerCode.addEventListener('keydown',event => {
+    if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); choose({action:'filter',code:pickerCode.value}); }
+  });
+  picker.addEventListener('keydown',event => {
+    if (event.key === 'Escape') { event.preventDefault(); choose({action:'cancel'}); }
+    if (event.key !== 'Tab') return;
+    const descendants = node => [node,...Array.from(node.children || []).flatMap(descendants)];
+    const nodes = descendants(picker).filter(node => ['BUTTON','INPUT'].includes(node.tagName) && !node.disabled && !node.closest('[hidden]'));
+    const index = nodes.indexOf(document.activeElement);
+    if (nodes.length && (event.shiftKey && index <= 0 || !event.shiftKey && (index < 0 || index === nodes.length - 1))) {
+      event.preventDefault(); nodes[event.shiftKey ? nodes.length - 1 : 0].focus();
+    }
+  });
+  function drawPicker() {
+    const choice = client.state?.choice;
+    picker.hidden = !choice;
+    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice);
+    for (const entry of mounts.values()) entry.mount?.repaint();
+    if (!choice) {
+      pickerTicket = null;
+      if (pickerReturn && !client.terminal) {
+        const owner = mounts.get(pickerReturn.session);
+        if (!owner || owner.panel.hidden || owner.mount?.view.focusReference(pickerReturn)) pickerReturn = null;
+      }
+      return;
+    }
+    const newTicket = pickerTicket !== choice.ticket;
+    if (newTicket) { pickerTicket = choice.ticket; pickerCode.value = choice.code; pickerReturn = choice; }
+    pickerTitle.textContent = 'Choose ' + choice.title;
+    const disabled = pickerBusy || client.pending > 0 || client.terminal || client.state.uncertain;
+    filter.disabled = cancel.disabled = pickerCode.disabled = disabled;
+    pickerError.textContent = client.terminal ? 'The outcome may be unknown. Selection is locked; no request will be repeated.'
+      : choice.error === 'too_many_matches' ? 'Too many matches. Enter an exact code to continue.'
+      : status || (choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
+    pickerRows.replaceChildren();
+    for (const row of choice.rows) {
+      const entry = el('div'), description = el('span',row.code + ' · ' + row.description);
+      entry.append(description);
+      const select = button('Choose record',entry,() => choose({action:'apply',choice:row.choice},choice.ticket));
+      select.setAttribute('aria-label','Choose ' + row.code + ' ' + row.description); select.disabled = disabled;
+      pickerRows.append(entry);
+    }
+    if (newTicket || !disabled && picker.contains(document.activeElement) && document.activeElement.disabled) pickerCode.focus({preventScroll:true});
+    if (!disabled && document.activeElement === document.body) pickerCode.focus({preventScroll:true});
   }
   function reconcileSelection() {
     const catalog = client.state?.catalog;
@@ -1180,7 +1361,7 @@ function mountApplication(environment, root, exchange = null) {
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
     const document = entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
-    const unavailable = () => client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
+    const unavailable = () => Boolean(client.state?.choice) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
     const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
     const openSelected = () => {
       // Resolve from the live set and latest projection, never a captured row
@@ -1236,7 +1417,7 @@ function mountApplication(environment, root, exchange = null) {
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
     title.textContent = client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
-    const disabled = client.terminal || !client.state || client.state.kind === 'closed';
+    const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice);
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
@@ -1246,7 +1427,7 @@ function mountApplication(environment, root, exchange = null) {
       node.disabled = disabled || !['catalog-object','document-object'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
-    drawCatalog();
+    drawCatalog(); drawPicker();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -1260,6 +1441,8 @@ function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const entry = {panel,tab,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
+        referenceActive: () => Boolean(client.state?.choice),
+        onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
     }
     const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
@@ -1273,6 +1456,7 @@ function mountApplication(environment, root, exchange = null) {
     finally { paint(); }
   }
   function openForm(entry, record = null) {
+    if (client.state?.choice) return Promise.resolve();
     const key = `${entry}:${record ?? ''}`;
     if (openings.has(key)) return openings.get(key);
     const token = `open-${instance}-${++openToken}`; intents.set(token,navigation);
@@ -1284,7 +1468,7 @@ function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea,picker); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });

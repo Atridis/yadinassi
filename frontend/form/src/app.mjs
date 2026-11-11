@@ -1,4 +1,4 @@
-import {FormClient, FormError, createTransport, takeSessionCapability} from './client.mjs';
+import {FormClient, FormError, tableCell, scalarEqual, createTransport, takeSessionCapability} from './client.mjs';
 import {createFormView} from './view.mjs';
 import {createBrowserHost, AttachmentRefusal} from './attachment.mjs';
 
@@ -8,9 +8,10 @@ export function mountForm(environment, root, options = {}) {
   root = browserHost?.content || root;
   let client = null, token = browserHost?.launcher || null, queuedToken = null, busy = false, error = '';
   const view = createFormView(environment.document, root, {
+    reference: options.onReference ? action => run('reference', action) : null,
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
-  const paint = () => view.render({snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
+  const paint = () => view.render({paused: Boolean(options.referenceActive?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
     transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
   const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
@@ -39,9 +40,23 @@ export function mountForm(environment, root, options = {}) {
       paint();
     }
   }
+  function referenceTarget(action) {
+    const item = client.snapshot.items.find(item => item.name === action.control);
+    const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
+    if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
+        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+    return {value: field.value, controlId: item.controlId, tableId: item.tableId};
+  }
   async function run(event, name, row) {
     if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
-    if (busy || !client || client.locked) return;
+    if (busy || !client || client.locked || options.referenceActive?.() && event !== 'reference') return;
+    const reference = event === 'reference';
+    if (reference && !options.onReference) return;
+    const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
+    let target;
+    if (referenceStart) {
+      try { target = referenceTarget(name); } catch (caught) { showError(caught); paint(); return; }
+    }
     // Only an explicit host policy may discard unvalidated local drafts. Keep
     // them until an authoritative response, including a recoverable handler error.
     if (event === 'command' && client.snapshot.discardCommands?.includes(name)) {
@@ -58,7 +73,8 @@ export function mountForm(environment, root, options = {}) {
     // Validate the whole local draft before applying the first field, then serialize.
     let changes;
     try {
-      changes = view.changes(event === 'change' ? name : undefined);
+      // A picker cancellation must not validate unrelated raw filter text or drafts.
+      changes = reference && !referenceStart ? [] : view.changes(event === 'change' ? name : undefined);
       if (event === 'toggle') {
         // Validate every draft first, then apply the newly activated checkbox
         // last, even when declaration order puts it before the field just left.
@@ -80,7 +96,17 @@ export function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
-      if (event === 'command') await client.event('command', {control: name});
+      if (reference) {
+        if (referenceStart) {
+          const latest = referenceTarget(name);
+          if (latest.controlId !== target.controlId || latest.tableId !== target.tableId || !scalarEqual(latest.value, target.value))
+            throw new FormError('draft_changed');
+        }
+        let nested;
+        try { nested = await options.onReference({revision: client.snapshot.revision, action: name}); }
+        catch (caught) { if (caught?.preDispatch !== true) client.transportFailed = true; throw caught; }
+        client.adopt(nested);
+      } else if (event === 'command') await client.event('command', {control: name});
       else if (event === 'select') await client.event('select', {control: name, row});
       else if (event === 'close') await client.event('close');
     } catch (caught) { showError(caught); }
@@ -94,7 +120,7 @@ export function mountForm(environment, root, options = {}) {
     finally { finish(); view.endOwnershipReconcile(); }
   }
   async function refresh() {
-    if (busy || !client || options.transport && client.transportFailed) return;
+    if (busy || !client || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -119,7 +145,7 @@ export function mountForm(environment, root, options = {}) {
     browserHost.setPending(hasPending, () => Boolean(client.transportFailed || client.outcomeUnknown || client.snapshot?.uncertain));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, run, reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

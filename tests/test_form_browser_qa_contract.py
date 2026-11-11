@@ -20,7 +20,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
     def test_closed_push_routes_select_exact_harnesses(self):
         workflow = self.workflow()
         trigger = workflow.split('\non:\n', 1)[1].split('\npermissions:', 1)[0].strip()
-        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed]')
+        self.assertEqual(trigger, 'push:\n    branches: [codex/ui-browser-reviewed, codex/form-browser-reviewed, codex/reference-browser-reviewed, codex/configuration-browser-reviewed, codex/application-host-browser-reviewed, codex/business-application-browser-reviewed, codex/document-form-browser-reviewed, codex/configuration-reference-browser-reviewed]')
         catalog = self.step('Acquire eight original-demo kind flows with Chromium sandbox enabled')
         form = self.step('Acquire five form flows with Chromium sandbox enabled')
         configuration = self.step('Acquire six configuration and catalog form flows with Chromium sandbox enabled')
@@ -41,7 +41,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         workflow = self.workflow()
         self.assertEqual(workflow.split('\npermissions:\n', 1)[1].split('\nconcurrency:', 1)[0].strip(), 'contents: read')
         self.assertIn("if: github.repository == 'Atridis/yadinassi'", workflow)
-        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/business-application-browser-reviewed' && 'business-application-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || 'configuration-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
+        self.assertIn("group: ${{ github.ref == 'refs/heads/codex/ui-browser-reviewed' && 'catalog-browser-reviewed' || github.ref == 'refs/heads/codex/form-browser-reviewed' && 'form-browser-reviewed' || github.ref == 'refs/heads/codex/reference-browser-reviewed' && 'reference-browser-reviewed' || github.ref == 'refs/heads/codex/application-host-browser-reviewed' && 'application-host-browser-reviewed' || github.ref == 'refs/heads/codex/business-application-browser-reviewed' && 'business-application-browser-reviewed' || github.ref == 'refs/heads/codex/document-form-browser-reviewed' && 'document-form-browser-reviewed' || github.ref == 'refs/heads/codex/configuration-reference-browser-reviewed' && 'configuration-reference-browser-reviewed' || 'configuration-browser-reviewed' }}\n  cancel-in-progress: false", workflow)
         self.assertIn('runs-on: ubuntu-22.04\n    timeout-minutes: 10', workflow)
         self.assertIn('ref: ${{ github.sha }}\n          persist-credentials: false', workflow)
         self.assertIn('python -m pip install -e . wcwidth==0.8.2', workflow)
@@ -50,6 +50,7 @@ class FormBrowserQAContractTests(unittest.TestCase):
         self.assertEqual(re.findall(r'uses: (\S+)', workflow), [
             'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
             'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+            'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',
             'actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9',

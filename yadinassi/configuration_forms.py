@@ -176,6 +176,7 @@ class FormDefinition:
         session = server.session; form = session.form
         if enroll is not None:
             enroll(session.interpreter)
+            session._reference_enroll_activation = enroll
             session._reference_managers = reference_managers
             session._reference_slots = self.reference_slots
             from .configuration_reference_choice import ConfigurationReferenceChoice

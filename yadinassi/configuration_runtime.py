@@ -70,6 +70,8 @@ class ConfigurationApplication:
             raise ValueError('configuration cannot be activated')
         if database_context is not None:
             database_context.require_active(tabular_sections=True)
+            if references and tuple(database_context.backend.activation_issues) != configuration.activation_issues:
+                raise ValueError('reference application requires its exact source grant')
             if database_context.backend.export_configuration() != sources:
                 raise ValueError('configuration source does not match the database')
             view = database_context.backend.begin_read()

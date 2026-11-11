@@ -14,10 +14,10 @@
     "src/index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
     "src/style.css": "ed3e908ade43af99165f53d58fe2b2a3d4908de36c65f297862271d9874a989a",
     "../form/src/attachment.mjs": "0dd71f108c991898e9509df26722c42e993e8c1cc41328b141cdbab5a8fd6cf4",
-    "../form/src/client.mjs": "1b42a2b6f67e52c71dc14d1c7c8d63cd9c53f6479948ab202eb35e31d89de784"
+    "../form/src/client.mjs": "1e793aa2b411478d13dccfcd8c7589efe160e458d0720050062c31d5368cdfe0"
   },
   "outputs": {
-    "app.js": "58bf4b619ee4a5922e01413aa757225eacc888da7c419c8bb698bd9ae4c6e08f",
+    "app.js": "6e478f95915ca1a3e93063445c5de111779a5e825e05e2b7053f3810e5e13bbd",
     "index.html": "1f46712f7d084402c9458b1b812042ee3f04655ab232acc145e47fd732ceb4f1",
     "style.css": "ed3e908ade43af99165f53d58fe2b2a3d4908de36c65f297862271d9874a989a",
     "LICENSE.txt": "1fe6958409c8c257a70c587a18b6f7f412b179b456630790d30b2ec9a8e4b7d4"

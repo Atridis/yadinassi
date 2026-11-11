@@ -3,18 +3,34 @@ import {FormError, validateSnapshot, PROTOCOL as FORM_PROTOCOL} from '../../form
 export const APPLICATION_PROTOCOL = 'yadinassi-configuration-app/3';
 const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join() === [...expected].sort().join();
 const integer = value => Number.isSafeInteger(value) && value > 0;
-const text = (value, max) => typeof value === 'string' && value.length <= max;
+const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
+  !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','invalid_record','object_required','save_recovery_required',
-  'startup_cancelled','startup_failed','exit_cancelled'];
+  'startup_cancelled','startup_failed','exit_cancelled','reference_refused'];
+const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
+const locator = value => text(value.control,128) && value.control.length > 0 &&
+  (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
+function referenceAction(action, state, session) {
+  if (!Object.hasOwn(state || {}, 'choice') || !state.sessions.some(value => value.id === session)) return false;
+  if (['begin','clear'].includes(action?.action))
+    return state.choice === null && keys(action,['action','control','row','column']) && locator(action);
+  if (state.choice?.session !== session || action?.ticket !== state.choice.ticket) return false;
+  if (action.action === 'cancel') return keys(action,['action','ticket']);
+  if (action.action === 'filter') return keys(action,['action','ticket','code']) && text(action.code,64);
+  return action.action === 'apply' && keys(action,['action','ticket','choice']) && opaque(action.choice) &&
+    state.choice.error === null && state.choice.rows.some(row => row.choice === action.choice);
+}
 export function validateApplicationReply(reply, request, previous) {
   if (!keys(reply,['jsonrpc','id','result']) || reply.jsonrpc !== '2.0' || reply.id !== request.id) throw new FormError('transport');
   const result = reply.result, state = result?.state;
+  const shape = ['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning'];
+  if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (!keys(result,['protocol','state','error','session','form']) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
-      !keys(state,['kind','title','entries','sessions','active','uncertain','catalog','lifecycle','messages','exitWarning']) || !['application','closed'].includes(state.kind) ||
+      !keys(state,shape) || !['application','closed'].includes(state.kind) ||
       !['forms','prepared','starting','running','before_exit','exiting','cancelled','failed','closed'].includes(state.lifecycle) ||
       !Array.isArray(state.messages) || state.messages.length > 64 || state.messages.some(message => !text(message,4096)) || !text(state.exitWarning,4096) ||
       !text(state.title,1024) || typeof state.uncertain !== 'boolean' ||
@@ -26,6 +42,7 @@ export function validateApplicationReply(reply, request, previous) {
         !['form','catalog-object','document-object'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
+  if (previous && Object.hasOwn(previous,'choice') !== Object.hasOwn(state,'choice')) throw new FormError('transport');
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
@@ -50,17 +67,31 @@ export function validateApplicationReply(reply, request, previous) {
     sessions.add(session.id);
   }
   if (!(state.active === null || sessions.has(state.active)) || state.kind === 'closed' && sessions.size) throw new FormError('transport');
-  if (request.method === 'application.form' && result.session !== request.params.session) throw new FormError('transport');
+  if (Object.hasOwn(state,'choice') && state.choice !== null) {
+    const choice = state.choice;
+    if (!keys(choice,['session','ticket','control','row','column','title','code','rows','error']) ||
+        !sessions.has(choice.session) || !opaque(choice.ticket) || !locator(choice) || !text(choice.title,1024) || !text(choice.code,64) ||
+        ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length > 32 ||
+        choice.error === 'too_many_matches' && choice.rows.length) throw new FormError('transport');
+    const tokens = new Set();
+    for (const row of choice.rows) {
+      if (!keys(row,['choice','code','description']) || !opaque(row.choice) || tokens.has(row.choice) ||
+          !text(row.code,64) || !text(row.description,1024)) throw new FormError('transport');
+      tokens.add(row.choice);
+    }
+  }
+  if (['application.form','application.reference'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.hello','application.reference'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
+        request.method === 'application.reference' && nested.id !== 1 ||
         !keys(nested.result,['protocol','state','error']) || nested.result.protocol !== FORM_PROTOCOL ||
-        !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit'].includes(nested.result.error))) throw new FormError('transport');
+        !(nested.result.error === null || ['invalid_request','stale_revision','event_failed','closed','outcome_unknown','busy','request_limit','reference_refused'].includes(nested.result.error))) throw new FormError('transport');
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
-  } else if (request.method === 'application.form' && result.error === null) throw new FormError('transport');
+  } else if (['application.form','application.reference'].includes(request.method) && result.error === null) throw new FormError('transport');
   if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
@@ -74,6 +105,11 @@ export class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
+          !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
+          !referenceAction(params.action,this.state,params.session))) {
+        const error = new FormError('reference_refused'); error.preDispatch = true; throw error;
+      }
       const request = {jsonrpc:'2.0',id:++this.id,method,params}; let result;
       try {
         if (!Number.isSafeInteger(this.id)) throw new FormError('transport');
@@ -97,6 +133,11 @@ export class ApplicationClient {
     });
     this.tail = operation.catch(() => {});
     return operation.finally(() => { this.pending--; });
+  }
+  async reference(session, revision, action) {
+    const result = await this.request('application.reference',{session,revision,action});
+    if (!result.form) { this.lock(); throw new FormError('transport'); }
+    return result.form;
   }
   async form(session, request) {
     const result = await this.request('application.form',{session,request});

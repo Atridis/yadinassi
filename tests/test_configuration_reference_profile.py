@@ -56,6 +56,17 @@ class ReferenceProfileTests(unittest.TestCase):
                 SQLiteCatalogBackend.create(path,replace(imported,module_runtime=None,common_modules=()),_source_profile=REFERENCE_PROFILE)
             self.assertFalse(path.exists())
 
+    def test_same_source_bytes_do_not_upgrade_old_scalar_database_grant(self):
+        from business_configuration_fixture import sources as scalar_sources
+        from yadinassi.configuration_runtime import ConfigurationApplication
+        files=scalar_sources()
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'db.sqlite'
+            SQLiteCatalogBackend.create_business_application(path,files).close()
+            with closing(SQLiteDBContext(path)) as context:
+                with self.assertRaises(ValueError):
+                    ConfigurationApplication.from_reference_files(files,side='server',database_context=context)
+
     def test_new_database_reopens_exact_source(self):
         files=sources()
         with tempfile.TemporaryDirectory() as temporary:
@@ -84,3 +95,8 @@ class ReferenceProfileTests(unittest.TestCase):
                     if not column:
                         value=server.session.form._data[slot.casefold()]
                         self.assertIs(type(value),BSLCatalogReference);self.assertTrue(value.is_empty())
+                        identity=next(identity for number,identity,_ in definition.reference_targets if number==target)
+                        vm_ref=server.session.interpreter._catalogs._manager_by_metadata_uuid(identity).empty_ref()
+                        adjusted=server.session.form._attributes[slot.casefold()].value_type.adjust_value(vm_ref)
+                        self.assertEqual(adjusted.value_type,value.value_type)
+                        self.assertIsNot(adjusted.value_type.snapshot,vm_ref.value_type.snapshot)

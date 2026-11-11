@@ -89,9 +89,13 @@ class _FormInterpreter(Interpreter):
         return value
 
     def _activation_interpreter(self):
-        return _FormInterpreter(self._form_session, self.output, encoding=self.encoding,
+        child = _FormInterpreter(self._form_session, self.output, encoding=self.encoding,
                                 native_target=self.native_target, database_context=self.database_context,
                                 compilation_profile=self.compilation_profile, family_owner=self._family_owner)
+        enroll = getattr(self._form_session, '_reference_enroll_activation', None)
+        if enroll is not None:
+            enroll(child)
+        return child
 
     def _visit(self, node):
         session = self._form_session

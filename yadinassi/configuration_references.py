@@ -3,7 +3,7 @@
 Only explicitly enrolled snapshots of the same open database may normalize into
 this coordinator's catalog managers. Browser capabilities never name records.
 """
-from uuid import UUID
+from weakref import WeakSet
 
 from .catalog_types import BSLCatalogReference
 from .form_references import FormReferenceBinding, FormReferenceScope
@@ -13,7 +13,7 @@ def owned_reference_scope(owned, targets):
     catalogs = owned.manager._catalogs
     metadata = catalogs._metadata
     metadata._snapshot()
-    enrolled = {metadata}
+    enrolled = WeakSet((metadata,))
     managers = {}
     bindings = {}
     for target, identity, name in targets:

@@ -66,8 +66,25 @@ export function createFormView(document, root, handlers) {
   main.addEventListener('pointerdown', event => { actionPointer = Boolean(event.target.closest('[data-form-action]')); });
   const releasePointer = () => { setTimeout(() => { actionPointer = false; }, 0); };
   main.addEventListener('pointerup', releasePointer); main.addEventListener('pointercancel', () => { actionPointer = false; });
+  function referenceActions(parent, locator) {
+    if (!handlers.reference) return null;
+    const group = element('span', 'reference-actions');
+    const choose = element('button', 'quiet', 'Choose'), clear = element('button', 'quiet', 'Clear');
+    for (const [node, action] of [[choose, 'begin'], [clear, 'clear']]) {
+      node.type = 'button'; node.dataset.formAction = 'reference';
+      node.addEventListener('click', () => { if (!node.disabled) handlers.reference({action, ...locator}); });
+    }
+    group.append(choose, clear); parent.append(group); return {group, choose, clear};
+  }
+  function paintReference(actions, field, label, disabled) {
+    if (!actions) return;
+    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
+    actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
+    actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
+  }
   function makeControl(item) {
-    const row = element(item.kind === 'button' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -106,7 +123,8 @@ export function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    return {row, caption, input, hint, item};
+    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
   function discardTable(name) {
@@ -160,11 +178,12 @@ export function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    return {cell, input, type: column.type, key};
+    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {
     const item = control.item;
-    const disabled = recovery.size > 0 || model.busy || model.locked || !active || !item.enabled || !item.visible;
+    const disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active || !item.enabled || !item.visible;
     control.heading.textContent = item.title || item.name;
     control.caption.textContent = (item.title || item.name) + '. ' + control.help.textContent;
     control.scroll.setAttribute('aria-label', item.title || item.name);
@@ -209,6 +228,7 @@ export function createFormView(document, root, handlers) {
         if (!cell) { cell = makeCell(control, data.id, column); cell.valueType = value.type; row.cells.set(column.name, cell); }
         if (row.node.children[index + 1] !== cell.cell) row.node.insertBefore(cell.cell, row.node.children[index + 1] || null);
         const field = tableCell(item, data.id, column.name), readOnly = !editable(field), input = cell.input;
+        paintReference(cell.reference, field, (column.title || column.name) + ', row ' + data.id, disabled);
         input.type = value.type === 'Boolean' ? 'checkbox' : 'text';
         if (input.type === 'checkbox') input.dataset.formAction = 'toggle';
         else delete input.dataset.formAction;
@@ -217,7 +237,7 @@ export function createFormView(document, root, handlers) {
         input.setAttribute('aria-label', (column.title || column.name) + ', row ' + data.id);
         input.setAttribute('aria-describedby', control.help.id);
         input.setAttribute('aria-readonly', readOnly ? 'true' : 'false');
-        input.title = value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
+        input.title = value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
           : ['Null', 'Undefined'].includes(value.type) ? 'Typed empty value · read-only'
           : readOnly ? 'Read-only' : value.type === 'Number' ? 'Exact decimal · use a decimal point (.)' : '';
         const draft = cellDrafts.get(cell.key), text = draft ? draft.value : value.type === 'Boolean' ? value.value : scalarText(value);
@@ -249,8 +269,8 @@ export function createFormView(document, root, handlers) {
       : current.lifecycle === 'failed' ? 'Failed' : 'Closed';
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
-    refresh.disabled = model.busy || !model.connected || model.exhausted;
-    close.disabled = recovery.size > 0 || model.busy || model.locked || !active;
+    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted;
+    close.disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
@@ -278,7 +298,8 @@ export function createFormView(document, root, handlers) {
       if (item.kind === 'table') { renderTable(control, model, active); continue; }
       const readOnly = item.kind === 'field' && !editable(item);
       if (readOnly) { remember('field:' + item.name, item.name, drafts.get(item.name)); drafts.delete(item.name); }
-      input.disabled = (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
+      paintReference(control.reference, item, item.title || item.name, recovery.size > 0 || model.paused || model.busy || model.locked || !active);
+      input.disabled = model.paused || (recovery.size > 0 && (item.kind !== 'button' || !current.discardCommands?.includes(item.name))) || model.busy || model.locked || !active || !item.enabled || !item.visible ||
         (item.kind === 'button' && item.readOnly) || (input.type === 'checkbox' && readOnly);
       input.readOnly = readOnly;
       if (item.kind === 'button') input.textContent = item.title || item.name;
@@ -292,7 +313,7 @@ export function createFormView(document, root, handlers) {
         else if (input.value !== value) input.value = value;
         input.maxLength = item.value.type === 'Number' ? 144 : LIMITS.text;
         input.inputMode = item.value.type === 'Number' ? 'decimal' : 'text';
-        hint.textContent = item.value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
+        hint.textContent = item.value.type === 'FormCatalogRef' ? 'Catalog reference · choose an existing record; no text editing' : item.value.type === 'Date' ? 'Date ticks · read-only · no timezone conversion'
           : ['Null', 'Undefined'].includes(item.value.type) ? 'Typed empty value · read-only'
           : readOnly ? 'Read-only' : item.value.type === 'Number' ? 'Exact decimal · use a decimal point (.)'
           : item.value.type === 'Boolean' ? '' : 'Applied when you leave the field or run a command';
@@ -311,6 +332,12 @@ export function createFormView(document, root, handlers) {
   }
   return {
     render,
+    focusReference(locator) {
+      const control = controls.get(locator.control);
+      const target = locator.row === null ? control?.reference?.choose : control?.rows?.get(locator.row)?.cells.get(locator.column)?.reference?.choose;
+      if (!target || target.disabled || target.closest('[hidden]')) return false;
+      target.focus({preventScroll: true}); return true;
+    },
     accept(change) {
       if (typeof change === 'string') drafts.delete(change);
       else if (!Object.hasOwn(change, 'row')) drafts.delete(change.control);

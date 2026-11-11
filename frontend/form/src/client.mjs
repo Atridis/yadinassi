@@ -3,6 +3,7 @@ export const PROTOCOL = 'yadinassi-form-ui/1';
 export const LIMITS = Object.freeze({bytes: 131072, text: 8192, controls: 128, messages: 64,
   counter: 2147483647, discardCommands: 64, tables: 4, columns: 8, rows: 32, rowIds: 4096, controlIds: 1024, cells: 256, dateTicks: '3155378975990000'});
 export const ERROR_MESSAGES = Object.freeze({
+  reference_refused: 'The reference selection was refused. Review the current value and choose again.',
   invalid_request: 'The host rejected this request. The displayed state is authoritative.',
   stale_revision: 'The form changed elsewhere. Review the latest state before another action.',
   event_failed: 'The handler returned an error. Completed changes are shown below.',
@@ -70,6 +71,13 @@ export function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
+    case 'FormCatalogRef':
+      if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
+          typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
+          Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
+          (value.key === null || typeof value.key === 'string' && /^[0-9a-f]{32}$/.test(value.key)) &&
+          validText(value.text, 4096) && [...value.text].length <= 1024) return value;
+      break;
     case 'Date':
       if (keys(value, ['type', 'ticks']) && typeof value.ticks === 'string' && value.ticks.length <= 19 &&
           /^(?:0|[1-9][0-9]*)$/.test(value.ticks) && BigInt(value.ticks) <= BigInt(LIMITS.dateTicks)) return value;
@@ -112,7 +120,7 @@ export function validateSnapshot(state) {
       const columns = new Set(), rows = new Set();
       for (const column of item.columns) {
         if (!keys(column, ['name', 'title', 'type', 'readOnly']) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         columns.add(column.name);
       }
@@ -145,6 +153,7 @@ export function validateSnapshot(state) {
 }
 export function scalarText(value) {
   validateScalar(value);
+  if (value.type === 'FormCatalogRef') return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -174,6 +183,9 @@ export function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 export function scalarEqual(left, right) {
+  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+    return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
+      left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
 }
 export class FormClient {
@@ -194,25 +206,29 @@ export class FormClient {
       let reply;
       try {
         reply = await this.exchange({jsonrpc: '2.0', id, method, params});
-        if (!keys(reply, ['jsonrpc', 'id', 'result']) || reply.jsonrpc !== '2.0' || reply.id !== id ||
-            !keys(reply.result, ['protocol', 'state', 'error']) || reply.result.protocol !== PROTOCOL ||
-            !(reply.result.error === null || ['invalid_request', 'stale_revision', 'event_failed', 'closed',
-              'outcome_unknown', 'busy', 'request_limit'].includes(reply.result.error))) throw new FormError('transport');
-        validateSnapshot(reply.result.state);
-        if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
       } catch (error) {
         if (error?.preDispatch === true) throw error;
-        this.transportFailed = true;
-        throw new FormError('transport');
+        this.transportFailed = true; throw new FormError('transport');
       }
-      // Even a failed handler can have completed effects. Adopt its whole snapshot first.
-      this.snapshot = reply.result.state;
-      this.transportFailed = false;
-      this.outcomeUnknown ||= this.snapshot.uncertain || reply.result.error === 'outcome_unknown';
-      this.exhausted ||= reply.result.error === 'request_limit';
-      if (reply.result.error !== null) throw new FormError(reply.result.error);
-      return this.snapshot;
+      return this.adopt(reply, id);
     } finally { this.busy = false; }
+  }
+  /** Adopt a host reference result without fabricating a form event or consuming its request ID. */
+  adopt(reply, expectedId = 1) {
+    try {
+      if (!keys(reply, ['jsonrpc', 'id', 'result']) || reply.jsonrpc !== '2.0' || reply.id !== expectedId ||
+          !keys(reply.result, ['protocol', 'state', 'error']) || reply.result.protocol !== PROTOCOL ||
+          !(reply.result.error === null || ['invalid_request', 'stale_revision', 'event_failed', 'closed',
+            'outcome_unknown', 'busy', 'request_limit', 'reference_refused'].includes(reply.result.error))) throw new FormError('transport');
+      validateSnapshot(reply.result.state);
+      if (this.snapshot && reply.result.state.revision < this.snapshot.revision) throw new FormError('transport');
+    } catch { this.transportFailed = true; throw new FormError('transport'); }
+    // Authoritative failures can contain completed effects, including presentation changes.
+    this.snapshot = reply.result.state; this.transportFailed = false;
+    this.outcomeUnknown ||= this.snapshot.uncertain || reply.result.error === 'outcome_unknown';
+    this.exhausted ||= reply.result.error === 'request_limit';
+    if (reply.result.error !== null) throw new FormError(reply.result.error);
+    return this.snapshot;
   }
   hello() { return this.request('form.hello', {protocol: PROTOCOL}); }
   resync() { return this.request('form.snapshot', {}); }

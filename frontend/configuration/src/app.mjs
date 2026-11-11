@@ -1,4 +1,4 @@
-import {createTransport, takeSessionCapability} from '../../form/src/client.mjs';
+import {FormError, createTransport, takeSessionCapability} from '../../form/src/client.mjs';
 import {mountForm} from '../../form/src/app.mjs';
 import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs';
 import {APPLICATION_PROTOCOL, ApplicationClient} from './client.mjs';
@@ -20,13 +20,24 @@ export function mountApplication(environment, root, exchange = null) {
   exitWarning.setAttribute('role','status');
   const mounts = new Map(), openings = new Map(); let active = null, openToken = 0, status = '', navigation = 0, client;
   const intents = new Map();
+  let pickerBusy = false, pickerTicket = null, pickerReturn = null;
+  const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
+  const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
+  picker.className = 'panel reference-picker'; picker.setAttribute('role','dialog'); picker.setAttribute('aria-modal','true'); picker.hidden = true;
+  pickerTitle.id = `reference-title-${instance}`; picker.setAttribute('aria-labelledby',pickerTitle.id);
+  pickerCode.type = 'text'; pickerCode.maxLength = 64; pickerCode.autocomplete = 'off'; pickerCode.spellcheck = false;
+  pickerCode.setAttribute('aria-label','Exact code'); codeLabel.append(pickerCode);
+  pickerHelp.textContent = 'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
+  pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
+  picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
   };
-  const pending = () => Boolean(client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
+  const pending = () => Boolean(pickerBusy || client.state?.choice || client.pending || client.terminal || client.state?.uncertain || [...mounts.values()].some(entry => entry.mount?.hasPending()));
   function show(id, userNavigation = true) {
+    if (userNavigation && client.state?.choice) return;
     if (userNavigation) navigation++;
     active = id;
     for (const [key, entry] of mounts) {
@@ -38,6 +49,66 @@ export function mountApplication(environment, root, exchange = null) {
     const saved = mounts.get(id)?.focus;
     if (saved?.node && !saved.node.disabled) { saved.node.focus({preventScroll:true}); if (typeof saved.start === 'number') saved.node.setSelectionRange(saved.start,saved.end); }
     workarea.className = active && client.state?.catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
+  }
+  async function choose(action, ticket = client.state?.choice?.ticket) {
+    const choice = client.state?.choice;
+    if (!choice || choice.ticket !== ticket || pickerBusy || client.pending || client.terminal || client.state.uncertain) return;
+    const entry = mounts.get(choice.session); if (!entry?.mount) return;
+    if (action.action === 'filter' && (typeof action.code !== 'string' || [...action.code].length > 64 ||
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.code))) {
+      status = 'Enter an exact code of at most 64 characters.'; paint(); return;
+    }
+    // Do not route cancellation through native form validation or raw code parsing.
+    pickerBusy = true; paint();
+    try { await entry.mount.reference({...action,ticket}); }
+    finally { pickerBusy = false; paint(); }
+  }
+  const filter = button('Find exact code',pickerActions,() => choose({action:'filter',code:pickerCode.value}));
+  const cancel = button('Cancel selection',pickerActions,() => choose({action:'cancel'}));
+  pickerCode.addEventListener('keydown',event => {
+    if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); choose({action:'filter',code:pickerCode.value}); }
+  });
+  picker.addEventListener('keydown',event => {
+    if (event.key === 'Escape') { event.preventDefault(); choose({action:'cancel'}); }
+    if (event.key !== 'Tab') return;
+    const descendants = node => [node,...Array.from(node.children || []).flatMap(descendants)];
+    const nodes = descendants(picker).filter(node => ['BUTTON','INPUT'].includes(node.tagName) && !node.disabled && !node.closest('[hidden]'));
+    const index = nodes.indexOf(document.activeElement);
+    if (nodes.length && (event.shiftKey && index <= 0 || !event.shiftKey && (index < 0 || index === nodes.length - 1))) {
+      event.preventDefault(); nodes[event.shiftKey ? nodes.length - 1 : 0].focus();
+    }
+  });
+  function drawPicker() {
+    const choice = client.state?.choice;
+    picker.hidden = !choice;
+    for (const node of [toolbar,entries,tabs,workarea]) node.inert = Boolean(choice);
+    for (const entry of mounts.values()) entry.mount?.repaint();
+    if (!choice) {
+      pickerTicket = null;
+      if (pickerReturn && !client.terminal) {
+        const owner = mounts.get(pickerReturn.session);
+        if (!owner || owner.panel.hidden || owner.mount?.view.focusReference(pickerReturn)) pickerReturn = null;
+      }
+      return;
+    }
+    const newTicket = pickerTicket !== choice.ticket;
+    if (newTicket) { pickerTicket = choice.ticket; pickerCode.value = choice.code; pickerReturn = choice; }
+    pickerTitle.textContent = 'Choose ' + choice.title;
+    const disabled = pickerBusy || client.pending > 0 || client.terminal || client.state.uncertain;
+    filter.disabled = cancel.disabled = pickerCode.disabled = disabled;
+    pickerError.textContent = client.terminal ? 'The outcome may be unknown. Selection is locked; no request will be repeated.'
+      : choice.error === 'too_many_matches' ? 'Too many matches. Enter an exact code to continue.'
+      : status || (choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
+    pickerRows.replaceChildren();
+    for (const row of choice.rows) {
+      const entry = el('div'), description = el('span',row.code + ' · ' + row.description);
+      entry.append(description);
+      const select = button('Choose record',entry,() => choose({action:'apply',choice:row.choice},choice.ticket));
+      select.setAttribute('aria-label','Choose ' + row.code + ' ' + row.description); select.disabled = disabled;
+      pickerRows.append(entry);
+    }
+    if (newTicket || !disabled && picker.contains(document.activeElement) && document.activeElement.disabled) pickerCode.focus({preventScroll:true});
+    if (!disabled && document.activeElement === document.body) pickerCode.focus({preventScroll:true});
   }
   function reconcileSelection() {
     const catalog = client.state?.catalog;
@@ -55,7 +126,7 @@ export function mountApplication(environment, root, exchange = null) {
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
     const document = entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
-    const unavailable = () => client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
+    const unavailable = () => Boolean(client.state?.choice) || client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
     const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
     const openSelected = () => {
       // Resolve from the live set and latest projection, never a captured row
@@ -111,7 +182,7 @@ export function mountApplication(environment, root, exchange = null) {
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
     title.textContent = client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
-    const disabled = client.terminal || !client.state || client.state.kind === 'closed';
+    const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice);
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
@@ -121,7 +192,7 @@ export function mountApplication(environment, root, exchange = null) {
       node.disabled = disabled || !['catalog-object','document-object'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
-    drawCatalog();
+    drawCatalog(); drawPicker();
   }
   function reconcile(result, request) {
     status = result.error ? `Application: ${result.error}` : '';
@@ -135,6 +206,8 @@ export function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const entry = {panel,tab,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
       entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
+        referenceActive: () => Boolean(client.state?.choice),
+        onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
     }
     const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
@@ -148,6 +221,7 @@ export function mountApplication(environment, root, exchange = null) {
     finally { paint(); }
   }
   function openForm(entry, record = null) {
+    if (client.state?.choice) return Promise.resolve();
     const key = `${entry}:${record ?? ''}`;
     if (openings.has(key)) return openings.get(key);
     const token = `open-${instance}-${++openToken}`; intents.set(token,navigation);
@@ -159,7 +233,7 @@ export function mountApplication(environment, root, exchange = null) {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,workarea,picker); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
   environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
