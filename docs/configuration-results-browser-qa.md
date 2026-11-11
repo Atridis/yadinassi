@@ -65,3 +65,12 @@ route, keyed to and compared with the delivered browser request. They do not
 read the same body again through CDP after delivery, when Chromium may have
 evicted it. This observer change does not retry RPCs, synthesize responses or
 replace the response with current DOM/application state.
+
+
+The four scenarios passed in [run 43005548423](https://github.com/Atridis/yadinassi/actions/runs/43005548423)
+on source tree `4395466cb3f2a8e6148125b6f7daa7b788845361`, with 17 business RPCs
+and 28 total RPCs. All 283 source hashes and four image hashes were checked;
+Chromium namespace/Seccomp sandbox and natural host shutdown were observed.
+This includes the real confirmed Close response lost before browser delivery:
+flat owned-capability forms remained copy-only navigable without reopening the
+transport or replaying any action.

@@ -98,4 +98,23 @@ verified entry marker. This is not successful lifecycle evidence. Static review
 found unqualified owner module variables used only from client handlers, unlike
 the existing explicit client-variable probe. Owner state now declares AtClient;
 entry is emitted before trace setup, and startup exceptions terminate without
-exporting error text. Whether this resolves the native timeout is unmeasured.
+exporting error text. The next real acquisition completed all five flows successfully.
+
+
+## Acquired behavior
+
+[Run 43005235949](https://github.com/Atridis/yadinassi/actions/runs/43005235949)
+on source tree `0c86a3ee2c2ccfebe5055a2d73fcc59c1c21f344` completed on
+1C 8.3.27.1508. The checked 400-byte output has SHA-256
+`286dfe1c79767b8f78955bdca1efce5d4ee3ba07d71fa4768d027637ff4fad84`.
+
+- String, Undefined and Structure each reached completion once, with the expected
+  value and shared AdditionalParameters mutation visible to the owner.
+- The first BeforeClose refusal kept the child alive; the second accepted close
+  delivered exactly one completion.
+- CancelOnOpen produced no completion during the bounded three-idle-turn observation.
+- Every accepted close recorded BeforeClose, OnClose, then completion in that order.
+
+Entry, completion, executable/source witnesses, process exit and cleanup were
+verified. These are five real lifecycle observations, not a broad runtime/native
+parity claim or XML serializer equivalence. The historical oracle is unchanged.
