@@ -49,10 +49,9 @@ class AccumulationAcquisitionTests(unittest.TestCase):
                      'scripts/native_1c_bootstrap/accumulation_register_suite.py',
                      'scripts/native_1c_accumulation_probe.sh'):
             self.assertIn(path+' text eol=lf',attributes)
-    def test_authored_child_order_matches_designer_220_sequence(self):
-        # MDClasses 2.20 AccumulationRegisterChildObjects: Resource*,
-        # Attribute*, Dimension*. Semantic projection alone sorts these groups.
-        # https://github.com/yellow-hammer/namespace-forest/blob/0023896332406bdc163f746daaf91756d26a54bd/schemas/designer/2.20/v8.1c.ru-8.3-MDClasses.xsd#L111-L119
+    def test_source_derived_child_order_matches_native_sequence(self):
+        # Both pinned native 2.4 sources retain Resource*, Attribute*, Dimension*.
+        # Keep this serialization order even though the material gate sorts fields.
         from xml.etree import ElementTree as ET
         _,assets=fixture.load_saved()
         root=ET.fromstring(assets['AccumulationRegister.xml'])

@@ -45,7 +45,38 @@ a PR that triggers native acquisition, the coordinator must announce exact local
 counts and the sixteen-case native count. A source branch push alone is an early
 checkpoint, not test execution or evidence.
 
-Public XML structure was inspected read-only at:
-https://github.com/vanessa-opensource/add/blob/2deeed6636dfbb84f42ae625fd40c8ab662bb64e/lib/CF/83xdd/AccumulationRegisters/РегистрНакопленияОстатки.xml
-Only schema structure informed this candidate. Fixture UUIDs, field names,
-modules and data are newly authored. Designer acceptance remains required.
+## Native source-derived declaration
+
+`AccumulationRegister.xml` is a modified MPL-2.0 derivative of complete native
+XML from vanessa-opensource/add, pinned at commit
+`2deeed6636dfbb84f42ae625fd40c8ab662bb64e`. The complete unmodified inputs,
+license, attribution and exact substitutions are in `public_source/vanessa_add`.
+`native_source.py` deterministically reproduces the owned declaration offline;
+it is not staged or imported by the native acquisition route or runtime importer.
+
+The complete native namespace header, all five StandardAttribute descriptors,
+and full Resource/Dimension wrappers come from `РегистрНакопленияОстатки.xml`.
+The full Attribute wrapper alone comes from `РегистрНакопления2.xml`; its boolean
+Type is replaced wholesale with the owned Note String type. No sibling catalog
+references, modules, forms or permissions are imported. Resource*, Attribute*,
+Dimension* order, original owned UUIDs and all six generated TypeId/ValueId
+pairs are retained. Register type, locking, totals splitting, field groups,
+scalar qualifiers and UseInTotals preserve the original sixteen-case design.
+The document, handler, observer, grants and material redump gate are unchanged.
+
+The input retains its truthful native schema **2.4**. Designer 8.3.27.1508 loaded
+the full unmodified balance declaration and redumped it as 2.20 in diagnostic
+run [42978092661](https://github.com/Atridis/yadinassi/actions/runs/42978092661),
+source tree `9c190f8255be8c81372e493e010f472ec122cab1`. That diagnostic's strict
+full-signature comparison did not pass, so it is not accepted native evidence
+or parity and proves no specific cause of the earlier sparse-XML loader crash.
+It supports using complete native wrappers rather than guessing another sparse
+hybrid. The derived five-field declaration still requires its own successful
+load, material redump verification and all sixteen observations.
+
+Designer-added UI defaults and 2.4-to-2.20 serialization are not semantic
+observations. The existing projection still checks the material fields,
+qualifiers, identities, controls, document linkage and handler bytes. No gate is
+weakened and no arbitrary native XML is newly accepted by runtime source grants.
+In particular, this acquisition-only 2.4 input does not activate runtime import
+support, aggregate rules, information-register uniqueness or any parity claim.
