@@ -848,7 +848,8 @@ class ConfigurationController:
             session._owned_close = lambda result: self._request_owned_close(sid, result)
             for alias in ('Close', 'Закрыть'):
                 key = alias.casefold()
-                if key in interpreter.routines or key in interpreter.server_routines or key in interpreter.functions:
+                if (key in interpreter.routines or key in interpreter.server_routines
+                        or key in interpreter.functions or key in self.application.reserved_form_names):
                     raise ValueError('reserved owned-form Close alias')
                 interpreter.functions[key] = HostFunction(alias, session.request_close, returns_value=False)
                 session.reserved_names.add(key)

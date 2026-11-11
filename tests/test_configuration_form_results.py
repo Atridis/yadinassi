@@ -148,6 +148,27 @@ class OwnedFormHostTests(HostFixture, unittest.TestCase):
         _, app, _, owner, child=self.pair(sources(accept='ThisObject.Close("method");'))
         self.event(app,child,'AcceptButton'); self.assertEqual(self.greeting(app,owner),'method')
 
+    def test_global_common_close_alias_cannot_shadow_owned_host_enrollment(self):
+        from configuration_runtime_fixture import module_files
+        for alias in ('Close', 'Закрыть'):
+            with self.subTest(alias=alias):
+                files=sources()
+                extra=module_files([('Shadow',
+                    f'Procedure {alias}(Result) Export Message("shadow called"); EndProcedure',
+                    {'Global':'true'})])
+                files.update({p:b for p,b in extra.items() if p.startswith('CommonModules/')})
+                files['Configuration.xml']=files['Configuration.xml'].replace(
+                    b'</ChildObjects>',b'<CommonModule>Shadow</CommonModule></ChildObjects>')
+                broker,app,packets=self.host(files)
+                self.assertIn(alias.casefold(),app.application.reserved_form_names)
+                result=self.rpc(app,'open',entry=app.names['commonform.welcome'],request='shadow')
+                self.assertEqual(result['error'],'open_failed')
+                self.assertFalse(result['state']['uncertain'])
+                self.assertFalse(app.sessions); self.assertFalse(broker.sessions)
+                self.assertFalse(app.owner_children); self.assertFalse(app.owned_results)
+                self.assertNotIn('shadow called',app.application_messages)
+                self.assertFalse(any(p['operation']=='form' for p in packets))
+
     def test_structure_result_detached_at_request_and_additional_shared(self):
         files=sources(accept='R=New Structure("Text", "first"); Close(R); R.Text="later";',
                       completion='Greeting=Result.Text; Extra.Calls=Extra.Calls+1;')
