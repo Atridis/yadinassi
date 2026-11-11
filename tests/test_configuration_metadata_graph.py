@@ -1,4 +1,5 @@
 """Admitted metadata graph; local contract tests are not new native evidence."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import sqlite3
@@ -269,7 +270,7 @@ class MetadataGraphTests(unittest.TestCase):
 
     def test_root_configuration_source_digest_checked(self):
         vm,context=self.runtime()
-        with sqlite3.connect(context.path) as c:
+        with closing(sqlite3.connect(context.path)) as c, c:
             c.execute("UPDATE configuration_file SET content=? WHERE path='Configuration.xml'",(b'<bad/>',))
         with self.assertRaises(BackendError): vm._metadata._ensure_source_info()
 
