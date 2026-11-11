@@ -53,9 +53,10 @@ export function mountApplication(environment, root, exchange = null) {
     workarea.className = active && catalog ? 'configuration-workarea with-form' : 'configuration-workarea';
     if (!catalog) return;
     const entry = client.state.entries.find(entry => entry.id === catalog.entry);
+    const document = entry.kind === 'document-object';
     const heading = el('h2',entry.title), actions = el('div'); actions.className = 'catalog-commands';
     const unavailable = () => client.terminal || client.state?.uncertain || client.state?.kind === 'closed' || client.pending > 0;
-    const create = button('New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
+    const create = button(document ? 'New document' : 'New record',actions,() => { if (!unavailable()) openForm(catalog.entry); });
     const openSelected = () => {
       // Resolve from the live set and latest projection, never a captured row
       // index or a previous render's single selection.
@@ -67,7 +68,7 @@ export function mountApplication(environment, root, exchange = null) {
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
-    for (const title of ['Select','Code','Description','Deletion mark']) headings.append(el('th',title));
+    for (const title of (document ? ['Select','Number','Date','Deletion mark'] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
     head.append(headings);table.append(head);const body = el('tbody'); table.append(body);
     const rows = [];
     function paintSelection() {
@@ -83,7 +84,7 @@ export function mountApplication(environment, root, exchange = null) {
     }
     for (const record of catalog.rows) {
       const row = el('tr'), selectCell = el('td'), check = el('input'); check.type = 'checkbox'; row.tabIndex = 0;
-      row.dataset.recordKey = record.key;check.setAttribute('aria-label',`Select ${record.code} ${record.description}`);
+      row.dataset.recordKey = record.key;check.setAttribute('aria-label',`Select ${document ? record.number : record.code} ${document ? record.date : record.description}`);
       check.addEventListener('click',event => { event.stopPropagation?.(); select(record.key,true); });
       row.addEventListener('click',event => select(record.key,Boolean(event.ctrlKey || event.metaKey)));
       row.addEventListener('keydown',event => {
@@ -95,7 +96,7 @@ export function mountApplication(environment, root, exchange = null) {
           rows[index+(event.key === 'ArrowDown'?1:-1)]?.row.focus();
         }
       });
-      selectCell.append(check);row.append(selectCell,el('td',record.code),el('td',record.description),el('td',record.deletionMark?'Marked':''));
+      selectCell.append(check);row.append(selectCell,el('td',document ? record.number : record.code),el('td',document ? record.date : record.description),el('td',record.deletionMark?'Marked':''));
       rows.push({row,check,key:record.key});body.append(row);
     }
     catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
@@ -114,10 +115,10 @@ export function mountApplication(environment, root, exchange = null) {
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
-        if (entry.kind === 'catalog-object') { show(null);perform('application.catalog',{entry:entry.id}); }
+        if (['catalog-object','document-object'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
       });
-      node.disabled = disabled || entry.kind !== 'catalog-object' && client.state.sessions.length >= 8;
+      node.disabled = disabled || !['catalog-object','document-object'].includes(entry.kind) && client.state.sessions.length >= 8;
     }
     for (const entry of mounts.values()) if (client.terminal) entry.mount?.lock();
     drawCatalog();
