@@ -6,7 +6,7 @@ MAX_FILE=original.MAX_FILE
 MAX_TOTAL=original.MAX_TOTAL
 _files=original._files
 VALIDATION_MODE='owned-enumeration-material-projection-v1'
-ASSET_HASHES={'Enum.xml': 'cebaebb5cdab296cc655c21ee7a2201e7dee1cfb6b2c4cb5d9bab182de859857'}
+ASSET_HASHES={'Enum.xml': '0e7c9247b8850846640f32c6b05677b898366d8a721e5c5751efadc45155e717'}
 
 def load_saved():
     import hashlib

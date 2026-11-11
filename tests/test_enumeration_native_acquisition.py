@@ -58,6 +58,12 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
     def test_fixture_adds_only_enum_and_read_right(self):
         before=baseline();_,after=fixture.prepare(before)
         self.assertEqual(set(after)-set(before),{'Enums/OwnedStatus.xml'})
+        md='{'+fixture.original.MD+'}'
+        properties=ET.fromstring(after['Enums/OwnedStatus.xml']).find(md+'Enum/'+md+'Properties')
+        names=[node.tag for node in properties]
+        index=names.index(md+'StandardAttributes')
+        self.assertEqual(names[index-1:index+2],[md+'UseStandardCommands',md+'StandardAttributes',md+'Characteristics'])
+        self.assertEqual(len(properties[index]),0)
         self.assertIn(b'<Enum>OwnedStatus</Enum>',after['Configuration.xml'])
         rights=after[fixture.original.ROLE_FILES[1]]
         self.assertIn(b'Enum.OwnedStatus',rights)
