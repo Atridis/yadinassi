@@ -1,4 +1,4 @@
-"""Authored inventory form sources retain exact bytes with Windows autocrlf."""
+"""All authored XML/BSL example sources retain exact bytes with Windows autocrlf."""
 import hashlib
 import json
 import os
@@ -15,8 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class InventoryFormsCheckoutTests(unittest.TestCase):
     def sources(self):
         return sorted(path.relative_to(ROOT).as_posix()
-                      for folder in ('configuration-inventory-application', 'configuration-inventory-enum-application')
-                      for path in (ROOT / 'examples' / folder).rglob('*')
+                      for path in (ROOT / 'examples').rglob('*')
                       if path.is_file() and path.suffix in ('.xml', '.bsl'))
 
     def git(self, cwd, *args, data=None):
@@ -26,9 +25,9 @@ class InventoryFormsCheckoutTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode('utf-8', errors='replace'))
         return result.stdout
 
-    def test_every_authored_packet_has_exact_lf_checkout_policy(self):
+    def test_every_authored_source_has_explicit_checkout_policy(self):
         names = self.sources()
-        self.assertEqual(len(names), 44)
+        self.assertEqual(len(names), 240)
         with tempfile.TemporaryDirectory(prefix='owned-ui-attributes-') as temporary:
             root = Path(temporary)
             (root / '.gitattributes').write_bytes((ROOT / '.gitattributes').read_bytes())
@@ -38,8 +37,8 @@ class InventoryFormsCheckoutTests(unittest.TestCase):
             parts = raw.decode('utf-8').split('\0')[:-1]
             values = {(parts[i], parts[i + 1]): parts[i + 2] for i in range(0, len(parts), 3)}
             for name in names:
-                self.assertEqual(values[name, 'text'], 'set', name)
-                self.assertEqual(values[name, 'eol'], 'lf', name)
+                self.assertTrue(values[name, 'text'] == 'unset' or
+                    (values[name, 'text'] == 'set' and values[name, 'eol'] == 'lf'), name)
 
     def test_autocrlf_checkout_preserves_packet_bytes(self):
         names = self.sources()
@@ -52,7 +51,6 @@ class InventoryFormsCheckoutTests(unittest.TestCase):
             for name in names:
                 raw = (ROOT / name).read_bytes()
                 raw.decode('utf-8')
-                self.assertNotIn(b'\r\n', raw, name)
                 expected[name] = hashlib.sha256(raw).hexdigest()
                 target = root / name
                 target.parent.mkdir(parents=True, exist_ok=True)

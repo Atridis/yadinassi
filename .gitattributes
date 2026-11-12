@@ -1,3 +1,8 @@
+# Authored XML/BSL examples participate in byte-bound source grants.
+# More specific immutable/historical policies below still take precedence.
+examples/**/*.xml text eol=lf
+examples/**/*.bsl text eol=lf
+
 # Keep pinned upstream Unicode data byte-exact on every checkout.
 yadinassi/data/*.txt -text
 
@@ -383,3 +388,4 @@ tests/fixtures/native_inventory_enum_relational/* -text
 # Authored inventory form sources must match their byte-pinned core projection.
 examples/configuration-inventory-application/** text eol=lf
 examples/configuration-inventory-enum-application/** text eol=lf
+
