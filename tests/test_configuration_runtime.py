@@ -33,7 +33,7 @@ class ModuleValidationTests(unittest.TestCase):
 
     def test_authority_and_reuse_flags_fail_closed(self):
         for flags in ({'Privileged': 'true'}, {'ClientOrdinaryApplication': 'true'},
-                      {'ExternalConnection': 'true'}, {'ReturnValuesReuse': 'DuringSession'},
+                      {'ExternalConnection': 'true'}, {'ReturnValuesReuse': 'Forever'},
                       {'Server': 'yes'}, {'ClientManagedApplication': 'false'}):
             with self.subTest(flags=flags), self.assertRaises(ValueError):
                 ConfigurationApplication.from_files(module_files([('Tools', CLIENT[1], flags)]))
@@ -62,10 +62,12 @@ class ModuleValidationTests(unittest.TestCase):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
                 ConfigurationApplication.from_files(files)
 
-    def test_session_object_and_other_modules_remain_closed(self):
+    def test_session_exports_object_and_other_modules_remain_closed(self):
         for path in ('Ext/SessionModule.bsl', 'Ext/ExternalConnectionModule.bsl',
                      'Catalogs/Products/Ext/ObjectModule.bsl'):
-            files = module_files([CLIENT]); files[path] = b'Procedure P() EndProcedure'
+            files = module_files([CLIENT])
+            files[path] = (b'Procedure P() Export EndProcedure' if path=='Ext/SessionModule.bsl'
+                           else b'Procedure P() EndProcedure')
             with self.subTest(path=path), self.assertRaises(ValueError): ConfigurationApplication.from_files(files)
 
     def test_annotations_and_imports_rejected(self):

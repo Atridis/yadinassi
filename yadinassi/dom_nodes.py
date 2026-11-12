@@ -462,6 +462,7 @@ class BSLDOMDocumentFragment(_DOMNode):pass
 
 class BSLDOMDocument(_DOMNode):
     _methods=dict(_DOMNode._methods, **_methods(
+        ('evaluate_xpath_expression',True,'EvaluateXPathExpression'),
         ('create_element',True,'CreateElement СоздатьЭлемент'),('create_attribute',True,'CreateAttribute СоздатьАтрибут'),
         ('create_text_node',True,'CreateTextNode СоздатьТекстовыйУзел'),('create_comment',True,'CreateComment СоздатьКомментарий'),
         ('create_cdata_section',True,'CreateCDATASection СоздатьСекциюCDATA'),
@@ -483,6 +484,9 @@ class BSLDOMDocument(_DOMNode):
         if name.casefold() in ('xmlversion','версияxml'):return '1.0'
         if name.casefold() in ('doctype','определениетипадокумента'):return None
         return super().get_member(name)
+    def evaluate_xpath_expression(self, expression, context, resolver):
+        from .dom_xpath import evaluate_xpath
+        return evaluate_xpath(self, expression, context, resolver)
     def create_element(self,*args):return _make(self,K.ELEMENT,*_named(args))
     def create_attribute(self,*args):return _make(self,K.ATTRIBUTE,*_named(args))
     def create_text_node(self,value):return _make(self,K.TEXT,data=_text(value))

@@ -116,10 +116,27 @@ class BSLXDTOFactory(_FileMethods):
         while staged.read():pass
         reader.__dict__.update(staged.__dict__)
         return value
+    def _check_serialization_types(self,value):
+        # A retained derived value needs xsi:type / JSON type assignment semantics.
+        # Refuse before touching the destination until that contract is measured.
+        pending=[(value,0)]; count=0
+        while pending:
+            current,depth=pending.pop(); count+=1
+            if count>MAX_NODES or depth>MAX_DEPTH:raise ValueError('XDTO: serialization graph bound')
+            if type(current) is not BSLXDTODataObject:continue
+            for prop in current._type._properties:
+                if prop._name not in current._values:continue
+                item=current._values[prop._name]
+                for child in item._items if type(item) is BSLXDTOList else (item,):
+                    if child is not None and child._type is not prop._type:
+                        raise ValueError('XDTO: retained derived type serialization unsupported')
+                    pending.append((child,depth+1))
+
     def write_xml(self,writer,value,local_name=None,uri=None,form=None,type_assignment=None):
         if type(writer) is not BSLXMLWriter:raise TypeError('XDTO: ожидается ЗаписьXML')
         if (form is not None and form is not BSLXMLForm.ELEMENT) or type_assignment is not None:raise ValueError('XDTO: расширенные формы записи пока не поддерживаются')
         value=self._value(value)
+        self._check_serialization_types(value)
         if type(value) is BSLXDTODataObject:value.validate()
         if local_name is None:
             candidates=[p for p in self._roots.values() if p._type is value._type]
@@ -171,6 +188,7 @@ class BSLXDTOFactory(_FileMethods):
         if type(writer) is not BSLJSONWriter:raise TypeError('XDTO: ожидается ЗаписьJSON')
         if type_assignment is not None:raise ValueError('XDTO: явное назначение типа пока не поддерживается')
         value=self._value(value)
+        self._check_serialization_types(value)
         if type(value) is BSLXDTODataObject:value.validate()
         write_json(writer,self._plain(value))
     def _from_plain(self,kind,value,depth=0):

@@ -27,6 +27,7 @@ class CommonModuleDefinition:
     client: bool
     server: bool
     server_call: bool
+    return_values_reuse: str = 'DontUse'
 
     @property
     def path(self):
@@ -72,13 +73,16 @@ def read_common_modules(files, names, used, issues):
         # They cannot be treated as descriptive metadata or successful no-ops.
         if flag('Privileged') or flag('ClientOrdinaryApplication') or flag('ExternalConnection'):
             _fail('unsupported common module execution mode')
-        if _text(props, 'ReturnValuesReuse', 'DontUse') != 'DontUse':
+        reuse = _text(props, 'ReturnValuesReuse', 'DontUse')
+        if reuse not in ('DontUse', 'DuringSession', 'DuringRequest'):
             _fail('common module return-value reuse unsupported')
+        if reuse != 'DontUse' and (global_module or client == server or (client and server_call)):
+            _fail('reusable common modules require an explicit measured side')
         if not client and not server:
             _fail('common module has no supported execution side')
         if server_call and (global_module or not server or client):
             _fail('invalid common module server-call combination')
-        result.append(CommonModuleDefinition(identity, name, global_module, client, server, server_call))
+        result.append(CommonModuleDefinition(identity, name, global_module, client, server, server_call, reuse))
     return tuple(result)
 
 
@@ -109,6 +113,22 @@ def compile_module(content, path, side, *, common):
     return result
 
 
+
+def compile_session_module(content):
+    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True)
+    handlers=[]
+    for routine in program:
+        if routine.exported:
+            raise ValueError('session module exports are unsupported')
+        if routine.name.casefold() in ('sessionparameterssetting','установкапараметровсеанса'):
+            if (routine.is_function or len(routine.parameters)!=1
+                    or routine.parameters[0].default is not None or routine.parameters[0].by_value):
+                raise ValueError('unsupported session parameter handler signature')
+            handlers.append(routine)
+    if len(handlers)>1: raise ValueError('ambiguous session parameter handler')
+    return program, handlers[0] if handlers else None
+
+
 def validate_module_sources(configuration):
     """Preflight all admitted bodies without running initializers or handlers."""
     files = {entry.path: entry.content for entry in configuration.files}
@@ -121,6 +141,8 @@ def validate_module_sources(configuration):
                 with location(stage='compile', file=module.path):
                     program = compile_module(files[module.path], module.path, side, common=True)
                 total += len(program)
+    session, _ = compile_session_module(files.get('Ext/SessionModule.bsl',b''))
+    total += len(session)
     app = 'Ext/ManagedApplicationModule.bsl'
     if app in files:
         with location(stage='compile', file=app):

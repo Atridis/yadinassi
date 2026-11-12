@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from decimal import localcontext
 from .native_targets import target_context
 
-from .configuration_modules import MODULE_RUNTIME, compile_module
+from .configuration_modules import MODULE_RUNTIME, compile_module, compile_session_module
 from .configuration_xml import ConfigurationImport, import_configuration
 from .errors import BSLError
 from .metadata import BSLCommonModuleMetadataCollection
@@ -15,8 +15,8 @@ from .structures import BSLStructure
 from .syntax import ast
 
 
-_RESERVED = frozenset(('thisobject', 'этотобъект', 'metadata', 'метаданные',
-    'enums', 'перечисления', 'catalogs', 'справочники', 'documents', 'документы', 'informationregisters',
+_RESERVED = frozenset(('sessionparameters', 'параметрысеанса', 'thisobject', 'этотобъект', 'metadata', 'метаданные',
+    'xdtofactory', 'фабрикаxdto', 'enums', 'перечисления', 'catalogs', 'справочники', 'documents', 'документы', 'informationregisters',
     'регистрысведений', 'chars', 'символы', 'openform', 'открытьформу'))
 _EVENTS = {
     'before_start': (('beforestart', 'передначаломработысистемы'), 1),
@@ -98,11 +98,16 @@ class ConfigurationApplication:
                         raise ValueError('configuration information-register schema does not match the database')
                 finally:
                     view.close()
+        if side is not None and any(d.server and d.return_values_reuse != 'DontUse'
+                                    for d in configuration.common_modules):
+            raise ValueError('server reuse requires the measured local file-mode application')
         self.configuration = configuration
         self.state = 'prepared'
         self.last_exit_warning = ''
         self.interpreter = Interpreter(self._message, native_target=native_target,
                                        database_context=database_context)
+        from .xdto_packages import load_packages
+        self._xdto_factory = load_packages(self.interpreter._xdto_factory, configuration.xdto_packages)
         if side == 'server':
             self.interpreter._logical_side = 'server'
             self.interpreter._context_stack = ['server']
@@ -126,8 +131,19 @@ class ConfigurationApplication:
         self._metadata = BSLCommonModuleMetadataCollection(configuration.common_modules)
         self._program = compile_module(sources.get('Ext/ManagedApplicationModule.bsl', b''),
                                        'Ext/ManagedApplicationModule.bsl', 'client', common=False)
+        self._session_program,self._session_handler=compile_session_module(sources.get('Ext/SessionModule.bsl',b''))
+        self._session_owner=None
+        from .session_parameters import BSLSessionParameters
+        self.session_parameters=BSLSessionParameters(self,configuration.session_parameters)
+        from .temporary_storage import ApplicationTemporaryStorage
+        self.temporary_storage=ApplicationTemporaryStorage(self)
+        from .common_templates import ApplicationCommonTemplates
+        self.common_templates=ApplicationCommonTemplates(self,configuration.common_templates)
         self._events = {}
         self._common_routines = {}
+        from .reusable_values import ApplicationReusableValues
+        self.reusable_values = ApplicationReusableValues(self)
+        self._reuse_routines = {}
         self._declared_routines = {id(n): n for n in self._program if type(n) is ast.Routine}
         self._preflight(sources)
 
@@ -195,6 +211,12 @@ class ConfigurationApplication:
                 if not enabled:
                     continue
                 program = compile_module(sources[definition.path], definition.path, side, common=True)
+                if definition.return_values_reuse != 'DontUse' and any(r.is_async for r in program):
+                    raise ValueError('asynchronous reusable common modules are unsupported')
+                if side == 'server' and definition.return_values_reuse != 'DontUse':
+                    if any(not r.is_function or any(not p.by_value or p.default is not None for p in r.parameters)
+                           for r in program):
+                        raise ValueError('server reuse requires explicit by-value scalar functions')
                 programs[name, side] = program
                 if definition.global_module:
                     for routine in program:
@@ -275,6 +297,10 @@ class ConfigurationApplication:
                 child._logical_side = 'server'
             child.execute_program(program)  # declarations only; validated above
             self._modules[name, side] = child._self_module
+            definition = self._definitions[name]
+            if definition.return_values_reuse != 'DontUse':
+                for routine in program:
+                    self._reuse_routines[id(routine)] = (routine, child, definition)
             if self._definitions[name].global_module:
                 for routine in program:
                     if routine.exported:
@@ -285,6 +311,22 @@ class ConfigurationApplication:
                 owner = self._modules[name, 'server'].interpreter
                 self.server_endpoints[binding.endpoint] = (binding,
                     lambda values, routine=routine, owner=owner: self._invoke_remote(owner, routine, values))
+        if self.side != 'client' and (self._session_program or self.configuration.session_parameters):
+            child=root._activation_interpreter()
+            child._logical_side='server'
+            child._diagnostic_owner=root._diagnostic_owner
+            child.user_messages=root.user_messages
+            child._inherit_host_bindings(root)
+            child._handled_errors=root._handled_errors
+            child._error_info_boundaries=root._error_info_boundaries
+            child._execute_depth=root._execute_depth
+            child._eval_depth=root._eval_depth
+            self.bind_interpreter(child)
+            for routine in self._session_program:
+                self._common_routines[id(routine)]=routine
+                self._declared_routines[id(routine)]=routine
+            child.execute_program(self._session_program)  # declarations only
+            self._session_owner=child
         # Application exports are visible to the same logical client context.
         for key, routine in app_routines.items():
             if routine.exported:
@@ -352,9 +394,12 @@ class ConfigurationApplication:
             raise ValueError('configuration module must belong to this scheduler family')
         interpreter._require_family()
         interpreter._configuration_runtime = self
+        interpreter._xdto_factory = self._xdto_factory
         from .enumerations import BSLEnumerations
         if interpreter._metadata._enumerations is None:
             interpreter._metadata._enumerations = BSLEnumerations(self.configuration.enumerations)
+        interpreter._metadata._session_parameters = self.session_parameters.metadata
+        interpreter._metadata._common_templates = self.common_templates.metadata
         interpreter._metadata._common_modules = self._metadata
         interpreter._metadata._configuration_name = self.configuration.name
         interpreter.user_messages._before_publish = self.check_messages
@@ -489,11 +534,45 @@ class ConfigurationApplication:
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), arguments)
         self.interpreter.execute_program([ast.ExpressionStatement(routine.token, call)])
 
+    def initialize_session_parameters(self, caller, names):
+        self.session_parameters._authorize(caller)
+        if self._session_owner is None:
+            raise ValueError('session initialization belongs to the server application')
+        routine=self._session_handler
+        if routine is not None:
+            arguments=[ast.Literal(routine.token,names)]
+            yield from caller.call_routine(routine,arguments,self._session_owner,require_value=False)
+
+    def _start_session(self):
+        if self._session_owner is not None:
+            owner=self._session_owner
+            with target_context(owner.native_target),localcontext():
+                owner._context_stack.append('server')
+                try:
+                    owner._scheduler.run_inline(self.initialize_session_parameters(owner,None))
+                finally:
+                    owner._context_stack.pop()
+
+    def is_scalar_server_reuse(self, routine):
+        entry = self._reuse_routines.get(id(routine))
+        return entry is not None and entry[0] is routine and entry[2].server
+
+    def reusable_call(self, caller, owner, routine, qualified):
+        entry = self._reuse_routines.get(id(routine))
+        if not qualified or entry is None or not routine.is_function:
+            return None
+        if entry[0] is not routine or entry[1] is not owner:
+            raise ValueError('reusable routine owner mismatch')
+        definition = entry[2]
+        cache = self.reusable_values.cache(caller, definition.return_values_reuse)
+        return cache, (str(definition.identity), routine.name.casefold())
+
     def start(self):
         if self.state != 'prepared':
             raise ValueError('configuration application can start only once')
         self.state = 'starting'
         try:
+            self._start_session()
             if self.side == 'server':
                 self.state = 'running'
                 return True
@@ -504,6 +583,8 @@ class ConfigurationApplication:
                 raise TypeError('application cancellation requires Boolean')
             if cancel.get_member('Cancel'):
                 self.state = 'cancelled'
+                self.temporary_storage.close();self.session_parameters.close()
+                self.reusable_values.close()
                 self.interpreter.close()
                 return False
             self._invoke('start')
@@ -512,6 +593,8 @@ class ConfigurationApplication:
             return True
         except BaseException:
             self.state = 'failed'
+            self.temporary_storage.close();self.session_parameters.close()
+            self.reusable_values.close()
             self.interpreter.close()
             raise
 
@@ -526,6 +609,8 @@ class ConfigurationApplication:
         if self.state == 'closed':
             return True
         if force or self.state != 'running' or self.side == 'server':
+            self.temporary_storage.close();self.session_parameters.close()
+            self.reusable_values.close()
             self.interpreter.close()
             self.state = 'closed'
             return True
@@ -542,10 +627,14 @@ class ConfigurationApplication:
             self.state = 'exiting'
             self._invoke('exit')
             self.interpreter.ensure_complete()
+            self.temporary_storage.close();self.session_parameters.close()
+            self.reusable_values.close()
             self.interpreter.close()
             self.state = 'closed'
             return True
         except BaseException:
             self.state = 'failed'
+            self.temporary_storage.close();self.session_parameters.close()
+            self.reusable_values.close()
             self.interpreter.close()
             raise
