@@ -87,7 +87,7 @@ The existing UI report grant stays closed independently of this core query API.
 Use a **separate fresh file**, not the older demo.sqlite or an existing grant:
 
 ```console
-python -m yadinassi --create-db period-stock.sqlite --import-xml examples/inventory_reference/source --source-profile accumulation-reference-v1
+python -m yadinassi --create-demo-db period-stock.sqlite --import-xml examples/demo
 python -m yadinassi --f period-stock.sqlite examples/inventory_reference/period_seed.bsl
 python -m yadinassi --f period-stock.sqlite examples/inventory_reference/period_statement.bsl
 python -m yadinassi --f period-stock.sqlite examples/inventory_reference/period_reconcile.bsl

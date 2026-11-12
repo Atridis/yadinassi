@@ -123,12 +123,6 @@ Phase 1 из 6749f5a уже включён: original demo собирается �
 - `tests/browser_ui/reference_browser_qa.mjs`
 - `docs/reference-orders.md`
 
-### `examples/inventory_reference/source`: 4 файлов
-- `tests/test_configuration_inventory_application.py`
-- `docs/inventory-reference-contract.md`
-- `docs/accumulation-query-conditions.md`
-- `docs/accumulation-period-statements.md`
-
 ## Следующий крупный блок
 - Inventory + inventory-enum: переносить в main demo полноценные сценарии документов, проведения и отчётов. Добавлены 3 теста canonical source: исключение несохранённых/непроведённых документов из движений; отмена проведения/повторное проведение/переоткрытие с enum; пометка исторической ссылки без потери движений.
 - Старые exact-profile admission/negative и native-acquisition pins не выдавать за приёмку новой конфигурации. Минимальные источники оставлять только после выделения действительно необходимого контракта; не перемещать все директории целиком в fixtures.
@@ -153,3 +147,12 @@ browser acquisition собирает ту же историческую базу
 результат с обоими генераторами, non-enum forms и enum runtime source.
 Основная демо остаётся `examples/demo`; количество пользовательских XML-конфигураций
 снижено с 20 до 19. Остальные удаляются по мере фактического переноса сценариев.
+
+## Перенос CLI-склада на основную демо
+
+Шесть BSL-сценариев `examples/inventory_reference/*.bsl` используют одну конфигурацию
+`examples/demo`: исходные русские справочники, обязательный вид номенклатуры и строки
+складов, Receipt/Issue и Stock. Отдельная `examples/inventory_reference/source`
+(8 файлов) удалена, число конфигураций теперь 18. Проверяется реальное исполнение
+CLI в разных процессах, reopen, отказ расхода, перепроведение и периодные отчёты.
+Historical native12 replay по-прежнему читает неизменные measured runtime sources.

@@ -35,7 +35,9 @@ class StockPeriodExampleTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(self.temp.cleanup)
         self.path=Path(self.temp.name)/'period.sqlite'
     def create(self):
-        with closing(create_prepared(self.path,prepare_directory(EXAMPLE/'source',profile=PROFILE))):pass
+        from yadinassi.configuration_main_demo import import_main_demo_configuration
+        from test_main_demo_configuration import source
+        with closing(SQLiteDBContext.create_main_demo(self.path,import_main_demo_configuration(source(),profile='main-demo-v1'))):pass
     def run_script(self,name,*,read_only=False):
         output=[]
         # The public CLI context has no read_only argument. This test host
@@ -69,7 +71,7 @@ class StockPeriodExampleTests(unittest.TestCase):
                                cwd=ROOT,capture_output=True,text=True)
             self.assertEqual(run.returncode,0,run.stdout+'\n'+run.stderr)
             return run.stdout.splitlines()
-        cli('--create-db',self.path,'--import-xml',EXAMPLE/'source','--source-profile',PROFILE)
+        cli('--create-demo-db',self.path,'--import-xml',ROOT/'examples/demo')
         self.assertEqual(cli('--f',self.path,EXAMPLE/'period_seed.bsl'),['Stock period example created.'])
         self.assertEqual(cli('--f',self.path,EXAMPLE/'period_statement.bsl'),INITIAL)
         cli('--f',self.path,EXAMPLE/'period_reconcile.bsl')

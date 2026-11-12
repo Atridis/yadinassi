@@ -48,9 +48,13 @@ class InventoryApplicationSourceTests(unittest.TestCase):
 
     def test_validated_projection_preserves_exact_core_schemas_and_handler_bytes(self):
         config=self.load();core=validated_core(config)
-        original=ROOT/'examples/inventory_reference/source'
-        baseline=import_inventory_configuration({p.relative_to(original).as_posix():p.read_bytes()
-            for p in original.rglob('*') if p.is_file()},inventory_runtime=CORE_PROFILE)
+        original=ROOT/'scripts/inventory_reference_behavior/runtime_source'
+        files={p.relative_to(original).as_posix():p.read_bytes()
+            for p in original.rglob('*') if p.is_file()}
+        # Historical business-rule variant differs only in the two handlers.
+        for name in ('Receipt','Issue'):
+            path=f'Documents/{name}/Ext/ObjectModule.bsl';files[path]=source()[path]
+        baseline=import_inventory_configuration(files,inventory_runtime=CORE_PROFILE)
         for name in ('identity','name','catalogs','documents','registers','handlers'):
             self.assertEqual(getattr(config,name),getattr(baseline,name),name)
             self.assertEqual(getattr(core,name),getattr(config,name),name)
