@@ -112,3 +112,38 @@ class MainDemoConfigurationTests(unittest.TestCase):
         self.assertEqual(files,source())
         changed=dict(files);changed['Documents/Receipt.xml']+=b' '
         with self.assertRaises(ValueError):_runtime_metadata_projection(changed)
+
+    def test_native_layout_projection_preserves_source_and_semantics(self):
+        import xml.etree.ElementTree as ET
+        from yadinassi.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_metadata_projection
+        files=source(); before=dict(files); projected=_runtime_metadata_projection(files)
+        L='{http://v8.1c.ru/8.3/xcf/logform}'; V='{http://v8.1c.ru/8.1/data/core}'
+        prior = {'CommonForms/DraftDetails/Ext/Form.xml':'67f34e7bebf16a62bc8e8616bccc82d170d2bc13d7a543f30a16c03ad6251983',
+                 'CommonForms/OperationDraft/Ext/Form.xml':'cf2b4d0296fb5932b3000ed823e661649cd25346119d57575f67be52aa0df42e',
+                 'Documents/Issue/Forms/Card/Ext/Form.xml':'2747be3390be238f91b80dcded8bdce77598ce648c6625475cfd449a5ea34222',
+                 'Documents/Receipt/Forms/Card/Ext/Form.xml':'f01260926e2526025a0d58ba7859d7d7eda6fd0d5b733396b20c4cc0677dd97d'}
+        for path in _NATIVE_LAYOUTS:
+            self.assertEqual(sha256(projected[path]).hexdigest(),prior[path])
+            native=ET.fromstring(files[path]); runtime=ET.fromstring(projected[path])
+            self.assertEqual([n.find(V+'item/'+V+'content').text for n in native.iter(L+'Title')],
+                             [n.text for n in runtime.iter(L+'Title')])
+            self.assertEqual([n.text.removeprefix('Form.Command.') for n in native.iter(L+'CommandName')],
+                             [n.text for n in runtime.iter(L+'CommandName')])
+            self.assertIn(b'xmlns:xs=',projected[path])
+            self.assertIn(b'xs:',projected[path])
+        self.assertEqual(files,before)
+        self.assertEqual(dict(self.config().files),before)
+
+    def test_native_layout_projection_rejects_unpinned_and_wrong_shape(self):
+        from unittest.mock import patch
+        from yadinassi.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_layout_projection
+        import yadinassi.configuration_main_demo as module
+        path=_NATIVE_LAYOUTS[0]; raw=source()[path]
+        variants=(raw.replace(b'>ru<',b'>en<',1),
+                  raw.replace(b'<v8:item>',b'<v8:item bad="1">',1),
+                  raw.replace(b'Form.Command.Accept',b'Form.Command.Unknown',1))
+        for changed in variants:
+            with self.assertRaises(ValueError):_runtime_layout_projection(path,changed)
+            with patch.dict(module.SOURCE_SHA256,{path:sha256(changed).hexdigest()}):
+                with self.assertRaises(ValueError):_runtime_layout_projection(path,changed)
+        with self.assertRaises(ValueError):_runtime_layout_projection('Foreign/Ext/Form.xml',raw)
