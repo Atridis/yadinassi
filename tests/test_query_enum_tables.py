@@ -1,4 +1,5 @@
 """Durable enum reports: bounded host contract, not a native parity assertion."""
+from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 import sqlite3
@@ -157,7 +158,9 @@ class EnumTableTests(unittest.TestCase):
 
     def test_external_empty_generation_change_fails(self):
         t = self.q('SELECT Unit FROM Catalog.Products WHERE Code="missing"').execute().unload()
-        with sqlite3.connect(self.context.path) as c: c.execute('UPDATE database_info SET generation=generation+1')
+        with closing(sqlite3.connect(self.context.path)) as connection:
+            with connection:
+                connection.execute('UPDATE database_info SET generation=generation+1')
         with self.assertRaises(BackendError): self.q('SELECT Unit FROM &Input', t).execute()
 
     def test_warm_metadata_corruption_refused_before_scan(self):

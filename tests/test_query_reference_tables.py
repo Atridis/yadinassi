@@ -1,4 +1,5 @@
 """Owned report roundtrip; explicit host contract, not native default parity."""
+from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 import unittest
@@ -149,8 +150,9 @@ class ReferenceReportTests(unittest.TestCase):
         import sqlite3
         from yadinassi.catalog_backend import BackendError
         t = self.query('SELECT Ref AS Item FROM Catalog.Products WHERE Code="missing"').execute().unload()
-        with sqlite3.connect(self.context.path) as connection:
-            connection.execute('UPDATE database_info SET generation=generation+1')
+        with closing(sqlite3.connect(self.context.path)) as connection:
+            with connection:
+                connection.execute('UPDATE database_info SET generation=generation+1')
         with self.assertRaises(BackendError): self.query('SELECT Item FROM &Input', t).execute()
 
     def test_all_domains_validated_not_only_projected(self):
