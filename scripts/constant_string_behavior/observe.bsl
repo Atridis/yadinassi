@@ -2,7 +2,7 @@
 // Existing nonprivileged external-processor harness; exactly one invocation.
 Function ObserveConstantString()
     Lines = New Array;
-    Lines.Add("witness=constant-string-v1");
+    Lines.Add("witness=constant-string10-v1");
     Try
         InitialValue = Constants.OwnedString.Get();
         Lines.Add("initial.get=ok");
@@ -17,7 +17,7 @@ Function ObserveConstantString()
         Lines.Add("initial.get=error");
         Lines.Add("initial.error=native-operation-failed");
     EndTry;
-    Marker = "owned-constant-probe-v1";
+    Marker = "owned-v2";
     Try
         Constants.OwnedString.Set(Marker);
         Lines.Add("set=ok");

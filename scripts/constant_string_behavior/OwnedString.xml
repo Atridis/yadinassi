@@ -7,7 +7,7 @@
 <xr:GeneratedType name="ConstantValueKey.OwnedString" category="ValueKey"><xr:TypeId>65c6b453-d1fa-46ed-acf2-6661ed5414ca</xr:TypeId><xr:ValueId>09c6294b-d37a-45bd-a38a-1b929f9d5987</xr:ValueId></xr:GeneratedType>
 </InternalInfo>
 <Properties><Name>OwnedString</Name><Synonym/><Comment/>
-<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>64</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
+<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>10</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
 <UseStandardCommands>true</UseStandardCommands><DefaultForm/><ExtendedPresentation/><Explanation/>
 <PasswordMode>false</PasswordMode><Format/><EditFormat/><ToolTip/><MarkNegatives>false</MarkNegatives><Mask/>
 <MultiLine>false</MultiLine><ExtendedEdit>false</ExtendedEdit><MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>

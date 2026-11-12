@@ -1,20 +1,13 @@
-# Owned String constant witness: NOT EXECUTED
-One acquisition with first Get, Set owned ASCII marker, Get. Records type,
-length, equality and finite error markers without assuming initial value.
-Transport success is not semantic success: inspect all three operation statuses.
-Metadata candidate OwnedString String64 Variable has not been accepted by 1C yet.
-LOAD/CHECK/UPDATE and material-redump validation must pass before observation.
-Only Read/Update rights for this constant; bootstrap SessionModule unchanged.
-Existing source-pinned host, nonce, mounted-input hashes, module hashes, timeouts,
-process census and cleanup retained. No user DB option, BSP or credentials.
-One Enterprise observation after constant install. Earlier bootstrap invocations
-run before the constant exists. Every retry requires fresh disposable DB.
-Exact owner-reviewed push workflow only. Eight packet and twelve admission tests.
-No successful native evidence yet.
-No claims about other types, transactions, restart persistence or safe mode.
+# Owned String(10) Variable observation: NOT EXECUTED
 
-First acquisition failed during Designer LOAD, before observation. The corrected
-owned declaration includes native GeneratedType identities (Manager, ValueManager,
-ValueKey) and standard Constant properties verified against actual XML export
-structure. All UUIDs are newly generated, no external names/modules/data copied.
-This is structural evidence, not a claim of successful native load or defaults.
+This revision changes only the declared length from the successfully measured
+String64 packet to String10 Variable. The marker is now owned-v2 (8 characters),
+so no truncation/overflow behavior is being tested or assumed. Source hashes and
+packet identity are updated. The same fresh disposable DB and nonce/source/
+module/config/cleanup guards remain unchanged; no other scalar types are added.
+
+Earlier String64 success: run43309356636, sourcef3cd1ca0925a22baa4c9ef6ceedbaedeba174223.
+That evidence does not prove this new length10 packet. Read first Get, Set, Get
+statuses and resulting type/length/equality only after this packet's own run.
+Twenty offline tests:8 packet and12 reviewed-push admission. No default inferred
+from XML alone; no claim about fixed strings, other lengths or other types.

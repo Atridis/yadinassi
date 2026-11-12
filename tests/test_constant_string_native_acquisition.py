@@ -22,14 +22,15 @@ class ConstantStringWitnessTests(unittest.TestCase):
         self.assertLess(source.index(b'InitialValue = Constants.OwnedString.Get()'),source.index(b'Constants.OwnedString.Set(Marker)'))
         self.assertEqual(source.count(b'Constants.OwnedString.Set('),1)
         self.assertEqual(source.count(b'Constants.OwnedString.Get()'),2)
+        self.assertIn(b'Marker = "owned-v2";',source)
         self.assertIn(b'initial.get=error',source)
         self.assertNotIn(b'ErrorDescription()',source)
         self.assertEqual(source.count(b'.error=native-operation-failed'),3)
-    def test_single_string64_declaration(self):
+    def test_single_string10_declaration(self):
         _,assets=fixture.load_saved();root=ET.fromstring(assets['OwnedString.xml'])
         md='{'+fixture.original.MD+'}';v='{'+fixture.original.V8+'}'
         self.assertEqual(root[0].tag,md+'Constant');self.assertEqual(root.find('.//'+v+'Type').text,'xs:string')
-        self.assertEqual(root.find('.//'+v+'Length').text,'64')
+        self.assertEqual(root.find('.//'+v+'Length').text,'10')
         self.assertEqual(root.find('.//'+v+'AllowedLength').text,'Variable')
         generated=root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}GeneratedType')
         self.assertEqual([(n.attrib['name'],n.attrib['category']) for n in generated],
