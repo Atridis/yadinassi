@@ -1,7 +1,8 @@
 """Bounded ordinary regex grammar. Unsupported extensions fail explicitly.
 
-!todo Backreferences, lookaround, named groups, inline flags, Unicode properties,
-atomic/possessive/conditional constructs are not implemented. Never delegate to re.
+Leading/scoped i/m/s, atomic lookahead and closed numeric references are
+locally implemented; native calibration is pending. Named groups, lookbehind,
+Unicode properties and atomic/possessive/conditional groups remain closed.
 """
 MAX_PATTERN = 4096
 MAX_TEXT = 65536
@@ -59,6 +60,7 @@ class Parser:
         self.source = checked_text(source, MAX_PATTERN, budget)
         self.i = 0
         self.groups = 0
+        self.closed_groups = set()
         self.budget = budget
 
     def error(self):
@@ -74,7 +76,18 @@ class Parser:
         return c
 
     def parse(self):
+        enabled = disabled = 0
+        while self.source.startswith('(?', self.i) and self.i+2 < len(self.source) and self.source[self.i+2] in 'ims-':
+            saved = self.i
+            self.take(); self.take()
+            add, remove, end = self.flags()
+            if end == ':':
+                self.i = saved
+                break
+            enabled = (enabled | add) & ~remove
+            disabled = (disabled | remove) & ~add
         node = self.alternation(0)
+        if enabled or disabled: node = ('flags', enabled, disabled, node)
         if self.i != len(self.source): self.error()
         return node, self.groups
 
@@ -106,10 +119,27 @@ class Parser:
                 lazy = self.peek() == '?'
                 if lazy: self.take()
                 if self.peek() and self.peek() in '*+?{': self.error()
-                if node[0] == 'assert': self.error()
+                if node[0] in ('assert', 'look'): self.error()
                 node = ('repeat', node, lower, upper, lazy)
             nodes.append(node)
         return ('seq', tuple(nodes))
+
+    def flags(self):
+        enabled = disabled = 0; removing = False; count = 0; removed = 0
+        masks = {'i': 1, 'm': 2, 's': 4}
+        while True:
+            c = self.take()
+            if c in (')', ':'):
+                if not count or removing and not removed: self.error()
+                return enabled, disabled, c
+            if c == '-' and not removing:
+                removing = True; continue
+            if c not in masks: self.error()
+            bit = masks[c]
+            if (enabled | disabled) & bit: self.error()
+            count += 1
+            if removing: disabled |= bit; removed += 1
+            else: enabled |= bit
 
     def integer(self):
         if not (self.peek().isascii() and self.peek().isdigit()): self.error()
@@ -123,17 +153,27 @@ class Parser:
     def atom(self, depth):
         c = self.take()
         if c == '(':
-            group = None
+            group = None; special = None
             if self.peek() == '?':
-                self.take()
-                if self.take() != ':': self.error()
+                self.take(); marker = self.peek()
+                if marker == ':': self.take()
+                elif marker in ('=', '!'):
+                    self.take(); special = ('look', marker == '=')
+                elif marker and marker in 'ims-':
+                    add, remove, end = self.flags()
+                    if end != ':': self.error()
+                    special = ('flags', add, remove)
+                else: self.error()
             else:
                 self.groups += 1; group = self.groups
                 if group > MAX_GROUPS:
                     raise RegexLimitError('Регулярное выражение: слишком много групп')
             node = self.alternation(depth + 1)
             if self.take() != ')': self.error()
-            return ('group', group, node) if group is not None else node
+            if group is not None:
+                self.closed_groups.add(group)
+                return ('group', group, node)
+            return (*special, node) if special else node
         if c == '[': return self.character_class()
         if c == '.': return ('dot',)
         if c in '^$': return ('assert', c)
@@ -143,6 +183,13 @@ class Parser:
 
     def escape(self, in_class):
         c = self.take()
+        if c in '123456789' and not in_class:
+            number = ord(c) - 48
+            while self.peek().isascii() and self.peek().isdigit():
+                number = number * 10 + ord(self.take()) - 48
+                if number > MAX_GROUPS: self.error()
+            if number not in self.closed_groups: self.error()
+            return ('backref', number)
         if c in 'dDsSwW': return ('category', c)
         if c in 'bB' and not in_class: return ('assert', c)
         if c == 'b' and in_class: return ('char', '\b')

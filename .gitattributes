@@ -335,3 +335,8 @@ yadinassi/dom_xpath_engine.py text eol=lf
 tests/test_dom_xpath_binding.py text eol=lf
 tests/test_dom_xpath_native_replay.py text eol=lf
 tests/fixtures/native_dom_xpath_43093418847.json -text
+# Recovered local regex extension tests; native fixture remains pending.
+tests/test_regex_extensions_parser.py text eol=lf
+tests/test_regex_extensions_vm.py text eol=lf
+tests/fixtures/native_regex_extensions_43178980355.json -text
+tests/test_regex_extensions_native_replay.py text eol=lf
