@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema"><Document uuid="0e9acacb-6885-56c2-b1f1-fabadccaad91"><Properties><Name>Issue</Name><NumberType>String</NumberType><NumberLength>9</NumberLength><NumberPeriodicity>Nonperiodical</NumberPeriodicity><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering><Posting>Allow</Posting><RealTimePosting>Deny</RealTimePosting><RegisterRecordsDeletion>AutoDeleteOnUnpost</RegisterRecordsDeletion><RegisterRecordsWritingOnPost>WriteSelected</RegisterRecordsWritingOnPost><RegisterRecords><xr:Item xsi:type="xr:MDObjectRef">AccumulationRegister.Stock</xr:Item></RegisterRecords><PostInPrivilegedMode>false</PostInPrivilegedMode><UnpostInPrivilegedMode>false</UnpostInPrivilegedMode><DefaultObjectForm>Document.Issue.Form.Card</DefaultObjectForm></Properties><ChildObjects><Attribute uuid="9cdc9cd3-d50a-599d-9bf0-010bca600e15"><Properties><Name>Warehouse</Name>
+							<Type><v8:Type>cfg:CatalogRef.Склады</v8:Type></Type>
+							</Properties></Attribute><TabularSection uuid="d8ef5b5f-7ca3-5d6b-8ffd-d19cbbd33f9b"><Properties><Name>Lines</Name>
+					</Properties><ChildObjects><Attribute uuid="aae0677a-f7dc-54cc-9bc7-9e1f57a729c9"><Properties><Name>Product</Name>
+							<Type><v8:Type>cfg:CatalogRef.Номенклатура</v8:Type></Type>
+							</Properties></Attribute><Attribute uuid="eed4128d-9718-50e6-bca7-a9e6df79ed36"><Properties><Name>Quantity</Name>
+							<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>10</v8:Digits><v8:FractionDigits>3</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+							</Properties></Attribute><Attribute uuid="b54d9c3e-206f-5fa2-8ff8-c1d98e35692a"><Properties><Name>Amount</Name>
+							<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>10</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+							</Properties></Attribute><Attribute uuid="e2171509-5c3b-5409-83af-b7d5e6a7f16d">
+						<Properties>
+							<Name>Unit</Name>
+							<Synonym />
+							<Comment />
+							<Type><v8:Type>cfg:EnumRef.Units</v8:Type></Type>
+							</Properties>
+					</Attribute></ChildObjects></TabularSection><Attribute uuid="a8f1edce-b6b3-520a-9fce-f40651f8c556">
+						<Properties>
+							<Name>State</Name>
+							<Synonym />
+							<Comment />
+							<Type><v8:Type>cfg:EnumRef.States</v8:Type></Type>
+							</Properties>
+					</Attribute><Form>Card</Form></ChildObjects></Document></MetaDataObject>

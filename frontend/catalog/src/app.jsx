@@ -25,8 +25,15 @@ function App(){
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
   const [recoveredDraft,setRecoveredDraft]=useState(null);
+  const [recordQuery,setRecordQuery]=useState(''),[recordOrder,setRecordOrder]=useState('code');
+  useEffect(()=>{setRecordQuery(snapshot?.state?.listQuery?.query||'');setRecordOrder(snapshot?.state?.listQuery?.order||'code');},
+    [snapshot?.state?.list?.catalog,snapshot?.state?.listQuery?.query,snapshot?.state?.listQuery?.order]);
   const draftRef=useRef(draft),recoveryRef=useRef(null);draftRef.current=draft;recoveryRef.current=recoveredDraft;
-  const inputBlocked=busy||Boolean(recoveredDraft);
+  const picker=snapshot?.state?.referenceChoice;
+  const pickerRef=useRef(null),[pickerQuery,setPickerQuery]=useState('');
+  useEffect(()=>{const dialog=pickerRef.current;if(picker){if(dialog&&!dialog.open)dialog.showModal();}else if(dialog?.open)dialog.close();},[picker?.ticket]);
+  useEffect(()=>{setPickerQuery(picker?.navigation.query||'');},[picker?.ticket,picker?.navigation.query]);
+  const inputBlocked=busy||Boolean(recoveredDraft)||Boolean(picker);
   const [selection,setSelection]=useState({catalog:null,records:[]});
   const selectionModel=useRef(null);
   if(!selectionModel.current)selectionModel.current=createSelectionModel();
@@ -78,6 +85,7 @@ function App(){
     addEventListener('beforeunload',warn);return()=>removeEventListener('beforeunload',warn);
   },[localDirty,editor?.dirty,editor?.editingLocked,busy,recoveredDraft]);
   async function run(event,values={},flush=false){
+    if(client.snapshot?.state?.referenceChoice&&event!=='referenceChoice')return;
     if(gate.current||recoveryRef.current||client.uncertain||browserHost.enabled&&!browserHost.attachment.writable)return;
     if(event==='checkCard'&&!listCheckPresentation(client.snapshot).available)return;
     if(['addRow','deleteRow','changeRow'].includes(event)&&(!editor||editor.editingLocked||editor.sourceStale))return;
@@ -116,7 +124,16 @@ function App(){
   }
   async function resync(){
     if(gate.current)return;gate.current=true;setBusy(true);
-    try{await client.resync();setError('');}catch(e){setError(e.message);}finally{apply(client.snapshot?.state?.editor?.editorId===editor?.editorId);gate.current=false;setBusy(false);}
+    const previous=client.snapshot?.state?.editor,raw=draftRef.current;
+    try{await client.resync();setError('');}catch(e){setError(e.message);}finally{
+      const current=client.snapshot?.state?.editor;
+      const orphan=orphanedDraft(previous,current,raw);
+      if(orphan){recoveryRef.current=orphan;setRecoveredDraft(orphan);}
+      // Do not restore an unchanged pre-Apply value over a confirmed choice.
+      // Preserve genuinely local edits and expose detached drafts for copying.
+      apply(current?.editorId===previous?.editorId&&hasDraftChanges(previous,raw));
+      gate.current=false;setBusy(false);
+    }
   }
   const state=snapshot?.state;
   const listCheck=listCheckPresentation(snapshot);
@@ -182,6 +199,13 @@ function App(){
           <button disabled={navigationLocked||selection.records.length!==0} onClick={()=>checkSelected(true)}>Проверить без выбора</button></>}
           <span class="selection-count" aria-label="Selected record count" aria-live="polite">{selection.records.length} selected</span>
         </div>
+        <div class="list-toolbar" role="search" aria-label="Search records">
+          <input type="search" aria-label="Search records" maxLength={128} disabled={navigationLocked} value={recordQuery} onInput={event=>setRecordQuery(event.currentTarget.value)}/>
+          <select aria-label="Record order" disabled={navigationLocked} value={recordOrder} onChange={event=>setRecordOrder(event.currentTarget.value)}><option value="code">Code</option><option value="description">Description</option></select>
+          <button disabled={navigationLocked} onClick={()=>run('filterRecords',{query:recordQuery,order:recordOrder})}>Search records</button>
+          <button disabled={navigationLocked} onClick={()=>run('refreshRecords')}>Refresh records</button>
+        </div>
+        {snapshot?.state?.listQuery?.notice&&<p role="status">{snapshot.state.listQuery.notice}</p>}
         {editor&&<p class="preview-note">Last confirmed records · updated after Save</p>}
         {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
@@ -219,12 +243,15 @@ function App(){
             disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||!field.enabled||field.readOnly}
             onInput={e=>changeField(field.control,e.currentTarget.value)}
             onBlur={e=>commitImportedField(field,e.currentTarget.value,e.relatedTarget)}/>}
+          {field.lazyChoice&&<button data-editor-action="reference-choice" type="button" aria-label={'Choose '+field.name}
+            disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||field.readOnly||!field.enabled}
+            onClick={()=>run('referenceChoice',{action:{action:'begin',control:field.control,section:null,row:null}},true)}>Choose reference</button>}
           {field.kind==='number'&&<small>Exact decimal · decimal point “.”</small>}
         </label>)}</div>
         {editor.fields.some(field=>field.visible&&field.name==='DeletionMark')&&<p id="deletion-mark-note" class="section-note">Пометка удаления изменяется только после «Save changes». Запись и строки не удаляются физически.</p>}
         {editor.references.length>0&&<section class="references"><h3>References <span class="badge">Read-only</span></h3>
           {editor.references.map(ref=><div key={ref.name}><strong>{ref.name}</strong><span>{ref.presentation||'Empty reference'}</span></div>)}
-          <p>These references are preserved: choices are unavailable, exceed 64 records, or the current value is not selectable. Native FormData is not supported.</p></section>}
+          <p>These references are preserved: choices are unavailable or the current value is not selectable. Native FormData is not supported.</p></section>}
         {(editor.sections||[]).length>0&&<section class="tabular-sections" aria-label="Tabular sections"><h3>Tabular sections</h3>
           {editor.sections.map(section=><section key={section.name} class="tabular-section" aria-label={section.title||section.name}>
             <div class="tabular-head"><div><h4>{section.title||section.name}</h4><span class="muted">{section.rowCount??section.rows.length} rows</span></div>
@@ -241,7 +268,10 @@ function App(){
                     {!row.field.choices.some(choice=>choice.value===row.field.inputText)&&
                       <option value={row.field.inputText}>Unavailable reference · {row.field.inputText}</option>}
                     {row.field.choices.map(choice=><option key={choice.value} value={choice.value}>{choice.label}</option>)}
-                  </select></td><td><button data-editor-action="delete-row" type="button"
+                  </select>{row.field.lazyChoice&&<button data-editor-action="reference-choice" type="button"
+                    aria-label={'Choose '+(section.title||section.name)+' row '+row.number}
+                    disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale||row.field.readOnly}
+                    onClick={()=>run('referenceChoice',{action:{action:'begin',control:null,section:section.name,row:row.id}},true)}>Choose reference</button>}</td><td><button data-editor-action="delete-row" type="button"
                     aria-label={'Delete row '+row.number+' from '+(section.title||section.name)}
                     disabled={inputBlocked||client.uncertain||editor.editingLocked||editor.sourceStale}
                     onClick={()=>run('deleteRow',{section:section.name,row:row.id},true)}>Delete</button></td></tr>)}
@@ -254,6 +284,24 @@ function App(){
       </form>
     </section>}
     </div>}
+    <dialog ref={pickerRef} aria-label="Choose reference" onCancel={event=>{event.preventDefault();if(picker&&!busy)run('referenceChoice',{action:{action:'cancel',ticket:picker.ticket}});}}>
+      {picker&&<section class="reference-picker">
+        <h2>Choose reference</h2>
+        {error&&<p role="alert">{error}</p>}
+        {client.uncertain&&<><p role="status">Outcome unknown. Read current state before choosing again; the previous action will not be repeated.</p>
+          <button disabled={busy} onClick={resync}>Resynchronize choice</button></>}
+        <label>Search references<input aria-label="Search references" type="search" maxLength={128} value={pickerQuery} disabled={busy||client.uncertain} onInput={event=>setPickerQuery(event.currentTarget.value)}/></label>
+        <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'search',ticket:picker.ticket,query:pickerQuery}})}>Search references</button>
+        <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'refresh',ticket:picker.ticket}})}>Refresh choices</button>
+        <p role="status">Page {picker.navigation.page} of {picker.navigation.pages}; {picker.navigation.total} matching records</p>
+        <div class="reference-picker-rows">{picker.rows.map(row=><button key={row.choice} disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'apply',ticket:picker.ticket,choice:row.choice}})}>{row.code} · {row.description}</button>)}</div>
+        {!picker.rows.length&&<p>No matching references.</p>}
+        <button disabled={busy||client.uncertain||!picker.navigation.previous} onClick={()=>run('referenceChoice',{action:{action:'page',ticket:picker.ticket,cursor:picker.navigation.previous}})}>Previous choices</button>
+        <button disabled={busy||client.uncertain||!picker.navigation.next} onClick={()=>run('referenceChoice',{action:{action:'page',ticket:picker.ticket,cursor:picker.navigation.next}})}>Next choices</button>
+        <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'clear',ticket:picker.ticket}})}>Empty reference</button>
+        <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'cancel',ticket:picker.ticket}})}>Cancel choice</button>
+      </section>}
+    </dialog>
     <footer class="app-footer">Runtime-owned form state · exact typed values · changes stay on this computer</footer>
   </main>;
 }

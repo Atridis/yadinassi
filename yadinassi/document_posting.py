@@ -97,9 +97,15 @@ class PostingRuntime:
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration, canonical_runtime as accumulation_canonical
         from .configuration_inventory_application import InventoryApplicationConfiguration, canonical as application_canonical
+        from .configuration_main_demo import MainDemoConfiguration
+        from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
         from .configuration_inventory_enums import InventoryEnumConfiguration, canonical as enum_canonical
-        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration)
-        self.configuration = (enum_canonical(configuration) if type(configuration) is InventoryEnumConfiguration else
+        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+        from .configuration_inventory_enum_application import canonical as enum_application_canonical
+        from .configuration_main_demo import canonical as main_demo_canonical
+        self.configuration = (main_demo_canonical(configuration) if type(configuration) is MainDemoConfiguration else
+                              enum_application_canonical(configuration) if type(configuration) is InventoryEnumApplicationConfiguration else
+                              enum_canonical(configuration) if type(configuration) is InventoryEnumConfiguration else
                               application_canonical(configuration) if type(configuration) is InventoryApplicationConfiguration else
                               accumulation_canonical(configuration) if self.accumulation
                               else canonical(configuration))

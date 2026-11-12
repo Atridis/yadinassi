@@ -167,11 +167,13 @@ class BSLCatalogManager(BSLObject):
         return BSLCatalogSelection(self,rows)
     def _find(self,field,value):
         from .sqlite_catalog import SQLiteCatalogBackend
+        from .configuration_main_demo import MainDemoConfiguration
+        from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
         from .configuration_inventory_enums import InventoryEnumConfiguration
         from .database_transactions import query_view
         backend=self._backend
         if (field=='code' and type(backend) is SQLiteCatalogBackend and backend.format_version==16
-                and type(backend.accumulation_configuration) is InventoryEnumConfiguration):
+                and type(backend.accumulation_configuration) in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)):
             # The measured format16 observer resolves catalog keys inside the
             # current owned transaction. Borrow its existing read lease only;
             # this grants neither detached object transfer nor tx control.

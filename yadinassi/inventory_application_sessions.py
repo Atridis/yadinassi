@@ -5,7 +5,8 @@ from .catalog_backend import BackendError
 from .configuration_catalog import CatalogObjectSession
 from .configuration_document import require_document_form_schema, _OpenedDocument
 from .configuration_posting_document import PostingDocumentSession
-from .configuration_inventory_application import canonical
+from .inventory_host_operations import canonical
+from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
 from .inventory_host_operations import InventoryRootOperations, _source_configuration
 from .documents import BSLDocumentObject
 
@@ -15,7 +16,21 @@ class InventoryCatalogSession(CatalogObjectSession):
         self.configuration = canonical(configuration)
         if schema not in self.configuration.catalogs:
             raise BackendError('unsupported')
-        super().__init__(context, schema, dict(self.configuration.files), reference)
+        self._interpreter = None
+        is_enum = type(self.configuration) is InventoryEnumApplicationConfiguration
+        if is_enum:
+            from .runtime import Interpreter
+            self._interpreter = Interpreter(database_context=context, output=lambda value: None)
+        try:
+            super().__init__(context, schema, dict(self.configuration.files), reference,
+                             enum_fields=is_enum, _interpreter=self._interpreter)
+        except BaseException:
+            if self._interpreter is not None: self._interpreter.close()
+            raise
+
+    def close(self):
+        self.require_discardable()
+        if self._interpreter is not None: self._interpreter.close()
 
     def verify_source(self):
         if _source_configuration(self.context.backend) != self.configuration:
@@ -30,7 +45,9 @@ class InventoryDocumentSession(PostingDocumentSession):
     after dispatch. Live opaque receipts retain the exact immutable request.
     """
     def __init__(self, context, schema, configuration, form, key=None, *, _opened=None):
-        require_document_form_schema(schema, reference_fields=True)
+        configuration = canonical(configuration)
+        require_document_form_schema(schema, reference_fields=True,
+            enum_fields=type(configuration) is InventoryEnumApplicationConfiguration)
         self.context, self.schema = context, schema
         self.configuration = canonical(configuration)
         if schema not in self.configuration.documents:
@@ -39,12 +56,9 @@ class InventoryDocumentSession(PostingDocumentSession):
         self._sources = MappingProxyType(dict(self.configuration.files))
         self.form = form
         self.operations = InventoryRootOperations(context, self.configuration)
-        from .metadata import BSLMetadata
-        from .catalogs import BSLCatalogs
-        from .documents import BSLDocuments
-        metadata = BSLMetadata(context)
-        catalogs = BSLCatalogs(metadata._catalogs, context)
-        self.manager = BSLDocuments(metadata._documents, context, catalogs).get_index(schema.name)
+        # Reuse the root host's canonical family; a bare metadata object has no
+        # owned enum namespace and cannot decode persisted enum identities.
+        self.manager = self.operations._interpreter._documents.get_index(schema.name)
         self.fields = ('Number', 'Date', 'DeletionMark', 'Posted') + tuple(f.name for f in schema.fields)
         self._saving = False
         self.pending_commit = self.pending_refresh = False

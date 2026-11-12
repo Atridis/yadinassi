@@ -379,3 +379,6 @@ scripts/native_1c_enum_relational_ci_policy.py text eol=lf
 
 # Immutable independent direct enum relational capture and coverage mapping.
 tests/fixtures/native_inventory_enum_relational/* -text
+
+# Exact authored main demo source, including original native catalog modules.
+examples/demo/** -text
