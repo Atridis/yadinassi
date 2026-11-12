@@ -23,6 +23,10 @@ class _SourceInterpreter(Interpreter):
 
     def visit_Name(self, node):
         key = node.name.casefold()
+        if ((self.locals is not None and key in self.locals)
+                or (self._has_module_context and key in self.variables
+                    and (self.locals is None or key in self.module_names))):
+            return super().visit_Name(node)
         # Do not expose empty standalone metadata as if it described this source.
         if key in {'metadata', 'метаданные', 'catalogs', 'справочники',
                    'documents', 'документы', 'informationregisters',

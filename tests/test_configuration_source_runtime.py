@@ -151,3 +151,28 @@ class SourceStartupTests(unittest.TestCase):
     def test_keyword_standalone_is_not_variable(self):
         from yadinassi.syntax.parser import parse
         with self.assertRaises(BSLError): parse('Procedure = 42;')
+
+    def test_local_name_precedes_common_module(self):
+        xml = b'<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><CommonModule uuid="00000000-0000-0000-0000-000000000002"><Properties><Name>Helpers</Name><ClientManagedApplication>true</ClientManagedApplication></Properties></CommonModule></MetaDataObject>'
+        output = []
+        app = SourceApplication(source(b'Function Echo(Helpers)\nReturn Helpers;\nEndFunction\nProcedure OnStart()\nMessage(Echo(42));\nEndProcedure', {'CommonModules/Helpers.xml': xml}), output=output.append)
+        self.assertTrue(app.start())
+        self.assertEqual(output, ['42'])
+        app.close()
+
+    def test_invalid_archives_produce_concise_cli_errors(self):
+        import zipfile
+        with tempfile.TemporaryDirectory() as directory:
+            for missing_manifest in (False, True):
+                path = Path(directory) / 'bad.zip'
+                if missing_manifest:
+                    with zipfile.ZipFile(path, 'w') as archive:
+                        archive.writestr('source/a', 'a')
+                        archive.writestr('source/b', 'b')
+                else:
+                    path.write_bytes(b'not a ZIP')
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(['--configuration-source', str(path)]), 1)
+                self.assertIn('invalid or unreadable', stderr.getvalue())
+                self.assertNotIn('Traceback', stderr.getvalue())

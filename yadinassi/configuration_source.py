@@ -12,6 +12,7 @@ from pathlib import PurePosixPath
 from uuid import UUID
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 
 from .configuration_diagnostics import location
 from .configuration_import import read_configuration_directory
@@ -206,6 +207,14 @@ def save_source_archive(path, source):
 
 def load_source_archive(path):
     """Read and verify bounded bytes without extraction or trusting stored grants."""
+    try:
+        return _load_source_archive(path)
+    except (zipfile.BadZipFile, KeyError, RuntimeError, NotImplementedError,
+            EOFError, zlib.error) as error:
+        raise ValueError('invalid or unreadable configuration source archive') from error
+
+
+def _load_source_archive(path):
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
         if not 2 <= len(entries) <= MAX_FILES + 1:
