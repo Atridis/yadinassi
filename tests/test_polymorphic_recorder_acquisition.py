@@ -89,7 +89,7 @@ class RecorderHostEnvelopeTests(unittest.TestCase):
                      source_sha256=route.SOURCE_SHA256,module_sha256=module,module_verified_sha256=module,
                      output_sha256=host.FULL.digest(data),output_size=len(data),record_count=8,incomplete=False,
                      partial_observations=[[i,'ERR'] for i in range(1,9)],
-                     process_diagnostics={**host.FULL.empty_process_diagnostics(),'stage':'after_exit','reason':'none'})
+                     process_diagnostics={**suite.full.empty_process_diagnostics(),'stage':'after_exit','reason':'none'})
         value=dict(schema=route.SCHEMA,profile=route.PROFILE,nonce=self.nonce,
                    report={'status':'ok','native_tests_completed':True,'stage3':stage},
                    outputs=[dict(name='polymorphic-recorder.out',size=len(data),sha256=host.FULL.digest(data),
