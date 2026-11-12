@@ -13,7 +13,8 @@ from uuid import UUID
 from . import database_transactions as transactions
 from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
 from .catalog_backend import (BackendError, CatalogKey, CatalogComparison,
-    CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision)
+    CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision,
+    CatalogValuePage, CatalogValueRow, CatalogSchema)
 from .configuration_inventory_application import (
     InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS)
 from .configuration_inventory_enum_application import (
@@ -31,6 +32,8 @@ MAX_LABELS = 2000
 MAX_LABEL_LENGTH = 1152
 UNAVAILABLE = '[Unavailable record]'
 MAX_CHOICES = 32
+MAX_CHOICE_SNAPSHOT_ROWS = 8192
+MAX_CHOICE_SNAPSHOT_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +55,11 @@ class InventoryReportChoices:
     code: str
     rows: tuple[InventoryReportChoice, ...]
     error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryReportChoiceSnapshot(InventoryReportChoices):
+    """Полный bounded snapshot; error snapshot_limit никогда не содержит partial rows."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,6 +469,98 @@ class InventoryReports:
         except sqlite3.Error:
             raise BackendError('storage_error') from None
         except (ValueError, TypeError, KeyError, IndexError, OverflowError):
+            raise BackendError('integrity') from None
+        finally:
+            owner.close()
+        return result
+
+    def choice_snapshot(self, report_name, dimension_name, code=''):
+        """Полный detached выбор report filter, не разрешение изменять объекты."""
+        self._admit()
+        if type(report_name) is not str or type(dimension_name) is not str or type(code) is not str:
+            raise BackendError('invalid_input')
+        grant = next((r for r in self._configuration.reports if r.name == report_name), None)
+        field = None if grant is None else next((f for f in grant.filters if f.dimension == dimension_name), None)
+        if grant is None or grant.view != 'BalanceAndTurnovers' or field is None:
+            raise BackendError('unsupported')
+        schema = next(s for s in self._configuration.catalogs if s.identity == field.catalog_id)
+        if type(schema) is not CatalogSchema:
+            raise BackendError('integrity')
+        try:
+            if '\x00' in code or len(code.encode('utf-16-le')) // 2 > schema.code_length:
+                raise BackendError('invalid_input')
+            code.encode('utf-8')
+        except UnicodeError:
+            raise BackendError('invalid_input') from None
+        terms = (CatalogComparison('deletion_mark', 'eq', False),)
+        if code:
+            terms += (CatalogComparison('code', 'eq', code),)
+        predicate = terms[0] if len(terms) == 1 else CatalogPredicate('and', terms)
+        if type(self._configuration) is InventoryEnumApplicationConfiguration:
+            from .sqlite_inventory_enum_profile import admit
+        else:
+            from .sqlite_inventory_profile import admit
+        owner = self._backend.begin_read()
+        try:
+            def verify():
+                if (type(owner.database_id) is not UUID or type(owner.configuration_generation) is not int
+                        or (owner.database_id, owner.configuration_generation) != self._binding):
+                    raise BackendError('schema_changed')
+                if owner.catalog_schema(field.catalog_id) != schema:
+                    raise BackendError('schema_changed')
+                current = admit(owner._connection, owner.database_id,
+                                self._configuration.catalogs, self._configuration.documents)
+                if current != self._configuration:
+                    raise BackendError('schema_changed')
+            verify()
+            rows, seen, cursors = [], set(), set()
+            size, cursor, error = 0, None, None
+            while True:
+                request = CatalogScanRequest(predicate=predicate, order=(CatalogOrder('code'),),
+                                             page_size=256, continuation=cursor)
+                page = owner.scan_catalog_values(field.catalog_id, request, ('code','description','deletion_mark'))
+                if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 256:
+                    raise BackendError('integrity')
+                for row in page.rows:
+                    if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                            or any(type(v) is not UUID for v in (row.key.database_id,row.key.catalog_id,row.key.record_id))
+                            or (row.key.database_id,row.key.catalog_id) != (owner.database_id,field.catalog_id)
+                            or not row.key.record_id.int or row.key in seen
+                            or type(row.values) is not tuple or len(row.values) != 3):
+                        raise BackendError('integrity')
+                    item_code, description, deleted = row.values
+                    if type(item_code) is not str or type(description) is not str or deleted is not False:
+                        raise BackendError('integrity')
+                    for value, bound in ((item_code,schema.code_length),(description,schema.description_length)):
+                        if '\x00' in value or len(value.encode('utf-16-le'))//2 > bound:
+                            raise BackendError('integrity')
+                        size += len(value.encode('utf-8'))
+                    if code and item_code != code:
+                        raise BackendError('integrity')
+                    size += 64
+                    if len(rows) >= MAX_CHOICE_SNAPSHOT_ROWS or size > MAX_CHOICE_SNAPSHOT_BYTES:
+                        rows, error = [], 'snapshot_limit'
+                        break
+                    seen.add(row.key)
+                    rows.append(InventoryReportChoice(row.key,item_code,description))
+                if error is not None:
+                    break
+                cursor = page.continuation
+                if cursor is None:
+                    break
+                if (type(cursor) is not str or len(cursor) != 32 or any(c not in '0123456789abcdef' for c in cursor)
+                        or cursor in cursors or not page.rows):
+                    raise BackendError('integrity')
+                cursors.add(cursor)
+            verify()
+            self._admit()
+            result = InventoryReportChoiceSnapshot(*self._binding,self._configuration.source_digest,grant.name,
+                field.dimension,field.dimension_id,field.catalog_id,code,tuple(rows),error)
+        except BackendError:
+            raise
+        except sqlite3.Error:
+            raise BackendError('storage_error') from None
+        except (ValueError,TypeError,KeyError,IndexError,OverflowError):
             raise BackendError('integrity') from None
         finally:
             owner.close()

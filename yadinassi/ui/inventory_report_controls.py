@@ -12,7 +12,7 @@ from ..catalog_backend import BackendError, CatalogKey
 from ..document_backend import DocumentKey
 from ..inventory_host_operations import canonical
 from ..inventory_application_reports import (InventoryReports, InventoryReportFilter,
-    InventoryReportChoices, InventoryReportChoice, InventoryReportResult,
+    InventoryReportChoices, InventoryReportChoiceSnapshot, InventoryReportChoice, InventoryReportResult,
     MAX_CHOICES, MAX_LABELS, MAX_LABEL_LENGTH, _statement_options)
 
 MAX_GENERATION = 2147483647
@@ -49,8 +49,15 @@ class _Selection:
 class _Chooser:
     dimension: str
     ticket: str
-    snapshot: InventoryReportChoices
+    snapshot: InventoryReportChoiceSnapshot
     tokens: tuple[str, ...]
+    rows: tuple[InventoryReportChoice, ...]
+    query: str
+    page: int
+    previous: str | None
+    next: str | None
+    total: int
+
 
 
 class InventoryReportControls:
@@ -110,7 +117,10 @@ class InventoryReportControls:
         return {'report':self._report,'ticket':self._setup,'filters':self._filter_state(),
                 'choice':None if choice is None else {'filter':choice.dimension,'ticket':choice.ticket,
                     'code':choice.snapshot.code,'rows':[{'choice':token,'code':row.code,'description':row.description}
-                        for token,row in zip(choice.tokens,choice.snapshot.rows)],'error':choice.snapshot.error}}
+                        for token,row in zip(choice.tokens,choice.rows)],'error':choice.snapshot.error,
+                    'navigation':None if choice.snapshot.error else {'page':choice.page+1,
+                        'pages':max(1,(choice.total+31)//32),'total':choice.total,'query':choice.query,
+                        'previous':choice.previous,'next':choice.next}}}
 
     def _check_setup(self, report, ticket):
         if type(report) is not str or type(ticket) is not str or report != self._report or ticket != self._setup:
@@ -122,12 +132,12 @@ class InventoryReportControls:
             raise BackendError('invalid_input')
         return self._choice
 
-    def _scan(self, grant, field, code):
+    def _scan(self, grant, field, code, *, query=''):
         # Even a failed new scan retires its old rows. Committed selections and
         # the setup remain unchanged; an old apply cannot target a replacement.
         self._choice = None
-        snapshot = self._service.choices(grant.name, field.dimension, code)
-        if (type(snapshot) is not InventoryReportChoices
+        snapshot = self._service.choice_snapshot(grant.name, field.dimension, code)
+        if (type(snapshot) is not InventoryReportChoiceSnapshot
                 or type(snapshot.database_id) is not UUID
                 or type(snapshot.configuration_generation) is not int
                 or type(snapshot.source_digest) is not str
@@ -138,23 +148,35 @@ class InventoryReportControls:
                 or type(snapshot.dimension_id) is not UUID or snapshot.dimension_id != field.dimension_id
                 or type(snapshot.catalog_id) is not UUID or snapshot.catalog_id != field.catalog_id
                 or type(snapshot.code) is not str or snapshot.code != code
-                or type(snapshot.rows) is not tuple or len(snapshot.rows) > MAX_CHOICES
-                or snapshot.error is not None and (type(snapshot.error) is not str or snapshot.error != 'too_many_matches')
+                or type(snapshot.rows) is not tuple or len(snapshot.rows) > 8192
+                or snapshot.error is not None and (type(snapshot.error) is not str or snapshot.error != 'snapshot_limit')
                 or snapshot.error is not None and snapshot.rows):
             raise BackendError('integrity')
-        seen = set()
+        seen = set(); size = 0
         for row in snapshot.rows:
             if (type(row) is not InventoryReportChoice
                     or not _catalog_key(row.key,self._binding[0],field.catalog_id)
                     or not row.key.record_id.int or row.key in seen):
                 raise BackendError('integrity')
             _text(row.code,64); _text(row.description,1024); seen.add(row.key)
-        ticket = self._ticket('choice')
-        tokens = tuple(secrets.token_hex(16) for _ in snapshot.rows)
-        if len(set(tokens)) != len(tokens):
-            raise BackendError('integrity')
-        choice = _Chooser(field.dimension,ticket,snapshot,tokens)
-        self._choice = choice
+            size += 64 + len(row.code.encode('utf-8')) + len(row.description.encode('utf-8'))
+            if size > 4*1024*1024: raise BackendError('integrity')
+        self._publish(field.dimension, snapshot, query, 0)
+
+    def _publish(self, dimension, snapshot, query, page):
+        _text(query,128)
+        rows = tuple(row for row in snapshot.rows if query.casefold() in row.code.casefold()
+                     or query.casefold() in row.description.casefold())
+        pages = max(1,(len(rows)+31)//32)
+        if type(page) is not int or not 0 <= page < pages:
+            raise BackendError('invalid_input')
+        visible = rows[page*32:(page+1)*32]
+        tokens = tuple(secrets.token_hex(16) for _ in visible)
+        if len(set(tokens)) != len(tokens): raise BackendError('integrity')
+        previous = 'report-choice-page-'+secrets.token_hex(16) if page else None
+        next_page = 'report-choice-page-'+secrets.token_hex(16) if page+1 < pages else None
+        if previous is not None and previous == next_page: raise BackendError('integrity')
+        self._choice = _Chooser(dimension,self._ticket('choice'),snapshot,tokens,visible,query,page,previous,next_page,len(rows))
 
     def _select(self, grant, field, value, text):
         selected = {s.value.dimension_id:s for s in self._selections}
@@ -178,7 +200,7 @@ class InventoryReportControls:
             self._report,self._setup,self._selections,self._choice = grant.name,ticket,(),None
             return self.state
         fields = {'begin':'filter','clear':'filter','empty':'filter','filter':'choice code',
-                  'apply':'choice value','cancel':'choice'}
+                  'apply':'choice value','cancel':'choice','search':'choice query','page':'choice cursor','refresh':'choice'}
         if action not in fields:
             raise BackendError('invalid_input')
         _keys(params,'report ticket action '+fields[action])
@@ -200,13 +222,27 @@ class InventoryReportControls:
             field = next(f for f in grant.filters if f.dimension == choice.dimension)
             if action == 'filter':
                 self._scan(grant,field,_text(params['code'],64))
+            elif action == 'search':
+                query = _text(params['query'],128)
+                if choice.snapshot.code:
+                    self._scan(grant,field,'',query=query)
+                else:
+                    self._publish(choice.dimension,choice.snapshot,query,0)
+            elif action == 'page':
+                cursor = params['cursor']
+                if type(cursor) is not str or cursor not in (choice.previous,choice.next):
+                    raise BackendError('invalid_input')
+                self._publish(choice.dimension,choice.snapshot,choice.query,choice.page+(-1 if cursor==choice.previous else 1))
+            elif action == 'refresh':
+                self._scan(grant,field,choice.snapshot.code,query=choice.query)
             elif action == 'cancel':
                 self._choice = None
             else:
+
                 token = params['value']
                 if type(token) is not str or token not in choice.tokens:
                     raise BackendError('invalid_input')
-                row = choice.snapshot.rows[choice.tokens.index(token)]
+                row = choice.rows[choice.tokens.index(token)]
                 value = InventoryReportFilter(field.dimension_id,row.key,self._binding[1])
                 self._select(grant,field,value,row.description or row.code)
         return self.state
