@@ -20,6 +20,11 @@ class _SourceInterpreter(Interpreter):
     def __init__(self, application, **kwargs):
         super().__init__(output=application.output, **kwargs)
         self.application = application
+        self._source_reusable_runtime = application
+        self.register_function('CurrentRunMode', application.current_run_mode)
+        self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
+        self.register_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
+        self.register_function('ОбновитьПовторноИспользуемыеЗначения', lambda: application.reusable_values.refresh(self))
 
     def visit_Name(self, node):
         key = node.name.casefold()
@@ -27,12 +32,18 @@ class _SourceInterpreter(Interpreter):
                 or (self._has_module_context and key in self.variables
                     and (self.locals is None or key in self.module_names))):
             return super().visit_Name(node)
-        # Do not expose empty standalone metadata as if it described this source.
-        if key in {'metadata', 'метаданные', 'catalogs', 'справочники',
+        if key in ('metadata', 'метаданные'):
+            self.application.require_open()
+            return self.application.metadata
+        # Source metadata does not grant operational storage managers.
+        if key in {'catalogs', 'справочники',
                    'documents', 'документы', 'informationregisters',
                    'регистрысведений', 'accumulationregisters', 'регистрынакопления',
                    'enums', 'перечисления'}:
             raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
+        if key in ('sessionparameters', 'параметрысеанса'):
+            self.application.session_parameters._authorize(self)
+            return self.application.session_parameters
         if key in self.application.modules:
             return self.application.module(key, self)
         return super().visit_Name(node)
@@ -60,11 +71,24 @@ class SourceApplication:
         self.output = output
         self.compilation_profile = compilation_profile
         self.files = {item.path: item.content for item in source.files}
+        from .configuration_source_metadata import SourceMetadataRoot
+        self.metadata = SourceMetadataRoot(source)
         self.modules = {item.name.casefold(): item for item in source.metadata
                         if item.family == 'CommonModule'}
         self._instances = {}
+        self._reuse_routines = {}
+        self.side = None
         self.state = 'prepared'
         self.interpreter = _SourceInterpreter(self, compilation_profile=compilation_profile)
+        from .configuration_source_session import source_session_definitions
+        from .session_parameters import BSLSessionParameters
+        definitions, unsupported = source_session_definitions(source)
+        self.session_parameters = BSLSessionParameters(self, definitions,
+            source_family=self.interpreter, unsupported=unsupported)
+        from .reusable_values import ApplicationReusableValues
+        self.reusable_values = ApplicationReusableValues(self, source_family=self.interpreter)
+        self._session_owner = None
+        self._session_handler = None
 
     def _program(self, path):
         program = parse(self.files.get(path, b'').decode('utf-8-sig'),
@@ -90,7 +114,7 @@ class SourceApplication:
         if (properties.get('Global') == 'true'
                 or properties.get('Privileged') == 'true'
                 or properties.get('ClientManagedApplication' if side == 'client' else 'Server') != 'true'
-                or properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse'):
+                or properties.get('ReturnValuesReuse', 'DontUse') not in ('DontUse', 'DuringSession', 'DuringRequest')):
             raise ValueError('Режим общего модуля пока не поддержан при запуске источника: ' + definition.name)
         if path not in self.files:
             raise ValueError('Отсутствует исходный текст общего модуля: ' + path)
@@ -103,6 +127,12 @@ class SourceApplication:
             if any(not isinstance(node, ast.Routine) for node in program):
                 raise ValueError('Общий модуль содержит неподдерживаемую инициализацию: ' + path)
             child.execute_program(program)
+            reuse = properties.get('ReturnValuesReuse', 'DontUse')
+            if reuse != 'DontUse':
+                for routine in program:
+                    if routine.is_async:
+                        raise ValueError('Асинхронные повторно используемые модули пока не поддержаны')
+                    self._reuse_routines[id(routine)] = (routine, child, definition.identity, reuse)
             child._self_module.ready = True
             self._instances[instance_key] = child
             return child._self_module
@@ -140,7 +170,8 @@ class SourceApplication:
                 self._instances['<session>'] = session
                 session._logical_side = 'server'
                 from .configuration_modules import compile_session_module
-                program, _ = compile_session_module(self.files[session_path])
+                program, self._session_handler = compile_session_module(self.files[session_path])
+                self._session_owner = session
                 session.execute_program(program)
                 handlers = ('sessionparameterssetting', 'установкапараметровсеанса')
                 selected = next((session.server_routines[name] for name in handlers if name in session.server_routines), None)
@@ -175,6 +206,41 @@ class SourceApplication:
             self.state = 'failed'
             raise
 
+    def is_scalar_server_reuse(self, routine):
+        # No IPC/wire packet exists in this same-side, source-only host.
+        return False
+
+    def reusable_call(self, caller, owner, routine, qualified):
+        entry = self._reuse_routines.get(id(routine))
+        if not qualified or entry is None or not routine.is_function:
+            return None
+        if entry[0] is not routine or entry[1] is not owner:
+            raise ValueError('source reusable routine owner mismatch')
+        cache = self.reusable_values.cache(caller, entry[3])
+        return cache, (str(entry[2]), routine.name.casefold(), caller.execution_context)
+
+    def current_run_mode(self):
+        """No managed/ordinary client is hosted by this headless source runner.
+
+        This is the actual host context, not an emulated native client mode.
+        The platform contract returns Undefined outside those two client modes.
+        """
+        self.require_open()
+        return None
+
+    def require_open(self):
+        if self.state not in ('starting', 'running'):
+            raise ValueError('source application is not running')
+
+    def initialize_session_parameters(self, caller, names):
+        self.session_parameters._authorize(caller)
+        if self._session_handler is not None:
+            routine = self._session_handler
+            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)],
+                                           self._session_owner, require_value=False)
+
     def close(self):
+        self.session_parameters.close()
+        self.reusable_values.close()
         self.interpreter.close()
         self.state = 'closed'

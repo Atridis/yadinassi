@@ -38,10 +38,12 @@ class SourceStartupTests(unittest.TestCase):
         self.assertIn('ManagedApplicationModule.bsl', str(error.exception))
         self.assertEqual(app.state, 'failed')
 
-    def test_metadata_not_empty_fake(self):
-        app = SourceApplication(source(b'Procedure OnStart()\nMessage(Metadata);\nEndProcedure'))
-        with self.assertRaisesRegex(BSLError, 'не активирован'):
-            app.start()
+    def test_metadata_source_name_is_not_empty_fake(self):
+        output = []
+        app = SourceApplication(source(b'Procedure OnStart()\nMessage(Metadata.Name);\nEndProcedure'), output=output.append)
+        self.assertTrue(app.start())
+        self.assertEqual(output, ['Demo'])
+        app.close()
 
     def test_cancel_is_respected(self):
         output = []

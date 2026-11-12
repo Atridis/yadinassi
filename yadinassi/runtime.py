@@ -1626,14 +1626,15 @@ class Interpreter:
         if crossing or function.is_async:
             from .database_transactions import forbid_transfer
             forbid_transfer(self._transaction_backend())
-        scalar_server_reuse = (self._configuration_runtime is not None
-            and self._configuration_runtime.is_scalar_server_reuse(function))
+        reusable_runtime = self._configuration_runtime or getattr(self, '_source_reusable_runtime', None)
+        scalar_server_reuse = (reusable_runtime is not None
+            and reusable_runtime.is_scalar_server_reuse(function))
         if scalar_server_reuse:
             from .invocation import _encode_scalar
             for value in bindings.values(): _encode_scalar(value.get() if isinstance(value, _Reference) else value)
         reuse = None
-        if self._configuration_runtime is not None:
-            selected = self._configuration_runtime.reusable_call(self, owner, function, qualified)
+        if reusable_runtime is not None:
+            selected = reusable_runtime.reusable_call(self, owner, function, qualified)
             if selected is not None:
                 from .reusable_values import argument_key
                 cache, identity = selected
@@ -1646,7 +1647,7 @@ class Interpreter:
                 if found:
                     try:
                         if scalar_server_reuse: _encode_scalar(cached)
-                        cache.revalidate(key, self._configuration_runtime.reusable_values.measure(cached))
+                        cache.revalidate(key, reusable_runtime.reusable_values.measure(cached))
                     except (TypeError, ValueError):
                         cache.discard(key)
                         raise
@@ -1703,9 +1704,9 @@ class Interpreter:
                         for (_, reference), value in zip(copyback, packet[1:]):
                             reference.set(value)
                     if reuse is not None:
-                        self._configuration_runtime.reusable_values.authorize(self)
+                        reusable_runtime.reusable_values.authorize(self)
                         cache, reservation = reuse
-                        cache.publish(reservation, result, self._configuration_runtime.reusable_values.measure(result))
+                        cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
                     return result
             finally:
                 owner._module_context_stack.pop()

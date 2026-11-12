@@ -12,20 +12,28 @@ _UNSET=object()
 class BSLSessionParameterMetadata(_MetadataObject):
     def __init__(self,definition):
         self._name=definition.name
-        self._description=_scalar_description(definition.kind,definition.qualifiers)
+        self._description=(None if definition.kind == 'fixed_map' else
+                           _scalar_description(definition.kind,definition.qualifiers))
 
     def get_member(self,name):
         key=name.casefold()
         if key in ('name','имя'): return self._name
-        if key in ('type','тип'): return self._description
+        if key in ('type','тип'):
+            if self._description is None:
+                raise ValueError('unsupported metadata field type: FixedMap description')
+            return self._description
         if key in ('fullname','полноеимя'):
             return HostFunction(name,lambda:'ПараметрСеанса.'+self._name)
         return super().get_member(name)
 
 
 class BSLSessionParameters(BSLObject):
-    def __init__(self, application, definitions):
+    def __init__(self, application, definitions, *, source_family=None, unsupported=None):
         self._application=weakref.ref(application)
+        # A source-only host binds a family explicitly, without granting the
+        # unrelated database/template/transport capabilities of ConfigurationApplication.
+        self._source_family = weakref.ref(source_family) if source_family is not None else None
+        self._unsupported = dict(unsupported or {})
         self._definitions={d.name.casefold():d for d in definitions}
         self.metadata=_DeclaredMetadataCollection(tuple(BSLSessionParameterMetadata(d) for d in definitions))
         self._values={name:_UNSET for name in self._definitions}
@@ -34,7 +42,11 @@ class BSLSessionParameters(BSLObject):
 
     def _authorize(self, caller):
         app=self._application()
-        if (self._closed or app is None or caller._configuration_runtime is not app
+        source_owned = (self._source_family is not None
+                        and self._source_family() is caller._family_owner
+                        and getattr(caller, 'application', None) is app)
+        if (self._closed or app is None
+                or (caller._configuration_runtime is not app and not source_owned)
                 or caller._scheduler is not app.interpreter._scheduler):
             raise ValueError('session parameters belong to another or closed application')
         app.require_open()
@@ -47,6 +59,8 @@ class BSLSessionParameters(BSLObject):
         if type(name) is not str or not 1<=len(name)<=128:
             raise TypeError('session parameter name requires String')
         key=name.casefold()
+        if key in self._unsupported:
+            raise ValueError('unsupported session parameter type: ' + name + ': ' + self._unsupported[key])
         if key not in self._definitions: raise ValueError('unknown session parameter')
         return key
 
@@ -75,6 +89,9 @@ class BSLSessionParameters(BSLObject):
         elif definition.kind=='number':
             valid=type(value) is Decimal and value.is_finite()
             if valid: valid=normalize_number(value,definition.qualifiers)==value
+        elif definition.kind=='fixed_map':
+            from .maps import BSLFixedMap
+            valid=type(value) is BSLFixedMap
         else:
             valid=type(value) is BSLDate
             if valid:value.require_known()

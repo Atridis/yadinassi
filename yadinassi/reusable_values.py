@@ -139,12 +139,17 @@ def _snapshot_cost(snapshot):
     return units
 
 class ApplicationReusableValues:
-    def __init__(self,application):
+    def __init__(self,application, *, source_family=None):
         import weakref
+        self._source_family = weakref.ref(source_family) if source_family is not None else None
         self._application=weakref.ref(application);self._session=ReusableValueCache();self._closed=False;self._request_key=object()
     def authorize(self,caller):
         app=self._application()
-        if (self._closed or app is None or caller._configuration_runtime is not app or caller._family_owner is not app.interpreter or caller._scheduler is not app.interpreter._scheduler):raise ValueError('foreign reusable owner')
+        source_owned = (self._source_family is not None and self._source_family() is caller._family_owner
+                        and getattr(caller, '_source_reusable_runtime', None) is app)
+        if (self._closed or app is None or (caller._configuration_runtime is not app and not source_owned)
+                or caller._family_owner is not app.interpreter or caller._scheduler is not app.interpreter._scheduler):
+            raise ValueError('foreign reusable owner')
         app.require_open();caller._require_family()
         sides = ('client', 'server') if app.side is None else ('client',)
         if app.state not in ('starting','running','before_exit','exiting') or caller.execution_context not in sides:raise ValueError('active local application required')
