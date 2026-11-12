@@ -69,6 +69,9 @@ class InventoryPeriodPreparationTests(unittest.TestCase):
     def test_workflow_exact_branch_and_no_dispatch(self):
         source=(ROOT/'.github/workflows/native-1c-inventory-period.yml').read_text(encoding='utf-8')
         self.assertIn("head.ref == 'codex/db-stock-period-statements'",source)
+        self.assertIn("head.ref == 'codex/configuration-stock-statements'",source)
+        self.assertEqual(source.count("head.ref == '"),2)
+        self.assertNotIn('startsWith(',source)
         self.assertNotIn('workflow_dispatch',source)
         self.assertIn('Observe fourteen cases',source)
     def test_material_reference_target_validation(self):

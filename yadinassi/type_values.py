@@ -65,9 +65,12 @@ from .value_lists import BSLValueList, BSLValueListItem
 
 from .async_runtime import Promise
 from .callbacks import BSLCallbackDescription
+from .form_dialogs import QuestionDialogMode, DialogReturnCode
 
 
 _VALUE_TYPES = (
+    (QuestionDialogMode, BSLType.QUESTION_DIALOG_MODE, "QuestionDialogMode"),
+    (DialogReturnCode, BSLType.DIALOG_RETURN_CODE, "DialogReturnCode"),
     (AccumulationDirection, BSLType.ACCUMULATION_RECORD_TYPE, "AccumulationRecordType"),
     (BSLOpenSSLSecureConnection, BSLType.OPENSSL_SECURE_CONNECTION, "OpenSSLSecureConnection"),
     (BSLFileCertificationAuthorityCertificates, BSLType.FILE_CA_CERTIFICATES, "FileCertificationAuthorityCertificates"),
@@ -252,6 +255,11 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    from .enum_types import BSLEnumType, BSLEnumReference
+    from .enumerations import BSLEnumManager
+    if type(value) is BSLEnumType: return BSLType.TYPE
+    if type(value) is BSLEnumReference: return value.value_type
+    if type(value) is BSLEnumManager: return value._manager_type
     if type(value) is BSLInformationRegisterType:
         return BSLType.TYPE
     if type(value) is BSLInformationRegisterManager:

@@ -7,7 +7,7 @@ from types import MappingProxyType
 from uuid import uuid4
 from secrets import token_hex
 from .catalog_backend import BackendError
-from .configuration_document import DocumentObjectSession, DocumentImage, DocumentSaveResult, require_document_form_schema
+from .configuration_document import DocumentObjectSession, DocumentImage, DocumentSaveResult, require_document_form_schema, _OpenedDocument
 from .configuration_posting_application import canonical
 from .document_posting_host import RootPostingOperations
 from .documents import BSLDocumentObject
@@ -19,7 +19,7 @@ class PostingDocumentSession:
     _members = staticmethod(DocumentObjectSession._members)
     require_discardable = DocumentObjectSession.require_discardable
 
-    def __init__(self, context, schema, configuration, form, key=None):
+    def __init__(self, context, schema, configuration, form, key=None, *, _opened=None):
         require_document_form_schema(schema)
         self.context, self.schema = context, schema
         self.configuration = canonical(configuration)
@@ -39,12 +39,17 @@ class PostingDocumentSession:
         self.error = None; self.save_state = 'new'
         self._operation_id = None; self.receipt_token = None
         self.verify_source()
+        if _opened is not None and (type(_opened) is not _OpenedDocument or key is None):
+            raise TypeError('owned document opening snapshot required')
         if key is None:
             self.object = self.manager.create_document()
         else:
-            view = self._backend.begin_document_read()
-            try: card = view.read_document(key)
-            finally: view.close()
+            if _opened is not None:
+                card = _opened.take(context, schema, key)
+            else:
+                view = self._backend.begin_document_read()
+                try: card = view.read_document(key)
+                finally: view.close()
             if card is None or key.document_id != schema.identity: raise BackendError('not_found')
             self.object = BSLDocumentObject(self.manager, card)
             self.save_state = 'unchanged'

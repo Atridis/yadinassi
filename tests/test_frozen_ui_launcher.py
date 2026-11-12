@@ -3,21 +3,21 @@ import sys
 import unittest
 from unittest import mock
 
-from scripts import entrypoint
+from yadinassi import launcher as entrypoint
 from yadinassi.ui.local_app import RuntimeBridge
 
 
 class FrozenLauncherTests(unittest.TestCase):
     def test_first_argument_only_selects_explicit_mode(self):
         with mock.patch.object(entrypoint, 'cli_main', return_value=9) as cli, \
-                mock.patch.object(entrypoint.local_app, 'main', return_value=8) as ui, \
+                mock.patch.object(entrypoint.database_launch, 'main', return_value=8) as ui, \
                 mock.patch.object(entrypoint.editor_stdio, 'main', return_value=7) as child:
-            self.assertEqual(entrypoint.main(['--catalog-ui', '--f', 'test.sqlite']), 8)
+            self.assertEqual(entrypoint.main(['--ui', '--f', 'test.sqlite']), 8)
             ui.assert_called_once_with(['--f', 'test.sqlite'])
             self.assertEqual(entrypoint.main(['--catalog-ui-runtime', 'test.sqlite']), 7)
             child.assert_called_once_with(['test.sqlite'])
-            for args in ([], ['-c', '--catalog-ui'], ['--', '--catalog-ui'],
-                         ['sample.bsl', '--catalog-ui']):
+            for args in ([], ['-c', '--ui'], ['--', '--ui'],
+                         ['sample.bsl', '--ui']):
                 self.assertEqual(entrypoint.main(args), 9)
                 cli.assert_called_with(args)
 

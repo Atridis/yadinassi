@@ -1,12 +1,13 @@
 """Bounded default-state ValueList operations from the owner core checkpoint.
 
 Only Value, Presentation and Check are exposed on items. Typed constraints,
-pictures and UI methods are deliberately outside this implementation. Sorting
+pictures and synchronous UI methods are deliberately outside this implementation. Sorting
 uses the separate, bounded owner-confirmed ValueList sort checkpoint.
 Resource budgets below are Yadinassi limits, not asserted native limits.
 """
 
 from decimal import Decimal
+from dataclasses import dataclass
 import re
 import weakref
 
@@ -20,6 +21,15 @@ _MAX_TEXT = 1_000_000
 _MAX_NUMBER_DIGITS = 4096
 _MAX_INTEGER = 2 ** 32
 _MAX_ID = 2 ** 32
+
+
+@dataclass(frozen=True, slots=True)
+class _ChooseItemMarker:
+    """Interpreter-only origin-preserving call, not a callable UI capability."""
+    source: object
+
+    def __call__(self, *arguments):
+        raise ValueError('ShowChooseItem requires an application-owned client dispatch')
 
 
 def _unsupported(message):
@@ -426,6 +436,10 @@ class BSLValueList(BSLObject):
 
     def get_method(self, name):
         key = name.casefold()
+        if key in ('showchooseitem', 'показатьвыборэлемента'):
+            if type(self) is not BSLValueList:
+                raise TypeError('exact ValueList required')
+            return HostFunction(name, _ChooseItemMarker(self), returns_value=False)
         functions = {
             "count": self.count, "количество": self.count,
             "get": self.get, "получить": self.get,

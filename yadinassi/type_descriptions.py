@@ -16,6 +16,7 @@ from uuid import UUID
 
 from .unique_identifiers import BSLUUID
 from .catalog_types import BSLCatalogReference, BSLCatalogType
+from .enum_types import BSLEnumReference, BSLEnumType
 from .document_types import BSLDocumentReference, BSLDocumentType
 from .information_registers import BSLInformationRegisterType
 from .document_lines import BSLDocumentLinesType, BSLDocumentLines, BSLDocumentLine, BSLDocumentSectionType
@@ -54,7 +55,7 @@ def _unsupported(message):
 
 
 def _is_reference_type(kind):
-    return type(kind) is BSLCatalogType or type(kind) is BSLDocumentType
+    return type(kind) is BSLCatalogType or type(kind) is BSLDocumentType or type(kind) is BSLEnumType
 
 
 def _checked_reference_type(kind, *, reference_only=True):
@@ -393,7 +394,8 @@ class BSLTypeDescription(BSLObject):
             # Official AdjustValue returns an already matching value unchanged.
             # !todo Measure default/Undefined/foreign-family reference coercions;
             # never invent an unbound empty ref or UUID/string conversion here.
-            expected = BSLCatalogReference if type(reference) is BSLCatalogType else BSLDocumentReference
+            expected = (BSLCatalogReference if type(reference) is BSLCatalogType else
+                        BSLEnumReference if type(reference) is BSLEnumType else BSLDocumentReference)
             if type(value) is not expected:
                 _unsupported('значение по умолчанию или преобразование в ссылку')
             kind = _checked_reference_type(value.value_type)
@@ -408,7 +410,7 @@ class BSLTypeDescription(BSLObject):
             if _scalar_type(value) is not self._query_scalar.types[0]:
                 _unsupported("преобразование типа nullable колонки запроса")
             return self._query_scalar.adjust_value(value)
-        if ((type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLInformationRegisterType or (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType) or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)):
+        if ((type(value) is BSLEnumReference or type(value) is BSLEnumType or type(value) is BSLCatalogReference or type(value) is BSLCatalogType or type(value) is BSLDocumentReference or type(value) is BSLDocumentType or type(value) is BSLInformationRegisterType or (type(value) is BSLDocumentLinesType or type(value) is BSLDocumentSectionType) or type(value) is BSLDocumentLines or type(value) is BSLDocumentLine)):
             _unsupported("приведение ссылки или типа справочника")
         if self.types == (BSLType.UUID,):
             # Native PR112 observations418..422: omitted/Undefined/canonical

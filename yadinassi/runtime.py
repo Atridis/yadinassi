@@ -1,4 +1,5 @@
 from weakref import WeakValueDictionary
+from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -43,6 +44,7 @@ from . import clocks, date_time_conversions, dates, formatting, number_in_words,
 from .chars import BSLChars, CHARS
 from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
+from .enumerations import BSLEnumerations, BSLEnumManager
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
@@ -514,7 +516,28 @@ class Interpreter:
         for alias in (name, *aliases):
             self.types[alias.casefold()] = wrapper
 
+    def _new_type_description(self, *values):
+        # Resolve only one application-owned enum type name. Mixed/reference
+        # unions and all qualifiers still pass through the descriptor's closed
+        # admission; do not turn arbitrary names into host type lookups.
+        if values and type(values[0]) is str and len(values[0]) <= 4096:
+            token = values[0].strip()
+            prefix, separator, _ = token.partition('.')
+            if (separator and ',' not in token and prefix.casefold() in
+                    ('enumref', 'перечислениессылка', 'enummanager', 'перечислениеменеджер')):
+                self._require_family()
+                if self._metadata._enumerations is None:
+                    raise ValueError('enumeration types require an active configuration application')
+                kind = self._metadata._enumerations.resolve_type(token)
+                source = BSLArray()
+                source.items.append(kind)
+                values = (source, *values[1:])
+        return BSLTypeDescription(*values)
+
     def _type_by_name(self, name):
+        if self._metadata._enumerations is not None:
+            value = self._metadata._enumerations.resolve_type(name)
+            if value is not None: return value
         return self._information_registers.type_by_name(name)
 
     def _new_query(self, text=""):
@@ -864,6 +887,9 @@ class Interpreter:
             if self._documents.posting_runtime() is None: raise ValueError("posting profile required")
             from .document_posting_values import DOCUMENT_WRITE_MODES
             return DOCUMENT_WRITE_MODES
+        if name in ("enums", "перечисления"):
+            if self._metadata._enumerations is None: raise ValueError("enumerations require an active configuration application")
+            return self._metadata._enumerations
         if name in ("документы", "documents"):
             return self._documents
         if name in ("справочники", "catalogs"):
@@ -880,6 +906,12 @@ class Interpreter:
             return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ('questiondialogmode', 'режимдиалогавопрос'):
+            from .form_dialogs import QUESTION_DIALOG_MODES
+            return QUESTION_DIALOG_MODES
+        if name in ('dialogreturncode', 'кодвозвратадиалога'):
+            from .form_dialogs import DIALOG_RETURN_CODES
+            return DIALOG_RETURN_CODES
         if name in ("форматдатыjson", "jsondateformat"):
             return JSON_DATE_FORMATS
         if name in ("вариантзаписидатыjson", "jsondatewritingvariant"):
@@ -1002,7 +1034,7 @@ class Interpreter:
         value = (yield from self._visit(node.object))
         if (type(value) is BSLCommonModuleMetadataCollection
                 or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
-                or is_metadata_collection(value)):
+                or is_metadata_collection(value) or type(value) is BSLEnumerations or type(value) is BSLEnumManager):
             return value.get_index((yield from self._visit(node.index)))
         if not isinstance(value, _COLLECTIONS):
             raise TypeError("Индексирование поддерживается только для коллекций")
@@ -1100,6 +1132,12 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        from .value_lists import _ChooseItemMarker
+        choosing = type(function.function) is _ChooseItemMarker
+        if choosing:
+            if self._configuration_runtime is None:
+                raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+            self._configuration_runtime.require_value_selection(self)
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
@@ -1162,6 +1200,8 @@ class Interpreter:
             else:
                 value = (yield from self._visit(argument))
             values.append(value)
+        if choosing:
+            return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
@@ -1274,7 +1314,57 @@ class Interpreter:
         # operation/error-dialog protocol. Never silently discard a handler.
         if error_name is not None or error_module is not None:
             raise ValueError("Обработчик ошибки ОписаниеОповещения пока не поддерживается")
+        target = self._capture_form_callback(module)
+        if target is not None:
+            return BSLCallbackDescription(name, module, additional, _form_target=target)
         return BSLCallbackDescription(name, self._callback_module(module), additional)
+
+    def _capture_form_callback(self, receiver):
+        # Only the owned form interpreter overrides this closed enrollment seam.
+        return None
+
+    def callback_target(self, description, *, form_arity=2):
+        """Validate a value capability without executing or creating source."""
+        if type(form_arity) is not int or form_arity not in (1, 2):
+            raise ValueError('unsupported sealed form callback arity')
+        self._require_callback_context()
+        if type(description) is not BSLCallbackDescription:
+            raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
+        from .callbacks import _FormCallbackTarget
+        target = description._form_target
+        if target is not None:
+            if type(target) is not _FormCallbackTarget or description.module is not target.receiver:
+                raise ValueError('invalid form callback capability')
+            owner = target.require(self)
+            if type(description.procedure_name) is not str or not description.procedure_name:
+                raise ValueError('callback procedure required')
+            routine = owner.routines.get(description.procedure_name.casefold())
+            if (routine is None or not routine.exported or routine.is_function or routine.is_async
+                    or routine.is_dual or not routine.module_context or routine.execution_context != 'client'
+                    or len(routine.parameters) != form_arity):
+                raise ValueError('form completion requires an exported synchronous client procedure with the granted arity')
+            return routine, owner
+        module = self._callback_module(description.module)
+        if module is None or not description.procedure_name:
+            raise ValueError('ОписаниеОповещения: не заданы имя процедуры и модуль')
+        routine = module.routine(description.procedure_name)
+        if routine.execution_context != 'client':
+            raise ValueError('Обработчик оповещения должен выполняться на клиенте')
+        return routine, module.interpreter
+
+    def dispatch_callback(self, description, result, token, *, result_argument=True):
+        """Shared value-based dispatch; host callers still own event admission."""
+        if type(result_argument) is not bool:
+            raise ValueError('explicit callback argument contract required')
+        routine, owner = self.callback_target(description, form_arity=2 if result_argument else 1)
+        if not result_argument and description._form_target is None:
+            raise ValueError('one-argument completion requires a sealed form target')
+        if description._form_target is not None:
+            if not owner._form_session._busy or owner._form_session.interpreter is not self:
+                raise ValueError('form callback requires its owning trusted event')
+        values = ([result] if result_argument else []) + [description.additional_parameters]
+        arguments = [ast.Literal(token, value) for value in values]
+        return (yield from self.call_routine(routine, arguments, owner, require_value=False))
 
     def _run_callback(self, node):
         self._require_callback_context()
@@ -1285,21 +1375,7 @@ class Interpreter:
         result = None
         if len(node.arguments) == 2 and not isinstance(node.arguments[1], ast.OmittedArgument):
             result = yield from self._visit(node.arguments[1])
-        if type(description) is not BSLCallbackDescription:
-            raise TypeError("ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения")
-        module = self._callback_module(description.module)
-        if module is None or not description.procedure_name:
-            raise ValueError("ОписаниеОповещения: не заданы имя процедуры и модуль")
-        routine = module.routine(description.procedure_name)
-        if routine.execution_context != "client":
-            raise ValueError("Обработчик оповещения должен выполняться на клиенте")
-        # Feed already evaluated values into ordinary routine dispatch. No caller
-        # variable alias is manufactured; shared objects keep normal identity.
-        # The same path owns Export, arity/defaults, frames, errors and Async.
-        arguments = [ast.Literal(node.token, result),
-                     ast.Literal(node.token, description.additional_parameters)]
-        return (yield from self.call_routine(routine, arguments, module.interpreter,
-                                            require_value=False))
+        return (yield from self.dispatch_callback(description, result, node.token))
 
     def known_receiver(self, node: ast.Node) -> object:
         """Read explicit receiver storage only, never factories or arbitrary fields."""
@@ -1510,6 +1586,10 @@ class Interpreter:
             promise = self._scheduler.start(owner._async_body(function, bindings),
                                             procedure=not function.is_function)
             return promise if function.is_function else None
+        input_call = (nullcontext() if self._configuration_runtime is None else
+                      self._configuration_runtime.input_call(self, owner,
+                          not crossing and caller_side == 'client' and function.execution_context == 'client'
+                          and function.module_context))
         previous = owner.locals
         # Fresh server module initialization precedes formal parameter storage.
         # One cleanup boundary encloses BOTH initializer and routine execution.
@@ -1519,26 +1599,27 @@ class Interpreter:
         from .database_transactions import admission
         with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                if crossing:
-                    for initializer in owner.server_initializers:
-                        yield from owner.block(initializer.body)
-                    owner.locals = bindings
-                result = None
-                try:
-                    (yield from owner.block(function.body))
-                except _Return as returned:
-                    result = returned.value
-                if crossing:
-                    # Validate the entire outgoing packet before touching caller
-                    # storage. Escaping errors never reach this normal-return path.
-                    packet = self._copy_context_packet(
-                        [result] + [bindings[name] for name, _ in copyback])
-                    result = packet[0]
-                    # Every output/result gets an independent per-occurrence copy.
-                    # Publish only after the whole packet validates and allocates.
-                    for (_, reference), value in zip(copyback, packet[1:]):
-                        reference.set(value)
-                return result
+                with input_call:
+                    if crossing:
+                        for initializer in owner.server_initializers:
+                            yield from owner.block(initializer.body)
+                        owner.locals = bindings
+                    result = None
+                    try:
+                        (yield from owner.block(function.body))
+                    except _Return as returned:
+                        result = returned.value
+                    if crossing:
+                        # Validate the entire outgoing packet before touching caller
+                        # storage. Escaping errors never reach this normal-return path.
+                        packet = self._copy_context_packet(
+                            [result] + [bindings[name] for name, _ in copyback])
+                        result = packet[0]
+                        # Every output/result gets an independent per-occurrence copy.
+                        # Publish only after the whole packet validates and allocates.
+                        for (_, reference), value in zip(copyback, packet[1:]):
+                            reference.set(value)
+                    return result
             finally:
                 owner._module_context_stack.pop()
                 owner._context_stack.pop()
@@ -1721,7 +1802,7 @@ class Interpreter:
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
             owner = (yield from self._visit(node.object))
-            if is_metadata_collection(owner) or type(owner) is BSLCatalogs or type(owner) is BSLDocuments:
+            if is_metadata_collection(owner) or type(owner) in (BSLCatalogs, BSLDocuments, BSLEnumerations, BSLEnumManager):
                 index = (yield from self._visit(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
@@ -1784,6 +1865,8 @@ class Interpreter:
             values = []
             for argument in node.arguments:
                 values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+            if factory.function is BSLTypeDescription:
+                return self._new_type_description(*values)
             return factory(*values)
         self.reject_host_omissions(node.arguments)
         if factory is None:
@@ -1813,6 +1896,8 @@ class Interpreter:
         arguments = tuple(parameters.items) if type(parameters) is BSLArray else ()
         if factory.function is callback_description_marker:
             return self._new_callback(arguments)
+        if factory.function is BSLTypeDescription:
+            return self._new_type_description(*arguments)
         return factory(*arguments)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -1827,7 +1912,7 @@ class Interpreter:
                     raise TypeError("Значение не имеет методов или свойств")
                 value.set_member(node.target.name, (yield from self._visit(node.value)))
             else:
-                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments)):
+                if is_metadata_collection(value) or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments, BSLEnumerations, BSLEnumManager)):
                     value.set_index((yield from self._visit(node.target.index)), (yield from self._visit(node.value)))
                     return
                 if not isinstance(value, _COLLECTIONS):
@@ -2078,7 +2163,8 @@ class Interpreter:
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections
                 and type(collection) is not BSLSortDirections
-                and not is_metadata_collection(collection)):
+                and not is_metadata_collection(collection)
+                and type(collection) is not BSLEnumManager):
             raise TypeError("Для Каждого ожидает массив, структуру, соответствие или поддержанное пространство системного перечисления")
         for item in collection:
             self.set_variable(node.name, item)

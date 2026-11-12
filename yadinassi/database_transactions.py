@@ -347,7 +347,7 @@ class RootOperation:
     the exact frozen journal, never a callback, form dispatch or posting handler.
     """
     def __init__(self, backend, operation_id):
-        require_host_root(backend)
+        self._admit_root(backend)
         if type(operation_id) is not UUID or not operation_id.int:
             raise BackendError('invalid_input')
         self.backend = backend
@@ -358,6 +358,12 @@ class RootOperation:
         self._images = None
         self._commit_attempted = False
 
+    @staticmethod
+    def _admit_root(backend):
+        # Separate trusted host adapters may supply another exact source grant.
+        # This public coordinator never broadens the original v13 admission.
+        require_host_root(backend)
+
     @property
     def locked(self):
         transaction = self._transaction
@@ -367,7 +373,7 @@ class RootOperation:
                 or transaction.unit._view._connection is not None))
 
     def _enter(self):
-        require_host_root(self.backend)
+        self._admit_root(self.backend)
         # Allocate the return container before installing either context. A
         # tuple built on return could fail after both tokens were acquired.
         tokens = [None, None]
@@ -448,7 +454,7 @@ class RootOperation:
 
     def resolve(self):
         self.release_for_resolution()
-        require_host_root(self.backend)
+        self._admit_root(self.backend)
         if self.receipt.state not in ('uncertain', 'committed') or self.receipt.accepted:
             return self.receipt
         transaction = self._transaction

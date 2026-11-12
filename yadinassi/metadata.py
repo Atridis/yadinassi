@@ -308,6 +308,7 @@ class BSLMetadata(_MetadataObject):
         self._documents = BSLDocumentMetadataCollection(context, self._catalogs,self)
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs,self)
         self._common_modules = None
+        self._enumerations = None
         self._catalog_managers = self._document_managers = None
         self._configuration_name = None
         self._identity = None
@@ -334,6 +335,11 @@ class BSLMetadata(_MetadataObject):
         finally: view.close()
 
     def find_by_type(self, kind):
+        from .enum_types import BSLEnumType
+        if type(kind) is BSLEnumType:
+            if self._enumerations is None or kind.snapshot is not self._enumerations.metadata:
+                raise ValueError("metadata type belongs to another runtime snapshot")
+            return next((m for m in self._enumerations.metadata if m._definition.identity == kind.metadata_uuid),None)
         from .catalog_types import BSLCatalogType
         from .document_types import BSLDocumentType
         from .information_registers import BSLInformationRegisterType
@@ -351,7 +357,9 @@ class BSLMetadata(_MetadataObject):
         if len(name) > 2048: raise ValueError('metadata path resource limit')
         parts = name.split('.')
         if len(parts) < 2 or len(parts) > 6 or len(parts) % 2: return None
-        collection = {'catalog':self._catalogs,'справочник':self._catalogs,
+        enum_metadata = None if self._enumerations is None else self._enumerations.metadata
+        collection = {'enum':enum_metadata,'перечисление':enum_metadata,
+                      'catalog':self._catalogs,'справочник':self._catalogs,
                       'document':self._documents,'документ':self._documents,
                       'informationregister':self._information_registers,'регистрсведений':self._information_registers,
                       'commonmodule':self._common_modules,'общиймодуль':self._common_modules}.get(parts[0].casefold())
@@ -382,6 +390,8 @@ class BSLMetadata(_MetadataObject):
             return self._configuration_name if name.casefold() in ('name','имя') else ''
         if name.casefold() in ('commonmodules', 'общиемодули') and self._common_modules is not None:
             return self._common_modules
+        if name.casefold() in ('enums', 'перечисления') and self._enumerations is not None:
+            return self._enumerations.metadata
         if name.casefold() in ('catalogs', 'справочники'):
             return self._catalogs
         if name.casefold() in ('documents', 'документы'):
@@ -474,6 +484,8 @@ def is_metadata_collection(value):
 
 
 def is_metadata_object(value):
+    from .enumerations import EnumMetadata, EnumValueMetadata
+    if type(value) is EnumMetadata or type(value) is EnumValueMetadata: return True
     return is_metadata_collection(value) or any(type(value) is cls for cls in (
         BSLMetadata,BSLCatalogMetadata,BSLDocumentMetadata,BSLInformationRegisterMetadata,
         BSLCommonModuleMetadata,BSLAttributeMetadata,BSLTabularSectionMetadata,StandardAttributeDescription))

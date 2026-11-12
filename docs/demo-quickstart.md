@@ -11,7 +11,7 @@ Python 3.10+ с установленными зависимостями прое
 
 ```console
 python -m yadinassi --create-demo-db demo.sqlite --import-xml tests/fixtures/demo_cf/source
-python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
 Первая команда создаёт новый файл. Вторая запускает локальный редактор и
@@ -20,17 +20,17 @@ URL. Без `--open-browser` браузер автоматически не за
 не пересылайте другим людям.
 
 Для путей с пробелами используйте кавычки. В установленном Python-пакете
-`python -m yadinassi` можно заменить на `yadinassi`, а
-`python -m yadinassi.ui.local_app` на `yadinassi-catalog`.
+`python -m yadinassi` можно заменить на `yadinassi`: общий `--ui`
+работает одинаково в пакете, исходниках и автономной сборке.
 Пакет не содержит XML-исходники демо: `--import-xml` должен указывать на
 `tests/fixtures/demo_cf/source` из соответствующего checkout репозитория.
 
 Автономный бинарник принимает ту же команду создания, а редактор выбирается
-первым аргументом `--catalog-ui`:
+первым аргументом `--ui`:
 
 ```console
 yadinassi --create-demo-db demo.sqlite --import-xml /path/to/yadinassi/tests/fixtures/demo_cf/source
-yadinassi --catalog-ui --f demo.sqlite --open-browser
+yadinassi --ui --f demo.sqlite --open-browser
 ```
 
 На Windows используйте `yadinassi.exe`; на Linux/macOS для файла в текущем

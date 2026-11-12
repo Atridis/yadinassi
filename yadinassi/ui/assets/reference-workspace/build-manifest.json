@@ -8,15 +8,15 @@
     "src/style.css": "f971ec0455474b7619419c7fa913f00742055fb75e3a75f11372d420a96c3648",
     "../form/src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
-    "../form/src/client.mjs": "951055cec3e38619f029e1e8695ee2e885edee925fbcdf192b5b0a29a5d43f10",
+    "../form/src/client.mjs": "474812f53bc3f102297485f0b841c4587d46e6ee5a5985f22d7e21924d062c7d",
     "../form/src/attachment.mjs": "3f6d3a33ce2b68e99a1e19939c6d92af437e9993877faa9eec4d9c9429f4e8f0",
-    "../form/src/view.mjs": "6d74959ea81af2eb96fd9cb52cd1f56beb1e34f0fa5f5c0797ef213f91850907",
-    "../form/src/app.mjs": "ce6b36b665ab67a6f46b7954696699bc9b829292953ae2a3afd445131bedae2d",
+    "../form/src/view.mjs": "762297959c54c3e69cb4c33e80b9aaf7e46275ffa10ab68e6a4e63b6ae9dbcf3",
+    "../form/src/app.mjs": "dcfd190e3c408ac1977c80157dd3307e205a1ae189340571be13c168ed67fbd8",
     "src/client.mjs": "7616519bdb35daee26060de294b9068c27849f11e6f1adc1a35d0d64831648f7",
     "src/app.mjs": "d70745d2f2e8f11ddaae5bb63c878f14a6a4ddc246f3645044057407fc5505c7"
   },
   "outputs": {
-    "app.js": "b525502ef92cc95115eb238461de75770f7a69d95c27e582648f13493039c245",
+    "app.js": "532b72f21e9937ba7c50dcc86cb0b21e3ae0259edb4e6cf610c93d9ed0f6eb07",
     "index.html": "eebbe7e0d68a5d6e1834b923e58c8faa0479808c07b999155c7ba1bfa08f4764",
     "style.css": "66852744e3c35456fe9d79a93b3030ca1b728551319c2a9f77f34b6f2ff9b837",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

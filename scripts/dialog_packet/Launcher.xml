@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"
+    xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.4">
+    <ExternalDataProcessor uuid="b0a5601c-5a1a-4dfd-bc15-dd8ebc673812">
+        <InternalInfo>
+            <xr:ContainedObject>
+                <xr:ClassId>c3831ec8-d8d5-4f93-8a22-f9bfae07327f</xr:ClassId>
+                <xr:ObjectId>3d0ba37d-b7e6-443f-8e6a-4b98c7a57f85</xr:ObjectId>
+            </xr:ContainedObject>
+            <xr:GeneratedType name="ExternalDataProcessorObject.Launcher" category="Object">
+                <xr:TypeId>220043fb-efc2-465e-aebe-431a481d3229</xr:TypeId>
+                <xr:ValueId>cfa1a9d1-8ee6-474c-93aa-4dd4c9319036</xr:ValueId>
+            </xr:GeneratedType>
+        </InternalInfo>
+        <Properties>
+            <Name>Launcher</Name>
+            <Synonym/>
+            <Comment/>
+            <DefaultForm>ExternalDataProcessor.Launcher.Form.Main</DefaultForm>
+            <AuxiliaryForm/>
+        </Properties>
+        <ChildObjects>
+            <Form>Main</Form>
+        </ChildObjects>
+    </ExternalDataProcessor>
+</MetaDataObject>
