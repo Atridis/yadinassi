@@ -16,11 +16,11 @@ const rpcFetchMs=35000,rpcReplyMs=50000; // Existing transport and observer budg
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['enum-catalogs.png','enum-written.png','enum-posted-report.png','enum-reopened-unposted.png','enum-record-pages.png'];
+const screenshots=['enum-catalogs.png','enum-written.png','enum-posted-report.png','enum-reopened-unposted.png','enum-record-pages.png','enum-reference-pages.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['catalog_enum_choice_save','receipt_header_line_enum_write',
- 'post_visible_enum_movements','restart_reopen_unpost','record_pages_search_refresh'];
-// Ровно 251 деловой RPC: 14 + 15 + 3 + 7 + 212. Hello/snapshot и lease heartbeat
+ 'post_visible_enum_movements','restart_reopen_unpost','record_pages_search_refresh','reference_pages_search_save_reopen'];
+// Ровно 262 деловых RPC: 14 + 15 + 3 + 7 + 212 + 11. Hello/snapshot и lease heartbeat
 // наблюдаются отдельно; бизнес-запросы не синтезируются и не повторяются.
 const businessPlan=[
  ["catalog", "open", "change:CodeInput", "change:DescriptionInput", "reference:begin", "reference:apply", "command:SaveButton", "close:", "catalog", "open", "change:CodeInput", "change:DescriptionInput", "command:SaveButton", "close:"],
@@ -78,7 +78,8 @@ const businessPlan=[
   "open","change:CodeInput","command:SaveButton","close:",
   "open","change:CodeInput","command:SaveButton","close:",
   "open","change:CodeInput","command:SaveButton","close:",
-  "catalogPage","openRecord","change:DescriptionInput","command:SaveButton","close:","catalogPage","catalogFilter","catalogFilter","catalogPage","catalog","close"]
+  "catalogPage","openRecord","change:DescriptionInput","command:SaveButton","close:","catalogPage","catalogFilter","catalogFilter","catalogPage","catalog","close"],
+ ["catalog","openRecord","reference:begin","reference:page","reference:search","reference:apply","command:WriteButton","close:","openRecord","close:","close"]
 ];
 const businessEvents=[];
 // Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
@@ -258,7 +259,7 @@ try:
    except BackendError as failure: assert failure.code=='unsupported'
    else: raise AssertionError('core16_ui_grant')
   result={'created':True,'core16Denied':True}
- elif sys.argv[1]=='audit':
+ elif sys.argv[1] in ('audit','audit-picked'):
   before=sha256(database.read_bytes()).digest()
   def number(value):
    assert type(value) is Decimal
@@ -298,7 +299,7 @@ try:
       values=dict(zip((f.name for f in schema.fields),card.values)); warehouse=values['Warehouse']
       state=enum_name(values['State'],'States')
       assert type(warehouse) is CatalogKey and warehouse.catalog_id==catalogs['Warehouses'].identity
-      assert warehouse==cards['Warehouses','W1'].key
+      assert warehouse==cards['Warehouses','Z0049' if sys.argv[1]=='audit-picked' else 'W1'].key
       section=schema.tabular_sections[0]; rows=card.tabular_sections[0].rows; assert len(rows)==1
       values=dict(zip((f.name for f in section.fields),rows[0].values)); product=values['Product']
       unit=enum_name(values['Unit'],'Units')
@@ -335,7 +336,7 @@ except Exception:
  print('{"error":"owned_inventory_fixture_failed"}',file=sys.stderr);sys.exit(1)
 `;
 function inventoryFixture(operation){
-  assert.ok(['create','audit'].includes(operation),'fixture_mode');
+  assert.ok(['create','audit','audit-picked'].includes(operation),'fixture_mode');
   checkpoint(operation==='create'?'fixture_create':'fixture_audit');
   let raw;
   try{raw=execFileSync(python,['-c',fixtureCode,operation,owned,path.join(repo,'examples/configuration-inventory-enum-application')],
@@ -429,10 +430,13 @@ function checkRequest(request){
       assert.ok(['WarehouseInput','UnitInput','StateInput'].includes(a.control)&&a.row===null&&a.column===null ||
         a.control==='LinesTable'&&Number.isSafeInteger(a.row)&&a.row>0&&a.row<=4096&&['Product','Unit'].includes(a.column));
     }else{
-      assert.equal(a.action,'apply');exactKeys(a,'action ticket choice');
+      assert.ok(['apply','page','search'].includes(a.action),'declared_reference_action');
+      exactKeys(a,a.action==='apply'?'action ticket choice':a.action==='page'?'action ticket cursor':'action ticket query');
       assert.equal(a.ticket,lastApplicationState?.choice?.ticket,'unissued_picker_ticket');
       assert.equal(packet.params.session,lastApplicationState.choice.session,'crossed_picker_owner');
-      assert.ok(lastApplicationState.choice.rows.some(row=>row.choice===a.choice),'unissued_choice');
+      if(a.action==='apply')assert.ok(lastApplicationState.choice.rows.some(row=>row.choice===a.choice),'unissued_choice');
+      else if(a.action==='page')assert.ok([lastApplicationState.choice.navigation?.previous,lastApplicationState.choice.navigation?.next].filter(Boolean).includes(a.cursor),'unissued_reference_page');
+      else assert.equal(a.query,'ZZ updated','fixed_reference_search');
     }
   }else if(packet.method==='application.report'){
     exactKeys(packet.params,'report at start end');
@@ -824,6 +828,33 @@ async function main(){
     assert.deepEqual(inventoryFixture('audit'),audit,'shutdown_mutated_database');
     report.acceptance.recordPaging=true;report.acceptance.recordSearchSort=true;report.acceptance.saveRefreshPage=true;
     report.acceptance.rowsCreatedThroughUI=51;
+  });
+  await scenario(scenarioNames[5],async()=>{
+    // Reuse the 51 warehouses created through UI, never seed business rows.
+    await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await idle();
+    await catalogEntry('Receipt card');await openNumber('R1');
+    let reply=replyFor(p=>p.method==='application.reference'&&p.params.action.action==='begin');
+    await action('Choose Warehouse').click();await reply;await picker().waitFor();await idle();
+    const nav=()=>lastApplicationState.choice.navigation;
+    assert.equal(nav().total,51);assert.equal(nav().page,1);assert.equal(lastApplicationState.choice.rows.length,32);
+    reply=replyFor(p=>p.method==='application.reference'&&p.params.action.action==='page');
+    await picker().getByRole('button',{name:'Next choices',exact:true}).click();await reply;await idle();
+    assert.equal(nav().page,2);assert.equal(lastApplicationState.choice.rows.length,19);
+    await picker().getByRole('button',{name:'Choose Z0049 ZZ updated last warehouse',exact:true}).waitFor();
+    await picker().getByLabel('Reference search',{exact:true}).fill('ZZ updated');
+    reply=replyFor(p=>p.method==='application.reference'&&p.params.action.action==='search');
+    await picker().getByRole('button',{name:'Search references',exact:true}).click();await reply;await idle();
+    assert.equal(nav().total,1);assert.equal(nav().page,1);assert.equal(nav().query,'ZZ updated');
+    reply=replyFor(p=>p.method==='application.reference'&&p.params.action.action==='apply');
+    await picker().getByRole('button',{name:'Choose Z0049 ZZ updated last warehouse',exact:true}).click();await reply;
+    await picker().waitFor({state:'hidden'});await idle();await value('Warehouse','ZZ updated last warehouse');
+    await command('Write document','WriteButton');
+    const audit=inventoryFixture('audit-picked');assert.equal(audit.documents[0].warehouse,'Z0049');
+    await closeForm();await countPanels(0);await openNumber('R1');await value('Warehouse','ZZ updated last warehouse');
+    assert.deepEqual(inventoryFixture('audit-picked'),audit,'picker_reopen_mutated_database');
+    await screenshot(screenshots[5]);await closeForm();await countPanels(0);await naturalStop();
+    assert.deepEqual(inventoryFixture('audit-picked'),audit,'picker_shutdown_mutated_database');
+    report.acceptance.referencePaging=true;report.acceptance.referenceSearch=true;report.acceptance.referenceSavedReopen=true;
   });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
