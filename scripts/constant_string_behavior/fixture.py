@@ -7,7 +7,7 @@ MAX_FILE=original.MAX_FILE
 MAX_TOTAL=original.MAX_TOTAL
 _files=original._files
 VALIDATION_MODE='owned-constant-string-material-projection-v1'
-ASSET_HASHES={'OwnedString.xml': 'c0bd9d52f9aab866add9e8f3f7e7f2eb93d651da219a16a0e74757df6840b4f8'}
+ASSET_HASHES={'OwnedString.xml': 'a8df6e3791fbe3adf6e14500aa51bcc49dd0bb6054ec463c82acca30675961d5'}
 PARAMETERS=('OwnedString',)
 
 def load_saved():

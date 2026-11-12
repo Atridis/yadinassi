@@ -1,2 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20"><Constant uuid="e82b3816-c2b3-4d26-84d7-e0fb863ae4f8"><Properties><Name>OwnedString</Name><Synonym/><Comment/><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>64</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></Constant></MetaDataObject>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+<Constant uuid="e82b3816-c2b3-4d26-84d7-e0fb863ae4f8">
+<InternalInfo>
+<xr:GeneratedType name="ConstantManager.OwnedString" category="Manager"><xr:TypeId>7f4ff4f0-5009-40e6-98b7-62fad6f7a748</xr:TypeId><xr:ValueId>099403eb-df3b-4709-9499-8a624a97e7e2</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="ConstantValueManager.OwnedString" category="ValueManager"><xr:TypeId>98c849f7-6526-4935-a31c-afe1866733e0</xr:TypeId><xr:ValueId>f97ba155-b431-4878-b4c8-abc5809c201c</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="ConstantValueKey.OwnedString" category="ValueKey"><xr:TypeId>65c6b453-d1fa-46ed-acf2-6661ed5414ca</xr:TypeId><xr:ValueId>09c6294b-d37a-45bd-a38a-1b929f9d5987</xr:ValueId></xr:GeneratedType>
+</InternalInfo>
+<Properties><Name>OwnedString</Name><Synonym/><Comment/>
+<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>64</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
+<UseStandardCommands>true</UseStandardCommands><DefaultForm/><ExtendedPresentation/><Explanation/>
+<PasswordMode>false</PasswordMode><Format/><EditFormat/><ToolTip/><MarkNegatives>false</MarkNegatives><Mask/>
+<MultiLine>false</MultiLine><ExtendedEdit>false</ExtendedEdit><MinValue xsi:nil="true"/><MaxValue xsi:nil="true"/>
+<FillChecking>DontCheck</FillChecking><ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+<ChoiceParameterLinks/><ChoiceParameters/><QuickChoice>Auto</QuickChoice><ChoiceForm/><LinkByType/>
+<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput><DataLockControlMode>Managed</DataLockControlMode>
+<DataHistory>DontUse</DataHistory><UpdateDataHistoryImmediatelyAfterWrite>false</UpdateDataHistoryImmediatelyAfterWrite>
+<ExecuteAfterWriteDataHistoryVersionProcessing>false</ExecuteAfterWriteDataHistoryVersionProcessing>
+</Properties></Constant></MetaDataObject>

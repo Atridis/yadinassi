@@ -9,5 +9,12 @@ Existing source-pinned host, nonce, mounted-input hashes, module hashes, timeout
 process census and cleanup retained. No user DB option, BSP or credentials.
 One Enterprise observation after constant install. Earlier bootstrap invocations
 run before the constant exists. Every retry requires fresh disposable DB.
-No CI wiring or native evidence yet. Eight offline contract tests only.
+Exact owner-reviewed push workflow only. Eight packet and twelve admission tests.
+No successful native evidence yet.
 No claims about other types, transactions, restart persistence or safe mode.
+
+First acquisition failed during Designer LOAD, before observation. The corrected
+owned declaration includes native GeneratedType identities (Manager, ValueManager,
+ValueKey) and standard Constant properties verified against actual XML export
+structure. All UUIDs are newly generated, no external names/modules/data copied.
+This is structural evidence, not a claim of successful native load or defaults.

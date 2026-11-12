@@ -31,6 +31,12 @@ class ConstantStringWitnessTests(unittest.TestCase):
         self.assertEqual(root[0].tag,md+'Constant');self.assertEqual(root.find('.//'+v+'Type').text,'xs:string')
         self.assertEqual(root.find('.//'+v+'Length').text,'64')
         self.assertEqual(root.find('.//'+v+'AllowedLength').text,'Variable')
+        generated=root.findall('.//{http://v8.1c.ru/8.3/xcf/readable}GeneratedType')
+        self.assertEqual([(n.attrib['name'],n.attrib['category']) for n in generated],
+            [('ConstantManager.OwnedString','Manager'),('ConstantValueManager.OwnedString','ValueManager'),('ConstantValueKey.OwnedString','ValueKey')])
+        ids=[child.text for n in generated for child in n]
+        self.assertEqual(len(set(ids)),6)
+        self.assertTrue(all(fixture.original._uuid(v) for v in ids))
     def test_minimal_install_preserves_bootstrap(self):
         before=baseline();_,after=fixture.prepare(before,bootstrap_module=before['Ext/SessionModule.bsl'])
         self.assertEqual(set(after)-set(before),{'Constants/OwnedString.xml'})
