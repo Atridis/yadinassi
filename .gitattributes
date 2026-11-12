@@ -340,3 +340,40 @@ tests/test_regex_extensions_parser.py text eol=lf
 tests/test_regex_extensions_vm.py text eol=lf
 tests/fixtures/native_regex_extensions_43178980355.json -text
 tests/test_regex_extensions_native_replay.py text eol=lf
+
+# Independent filtered virtual-table acquisition bytes.
+scripts/inventory_filter_behavior/** text eol=lf
+scripts/native_1c_inventory_filter_profile.py text eol=lf
+scripts/native_1c_inventory_filter_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_filter_suite.py text eol=lf
+
+# Immutable native filter capture is byte-hashed on every platform.
+tests/fixtures/native_inventory_filter/* -text
+
+# Independent fresh EnumRef persistence acquisition bytes.
+scripts/inventory_enum_behavior/** text eol=lf
+scripts/native_1c_inventory_enum_profile.py text eol=lf
+scripts/native_1c_inventory_enum_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_enum_suite.py text eol=lf
+
+# Immutable two-process enum persistence capture.
+tests/fixtures/native_inventory_enum/** -text
+
+# Independent typed virtual predicate acquisition bytes.
+scripts/inventory_typed_filter_behavior/** text eol=lf
+scripts/native_1c_inventory_typed_filter_profile.py text eol=lf
+scripts/native_1c_inventory_typed_filter_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_typed_filter_suite.py text eol=lf
+
+# Immutable native typed virtual-predicate capture.
+tests/fixtures/native_inventory_typed_filter/* -text
+
+# Source-bound direct enum relational acquisition packet
+scripts/inventory_enum_relational_behavior/** text eol=lf
+scripts/native_1c_inventory_enum_relational_profile.py text eol=lf
+scripts/native_1c_inventory_enum_relational_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_enum_relational_suite.py text eol=lf
+scripts/native_1c_enum_relational_ci_policy.py text eol=lf
+
+# Immutable independent direct enum relational capture and coverage mapping.
+tests/fixtures/native_inventory_enum_relational/* -text

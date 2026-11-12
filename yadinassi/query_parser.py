@@ -45,6 +45,7 @@ class Source:
     family: str = 'catalog'
     period_boundary: object = None
     derived: object = None
+    virtual_condition: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,13 @@ class Comparison:
 
 @dataclass(frozen=True, slots=True)
 class Membership:
+    field: object
+    values: object
+
+
+@dataclass(frozen=True, slots=True)
+class VirtualMembership:
+    """Closed virtual-table array argument, not ordinary relational IN."""
     field: object
     values: object
 
@@ -126,6 +134,7 @@ class Select:
     family: str = 'catalog'
     period_boundary: object = None
     derived: object = None
+    virtual_condition: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +340,7 @@ class _Parser:
                          'accumulation_register' if family.casefold() in ('accumulationregister', 'регистрнакопления') else
                          'information_register' if family.casefold() in ('informationregister', 'регистрсведений') else 'catalog')
         boundary = None
+        virtual_condition = None
         if source_family == 'information_register' and section is not None:
             names={'slicelast':'last','срезпоследних':'last','slicefirst':'first','срезпервых':'first'}
             if section.casefold() not in names: raise ValueError('Unsupported information-register virtual source')
@@ -346,17 +356,58 @@ class _Parser:
             section = names[section.casefold()]
             self.take('('); self.take('&'); start = Parameter(self.take('name'))
             boundary = (start,)
-            if section != 'balance':
+            if section == 'balance':
+                if self.accept(',') and self.peek() != ')':
+                    virtual_condition = self.dimension_condition()
+            else:
                 self.take(','); self.take('&'); boundary += (Parameter(self.take('name')),)
                 if self.accept(','):
-                    periodicity = {'day': 'day', 'день': 'day',
-                                   'month': 'month', 'месяц': 'month'}.get(self.take('name').casefold())
-                    if periodicity is None:
-                        raise ValueError('Unsupported accumulation periodicity')
-                    boundary += (Periodicity(periodicity),)
+                    if self.peek() not in (',', ')'):
+                        periodicity = {'day': 'day', 'день': 'day',
+                                       'month': 'month', 'месяц': 'month'}.get(self.take('name').casefold())
+                        if periodicity is None:
+                            raise ValueError('Unsupported accumulation periodicity')
+                        boundary += (Periodicity(periodicity),)
+                    if self.accept(','):
+                        # BalanceAndTurnovers has an intervening completion
+                        # method slot. Only its native default (empty) is open.
+                        if section == 'balance_and_turnovers':
+                            if self.peek() != ')':
+                                self.take(',')
+                                if self.peek() != ')':
+                                    virtual_condition = self.dimension_condition()
+                        elif self.peek() != ')':
+                            virtual_condition = self.dimension_condition()
             self.take(')')
         alias = self.take('name') if self.accept('as') else (section or catalog)
-        return Source(catalog, alias, section, family=source_family, period_boundary=boundary)
+        return Source(catalog, alias, section, family=source_family, period_boundary=boundary, virtual_condition=virtual_condition)
+
+    def dimension_condition(self, depth=0):
+        """Explicit virtual argument, never an inferred WHERE pushdown."""
+        if depth > 16:
+            raise ValueError('Virtual dimension condition nesting limit exceeded')
+        terms = []
+        while True:
+            if self.accept('('):
+                terms.append(self.dimension_condition(depth + 1))
+                self.take(')')
+            else:
+                field = Field((self.take('name'),))
+                if self.accept('in'):
+                    # Native typed12 case4: the parentheses are required for
+                    # both Array and FixedArray. No lists/literals/subquery.
+                    self.take('('); self.take('&')
+                    terms.append(VirtualMembership(field, Parameter(self.take('name'))))
+                    self.take(')')
+                else:
+                    self.take('='); self.take('&')
+                    terms.append(Comparison(field, 'eq', Parameter(self.take('name'))))
+                self.comparisons += 1
+                if self.comparisons > 128:
+                    raise ValueError('Query predicate budget exceeded')
+            if not self.accept('and'):
+                break
+        return terms[0] if len(terms) == 1 else Predicate('and', tuple(terms))
 
     def scalar(self):
         if self.accept('&'):
@@ -523,7 +574,7 @@ class _Parser:
                     break
         if complete: self.take('end')
         return Select(source.catalog, source.alias, tuple(projections), predicate,
-                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary, source.derived)
+                      tuple(order), limit, source.section, tuple(joins), tuple(groups), having, distinct, source.temporary, into, source.external, source.family, source.period_boundary, source.derived, source.virtual_condition)
 
 
     def statement(self):
@@ -579,7 +630,7 @@ def walk_nodes(value):
     """Walk only closed grammar nodes, including nested membership sources."""
     from dataclasses import fields
     node_types = (Field, Aggregate, NullLiteral, Expression, Source, Destroy, Join,
-                  Parameter, Periodicity, Comparison, Membership, Hierarchy, Predicate, Projection, Order, Select, Union)
+                  Parameter, Periodicity, Comparison, Membership, VirtualMembership, Hierarchy, Predicate, Projection, Order, Select, Union)
     if type(value) is tuple:
         for item in value: yield from walk_nodes(item)
     elif type(value) in node_types:

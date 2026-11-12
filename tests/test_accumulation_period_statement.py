@@ -20,9 +20,9 @@ class PeriodStatementGrammarTests(unittest.TestCase):
                     statement=syntax.parse_package('SELECT QuantityTurnover FROM AccumulationRegister.Stock.'+source+'(&A,&B,'+token+')')[0]
                     self.assertEqual(statement.period_boundary,(syntax.Parameter('A'),syntax.Parameter('B'),syntax.Periodicity(kind)))
 
-    def test_optional_filters_completion_and_nonliteral_periodicity_remain_closed(self):
-        for args in ('', '&A', '&A,', ',&B', '&A,&B,', '&A,&B,Auto', '&A,&B,Recorder',
-                     '&A,&B,Week','&A,&B,"Day"','&A,&B,&Mode','&A,&B,Day,','&A,&B,Day,,',
+    def test_completion_and_nonliteral_periodicity_remain_closed(self):
+        for args in ('', '&A', '&A,', ',&B', '&A,&B,Auto', '&A,&B,Recorder',
+                     '&A,&B,Week','&A,&B,"Day"','&A,&B,&Mode',
                      '&A,&B,Day,MovementsAndPeriodBoundaries','&A+1,&B','&A,&B+1','&A,&B,Month,Product=&P'):
             with self.subTest(args=args),self.assertRaises(ValueError):
                 syntax.parse_package('SELECT QuantityOpeningBalance FROM AccumulationRegister.Stock.BalanceAndTurnovers('+args+')')

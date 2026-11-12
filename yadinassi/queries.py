@@ -21,6 +21,7 @@ from .catalog_backend import (CatalogComparison, CatalogPredicate, CatalogOrder,
 from .catalog_qualifiers import bound_number, validate_string
 from .catalog_types import BSLCatalogReference
 from .document_types import BSLDocumentReference
+from .enum_types import BSLEnumReference
 from .dates import BSLDate
 from .values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from .value_tables import BSLValueTable
@@ -46,6 +47,7 @@ class _Column:
     custom: object = None
     explicit_alias: bool = False
     reference_identity: object = None
+    enum_descriptor: object = None
 
 
 def _field(manager, field, source_alias, section=None):
@@ -85,7 +87,7 @@ def _parameter_value(value):
             raise ValueError('Query parameter number limit exceeded')
     elif kind is BSLDate:
         value.require_known()
-    elif kind is not bool and kind is not BSLCatalogReference and kind is not BSLDocumentReference:
+    elif kind is not bool and kind is not BSLCatalogReference and kind is not BSLDocumentReference and kind is not BSLEnumReference:
         raise TypeError('Unsupported query parameter type')
     return value
 
@@ -265,9 +267,18 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key not in self._parameters and len(self._parameters) >= _MAX_PARAMETERS:
             raise ValueError('Query parameter count limit exceeded')
+        from .values import NULL
+        if value is NULL:
+            from .inventory_enum_runtime import query_binding
+            if query_binding(self._catalogs) is None:
+                raise TypeError('NULL query parameters require the explicit inventory enum profile')
+            self._parameters[key] = value
+            return
         self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
 
     def execute_batch(self):
+        from .inventory_enum_runtime import query_binding
+        if query_binding(self._catalogs) is not None:raise ValueError('Enum inventory query packages are outside this profile')
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
                                dict(self._parameters), self._temp_tables_manager, self._documents, self._information_registers)
@@ -275,19 +286,34 @@ class BSLQuery(BSLObject):
     def execute(self):
         statements = syntax.parse_package(self._text)
         query = statements[0]
+        from .inventory_enum_runtime import query_binding
+        if query_binding(self._catalogs) is not None:
+            from .query_enum_reporting import execute_direct
+            return execute_direct(statements, self._catalogs, dict(self._parameters),
+                                  self._temp_tables_manager, self._documents,
+                                  self._information_registers)
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
                 or syntax.extended_filters(query)
                 or query.temporary or query.external
                 or any(join.source.temporary or join.source.external for join in query.joins)
                 or self._temp_tables_manager is not None):
+            from .inventory_enum_runtime import query_binding
+            if query_binding(self._catalogs) is not None:raise ValueError('Enum inventory query packages are outside this profile')
             from .query_packages import execute_package
             return execute_package(statements, self._catalogs, dict(self._parameters),
                                    self._temp_tables_manager, self._documents, self._information_registers).items[-1]
         from . import relational_queries
+        # One immutable parameter snapshot per direct Execute, never at
+        # SetParameter and never again per virtual source. Ordinary IN retains
+        # its separate package/enum refusal path above.
+        parameters = dict(self._parameters)
+        if any(type(node) is syntax.VirtualMembership for node in syntax.walk_nodes(query)):
+            parameters = relational_queries.snapshot_parameters(parameters)
         if relational_queries.required(query):
-            return relational_queries.execute(query, self._catalogs, dict(self._parameters), self._documents, self._information_registers)
+            return relational_queries.execute(query, self._catalogs, parameters, self._documents, self._information_registers)
         # The fast scan and relational/package paths share the exact same binder.
-        plan = relational_queries._Plan(query, self._catalogs, dict(self._parameters))
+        plan = relational_queries._Plan(query, self._catalogs, parameters)
+        if plan.enum_binding is not None:return plan.execute()
         manager, section = plan.managers[0], plan.sections[0]
         columns = plan.columns
         predicate = plan.storage_predicate(plan.predicate, 0, allow_or=True)
