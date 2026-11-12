@@ -199,3 +199,74 @@ class AcquisitionContracts(unittest.TestCase):
             with patch.object(suite.stat,'S_ISREG',return_value=False) as predicate:
                 with self.assertRaises(suite.full.FullError):suite.dump_files(root)
                 predicate.assert_called_once()
+
+    def diagnostic(self,raw):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+            root=Path(tmp);(root/'enterprise.log').write_bytes(raw)
+            return suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics)
+
+    def test_28_known_compile_projection(self):
+        text='{МодульСеанса(7)}: Переменная не определена (ПараметрЗапуска)'
+        for encoding in ('utf-8','utf-16'):
+            with self.subTest(encoding=encoding):
+                value=self.diagnostic(text.encode(encoding))
+                self.assertEqual(value,dict(category='compile_error',module='SessionModule',line=7,identifier='ПараметрЗапуска'))
+
+    def test_29_unknown_details_never_escape(self):
+        value=self.diagnostic(b'{SecretModule(12)}: variable not defined (secret_token) /private/path')
+        self.assertEqual(value,dict(category='compile_error',module=None,line=None,identifier=None))
+        with self.subTest(category='conflicting_evidence'):
+            value=self.diagnostic('{МодульСеанса(7)}: Переменная не определена (ПараметрЗапуска)\naccess denied'.encode('utf-16'))
+            self.assertEqual(value,dict(category='conflicting_evidence',module=None,line=None,identifier=None))
+
+    def test_30_symlink_not_read(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+            root=Path(tmp);(root/'private').write_bytes(b'secret')
+            try:
+                (root/'enterprise.log').symlink_to(root/'private')
+            except OSError as error:
+                # Only missing Windows symlink privilege is an unavailable capability.
+                # All other failures (including POSIX permission errors) remain failures.
+                if sys.platform=='win32' and getattr(error,'winerror',None)==1314:
+                    self.skipTest('Windows symlink privilege unavailable')
+                raise
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics)['category'],'evidence_invalid')
+
+    def test_31_oversize_not_read(self):
+        self.assertEqual(self.diagnostic(b'x'*65537)['category'],'evidence_invalid')
+
+    def test_32_missing_log_closed(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+            self.assertEqual(suite.failure_diagnostics.collect(Path(tmp),suite.full,suite.diagnostics)['category'],'evidence_invalid')
+
+    def test_33_exact_projection_schema(self):
+        host,_=self.adapters();d=host.failure_diagnostics
+        bad=[{**d.empty(),'text':'secret'},{**d.empty(),'category':'secret'},
+             {**d.empty(),'category':'compile_error','module':'SessionModule','line':True},
+             {**d.empty(),'category':'compile_error','module':'SessionModule','line':203},
+             {**d.empty(),'category':'compile_error','identifier':'secret'}]
+        for value in bad:
+            with self.assertRaises(ValueError): d.validate(value,host.DIAGNOSTICS.IDENTIFIERS)
+
+    def test_34_bound_failure_retains_only_projection_and_census(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='enterprise',native_error={'category':'compile_error','module':None,'line':None,'identifier':None})
+        value['report'].update(status='failed',native_tests_completed=False);value['outputs']=[]
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        detail=caught.exception.native_failure
+        self.assertEqual(detail['native_error'],stage['native_error'])
+        self.assertEqual(detail['process_diagnostics'],stage['process_diagnostics'])
+        self.assertNotIn('nonce',self.wire(detail).decode())
+
+    def test_35_success_cannot_carry_error_hint(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['native_error']['category']='unknown'
+        with self.assertRaises(host.FormError):
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))

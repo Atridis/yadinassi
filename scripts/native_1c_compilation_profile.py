@@ -11,6 +11,7 @@ import shutil
 import sys
 import tempfile
 import uuid
+from compilation_profile_packet import failure_diagnostics
 from compilation_profile_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -31,6 +32,8 @@ def sibling(name):
 
 FULL=sibling('native_1c_full_host')
 SMOKE=sibling('native_1c_smoke')
+_spec=importlib.util.spec_from_file_location('compilation_diagnostic_sanitizer',ROOT/'scripts/native_1c_bootstrap/diagnostics.py')
+DIAGNOSTICS=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(DIAGNOSTICS)
 
 
 class FormError(ValueError):pass
@@ -47,7 +50,7 @@ def staged_files(smoke=SMOKE):
             'scripts/native_1c_bootstrap/full_suite.py':'bootstrap/full_suite.py',
             'scripts/native_1c_bootstrap/compilation_profile_suite.py':'bootstrap/compilation_profile_suite.py',
             **{'scripts/compilation_profile_packet/'+name:'bootstrap/compilation_profile_packet/'+name
-               for name in ('__init__.py','route.py','fixture.py',*PACKET_HASHES)},
+               for name in ('__init__.py','route.py','fixture.py','failure_diagnostics.py',*PACKET_HASHES)},
     **{'scripts/catalog_object_behavior/'+name:'bootstrap/catalog_object_behavior/'+name
        for name in ('__init__.py','route.py','fixture.py','packet.py','Catalog.xml','SOURCE.json',
                     'generated/setup.json','generated/Catalog.xml','generated/observe.bsl')},
@@ -239,7 +242,7 @@ PHASES=('prerequisites','inputs','build','install','enterprise','markers','final
 FLAGS={'config_verified','event1_done','entered','completed','process_exited','quiet','witness_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','prepared_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics'}
+    'input_sha256','output_size','record_count','process_diagnostics','native_error'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -260,12 +263,15 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(stage['output_size'] is None or type(stage['output_size']) is int and 0<stage['output_size']<=MAX_OUTPUT)
         require(stage['record_count'] is None or type(stage['record_count']) is int and stage['record_count']==16)
         FULL.validate_process_diagnostics(stage['process_diagnostics'])
+        failure_diagnostics.validate(stage['native_error'],DIAGNOSTICS.IDENTIFIERS)
+        if stage['status']=='ok' or stage['failure_phase']!='enterprise':
+            require(stage['native_error']==failure_diagnostics.empty())
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
-            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet')}
+            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet','process_diagnostics','native_error')}
             raise error
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')
         require(report['status']=='ok' and report['native_tests_completed'] is True and all(stage[k] for k in FLAGS))

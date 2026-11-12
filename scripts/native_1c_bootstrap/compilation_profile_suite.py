@@ -4,12 +4,14 @@ import json
 import os
 import stat
 import re
+import diagnostics
 import inject_modules
 import evidence_gates
 import run_stage
 from compilation_profile_packet import fixture
 from pathlib import Path
 import full_suite as full
+from compilation_profile_packet import failure_diagnostics
 from compilation_profile_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available
 
 PROFILE='compilation-profile-v1'
@@ -21,7 +23,7 @@ INPUT_FILES={
     'scripts/native_1c_bootstrap/run_compilation_profile_stage.py':'bootstrap/run_stage.py',
     'scripts/native_1c_bootstrap/compilation_profile_suite.py':'bootstrap/compilation_profile_suite.py',
     **{'scripts/compilation_profile_packet/'+name:'bootstrap/compilation_profile_packet/'+name
-       for name in ('__init__.py','route.py','fixture.py',*PACKET_HASHES)},
+       for name in ('__init__.py','route.py','fixture.py','failure_diagnostics.py',*PACKET_HASHES)},
     **{'scripts/catalog_object_behavior/'+name:'bootstrap/catalog_object_behavior/'+name
        for name in ('__init__.py','route.py','fixture.py','packet.py','Catalog.xml','SOURCE.json',
                     'generated/setup.json','generated/Catalog.xml','generated/observe.bsl')},
@@ -41,7 +43,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'prepared_sha256':None,'config_verified':False,'event1_done':False,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'output_sha256':None,'output_size':None,
-            'record_count':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'record_count':None,'native_error':failure_diagnostics.empty(),'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -224,6 +226,7 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
     except Exception as error:
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
+        if phase=='enterprise': report['native_error']=failure_diagnostics.collect(root,full,diagnostics)
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
     return report
 
