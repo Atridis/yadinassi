@@ -39,6 +39,7 @@ export class EditorClient {
   resync(){return this.request('editor.snapshot',{});}
   event(event,values={}){
     if(!this.snapshot||this.uncertain)throw Error('Resynchronize before editing');
+    if(event==='referenceChoice')validateReferenceAction(this.snapshot,values.action);
     return this.request('editor.event',{event,baseRevision:this.snapshot.revision,...values});
   }
 }
@@ -142,4 +143,31 @@ export function takeSessionCapability(location,history){
   const value=new URLSearchParams(location.hash.slice(1)).get('session');
   if(location.hash)history.replaceState(null,'',location.pathname);
   return typeof value==='string'&&/^[A-Za-z0-9_-]{32,128}$/.test(value)?value:null;
+}
+
+
+export function validateReferenceAction(snapshot, action){
+  const plain=value=>value&&Object.getPrototypeOf(value)===Object.prototype;
+  const exact=(value,keys)=>plain(value)&&Object.keys(value).sort().join(',')===keys.split(' ').sort().join(',');
+  const reject=()=>{throw Error('Reference choice unavailable');};
+  const editor=snapshot?.state?.editor,choice=snapshot?.state?.referenceChoice;
+  if(!editor||editor.editingLocked||editor.sourceStale||!plain(action))return reject();
+  if(action.action==='begin'){
+    if(!exact(action,'action control section row')||choice)return reject();
+    if(action.control!==null){
+      const field=editor.fields.find(f=>f.control===action.control);
+      if(action.section!==null||action.row!==null||!field?.lazyChoice||field.readOnly||!field.enabled)return reject();
+    }else{
+      const section=editor.sections.find(s=>s.name===action.section),row=section?.rows.find(r=>r.id===action.row);
+      if(section?.readOnly||!row?.field?.lazyChoice||row.field.readOnly)return reject();
+    }
+    return action;
+  }
+  const fields={search:'query',page:'cursor',apply:'choice',cancel:'',clear:'',refresh:''};
+  if(!Object.hasOwn(fields,action.action)||!exact(action,('action ticket '+fields[action.action]).trim())||
+      !choice||action.ticket!==choice.ticket)return reject();
+  if(action.action==='search'&&(typeof action.query!=='string'||action.query.length>128||action.query.includes('\0')))return reject();
+  if(action.action==='page'&&![choice.navigation?.previous,choice.navigation?.next].filter(Boolean).includes(action.cursor))return reject();
+  if(action.action==='apply'&&!choice.rows.some(row=>row.choice===action.choice))return reject();
+  return action;
 }

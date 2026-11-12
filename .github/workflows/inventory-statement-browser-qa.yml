@@ -36,7 +36,7 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
-      - name: Acquire four paged stock statement flows with Chromium sandbox enabled
+      - name: Acquire five paged stock statement flows with Chromium sandbox enabled
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
@@ -54,5 +54,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-filters.png
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-fences.png
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-reopened.png
+            ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-historical.png
           if-no-files-found: error
           retention-days: 14

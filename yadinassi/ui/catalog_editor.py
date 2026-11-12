@@ -13,7 +13,8 @@ import re
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
-from ..catalog_backend import BackendError
+from ..catalog_backend import (BackendError, CatalogScanRequest, CatalogOrder,
+    CatalogValuePage, CatalogValueRow, CatalogKey, CatalogSchema)
 from ..catalogs import BSLCatalogs
 from ..metadata import BSLCatalogMetadataCollection
 from ..unique_identifiers import BSLUUID
@@ -25,6 +26,7 @@ from ..catalog_object_preparation import CatalogWriteRefused
 from ..type_descriptions import BSLTypeDescription
 from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
 from .catalog_view import CatalogRepository
+from .legacy_reference_choice import LegacyReferenceChooser
 from ..catalog_sections import BSLCatalogSection
 from .protocol import CatalogRef, UIError, bounded_text, encode_line, encode_value, uuid_text, MAX_LINE_BYTES
 
@@ -92,6 +94,62 @@ def _reference_label(code, description):
     return bounded_text(short(code, 64) + ' · ' + short(description, 512), 4096)
 
 
+def _reference_options(backend, target, current):
+    """Bounded compatibility probe; large catalogs retain current/empty only."""
+    repository = CatalogRepository(backend, own_backend=False)
+    try:
+        identity = str(target)
+        if not any(item.identity == identity for item in repository.inventory()):
+            raise UIError('catalog_unavailable')
+        view = repository._read()
+        schema = view.catalog_schema(target)
+        if type(schema) is not CatalogSchema or schema.identity != target or schema not in repository._schemas:
+            raise UIError('metadata_unavailable')
+        repository._summary_fields(schema)
+        scan = getattr(view, 'scan_catalog_values', None)
+        if not callable(scan):
+            raise UIError('catalog_unavailable')
+        page = scan(target, CatalogScanRequest(order=(CatalogOrder('code'),), page_size=64),
+                    ('code', 'description', 'deletion_mark'))
+        if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 64:
+            raise UIError('catalog_unavailable')
+        if page.continuation is not None and (type(page.continuation) is not str or len(page.continuation) != 32
+                or any(c not in '0123456789abcdef' for c in page.continuation) or not page.rows):
+            raise UIError('catalog_unavailable')
+        options, seen = {str(UUID(int=0)): 'Empty reference'}, set()
+        for row in page.rows:
+            if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                    or type(row.key.database_id) is not UUID or type(row.key.catalog_id) is not UUID
+                    or row.key.database_id != repository._identity[0] or row.key.catalog_id != target):
+                raise UIError('catalog_identity')
+            record = repository._uuid(row.key.record_id)
+            if record in seen or type(row.values) is not tuple or len(row.values) != 3:
+                raise UIError('catalog_unavailable')
+            seen.add(record)
+            code, description, deleted = row.values
+            if type(code) is not str or type(description) is not str or type(deleted) is not bool:
+                raise UIError('unsupported_value')
+            for value, bound in ((code, schema.code_length), (description, schema.description_length)):
+                if '\x00' in value or len(value.encode('utf-16-le'))//2 > bound:
+                    raise UIError('unsupported_value')
+                value.encode('utf-8')
+            if page.continuation is None and not deleted:
+                options[record] = _reference_label(code, description)
+        for record in set(current):
+            if record == str(UUID(int=0)) or record in options:
+                continue
+            cards = repository.load(identity, summary_only=True, record=UUID(record)).cards
+            if cards and not cards[0].value('DeletionMark'):
+                options[record] = _reference_label(cards[0].value('Code'), cards[0].value('Description'))
+        repository.check_source()
+        repository._read()
+        return options
+    except UnicodeError:
+        raise UIError('unsupported_value') from None
+    finally:
+        repository.close()
+
+
 class CatalogEditController:
     """One detached object and scalar selection keys. No persistent read transaction."""
     def __init__(self, manager, schema, obj, *, imported_form=False):
@@ -125,31 +183,20 @@ class CatalogEditController:
         definitions = [('Code', 'string', (schema.code_length,)),
                        ('Description', 'string', (schema.description_length,))]
         definitions += [(f.name, f.kind, f.qualifiers) for f in schema.fields if f.kind != 'catalog_ref']
-        # Choices are captured through the logical read port, never supplied by
-        # the renderer. Overflow and dangling/deleted existing values stay read-only.
+        # A bounded compatibility probe keeps small inline choices. Large targets
+        # use the owned pager; missing/deleted current values remain read-only.
         for field in schema.fields:
             if field.kind != 'catalog_ref':
                 continue
             value = obj.get_member(field.name)
-            repository = CatalogRepository(manager._backend, own_backend=False)
-            try:
-                target = repository.load(str(field.target_catalog_id))
-            except UIError as error:
-                if error.code != 'catalog_unavailable':
-                    raise
-                target = None
-            finally:
-                repository.close()
-            choices = {'00000000-0000-0000-0000-000000000000': 'Empty reference'}
-            if target is not None and len(target.cards) <= 64:
-                choices.update((card.reference.record, _reference_label(
-                    card.value('Code'), card.value('Description')))
-                    for card in target.cards if not card.value('DeletionMark'))
             record = str(value.reference_uuid)
-            if target is None or len(target.cards) > 64 or record not in choices:
+            try:
+                choices = _reference_options(manager._backend, field.target_catalog_id, (record,))
+            except (UIError, BackendError):
+                choices = None
+            if choices is None or record not in choices:
                 self.references.append({'name': field.name, 'readOnly': True,
-                    'reason': ('reference-options-unavailable' if target is None else
-                               'reference-choice-limit' if len(target.cards) > 64 else 'reference-not-selectable'),
+                    'reason': 'reference-options-unavailable' if choices is None else 'reference-not-selectable',
                     'value': encode_value(CatalogRef(str(field.target_catalog_id), record)),
                     'presentation': bounded_text(str(value), 4096)})
                 continue
@@ -531,7 +578,7 @@ class CatalogEditController:
             fields.append({'name': field, 'kind': kind, 'control': control,
                 'value': encode_value(value), 'inputText': _input_text(values[attribute]),
                 'title': item[2], 'visible': item[3], 'enabled': item[4], 'readOnly': item[5] or (self._source_record is not None and field == 'Code'),
-                'view': views[control], **({'choices': choices} if choices is not None else {})})
+                'view': views[control], **({'choices': choices, 'lazyChoice': True} if choices is not None else {})})
         return {'editorId': self.identity, 'catalog': str(self.schema.identity), 'catalogName': self.schema.name,
             'reference': encode_value(self._saved_reference()), 'isNew': self.object.is_new(),
             'formRevision': snapshot.revision, 'state': snapshot.state,
@@ -577,6 +624,11 @@ class CatalogEditorApplication:
         self.editor = None
         self.closed = False
         self.list_messages = ()
+        self.summary = None
+        self.query, self.order = '', 'code'
+        self.list_notice = ''
+        self._reference_chooser = None
+        self._reference_projection = None
 
     def _inventory(self):
         view = self.backend.begin_read()
@@ -591,8 +643,21 @@ class CatalogEditorApplication:
 
     def _load(self):
         repository = CatalogRepository(self.backend, own_backend=False)
-        try: return repository.load(self.selected)
+        try:
+            summary = repository.load_summary(self.selected)
+            candidate = summary.select(query=self.query, order=self.order)
+            self.summary = summary
+            return candidate
         finally: repository.close()
+
+    def _list_state(self):
+        return self.selected, self.summary, self.view, self.page, self.query, self.order, self.list_notice
+
+    def _restore_list(self, state):
+        self.selected, self.summary, self.view, self.page, self.query, self.order, self.list_notice = state
+
+    def _preflight_list(self):
+        encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
 
     def _refresh_saved_list(self):
         """Authoritative read after confirmed Save, never another Write.
@@ -604,24 +669,21 @@ class CatalogEditorApplication:
         editor = self.editor
         if editor is None or editor.error or editor.save_state not in ('saved', 'unchanged'):
             return
+        previous = self._list_state()
         try:
             candidate = self._load()
             reference = editor._saved_reference()
             position = next((i for i, card in enumerate(candidate.cards) if card.reference == reference), None)
-            if position is None:
-                raise BackendError('not_found')
             limit = self.page[1]
-            page = ((position // limit) * limit, limit)
-            old_view, old_page = self.view, self.page
+            # A confirmed write may legitimately move outside the current filter.
+            # It must not become a pending write or be injected into the result.
+            page = (((position // limit) * limit) if position is not None else min(self.page[0], max(0, ((len(candidate.cards)-1)//limit)*limit)), limit)
+            present = any(card.reference == reference for card in self.summary.cards)
+            self.list_notice = (('Saved record is outside the current filter' if present else 'Saved record is no longer available') if position is None else '')
             self.view, self.page = candidate, page
-            try:
-                # Include the deepest wire envelope before declaring both the
-                # editor and its retained list refreshed successfully.
-                encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
-            except BaseException:
-                self.view, self.page = old_view, old_page
-                raise
+            self._preflight_list()
         except Exception:
+            self._restore_list(previous)
             self.view = None
             editor.pending_refresh = True
             editor.save_state = 'committed'
@@ -631,12 +693,38 @@ class CatalogEditorApplication:
     def select(self, identity):
         if self.editor is not None: raise UIError('busy')
         self._schema(identity)
-        old = self.selected
-        self.selected = identity
-        try: self.view = self._load()
+        previous = self._list_state()
+        self.selected, self.query, self.order = identity, '', 'code'
+        try:
+            self.view = self._load()
+            self.page, self.list_notice = (0, 8), ''
+            self._preflight_list()
         except BaseException:
-            self.selected = old; raise
-        self.page = (0, 8)
+            self._restore_list(previous); raise
+
+    def filter_records(self, query, order):
+        if self.editor is not None or self.summary is None: raise UIError('busy')
+        candidate = self.summary.select(query=query, order=order)
+        previous = self._list_state()
+        try:
+            self.view, self.query, self.order = candidate, query, order
+            self.page, self.list_notice = (0, self.page[1]), ''
+            self._preflight_list()
+        except BaseException:
+            self._restore_list(previous); raise
+
+    def refresh_records(self):
+        if self.editor is not None or self.selected is None: raise UIError('busy')
+        previous = self._list_state()
+        try:
+            candidate = self._load()
+            limit = self.page[1]
+            offset = min(self.page[0], max(0, ((len(candidate.cards)-1)//limit)*limit))
+            self.view, self.page = candidate, (offset, limit)
+            self.list_notice = ''
+            self._preflight_list()
+        except BaseException:
+            self._restore_list(previous); raise
 
     def check_card(self, reference):
         self.list_messages = ()
@@ -676,11 +764,134 @@ class CatalogEditorApplication:
             imported_form=schema.identity in self._active_forms)
         self.editor = editor
 
+    def _close_reference_choice(self):
+        if self._reference_chooser is not None:
+            self._reference_chooser.cancel()
+        self._reference_chooser = self._reference_projection = None
+
+    def reference_choice(self, action):
+        try:
+            return self._reference_choice(action)
+        except BaseException:
+            if self._reference_chooser is not None and self._reference_chooser._ticket is None:
+                self._close_reference_choice()
+            raise
+
+    def _reference_choice(self, action):
+        if type(action) is not dict or type(action.get('action')) is not str:
+            raise UIError('invalid_value')
+        name = action['action']
+        expected = {'begin': {'action','control','section','row'},
+            'search': {'action','ticket','query'}, 'page': {'action','ticket','cursor'},
+            'apply': {'action','ticket','choice'}, 'clear': {'action','ticket'},
+            'cancel': {'action','ticket'}, 'refresh': {'action','ticket'}}
+        if name not in expected or set(action) != expected[name]:
+            raise UIError('invalid_value')
+        editor = self.editor
+        if editor is None or editor.pending_commit or editor.pending_refresh or editor.form.closed:
+            raise UIError('busy')
+        if name == 'begin':
+            control, section, row_id = action['control'], action['section'], action['row']
+            scalar = type(control) is str and section is None and row_id is None
+            sectional = control is None and type(section) is str and type(row_id) is str
+            if not scalar and not sectional:
+                raise UIError('invalid_value')
+            if sectional: uuid_text(row_id, nonzero=True)
+            binding = None
+            def witness():
+                if self.editor is not editor or editor.pending_commit or editor.pending_refresh or editor.form.closed:
+                    raise UIError('busy')
+                if self.backend is not editor.manager._backend:
+                    raise UIError('catalog_unavailable')
+                if editor._source_record is not None: editor._verify_source()
+                view = self.backend.begin_read()
+                try:
+                    actual_binding = (view.database_id, view.configuration_generation)
+                    schemas = view.catalogs()
+                    if type(schemas) is not tuple or any(type(s) is not CatalogSchema for s in schemas) or editor.schema not in schemas:
+                        raise UIError('metadata_unavailable')
+                finally:
+                    view.close()
+                if binding is not None and actual_binding != binding:
+                    raise UIError('catalog_unavailable')
+                snap = editor.snapshot()
+                if scalar:
+                    field = next((f for f in snap['fields'] if f['control'] == control), None)
+                    if field is None or not field.get('lazyChoice') or field['readOnly'] or not field['enabled'] or not field['visible']:
+                        raise UIError('invalid_value')
+                    target = editor.reference_fields[field['name']][0]
+                    current = field['inputText']
+                else:
+                    item = next((s for s in snap['sections'] if s['name'] == section), None)
+                    row = None if item is None else next((r for r in item['rows'] if r['id'] == row_id), None)
+                    if item is None or item['readOnly'] or row is None or row['field']['readOnly']:
+                        raise UIError('invalid_value')
+                    schema = next(s for s in editor.schema.tabular_sections if s.name == section)
+                    target = str(schema.fields[0].target_catalog_id)
+                    current = row['field']['inputText']
+                return (editor.identity, control, section, row_id, target, current, snap['formRevision'], actual_binding)
+            pin = witness()
+            binding = pin[-1]
+            self._close_reference_choice()
+            def preflight(projection):
+                previous = self._reference_projection
+                try:
+                    self._reference_projection = projection
+                    encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
+                finally:
+                    self._reference_projection = previous
+            chooser = LegacyReferenceChooser(self.backend, UUID(pin[4]), witness, preflight=preflight)
+            projection = chooser.begin()
+            self._reference_chooser, self._reference_projection = chooser, projection
+            self._reference_destination = (control, section, row_id)
+            return
+        chooser = self._reference_chooser
+        if chooser is None:
+            raise UIError('invalid_value')
+        ticket = action['ticket']
+        if name == 'cancel':
+            chooser._check(ticket)
+            self._close_reference_choice()
+        elif name in ('search', 'page', 'refresh'):
+            projection = (chooser.search(ticket, action['query']) if name == 'search' else
+                          chooser.page(ticket, action['cursor']) if name == 'page' else chooser.refresh(ticket))
+            self._reference_projection = projection
+        else:
+            label = 'Empty reference'
+            if name == 'apply':
+                selected = next((r for r in self._reference_projection['rows'] if r['choice'] == action['choice']), None)
+                if selected is None: raise UIError('invalid_value')
+                label = _reference_label(selected['code'], selected['description'])
+            reference = chooser.clear(ticket) if name == 'clear' else chooser.apply(ticket, action['choice'])
+            control, section, row_id = self._reference_destination
+            self._close_reference_choice()
+            if control is not None:
+                field = next(f for f in editor.fields if 'Input'+f[2] == control)
+                target, manager, options = editor.reference_fields[field[0]]
+                updated = dict(options); updated[reference.record] = label
+                editor.reference_fields[field[0]] = (target, manager, MappingProxyType(updated))
+                try: editor.change(control, reference)
+                except BaseException:
+                    editor.reference_fields[field[0]] = (target, manager, options)
+                    raise
+            else:
+                options = editor.sections.options[section]
+                updated = dict(options); updated[reference.record] = label
+                editor.sections.options[section] = updated
+                try: editor.row_event('changeRow', section, row_id, reference)
+                except BaseException:
+                    editor.sections.options[section] = options
+                    raise
+
     def event(self, event, **values):
         if self.closed: raise UIError('closed')
+        if event != 'referenceChoice': self._close_reference_choice()
         if event != 'checkCard': self.list_messages = ()
-        if event == 'checkCard': self.check_card(values['reference'])
+        if event == 'referenceChoice': self.reference_choice(values['action'])
+        elif event == 'checkCard': self.check_card(values['reference'])
         elif event == 'selectCatalog': self.select(values['catalog'])
+        elif event == 'filterRecords': self.filter_records(values['query'], values['order'])
+        elif event == 'refreshRecords': self.refresh_records()
         elif event == 'create': self.open()
         elif event == 'openCard': self.open(values['reference'])
         elif event == 'page':
@@ -705,7 +916,7 @@ class CatalogEditorApplication:
                     self.view = None
                     self.close()
                 else:
-                    self.view = self._load()
+                    self.refresh_records()
         elif event == 'close':
             if self.editor is not None:
                 self.editor.close()
@@ -720,16 +931,19 @@ class CatalogEditorApplication:
                  'catalogs': [] if self.closed or self.editor is not None else [{'id': str(schema.identity), 'name': schema.name} for schema in self._inventory()],
                  'list': self.view.page(*self.page) if self.view is not None and not self.closed else None,
                  'editor': self.editor.snapshot() if self.editor is not None else None,
+                 'referenceChoice': self._reference_projection,
+                 'listQuery': {'query': self.query, 'order': self.order, 'notice': self.list_notice},
                  'listCheck': {'available': bool(not self.closed and self.editor is None and self.view is not None
                      and any(str(s.identity) == self.selected and s.identity in self._active_forms
                              and s.name == 'Номенклатура' for s in self._inventory())),
                      'messages': [{'text': m.text, 'field': m.field} for m in self.list_messages]}}
         return {'capabilities': {'canCreate': writable, 'canEdit': writable, 'canWrite': writable,
-                'referenceEditing': True, 'referenceChoiceLimit': 64, 'referenceRowEditing': True, 'sectionRowLimit': 32, 'actual1CForms': False, 'autoform': True,
+                'referenceEditing': True, 'referenceChoiceLimit': 64, 'referencePickerLimit': 8192, 'lazyReferenceChoice': True, 'referenceRowEditing': True, 'sectionRowLimit': 32, 'actual1CForms': False, 'autoform': True,
                 'standardFormWrite': False, 'remoteService': False,
                 'importedNameValidation': bool(self._active_forms)}, 'state': state}
 
     def close(self):
+        self._close_reference_choice()
         if not self.closed:
             self.closed = True
             self.context.close()
@@ -747,21 +961,12 @@ class ReferenceSections:
             if len(schema.fields) != 1 or schema.fields[0].kind != 'catalog_ref':
                 continue
             field = schema.fields[0]
-            repository = CatalogRepository(owner.manager._backend, own_backend=False)
+            current = tuple(str(row.get_member(field.name).reference_uuid)
+                for row in owner.object._sections[schema.name.casefold()]._rows)
             try:
-                target = repository.load(str(field.target_catalog_id))
-            except UIError as error:
-                if error.code != 'catalog_unavailable':
-                    raise
-                target = None
-            finally:
-                repository.close()
-            if target is None or len(target.cards) > 64:
+                choices = _reference_options(owner.manager._backend, field.target_catalog_id, current)
+            except (UIError, BackendError):
                 continue
-            choices = {str(UUID(int=0)): 'Empty reference'}
-            choices.update((card.reference.record, _reference_label(
-                card.value('Code'), card.value('Description')))
-                for card in target.cards if not card.value('DeletionMark'))
             self.options[schema.name] = choices
 
     def snapshot(self, obj=None, replacement=None):
@@ -787,7 +992,7 @@ class ReferenceSections:
                         'field': {'name': field.name, 'kind': 'catalog_ref',
                             'value': encode_value(CatalogRef(str(field.target_catalog_id), record)),
                             'inputText': record, 'choices': [{'value': key, 'label': label} for key, label in choices.items()],
-                            'readOnly': record not in choices}})
+                            'readOnly': record not in choices, 'lazyChoice': record in choices}})
             result.append(item)
         return result
 

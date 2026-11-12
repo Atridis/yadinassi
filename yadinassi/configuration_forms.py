@@ -129,6 +129,7 @@ class FormDefinition:
     reference_slots: tuple = ()
     posting_application: bool = False
     layout: tuple = ()
+    enum_targets: tuple = ()
 
     def client_package(self):
         return SimpleNamespace(source=self.program.client, handlers=self.program.handlers,
@@ -139,12 +140,12 @@ class FormDefinition:
         initial = {}; server_bindings = ()
         attributes, tables = self.attributes, self.tables
         reference_scope = None; enroll = None
-        if self.reference_targets and not _validate_only:
+        if (self.reference_targets or self.enum_targets) and not _validate_only:
             if object_session is None:
                 raise ValueError('reference forms require an owned persistence activation')
             from .configuration_references import owned_reference_scope
             from .form_tables import FormTableColumn, FormTableSchema
-            reference_scope, reference_managers, enroll = owned_reference_scope(object_session, self.reference_targets)
+            reference_scope, reference_managers, enroll = owned_reference_scope(object_session, self.reference_targets, self.enum_targets)
             slots = {(slot.casefold(), column.casefold()): target for slot, column, target in self.reference_slots}
             attributes = tuple(BSLFormAttribute(a.name, reference_scope.descriptor(slots[a.name.casefold(), ''])
                 if (a.name.casefold(), '') in slots else a.value_type, title=a.title) for a in self.attributes)
@@ -169,7 +170,7 @@ class FormDefinition:
                         else self._write_object(session, object_session))
             server_bindings = (FormServerBinding('WriteObject', write),)
         choice_holder = {}
-        if self.reference_targets:
+        if self.reference_targets or self.enum_targets:
             from .form_runtime import FormServerBinding
             server_bindings += (FormServerBinding('HostReferenceAction',
                 lambda session: choice_holder['choice'].execute(session)),)
@@ -249,8 +250,9 @@ class FormDefinition:
                 owned.projection_preflight(result.listing)
             if len(result.listing.cards) > 256:
                 raise ValueError('catalog projection limit')
-            # Validate the whole bounded authoritative list, not merely the
-            # saved card's old eight-row page. No success with an unusable list.
+            # Legacy sessions provide the complete bounded list. A paged host
+            # provides only its freshly read saved-row witness here; the host
+            # acquires the complete summary snapshot after dispatch exits.
             encode_line({'entry': 64, 'version': 2147483647, 'rows': [
                 {'key': 'record-4096', 'code': card.values[0],
                  'description': card.values[1], 'deletionMark': card.values[2]}
@@ -387,7 +389,7 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False, enum_definitions=()):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
@@ -395,9 +397,15 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
     attrs = []; object_fields = (); object_sections = (); tables = (); main_seen = False
     reference_slots = []
     reference_targets = tuple((i, catalog.identity, catalog.name) for i, catalog in enumerate(reference_catalogs, 1))
+    enum_targets=tuple((i,enum.identity,enum.name) for i,enum in enumerate(enum_definitions,len(reference_targets)+1))
     references = {identity: target for target, identity, _ in reference_targets}
+    enum_references={identity:target for target,identity,_ in enum_targets}
     def field_descriptor(field, slot, column=''):
         from .ui.catalog_editor import _descriptor
+        if field.kind=='enum_ref':
+            if field.target_enum_id not in enum_references:raise ValueError('enum target outside explicit form grant')
+            reference_slots.append((slot,column,enum_references[field.target_enum_id]))
+            return BSLTypeDescription('String')
         if field.kind != 'catalog_ref': return _descriptor(field.kind, field.qualifiers)
         if field.target_catalog_id not in references:
             raise ValueError('reference target is outside the explicit form source grant')
@@ -427,7 +435,7 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
             if document_schema:
                 from .configuration_document import require_document_form_schema
                 from .form_tables import FormTableColumn, FormTableSchema
-                require_document_form_schema(schema, reference_fields=bool(reference_catalogs))
+                require_document_form_schema(schema, reference_fields=bool(reference_catalogs), enum_fields=bool(enum_definitions))
                 specs = [('Number', 'string', (schema.number_length,)), ('Date', 'datetime', ()), ('DeletionMark', 'boolean', ())]
                 if posting_application: specs.append(('Posted', 'boolean', ()))
             else:
@@ -547,14 +555,14 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
     definition = FormDefinition(public_name, identity, sha256(raw+b'\0'+module).hexdigest(), program,
         tuple(attrs), MappingProxyType(bindings), _value(props,'Title'), tuple(items), tuple(commands),
         catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
-        reference_targets if reference_slots else (), tuple(reference_slots), posting_application, tuple(layout) if has_groups else ())
+        reference_targets if reference_slots else (), tuple(reference_slots), posting_application, tuple(layout) if has_groups else (), enum_targets if reference_slots else ())
     # Validate every declared handler and all reserved-name collisions eagerly.
     validation_server = definition.create_server(_validate_only=True)
     validation_server.session.interpreter.close()
     return definition
 
 
-def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=(), posting_application=False):
+def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), reference_catalogs=(), posting_application=False, enum_definitions=()):
     """Load declared CommonForms and Catalog/Document custom forms, explicitly."""
     accepted = _accept_source_files(files)
     schemas = {schema.name.casefold(): schema for schema in catalog_schemas}
@@ -615,7 +623,7 @@ def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), 
         path = prefix+'/Ext/Form.xml'; module = prefix+'/Ext/Form/Module.bsl'
         is_document = public_name.startswith('Document.')
         definition = _definition(public_name, uid, files[path], files.get(module,b''),
-            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application and is_document)
+            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application and is_document, enum_definitions)
         if public_name.casefold() in forms:
             raise ValueError('duplicate form name')
         forms[public_name.casefold()] = definition

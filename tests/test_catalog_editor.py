@@ -206,14 +206,17 @@ class CatalogEditorTests(unittest.TestCase):
                 self.change('Category', CatalogRef(self.ids['category'], str(UUID(int=0))))
             setattr(self.app.editor, state, False)
 
-    def test_oversized_reference_catalog_remains_explicitly_readonly(self):
+    def test_oversized_reference_catalog_uses_lazy_choices(self):
         manager = self.app.catalogs.get_index('Categories')
         for index in range(64):
             obj = manager.create_item(); obj.set_member('Code', str(100 + index)); obj.write()
         self.open_existing()
         snapshot = self.app.editor.snapshot()
-        self.assertFalse(any(f['name'] == 'Category' for f in snapshot['fields']))
-        self.assertEqual(snapshot['references'][0]['reason'], 'reference-choice-limit')
+        field = next(f for f in snapshot['fields'] if f['name'] == 'Category')
+        self.assertTrue(field['lazyChoice'])
+        self.assertFalse(field['readOnly'])
+        self.assertEqual(len(field['choices']), 2)
+        self.assertEqual(snapshot['references'], [])
         self.change('Description', 'Scalar still editable'); self.save()
         self.assertEqual(self.app.editor.snapshot()['saveState'], 'saved')
 
