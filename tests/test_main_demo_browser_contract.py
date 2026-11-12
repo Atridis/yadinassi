@@ -139,7 +139,8 @@ class MainDemoBrowserContractTests(unittest.TestCase):
 
     def test_dialog_recovery_is_same_demo_actual_answer_and_readonly_inspection(self):
         text = HARNESS.read_text(encoding='utf-8')
-        for marker in ('dialog_confirmation_once_and_lost_answer_without_replay',
+        for marker in ("const dialog=()=>page.locator('.configuration-dialog:not([hidden])')",
+                       'dialog_confirmation_once_and_lost_answer_without_replay',
                        'dialog_answer_count', 'dialog_answer_amount', 'dialog_answer_applied_before_delivery',
                        'dialog_answer_repeated', 'dialog_escape_answered', 'dialog_owner_not_paused',
                        'dialog_independent_draft_lost', 'dialog_loss_not_observed',

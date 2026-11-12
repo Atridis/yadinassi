@@ -591,7 +591,7 @@ async function main(){
     await act('dialog-restart-owned-host',async()=>{await stopHost();await startHost();await page.goto(url);});
     await click('Документы, формы и отчёты');
     const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
-    const dialog=()=>page.locator('.configuration-dialog');
+    const dialog=()=>page.locator('.configuration-dialog:not([hidden])');
     const answerButton=name=>dialog().getByRole('button',{name,exact:true});
     const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
     const command=label=>settled(formEvent('command'),()=>docButton(label).click());
