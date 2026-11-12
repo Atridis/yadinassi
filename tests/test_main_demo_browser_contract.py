@@ -53,6 +53,8 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         for stage in ('await-response', 'read-response', 'validate-envelope', 'await-render-ready',
                       'validate-catalog', 'await-visible-rows', 'validate-unapplied-draft', 'draft-preserved'):
             self.assertIn("report.filterStage='" + stage + "'", text)
+        self.assertIn("state?.surface,'catalogs'", text)
+        self.assertIn("state?.canSwitch,true", text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)

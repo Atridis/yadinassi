@@ -70,9 +70,15 @@ class MainDemoHost:
         owner = self.owner
         # operations retains open-intent replay receipts after session retirement.
         # It is history, not live work; sessions/pending/uncertain fence live owners.
+        # Dialog/input receipts also remain for replay refusal after completion.
+        # Only explicit terminal receipts may be ignored; live/unknown states
+        # and owner enrollment maps still fence navigation.
+        terminal = ('delivered', 'failed', 'cancelled', 'owner_retired', 'stale')
+        unsettled = any(record.state not in terminal
+                        for record in (*owner.dialogs.values(), *owner.inputs.values()))
         return not (owner.closed or owner.uncertain or owner.sessions or owner.pending
-                    or owner.choice or owner.dialogs or owner.inputs
-                    or owner._dispatch_active)
+                    or owner.choice or owner.owner_dialogs or owner.owner_inputs
+                    or unsettled or owner._dispatch_active)
 
     def _retire(self):
         resources = self._retired + [resource for resource in (self.owner, self.broker)

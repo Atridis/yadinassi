@@ -164,3 +164,40 @@ class MainDemoHostTests(unittest.TestCase):
         self.assertEqual(self.rpc('dispatch',epoch=epoch,request={'method':'editor.snapshot'})['error'],'stale_surface')
         self.host.close()
         self.assertTrue(owner.backend._closed);self.assertEqual(self.host._retired,[])
+
+    def test_answered_dialog_history_does_not_block_switch_but_live_dialog_does(self):
+        from yadinassi.form_dialogs import DIALOG_CAPABILITY
+        self.rpc('select', epoch=self.host.epoch, surface='documents')
+        def dispatch(method, **params):
+            return self.rpc('dispatch', epoch=self.host.epoch, request={
+                'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params})['payload']['result']
+        dispatch('hello', protocol=APP_PROTOCOL, dialogCapability=DIALOG_CAPABILITY)
+        owner = self.host.owner
+        opened = dispatch('open', entry=owner.names['commonform.operationdraft'], request='draft')
+        sid = opened['session']
+        def event(**params):
+            return dispatch('form', session=sid, request={'jsonrpc':'2.0','id':2,
+                'method':'form.event','params':{'revision':owner.sessions[sid][0].session.revision, **params}})
+        asked = event(event='command', control='InfoButton')
+        self.assertIsNone(asked['error'], asked)
+        dialog = asked['dialogs'][0]
+        self.assertFalse(self.host._can_leave())
+        self.assertEqual(self.rpc('select', epoch=self.host.epoch, surface='catalogs')['error'], 'finish_current_surface')
+        answered = dispatch('answerDialog', session=sid, ticket=dialog['ticket'], answer='dismiss')
+        self.assertIsNone(answered['error'], answered)
+        event(event='close')
+        self.assertFalse(owner.sessions)
+        self.assertTrue(owner.dialogs)  # Retained replay protection, not live work.
+        self.assertFalse(owner.owner_dialogs)
+        self.assertEqual(dispatch('answerDialog', session=sid, ticket=dialog['ticket'], answer='dismiss')['error'], 'dialog_retired')
+        self.assertTrue(self.host._can_leave())
+        receipt = owner.dialogs[dialog['ticket']]
+        terminal = receipt.state
+        for unsettled in ('queued', 'open', 'retired', 'delivering', 'uncertain', 'foreign'):
+            receipt.state = unsettled
+            self.assertFalse(self.host._can_leave(), unsettled)
+        receipt.state = terminal
+        owner.owner_dialogs[sid] = receipt
+        self.assertFalse(self.host._can_leave())
+        owner.owner_dialogs.pop(sid)
+        self.assertIsNone(self.rpc('select', epoch=self.host.epoch, surface='catalogs')['error'])

@@ -445,7 +445,17 @@ async function main(){
     const repeat=await command('Применить черновик');ownerValues(repeat,123.45,1);assert.deepEqual(repeat.dialogs,[],'no_repeated_confirmation');
     await command('О черновике');ownerValues(await answer('Continue'),123.45,1);
     await command('Close form');await active().waitFor({state:'detached'});
-    await click('Справочники');
+    await act('Справочники',async()=>{
+      const switching=page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/rpc'&&response.status()===200&&response.request().postDataJSON().method==='demo.select'&&response.request().postDataJSON().params.surface==='catalogs',{timeout:remaining(rpcReplyMs)});
+      const [response]=await Promise.all([switching,button('Справочники').click()]);
+      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_switch_reply_timeout');
+      assert.ok(bytes.length<=131072,'draft_switch_reply_budget');
+      const value=JSON.parse(bytes.toString('utf8'));
+      assert.equal(value.jsonrpc,'2.0');assert.equal(value.id,response.request().postDataJSON().id);
+      assert.equal(value.result?.error,null);assert.equal(value.result?.state?.surface,'catalogs');
+      assert.equal(value.result?.state?.uncertain,false);assert.equal(value.result?.state?.canSwitch,true);
+      await page.getByRole('navigation',{name:'Catalogs',exact:true}).waitFor({state:'visible'});
+    });
     assert.equal(actionLog.length-start,22,'draft_action_count');
     assert.deepEqual(audit(),saved,'memory_draft_changed_database');
     report.operationDraft={keepOpenVeto:true,preparedReopened:true,childCancelPreserved:true,appliedAmount:'123.45',appliedCount:1,repeatDidNotApply:true,messageReadOnly:true,durableUnchanged:true};

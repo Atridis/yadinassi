@@ -16,10 +16,10 @@ from ..configuration_xml import MD, _object
 
 
 def document_forms(configuration):
-    from ..configuration_main_demo import canonical
+    from ..configuration_main_demo import canonical, _runtime_metadata_projection
     configuration = canonical(configuration)
     source = dict(configuration.files)
-    projected = dict(source)
+    projected = _runtime_metadata_projection(source)
     _, _, root = _object(source['Configuration.xml'], 'Configuration', include_root=True)
     metadata = '{' + MD + '}'
     owner = root.find(metadata+'Configuration')
