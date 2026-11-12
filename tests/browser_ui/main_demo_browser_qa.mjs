@@ -305,8 +305,7 @@ async function main(){
     await act('post-document',()=>settled(formEvent('command'),()=>docButton('Post document').click()));
     await act('movement-report-tab',()=>page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock Movements',exact:true}).click());
     const reports=page.getByRole('region',{name:'Saved stock reports',exact:true});
-    await act('report-start',()=>reports.getByLabel('From moment (inclusive)',{exact:true}).fill('2026-11-11T00:00:00'));
-    await act('report-end',()=>reports.getByLabel('Through moment (inclusive)',{exact:true}).fill('2026-11-12T00:00:00'));
+    // Movements has no period filter; only Turnovers/Statement expose bounds.
     await act('show-report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
     await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();await screenshot('editor.png');
     const saved=audit();verifyMainDemoAudit(saved,assert);
@@ -321,7 +320,7 @@ async function main(){
     await click('← Back to records');await recordsReady();
     // Process cleanup is owned and verified below; no hidden business close API.
   });
-  assert.equal(actionLog.length,46,'total_action_count');
+  assert.equal(actionLog.length,44,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};

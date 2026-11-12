@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,2)", "assert.equal(actionLog.length,46",
+            "assert.equal(results.length,2)", "assert.equal(actionLog.length,44",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
@@ -32,6 +32,9 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         self.assertIn('contents: read', workflow)
         for screenshot in ('list.png', 'editor.png', 'narrow.png'):
             self.assertIn('/yadinassi-browser-artifacts/'+screenshot, workflow)
+        self.assertNotIn("act('report-start'", text)
+        self.assertNotIn("act('report-end'", text)
+        self.assertIn('Movements has no period filter', text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)
