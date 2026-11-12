@@ -1,0 +1,405 @@
+"""Offline source/marker contracts. Never starts 1C or a container."""
+import ast
+import hashlib
+import importlib
+import json
+from pathlib import Path
+import sys
+import unittest
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(ROOT/'scripts'))
+from compilation_profile_packet import route, packet, PACKET_HASHES, SOURCE_SHA256, FORM_SHA256, MODULES_SHA256, parse_records
+
+class AcquisitionContracts(unittest.TestCase):
+    def marker(self,phase='completed',count=16):
+        return dict(schema=route.SCHEMA,nonce='a'*32,phase=phase,source_sha256=SOURCE_SHA256,
+                    form_sha256=FORM_SHA256,modules_sha256=MODULES_SHA256,
+                    records=''.join(f'CP{i}=1|' for i in range(1,count+1)) if phase not in ('entered','error') else '')
+    def wire(self,value):return json.dumps(value).encode()
+    def test_01_raw_pins(self):
+        self.assertEqual(set(packet()),set(PACKET_HASHES))
+        for p,raw in packet().items():self.assertEqual(hashlib.sha256(raw).hexdigest(),PACKET_HASHES[p])
+    def test_02_prepared_identity(self):
+        self.assertEqual(route.validate_prepared(route.sources()),route.module_digest())
+    def test_03_prepared_drift(self):
+        value=route.sources();value[next(iter(value))]+=b' '
+        with self.assertRaises(ValueError):route.validate_prepared(value)
+    def test_04_missing_source(self):
+        value=route.sources();value.pop(next(iter(value)))
+        with self.assertRaises(ValueError):route.validate_prepared(value)
+    def test_05_manifest(self):
+        route.verify_hashes({'scripts/compilation_profile_packet/'+p:h for p,h in PACKET_HASHES.items()})
+        with self.assertRaises(ValueError):route.verify_hashes({})
+    def test_06_completed(self):
+        self.assertEqual(route.marker(self.wire(self.marker()),'a'*32,'completed')['phase'],'completed')
+    def test_07_nonce(self):
+        with self.assertRaises(ValueError):route.marker(self.wire(self.marker()),'b'*32,'completed')
+    def test_08_source(self):
+        value=self.marker();value['source_sha256']='0'*64
+        with self.assertRaises(ValueError):route.marker(self.wire(value),'a'*32,'completed')
+    def test_09_module(self):
+        value=self.marker();value['modules_sha256']='0'*64
+        with self.assertRaises(ValueError):route.marker(self.wire(value),'a'*32,'completed')
+    def test_10_duplicate_marker(self):
+        raw=self.wire(self.marker());raw=raw[:-1]+b',"phase":"completed"}'
+        with self.assertRaises(ValueError):route.marker(raw,'a'*32,'completed')
+    def test_11_entered(self):
+        route.marker(self.wire(self.marker('entered')),'a'*32,'entered')
+    def test_12_intermediate(self):
+        route.marker(self.wire(self.marker('event1_done',15)),'a'*32,'event1_done')
+        with self.assertRaises(ValueError):route.marker(self.wire(self.marker('event1_done',16)),'a'*32,'event1_done')
+    def test_13_record_inventory(self):
+        with self.assertRaises(ValueError):parse_records(b'CP1=1|')
+    def test_14_no_token_or_text_export(self):
+        for payload in ('12345678901234567890','error message','abcd-uuid'):
+            raw=self.marker()['records'].replace('CP1=1|','CP1='+payload+'|').encode()
+            with self.assertRaises(ValueError):parse_records(raw)
+    def test_15_server_only_metadata(self):
+        for name,client,server,remote in (('ClientProbe',True,False,False),('ServerProbe',False,True,True),('DualProbe',True,True,False)):
+            text=packet()[f'CommonModules/{name}.xml'].decode()
+            for flag,value in (('ClientManagedApplication',client),('Server',server),('ServerCall',remote),('Global',False),('Privileged',False),('ExternalConnection',False)):
+                self.assertIn('<'+flag+'>'+str(value).lower()+'</'+flag+'>',text)
+            self.assertIn('<ReturnValuesReuse>DontUse</ReturnValuesReuse>',text)
+    def test_16_real_event_transition(self):
+        text=route.module().decode()
+        self.assertIn('AttachIdleHandler("SecondEvent", 1, True);',text)
+        self.assertNotIn('SecondEvent();',text)
+        self.assertIn('Procedure SecondEvent() Export',text)
+        self.assertIn('Request.event1_done',text)
+    def test_17_designer_result_gates(self):
+        text=(ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py').read_text(encoding='utf-8')
+        self.assertIn("full.require_zero_result(root/(label+'.result'),0)",text)
+        self.assertIn("full.require_zero_result(root/'build.result',0)",text)
+        for label in ('before','load','update','loaded'):self.assertIn("designer('"+label+"'",text)
+        self.assertNotIn('/DumpExternalDataProcessorOrReportToFiles',text)
+        self.assertEqual(text.count('/DumpConfigToFiles'),2)
+        self.assertIn("designer('before',['/DumpConfigToFiles',str(before)",text)
+        self.assertIn("designer('loaded',['/DumpConfigToFiles',str(loaded)",text)
+        self.assertLess(text.index("designer('before'"),text.index("designer('load'"))
+        self.assertLess(text.index("designer('update'"),text.index("designer('loaded'"))
+        self.assertLess(text.index("designer('loaded'"),text.index("phase='check_config'"))
+    def test_18_baseline_source_preserved(self):
+        text=(ROOT/'scripts/compilation_profile_packet/fixture.py').read_text(encoding='utf-8')
+        self.assertIn('original._baseline(files,setup)',text)
+        self.assertIn("files['Ext/SessionModule.bsl']",text)
+        self.assertNotIn('Role>',text)
+    def test_19_packet_syntax_and_inventory(self):
+        paths=[ROOT/'scripts'/p for p in ('native_1c_compilation_profile.py','native_1c_bootstrap/compilation_profile_suite.py','native_1c_bootstrap/run_compilation_profile_stage.py')]
+        paths+=list((ROOT/'scripts/compilation_profile_packet').glob('*.py'))
+        for path in paths:ast.parse(path.read_text(encoding='utf-8'))
+    def test_20_dedicated_source_bound_adapter(self):
+        text=(ROOT/'scripts/native_1c_compilation_profile.py').read_text(encoding='utf-8')
+        self.assertIn("PROFILE='compilation-profile-v1'",text)
+        self.assertIn('compilation_profile_packet',text)
+        probe=(ROOT/'scripts/native_1c_compilation_profile_probe.sh').read_text(encoding='utf-8')
+        self.assertIn('[ "$1" = --compilation_profile-suite ]',probe)
+        self.assertNotIn('--common_module_reuse-suite',probe)
+        workflow=(ROOT/'.github/workflows/native-1c-compilation-profile.yml').read_text(encoding='utf-8')
+        self.assertIn("github.event.pull_request.head.ref == 'codex/configuration-compilation-profile'",workflow)
+        self.assertIn('persist-credentials: false',workflow)
+        self.assertIn('cancel-in-progress: false',workflow)
+        self.assertIn('native_1c_compilation_profile.py',workflow)
+        self.assertNotIn('workflow_dispatch',workflow)
+
+    def adapters(self):
+        # Load the actual source files with their real bootstrap helpers. Avoid
+        # leaking generic module names into other suites or using stale aliases.
+        import importlib.util
+        names=('full_suite','inject_modules','evidence_gates','run_stage','diagnostics')
+        saved={name:sys.modules.get(name) for name in names}
+        old_path=list(sys.path)
+        try:
+            for name in names:sys.modules.pop(name,None)
+            sys.path.insert(0,str(ROOT/'scripts/native_1c_bootstrap'))
+            def load(name,path):
+                spec=importlib.util.spec_from_file_location(name,path)
+                module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+                return module
+            host=load('owned_reuse_host',ROOT/'scripts/native_1c_compilation_profile.py')
+            suite=load('owned_reuse_suite',ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py')
+            if sys.platform=='win32':
+                from tests import test_native_1c_full_host as synthetic
+                from unittest.mock import patch
+                # Static Windows fixtures are not a proof of Linux fd/path identity.
+                def host_read(path,limit,nonempty=False):
+                    try:return synthetic.read_synthetic_file(path,limit,nonempty=nonempty)
+                    except synthetic.full.FullError:raise host.FULL.FullError('invalid_private_file') from None
+                def stage_read(path,limit,allow_empty=False):
+                    try:return synthetic.read_synthetic_file(path,limit,nonempty=not allow_empty)
+                    except synthetic.full.FullError:raise suite.full.FullError('artifact_missing') from None
+                for owner,attribute,reader in (
+                    (host.FULL,'read_regular',host_read),
+                    (suite.full,'secure_bytes',stage_read)):
+                    replacement=patch.object(owner,attribute,side_effect=reader)
+                    replacement.start();self.addCleanup(replacement.stop)
+            return host,suite
+        finally:
+            sys.path[:]=old_path
+            for name in names:
+                sys.modules.pop(name,None)
+                if saved[name] is not None:sys.modules[name]=saved[name]
+
+    def test_21_actual_adapter_inventory(self):
+        host,suite=self.adapters()
+        self.assertEqual(host.staged_files(),suite.INPUT_FILES)
+        self.assertEqual(set(suite.empty_report('a'*32)),host.STAGE_KEYS)
+        self.assertEqual(suite.PHASES,host.PHASES)
+
+    def test_22_stage_exact_inputs(self):
+        import tempfile
+        host,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='reuse-stage-',dir=ROOT.parent) as tmp:
+            destination=Path(tmp)/'staged'
+            hashes=host.stage_inputs(ROOT,destination,host.SMOKE)
+            self.assertEqual(hashes,suite.input_hashes(destination))
+            self.assertEqual(set(hashes),set(suite.INPUT_FILES))
+            for source,target in suite.INPUT_FILES.items():
+                self.assertEqual((ROOT/source).read_bytes(),(destination/target).read_bytes())
+
+    def test_23_stage_rejects_extra_inventory(self):
+        import tempfile
+        host,_=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='reuse-drift-',dir=ROOT.parent) as tmp:
+            destination=Path(tmp)/'staged'
+            hashes=host.stage_inputs(ROOT,destination,host.SMOKE)
+            (destination/'unlisted.txt').write_bytes(b'not a source')
+            with self.assertRaises(host.FormError):host.validate_inputs(destination,hashes,host.SMOKE)
+
+    def test_24_stage_rejects_source_drift(self):
+        import tempfile
+        host,_=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='reuse-bytes-',dir=ROOT.parent) as tmp:
+            destination=Path(tmp)/'staged'
+            hashes=host.stage_inputs(ROOT,destination,host.SMOKE)
+            target=destination/'bootstrap/compilation_profile_packet/CommonModules/ServerProbe/Ext/Module.bsl'
+            target.write_bytes(target.read_bytes()+b'\n// drift\n')
+            with self.assertRaises(host.FormError):host.validate_inputs(destination,hashes,host.SMOKE)
+
+    def envelope(self,host,suite):
+        import base64
+        hashes={source:hashlib.sha256((ROOT/source).read_bytes()).hexdigest() for source in host.staged_files()}
+        raw=self.marker()['records'].encode('ascii')
+        stage=suite.empty_report('a'*32)
+        stage.update(status='ok',failure_kind='none',failure_phase='final',input_sha256=hashes,
+                     source_sha256=SOURCE_SHA256,form_sha256=FORM_SHA256,
+                     module_sha256=route.module_digest(),prepared_sha256=route.module_digest(),
+                     output_sha256=hashlib.sha256(raw).hexdigest(),output_size=len(raw),record_count=16)
+        stage.update({name:True for name in host.FLAGS})
+        stage['process_diagnostics'].update(stage='after_exit',reason='none')
+        stage['loaded_sources']={p:dict(expected_sha256='a'*64,actual_sha256='a'*64,matched=True) for p in suite.loaded_probe.PATHS}
+        stage['check_config']=dict(status='passed',result='zero',process_success=True)
+        result=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce='a'*32,
+                    report=dict(status='ok',native_tests_completed=True,stage3=stage),
+                    outputs=[dict(name='compilation_profile.out',size=len(raw),sha256=hashlib.sha256(raw).hexdigest(),data_b64=base64.b64encode(raw).decode())])
+        return result,hashes,raw
+
+    def test_25_actual_stage_schema_accepts_bound_report(self):
+        host,suite=self.adapters();value,hashes,raw=self.envelope(host,suite)
+        # Isolate the new stage contract; unchanged stage2 has its own suite.
+        report,output=host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        self.assertEqual(output,raw)
+        self.assertTrue(report['stage3']['event1_done'])
+
+    def test_26_actual_stage_requires_event1_and_exact_fields(self):
+        import copy
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        for change in ('false','missing','extra'):
+            changed=copy.deepcopy(value);stage=changed['report']['stage3']
+            if change=='false':stage['event1_done']=False
+            elif change=='missing':stage.pop('event1_done')
+            else:stage['unverified']=True
+            with self.assertRaises(host.FormError):host.validate_envelope(self.wire(changed),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_27_dump_files_real_regular_file_admission(self):
+        import tempfile
+        from unittest.mock import patch
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-dump-',dir=ROOT.parent) as tmp:
+            root=Path(tmp);(root/'Ext').mkdir()
+            (root/'Ext/SessionModule.bsl').write_bytes(b'// owned regular source\n')
+            from contextlib import nullcontext
+            replacement=nullcontext()
+            if sys.platform=='win32':
+                from contextlib import contextmanager
+                from types import SimpleNamespace
+                original_scandir=suite.os.scandir
+                @contextmanager
+                def stable_entries(directory):
+                    with original_scandir(directory) as entries:
+                        yield (SimpleNamespace(path=entry.path,
+                            stat=lambda follow_symlinks=False,path=entry.path:Path(path).lstat())
+                            for entry in entries)
+                replacement=patch.object(suite.os,'scandir',side_effect=stable_entries)
+            with replacement:
+                self.assertEqual(suite.dump_files(root),{'Ext/SessionModule.bsl':b'// owned regular source\n'})
+                with patch.object(suite.stat,'S_ISREG',return_value=False) as predicate:
+                    with self.assertRaises(suite.full.FullError):suite.dump_files(root)
+                    predicate.assert_called_once()
+
+    def diagnostic(self,raw):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
+            root=Path(tmp);(root/'enterprise.log').write_bytes(raw)
+            return suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics)
+
+    def test_28_known_compile_projection(self):
+        text='{МодульСеанса(7)}: Переменная не определена (ПараметрЗапуска)'
+        for encoding in ('utf-8','utf-16'):
+            with self.subTest(encoding=encoding):
+                value=self.diagnostic(text.encode(encoding))
+                self.assertEqual(value,dict(category='compile_error',module='SessionModule',line=7,identifier='ПараметрЗапуска'))
+
+    def test_29_unknown_details_never_escape(self):
+        value=self.diagnostic(b'{SecretModule(12)}: variable not defined (secret_token) /private/path')
+        self.assertEqual(value,dict(category='compile_error',module=None,line=None,identifier=None))
+        with self.subTest(category='conflicting_evidence'):
+            value=self.diagnostic('{МодульСеанса(7)}: Переменная не определена (ПараметрЗапуска)\naccess denied'.encode('utf-16'))
+            self.assertEqual(value,dict(category='conflicting_evidence',module=None,line=None,identifier=None))
+
+    def test_30_symlink_not_read(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
+            root=Path(tmp);(root/'private').write_bytes(b'secret')
+            try:
+                (root/'enterprise.log').symlink_to(root/'private')
+            except OSError as error:
+                # Only missing Windows symlink privilege is an unavailable capability.
+                # All other failures (including POSIX permission errors) remain failures.
+                if sys.platform=='win32' and getattr(error,'winerror',None)==1314:
+                    self.skipTest('Windows symlink privilege unavailable')
+                raise
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics)['category'],'evidence_invalid')
+
+    def test_31_oversize_not_read(self):
+        self.assertEqual(self.diagnostic(b'x'*65537)['category'],'evidence_invalid')
+
+    def test_32_missing_log_closed(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
+            self.assertEqual(suite.failure_diagnostics.collect(Path(tmp),suite.full,suite.diagnostics)['category'],'evidence_invalid')
+
+    def test_33_exact_projection_schema(self):
+        host,_=self.adapters();d=host.failure_diagnostics
+        bad=[{**d.empty(),'text':'secret'},{**d.empty(),'category':'secret'},
+             {**d.empty(),'category':'compile_error','module':'SessionModule','line':True},
+             {**d.empty(),'category':'compile_error','module':'SessionModule','line':203},
+             {**d.empty(),'category':'compile_error','identifier':'secret'}]
+        for value in bad:
+            with self.assertRaises(ValueError): d.validate(value,host.DIAGNOSTICS.IDENTIFIERS)
+
+    def test_34_bound_failure_retains_only_projection_and_census(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='enterprise',native_error={'category':'compile_error','module':None,'line':None,'identifier':None})
+        value['report'].update(status='failed',native_tests_completed=False);value['outputs']=[]
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        detail=caught.exception.native_failure
+        self.assertEqual(detail['native_error'],stage['native_error'])
+        self.assertEqual(detail['process_diagnostics'],stage['process_diagnostics'])
+        self.assertNotIn('nonce',self.wire(detail).decode())
+
+    def test_35_success_cannot_carry_error_hint(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['native_error']['category']='unknown'
+        with self.assertRaises(host.FormError):
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def loaded_fixture(self):
+        from compilation_profile_packet import loaded_probe
+        expected={p:b'// source\n' for p in loaded_probe.PATHS}
+        return loaded_probe,expected
+
+    def test_36_loaded_source_bom_crlf_only(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            for path in probe.PATHS:
+                p=root/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'\xef\xbb\xbf// source\r\n')
+            observed=probe.inspect_sources(root,expected,suite.full)
+            self.assertTrue(all(x['matched'] for x in observed.values()))
+            probe.validate(observed,probe.empty_check())
+
+    def test_37_loaded_source_drift_preserved(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            for path in probe.PATHS:
+                p=root/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'// drift\n')
+            observed=probe.inspect_sources(root,expected,suite.full)
+            self.assertTrue(all(x['matched'] is False and x['actual_sha256'] is not None for x in observed.values()))
+
+    def test_38_loaded_missing_is_not_accepted(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            observed=probe.inspect_sources(Path(tmp),expected,suite.full)
+            self.assertTrue(all(x['matched'] is False and x['actual_sha256'] is None for x in observed.values()))
+            self.assertFalse(probe.accepted(observed,probe.empty_check()))
+
+    def test_39_loaded_inventory_and_digest_closed(self):
+        probe,_=self.loaded_fixture()
+        bad=probe.empty_sources();bad['secret/path']=bad.pop(probe.PATHS[0])
+        with self.assertRaises(ValueError):probe.validate(bad,probe.empty_check())
+        bad=probe.empty_sources();bad[probe.PATHS[0]]['actual_sha256']='secret'
+        with self.assertRaises(ValueError):probe.validate(bad,probe.empty_check())
+
+    def test_40_result_state_bounded(self):
+        import tempfile
+        _,suite=self.adapters();probe,_=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            path=Path(tmp)/'check.result'
+            for raw,want in ((b'0','zero'),('0'.encode('utf-16'),'zero'),(b'1','nonzero'),(b'-3','nonzero'),(b'private text','invalid'),(b'0'*129,'invalid')):
+                with self.subTest(raw=raw[:8]):
+                    path.write_bytes(raw);self.assertEqual(probe.result_state(path,suite.full),want)
+
+    def test_41_check_requires_source_admission(self):
+        probe,_=self.loaded_fixture()
+        with self.assertRaises(ValueError):probe.validate(probe.empty_sources(),dict(status='passed',result='zero',process_success=True))
+
+    def test_42_check_nonzero_cannot_pass(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['check_config']['result']='nonzero'
+        with self.assertRaises(host.FormError):host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_43_success_requires_both_gates(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['check_config']=suite.loaded_probe.empty_check()
+        with self.assertRaises(host.FormError):host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_44_enterprise_failure_keeps_earlier_gates(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='enterprise')
+        value['report'].update(status='failed',native_tests_completed=False);value['outputs']=[]
+        with self.assertRaises(host.FormError) as caught:host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        self.assertEqual(caught.exception.native_failure['check_config']['status'],'passed')
+        self.assertEqual(caught.exception.native_failure['loaded_sources'],stage['loaded_sources'])
+        import copy
+        for phase in ('build','enterprise','markers','final','check_config','inputs','install','loaded_source'):
+            with self.subTest(phase=phase):
+                changed=copy.deepcopy(value);candidate=changed['report']['stage3'];candidate['failure_phase']=phase
+                if phase in ('build','enterprise','markers','final'):
+                    candidate['check_config']=suite.loaded_probe.empty_check()
+                elif phase=='check_config':
+                    candidate['loaded_sources']=suite.loaded_probe.empty_sources()
+                    candidate['check_config']=suite.loaded_probe.empty_check()
+                # Early stages retain passed check from the original and must refuse it.
+                with self.assertRaises(host.FormError) as rejected:
+                    host.validate_envelope(self.wire(changed),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+                self.assertFalse(hasattr(rejected.exception,'native_failure'))
+
+    def test_45_designer_probe_is_narrow_and_before_enterprise(self):
+        source=(ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py').read_text(encoding='utf-8')
+        self.assertIn("['/CheckConfig','-ThickClientManagedApplication'",source)
+        self.assertLess(source.index("phase='loaded_source'"),source.index("phase='check_config'"))
+        self.assertLess(source.index("phase='check_config'"),source.index("phase='enterprise'"))
+        self.assertIn("if check['result']!='zero':raise",source)
+        self.assertNotIn("'-ThinClient'",source)
+        self.assertIn("full.absent(root/'check.log',root/'check.result',root/'check-console.log')",source)
+        self.assertLess(source.index("phase='build'"),source.index("src=root/'src'"))
+
+        self.assertLess(source.index("full.absent(root/'check.log'"),source.index("phase='check_config'"))

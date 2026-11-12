@@ -302,3 +302,12 @@ scripts/native_1c_enum_relational_ci_policy.py text eol=lf
 
 # Immutable independent direct enum relational capture and coverage mapping.
 tests/fixtures/native_inventory_enum_relational/* -text
+
+# Exact owned compilation-profile observation sources.
+scripts/compilation_profile_packet/** text eol=lf
+scripts/native_1c_compilation_profile.py text eol=lf
+scripts/native_1c_compilation_profile_probe.sh text eol=lf
+scripts/native_1c_bootstrap/compilation_profile_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_compilation_profile_stage.py text eol=lf
+scripts/compilation_profile_packet/failure_diagnostics.py text eol=lf
+scripts/compilation_profile_packet/loaded_probe.py text eol=lf
