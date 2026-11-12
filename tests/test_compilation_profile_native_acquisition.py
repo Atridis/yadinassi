@@ -112,6 +112,21 @@ class AcquisitionContracts(unittest.TestCase):
                 return module
             host=load('owned_reuse_host',ROOT/'scripts/native_1c_compilation_profile.py')
             suite=load('owned_reuse_suite',ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py')
+            if sys.platform=='win32':
+                from tests import test_native_1c_full_host as synthetic
+                from unittest.mock import patch
+                # Static Windows fixtures are not a proof of Linux fd/path identity.
+                def host_read(path,limit,nonempty=False):
+                    try:return synthetic.read_synthetic_file(path,limit,nonempty=nonempty)
+                    except synthetic.full.FullError:raise host.FULL.FullError('invalid_private_file') from None
+                def stage_read(path,limit,allow_empty=False):
+                    try:return synthetic.read_synthetic_file(path,limit,nonempty=not allow_empty)
+                    except synthetic.full.FullError:raise suite.full.FullError('artifact_missing') from None
+                for owner,attribute,reader in (
+                    (host.FULL,'read_regular',host_read),
+                    (suite.full,'secure_bytes',stage_read)):
+                    replacement=patch.object(owner,attribute,side_effect=reader)
+                    replacement.start();self.addCleanup(replacement.stop)
             return host,suite
         finally:
             sys.path[:]=old_path
@@ -195,10 +210,24 @@ class AcquisitionContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='compilation-dump-') as tmp:
             root=Path(tmp);(root/'Ext').mkdir()
             (root/'Ext/SessionModule.bsl').write_bytes(b'// owned regular source\n')
-            self.assertEqual(suite.dump_files(root),{'Ext/SessionModule.bsl':b'// owned regular source\n'})
-            with patch.object(suite.stat,'S_ISREG',return_value=False) as predicate:
-                with self.assertRaises(suite.full.FullError):suite.dump_files(root)
-                predicate.assert_called_once()
+            from contextlib import nullcontext
+            replacement=nullcontext()
+            if sys.platform=='win32':
+                from contextlib import contextmanager
+                from types import SimpleNamespace
+                original_scandir=suite.os.scandir
+                @contextmanager
+                def stable_entries(directory):
+                    with original_scandir(directory) as entries:
+                        yield (SimpleNamespace(path=entry.path,
+                            stat=lambda follow_symlinks=False,path=entry.path:Path(path).lstat())
+                            for entry in entries)
+                replacement=patch.object(suite.os,'scandir',side_effect=stable_entries)
+            with replacement:
+                self.assertEqual(suite.dump_files(root),{'Ext/SessionModule.bsl':b'// owned regular source\n'})
+                with patch.object(suite.stat,'S_ISREG',return_value=False) as predicate:
+                    with self.assertRaises(suite.full.FullError):suite.dump_files(root)
+                    predicate.assert_called_once()
 
     def diagnostic(self,raw):
         import tempfile
