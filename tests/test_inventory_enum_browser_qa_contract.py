@@ -58,3 +58,17 @@ class InventoryEnumBrowserQAContractTests(unittest.TestCase):
                       'inventory_enum_application_browser_qa.mjs','capability_leak','resultSha256',
                       'nativeParity:false','enumReportTextOnly:true'):
             self.assertIn(token,self.source)
+
+    def test_ci_is_exact_opt_in_and_keeps_readonly_sandbox_route(self):
+        workflow=(ROOT/'.github/workflows/inventory-enum-application-browser-qa.yml').read_text()
+        self.assertIn('branches: [codex/inventory-enum-application-browser-reviewed]',workflow)
+        self.assertIn('contents: read',workflow)
+        self.assertIn('persist-credentials: false',workflow)
+        self.assertIn('ref: ${{ github.sha }}',workflow)
+        self.assertIn('QA_SOURCE_SHA: ${{ github.sha }}',workflow)
+        self.assertIn('node tests/browser_ui/inventory_enum_application_browser_qa.mjs',workflow)
+        self.assertNotIn('pull_request:',workflow)
+        self.assertNotIn('sudo',workflow)
+        self.assertNotIn('--no-sandbox',workflow)
+        for name in ('enum-catalogs.png','enum-written.png','enum-posted-report.png','enum-reopened-unposted.png'):
+            self.assertIn(name,workflow)

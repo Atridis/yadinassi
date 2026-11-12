@@ -146,7 +146,7 @@ function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
-    case 'FormCatalogRef':
+    case 'FormCatalogRef': case 'FormEnumRef':
       if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
           typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
           Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
@@ -206,7 +206,7 @@ function validateSnapshot(state) {
         const shape = ['name', 'title', 'type', 'readOnly'];
         if (record(column) && Object.hasOwn(column, 'editor')) shape.push('editor');
         if (!keys(column, shape) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef', 'FormEnumRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         if (Object.hasOwn(column, 'editor')) validateEditor(column.editor, column.type);
         columns.add(column.name);
@@ -259,7 +259,7 @@ function validateSnapshot(state) {
 }
 function scalarText(value, editor) {
   validateScalar(value);
-  if (value.type === 'FormCatalogRef') return value.text;
+  if (['FormCatalogRef', 'FormEnumRef'].includes(value.type)) return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return editor?.kind === 'date' && dateFits(value, editor) ? dateText(value, editor) : value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -272,6 +272,7 @@ function editable(item) {
 }
 function inputHint(item) {
   const type = item.value.type, editor = item.editor;
+  if (type === 'FormEnumRef') return 'Enumeration · choose a declared value; no text editing';
   if (type === 'FormCatalogRef') return 'Catalog reference · choose an existing record; no text editing';
   if (type === 'Date') {
     if (!editor || !dateFits(item.value, editor)) return 'Exact date ticks · read-only · no timezone conversion';
@@ -312,7 +313,7 @@ function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 function scalarEqual(left, right) {
-  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+  if (['FormCatalogRef', 'FormEnumRef'].includes(left?.type) || ['FormCatalogRef', 'FormEnumRef'].includes(right?.type))
     return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
       left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
@@ -864,13 +865,13 @@ function createFormView(document, root, handlers) {
   }
   function paintReference(actions, field, label, disabled) {
     if (!actions) return;
-    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(field?.value?.type); actions.group.hidden = !reference;
     const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
     actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
     actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
   }
   function makeControl(item) {
-    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -910,7 +911,7 @@ function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
     return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
@@ -967,7 +968,7 @@ function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(column.type) ? referenceActions(cell, locator) : null;
     return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {
@@ -1259,7 +1260,7 @@ function mountForm(environment, root, options = {}) {
     const item = client.snapshot.items.find(item => item.name === action.control);
     const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
     if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
-        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+        !['FormCatalogRef', 'FormEnumRef'].includes(field.value.type)) throw new FormError('unavailable');
     return {value: field.value, controlId: item.controlId, tableId: item.tableId};
   }
   async function run(event, name, row) {

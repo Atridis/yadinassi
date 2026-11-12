@@ -45,3 +45,16 @@ Playwright 1.64.1 и его Chromium с рабочим sandbox. Наличие `
 SQL, содержимое базы и внутренние UUID в артефакты не включаются.
 Только новый успешный запуск даёт PASS; статические проверки не заменяют
 реальный Chromium-прогон.
+
+## Штатный CI runner
+
+Workflow `.github/workflows/inventory-enum-application-browser-qa.yml`
+запускается только при push проверенного снимка в
+`codex/inventory-enum-application-browser-reviewed`. Обычные PR и checkpoint
+ветки его не запускают. Используются существующие pinned actions, read-only
+permissions и свежий непривилегированный Ubuntu runner, без изменения системных
+настроек sandbox. Публикуются только перечисленные bounded artifacts.
+
+Локальная попытка на checkpoint `05ccf577` остановилась до запуска Chromium:
+окружение не предоставило `/proc/<pid>/task/<pid>/children`, необходимый
+проверке владения процессами. Это 0 из 4 сценариев, не доказательство UI PASS.
