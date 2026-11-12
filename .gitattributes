@@ -265,6 +265,83 @@ tests/fixtures/native_inventory_period/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+scripts/session_parameter_behavior/** text eol=lf
+scripts/native_1c_bootstrap/session_parameter_suite.py text eol=lf
+scripts/native_1c_session_parameter_probe.sh text eol=lf
+
+# Explicit session declarations and application runtime source.
+yadinassi/configuration_session_parameters.py text eol=lf
+yadinassi/session_parameters.py text eol=lf
+
+# Immutable native session observations.
+tests/fixtures/native_session_parameters_43052415203.json -text
+
+# Owned temporary storage acquisition sources.
+scripts/temporary_storage_behavior/** text eol=lf
+scripts/native_1c_bootstrap/temporary_storage_suite.py text eol=lf
+scripts/native_1c_temporary_storage_probe.sh text eol=lf
+yadinassi/temporary_storage.py text eol=lf
+tests/fixtures/native_temporary_storage_43056863128.json -text
+
+# Exact owned common-template observation inputs.
+scripts/common_template_behavior/** text eol=lf
+scripts/common_template_behavior/OwnedText.txt -text
+scripts/common_template_behavior/OwnedBinary.bin -text
+scripts/native_1c_common_template_probe.sh text eol=lf
+
+# Exact owned configuration XDTO package observation inputs.
+scripts/configuration_xdto_behavior/** text eol=lf
+scripts/configuration_xdto_behavior/Package.bin -text
+scripts/native_1c_configuration_xdto_probe.sh text eol=lf
+scripts/native_1c_configuration_xdto_profile.py text eol=lf
+scripts/native_1c_bootstrap/configuration_xdto_suite.py text eol=lf
+
+# Source-bound linked configuration XDTO acquisition.
+scripts/configuration_xdto_linked_behavior/** text eol=lf
+scripts/configuration_xdto_linked_behavior/Package.bin -text
+scripts/configuration_xdto_linked_behavior/Envelope.bin -text
+scripts/native_1c_configuration_xdto_linked_profile.py text eol=lf
+scripts/native_1c_configuration_xdto_linked_probe.sh text eol=lf
+scripts/native_1c_bootstrap/configuration_xdto_linked_suite.py text eol=lf
+tests/test_configuration_xdto_linked_native_acquisition.py text eol=lf
+
+# Source-bound ordinary DOM XPath observations.
+scripts/dom_xpath_behavior/** text eol=lf
+scripts/native_1c_dom_xpath_profile.py text eol=lf
+scripts/native_1c_dom_xpath_probe.sh text eol=lf
+scripts/native_1c_bootstrap/dom_xpath_suite.py text eol=lf
+tests/test_dom_xpath_native_acquisition.py text eol=lf
+
+# Source-bound ordinary regex extensions.
+scripts/regex_extensions_behavior/** text eol=lf
+scripts/native_1c_regex_extensions_profile.py text eol=lf
+scripts/native_1c_regex_extensions_probe.sh text eol=lf
+scripts/native_1c_bootstrap/regex_extensions_suite.py text eol=lf
+tests/test_regex_extensions_native_acquisition.py text eol=lf
+
+yadinassi/configuration_templates.py text eol=lf
+yadinassi/common_templates.py text eol=lf
+tests/test_common_templates_recovery.py text eol=lf
+tests/fixtures/native_common_templates_43083042989.json -text
+# Owned configuration XDTO runtime and immutable native observations.
+yadinassi/configuration_xdto.py text eol=lf
+yadinassi/xdto_packages.py text eol=lf
+tests/configuration_xdto_fixture.py text eol=lf
+tests/test_configuration_xdto_packages.py text eol=lf
+tests/test_configuration_xdto_native_replay.py text eol=lf
+tests/fixtures/native_configuration_xdto_43086017286.json -text
+tests/fixtures/native_configuration_xdto_linked_43089477510.json -text
+# Recovered source-bound DOM XPath runtime and immutable native evidence.
+yadinassi/dom_xpath.py text eol=lf
+yadinassi/dom_xpath_engine.py text eol=lf
+tests/test_dom_xpath_binding.py text eol=lf
+tests/test_dom_xpath_native_replay.py text eol=lf
+tests/fixtures/native_dom_xpath_43093418847.json -text
+# Recovered local regex extension tests; native fixture remains pending.
+tests/test_regex_extensions_parser.py text eol=lf
+tests/test_regex_extensions_vm.py text eol=lf
+tests/fixtures/native_regex_extensions_43178980355.json -text
+tests/test_regex_extensions_native_replay.py text eol=lf
 
 # Independent filtered virtual-table acquisition bytes.
 scripts/inventory_filter_behavior/** text eol=lf

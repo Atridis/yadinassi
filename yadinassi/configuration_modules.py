@@ -109,6 +109,22 @@ def compile_module(content, path, side, *, common):
     return result
 
 
+
+def compile_session_module(content):
+    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True)
+    handlers=[]
+    for routine in program:
+        if routine.exported:
+            raise ValueError('session module exports are unsupported')
+        if routine.name.casefold() in ('sessionparameterssetting','установкапараметровсеанса'):
+            if (routine.is_function or len(routine.parameters)!=1
+                    or routine.parameters[0].default is not None or routine.parameters[0].by_value):
+                raise ValueError('unsupported session parameter handler signature')
+            handlers.append(routine)
+    if len(handlers)>1: raise ValueError('ambiguous session parameter handler')
+    return program, handlers[0] if handlers else None
+
+
 def validate_module_sources(configuration):
     """Preflight all admitted bodies without running initializers or handlers."""
     files = {entry.path: entry.content for entry in configuration.files}
@@ -121,6 +137,8 @@ def validate_module_sources(configuration):
                 with location(stage='compile', file=module.path):
                     program = compile_module(files[module.path], module.path, side, common=True)
                 total += len(program)
+    session, _ = compile_session_module(files.get('Ext/SessionModule.bsl',b''))
+    total += len(session)
     app = 'Ext/ManagedApplicationModule.bsl'
     if app in files:
         with location(stage='compile', file=app):

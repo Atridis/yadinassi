@@ -63,6 +63,9 @@ class ConfigurationImport:
     module_runtime: str | None = None
     information_registers: tuple[InformationRegisterSchema, ...] = ()
     enumerations: tuple = ()
+    session_parameters: tuple = ()
+    common_templates: tuple = ()
+    xdto_packages: tuple = ()
 
 
 def _fail(reason):
@@ -468,7 +471,7 @@ def _dump_info_matches(raw, config_uuid, name, catalogs, metadata_versions):
     return not expected
 
 
-def _accept_source_files(files):
+def _accept_source_files(files, *, templates=False):
     if type(files) is not dict or not 1<=len(files)<=MAX_FILES:_fail('file count')
     if any(type(path) is not str for path in files):_fail('invalid path type')
     accepted=[];total=0;normalized=set()
@@ -477,17 +480,20 @@ def _accept_source_files(files):
             if (type(path) is not str or len(path)>256 or '\\' in path or ':' in path
                     or path.startswith('/') or any(ord(c)<32 for c in path) or any(x in ('','.', '..') for x in path.split('/'))):_fail('unsafe path')
             p=PurePosixPath(path)
-            if p.suffix.lower() not in ('.xml','.bsl'):_fail('only XML/BSL interchange supported')
+            resource=templates and re.fullmatch(r'CommonTemplates/[^/]+/Ext/Template\.(?:txt|bin)',path) is not None
+            package_resource = (len(p.parts)==4 and p.parts[0]=='XDTOPackages' and p.parts[2:] == ('Ext','Package.bin') and p.parts[1].isidentifier())
+            if not resource and not package_resource and p.suffix.lower() not in ('.xml','.bsl'):_fail('unsupported source resource')
             if path.casefold() in normalized:_fail('case-colliding paths')
             normalized.add(path.casefold())
             if type(raw) is not bytes or len(raw)>MAX_FILE_BYTES:_fail('file byte bound')
             total+=len(raw)
             if total>MAX_TOTAL_BYTES:_fail('total byte bound')
-            try:raw.decode('utf-8-sig')
-            except UnicodeError:_fail('non UTF-8 source')
+            if not resource:
+                try:raw.decode('utf-8-sig')
+                except UnicodeError:_fail('non UTF-8 source')
             if p.suffix.lower()=='.xml':
                 with location(stage='xml', file=path): _parse(raw)
-            accepted.append(ConfigurationFile(path,raw,'module' if p.suffix.lower()=='.bsl' else 'xml'))
+            accepted.append(ConfigurationFile(path,raw,'resource' if resource else 'module' if p.suffix.lower()=='.bsl' else 'xml'))
     return tuple(accepted)
 
 
@@ -612,7 +618,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         from .configuration_modules import MODULE_RUNTIME, read_common_modules, validate_module_sources
         if module_runtime is not None and (type(module_runtime) is not str or module_runtime != MODULE_RUNTIME):
             _fail('unsupported module runtime profile')
-        accepted = _accept_source_files(files)
+        accepted = _accept_source_files(files,templates=module_runtime is not None)
         if 'Configuration.xml' not in files:_fail('missing Configuration.xml')
         config,_,config_root=_object(files['Configuration.xml'],'Configuration',include_root=True);config_uuid=_uuid(config.get('uuid'));props=_props(config)
         name=_name(_text(props,'Name'));issues=[];objects={};used={config_uuid}
@@ -620,8 +626,17 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         _activation_properties(config,{'Name','Synonym','Comment'},issues,name)
         children=config.find('{'+MD+'}ChildObjects')
         if children is None:_fail('missing configuration ChildObjects')
-        catalog_names=[];document_names=[];common_names=[];register_names=[];enum_names=[]
+        catalog_names=[];document_names=[];common_names=[];register_names=[];enum_names=[];session_names=[];template_names=[];xdto_names=[]
         for node in children:
+            if module_runtime is not None and node.tag=='{'+MD+'}CommonTemplate':
+                if node.attrib or len(node):_fail('common template inventory entry')
+                template_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+            if module_runtime is not None and node.tag=='{'+MD+'}SessionParameter':
+                if node.attrib or len(node): _fail('session parameter inventory entry')
+                session_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
+            if module_runtime is not None and node.tag=='{'+MD+'}XDTOPackage':
+                if node.attrib or len(node):_fail('XDTO package child declaration shape')
+                xdto_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
             if module_runtime is not None and node.tag=='{'+MD+'}Enum':
                 enum_names.append(_name((node.text or '').strip(_XML_WHITESPACE)));continue
             if module_runtime is not None and node.tag=='{'+MD+'}CommonModule':
@@ -738,6 +753,12 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                 documents.append(document)
         from .configuration_enumerations import read_enumerations
         enumerations=read_enumerations(files,enum_names,used,issues)
+        from .configuration_session_parameters import read_session_parameters
+        session_parameters=read_session_parameters(files,session_names,used,issues)
+        from .configuration_templates import read_common_templates
+        common_templates=read_common_templates(files,template_names,used,issues)
+        from .configuration_xdto import read_xdto_packages
+        xdto_packages=read_xdto_packages(files,xdto_names,used,issues)
         registers=[]
         for rname in register_names:
             with location(file='InformationRegisters/'+rname+'.xml', object=rname):
@@ -749,8 +770,13 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         modules=[];expected={'Configuration.xml',*(f'Catalogs/{n}.xml' for n in catalog_names),
                             *(f'Documents/{n}.xml' for n in document_names),
                             *(f'CommonModules/{n}.xml' for n in common_names),
+                            *(f'CommonTemplates/{n}.xml' for n in template_names),
+                            *(d.path for d in common_templates),
+                            *(f'SessionParameters/{n}.xml' for n in session_names),
                             *(f'InformationRegisters/{n}.xml' for n in register_names),
-                            *(f'Enums/{n}.xml' for n in enum_names)}
+                            *(f'Enums/{n}.xml' for n in enum_names),
+                            *(f'XDTOPackages/{n}.xml' for n in xdto_names),
+                            *(f'XDTOPackages/{n}/Ext/Package.bin' for n in xdto_names)}
         # Closed canonical hierarchical paths, not a generic Ext/*.bsl allowance.
         # A source archive may contain unknown modules, but it must not activate or
         # invent a Configuration owner for a file whose metadata owner is unknown.
@@ -768,6 +794,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
         runtime_paths = {module.path for module in common_modules}
         if module_runtime is not None:
             runtime_paths.add('Ext/ManagedApplicationModule.bsl')
+            runtime_paths.add('Ext/SessionModule.bsl')
         unknown_module_count = 0
         unknown_module_issues = []
         unknown_module_json_size = 2  # The enclosing JSON array brackets.
@@ -795,7 +822,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                 if code and entry.path not in runtime_paths:issues.append('module execution unsupported:'+entry.path)
             elif entry.path == 'ConfigDumpInfo.xml':
                 versions = (config_root.get('version'), *(obj[4].get('version') for obj in objects.values()))
-                if enum_names or register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
+                if xdto_names or template_names or session_names or enum_names or register_names or document_names or common_names or not _dump_info_matches(entry.content, config_uuid, name, catalogs, versions):
                     issues.append('unsupported configuration file:'+entry.path)
             elif entry.path not in expected:
                 _parse(entry.content);issues.append('unsupported configuration file:'+entry.path)
@@ -804,7 +831,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                           ' (individual paths retained in configuration files)')
         else:
             issues.extend(unknown_module_issues)
-        result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),enumerations)
+        result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),enumerations=enumerations,session_parameters=session_parameters,common_templates=common_templates,xdto_packages=xdto_packages)
         if module_runtime is not None:
             validate_module_sources(result)
         return result

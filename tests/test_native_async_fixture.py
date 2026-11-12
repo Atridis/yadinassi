@@ -376,6 +376,36 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_repository_inventory_budget(source):
+    """Exact inverse of the bounded Git inventory budget, not native evidence."""
+    base = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
+    candidate = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('repository inventory outer source identity')
+    old = '                                             stdout_limit=8192, stderr_limit=8192)'
+    new = '                                             stdout_limit=(65536 if args[0] == "ls-files" else 8192),\n                                             stderr_limit=8192)'
+    if source.count(new) != 1:
+        raise AssertionError('repository inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('repository inventory inner source identity')
+    return source
+
+
+def historical_source_bytes(path, raw, expected_sha256):
+    """Restore only the exact historical full-host inventory-budget layer.
+
+    Other paths and pins retain their actual bytes; evidence is never rewritten.
+    """
+    if (path == 'scripts/native_1c_full_host.py'
+            and expected_sha256 == '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'):
+        return without_repository_inventory_budget(raw.decode('utf-8')).encode('utf-8')
+    return raw
+
+
 def without_configuration_assets_provenance(source):
     """Hash-bound configuration layer, standalone or after reference assets."""
     base = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
@@ -383,6 +413,9 @@ def without_configuration_assets_provenance(source):
     reference = '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568'
     combined = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (base, reference, candidate, combined):
+        source = without_repository_inventory_budget(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest in (base, reference):
         return source
     if digest == combined:
