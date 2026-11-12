@@ -55,5 +55,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-inventory-enum-browser-artifacts/enum-posted-report.png
             ${{ runner.temp }}/yadinassi-inventory-enum-browser-artifacts/enum-reopened-unposted.png
             ${{ runner.temp }}/yadinassi-inventory-enum-browser-artifacts/enum-record-pages.png
+            ${{ runner.temp }}/yadinassi-inventory-enum-browser-artifacts/enum-reference-pages.png
           if-no-files-found: error
           retention-days: 14

@@ -11,13 +11,13 @@ class InventoryEnumBrowserQAContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.source=(ROOT/'tests/browser_ui/inventory_enum_application_browser_qa.mjs').read_text()
 
-    def test_five_scenarios_and_exact_business_requests(self):
+    def test_six_scenarios_and_exact_business_requests(self):
         names=ast.literal_eval(self.source.split('const scenarioNames=',1)[1].split(';',1)[0])
-        self.assertEqual(len(names),5)
+        self.assertEqual(len(names),6)
         plan=ast.literal_eval(self.source.split('const businessPlan=',1)[1].split(';',1)[0])
-        self.assertEqual([len(p) for p in plan],[14,15,3,7,212])
-        self.assertEqual(sum(map(len,plan)),251)
-        self.assertEqual(self.source.count('await scenario(scenarioNames['),5)
+        self.assertEqual([len(p) for p in plan],[14,15,3,7,212,11])
+        self.assertEqual(sum(map(len,plan)),262)
+        self.assertEqual(self.source.count('await scenario(scenarioNames['),6)
         self.assertIn('total:scenarioNames.length',self.source)
 
     def test_empty_explicit_database_and_readonly_audit(self):
@@ -83,3 +83,10 @@ class InventoryEnumBrowserQAContractTests(unittest.TestCase):
             self.assertIn(token,self.source)
         self.assertIn('CatalogSelection(limit=64)',self.source)
         self.assertIn('assert len(rows)<64',self.source)
+
+    def test_reference_pages_reuse_ui_rows_and_verify_saved_choice(self):
+        for token in ("scenario(scenarioNames[5]", "name:'Next choices'", "name:'Search references'",
+                      "nav().total,51", "choice.rows.length,32", "choice.rows.length,19",
+                      "inventoryFixture('audit-picked')", "referenceSavedReopen=true",
+                      "unissued_reference_page", "fixed_reference_search"):
+            self.assertIn(token,self.source)
