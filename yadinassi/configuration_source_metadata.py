@@ -2,12 +2,13 @@
 
 Collections follow the actual XML ChildObjects inventory and retain its order.
 Only source-backed scalar properties are exposed. Unknown object properties,
-embedded fields, types, storage managers and absent declarations are not guessed.
+types, storage managers and absent declarations are not guessed. Inline child
+identities are read from XML without granting executable/storage capabilities.
 """
 import xml.etree.ElementTree as ET
 from io import BytesIO
 
-from .configuration_source import ConfigurationSource
+from .configuration_source import ConfigurationSource, SourceMetadata, _identity
 from .configuration_xml import MD, XR, XSI
 from .metadata import _MetadataObject, _DeclaredMetadataCollection
 from .values import HostFunction
@@ -36,10 +37,51 @@ _FAMILIES = (
     ('DocumentJournal', 'DocumentJournals', 'ЖурналыДокументов', 'ЖурналДокументов'),
     ('BusinessProcess', 'BusinessProcesses', 'БизнесПроцессы', 'БизнесПроцесс'),
     ('Task', 'Tasks', 'Задачи', 'Задача'),
+    ('ChartOfCharacteristicTypes', 'ChartsOfCharacteristicTypes', 'ПланыВидовХарактеристик', 'ПланВидовХарактеристик'),
+    ('ChartOfAccounts', 'ChartsOfAccounts', 'ПланыСчетов', 'ПланСчетов'),
+    ('ChartOfCalculationTypes', 'ChartsOfCalculationTypes', 'ПланыВидовРасчета', 'ПланВидовРасчета'),
+    ('AccountingRegister', 'AccountingRegisters', 'РегистрыБухгалтерии', 'РегистрБухгалтерии'),
+    ('CalculationRegister', 'CalculationRegisters', 'РегистрыРасчета', 'РегистрРасчета'),
+    ('CommonAttribute', 'CommonAttributes', 'ОбщиеРеквизиты', 'ОбщийРеквизит'),
+    ('EventSubscription', 'EventSubscriptions', 'ПодпискиНаСобытия', 'ПодпискаНаСобытие'),
+    ('FunctionalOptionsParameter', 'FunctionalOptionsParameters', 'ПараметрыФункциональныхОпций', 'ПараметрФункциональныхОпций'),
+    ('SettingsStorage', 'SettingsStorages', 'ХранилищаНастроек', 'ХранилищеНастроек'),
+    ('HTTPService', 'HTTPServices', 'HTTPСервисы', 'HTTPСервис'),
+    ('WebService', 'WebServices', 'WebСервисы', 'WebСервис'),
+    ('WSReference', 'WSReferences', 'WSСсылки', 'WSСсылка'),
+    ('XDTOPackage', 'XDTOPackages', 'XDTOПакеты', 'XDTOПакет'),
+    ('StyleItem', 'StyleItems', 'ЭлементыСтиля', 'ЭлементСтиля'),
+    ('Interface', 'Interfaces', 'Интерфейсы', 'Интерфейс'),
+    ('Style', 'Styles', 'Стили', 'Стиль'),
+    ('FilterCriterion', 'FilterCriteria', 'КритерииОтбора', 'КритерийОтбора'),
 )
-_COLLECTIONS = {name.casefold(): family for family in _FAMILIES for name in family[1:3]}
-_FAMILY = {family[0]: family for family in _FAMILIES}
-_FULL_FAMILIES = {name.casefold(): family for family in _FAMILIES for name in (family[0], family[3])}
+_EMBEDDED = (
+    ('Attribute', 'Attributes', 'Реквизиты', 'Реквизит'),
+    ('TabularSection', 'TabularSections', 'ТабличныеЧасти', 'ТабличнаяЧасть'),
+    ('Dimension', 'Dimensions', 'Измерения', 'Измерение'),
+    ('Resource', 'Resources', 'Ресурсы', 'Ресурс'),
+    ('EnumValue', 'EnumValues', 'ЗначенияПеречисления', 'ЗначениеПеречисления'),
+    ('Command', 'Commands', 'Команды', 'Команда'),
+)
+_EMBEDDED_OWNERS = {
+    'Attribute': {'Catalog', 'Document', 'DataProcessor', 'Report', 'ExchangePlan',
+                  'ChartOfCharacteristicTypes', 'ChartOfAccounts', 'ChartOfCalculationTypes',
+                  'BusinessProcess', 'Task', 'TabularSection', 'InformationRegister',
+                  'AccumulationRegister', 'AccountingRegister', 'CalculationRegister'},
+    'TabularSection': {'Catalog', 'Document', 'DataProcessor', 'Report', 'ExchangePlan',
+                       'ChartOfCharacteristicTypes', 'ChartOfAccounts', 'ChartOfCalculationTypes',
+                       'BusinessProcess', 'Task'},
+    'Dimension': {'InformationRegister', 'AccumulationRegister', 'AccountingRegister', 'CalculationRegister'},
+    'Resource': {'InformationRegister', 'AccumulationRegister', 'AccountingRegister', 'CalculationRegister'},
+    'EnumValue': {'Enum'},
+    'Command': {'Catalog', 'Document', 'DataProcessor', 'Report', 'ExchangePlan',
+                'ChartOfCharacteristicTypes', 'ChartOfAccounts', 'ChartOfCalculationTypes',
+                'BusinessProcess', 'Task', 'InformationRegister', 'AccumulationRegister',
+                'AccountingRegister', 'CalculationRegister', 'DocumentJournal'},
+}
+_COLLECTIONS = {name.casefold(): family for family in _FAMILIES + _EMBEDDED for name in family[1:3]}
+_FAMILY = {family[0]: family for family in _FAMILIES + _EMBEDDED}
+_FULL_FAMILIES = {name.casefold(): family for family in _FAMILIES + _EMBEDDED for name in (family[0], family[3])}
 _SCALARS = {
     'languagecode': ('LanguageCode', str), 'кодязыка': ('LanguageCode', str),
     'comment': ('Comment', str), 'комментарий': ('Comment', str),
@@ -98,7 +140,41 @@ class SourceMetadataObject(_MetadataObject):
         name = family[3] + '.' + self._name
         return self._parent.full_name() + '.' + name if self._parent is not None else name
 
+    def _embedded_collection(self, family):
+        if self._entry.family not in _EMBEDDED_OWNERS[family[0]]:
+            raise ValueError('embedded metadata collection is unsupported for ' + self._entry.family)
+        if family[0] in self._collections:
+            return self._collections[family[0]]
+        nodes = self._object().findall('{' + MD + '}ChildObjects')
+        if len(nodes) > 1:
+            raise ValueError('ambiguous source ChildObjects')
+        values, identities = [], set()
+        for node in nodes[0] if nodes else ():
+            if node.tag != '{' + MD + '}' + family[0]:
+                continue
+            identity = _identity(node)
+            if identity in identities:
+                raise ValueError('duplicate embedded metadata identity')
+            identities.add(identity)
+            properties = node.findall('{' + MD + '}Properties')
+            names = properties[0].findall('{' + MD + '}Name') if len(properties) == 1 else []
+            if (len(names) != 1 or names[0].attrib or len(names[0])
+                    or not names[0].text or not names[0].text.isidentifier()
+                    or len(names[0].text) > 128):
+                raise ValueError('invalid embedded source metadata name')
+            name = names[0].text
+            entry = SourceMetadata(identity, family[0], name, self._entry.path)
+            child = SourceMetadataObject(self._root, entry, self)
+            child._xml = node
+            child._namespaces = self._namespaces
+            values.append(child)
+        result = _DeclaredMetadataCollection(tuple(values))
+        self._collections[family[0]] = result
+        return result
+
     def _collection(self, family):
+        if family in _EMBEDDED:
+            return self._embedded_collection(family)
         if self._entry.family != 'Configuration' and not (
                 self._entry.family == 'Subsystem' and family[0] == 'Subsystem'):
             raise ValueError('source metadata child collection is unsupported: ' + family[1])

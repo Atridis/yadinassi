@@ -289,3 +289,22 @@ an explicitly created scratch store as `SQLite=<absolute path>`, consistently
 with the host's SQLite database identity. It does not return native `File=` or
 `Srvr=` syntax, claim a 1CD database/server cluster, or activate database CRUD.
 Without the scratch store, or from a foreign/client context, it fails explicitly.
+
+### Read-only source object graph
+
+The source facade exposes declared top-level metadata families and inline
+Attributes, TabularSections (including their Attributes), Dimensions, Resources,
+EnumValues and Commands for supported owners. Collections retain XML order,
+case-insensitive lookup and cached object identity. `FindByFullName` traverses
+English or Russian family names, including nested tabular attributes.
+
+Children are decoded lazily from actual XML ChildObjects, with UUID and name
+validation. Unsupported owner/collection pairs remain errors rather than fake
+empty collections. Missing children under a supported owner form an empty
+collection. Reading this graph does not implement field Type descriptions,
+rights, CRUD, command execution or native enum values; unsupported operations
+remain explicit errors.
+
+External child Form/Template/Command file references are not exposed by this
+inline-child facade yet; requesting an external Command declaration fails
+explicitly instead of pretending it is an empty or executable command.
