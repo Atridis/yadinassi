@@ -68,3 +68,32 @@ def normalized(raw, nonce):
     values = parse_wire(raw, nonce)
     return {'schema': SCHEMA, 'groups': values, 'measurement_complete': True,
             'runtime_parity_claimed': False, 'source_sha256': SOURCE_SHA256}
+
+
+# Stage adapter intentionally has no raw per-case error messages. An ERR inside
+# a measured query is a scalar observation; interrupted setup stays incomplete.
+STAGE_SCHEMA = 'native-1c-polymorphic-recorder-stage-v1'
+STAGES = ('setup', 'query')
+
+def parse_attempt(raw, nonce):
+    return list(map(list, enumerate(parse_wire(raw, nonce), 1))), []
+
+def failure_details(result, nonce):
+    _nonce(nonce)
+    if (type(result) is not dict or set(result) != {'messages', 'error'}
+            or type(result['error']) is not str or len(result['error']) > 16384
+            or type(result['messages']) is not list or len(result['messages']) > COUNT + 2
+            or any(type(m) is not str or len(m) > 8192 for m in result['messages'])):
+        raise ValueError('failure envelope')
+    # Deliberately export no error text, locations, payload, or nonce.
+    return {'entered': bool(result['messages'] and result['messages'][0] == 'PRQ|' + nonce + '|entered'),
+            'category': 'native_failure'}
+
+def valid_failure_details(value):
+    return (type(value) is dict and set(value) == {'entered', 'category'}
+            and type(value['entered']) is bool and type(value['category']) is str
+            and value['category'] == 'native_failure')
+
+# The shared material fixture contains the same exact owned metadata identifiers.
+# Reuse only the finite-vocabulary sanitizer, never its native observation route.
+from inventory_reference_behavior.route import install_diagnostic, valid_install_diagnostic

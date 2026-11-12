@@ -4,6 +4,9 @@ from . import route
 VALIDATION_MODE = 'owned-polymorphic-recorder-material-projection-v1'
 OBJECTS = inventory.OBJECTS
 MODULES = inventory.MODULES
+MAX_FILE = inventory.MAX_FILE
+MAX_TOTAL = inventory.MAX_TOTAL
+_files = inventory._files
 
 def load_saved():
     setup, assets = inventory.load_saved()

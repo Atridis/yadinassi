@@ -49,3 +49,14 @@ isolated image, bounded execution, process/container cleanup witnesses и
 проверенный provenance. Этот модуль сам ничего не запускает, не объявляет
 cleanup/provenance проверенными и не сохраняет golden. Даже complete observation
 не означает runtime parity. Offline tests проверяют только authored protocol.
+
+## Состояние acquisition draft
+
+Добавлен отдельный `native_1c_bootstrap/polymorphic_recorder_suite.py` с тем же
+secure lifecycle, но своими stage schema, manifest и output names. Route adapter
+принимает только полный ordered packet; неожиданные исключения дают ограниченный
+failure envelope без raw text. Host profile/probe пока не подключены, поэтому
+этот checkpoint не является готовым маршрутом запуска. Добавлены восемь offline
+checks адаптера/неуспешного lifecycle; их static assertions не доказывают native
+containment. Ранее 12 packet tests прошли normal/-O до этого слоя; суммарные20
+на новом слое ещё не выполнялись.
