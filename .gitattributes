@@ -293,6 +293,8 @@ scripts/native_1c_common_template_probe.sh text eol=lf
 scripts/configuration_xdto_behavior/** text eol=lf
 scripts/configuration_xdto_behavior/Package.bin -text
 scripts/native_1c_configuration_xdto_probe.sh text eol=lf
+scripts/native_1c_configuration_xdto_profile.py text eol=lf
+scripts/native_1c_bootstrap/configuration_xdto_suite.py text eol=lf
 
 # Source-bound linked configuration XDTO acquisition.
 scripts/configuration_xdto_linked_behavior/** text eol=lf

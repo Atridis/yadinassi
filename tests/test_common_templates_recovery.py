@@ -18,7 +18,7 @@ def files(application=''):
     return result
 
 def app():
-    source=(ASSETS/'observe.bsl').read_text().split('For CaseNo = 1 To 12 Do')[0]
+    source=(ASSETS/'observe.bsl').read_text(encoding='utf-8').split('For CaseNo = 1 To 12 Do')[0]
     value=ConfigurationApplication.from_files(files(source));value.start();return value
 
 class NativeReplay(unittest.TestCase):
