@@ -116,3 +116,11 @@ class SourceMetadataTests(unittest.TestCase):
     def test_method_identity_stable_for_repeated_lookup(self):
         root = self.root()
         self.assertIs(root.get_member('Subsystems').find('Features'), root.find_by_full_name('Subsystem.Features'))
+
+    def test_find_unsupported_family_is_not_false_absence(self):
+        mapping = files()
+        mapping['ChartsOfCharacteristicTypes/Features.xml'] = xml('ChartOfCharacteristicType', 'Features')
+        root = self.root(mapping)
+        with self.assertRaisesRegex(ValueError, 'unsupported source metadata family'):
+            root.find_by_full_name('ChartOfCharacteristicType.Features')
+        self.assertIsNone(root.find_by_full_name('Subsystem.Missing'))

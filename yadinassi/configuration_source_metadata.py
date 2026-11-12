@@ -161,7 +161,7 @@ class SourceMetadataRoot(SourceMetadataObject):
         for index in range(0, len(parts), 2):
             family = _FULL_FAMILIES.get(parts[index].casefold())
             if family is None:
-                return None
+                raise ValueError('unsupported source metadata family: ' + parts[index])
             owner = owner._collection(family).find(parts[index + 1])
             if owner is None:
                 return None
