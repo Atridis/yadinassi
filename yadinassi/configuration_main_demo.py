@@ -65,6 +65,38 @@ def _catalogs(source, inventory):
     return tuple(sorted(result, key=lambda c: str(c.identity)))
 
 
+def _runtime_metadata_projection(source):
+    """Strip only measured native identity sections after exact source admission.
+
+    This private projection is not a generic XML import capability. Original
+    files remain the canonical persisted/exported/native source envelope.
+    """
+    import re
+    owners = {
+        'Documents/Receipt.xml': ('8cf22ebb-2c35-58b8-9dc5-85da7eb3d6ee',
+                                 '262e03a6-3d12-5852-80c3-b7cfee187839'),
+        'Documents/Issue.xml': ('0e9acacb-6885-56c2-b1f1-fabadccaad91',
+                               'd8ef5b5f-7ca3-5d6b-8ffd-d19cbbd33f9b'),
+        'AccumulationRegisters/Stock.xml': ('9ea1e3ef-4d1e-5933-b5ff-923cb2084491',),
+    }
+    result = dict(source)
+    for path, expected in owners.items():
+        raw = source[path]
+        if type(raw) is not bytes or sha256(raw).hexdigest() != SOURCE_SHA256[path]:
+            raise ValueError('main demo projection source mismatch')
+        root = ET.fromstring(raw)
+        actual = tuple(n.get('uuid') for n in root.iter()
+                       if n.find(M+'InternalInfo') is not None)
+        if actual != expected:
+            raise ValueError('main demo projection owner mismatch')
+        projected, count = re.subn(rb'<InternalInfo(?: xmlns:xr="[^"]+")?>.*?</InternalInfo>',
+                                  b'', raw, flags=re.S)
+        if count != len(expected):
+            raise ValueError('main demo projection shape mismatch')
+        result[path] = projected
+    return result
+
+
 def import_main_demo_configuration(files, *, profile=None):
     if type(profile) is not str or profile != PROFILE:
         raise ValueError('explicit main demo source grant required')
@@ -72,6 +104,7 @@ def import_main_demo_configuration(files, *, profile=None):
     source = {f.path: f.content for f in accepted}
     if {p: sha256(raw).hexdigest() for p, raw in source.items()} != SOURCE_SHA256:
         raise ValueError('main demo source mismatch')
+    runtime_source = _runtime_metadata_projection(source)
     # Inert inventory checks catalog/form identities without granting execution.
     archive, inventory = xml._inert_configuration(source)
     catalogs = _catalogs(source, inventory)
@@ -96,7 +129,7 @@ def import_main_demo_configuration(files, *, profile=None):
     expected, form_names, projected = set(), set(), {}
     for (kind, name), path in declarations.items():
         if kind != 'Document': continue
-        raw = _project_owner(source, path, kind, name, expected, form_names)
+        raw = _project_owner(runtime_source, path, kind, name, expected, form_names)
         projected[path] = raw
         document, recorders = _document(raw, name, declarations, used,
                                         targets=targets, enum_targets=enum_targets)
@@ -106,13 +139,13 @@ def import_main_demo_configuration(files, *, profile=None):
     for (kind, name), path in declarations.items():
         if kind != 'AccumulationRegister': continue
         owners = tuple(sorted((d for d,r in links.items() if name in r),key=str))
-        registers.append(_register(source[path],name,owners,used,
+        registers.append(_register(runtime_source[path],name,owners,used,
                                    targets=targets,enum_targets=enum_targets))
     # Original native catalog forms use their own bound policy. The strict
     # form loader receives document and the two closed common-form declarations, never a fake
     # generic grant for those original catalog modules or their list form.
     from .configuration_forms import load_configuration_forms
-    form_source = dict(source)
+    form_source = dict(runtime_source)
     _, _, form_root = xml._object(source['Configuration.xml'], 'Configuration', include_root=True)
     form_config = form_root.find(M+'Configuration')
     children = form_config.find(M+'ChildObjects')
