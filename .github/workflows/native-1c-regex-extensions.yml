@@ -5,7 +5,7 @@ on:
     types: [opened, synchronize, reopened]
 permissions: {}
 concurrency:
-  group: native-regex_extensions-${{ github.event.pull_request.number }}
+  group: native-regex_extensions-recovery-20261112-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 jobs:
   observe:
