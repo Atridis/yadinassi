@@ -464,14 +464,16 @@ async function main(){
     const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
     assert.equal(await nav.getByRole('button',{name:'Подготовка изменений',exact:true}).count(),0,'owned_child_not_navigation');
     const observed=async(method,action)=>{
+      const capture=filterCapture.begin(method);
+      try{
       report.draftStage='await-response';
       const waiting=replyFor(packet=>packet.method===method).catch(()=>{throw Error('draft_response_wait_failed');});
-      const [response]=await Promise.all([waiting,action().catch(()=>{throw Error('draft_action_failed');})]);
+      const [response]=await Promise.all([waiting,action().catch(()=>{throw Error('draft_action_failed');}),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
       report.draftStage='read-response';
       const packet=response.request().postDataJSON();
-      let bytes;
-      try{bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_reply_timeout');}
-      catch(error){throw Error(error?.message==='draft_reply_timeout'?'draft_reply_timeout':'draft_reply_read_failed');}
+      const captured=filterCapture.consume(capture,packet.id);
+      assert.equal(captured.packet.params.request.id,packet.params.request.id,'filter_capture_consumer_inner_id');
+      const bytes=captured.bytes;
       assert.ok(bytes.length<=131072,'draft_reply_budget');
       report.draftStage='validate-envelope';
       let body;try{body=JSON.parse(bytes.toString('utf8'));}catch{throw Error('draft_reply_json');}
@@ -485,6 +487,7 @@ async function main(){
       report.draftStage='await-idle';
       try{await idle();}catch{throw Error('draft_idle_timeout');}
       report.draftStage='complete';return payload.result;
+      }finally{filterCapture.clear(capture);}
     };
     const command=async(label)=>{let result;await act('draft:'+label,async()=>{result=await observed('application.form',()=>docButton(label).click());});return result;};
     const answer=async(label)=>{let result;await act('draft-answer:'+label,async()=>{result=await observed('application.answerDialog',()=>page.locator('.configuration-dialog').getByRole('button',{name:label,exact:true}).click());});return result;};
@@ -514,15 +517,21 @@ async function main(){
     await command('О черновике');ownerValues(await answer('Continue'),123.45,1);
     await command('Close form');await active().waitFor({state:'detached'});
     await act('Справочники',async()=>{
+      const capture=filterCapture.begin('demo.select');
+      try{
+      report.draftStage='switch-await-response';
       const switching=page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/rpc'&&response.status()===200&&response.request().postDataJSON().method==='demo.select'&&response.request().postDataJSON().params.surface==='catalogs',{timeout:remaining(rpcReplyMs)});
-      const [response]=await Promise.all([switching,button('Справочники').click()]);
-      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_switch_reply_timeout');
+      const [response]=await Promise.all([switching,button('Справочники').click(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
+      report.draftStage='switch-validate-envelope';
+      const bytes=filterCapture.consume(capture,response.request().postDataJSON().id).bytes;
       assert.ok(bytes.length<=131072,'draft_switch_reply_budget');
       const value=JSON.parse(bytes.toString('utf8'));
       assert.equal(value.jsonrpc,'2.0');assert.equal(value.id,response.request().postDataJSON().id);
       assert.equal(value.result?.error,null);assert.equal(value.result?.state?.surface,'catalogs');
       assert.equal(value.result?.state?.uncertain,false);assert.equal(value.result?.state?.canSwitch,true);
       await page.getByRole('navigation',{name:'Catalogs',exact:true}).waitFor({state:'visible'});
+      report.draftStage='switch-complete';
+      }finally{filterCapture.clear(capture);}
     });
     assert.equal(actionLog.length-start,22,'draft_action_count');
     assert.deepEqual(audit(),saved,'memory_draft_changed_database');

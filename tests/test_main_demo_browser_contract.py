@@ -128,12 +128,16 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         body = text.split('const observed=async(method,action)=>{', 1)[1].split('const command=', 1)[0]
         for stage in ('await-response', 'read-response', 'validate-envelope', 'await-idle', 'complete'):
             self.assertIn("report.draftStage='" + stage + "'", body)
-        for code in ('draft_response_wait_failed', 'draft_action_failed', 'draft_reply_timeout',
-                     'draft_reply_read_failed', 'draft_reply_budget', 'draft_reply_json', 'draft_outer_id',
+        for code in ('draft_response_wait_failed', 'draft_action_failed', 'draft_reply_budget', 'draft_reply_json', 'draft_outer_id',
                      'draft_outer_error', 'draft_uncertain', 'draft_inner_id', 'draft_inner_error',
                      'draft_form_error', 'draft_idle_timeout'):
             self.assertIn("'" + code + "'", body)
             self.assertIn("'" + code + "'", text.split('const safeFailureCodes=new Set([', 1)[1])
+        self.assertNotIn('response.body()', body)
+        self.assertIn('finally{filterCapture.clear(capture);}', body)
+        switch = text.split("const capture=filterCapture.begin('demo.select');", 1)[1].split("assert.equal(actionLog.length-start,22", 1)[0]
+        self.assertNotIn('response.body()', switch)
+        self.assertIn('finally{filterCapture.clear(capture);}', switch)
         self.assertNotIn('console.', body)
         self.assertNotIn('report.error', body)
 

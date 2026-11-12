@@ -1,6 +1,6 @@
 /** Single-use observer of one real browser RPC; never sends a second request. */
 import assert from 'node:assert/strict';
-const METHODS=new Set(['application.catalog','application.catalogFilter','application.report']);
+const METHODS=new Set(['application.catalog','application.catalogFilter','application.report','application.form','application.answerDialog','demo.select']);
 const endpoint=(value,origin)=>{const url=new URL(value);return url.origin===origin&&url.pathname==='/rpc'&&!url.search&&!url.hash&&!url.username&&!url.password;};
 export class MainDemoFilterCapture {
   #active=null;
@@ -13,13 +13,15 @@ export class MainDemoFilterCapture {
   }
   async route(route,origin,{fetchTimeout,bodyTimeout,bounded}){
     const ticket=this.#active,packet=route.request().postDataJSON();
-    if(!ticket||packet?.method!=='demo.dispatch'||packet.params?.request?.method!==ticket.method)return false;
+    if(!ticket)return false;
+    const surface=ticket.method==='demo.select';
+    if(surface ? packet?.method!=='demo.select'||packet.params?.surface!=='catalogs' : packet?.method!=='demo.dispatch'||packet.params?.request?.method!==ticket.method)return false;
     let response;
     try{
       assert.ok(!ticket.claimed,'filter_capture_duplicate');ticket.claimed=true;
       assert.ok(endpoint(route.request().url(),origin),'filter_capture_request_origin');
-      const inner=packet.params.request;
-      assert.ok((typeof packet.id==='number'||typeof packet.id==='string')&&(typeof inner.id==='number'||typeof inner.id==='string'),'filter_capture_request_id');
+      const inner=surface?null:packet.params.request;
+      assert.ok((typeof packet.id==='number'||typeof packet.id==='string')&&(surface||typeof inner.id==='number'||typeof inner.id==='string'),'filter_capture_request_id');
       response=await route.fetch({timeout:fetchTimeout,maxRedirects:0,maxRetries:0});
       assert.ok(endpoint(response.url(),origin),'filter_capture_response_origin');
       assert.equal(response.status(),200,'filter_capture_http');
@@ -27,7 +29,7 @@ export class MainDemoFilterCapture {
       assert.ok(Buffer.isBuffer(bytes)&&bytes.length<=131072,'filter_reply_body_budget');
       let body;try{body=JSON.parse(bytes.toString('utf8'));}catch{throw Error('filter_capture_json');}
       assert.equal(body.id,packet.id,'filter_capture_outer_id');
-      assert.equal(body.result?.payload?.id,inner.id,'filter_capture_inner_id');
+      if(!surface)assert.equal(body.result?.payload?.id,inner.id,'filter_capture_inner_id');
       assert.equal(this.#active,ticket,'filter_capture_retired');
       assert.equal(ticket.error,null,'filter_capture_failed');
       // The browser receives this exact buffer, not a reserialized JSON value.

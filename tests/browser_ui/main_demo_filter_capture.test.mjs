@@ -4,10 +4,10 @@ const origin='http://127.0.0.1:12345',url=origin+'/rpc';
 const packet={id:7,method:'demo.dispatch',params:{request:{id:9,method:'application.catalogFilter',params:{}}}};
 const raw=Buffer.from('{"id":7,"result":{"payload":{"id":9}}}');
 const limits={fetchTimeout:100,bodyTimeout:100,bounded:(promise)=>promise};
-function fixture({requestURL=url,responseURL=url,status=200,bytes=raw,disposeError=false}={}){
+function fixture({requestURL=url,responseURL=url,status=200,bytes=raw,disposeError=false,requestPacket=packet}={}){
  const seen={fetch:[],fulfill:[],dispose:0,abort:0};
  const response={url:()=>responseURL,status:()=>status,body:async()=>bytes,dispose:async()=>{seen.dispose++;if(disposeError)throw Error('private detail');}};
- const route={request:()=>({url:()=>requestURL,postDataJSON:()=>packet}),fetch:async args=>{seen.fetch.push(args);return response;},
+ const route={request:()=>({url:()=>requestURL,postDataJSON:()=>requestPacket}),fetch:async args=>{seen.fetch.push(args);return response;},
    fulfill:async args=>{seen.fulfill.push(args);},abort:async()=>{seen.abort++;}};
  return {route,seen,response};
 }
@@ -25,7 +25,7 @@ test('captures exactly one actual fetch and delivers identical bytes; single con
  assert.throws(()=>c.consume(t,7),/filter_capture_consumed/);c.clear(t);
 });
 test('one expected method pending, unknown methods refused, clear settles pending waiter',async()=>{
- const c=new MainDemoFilterCapture();assert.throws(()=>c.begin('application.form'),/filter_capture_method/);
+ const c=new MainDemoFilterCapture();assert.throws(()=>c.begin('application.unknown'),/filter_capture_method/);
  const t=c.begin('application.catalogFilter');assert.throws(()=>c.begin('application.report'),/filter_capture_pending/);
  const rejected=assert.rejects(t.ready,/filter_capture_retired/);c.clear(t);await rejected;
 });
@@ -52,4 +52,24 @@ test('consumer id binding and unrelated method do not silently consume or fetch'
  const rejected=assert.rejects(t.ready,/filter_capture_retired/);c.clear(t);await rejected;
  const next=c.begin('application.catalogFilter');await c.route(f.route,origin,limits);await next.ready;
  assert.throws(()=>c.consume(next,8),/filter_capture_consumer_id/);c.clear(next);
+});
+
+for(const method of ['application.form','application.answerDialog'])test('exact-byte draft capture: '+method,async()=>{
+ const requestPacket={...packet,params:{request:{...packet.params.request,method}}};
+ const c=new MainDemoFilterCapture(),t=c.begin(method),f=fixture({requestPacket});
+ await c.route(f.route,origin,limits);await t.ready;
+ assert.equal(c.consume(t,7).bytes,raw);assert.equal(f.seen.fulfill[0].body,raw);
+ assert.equal(f.seen.fetch.length,1);assert.equal(f.seen.dispose,1);c.clear(t);
+});
+test('surface capture requires catalogs and binds outer id without inventing inner envelope',async()=>{
+ const requestPacket={id:7,method:'demo.select',params:{surface:'catalogs'}};
+ const bytes=Buffer.from('{"id":7,"result":{"state":{"surface":"catalogs"}}}');
+ const c=new MainDemoFilterCapture(),t=c.begin('demo.select');
+ const other=fixture({requestPacket:{...requestPacket,params:{surface:'application'}},bytes});
+ assert.equal(await c.route(other.route,origin,limits),false);assert.equal(other.seen.fetch.length,0);
+ const f=fixture({requestPacket,bytes});await c.route(f.route,origin,limits);await t.ready;
+ assert.equal(c.consume(t,7).bytes,bytes);assert.equal(f.seen.fulfill[0].body,bytes);c.clear(t);
+ const bad=c.begin('demo.select'),wrong=fixture({requestPacket,bytes:Buffer.from('{"id":8}')});
+ const rejected=assert.rejects(bad.ready,/filter_capture_outer_id/);await c.route(wrong.route,origin,limits);await rejected;
+ assert.equal(wrong.seen.fulfill.length,0);c.clear(bad);
 });
