@@ -20,6 +20,7 @@ class _SourceInterpreter(Interpreter):
     def __init__(self, application, **kwargs):
         super().__init__(output=application.output, **kwargs)
         self.application = application
+        self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
         self.register_function('CurrentRunMode', application.current_run_mode)
         self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
@@ -46,9 +47,11 @@ class _SourceInterpreter(Interpreter):
         # Source metadata does not grant operational storage managers.
         if key in {'catalogs', 'справочники',
                    'documents', 'документы', 'informationregisters',
-                   'регистрысведений', 'accumulationregisters', 'регистрынакопления',
-                   'enums', 'перечисления'}:
+                   'регистрысведений', 'accumulationregisters', 'регистрынакопления'}:
             raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
+        if key in ('enums', 'перечисления'):
+            self.application.require_open()
+            return self.application.enumerations
         if key in ('constants', 'константы'):
             from .source_constants_runtime import SourceConstants
             return SourceConstants(self.application)
@@ -86,6 +89,10 @@ class SourceApplication:
         self.metadata = SourceMetadataRoot(source)
         self.modules = {item.name.casefold(): item for item in source.metadata
                         if item.family == 'CommonModule'}
+        from .configuration_source_enums import source_enum_definitions
+        from .enumerations import BSLEnumerations
+        enum_definitions, unsupported_enums, _ = source_enum_definitions(source)
+        self.enumerations = BSLEnumerations(enum_definitions, unsupported=unsupported_enums)
         self._instances = {}
         self._reuse_routines = {}
         self.side = None

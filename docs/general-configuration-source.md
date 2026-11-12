@@ -156,3 +156,18 @@ semantics are established, `Get()` before an explicit `Set()` reports an
 uninitialized constant. Closing the application invalidates its managers.
 Source SafeMode rejects access to this database just like other external I/O;
 this is a conservative host restriction, not claimed native database parity.
+
+## Source enumeration values
+
+The source host exposes declared enumeration values through `Enums` /
+`Перечисления` using the existing immutable enum runtime. Metadata UUIDs and
+value declaration order determine identities; no values are synthesized from
+names. Each source application owns one reference/type snapshot, shared by its
+modules and by `Type`, `TypeOf` and enum `TypeDescription` lookup. This capability
+needs no database and grants neither storage serialization nor native type GUID
+conversion.
+
+Rich source metadata remains preserved even when an enum's runtime declaration
+is unsupported; accessing that enum reports the specific limitation. Manager
+module execution, forms and arbitrary metadata services are not implied by
+availability of an enum's declared values.
