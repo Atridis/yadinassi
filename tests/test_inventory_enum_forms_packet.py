@@ -129,6 +129,26 @@ class EnumFormsMaterialTests(unittest.TestCase):
         changed=changed.replace(b'<MainAttribute>',b'<SavedData>true</SavedData><MainAttribute>')
         self.assertEqual(self.material.managed_form(raw),self.material.managed_form(changed))
 
+    def test_diagnostics_are_finite_component_labels_only(self):
+        from scripts.inventory_enum_forms_packet import route
+        expected={}
+        for kind,owner in (('Catalog','Products'),('Document','Receipt')):
+            prefix=kind+'s/'+owner
+            expected[prefix+'.xml']=('<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses"><'+kind+'><ChildObjects><Form>Card</Form></ChildObjects></'+kind+'></MetaDataObject>').encode()
+            expected[prefix+'/Forms/Card.xml']=(ROOT/owner/'Card.xml').read_bytes()
+            expected[prefix+'/Forms/Card/Ext/Form.xml']=(ROOT/owner/'Form.xml').read_bytes()
+            expected[prefix+'/Forms/Card/Ext/Form/Module.bsl']=b'// exact module'
+        actual=dict(expected)
+        actual['Catalogs/Products/Forms/Card/Ext/Form/Module.bsl']=b'// other'
+        self.assertEqual(self.material.diagnostic(expected,actual),['products_module'])
+        actual=dict(expected)
+        key='Documents/Receipt/Forms/Card/Ext/Form.xml'
+        actual[key]=actual[key].replace(b'>ObservedOpen<',b'>Other<')
+        self.assertEqual(self.material.diagnostic(expected,actual),['receipt_binding'])
+        self.assertTrue(self.material.valid_diagnostic(['receipt_binding']))
+        for invalid in ([],['/private/path'],['receipt_binding']*2,'receipt_binding'):
+            self.assertFalse(self.material.valid_diagnostic(invalid))
+
     def test_type_and_event_binding_changes_are_material(self):
         raw=(ROOT/'Products/Form.xml').read_bytes()
         with self.assertRaises(ValueError):
@@ -303,13 +323,14 @@ class EnumFormsCheckoutTests(unittest.TestCase):
         self.assertEqual(host.PHASES,stage.PHASES)
         for phase in ('install_load','install_update','install_redump','install_material'):
             report=stage.empty_report('a'*32)
-            report.update(status='failed',failure_kind='module_mismatch',failure_phase=phase)
+            report.update(status='failed',failure_kind='module_mismatch',failure_phase=phase,redump_projection=['products_module'])
             envelope=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce='a'*32,
                           report=dict(status='stage3_failed',native_tests_completed=False,stage3=report),outputs=[])
             with self.subTest(phase=phase), self.assertRaises(host.FormError) as caught:
                 host.validate_envelope(json.dumps(envelope).encode(),'a'*32,{},
                                        validator=lambda raw,**kwargs:json.loads(raw))
             self.assertEqual(caught.exception.native_failure['failure_phase'],phase)
+            self.assertEqual(caught.exception.native_failure['redump_projection'],['products_module'])
             self.assertFalse(caught.exception.native_failure['completed'])
         report['failure_phase']='private/arbitrary/path'
         with self.assertRaises(host.FormError) as caught:

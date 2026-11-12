@@ -124,3 +124,47 @@ def verify_redump(expected,actual):
         path=owner+'/Forms/Card/Ext/Form/Module.bsl'
         original.verify_redump({path:left.pop(path)},{path:right.pop(path)})
     return core.verify_redump(left,right)
+
+
+# Only finite component labels, never native XML, values, paths or logs.
+DIAGNOSTIC_CODES=('configuration_inventory','products_declaration','receipt_declaration',
+    'products_metadata','receipt_metadata','products_binding','receipt_binding',
+    'products_module','receipt_module','core_schema','core_modules')
+
+
+def diagnostic(expected,actual):
+    if set(expected)!=set(actual):return ['configuration_inventory']
+    left=dict(expected);right=dict(actual);result=[]
+    for kind,name in configuration.OWNERS:
+        owner=kind+'s/'+name;label=name.lower()
+        try:
+            left[owner+'.xml']=_without_form_declaration(left[owner+'.xml'])
+            right[owner+'.xml']=_without_form_declaration(right[owner+'.xml'])
+        except (ValueError,KeyError):result.append(label+'_declaration')
+        for suffix,project,code in (('/Forms/Card.xml',metadata_form,'metadata'),
+                ('/Forms/Card/Ext/Form.xml',managed_form,'binding')):
+            path=owner+suffix
+            try:
+                if project(left.pop(path))!=project(right.pop(path)):result.append(label+'_'+code)
+            except (ValueError,KeyError):result.append(label+'_'+code)
+        path=owner+'/Forms/Card/Ext/Form/Module.bsl'
+        try:original.verify_redump({path:left.pop(path)},{path:right.pop(path)})
+        except (ValueError,KeyError):result.append(label+'_module')
+    if result:return result
+    for path in left:
+        try:
+            if path in core.OBJECTS:
+                kind=core.OBJECTS[path][0]
+                if core._owned_projection(left[path],kind)!=core._owned_projection(right[path],kind):
+                    raise ValueError('schema')
+            else:original.verify_redump({path:left[path]},{path:right[path]})
+        except ValueError:
+            code='core_modules' if path.endswith('.bsl') else 'core_schema'
+            if code not in result:result.append(code)
+    return result
+
+
+def valid_diagnostic(value):
+    return (type(value) is list and 0<len(value)<=len(DIAGNOSTIC_CODES)
+            and all(type(code) is str and code in DIAGNOSTIC_CODES for code in value)
+            and len(value)==len(set(value)))

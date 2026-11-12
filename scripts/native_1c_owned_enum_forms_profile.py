@@ -263,7 +263,9 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         events=stage['lifecycle_events']
         if events is not None:
             route.lifecycle(json.dumps({'nonce':nonce,'events':events},separators=(',',':')).encode(),nonce)
-        projection=stage['redump_projection'];require(projection is None)
+        projection=stage['redump_projection']
+        from inventory_enum_forms_packet import material
+        require(projection is None or material.valid_diagnostic(projection))
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')

@@ -136,9 +136,11 @@ def run_suite(platform,root,inputs,nonce):
         after=root/'after';after.mkdir()
         designer('after',['/DumpConfigToFiles',str(after),'-Format','Hierarchical'])
         phase='install_material'
+        actual_configuration=dump_files(after)
         try:
-            material.verify_redump(expected_configuration,dump_files(after))
+            material.verify_redump(expected_configuration,actual_configuration)
         except ValueError:
+            report['redump_projection']=material.diagnostic(expected_configuration,actual_configuration)
             raise full.FullError('module_mismatch') from None
         report['config_verified']=True
         src=root/'src';src.mkdir()
