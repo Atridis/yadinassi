@@ -89,7 +89,7 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
             table=quote_identifier(context.backend._layout.table_name(schema.identity))
         # A separate writer edits only this test's freshly generated database.
         from yadinassi.sqlite_query_indexes import register_query_collations
-        with sqlite3.connect(self.path) as writer:
+        with closing(sqlite3.connect(self.path)) as writer, writer:
             register_query_collations(writer)
             writer.execute('DELETE FROM '+table+' WHERE code=?',('X0000',))
         result=self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.openRecord',

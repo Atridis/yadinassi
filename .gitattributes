@@ -379,3 +379,7 @@ scripts/native_1c_enum_relational_ci_policy.py text eol=lf
 
 # Immutable independent direct enum relational capture and coverage mapping.
 tests/fixtures/native_inventory_enum_relational/* -text
+
+# Authored inventory form sources must match their byte-pinned core projection.
+examples/configuration-inventory-application/** text eol=lf
+examples/configuration-inventory-enum-application/** text eol=lf

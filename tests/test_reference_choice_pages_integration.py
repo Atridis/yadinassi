@@ -74,7 +74,7 @@ class ReferencePagesIntegrationTests(unittest.TestCase):
         found=self.reference(sid,dict(action='search',ticket=first['ticket'],query='X0031'))['state']['choice']
         with closing(SQLiteDBContext(self.path)) as context:
             schema=next(s for s in self.config.catalogs if s.name=='Warehouses');table=quote_identifier(context.backend._layout.table_name(schema.identity))
-        with sqlite3.connect(self.path) as writer:
+        with closing(sqlite3.connect(self.path)) as writer, writer:
             register_query_collations(writer);writer.execute('UPDATE '+table+' SET deletion_mark=1 WHERE code=?',('X0031',))
         result=self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.reference','params':{
             'session':sid,'revision':self.app.sessions[sid][0].session.revision,

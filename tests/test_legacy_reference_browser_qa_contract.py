@@ -6,7 +6,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 class LegacyBrowserContractTests(unittest.TestCase):
     def setUp(self):
-        self.script=(ROOT/'tests/browser_ui/legacy_reference_pages_browser_qa.mjs').read_text()
+        self.script=(ROOT/'tests/browser_ui/legacy_reference_pages_browser_qa.mjs').read_text(encoding='utf-8')
 
     def test_sandbox_source_and_cleanup_guards(self):
         for text in ('ordinary_nonroot_runner_required','chromiumSandbox:true','sandboxCommand(commandLineArgs',
@@ -35,7 +35,7 @@ class LegacyBrowserContractTests(unittest.TestCase):
         self.assertEqual(self.script.count('await scenario('),1)
 
     def test_dedicated_authored_seed_no_legacy_fixture_mutation(self):
-        source=(ROOT/'tests/browser_ui/legacy_reference_pages_fixture.py').read_text()
+        source=(ROOT/'tests/browser_ui/legacy_reference_pages_fixture.py').read_text(encoding='utf-8')
         for text in ('range(70)', "'productsInitially':0", 'read_only=True', "'DefaultWarehouse'", "'section_reference'"):
             self.assertIn(text,source)
         self.assertIn('legacy_reference_pages_fixture.py',self.script)
