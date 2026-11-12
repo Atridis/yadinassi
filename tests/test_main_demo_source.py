@@ -84,6 +84,10 @@ class MainDemoSourceTests(unittest.TestCase):
                 self.assertEqual(form.findtext(M+'Properties/'+M+'Name'), name)
                 self.assertEqual(form.findtext(M+'Properties/'+M+'FormType'), 'Managed')
 
+    def test_pending_draft_is_declared_in_client_context(self):
+        module=(SOURCE/'CommonForms/OperationDraft/Ext/Form/Module.bsl').read_text(encoding='utf-8')
+        self.assertTrue(module.startswith('&AtClient\nVar PendingDraft;\n'))
+
     def test_authored_layout_titles_and_commands_use_native_representation(self):
         from hashlib import sha256
         v = '{http://v8.1c.ru/8.1/data/core}'

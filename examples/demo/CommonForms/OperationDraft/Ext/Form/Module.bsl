@@ -1,3 +1,4 @@
+&AtClient
 Var PendingDraft;
 &AtServer
 Procedure Created(Cancel, StandardProcessing)
