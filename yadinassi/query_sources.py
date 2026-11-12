@@ -21,6 +21,11 @@ def _external_column(column):
     description = column.value_type
     if type(description) is not BSLTypeDescription:
         raise TypeError('External query columns require TypeDescription')
+    if description._query_reference is not None:
+        from .query_reference_tables import description_binding
+        binding = description_binding(description)
+        return _Column(column.name, None, binding.kind, (), explicit_alias=True,
+                       reference_identity=binding.identity, reference_binding=binding)
     kinds = tuple(t for t in description.types if t is not BSLType.NULL)
     if len(kinds) != 1:
         raise TypeError('External query columns require one scalar type, optionally nullable')
@@ -66,6 +71,8 @@ def _external_value(value, column, nullable):
     if value is NULL:
         if not nullable: raise TypeError('External query NULL requires nullable column metadata')
         return value
+    if column.reference_binding is not None:
+        return column.reference_binding.value(value)
     expected = {'string': str, 'number': Decimal, 'datetime': BSLDate, 'boolean': bool}[column.kind]
     if type(value) is not expected:
         raise TypeError('External query cell requires exact declared scalar type')
@@ -87,7 +94,7 @@ def _external_value(value, column, nullable):
     return value
 
 
-def _snapshot(value, budget):
+def _snapshot(value, budget, catalogs=None, documents=None):
     from .queries import _MAX_CELLS, _MAX_RESULT_TEXT
     from .query_packages import _Table
     if type(value) is not BSLValueTable:
@@ -109,7 +116,10 @@ def _snapshot(value, budget):
         key = column.name.casefold()
         if key in names: raise ValueError('Duplicate external query column')
         names.add(key)
-        columns.append(_external_column(column))
+        output_column = _external_column(column)
+        if output_column.reference_binding is not None:
+            output_column.reference_binding.require_context(catalogs, documents)
+        columns.append(output_column)
         nullables.append(any(t is BSLType.NULL for t in column.value_type.types))
     rows = []
     for row in value.rows:
@@ -128,7 +138,7 @@ def _snapshot(value, budget):
     return _Table(tuple(columns), tuple(rows))
 
 
-def snapshot_sources(statements, parameters):
+def snapshot_sources(statements, parameters, catalogs=None, documents=None):
     """Capture each referenced parameter once, before any statement/database read."""
     result, budget = {}, [0, 0]
     for arm in syntax.selects(statements):
@@ -137,7 +147,7 @@ def snapshot_sources(statements, parameters):
             key = name.casefold()
             if key in result: continue
             if key not in parameters: raise ValueError('External query parameter is not set')
-            result[key] = _snapshot(parameters[key], budget)
+            result[key] = _snapshot(parameters[key], budget, catalogs, documents)
     return result
 
 
@@ -170,7 +180,8 @@ def _union_column(columns, enum_scope=None):
         descriptor = enum_scope.require_same(tuple(c.enum_descriptor for c in typed))
         identity = (descriptor.value_type.snapshot, descriptor.value_type.metadata_uuid)
     return replace(first, kind=kind, qualifiers=qualifiers, custom=None,
-                   reference_identity=identity, enum_descriptor=descriptor)
+                   reference_identity=identity, enum_descriptor=descriptor,
+                   reference_binding=typed[0].reference_binding)
 
 
 class _UnionPlan:

@@ -250,6 +250,9 @@ class _Plan:
                 column = replace(descriptor, name=projection.alias, field=None, explicit_alias=True)
             if column.kind in ('catalog_ref', 'document_ref', 'enum_ref'):
                 column = replace(column, reference_identity=self.reference_identity(expression))
+            if column.kind in ('catalog_ref', 'document_ref'):
+                from .query_reference_tables import bind_column
+                column = bind_column(column, catalogs, documents)
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)

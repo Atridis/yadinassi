@@ -48,6 +48,7 @@ class _Column:
     explicit_alias: bool = False
     reference_identity: object = None
     enum_descriptor: object = None
+    reference_binding: object = None
 
 
 def _field(manager, field, source_alias, section=None):
@@ -410,6 +411,9 @@ class BSLQueryResult(BSLObject):
     def unload(self):
         # Refuse the whole operation before creating an incorrectly untyped
         # dynamic column. Scalar descriptions derive from the admitted schema.
+        if any(column.reference_binding is not None for column in self._columns):
+            from .query_reference_tables import unload
+            return unload(self._columns, self._rows)
         descriptions = tuple(_description(column) for column in self._columns)
         table = BSLValueTable()
         for column, description in zip(self._columns, descriptions):

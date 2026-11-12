@@ -112,8 +112,15 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         owner = catalogs._metadata
         if manager._owner is not None and manager._owner is not owner:
             raise ValueError('Temporary table manager belongs to another metadata snapshot')
-        external = snapshot_sources(statements, parameters)
+        external = snapshot_sources(statements, parameters, catalogs, documents)
         tables = dict(manager._tables)
+        from .query_reference_tables import input_bindings, validate_view
+        bindings = input_bindings((*external.values(), *tables.values()), catalogs, documents)
+        if bindings:
+            composite = composite or any(b.kind == 'document_ref' for b in bindings)
+            view = (catalogs._context.backend.begin_query_read() if composite
+                    else _transaction_query_view(bindings[0].issuer))
+            validate_view(bindings, view)
         result = BSLArray()
         budget = [0, 0]
         condition_budget = [0, 0]
