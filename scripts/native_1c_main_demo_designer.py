@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import native_1c_main_demo_diagnostics as diagnostics
 
-SCHEMA = 'native-main-demo-designer-v2'
+SCHEMA = 'native-main-demo-designer-v3'
 VERSION = '8.3.27.1508'
 IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728'
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
@@ -179,7 +179,7 @@ def native_run(nonce):
     report = dict(schema=SCHEMA, nonce=nonce, status='failed', phase='inputs',
                   failure='invalid_input', input_sha256={}, source_sha256={},
                   platform_sha256={}, excluded_files=[MANIFEST],
-                  check_flags=list(CHECK_FLAGS), completed=[], diagnostics=diagnostics.empty())
+                  check_flags=list(CHECK_FLAGS), completed=[], diagnostics=diagnostics.empty(), channels=diagnostics.channels_empty())
     try:
         require(re.fullmatch('[0-9a-f]{32}', nonce) is not None and os.getuid() == 1000)
         report['input_sha256'] = inventory(ROOT)
@@ -192,9 +192,18 @@ def native_run(nonce):
         for phase, command in operations(root):
             report['phase'] = phase
             require(not (root / (phase + '.result')).exists())
-            code = subprocess.run(['timeout', '--signal=TERM', '--kill-after=5s', '120s', *command],
-                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                  stderr=subprocess.DEVNULL, timeout=135).returncode
+            # Native output remains in bounded-lived private tmpfs; never inherit
+            # the host stdout/stderr used for the validated report.
+            with (root / (phase + '.stdout')).open('xb') as out, (root / (phase + '.stderr')).open('xb') as err:
+                try:
+                    code = subprocess.run(['timeout', '--signal=TERM', '--kill-after=5s', '120s', *command],
+                                          stdin=subprocess.DEVNULL, stdout=out,
+                                          stderr=err, timeout=135).returncode
+                except subprocess.TimeoutExpired:
+                    out.flush(); err.flush()
+                    report['channels'] = diagnostics.capture(root, phase, None)
+                    raise
+            report['channels'] = diagnostics.capture(root, phase, code)
             if code != 0:
                 report['diagnostics'] = diagnostics.classify(root / (phase + '.log'), PLATFORM_FILES)
             require(code == 0, 'timeout' if code in (124, 137) else 'process_failed')
@@ -254,19 +263,22 @@ def validate_report(raw, nonce, hashes):
         raise DemoError('invalid_result') from None
     require(type(report) is dict and set(report) == {
         'schema', 'nonce', 'status', 'phase', 'failure', 'input_sha256',
-        'source_sha256', 'platform_sha256', 'excluded_files', 'check_flags', 'completed', 'diagnostics'}, 'invalid_result')
+        'source_sha256', 'platform_sha256', 'excluded_files', 'check_flags', 'completed', 'diagnostics', 'channels'}, 'invalid_result')
     require(report['schema'] == SCHEMA and report['nonce'] == nonce
             and report['input_sha256'] == hashes and report['source_sha256'] == SOURCE_SHA256
             and report['platform_sha256'] == {n: SOURCE_SHA256[n] for n in PLATFORM_FILES}
             and report['excluded_files'] == [MANIFEST] and report['check_flags'] == list(CHECK_FLAGS),
             'invalid_result')
+    require(diagnostics.channels_valid(report['channels']), 'invalid_result')
     require(diagnostics.valid(report['diagnostics'], len(PLATFORM_FILES)), 'invalid_result')
     require(type(report['completed']) is list and report['completed'] in
             [list(PHASES[:n]) for n in range(5)], 'invalid_result')
     if report['status'] == 'ok':
         require(report['phase'] == 'complete' and report['failure'] == 'none'
                 and report['completed'] == list(PHASES)
-                and report['diagnostics'] == diagnostics.empty(), 'invalid_result')
+                and report['diagnostics'] == diagnostics.empty()
+                and report['channels']['exit_code'] == 0
+                and report['channels']['channels'].get('result', {}).get('result') == 'zero', 'invalid_result')
     else:
         require(report['status'] == 'failed' and report['failure'] in FAILURES[1:]
                 and report['phase'] in ('inputs', *PHASES), 'invalid_result')

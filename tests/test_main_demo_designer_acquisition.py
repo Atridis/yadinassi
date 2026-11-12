@@ -21,7 +21,9 @@ class MainDemoDesignerTests(unittest.TestCase):
         return dict(schema=host.SCHEMA,nonce='a'*32,status='ok',phase='complete',failure='none',
             input_sha256={'fixture':'b'*64},source_sha256=host.SOURCE_SHA256,
             platform_sha256={n:host.SOURCE_SHA256[n] for n in host.PLATFORM_FILES},
-            excluded_files=[host.MANIFEST],check_flags=list(host.CHECK_FLAGS),completed=list(host.PHASES),diagnostics=host.diagnostics.empty())
+            excluded_files=[host.MANIFEST],check_flags=list(host.CHECK_FLAGS),completed=list(host.PHASES),diagnostics=host.diagnostics.empty(),channels=dict(exit_code=0,channels={
+                name:dict(state='read',bytes=1,encoding='utf8',lines=['[hidden]'],result='zero')
+                for name in host.diagnostics.CHANNELS}))
     def validate(self, value):
         return host.validate_report(json.dumps(value).encode(),'a'*32,{'fixture':'b'*64})
     def context(self):
@@ -230,3 +232,38 @@ class MainDemoDesignerTests(unittest.TestCase):
             self.assertEqual(host.diagnostics.classify(q,())['reason'],'unsafe_file')
             self.assertEqual(host.diagnostics.classify(p,()),
                              dict(state='classified',reason='none',codes=['unclassified'],file_ids=[]))
+
+    def test_channel_vocabulary_never_copies_unknown_tokens_or_paths(self):
+        text='Ошибка загрузки метаданных /private/name/file.xml token=receipt\nUnknown property INTERNALINFO user@example.com\nsecret_123 ABCDEFGH123456789 1234567890'
+        lines=host.diagnostics.sanitized_lines(text)
+        self.assertEqual(lines[0],'[hidden]')
+        self.assertIn('unknown property internalinfo',lines[1])
+        for value in ('private','name','example','secret_123','1234567890','ABCDEFG'):
+            self.assertNotIn(value,' '.join(lines))
+
+    def test_channel_empty_and_dump_result_are_distinct(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'result';p.write_bytes(b'')
+            self.assertEqual(host.diagnostics.channel(p)['state'],'empty')
+            p.write_bytes(b'1');r=host.diagnostics.channel(p)
+            self.assertEqual(r['result'],'nonzero');self.assertEqual(r['bytes'],1)
+            p.write_bytes('0'.encode('utf-16'))
+            self.assertEqual(host.diagnostics.channel(p)['encoding'],'utf16')
+            self.assertEqual(host.diagnostics.channel(p)['result'],'zero')
+
+    def test_channels_validator_rejects_raw_text_and_invalid_exit(self):
+        r=self.report()['channels'];self.assertTrue(host.diagnostics.channels_valid(r))
+        for code in (True,256,-129,'1'):
+            bad=copy.deepcopy(r);bad['exit_code']=code
+            self.assertFalse(host.diagnostics.channels_valid(bad))
+        for line in ('/private/file','password=secret','unknown secretword','unknown\nproperty'):
+            bad=copy.deepcopy(r);bad['channels']['out']['lines']=[line]
+            self.assertFalse(host.diagnostics.channels_valid(bad))
+
+    def test_channel_caps_lines_and_bytes_without_export_on_failure(self):
+        self.assertLessEqual(len(host.diagnostics.sanitized_lines('error\n'*100)),3)
+        self.assertTrue(all(len(x)<=240 for x in host.diagnostics.sanitized_lines('error '*1000)))
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'out';p.write_bytes(b'x'*(host.diagnostics.MAX_BYTES+1))
+            r=host.diagnostics.channel(p)
+            self.assertEqual(r['state'],'budget');self.assertEqual(r['lines'],[])
