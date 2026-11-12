@@ -21,11 +21,12 @@ def validate(value, identifiers):
         raise ValueError('diagnostic detail')
     return value
 
-def collect(root, full, sanitizer):
+def collect(root, full, sanitizer, *, label="enterprise"):
+    if label not in ("enterprise","check"): raise ValueError("diagnostic origin")
     # Caller supplies its exclusive TemporaryDirectory root, never a path from1C.
     # secure_bytes rejects links/nonregular files and enforces read/stat bounds.
     try:
-        raw=full.secure_bytes(root/'enterprise.log',MAX_LOG)
+        raw=full.secure_bytes(root/(label+'.log'),MAX_LOG)
         summary=sanitizer.summarize_text(sanitizer.native_text(raw))
         value={key:summary[key] for key in empty()}
         return validate(value,sanitizer.IDENTIFIERS)

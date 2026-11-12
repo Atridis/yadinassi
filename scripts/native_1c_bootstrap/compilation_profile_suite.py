@@ -11,7 +11,7 @@ import run_stage
 from compilation_profile_packet import fixture
 from pathlib import Path
 import full_suite as full
-from compilation_profile_packet import failure_diagnostics
+from compilation_profile_packet import failure_diagnostics, loaded_probe
 from compilation_profile_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available
 
 PROFILE='compilation-profile-v1'
@@ -23,13 +23,13 @@ INPUT_FILES={
     'scripts/native_1c_bootstrap/run_compilation_profile_stage.py':'bootstrap/run_stage.py',
     'scripts/native_1c_bootstrap/compilation_profile_suite.py':'bootstrap/compilation_profile_suite.py',
     **{'scripts/compilation_profile_packet/'+name:'bootstrap/compilation_profile_packet/'+name
-       for name in ('__init__.py','route.py','fixture.py','failure_diagnostics.py',*PACKET_HASHES)},
+       for name in ('__init__.py','route.py','fixture.py','failure_diagnostics.py','loaded_probe.py',*PACKET_HASHES)},
     **{'scripts/catalog_object_behavior/'+name:'bootstrap/catalog_object_behavior/'+name
        for name in ('__init__.py','route.py','fixture.py','packet.py','Catalog.xml','SOURCE.json',
                     'generated/setup.json','generated/Catalog.xml','generated/observe.bsl')},
 
 }
-PHASES=('prerequisites','inputs','build','install','enterprise','markers','final')
+PHASES=('prerequisites','inputs','build','install','loaded_source','check_config','enterprise','markers','final')
 
 
 def input_hashes(inputs):
@@ -43,6 +43,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'prepared_sha256':None,'config_verified':False,'event1_done':False,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'output_sha256':None,'output_size':None,
+            'loaded_sources':loaded_probe.empty_sources(),'check_config':loaded_probe.empty_check(),
             'record_count':None,'native_error':failure_diagnostics.empty(),'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
@@ -154,13 +155,32 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
         designer('update',['/UpdateDBCfg'])
         if dump_files(config)!=expected:raise full.FullError('module_mismatch')
         report['config_verified']=True
+        phase='loaded_source'
+        loaded=root/'loaded';full.absent(loaded);loaded.mkdir()
+        designer('loaded',['/DumpConfigToFiles',str(loaded),'-Format','Hierarchical'])
+        report['loaded_sources']=loaded_probe.inspect_sources(loaded,expected,full)
+        if not all(item['matched'] is True for item in report['loaded_sources'].values()):raise full.FullError('module_mismatch')
+        full.absent(root/'check.log',root/'check.result',root/'check-console.log')
+        phase='check_config'
+        check=report['check_config'];check['status']='failed'
+        try:
+            full.run_process(platform.command('DESIGNER')+['/CheckConfig','-ThickClientManagedApplication',
+                '/Out',str(root/'check.log'),'/DumpResult',str(root/'check.result')],
+                root,root/'check-console.log',120,require_clean_tree=True)
+            check['process_success']=True
+        finally:
+            check['result']=loaded_probe.result_state(root/'check.result',full)
+        if check['result']!='zero':raise full.FullError('invalid_dump_result')
+        if not full.native_processes_quiet(platform.executable):raise full.FullError('process_failed')
+        check['status']='passed'
+        phase='build'
         src=root/'src';src.mkdir()
         for relative,raw in prepared.items():
             target=src/relative;target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(full.generated_module(raw) if relative.endswith('.bsl') else raw)
         try:route.validate_prepared(_dump_files(src))
         except ValueError:raise full.FullError('module_mismatch') from None
-        phase='build';epf=root/'CompilationProbe.epf'
+        epf=root/'CompilationProbe.epf'
         full.run_process(platform.command('DESIGNER')+[
             '/LoadExternalDataProcessorOrReportFromFiles',str(src/'Launcher.xml'),str(epf),
             '/Out',str(root/'build.log'),'/DumpResult',str(root/'build.result')],
@@ -226,7 +246,8 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
     except Exception as error:
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
-        if phase=='enterprise': report['native_error']=failure_diagnostics.collect(root,full,diagnostics)
+        if phase in ('enterprise','check_config'):
+            report['native_error']=failure_diagnostics.collect(root,full,diagnostics,label='check' if phase=='check_config' else 'enterprise')
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
     return report
 

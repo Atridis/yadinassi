@@ -70,9 +70,14 @@ class AcquisitionContracts(unittest.TestCase):
         text=(ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py').read_text(encoding='utf-8')
         self.assertIn("full.require_zero_result(root/(label+'.result'),0)",text)
         self.assertIn("full.require_zero_result(root/'build.result',0)",text)
-        for label in ('before','load','update'):self.assertIn("designer('"+label+"'",text)
+        for label in ('before','load','update','loaded'):self.assertIn("designer('"+label+"'",text)
         self.assertNotIn('/DumpExternalDataProcessorOrReportToFiles',text)
-        self.assertEqual(text.count('/DumpConfigToFiles'),1)
+        self.assertEqual(text.count('/DumpConfigToFiles'),2)
+        self.assertIn("designer('before',['/DumpConfigToFiles',str(before)",text)
+        self.assertIn("designer('loaded',['/DumpConfigToFiles',str(loaded)",text)
+        self.assertLess(text.index("designer('before'"),text.index("designer('load'"))
+        self.assertLess(text.index("designer('update'"),text.index("designer('loaded'"))
+        self.assertLess(text.index("designer('loaded'"),text.index("phase='check_config'"))
     def test_18_baseline_source_preserved(self):
         text=(ROOT/'scripts/compilation_profile_packet/fixture.py').read_text(encoding='utf-8')
         self.assertIn('original._baseline(files,setup)',text)
@@ -181,6 +186,8 @@ class AcquisitionContracts(unittest.TestCase):
                      output_sha256=hashlib.sha256(raw).hexdigest(),output_size=len(raw),record_count=16)
         stage.update({name:True for name in host.FLAGS})
         stage['process_diagnostics'].update(stage='after_exit',reason='none')
+        stage['loaded_sources']={p:dict(expected_sha256='a'*64,actual_sha256='a'*64,matched=True) for p in suite.loaded_probe.PATHS}
+        stage['check_config']=dict(status='passed',result='zero',process_success=True)
         result=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce='a'*32,
                     report=dict(status='ok',native_tests_completed=True,stage3=stage),
                     outputs=[dict(name='compilation_profile.out',size=len(raw),sha256=hashlib.sha256(raw).hexdigest(),data_b64=base64.b64encode(raw).decode())])
@@ -299,3 +306,100 @@ class AcquisitionContracts(unittest.TestCase):
         value['report']['stage3']['native_error']['category']='unknown'
         with self.assertRaises(host.FormError):
             host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def loaded_fixture(self):
+        from compilation_profile_packet import loaded_probe
+        expected={p:b'// source\n' for p in loaded_probe.PATHS}
+        return loaded_probe,expected
+
+    def test_36_loaded_source_bom_crlf_only(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            for path in probe.PATHS:
+                p=root/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'\xef\xbb\xbf// source\r\n')
+            observed=probe.inspect_sources(root,expected,suite.full)
+            self.assertTrue(all(x['matched'] for x in observed.values()))
+            probe.validate(observed,probe.empty_check())
+
+    def test_37_loaded_source_drift_preserved(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            for path in probe.PATHS:
+                p=root/path;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(b'// drift\n')
+            observed=probe.inspect_sources(root,expected,suite.full)
+            self.assertTrue(all(x['matched'] is False and x['actual_sha256'] is not None for x in observed.values()))
+
+    def test_38_loaded_missing_is_not_accepted(self):
+        import tempfile
+        _,suite=self.adapters();probe,expected=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            observed=probe.inspect_sources(Path(tmp),expected,suite.full)
+            self.assertTrue(all(x['matched'] is False and x['actual_sha256'] is None for x in observed.values()))
+            self.assertFalse(probe.accepted(observed,probe.empty_check()))
+
+    def test_39_loaded_inventory_and_digest_closed(self):
+        probe,_=self.loaded_fixture()
+        bad=probe.empty_sources();bad['secret/path']=bad.pop(probe.PATHS[0])
+        with self.assertRaises(ValueError):probe.validate(bad,probe.empty_check())
+        bad=probe.empty_sources();bad[probe.PATHS[0]]['actual_sha256']='secret'
+        with self.assertRaises(ValueError):probe.validate(bad,probe.empty_check())
+
+    def test_40_result_state_bounded(self):
+        import tempfile
+        _,suite=self.adapters();probe,_=self.loaded_fixture()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            path=Path(tmp)/'check.result'
+            for raw,want in ((b'0','zero'),('0'.encode('utf-16'),'zero'),(b'1','nonzero'),(b'-3','nonzero'),(b'private text','invalid'),(b'0'*129,'invalid')):
+                with self.subTest(raw=raw[:8]):
+                    path.write_bytes(raw);self.assertEqual(probe.result_state(path,suite.full),want)
+
+    def test_41_check_requires_source_admission(self):
+        probe,_=self.loaded_fixture()
+        with self.assertRaises(ValueError):probe.validate(probe.empty_sources(),dict(status='passed',result='zero',process_success=True))
+
+    def test_42_check_nonzero_cannot_pass(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['check_config']['result']='nonzero'
+        with self.assertRaises(host.FormError):host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_43_success_requires_both_gates(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        value['report']['stage3']['check_config']=suite.loaded_probe.empty_check()
+        with self.assertRaises(host.FormError):host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_44_enterprise_failure_keeps_earlier_gates(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='enterprise')
+        value['report'].update(status='failed',native_tests_completed=False);value['outputs']=[]
+        with self.assertRaises(host.FormError) as caught:host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        self.assertEqual(caught.exception.native_failure['check_config']['status'],'passed')
+        self.assertEqual(caught.exception.native_failure['loaded_sources'],stage['loaded_sources'])
+        import copy
+        for phase in ('build','enterprise','markers','final','check_config','inputs','install','loaded_source'):
+            with self.subTest(phase=phase):
+                changed=copy.deepcopy(value);candidate=changed['report']['stage3'];candidate['failure_phase']=phase
+                if phase in ('build','enterprise','markers','final'):
+                    candidate['check_config']=suite.loaded_probe.empty_check()
+                elif phase=='check_config':
+                    candidate['loaded_sources']=suite.loaded_probe.empty_sources()
+                    candidate['check_config']=suite.loaded_probe.empty_check()
+                # Early stages retain passed check from the original and must refuse it.
+                with self.assertRaises(host.FormError) as rejected:
+                    host.validate_envelope(self.wire(changed),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+                self.assertFalse(hasattr(rejected.exception,'native_failure'))
+
+    def test_45_designer_probe_is_narrow_and_before_enterprise(self):
+        source=(ROOT/'scripts/native_1c_bootstrap/compilation_profile_suite.py').read_text(encoding='utf-8')
+        self.assertIn("['/CheckConfig','-ThickClientManagedApplication'",source)
+        self.assertLess(source.index("phase='loaded_source'"),source.index("phase='check_config'"))
+        self.assertLess(source.index("phase='check_config'"),source.index("phase='enterprise'"))
+        self.assertIn("if check['result']!='zero':raise",source)
+        self.assertNotIn("'-ThinClient'",source)
+        self.assertIn("full.absent(root/'check.log',root/'check.result',root/'check-console.log')",source)
+        self.assertLess(source.index("phase='build'"),source.index("src=root/'src'"))
+
+        self.assertLess(source.index("full.absent(root/'check.log'"),source.index("phase='check_config'"))
