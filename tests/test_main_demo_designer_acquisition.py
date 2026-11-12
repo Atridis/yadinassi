@@ -141,7 +141,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         self.assertIn('branches: [codex/main-demo-designer-reviewed]',workflow)
         self.assertNotIn('pull_request:',workflow);self.assertNotIn('pull_request_target:',workflow)
         self.assertIn('persist-credentials: false',workflow)
-        self.assertEqual(workflow.count("${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}"), 2)
+        self.assertEqual(workflow.count("${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}"), 3)
 
     def test_bootstrap_private_display_and_bus(self):
         shell=(ROOT/'scripts/native_1c_main_demo_designer.sh').read_text()
@@ -181,3 +181,13 @@ class MainDemoDesignerTests(unittest.TestCase):
                 ('GITHUB_WORKFLOW_SHA','b'*40),('NATIVE_DISPATCH_INPUTS','null')):
             bad=dict(c);bad[key]=value
             with self.subTest(key=key),self.assertRaises(ValueError):policy.admission(e,bad)
+
+    def test_execution_step_supplies_its_own_admission_environment(self):
+        workflow = (ROOT/'.github/workflows/native-1c-main-demo-designer.yml').read_text()
+        steps = workflow.split('      - name: ')
+        execution, = [step for step in steps if '--execute-approved-image' in step]
+        env = execution.split('        env:\n', 1)[1].split('        run:', 1)[0]
+        self.assertIn('          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}', env)
+        self.assertIn("          NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}", env)
+        self.assertIn('          GHCR_USER: ${{ github.actor }}', env)
+        self.assertIn('          GHCR_TOKEN: ${{ github.token }}', env)
