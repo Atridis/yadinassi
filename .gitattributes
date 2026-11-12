@@ -265,3 +265,9 @@ tests/fixtures/native_inventory_period/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Exact authored enum-form acquisition sources on every checkout platform.
+scripts/inventory_enum_forms_packet/** text eol=lf
+scripts/native_1c_bootstrap/owned_enum_forms_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_owned_enum_forms_stage.py text eol=lf
+scripts/native_1c_owned_enum_forms_probe.sh text eol=lf

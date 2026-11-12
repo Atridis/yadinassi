@@ -267,3 +267,49 @@ class EnumFormsRouteTests(unittest.TestCase):
                 host.validate_envelope(self.encode(bad),nonce,hashes,validator)
         bad=copy.deepcopy(envelope);bad['report']['stage3']['lifecycle_events'][0]['code']='observed'
         with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
+
+
+class EnumFormsCheckoutTests(unittest.TestCase):
+    def test_autocrlf_checkout_preserves_every_authored_asset(self):
+        import hashlib, shutil, subprocess, tempfile
+        from scripts.inventory_enum_forms_packet.assets import ASSET_HASHES
+        if shutil.which('git') is None:
+            self.skipTest('git required for real checkout contract')
+        with tempfile.TemporaryDirectory() as temp:
+            repo=Path(temp)
+            def git(*args):
+                return subprocess.run(['git','-C',str(repo),*args],check=True,
+                                      stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            git('init','-q');git('config','core.autocrlf','true')
+            (repo/'.gitattributes').write_bytes((ROOT.parent.parent/'.gitattributes').read_bytes())
+            for name in ASSET_HASHES:
+                target=repo/'scripts/inventory_enum_forms_packet'/name
+                target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes((ROOT/name).read_bytes())
+            git('add','.gitattributes','scripts')
+            git('checkout-index','--all','--force')
+            for name,digest in ASSET_HASHES.items():
+                with self.subTest(name=name):
+                    self.assertEqual(hashlib.sha256((repo/'scripts/inventory_enum_forms_packet'/name).read_bytes()).hexdigest(),digest)
+
+    def test_install_failure_phases_are_closed_and_preserved(self):
+        import json, sys
+        sys.path.insert(0,str(ROOT.parent));sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
+        import native_1c_owned_enum_forms_profile as host
+        import owned_enum_forms_suite as stage
+        self.assertEqual(host.PHASES,stage.PHASES)
+        for phase in ('install_load','install_update','install_redump','install_material'):
+            report=stage.empty_report('a'*32)
+            report.update(status='failed',failure_kind='module_mismatch',failure_phase=phase)
+            envelope=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce='a'*32,
+                          report=dict(status='stage3_failed',native_tests_completed=False,stage3=report),outputs=[])
+            with self.subTest(phase=phase), self.assertRaises(host.FormError) as caught:
+                host.validate_envelope(json.dumps(envelope).encode(),'a'*32,{},
+                                       validator=lambda raw,**kwargs:json.loads(raw))
+            self.assertEqual(caught.exception.native_failure['failure_phase'],phase)
+            self.assertFalse(caught.exception.native_failure['completed'])
+        report['failure_phase']='private/arbitrary/path'
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(json.dumps(envelope).encode(),'a'*32,{},
+                                   validator=lambda raw,**kwargs:json.loads(raw))
+        self.assertFalse(hasattr(caught.exception,'native_failure'))

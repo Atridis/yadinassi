@@ -234,7 +234,7 @@ def export_artifact(root: Path, files: dict[str, bytes]) -> None:
         raise failure from None
 
 
-PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','configuration','final')
+PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','install_load','install_update','install_redump','install_material','configuration','final')
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified','lifecycle_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','roundtrip_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',

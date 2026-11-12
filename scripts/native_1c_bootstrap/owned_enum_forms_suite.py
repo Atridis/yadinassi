@@ -26,7 +26,7 @@ INPUT_FILES={
     **{'scripts/inventory_enum_forms_packet/'+name:'bootstrap/inventory_enum_forms_packet/'+name
        for name in ('__init__.py','route.py','records.py','assets.py','inputs.py','configuration.py','material.py',*PACKET_HASHES)},
 }
-PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','configuration','final')
+PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','install_load','install_update','install_redump','install_material','configuration','final')
 
 
 def dump_files(root):
@@ -128,12 +128,18 @@ def run_suite(platform,root,inputs,nonce):
         for name,raw in expected_configuration.items():
             path=config_source/name;path.parent.mkdir(parents=True,exist_ok=True)
             with path.open('xb') as stream:stream.write(raw)
-        phase='install'
+        phase='install_load'
         designer('load',['/LoadConfigFromFiles',str(config_source)])
+        phase='install_update'
         designer('update',['/UpdateDBCfg'])
+        phase='install_redump'
         after=root/'after';after.mkdir()
         designer('after',['/DumpConfigToFiles',str(after),'-Format','Hierarchical'])
-        material.verify_redump(expected_configuration,dump_files(after))
+        phase='install_material'
+        try:
+            material.verify_redump(expected_configuration,dump_files(after))
+        except ValueError:
+            raise full.FullError('module_mismatch') from None
         report['config_verified']=True
         src=root/'src';src.mkdir()
         for relative,raw in prepared.items():
