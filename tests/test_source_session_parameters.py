@@ -168,3 +168,75 @@ class SourceSessionTests(unittest.TestCase):
         _, second = self.run_source(self.cached_source())
         self.assertEqual(first, second)
         self.assertEqual(second.count('compute'), 1)
+
+
+class SourceFixedStructureSessionTests(unittest.TestCase):
+    def run_source(self, configuration):
+        output=[]
+        app=SourceApplication(configuration,output=output.append)
+        self.addCleanup(app.close)
+        app.start()
+        return output
+
+    def test_actual_assigned_structure(self):
+        output=self.run_source(package('SessionParameters.State=New FixedStructure("Main_,Corrections", "a", "b"); Message(SessionParameters.State.Main_);',kind='v8:FixedStructure'))
+        self.assertEqual(output,['a'])
+
+    def test_mutable_structure_rejected(self):
+        with self.assertRaises(BSLError):
+            self.run_source(package('SessionParameters.State=New Structure("Key",1);',kind='v8:FixedStructure'))
+
+    def test_no_invented_default(self):
+        with self.assertRaisesRegex(BSLError,'not set'):
+            self.run_source(package('If Names=Undefined Then Message(SessionParameters.State); EndIf;',kind='v8:FixedStructure'))
+
+    def test_lazy_handler_assigns_structure(self):
+        output=self.run_source(package('If Names=Undefined Then Message(SessionParameters.State.Key); Else SessionParameters.State=New FixedStructure("Key",42); EndIf;',kind='v8:FixedStructure'))
+        self.assertEqual(output,['42'])
+
+    def test_fixed_map_not_coerced(self):
+        with self.assertRaises(BSLError):
+            self.run_source(package('SessionParameters.State=New FixedMap(New Map);',kind='v8:FixedStructure'))
+
+    def test_client_access_not_granted(self):
+        with self.assertRaisesRegex(BSLError,'server application context'):
+            self.run_source(package('',kind='v8:FixedStructure',app='Procedure OnStart() Message(SessionParameters.State); EndProcedure'))
+
+
+class SourceUnboundedStringSessionTests(unittest.TestCase):
+    def configuration(self, code):
+        body='<v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>0</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers>'
+        return source(extra={'SessionParameters/State.xml':declaration('State',body),
+           'Ext/SessionModule.bsl':('Procedure SessionParametersSetting(Names)\n'+code+'\nEndProcedure').encode()})
+
+    def app(self, code):
+        app=SourceApplication(self.configuration(code),output=lambda _:None)
+        self.addCleanup(app.close)
+        return app
+
+    def test_unbounded_source_string_assigned(self):
+        self.assertTrue(self.app('SessionParameters.State="actual"; Message(SessionParameters.State);').start())
+
+    def test_no_default(self):
+        with self.assertRaisesRegex(BSLError,'not set'):
+            self.app('If Names=Undefined Then Message(SessionParameters.State); EndIf;').start()
+
+    def test_nonstring_rejected(self):
+        with self.assertRaises(BSLError):self.app('SessionParameters.State=42;').start()
+
+    def test_old_profile_stays_closed(self):
+        from yadinassi.configuration_session_parameters import read_session_parameters
+        files={f.path:f.content for f in self.configuration('').files}
+        with self.assertRaises(ValueError):read_session_parameters(files,['State'],set(),[])
+
+    def test_resource_limit_does_not_truncate(self):
+        import unittest.mock
+        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',4):
+            with self.assertRaisesRegex(BSLError,'resource limit'):
+                self.app('SessionParameters.State="abcde";').start()
+
+    def test_utf16_resource_limit(self):
+        import unittest.mock
+        with unittest.mock.patch('yadinassi.session_parameters._SOURCE_STRING_MAX_UNITS',3):
+            with self.assertRaisesRegex(BSLError,'resource limit'):
+                self.app('SessionParameters.State="😀😀";').start()

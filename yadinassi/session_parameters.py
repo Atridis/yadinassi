@@ -7,12 +7,13 @@ from .dates import BSLDate
 from .catalog_qualifiers import validate_string, normalize_number
 
 _UNSET=object()
+_SOURCE_STRING_MAX_UNITS=1048576
 
 
 class BSLSessionParameterMetadata(_MetadataObject):
     def __init__(self,definition):
         self._name=definition.name
-        self._description=(None if definition.kind == 'fixed_map' else
+        self._description=(None if definition.kind in ('fixed_map', 'fixed_structure') else
                            _scalar_description(definition.kind,definition.qualifiers))
 
     def get_member(self,name):
@@ -20,7 +21,7 @@ class BSLSessionParameterMetadata(_MetadataObject):
         if key in ('name','имя'): return self._name
         if key in ('type','тип'):
             if self._description is None:
-                raise ValueError('unsupported metadata field type: FixedMap description')
+                raise ValueError('unsupported metadata field type: fixed collection description')
             return self._description
         if key in ('fullname','полноеимя'):
             return HostFunction(name,lambda:'ПараметрСеанса.'+self._name)
@@ -85,13 +86,25 @@ class BSLSessionParameters(BSLObject):
         if definition.kind=='boolean':
             valid=type(value) is bool
         elif definition.kind=='string':
-            validate_string(value,definition.qualifiers[0]);valid=True
+            if definition.qualifiers[0] == 0:
+                if self._source_family is None:
+                    raise ValueError('unbounded session strings require source host')
+                if type(value) is not str:
+                    raise TypeError('session String required')
+                if len(value) > _SOURCE_STRING_MAX_UNITS or len(value.encode('utf-16-le')) > 2 * _SOURCE_STRING_MAX_UNITS:
+                    raise ValueError('source session String resource limit')
+            else:
+                validate_string(value,definition.qualifiers[0])
+            valid=True
         elif definition.kind=='number':
             valid=type(value) is Decimal and value.is_finite()
             if valid: valid=normalize_number(value,definition.qualifiers)==value
         elif definition.kind=='fixed_map':
             from .maps import BSLFixedMap
             valid=type(value) is BSLFixedMap
+        elif definition.kind=='fixed_structure':
+            from .structures import BSLFixedStructure
+            valid=type(value) is BSLFixedStructure
         else:
             valid=type(value) is BSLDate
             if valid:value.require_known()

@@ -223,3 +223,14 @@ no attachment, activation, mutation, filter evaluation, or implicit scratch
 creation. Existing databases are never opened or migrated. SafeMode blocks the
 read. The API shape follows the platform reference; this is not full native
 extension support or proof that a loaded configuration has no required extensions.
+
+Source session parameters accept exact `v8:FixedStructure` declarations and
+actual FixedStructure assignments in addition to scalar and FixedMap values.
+They retain the same owning-server-family and lazy-initialization rules; an unset
+value remains an error. Unknown types and unsupported collection TypeDescription
+queries remain explicit errors.
+
+Source-only String declarations may use `Length=0` with Variable allowed length.
+Assignments are bounded to 1,048,576 UTF-16 code units as a host resource limit,
+not truncated to that length. This opt-in does not expand the legacy database
+profile parser or invent an empty string default.
