@@ -41,7 +41,10 @@ Function Rows(Text, Params, Ordered=False)
 EndFunction
 Function Types(Text, Params)
     Try
-        T=ExecuteOwned(Text,Params).Unload(); D=T.Columns[0].ValueType;
+        T=ExecuteOwned(Text,Params).Unload();
+    Except Return "ERR"; EndTry;
+    If T.Count()>16 Then Raise "owned row bound"; EndIf;
+    D=T.Columns[0].ValueType;
         R=False; I=False; N=False; Other=0;
         For Each Kind In D.Types() Do
             If Kind=TypeOf(Params.R) Then R=True;
@@ -50,7 +53,6 @@ Function Types(Text, Params)
             Else Other=Other+1; EndIf;
         EndDo;
         Return "OK:"+Num(T.Count())+","+Bit(R)+Bit(I)+Bit(N)+","+Num(Other)+","+Bit(D.ContainsType(TypeOf(Params.R)))+Bit(D.ContainsType(TypeOf(Params.I)))+Bit(D.ContainsType(TypeOf(Null)));
-    Except Return "ERR"; EndTry;
 EndFunction
 Function NewDocument(Expense, Product, Store, Fixed)
     If Expense Then M=Documents.Issue; Else M=Documents.Receipt; EndIf;

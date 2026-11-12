@@ -85,3 +85,8 @@ class PolymorphicRecorderPacketTests(unittest.TestCase):
                       b'D.Types()',b'D.ContainsType',b'WHERE FALSE',b'ORDER BY S.Recorder DESC']:
             self.assertIn(token,raw)
         self.assertNotIn(b'ErrorDescription',raw)
+        types=raw.split(b'Function Types(',1)[1].split(b'EndFunction',1)[0]
+        self.assertEqual(types.count(b'Except'),1)
+        self.assertLess(types.index(b'EndTry;'),types.index(b'If T.Count()>16'))
+        self.assertLess(types.index(b'If T.Count()>16'),types.index(b'D=T.Columns[0].ValueType'))
+        self.assertLess(types.index(b'EndTry;'),types.index(b'D.Types()'))

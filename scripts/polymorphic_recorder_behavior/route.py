@@ -8,7 +8,7 @@ SCHEMA = 'native-1c-polymorphic-recorder-v1'
 COUNT = 8
 MAX_OUTPUT = 32768
 MAX_VALUE = 2048
-SOURCE_SHA256 = '46004d5e43e31f42e594a2212a065d998babfffa83f5f1d98fb8bdcff0aee84c'
+SOURCE_SHA256 = '22f0515106b3fd488068a30692e5b059207026c66bb83e9ed15478ded50a10b5'
 
 def _nonce(value):
     if type(value) is not str or re.fullmatch('[0-9a-f]{32}', value) is None:
@@ -24,6 +24,7 @@ def source():
     return raw
 
 def program(setup, nonce):
+    """Keep the acquisition signature; setup is unused by this owned observer."""
     _nonce(nonce)
     raw = source()
     marker = b'P=Setup();\n'
