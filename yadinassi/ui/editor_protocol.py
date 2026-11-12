@@ -13,7 +13,7 @@ from .protocol import (UIError, MAX_COUNTER, bounded_text, counter, decode_line,
 PROTOCOL = 'yadinassi-editor/0'
 _EVENTS = {'checkCard': {'reference'}, 'selectCatalog': {'catalog'}, 'create': set(), 'openCard': {'reference'},
            'change': {'control', 'value'}, 'command': {'control'}, 'closeCard': set(),
-           'page': {'offset', 'limit'}, 'close': set(), 'addRow': {'section'},
+           'page': {'offset', 'limit'}, 'filterRecords': {'query', 'order'}, 'refreshRecords': set(), 'close': set(), 'addRow': {'section'},
            'deleteRow': {'section', 'row'}, 'changeRow': {'section', 'row', 'value'}}
 
 
@@ -44,6 +44,10 @@ def validate_request(value):
             bounded_text(params['section'], 512)
             if event != 'addRow': uuid_text(params['row'], nonzero=True)
             if event == 'changeRow': decode_value(params['value'])
+        elif event == 'filterRecords':
+            bounded_text(params['query'], 512)
+            if len(params['query']) > 128 or type(params['order']) is not str or params['order'] not in ('code', 'description'):
+                raise UIError('invalid_message')
         elif event == 'page':
             counter(params['offset'])
             if type(params['limit']) is not int or not 1 <= params['limit'] <= 64:

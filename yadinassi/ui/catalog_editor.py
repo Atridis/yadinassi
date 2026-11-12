@@ -577,6 +577,9 @@ class CatalogEditorApplication:
         self.editor = None
         self.closed = False
         self.list_messages = ()
+        self.summary = None
+        self.query, self.order = '', 'code'
+        self.list_notice = ''
 
     def _inventory(self):
         view = self.backend.begin_read()
@@ -591,8 +594,21 @@ class CatalogEditorApplication:
 
     def _load(self):
         repository = CatalogRepository(self.backend, own_backend=False)
-        try: return repository.load(self.selected)
+        try:
+            summary = repository.load_summary(self.selected)
+            candidate = summary.select(query=self.query, order=self.order)
+            self.summary = summary
+            return candidate
         finally: repository.close()
+
+    def _list_state(self):
+        return self.selected, self.summary, self.view, self.page, self.query, self.order, self.list_notice
+
+    def _restore_list(self, state):
+        self.selected, self.summary, self.view, self.page, self.query, self.order, self.list_notice = state
+
+    def _preflight_list(self):
+        encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
 
     def _refresh_saved_list(self):
         """Authoritative read after confirmed Save, never another Write.
@@ -604,24 +620,21 @@ class CatalogEditorApplication:
         editor = self.editor
         if editor is None or editor.error or editor.save_state not in ('saved', 'unchanged'):
             return
+        previous = self._list_state()
         try:
             candidate = self._load()
             reference = editor._saved_reference()
             position = next((i for i, card in enumerate(candidate.cards) if card.reference == reference), None)
-            if position is None:
-                raise BackendError('not_found')
             limit = self.page[1]
-            page = ((position // limit) * limit, limit)
-            old_view, old_page = self.view, self.page
+            # A confirmed write may legitimately move outside the current filter.
+            # It must not become a pending write or be injected into the result.
+            page = (((position // limit) * limit) if position is not None else min(self.page[0], max(0, ((len(candidate.cards)-1)//limit)*limit)), limit)
+            present = any(card.reference == reference for card in self.summary.cards)
+            self.list_notice = (('Saved record is outside the current filter' if present else 'Saved record is no longer available') if position is None else '')
             self.view, self.page = candidate, page
-            try:
-                # Include the deepest wire envelope before declaring both the
-                # editor and its retained list refreshed successfully.
-                encode_line({'error': {'data': {'snapshot': self.snapshot()}}})
-            except BaseException:
-                self.view, self.page = old_view, old_page
-                raise
+            self._preflight_list()
         except Exception:
+            self._restore_list(previous)
             self.view = None
             editor.pending_refresh = True
             editor.save_state = 'committed'
@@ -631,12 +644,38 @@ class CatalogEditorApplication:
     def select(self, identity):
         if self.editor is not None: raise UIError('busy')
         self._schema(identity)
-        old = self.selected
-        self.selected = identity
-        try: self.view = self._load()
+        previous = self._list_state()
+        self.selected, self.query, self.order = identity, '', 'code'
+        try:
+            self.view = self._load()
+            self.page, self.list_notice = (0, 8), ''
+            self._preflight_list()
         except BaseException:
-            self.selected = old; raise
-        self.page = (0, 8)
+            self._restore_list(previous); raise
+
+    def filter_records(self, query, order):
+        if self.editor is not None or self.summary is None: raise UIError('busy')
+        candidate = self.summary.select(query=query, order=order)
+        previous = self._list_state()
+        try:
+            self.view, self.query, self.order = candidate, query, order
+            self.page, self.list_notice = (0, self.page[1]), ''
+            self._preflight_list()
+        except BaseException:
+            self._restore_list(previous); raise
+
+    def refresh_records(self):
+        if self.editor is not None or self.selected is None: raise UIError('busy')
+        previous = self._list_state()
+        try:
+            candidate = self._load()
+            limit = self.page[1]
+            offset = min(self.page[0], max(0, ((len(candidate.cards)-1)//limit)*limit))
+            self.view, self.page = candidate, (offset, limit)
+            self.list_notice = ''
+            self._preflight_list()
+        except BaseException:
+            self._restore_list(previous); raise
 
     def check_card(self, reference):
         self.list_messages = ()
@@ -681,6 +720,8 @@ class CatalogEditorApplication:
         if event != 'checkCard': self.list_messages = ()
         if event == 'checkCard': self.check_card(values['reference'])
         elif event == 'selectCatalog': self.select(values['catalog'])
+        elif event == 'filterRecords': self.filter_records(values['query'], values['order'])
+        elif event == 'refreshRecords': self.refresh_records()
         elif event == 'create': self.open()
         elif event == 'openCard': self.open(values['reference'])
         elif event == 'page':
@@ -705,7 +746,7 @@ class CatalogEditorApplication:
                     self.view = None
                     self.close()
                 else:
-                    self.view = self._load()
+                    self.refresh_records()
         elif event == 'close':
             if self.editor is not None:
                 self.editor.close()
@@ -720,6 +761,7 @@ class CatalogEditorApplication:
                  'catalogs': [] if self.closed or self.editor is not None else [{'id': str(schema.identity), 'name': schema.name} for schema in self._inventory()],
                  'list': self.view.page(*self.page) if self.view is not None and not self.closed else None,
                  'editor': self.editor.snapshot() if self.editor is not None else None,
+                 'listQuery': {'query': self.query, 'order': self.order, 'notice': self.list_notice},
                  'listCheck': {'available': bool(not self.closed and self.editor is None and self.view is not None
                      and any(str(s.identity) == self.selected and s.identity in self._active_forms
                              and s.name == 'Номенклатура' for s in self._inventory())),

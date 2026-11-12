@@ -25,6 +25,9 @@ function App(){
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
     [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
   const [recoveredDraft,setRecoveredDraft]=useState(null);
+  const [recordQuery,setRecordQuery]=useState(''),[recordOrder,setRecordOrder]=useState('code');
+  useEffect(()=>{setRecordQuery(snapshot?.state?.listQuery?.query||'');setRecordOrder(snapshot?.state?.listQuery?.order||'code');},
+    [snapshot?.state?.list?.catalog,snapshot?.state?.listQuery?.query,snapshot?.state?.listQuery?.order]);
   const draftRef=useRef(draft),recoveryRef=useRef(null);draftRef.current=draft;recoveryRef.current=recoveredDraft;
   const inputBlocked=busy||Boolean(recoveredDraft);
   const [selection,setSelection]=useState({catalog:null,records:[]});
@@ -182,6 +185,13 @@ function App(){
           <button disabled={navigationLocked||selection.records.length!==0} onClick={()=>checkSelected(true)}>Проверить без выбора</button></>}
           <span class="selection-count" aria-label="Selected record count" aria-live="polite">{selection.records.length} selected</span>
         </div>
+        <div class="list-toolbar" role="search" aria-label="Search records">
+          <input type="search" aria-label="Search records" maxLength={128} disabled={navigationLocked} value={recordQuery} onInput={event=>setRecordQuery(event.currentTarget.value)}/>
+          <select aria-label="Record order" disabled={navigationLocked} value={recordOrder} onChange={event=>setRecordOrder(event.currentTarget.value)}><option value="code">Code</option><option value="description">Description</option></select>
+          <button disabled={navigationLocked} onClick={()=>run('filterRecords',{query:recordQuery,order:recordOrder})}>Search records</button>
+          <button disabled={navigationLocked} onClick={()=>run('refreshRecords')}>Refresh records</button>
+        </div>
+        {snapshot?.state?.listQuery?.notice&&<p role="status">{snapshot.state.listQuery.notice}</p>}
         {editor&&<p class="preview-note">Last confirmed records · updated after Save</p>}
         {listCheck.messages.length>0&&<div role="status" class="notice" aria-label="Результат проверки карточки">
           {listCheck.messages.map((message,index)=><div key={index}>{message.field&&<strong>{message.field}: </strong>}<span>{message.text}</span></div>)}
