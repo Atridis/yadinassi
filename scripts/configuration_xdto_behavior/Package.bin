@@ -1,0 +1,4 @@
+<package xmlns="http://v8.1c.ru/8.1/xdto" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:t="urn:owned:records" targetNamespace="urn:owned:records">
+<objectType name="Child"><property name="Label" type="xs:string"/></objectType>
+<objectType name="Record"><property name="Title" type="xs:string"/><property name="Amount" type="xs:decimal" lowerBound="0"/><property name="Child" type="t:Child" lowerBound="0" nillable="true"/><property name="Items" type="t:Child" lowerBound="0" upperBound="-1"/></objectType>
+</package>

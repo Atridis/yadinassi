@@ -1,0 +1,1 @@
+<package xmlns="http://v8.1c.ru/8.1/xdto" xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:owned:records"><valueType name="Code" base="xs:string" variety="Atomic"/><valueType name="AmountValue" base="xs:decimal" variety="Atomic"/><objectType name="Child"><property name="Label" type="xs:string"/></objectType></package>
