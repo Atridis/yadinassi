@@ -18,7 +18,8 @@ export function mountApplication(environment, root, exchange = null) {
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const reportPanel=el('section');
   const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
-    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))));
+    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))),
+    (method,params)=>perform(method,params));
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -382,7 +383,9 @@ export function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
-    status = result.error ? `Application: ${result.error}` : '';
+    status = result.error === 'form_capacity'
+      ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
+      : result.error ? `Application: ${result.error}` : '';
     const fresh = []; let removedActive = false;
     for (const [id, entry] of mounts) if (!client.state.sessions.some(session => session.id === id)) {
       entry.panel.remove(); entry.tab.remove(); mounts.delete(id); if (active === id) { active = null; removedActive = true; }
@@ -425,7 +428,10 @@ export function mountApplication(environment, root, exchange = null) {
   }
   async function perform(method,params) {
     try { return await client.request(method,params); }
-    catch { status = 'Application connection failed.'; paint(); }
+    catch(error) {
+      if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
+      status = 'Application connection failed.'; paint();
+    }
     finally { paint(); }
   }
   function openForm(entry, record = null) {

@@ -114,6 +114,14 @@ Posted and movements in one root operation. Undo posting clears its movements.
 An Issue that exceeds available stock is refused by the example's authored
 handler. Catalog save refreshes the selected list without replacing sibling drafts.
 
+Object forms currently admit at most 32 rows per table. Storage and read-only
+report limits are separate: a valid saved document can exceed this form bound.
+Opening such a document is refused without truncating its lines; the current
+creation-failure path locks the UI connection. Copy unsaved sibling edits before
+closing that host and reopening the base. A nonterminal, preflight capacity
+message is a follow-up UX task, not
+implemented by the statement paging extension.
+
 Document close compares the complete authoritative typed image and pending
 receipt, not the example's local Dirty flag. An uncertain or committed-but-not-
 refreshed operation stays locked and uses its original receipt; the UI never
@@ -126,3 +134,14 @@ come from one snapshot. Unsaved form inputs are not included, report reading
 does not resolve an operation, and pending receipts block reports. Changing form
 state clears an old projection; changing period controls never relabels the old
 result. Large results are refused as a whole, not silently truncated.
+
+## Explicit period statement grant
+
+The example additionally declares `StockStatement` (`BalanceAndTurnovers`) with
+source-bound `None`, `Day`, `Month` periodicities and exact Product/Warehouse
+catalog-dimension filter identities. The original three report declarations
+remain unchanged and remain valid without this extension. Only the new report
+accepts these closed children; no profile, database format, posting command or
+BSL authority is widened. See [the report contract](inventory-application-reports.md#source-declared-stock-statements)
+for typed filters, same-lease admission, date bounds, sparse rows and detached
+read-only results.

@@ -20,7 +20,9 @@ FORMAT_VERSION = 15
 MANIFEST = 'InventoryApplication.xml'
 NAMESPACE = 'urn:yadinassi:inventory-application:1'
 MODES = ('Write', 'Post', 'UndoPosting')
-VIEWS = ('Movements', 'Balance', 'Turnovers')
+VIEWS = ('Movements', 'Balance', 'Turnovers', 'BalanceAndTurnovers')
+PERIODICITIES = ('None', 'Day', 'Month')
+MAX_REPORT_FILTERS = 16
 _M = '{' + xml.MD + '}'
 _N = '{' + NAMESPACE + '}'
 
@@ -34,11 +36,20 @@ class InventoryCommandGrant:
 
 
 @dataclass(frozen=True, slots=True)
+class InventoryReportFilterGrant:
+    dimension: str
+    dimension_id: UUID
+    catalog_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
 class InventoryReportGrant:
     name: str
     register: str
     register_id: UUID
     view: str
+    periodicities: tuple[str, ...] = ()
+    filters: tuple[InventoryReportFilterGrant, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +148,39 @@ def _command_grants(node, definition, source):
     return grants
 
 
+def _report_options(node, register, view):
+    if view != 'BalanceAndTurnovers':
+        if len(node):
+            raise ValueError('legacy report options are not granted')
+        return (), ()
+    dimensions = {f.name: f for f in register.dimensions}
+    periodicities, filters, seen = [], [], set()
+    for child in node:
+        if len(child) or not _space(child.text) or not _space(child.tail):
+            raise ValueError('closed statement option required')
+        if child.tag == _N+'Periodicity':
+            value = child.get('name')
+            if (set(child.attrib) != {'name'} or value not in PERIODICITIES
+                    or value in periodicities or filters):
+                raise ValueError('explicit unique statement periodicity required')
+            periodicities.append(value)
+        elif child.tag == _N+'Filter':
+            field = dimensions.get(child.get('dimension'))
+            if (set(child.attrib) != {'dimension','dimensionId','catalogId'}
+                    or field is None or field.kind != 'catalog_ref'
+                    or child.get('dimensionId') != str(field.identity)
+                    or child.get('catalogId') != str(field.target_catalog_id)
+                    or field.identity in seen or len(filters) >= MAX_REPORT_FILTERS):
+                raise ValueError('exact unique catalog dimension filter required')
+            seen.add(field.identity)
+            filters.append(InventoryReportFilterGrant(field.name, field.identity, field.target_catalog_id))
+        else:
+            raise ValueError('unknown statement option')
+    if not periodicities:
+        raise ValueError('statement periodicity grant required')
+    return tuple(periodicities), tuple(filters)
+
+
 def _manifest(raw, forms, source, registers):
     root, _ = xml._parse(raw)
     if (root.tag != _N+'InventoryApplication' or root.attrib != {'version':'1'}
@@ -167,7 +211,7 @@ def _manifest(raw, forms, source, registers):
     report_names = set(); report_views = set(); reports = []
     for node in reports_node:
         if (node.tag != _N+'Report' or set(node.attrib) != {'name','register','registerId','view'}
-                or len(node) or not _space(node.text) or not _space(node.tail)):
+                or not _space(node.text) or not _space(node.tail)):
             raise ValueError('closed inventory report grant required')
         name = xml._name(node.get('name', '')); register = registry.get(node.get('register'))
         view = node.get('view')
@@ -176,7 +220,8 @@ def _manifest(raw, forms, source, registers):
                 or (register.identity,view) in report_views):
             raise ValueError('exact unique inventory register report required')
         report_names.add(name.casefold()); report_views.add((register.identity,view))
-        reports.append(InventoryReportGrant(name,register.name,register.identity,view))
+        periodicities, filters = _report_options(node, register, view)
+        reports.append(InventoryReportGrant(name,register.name,register.identity,view,periodicities,filters))
     return tuple(commands), tuple(reports)
 
 

@@ -1394,38 +1394,94 @@ const keys = (v,names) => v !== null && typeof v === 'object' && !Array.isArray(
   Object.keys(v).length === names.length && names.every(n => Object.hasOwn(v,n));
 const text = (v,n=1152) => typeof v === 'string' && v.length <= n*2 && [...v].length <= n &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(v);
-const views = ['Movements','Balance','Turnovers'];
+const views = ['Movements','Balance','Turnovers','BalanceAndTurnovers'];
+const statement = value => value?.view==='BalanceAndTurnovers';
+const ticket = (v,prefix) => typeof v==='string' && new RegExp('^'+prefix+'-[0-9a-f]{32}-[1-9][0-9]{0,15}$').test(v);
+const rowToken = value => typeof value==='string' && /^[0-9a-f]{32}$/.test(value);
+const safe = state => state?.kind!=='closed' && !state?.choice && !state?.uncertain && !state?.posting?.some(p=>['uncertain','committed'].includes(p.state));
 const date = value => {
   if (!text(value,19) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(value)) return false;
   const [year,month,day,hour,minute,second]=value.match(/\d+/g).map(Number);
   const leap=year%4===0 && (year%100!==0 || year%400===0);
   return year>=1 && month>=1 && month<=12 && day>=1 && day<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][month-1] && hour<24 && minute<60 && second<60;
 };
-function validReportRequest(params, state) {
-  if (!keys(params,['report','at','start','end']) || !state?.reports?.some(r=>r.id===params.report) ||
-      state.kind==='closed' || state.choice || state.uncertain || state.posting?.some(p=>['uncertain','committed'].includes(p.state))) return false;
-  const view=state.reports.find(r=>r.id===params.report).view;
-  return view==='Movements' ? params.at===null && params.start===null && params.end===null
-    : view==='Balance' ? date(params.at) && params.start===null && params.end===null
-    : params.at===null && date(params.start) && date(params.end) && params.start<=params.end;
+function filterValues(values,declared) {
+  return Array.isArray(values) && values.length===declared.filters.length && values.every((v,i)=>
+    keys(v,['id','mode','text']) && v.id===declared.filters[i].id && ['all','empty','selected'].includes(v.mode) && text(v.text) &&
+    (v.mode!=='all' || v.text==='') && (v.mode!=='empty' || v.text==='(empty reference)'));
 }
-function validateReports(state, previous) {
+function setupValid(setup,reports) {
+  const declared=reports.find(r=>r.id===setup?.report);
+  if(!keys(setup,['report','ticket','filters','choice']) || !statement(declared) || !ticket(setup.ticket,'setup') || !filterValues(setup.filters,declared))return false;
+  const choice=setup.choice;if(choice===null)return true;
+  if(!keys(choice,['filter','ticket','code','rows','error']) || !declared.filters.some(f=>f.id===choice.filter) || !ticket(choice.ticket,'choice') || !text(choice.code,64) ||
+     ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length>32 || choice.error!==null && choice.rows.length)return false;
+  const seen=new Set();return choice.rows.every(row=>{
+    if(!keys(row,['choice','code','description']) || !rowToken(row.choice) || seen.has(row.choice) || !text(row.code,64) || !text(row.description,1024))return false;
+    seen.add(row.choice);return true;
+  });
+}
+function validReportRequest(params,state) {
+  const declared=state?.reports?.find(r=>r.id===params?.report), extra=statement(declared)?['periodicity','setup']:[];
+  if (!keys(params,['report','at','start','end',...extra]) || !declared || !safe(state)) return false;
+  const bounds=declared.view==='Movements' ? params.at===null && params.start===null && params.end===null
+    : declared.view==='Balance' ? date(params.at) && params.start===null && params.end===null
+    : params.at===null && date(params.start) && date(params.end) && params.start<=params.end;
+  return bounds && (!statement(declared) || declared.periodicities.includes(params.periodicity) &&
+    params.start>='1900-01-01T00:00:00' && params.end<='2099-12-31T23:59:59' &&
+    state.reportSetup?.report===params.report && state.reportSetup.ticket===params.setup && !state.reportSetup.choice);
+}
+function validReportAction(method,params,state) {
+  if(!safe(state))return false;
+  if(method==='application.reportPage'){
+    const page=state?.report?.page;
+    return keys(params,['snapshot','cursor']) && !!page && page.snapshot===params.snapshot && [page.cursor,page.previous,page.next].includes(params.cursor) && params.cursor!==null;
+  }
+  if(method!=='application.reportSetup')return false;
+  const declared=state?.reports?.find(r=>r.id===params?.report);if(!statement(declared))return false;
+  if(params.action==='open')return keys(params,['report','action']);
+  const setup=state.reportSetup;
+  if(!setup || setup.report!==params.report || setup.ticket!==params.ticket)return false;
+  const base=['report','ticket','action'];
+  if(['begin','clear','empty'].includes(params.action))return keys(params,[...base,'filter']) && setup.choice===null && declared.filters.some(f=>f.id===params.filter);
+  if(!setup.choice || setup.choice.ticket!==params.choice)return false;
+  if(params.action==='filter')return keys(params,[...base,'choice','code']) && text(params.code,64);
+  if(params.action==='cancel')return keys(params,[...base,'choice']);
+  return params.action==='apply' && keys(params,[...base,'choice','value']) && setup.choice.error===null && setup.choice.rows.some(r=>r.choice===params.value);
+}
+function pageValid(page,rows) {
+  if(!keys(page,['snapshot','cursor','previous','next','offset','total']) || !/^report-[A-Za-z0-9_-]{32}-[1-9][0-9]{0,15}$/.test(page.snapshot) ||
+     !Number.isSafeInteger(page.offset) || !Number.isSafeInteger(page.total) || page.offset<0 || page.offset>page.total || page.total>1000 || rows.length>50 ||
+     page.offset+rows.length>page.total || page.total>0 && !rows.length || (page.previous===null)!==(page.offset===0) || (page.next===null)!==(page.offset+rows.length===page.total))return false;
+  const cursors=[page.cursor,...[page.previous,page.next].filter(v=>v!==null)];
+  return cursors.every(v=>typeof v==='string' && /^page-[A-Za-z0-9_-]{32}$/.test(v)) && new Set(cursors).size===cursors.length;
+}
+function validateReports(state,previous) {
   const enabled=Object.hasOwn(state,'reports');
   if (enabled !== Object.hasOwn(state,'report') || previous && enabled!==Object.hasOwn(previous,'reports')) throw new FormError('transport');
-  if (!enabled) return;
+  if (!enabled) { if(Object.hasOwn(state,'reportSetup'))throw new FormError('transport'); return; }
   if (!Array.isArray(state.reports) || state.reports.length>96 || previous && JSON.stringify(state.reports)!==JSON.stringify(previous.reports)) throw new FormError('transport');
   const seen=new Set();
   for (const report of state.reports) {
-    if (!keys(report,['id','title','view']) || !text(report.id,128) || !/^[\p{ID_Start}_][\p{ID_Continue}]*$/u.test(report.id) ||
+    if (!keys(report,['id','title','view',...(statement(report)?['periodicities','filters']:[])]) || !text(report.id,128) || !/^[\p{ID_Start}_][\p{ID_Continue}]*$/u.test(report.id) ||
         seen.has(report.id) || !text(report.title,256) || !views.includes(report.view)) throw new FormError('transport');
+    if(statement(report)){
+      if(!Array.isArray(report.periodicities) || !report.periodicities.length || report.periodicities.length>3 || new Set(report.periodicities).size!==report.periodicities.length ||
+         report.periodicities.some(p=>!['None','Day','Month'].includes(p)) || !Array.isArray(report.filters) || report.filters.length>16 || new Set(report.filters.map(f=>f?.id)).size!==report.filters.length ||
+         report.filters.some(f=>!keys(f,['id','title']) || !text(f.id,128) || !/^[\p{ID_Start}_][\p{ID_Continue}]*$/u.test(f.id) || !text(f.title,128)))throw new FormError('transport');
+    }
     seen.add(report.id);
   }
+  if(Object.hasOwn(state,'reportSetup')!==state.reports.some(statement) || state.reportSetup!==undefined && state.reportSetup!==null && !setupValid(state.reportSetup,state.reports))throw new FormError('transport');
   if (state.report===null) return;
-  const result=state.report, declared=state.reports.find(r=>r.id===result?.report);
-  if (!keys(result,['report','view','at','start','end','columns','rows']) || !declared || declared.view!==result.view ||
-      !validReportRequest({report:result.report,at:result.at,start:result.start,end:result.end},{...state,choice:null,posting:[],uncertain:false}) ||
+  const result=state.report, declared=state.reports.find(r=>r.id===result?.report), extra=statement(declared)?['periodicity','setup','filters','page']:[];
+  const request={report:result.report,at:result.at,start:result.start,end:result.end,...(statement(declared)?{periodicity:result.periodicity,setup:result.setup}:{})};
+  if (!keys(result,['report','view','at','start','end','columns','rows',...extra]) || !declared || declared.view!==result.view ||
+      !validReportRequest(request,{...state,choice:null,posting:[],uncertain:false}) ||
       !Array.isArray(result.columns) || !result.columns.length || result.columns.length>32 ||
-      !Array.isArray(result.rows) || result.rows.length>1000 || result.rows.length*result.columns.length>25000) throw new FormError('transport');
+      !Array.isArray(result.rows) || result.rows.length>1000 || result.rows.length*result.columns.length>25000 ||
+      statement(declared) && (!filterValues(result.filters,declared) || !pageValid(result.page,result.rows) ||
+        result.filters.some((f,i)=>f.id!==state.reportSetup.filters[i].id || f.mode!==state.reportSetup.filters[i].mode))) throw new FormError('transport');
   for (const column of result.columns) {
     if (!keys(column,['name','type']) || !text(column.name,128) ||
         !['String','Number','Boolean','Date','Catalog','Document'].includes(column.type)) throw new FormError('transport');
@@ -1440,60 +1496,139 @@ function validateReports(state, previous) {
     });
   }
 }
+function validateReportReply(result,request,previous) {
+  if(result.error!==null)return;
+  const state=result.state;
+  if(request.method==='application.report'){
+    if(!state.report || Object.keys(request.params).some(k=>state.report[k]!==request.params[k]))throw new FormError('transport');
+    if(statement(state.report) && state.report.page.offset!==0)throw new FormError('transport');
+  }
+  if(request.method==='application.reportPage'){
+    const prior=previous?.report,next=state.report;
+    const header=value=>Object.fromEntries(Object.entries(value).filter(([k])=>!['page','rows'].includes(k)));
+    if(!prior?.page || !next?.page || next.page.snapshot!==request.params.snapshot || next.page.cursor!==request.params.cursor ||
+       next.page.total!==prior.page.total || JSON.stringify(header(prior))!==JSON.stringify(header(next)))throw new FormError('transport');
+  }
+  if(request.method==='application.reportSetup'){
+    const next=state.reportSetup,old=previous?.reportSetup,action=request.params.action;
+    if(!next || next.report!==request.params.report || state.report!==null)throw new FormError('transport');
+    if(action!=='open'){
+      if(!old || old.ticket!==request.params.ticket)throw new FormError('transport');
+      const changed=['apply','empty','clear'].includes(action);
+      if(changed===(next.ticket===old.ticket) || !changed && JSON.stringify(next.filters)!==JSON.stringify(old.filters))throw new FormError('transport');
+      if(['begin','filter'].includes(action)){
+        if(!next.choice || next.choice.filter!==(action==='begin'?request.params.filter:old.choice?.filter) || next.choice.ticket===old.choice?.ticket)throw new FormError('transport');
+      }else if(next.choice!==null)throw new FormError('transport');
+    }
+  }
+}
 function reportCellText(cell) {
   return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
 }
-function createReportPanel(document, host, request, blocked) {
+function createReportPanel(document, host, request, blocked, command=null) {
   const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
-  const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), output=el('div'), notice=el('p');
-  host.className='configuration-reports';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
-  navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');
+  const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), filters=el('section'), output=el('div'), notice=el('p');
+  host.className='configuration-reports';host.dataset.formAction='application-navigation';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
+  navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');filters.setAttribute('aria-label','Statement catalog filters');
   const input=(labelText)=>{const label=el('label',labelText),field=el('input');field.type='datetime-local';field.step='1';field.setAttribute('aria-label',labelText);label.append(field);controls.append(label);return {label,field};};
   const at=input('Balance before moment (exclusive)'), start=input('From moment (inclusive)'), end=input('Through moment (inclusive)');
   const now=new Date(),pad=v=>String(v).padStart(2,'0');
   const today=`${String(now.getFullYear()).padStart(4,'0')}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
   at.field.value=today+'T23:59:59';start.field.value=today+'T00:00:00';end.field.value=today+'T23:59:59';
-  const show=el('button','Show saved stock');show.type='button';controls.append(show);
-  host.append(title,el('p','Read-only saved database state. Unsaved form edits are not included. No movement or total can be edited here.'),navigation,controls,notice,output);
-  let state=null, selected=null, busy=false, localError='', lastResult=undefined;
+  const periodLabel=el('label','Statement periodicity'),period=el('select');period.setAttribute('aria-label','Statement periodicity');periodLabel.append(period);controls.append(periodLabel);
+  const show=el('button','Show saved stock');show.type='button';show.addEventListener('pointerdown',event=>event.preventDefault());controls.append(show);
+  host.append(title,el('p','Read-only saved database state. Unsaved form edits are not included. No movement or total can be edited here.'),navigation,controls,filters,notice,output);
+  let state=null, selected=null, busy=false, localError='', lastResult=undefined, periodOwner=null, navigationGeneration=0;
+  const invoke=(method,params)=>method==='application.report'?request(params):command ? command(method,params):Promise.reject(new FormError('unavailable'));
+  const button=(parent,label,disabled,action)=>{const b=el('button',label);b.type='button';b.disabled=disabled;b.addEventListener('pointerdown',event=>event.preventDefault());b.addEventListener('click',()=>{if(!b.disabled)action();});parent.append(b);return b;};
+  async function run(method,params) {
+    if(busy || blocked() || !state)return;
+    if(method==='application.report' ? !validReportRequest(params,state):!validReportAction(method,params,state))return;
+    const generation=navigationGeneration;
+    busy=true;localError='';paint();
+    try{const result=await invoke(method,params);if(generation===navigationGeneration && result?.error)localError=result.error==='report_busy'?'Resolve the pending saved operation first.':'This report is unavailable or exceeds the bounded result limit.';}
+    catch{if(generation===navigationGeneration)localError='Report request did not finish. It will not be repeated automatically.';}
+    finally{busy=false;paint();}
+  }
+  function drawFilters(report,disabled) {
+    filters.replaceChildren();filters.hidden=!statement(report);if(filters.hidden)return;
+    const setup=state.reportSetup?.report===selected?state.reportSetup:null;
+    if(!setup){
+      filters.append(el('p','Prepare the statement filters before reading. All dimensions start unfiltered.'));
+      button(filters,'Prepare statement',disabled,()=>run('application.reportSetup',{report:selected,action:'open'}));return;
+    }
+    const base={report:selected,ticket:setup.ticket};
+    for(const filter of setup.filters){
+      const line=el('div'),declared=report.filters.find(f=>f.id===filter.id);
+      line.append(el('span',declared.title+': '+(filter.mode==='all'?'All saved values':filter.text)));
+      button(line,'Choose '+declared.title,disabled || setup.choice!==null,()=>run('application.reportSetup',{...base,action:'begin',filter:filter.id}));
+      button(line,'All '+declared.title,disabled || setup.choice!==null,()=>run('application.reportSetup',{...base,action:'clear',filter:filter.id}));
+      button(line,'Empty '+declared.title,disabled || setup.choice!==null,()=>run('application.reportSetup',{...base,action:'empty',filter:filter.id}));
+      filters.append(line);
+    }
+    const choice=setup.choice;if(!choice)return;
+    const picker=el('section'),label=el('label','Exact code'),code=el('input');
+    picker.setAttribute('aria-label','Statement filter choice');picker.append(el('h3','Choose '+choice.filter));
+    code.type='text';code.maxLength=64;code.value=choice.code;code.setAttribute('aria-label','Statement exact code');code.disabled=disabled;label.append(code);picker.append(label);
+    const captured={...base,choice:choice.ticket};
+    const search=()=>{if(!text(code.value,64)){localError='Enter an exact code of at most 64 characters.';paint();return;}run('application.reportSetup',{...captured,action:'filter',code:code.value});};
+    button(picker,'Find statement code',disabled,search);
+    button(picker,'Cancel statement choice',disabled,()=>run('application.reportSetup',{...captured,action:'cancel'}));
+    code.addEventListener('keydown',event=>{if(event.key==='Enter' && !event.isComposing){event.preventDefault();search();}});
+    picker.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();run('application.reportSetup',{...captured,action:'cancel'});}});
+    if(choice.error)picker.append(el('p','Too many matches. Enter an exact code; no partial choices are shown.'));
+    for(const row of choice.rows)button(picker,row.description || row.code,disabled,()=>run('application.reportSetup',{...captured,action:'apply',value:row.choice}));
+    if(!choice.error && !choice.rows.length)picker.append(el('p','No matching saved record.'));
+    filters.append(picker);
+  }
   function paint() {
     host.hidden=!state?.reports?.length;if(host.hidden)return;
     if(!state.reports.some(r=>r.id===selected))selected=state.reports[0].id;
     const disabled=busy || blocked(), report=state.reports.find(r=>r.id===selected);
     navigation.replaceChildren();
-    for(const item of state.reports){const button=el('button',item.title);button.type='button';button.disabled=disabled;button.setAttribute('aria-pressed',String(item.id===selected));
-      button.addEventListener('click',()=>{if(busy || blocked())return;selected=item.id;localError='';paint();});navigation.append(button);}
-    at.label.hidden=report.view!=='Balance';start.label.hidden=end.label.hidden=report.view!=='Turnovers';
-    for(const field of [at.field,start.field,end.field])field.disabled=disabled;
-    show.disabled=disabled;notice.textContent=localError || (disabled?'Finish the current selection or uncertain operation before reading stock.':'');
+    for(const item of state.reports){const b=button(navigation,item.title,disabled,()=>{if(busy || blocked())return;selected=item.id;navigationGeneration++;localError='';paint();});b.setAttribute('aria-pressed',String(item.id===selected));}
+    at.label.hidden=report.view!=='Balance';start.label.hidden=end.label.hidden=!['Turnovers','BalanceAndTurnovers'].includes(report.view);
+    periodLabel.hidden=!statement(report);
+    if(periodOwner!==report.id){period.replaceChildren();for(const name of report.periodicities || []){const option=el('option',name);option.value=name;period.append(option);}period.value=report.periodicities?.[0] || '';periodOwner=report.id;}
+    for(const field of [at.field,start.field,end.field,period])field.disabled=disabled;
+    const setup=state.reportSetup?.report===selected?state.reportSetup:null;
+    show.disabled=disabled || statement(report) && (!setup || setup.choice!==null);
+    notice.textContent=localError || (disabled?'Finish the current selection or uncertain operation before reading stock.':'');
+    drawFilters(report,disabled);
     const result=state.report?.report===selected?state.report:null;
-    if(result!==lastResult){output.replaceChildren();lastResult=result;
+    // Button state changes with the queue even when the immutable page does not.
+    if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
         for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
         for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
-        const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:result.view==='Turnovers'?`Displayed turnovers from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
+        const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
-        output.append(el('p',`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),table);
+        if(statement(result)){
+          output.append(el('p',`Statement periodicity: ${result.periodicity}. Opening is strictly before the start; sparse boundary rows do not fill every empty day or month.`));
+          for(const filter of result.filters)output.append(el('p',filter.id+': '+(filter.mode==='all'?'All saved values':filter.text)));
+        }
+        const page=result.page;
+        output.append(el('p',page?`${page.total? page.offset+1:0}–${page.offset+result.rows.length} of ${page.total} saved rows. Pages share this detached snapshot. Refresh explicitly after another writer changes the database.`:`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),table);
+        if(page){const nav=el('nav');nav.setAttribute('aria-label','Statement pages');
+          for(const [label,cursor] of [['Previous saved page',page.previous],['Next saved page',page.next]])button(nav,label,disabled || cursor===null,()=>run('application.reportPage',{snapshot:page.snapshot,cursor}));output.append(nav);}
         if(!result.rows.length)output.append(el('p','No saved rows for these boundaries.'));
       }else output.append(el('p','Choose boundaries and show saved stock. Changes to forms clear the previous report.'));
     }
   }
-  show.addEventListener('click',async()=>{
+  show.addEventListener('click',()=>{
     if(busy || blocked() || !state)return;
-    const report=state.reports.find(r=>r.id===selected);
+    const report=state.reports.find(r=>r.id===selected),ranged=['Turnovers','BalanceAndTurnovers'].includes(report.view);
     const value=field=>field.value.length===16?field.value+':00':field.value;
-    const params={report:selected,at:report.view==='Balance'?value(at.field):null,start:report.view==='Turnovers'?value(start.field):null,end:report.view==='Turnovers'?value(end.field):null};
-    if(!validReportRequest(params,state)){localError='Enter valid whole-second boundaries; the start must not exceed the end.';paint();return;}
-    busy=true;localError='';paint();
-    try{const result=await request(params);if(result?.error)localError=result.error==='report_busy'?'Resolve the pending saved operation first.':'This report is unavailable or exceeds the bounded result limit.';}
-    catch{localError='Report request did not finish. It will not be repeated automatically.';}
-    finally{busy=false;paint();}
+    const params={report:selected,at:report.view==='Balance'?value(at.field):null,start:ranged?value(start.field):null,end:ranged?value(end.field):null,
+      ...(statement(report)?{periodicity:period.value,setup:state.reportSetup?.ticket}:{})};
+    if(!validReportRequest(params,state)){localError='Enter valid whole-second boundaries; the start must not exceed the end. Statements support 1900–2099 and require prepared filters.';paint();return;}
+    run('application.report',params);
   });
   return {update(next){state=next;paint();},pending:()=>busy};
 }
 
-return {validReportRequest, validateReports, reportCellText, createReportPanel};
+return {validReportRequest, validReportAction, validateReports, validateReportReply, reportCellText, createReportPanel};
 })();
 const __configurationInputs = (() => {
 const {FormError, validateScalar, validateSnapshot, typedInput, scalarEqual, scalarText} = __formClient;
@@ -1565,7 +1700,7 @@ function validInputAnswer(params, inputs) {
 return {INPUT_CAPABILITY, inputField, validateInputs, validInputAnswer};
 })();
 const __configurationClient = (() => {
-const {validReportRequest, validateReports} = __configurationReports;
+const {validReportRequest, validReportAction, validateReports, validateReportReply} = __configurationReports;
 const {INPUT_CAPABILITY, validateInputs, validInputAnswer} = __configurationInputs;
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
@@ -1577,7 +1712,7 @@ const text = (value, max) => typeof value === 'string' && value.length <= max * 
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
-const errors = ['closed','outcome_unknown','capacity','open_failed','retired_session','forms_open',
+const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
   'catalog_unavailable','catalog_limit','report_unavailable','report_busy','invalid_record','object_required','save_recovery_required',
   'startup_cancelled','startup_failed','exit_cancelled','reference_refused','owned_child_open','completion_failed','dialog_pending','dialog_refused','dialog_retired','input_pending','input_refused','input_retired','input_stale'];
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
@@ -1603,6 +1738,7 @@ function validateApplicationReply(reply, request, previous) {
   if (state && Object.hasOwn(state,'choice')) shape.push('choice');
   if (state && Object.hasOwn(state,'posting')) shape.push('posting');
   if (state && Object.hasOwn(state,'reports')) shape.push('reports','report');
+  if (state && Object.hasOwn(state,'reportSetup')) shape.push('reportSetup');
   if (!keys(result,['protocol','state','error','session','form',...(ownedResults ? ['updates'] : []),...(dialogCapability ? ['dialogCapability','dialogs'] : []),...(inputCapability ? ['inputCapability','inputs'] : [])]) || result.protocol !== APPLICATION_PROTOCOL ||
       !(result.error === null || errors.includes(result.error)) || !(result.session === null || sessionId(result.session)) ||
       !keys(state,shape) || !['application','closed'].includes(state.kind) ||
@@ -1612,8 +1748,7 @@ function validateApplicationReply(reply, request, previous) {
       !Array.isArray(state.entries) || !state.entries.length || state.entries.length > 64 ||
       !Array.isArray(state.sessions) || state.sessions.length > 8) throw new FormError('transport');
   validateReports(state,previous);
-  if (request.method==='application.report' && result.error===null &&
-      (!state.report || ['report','at','start','end'].some(key=>state.report[key]!==request.params[key]))) throw new FormError('transport');
+  validateReportReply(result,request,previous);
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
@@ -1745,7 +1880,7 @@ class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -1754,7 +1889,8 @@ class ApplicationClient {
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
-      if (method === 'application.report' && !validReportRequest(params,this.state)) {
+      if (method === 'application.report' && !validReportRequest(params,this.state) ||
+          ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
@@ -1862,7 +1998,8 @@ function mountApplication(environment, root, exchange = null) {
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const reportPanel=el('section');
   const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
-    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))));
+    ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))),
+    (method,params)=>perform(method,params));
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -2226,7 +2363,9 @@ function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
-    status = result.error ? `Application: ${result.error}` : '';
+    status = result.error === 'form_capacity'
+      ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
+      : result.error ? `Application: ${result.error}` : '';
     const fresh = []; let removedActive = false;
     for (const [id, entry] of mounts) if (!client.state.sessions.some(session => session.id === id)) {
       entry.panel.remove(); entry.tab.remove(); mounts.delete(id); if (active === id) { active = null; removedActive = true; }
@@ -2269,7 +2408,10 @@ function mountApplication(environment, root, exchange = null) {
   }
   async function perform(method,params) {
     try { return await client.request(method,params); }
-    catch { status = 'Application connection failed.'; paint(); }
+    catch(error) {
+      if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
+      status = 'Application connection failed.'; paint();
+    }
     finally { paint(); }
   }
   function openForm(entry, record = null) {

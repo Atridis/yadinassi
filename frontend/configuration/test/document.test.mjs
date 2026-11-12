@@ -56,3 +56,29 @@ test('document records do not expose document handle or section object payloads'
   for(const extra of [{ref:{}},{lines:[]},{database:'/private/file'},{revision:'private'}])
     assert.throws(()=>validateApplicationReply(reply(request,state({catalog:{entry:1,version:1,rows:[{...row(),...extra}]}})),request,null));
 });
+
+test('known form capacity refusal remains usable without allocating a form',async()=>{
+  const requests=[];const client=new ApplicationClient(async request=>{
+    requests.push(request);
+    return reply(request,state(),{error:request.method==='application.openRecord'?'form_capacity':null});
+  });
+  await client.request('application.hello',{});
+  const result=await client.request('application.openRecord',{entry:1,record:'record-1',request:'large'});
+  assert.equal(result.error,'form_capacity');assert.equal(result.session,null);assert.equal(client.terminal,false);
+  await client.request('application.catalog',{entry:1});
+  assert.equal(client.state.catalog.rows.length,1);assert.equal(requests.length,3);
+});
+
+test('capacity message explains bounded refusal and keeps the catalog controls live',async()=>{
+  const env=environment();
+  const app=mountApplication(env,env.document.root,async request=>reply(request,state(),{
+    error:request.method==='application.openRecord'?'form_capacity':null}));
+  await app.ready;
+  all(env.document.root).find(node=>node.dataset.recordKey==='record-1').emit('click');
+  buttons(env.document).find(node=>node.textContent==='Open selected').emit('click');
+  // Await the same deduplicated opening, including its real finally/repaint.
+  await app.openForm(1,'record-1');
+  assert.equal(app.client.pending,0);assert.equal(app.client.terminal,false);assert.equal(app.mounts.size,0);
+  assert.ok(all(env.document.root).some(node=>node.textContent.includes('Nothing was opened or changed.')));
+  assert.equal(buttons(env.document).find(node=>node.textContent==='New document').disabled,false);
+});
