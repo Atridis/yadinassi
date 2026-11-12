@@ -439,16 +439,27 @@ async function main(){
     const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
     assert.equal(await nav.getByRole('button',{name:'Подготовка изменений',exact:true}).count(),0,'owned_child_not_navigation');
     const observed=async(method,action)=>{
-      const waiting=replyFor(packet=>packet.method===method);
-      const [response]=await Promise.all([waiting,action()]);
+      report.draftStage='await-response';
+      const waiting=replyFor(packet=>packet.method===method).catch(()=>{throw Error('draft_response_wait_failed');});
+      const [response]=await Promise.all([waiting,action().catch(()=>{throw Error('draft_action_failed');})]);
+      report.draftStage='read-response';
       const packet=response.request().postDataJSON();
-      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_reply_timeout');
+      let bytes;
+      try{bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_reply_timeout');}
+      catch(error){throw Error(error?.message==='draft_reply_timeout'?'draft_reply_timeout':'draft_reply_read_failed');}
       assert.ok(bytes.length<=131072,'draft_reply_budget');
-      const body=JSON.parse(bytes.toString('utf8'));
-      assert.equal(body.id,packet.id);assert.equal(body.result?.error,null);assert.equal(body.result?.state?.uncertain,false);
-      const payload=body.result.payload;assert.equal(payload?.id,packet.params.request.id);
-      assert.ok(!payload.error&&payload.result);assert.equal(payload.result.error,null);
-      await idle();return payload.result;
+      report.draftStage='validate-envelope';
+      let body;try{body=JSON.parse(bytes.toString('utf8'));}catch{throw Error('draft_reply_json');}
+      assert.equal(body.id,packet.id,'draft_outer_id');
+      assert.equal(body.result?.error,null,'draft_outer_error');
+      assert.equal(body.result?.state?.uncertain,false,'draft_uncertain');
+      const payload=body.result.payload;
+      assert.equal(payload?.id,packet.params.request.id,'draft_inner_id');
+      assert.ok(!payload.error&&payload.result,'draft_inner_error');
+      assert.equal(payload.result.error,null,'draft_form_error');
+      report.draftStage='await-idle';
+      try{await idle();}catch{throw Error('draft_idle_timeout');}
+      report.draftStage='complete';return payload.result;
     };
     const command=async(label)=>{let result;await act('draft:'+label,async()=>{result=await observed('application.form',()=>docButton(label).click());});return result;};
     const answer=async(label)=>{let result;await act('draft-answer:'+label,async()=>{result=await observed('application.answerDialog',()=>page.locator('.configuration-dialog').getByRole('button',{name:label,exact:true}).click());});return result;};
@@ -565,6 +576,9 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'draft_response_wait_failed','draft_action_failed','draft_reply_timeout','draft_reply_read_failed',
+  'draft_reply_budget','draft_reply_json','draft_outer_id','draft_outer_error','draft_uncertain',
+  'draft_inner_id','draft_inner_error','draft_form_error','draft_idle_timeout',
   'filter_capture_pending','filter_capture_method','filter_capture_duplicate','filter_capture_request_origin',
   'filter_capture_response_origin','filter_capture_request_id','filter_capture_http','filter_capture_json',
   'filter_capture_outer_id','filter_capture_inner_id','filter_capture_retired','filter_capture_failed',
