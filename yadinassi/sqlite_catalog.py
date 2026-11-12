@@ -663,6 +663,12 @@ class SQLiteCatalogBackend:
 
     @classmethod
     @_boundary
+    def create_inventory_application(cls, path, configuration):
+        from .sqlite_inventory_profile import create_application
+        return create_application(cls, path, configuration)
+
+    @classmethod
+    @_boundary
     def create_accumulation(cls, path, configuration):
         from .sqlite_accumulation_profile import create
         return create(cls, path, configuration)
@@ -1170,6 +1176,12 @@ class SQLiteCatalogBackend:
                             document_tabular_sections=active and self.storage_version in (7, 8, 9, 10),
                             register_read=active and self.storage_version in (8, 9, 10),
                             register_write=active and self.storage_version in (8, 9, 10) and not self.read_only)
+
+    @_boundary
+    def launch_snapshot(self):
+        """Detached exact-source UI admission under one owned read lease."""
+        from .sqlite_launch import launch_snapshot
+        return launch_snapshot(self)
 
     @_boundary
     def begin_read(self):

@@ -6,6 +6,7 @@ import {readFileSync,readlinkSync,lstatSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
+import {checkUnownedApplicationCapability} from './unowned_application_capability.mjs';
 import {allowedRequest,childEnvironment,ownBrowserPid,
   commandLineArgs,sandboxCommand,sandboxStatus,sha256,launchURL} from './support.mjs';
 
@@ -305,7 +306,8 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    exactKeys(packet.params,'protocol dialogCapability inputCapability');assert.equal(packet.params.inputCapability,'yadinassi-owned-input/1');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.reference'){
     exactKeys(packet.params,'session revision action');
     assert.match(packet.params.session,/^form-[1-9][0-9]*$/);
@@ -417,7 +419,7 @@ function checkScalar(value){
 function checkReply(body,packet,stage){
   stage('reply_envelope');
   exactKeys(body,'jsonrpc id result');assert.equal(body.id,packet.id);assert.equal(body.jsonrpc,'2.0');
-  const result=body.result;exactKeys(result,'protocol state error session form');
+  const result=body.result;checkUnownedApplicationCapability(result);
   assert.equal(result.protocol,'yadinassi-configuration-app/3');assert.equal(result.error,null,'application_refused');
   assert.equal(result.state.uncertain,false);assert.ok(Object.hasOwn(result.state,'choice'));
   if(result.form){

@@ -615,7 +615,7 @@ def load_configuration_forms(files, *, catalog_schemas=(), document_schemas=(), 
         path = prefix+'/Ext/Form.xml'; module = prefix+'/Ext/Form/Module.bsl'
         is_document = public_name.startswith('Document.')
         definition = _definition(public_name, uid, files[path], files.get(module,b''),
-            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application)
+            None if is_document else schema, schema if is_document else None, reference_catalogs, posting_application and is_document)
         if public_name.casefold() in forms:
             raise ValueError('duplicate form name')
         forms[public_name.casefold()] = definition

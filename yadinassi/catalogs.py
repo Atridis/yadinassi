@@ -378,8 +378,9 @@ class BSLCatalogObject(BSLObject):
         if key in self._sections:return self._sections[key]
         if key in ('ref','ссылка') and self._revision is None and self._pending_write is not None:
             from .configuration_accumulation_references import InventoryConfiguration
+            from .configuration_inventory_application import InventoryApplicationConfiguration
             backend = self._manager._backend
-            if type(getattr(backend, 'accumulation_configuration', None)) is InventoryConfiguration:
+            if type(getattr(backend, 'accumulation_configuration', None)) in (InventoryConfiguration, InventoryApplicationConfiguration):
                 from .database_transactions import current
                 transaction = current(backend)
                 if transaction is None or transaction.unit.state != 'open':

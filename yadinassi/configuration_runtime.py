@@ -35,7 +35,7 @@ class ConfigurationApplication:
     """
     def __init__(self, configuration, *, output=print, database_context=None,
                  native_target='windows-8.3.27.2342', side=None, host_services=None,
-                 server_exchange=None):
+                 server_exchange=None, value_selection_service=None):
         from .runtime import Interpreter
         if type(configuration) is not ConfigurationImport or configuration.module_runtime != MODULE_RUNTIME:
             raise TypeError('an explicitly compiled configuration is required')
@@ -43,6 +43,10 @@ class ConfigurationApplication:
             raise ValueError('invalid application process side')
         if server_exchange is not None and (side != 'client' or not callable(server_exchange)):
             raise ValueError('server transport belongs to the client process')
+        if value_selection_service is not None and (side != 'client' or not callable(value_selection_service)):
+            raise ValueError('value selection belongs to the client application host')
+        self._value_selection_service = value_selection_service
+        self._input_call_key = object()
         self.side = side
         self._output = output
         self._event_output = None
@@ -107,8 +111,10 @@ class ConfigurationApplication:
         for name, function in (host_services or {}).items():
             if type(name) is not str or type(function) is not HostFunction:
                 raise TypeError('named HostFunction services required')
-            if side == 'server' and name.casefold() in ('openform', 'открытьформу'):
-                raise ValueError('OpenForm is client-only')
+            if side == 'server' and name.casefold() in ('openform', 'открытьформу',
+                    'showquerybox', 'показатьвопрос', 'showmessagebox', 'показатьпредупреждение',
+                    'showinputvalue', 'показатьвводзначения'):
+                raise ValueError('form host services are client-only')
             if name.casefold() in self.interpreter.functions:
                 raise ValueError('host service conflicts with existing function')
             self.interpreter.functions[name.casefold()] = function
@@ -176,6 +182,8 @@ class ConfigurationApplication:
                 app_names.add(node.name.casefold())
             elif type(node) is ast.Var:
                 app_names.update(name.casefold() for name in node.names)
+        if app_names & {'showinputvalue', 'показатьвводзначения'} & set(self._host_services):
+            raise ValueError('application declaration conflicts with input host service')
         if module_names & (reserved | app_names):
             raise ValueError('configuration module name conflicts with global context')
         programs = {}
@@ -415,9 +423,56 @@ class ConfigurationApplication:
 
     def check_host_service(self, function, caller):
         self.require_open()
-        if function.name.casefold() in ('openform', 'открытьформу'):
+        if function.name.casefold() in ('openform', 'открытьформу',
+                'showquerybox', 'показатьвопрос', 'showmessagebox', 'показатьпредупреждение',
+                'showinputvalue', 'показатьвводзначения'):
             if caller.execution_context != 'client' or self.side == 'server' or self.state not in ('starting', 'running'):
-                raise ValueError('OpenForm requires an active client application event')
+                raise ValueError('form host service requires an active client application event')
+        if function.name.casefold() in ('showinputvalue', 'показатьвводзначения'):
+            self.input_origin(caller)
+
+    @contextmanager
+    def input_call(self, caller, owner, admitted):
+        """Task-local existing-call provenance, never copied into another VM/task."""
+        if self._value_selection_service is None:
+            yield
+            return
+        state = self.interpreter._scheduler.active_context.state
+        stack = state.setdefault(self._input_call_key, {'frames': []})['frames']
+        stack.append((caller, owner, admitted))
+        try:
+            yield
+        finally:
+            stack.pop()
+            if not stack:
+                state.pop(self._input_call_key, None)
+
+    def input_origin(self, caller=None):
+        state = self.interpreter._scheduler.active_context.state
+        stack = state.get(self._input_call_key, {}).get('frames', ())
+        if (not stack or caller is not None and stack[-1][1] is not caller
+                or any(not admitted for _, _, admitted in stack)
+                or any(previous[1] is not current[0] for previous, current in zip(stack, stack[1:]))):
+            raise ValueError('input requires an uninterrupted synchronous client call chain')
+        origin = stack[0][0]
+        origin._require_family()
+        if origin._configuration_runtime is not self or origin._family_owner is not self.interpreter:
+            raise ValueError('foreign input origin')
+        return origin
+
+    def require_value_selection(self, caller):
+        """No global BSL name: the interpreter forwards the actual call origin."""
+        self.require_open()
+        caller._require_family()
+        if (self._value_selection_service is None or self.side != 'client' or self.state != 'running'
+                or caller._configuration_runtime is not self
+                or caller._family_owner is not self.interpreter or caller.execution_context != 'client'):
+            raise ValueError('value selection requires the live client application family')
+        self.input_origin(caller)
+
+    def dispatch_value_selection(self, caller, source, arguments):
+        self.require_value_selection(caller)
+        return self._value_selection_service(caller, source, *arguments)
 
     def check_call(self, routine, caller):
         self.require_open()

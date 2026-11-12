@@ -106,7 +106,7 @@ jobs:
     name: Light tests (${{ matrix.target }})
     needs: admission
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: ${{ matrix.target == 'mac-x86' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.admission.outputs.light_matrix) }}

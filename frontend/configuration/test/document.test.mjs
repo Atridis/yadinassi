@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {APPLICATION_PROTOCOL, ApplicationClient, validateApplicationReply} from '../src/client.mjs';
-import {mountApplication} from '../src/app.mjs';
+import {mountApplication} from './application-fixtures.mjs';
 import {environment, all, buttons} from '../../form/test/fake-dom.mjs';
 import {reply as formReply} from '../../form/test/fixtures.mjs';
 const row = () => ({key:'record-1',number:'00001',date:'2026-11-10 12:30:00',deletionMark:false});

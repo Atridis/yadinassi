@@ -15,6 +15,7 @@ export const ERROR_MESSAGES = Object.freeze({
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
   draft_hidden: 'Unsubmitted inputs are on another page. Return to that page and apply them before running this action.',
+  owned_child_open: 'Finish or close the owned form before editing its owner.',
   draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
