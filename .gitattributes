@@ -392,3 +392,15 @@ tests/test_reusable_values.py text eol=lf
 tests/test_configuration_reusable_values.py text eol=lf
 tests/test_common_module_reuse_native_replay.py text eol=lf
 tests/fixtures/native_common_module_reuse_43130157790.json -text
+
+# Source-bound server reusable-value observations; immutable evidence is raw bytes.
+scripts/server_module_reuse_packet/** text eol=lf
+scripts/native_1c_server_module_reuse_profile.py text eol=lf
+scripts/native_1c_server_module_reuse_probe.sh text eol=lf
+scripts/native_1c_bootstrap/server_module_reuse_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_server_module_reuse_stage.py text eol=lf
+tests/test_server_module_reuse_packet.py text eol=lf
+tests/test_server_module_reuse_native_acquisition.py text eol=lf
+tests/test_server_module_reuse_native_replay.py text eol=lf
+tests/test_configuration_server_reuse.py text eol=lf
+tests/fixtures/native_server_module_reuse_43165393593.json -text

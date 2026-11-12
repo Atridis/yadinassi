@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from server_module_reuse_packet import route, packet, PACKET_HASHES, SOURCE_SHA256, FORM_SHA256, MODULES_SHA256, parse_records
@@ -68,29 +69,29 @@ class AcquisitionContracts(unittest.TestCase):
         self.assertIn('Procedure SecondEvent() Export',text)
         self.assertIn('Request.event1_done',text)
     def test_17_designer_result_gates(self):
-        text=(ROOT/'scripts/native_1c_bootstrap/server_module_reuse_suite.py').read_text()
+        text=(ROOT/'scripts/native_1c_bootstrap/server_module_reuse_suite.py').read_text(encoding='utf-8')
         self.assertIn("full.require_zero_result(root/(label+'.result'),0)",text)
         self.assertIn("full.require_zero_result(root/'build.result',0)",text)
         for label in ('before','load','update'):self.assertIn("designer('"+label+"'",text)
         self.assertNotIn('/DumpExternalDataProcessorOrReportToFiles',text)
         self.assertEqual(text.count('/DumpConfigToFiles'),1)
     def test_18_baseline_source_preserved(self):
-        text=(ROOT/'scripts/server_module_reuse_packet/fixture.py').read_text()
+        text=(ROOT/'scripts/server_module_reuse_packet/fixture.py').read_text(encoding='utf-8')
         self.assertIn('original._baseline(files,setup)',text)
         self.assertIn("files['Ext/SessionModule.bsl']",text)
         self.assertNotIn('Role>',text)
     def test_19_packet_syntax_and_inventory(self):
         paths=[ROOT/'scripts'/p for p in ('native_1c_server_module_reuse_profile.py','native_1c_bootstrap/server_module_reuse_suite.py','native_1c_bootstrap/run_server_module_reuse_stage.py')]
         paths+=list((ROOT/'scripts/server_module_reuse_packet').glob('*.py'))
-        for path in paths:ast.parse(path.read_text())
+        for path in paths:ast.parse(path.read_text(encoding='utf-8'))
     def test_20_dedicated_source_bound_adapter(self):
-        text=(ROOT/'scripts/native_1c_server_module_reuse_profile.py').read_text()
+        text=(ROOT/'scripts/native_1c_server_module_reuse_profile.py').read_text(encoding='utf-8')
         self.assertIn("PROFILE='server-module-reuse-v1'",text)
         self.assertIn('server_module_reuse_packet',text)
-        probe=(ROOT/'scripts/native_1c_server_module_reuse_probe.sh').read_text()
+        probe=(ROOT/'scripts/native_1c_server_module_reuse_probe.sh').read_text(encoding='utf-8')
         self.assertIn('[ "$1" = --server_module_reuse-suite ]',probe)
         self.assertNotIn('--common_module_reuse-suite',probe)
-        workflow=(ROOT/'.github/workflows/native-1c-server-module-reuse.yml').read_text()
+        workflow=(ROOT/'.github/workflows/native-1c-server-module-reuse.yml').read_text(encoding='utf-8')
         self.assertIn("github.event.pull_request.head.ref == 'codex/server-module-return-reuse'",workflow)
         self.assertIn('persist-credentials: false',workflow)
         self.assertIn('cancel-in-progress: false',workflow)
@@ -113,6 +114,24 @@ class AcquisitionContracts(unittest.TestCase):
                 return module
             host=load('owned_reuse_host',ROOT/'scripts/native_1c_server_module_reuse_profile.py')
             suite=load('owned_reuse_suite',ROOT/'scripts/native_1c_bootstrap/server_module_reuse_suite.py')
+            if sys.platform == 'win32':
+                # Static test fixtures use one metadata API; production secure
+                # readers remain unchanged and are exercised on Linux/macOS.
+                from test_native_1c_full_host import read_synthetic_file, full as synthetic_full
+                def synthetic_regular(path,limit,*,nonempty=False):
+                    try:
+                        return read_synthetic_file(path,limit,nonempty=nonempty)
+                    except synthetic_full.FullError:
+                        raise host.FULL.FullError('invalid_private_file') from None
+                patcher=mock.patch.object(host.FULL,'read_regular',side_effect=synthetic_regular)
+                patcher.start();self.addCleanup(patcher.stop)
+                def synthetic_bytes(path,limit,allow_empty=False):
+                    try:
+                        return read_synthetic_file(path,limit,nonempty=not allow_empty)
+                    except synthetic_full.FullError:
+                        raise suite.full.FullError('artifact_missing') from None
+                patcher=mock.patch.object(suite.full,'secure_bytes',side_effect=synthetic_bytes)
+                patcher.start();self.addCleanup(patcher.stop)
             return host,suite
         finally:
             sys.path[:]=old_path
@@ -188,3 +207,21 @@ class AcquisitionContracts(unittest.TestCase):
             elif change=='missing':stage.pop('event1_done')
             else:stage['unverified']=True
             with self.assertRaises(host.FormError):host.validate_envelope(self.wire(changed),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_27_windows_fixture_adapter_preserves_exact_bytes_and_drift(self):
+        # Exercise the Windows-only static adapter on every platform, without
+        # changing OS path semantics or any production admission code.
+        with mock.patch.object(sys,'platform','win32'):
+            self.test_22_stage_exact_inputs()
+            self.test_24_stage_rejects_source_drift()
+            import tempfile
+            host,suite=self.adapters()
+            with tempfile.TemporaryDirectory(prefix='reuse-reader-',dir=ROOT.parent) as tmp:
+                missing=Path(tmp)/'missing'; oversized=Path(tmp)/'oversized'
+                oversized.write_bytes(b'12345')
+                for path in (missing,oversized):
+                    with self.subTest(path=path.name):
+                        with self.assertRaises(host.FULL.FullError):
+                            host.FULL.read_regular(path,4)
+                        with self.assertRaises(suite.full.FullError):
+                            suite.full.secure_bytes(path,4)

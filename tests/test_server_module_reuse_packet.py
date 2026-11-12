@@ -74,3 +74,34 @@ class PacketTests(unittest.TestCase):
         self.assertIn('Procedure RefreshServer() Export\n RefreshReusableValues();',text)
         form=packet()['Launcher/Forms/Main/Ext/Form/Module.bsl'].decode()
         self.assertIn('ServerInspector.RefreshServer(); RefreshReusableValues();',form)
+
+    def test_autocrlf_checkout_preserves_both_packets_and_immutable_evidence(self):
+        import os, shutil, subprocess, tempfile
+        if not shutil.which('git'): self.skipTest('Git required')
+        from common_module_reuse_packet import PACKET_HASHES as client_hashes
+        root=SCRIPTS.parent
+        wanted={**{'scripts/server_module_reuse_packet/'+n:h for n,h in PACKET_HASHES.items()},
+                **{'scripts/common_module_reuse_packet/'+n:h for n,h in client_hashes.items()}}
+        for name in ('native_server_module_reuse_43165393593.json',
+                     'native_common_module_reuse_43130157790.json'):
+            path='tests/fixtures/'+name
+            wanted[path]=hashlib.sha256((root/path).read_bytes()).hexdigest()
+        env=dict(os.environ,GIT_CONFIG_NOSYSTEM='1',GIT_CONFIG_GLOBAL=os.devnull)
+        def git(cwd,*args):
+            result=subprocess.run(['git',*args],cwd=cwd,env=env,capture_output=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
+            return result.stdout
+        with tempfile.TemporaryDirectory(prefix='reuse-checkout-',dir=root.parent) as temporary:
+            parent=Path(temporary);source=parent/'source';source.mkdir()
+            for name in ('.gitattributes',*wanted):
+                path=source/name;path.parent.mkdir(parents=True,exist_ok=True)
+                path.write_bytes((root/name).read_bytes())
+            git(source,'init','-q');git(source,'-c','core.autocrlf=false','add','.')
+            git(source,'-c','user.name=Reuse fixture','-c','user.email=fixture@example.invalid',
+                '-c','commit.gpgsign=false','commit','-qm','Exact fixture')
+            git(parent,'clone','-q','--no-hardlinks','-c','core.autocrlf=true',str(source),str(parent/'checkout'))
+            for name,digest in wanted.items():
+                with self.subTest(path=name):
+                    raw=(parent/'checkout'/name).read_bytes()
+                    self.assertEqual(raw,(root/name).read_bytes())
+                    self.assertEqual(hashlib.sha256(raw).hexdigest(),digest)
