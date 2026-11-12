@@ -1,4 +1,4 @@
-/** Четыре связанных UI-сценария enum inventory; не свидетельство native parity. */
+/** Пять связанных UI-сценария enum inventory; не свидетельство native parity. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir} from 'node:fs/promises';
@@ -10,26 +10,75 @@ import {launchOutputReader,allowedRequest,childEnvironment,ownBrowserPid,
   commandLineArgs,sandboxCommand,sandboxStatus,sha256,launchURL} from './support.mjs';
 
 const startedAt=Date.now();
-const workDeadline=startedAt+220000;
-const totalDeadline=startedAt+240000;
+const workDeadline=startedAt+400000;
+const totalDeadline=startedAt+420000;
 const rpcFetchMs=35000,rpcReplyMs=50000; // Existing transport and observer budgets; global deadline unchanged.
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['enum-catalogs.png','enum-written.png','enum-posted-report.png','enum-reopened-unposted.png'];
+const screenshots=['enum-catalogs.png','enum-written.png','enum-posted-report.png','enum-reopened-unposted.png','enum-record-pages.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['catalog_enum_choice_save','receipt_header_line_enum_write',
- 'post_visible_enum_movements','restart_reopen_unpost'];
-// Ровно 39 деловых RPC: 14 + 15 + 3 + 7. Hello/snapshot и lease heartbeat
+ 'post_visible_enum_movements','restart_reopen_unpost','record_pages_search_refresh'];
+// Ровно 251 деловой RPC: 14 + 15 + 3 + 7 + 212. Hello/snapshot и lease heartbeat
 // наблюдаются отдельно; бизнес-запросы не синтезируются и не повторяются.
 const businessPlan=[
- ['catalog','open','change:CodeInput','change:DescriptionInput','reference:begin','reference:apply','command:SaveButton','close:',
-  'catalog','open','change:CodeInput','change:DescriptionInput','command:SaveButton','close:'],
- ['catalog','open','change:NumberInput','reference:begin','reference:apply','reference:begin','reference:apply',
-  'command:AddLineButton','reference:begin','reference:apply','reference:begin','reference:apply',
-  'cell:LinesTable','cell:LinesTable','command:WriteButton'],
- ['command:PostButton','report:StockMovements','close:'],
- ['close','catalog','openRecord','command:UndoPostingButton','report:StockMovements','close:','close']
+ ["catalog", "open", "change:CodeInput", "change:DescriptionInput", "reference:begin", "reference:apply", "command:SaveButton", "close:", "catalog", "open", "change:CodeInput", "change:DescriptionInput", "command:SaveButton", "close:"],
+ ["catalog", "open", "change:NumberInput", "reference:begin", "reference:apply", "reference:begin", "reference:apply", "command:AddLineButton", "reference:begin", "reference:apply", "reference:begin", "reference:apply", "cell:LinesTable", "cell:LinesTable", "command:WriteButton"],
+ ["command:PostButton", "report:StockMovements", "close:"],
+ ["close", "catalog", "openRecord", "command:UndoPostingButton", "report:StockMovements", "close:", "close"],
+ ["catalog",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "open","change:CodeInput","command:SaveButton","close:",
+  "catalogPage","openRecord","change:DescriptionInput","command:SaveButton","close:","catalogPage","catalogFilter","catalogFilter","catalogPage","catalog","close"]
 ];
 const businessEvents=[];
 // Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
@@ -231,8 +280,8 @@ try:
      return next(v.name for v in definition.values if v.identity==value.value_id)
     catalog_enums=[]
     for name in sorted(catalogs):
-     rows=owner.select_catalog(catalogs[name].identity,CatalogSelection(limit=4))
-     assert len(rows)<=4
+     rows=owner.select_catalog(catalogs[name].identity,CatalogSelection(limit=64))
+     assert len(rows)<64
      for card in rows:
       assert type(card.key) is CatalogKey and not card.deletion_mark
       labels[card.key]=card.code; cards[name,card.code]=card
@@ -391,6 +440,16 @@ function checkRequest(request){
     for(const key of ['at','start','end'])assert.ok(packet.params[key]===null||/^2026-11-11T[0-9:]{8}$/.test(packet.params[key]),'fixed_period');
   }else if(packet.method==='application.catalog'){
     exactKeys(packet.params,'entry');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
+  }else if(['application.catalogPage','application.catalogFilter'].includes(packet.method)){
+    const nav=lastApplicationState?.catalog?.navigation;
+    exactKeys(packet.params,packet.method==='application.catalogPage'?'entry snapshot cursor':'entry snapshot query order');
+    assert.equal(packet.params.entry,lastApplicationState?.catalog?.entry,'navigation_entry');
+    assert.equal(packet.params.snapshot,nav?.snapshot,'navigation_snapshot');
+    if(packet.method==='application.catalogPage')assert.ok([nav.previous,nav.next].filter(Boolean).includes(packet.params.cursor),'navigation_cursor');
+    else{
+      assert.ok(typeof packet.params.query==='string'&&packet.params.query.length<=128,'navigation_query');
+      assert.ok(['code','description'].includes(packet.params.order),'navigation_order');
+    }
   }else if(packet.method==='application.openRecord'){
     exactKeys(packet.params,'entry record request');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
     assert.match(packet.params.record,/^record-[1-9][0-9]{0,8}$/);assert.match(packet.params.request,/^open-[0-9a-f]{32}-[1-9][0-9]*$/);
@@ -425,7 +484,7 @@ function checkRequest(request){
   }
   if(packet.method==='application.reference')businessEvents.push('reference:'+packet.params.action.action);
   else if(packet.method==='application.report')businessEvents.push('report:'+packet.params.report);
-  else if(['application.catalog','application.open','application.openRecord','application.close'].includes(packet.method))
+  else if(['application.catalog','application.catalogPage','application.catalogFilter','application.open','application.openRecord','application.close'].includes(packet.method))
     businessEvents.push(packet.method.slice('application.'.length));
   else if(packet.method==='application.form'&&packet.params.request.method==='form.event'){
     const event=packet.params.request.params;businessEvents.push(event.event+':'+(event.control||''));
@@ -448,10 +507,22 @@ async function auditResponse(response,packet){
       else exactKeys(cell,cell.type==='Date'?'type ticks':'type value');
     }
   }
+  if(lastApplicationState?.catalog){
+    const {rows,navigation:n}=lastApplicationState.catalog;
+    exactKeys(n,'snapshot page pages total query order previous next');
+    assert.match(n.snapshot,/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/);
+    for(const k of ['page','pages','total'])assert.ok(Number.isSafeInteger(n[k]),'navigation_integer');
+    assert.ok(n.total>=0&&n.total<=8192&&n.page>=1&&n.page<=n.pages,'navigation_bounds');
+    assert.equal(n.pages,Math.max(1,Math.ceil(n.total/50)));
+    assert.equal(rows.length,Math.min(50,Math.max(0,n.total-(n.page-1)*50)));
+    for(const [key,absent] of [['previous',n.page===1],['next',n.page===n.pages]]){
+      if(absent)assert.equal(n[key],null);else assert.match(n[key],/^records-page-[0-9a-f]{32}$/);
+    }
+  }
   assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(text),'persistent_uuid_leak');
   for(const key of ['operation_id','database_id','record_id','expected_revision','expanded_requests','source_files'])
     assert.ok(!text.includes('"'+key+'"'),'private_host_envelope_leak');
-  assert.ok(observedReplies.size<180,'audited_reply_budget');
+  assert.ok(observedReplies.size<360,'audited_reply_budget');
   assert.ok(!observedReplies.has(packet.id),'audited_reply_duplicate');
   observedReplies.set(packet.id,{packet,actual:decoded,origin});
 }
@@ -591,7 +662,7 @@ async function main(){
       }catch{if(host&&host.exitCode===null&&!aborted){wireFailure=true;abort();}return route.abort().catch(()=>{});}
     }
     if(new URL(target).pathname==='/rpc'){
-      if(rpc>=180){abort();return route.abort().catch(()=>{});}
+      if(rpc>=360){abort();return route.abort().catch(()=>{});}
       rpc++;
       try{
         checkRequest(route.request());
@@ -715,6 +786,45 @@ async function main(){
       enumReportTextOnly:true,independentTypedAudit:true,naturalRestart:true,
       directBusinessSeeding:false,browserStateInjection:false,nativeParity:false};
   });
+  await scenario(scenarioNames[4],async()=>{
+    await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await idle();
+    await catalogEntry('Warehouses card');
+    for(let index=0;index<50;index++){
+      const suffix=String(index).padStart(4,'0');await newCard(false);
+      await commitInput('Code','Z'+suffix);
+      const reply=formReply('command','SaveButton');await action('Save record').click();await reply;await idle();
+      await closeForm();await countPanels(0);
+    }
+    const nav=()=>lastApplicationState.catalog.navigation;
+    const turn=async title=>{const reply=replyFor(p=>p.method==='application.catalogPage');await catalog().getByRole('button',{name:title,exact:true}).click();await reply;await idle();};
+    const search=async(query,order)=>{
+      await catalog().getByLabel('Search records',{exact:true}).fill(query);
+      await catalog().getByLabel('Record order',{exact:true}).selectOption(order);
+      const reply=replyFor(p=>p.method==='application.catalogFilter');await catalog().getByRole('button',{name:'Search records',exact:true}).click();await reply;await idle();
+    };
+    assert.equal(nav().total,51);assert.equal(nav().page,1);assert.equal(await catalog().locator('tbody tr').count(),50);
+    await turn('Next records');assert.equal(nav().page,2);assert.equal(await catalog().locator('tbody tr').count(),1);
+    await selectNumber('Z0049');const opened=replyFor(p=>p.method==='application.openRecord');
+    await catalog().getByRole('button',{name:'Open selected',exact:true}).click();await opened;await idle();await value('Code','Z0049');
+    await commitInput('Description','ZZ updated last warehouse');
+    const saved=formReply('command','SaveButton');await action('Save record').click();await saved;await idle();
+    assert.equal(nav().page,2);await catalog().getByRole('cell',{name:'ZZ updated last warehouse',exact:true}).waitFor();
+    await closeForm();await countPanels(0);assert.equal(await catalog().getByRole('button',{name:'Open selected',exact:true}).isEnabled(),false);
+    await turn('Previous records');assert.equal(nav().page,1);
+    await search('Z0049','code');assert.equal(nav().total,1);assert.equal(nav().pages,1);
+    await catalog().getByRole('cell',{name:'ZZ updated last warehouse',exact:true}).waitFor();
+    await search('','description');assert.equal(nav().total,51);assert.equal(nav().order,'description');
+    await turn('Next records');assert.equal(nav().page,2);
+    const refreshed=replyFor(p=>p.method==='application.catalog');await catalog().getByRole('button',{name:'Refresh records',exact:true}).click();await refreshed;await idle();
+    assert.equal(nav().page,2);assert.equal(nav().order,'description');assert.equal(nav().total,51);
+    await catalog().getByRole('cell',{name:'ZZ updated last warehouse',exact:true}).waitFor();
+    const audit=inventoryFixture('audit'),warehouses=audit.catalogs.filter(row=>row[0]==='Warehouses');
+    assert.equal(warehouses.length,51);assert.ok(warehouses.some(row=>row[1]==='Z0049'&&row[2]==='ZZ updated last warehouse'));
+    await screenshot(screenshots[4]);await naturalStop();
+    assert.deepEqual(inventoryFixture('audit'),audit,'shutdown_mutated_database');
+    report.acceptance.recordPaging=true;report.acceptance.recordSearchSort=true;report.acceptance.saveRefreshPage=true;
+    report.acceptance.rowsCreatedThroughUI=51;
+  });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
   assert.deepEqual(results.map(row=>row.name),scenarioNames,'incomplete_scenarios');
@@ -779,5 +889,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:scenarioNames.length,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;
