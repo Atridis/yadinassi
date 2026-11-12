@@ -186,3 +186,8 @@ server-call DemoService. Общие модули не получают database_
 Designer projection43: старое native/browser evidence к нему не относится.
 Application-host/business ещё не удалены: их навигационные сценарии должны
 быть перенесены и проверены до удаления исходных конфигураций.
+
+Продолжение переноса lifecycle: `DemoWelcome` в основной демо воспроизводит
+server Message + Val arguments и OpenForm именно из client CommonModule.
+Старый lifecycle тест не удалён, новый проверяет отдельный child process и
+неизменность SQLite. Новый source47/Designer46 ещё требует native и browser.

@@ -30,7 +30,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
         files=source()
         for path,digest in _DEMO_KINDS_SOURCE_SHA256.items():
             if path!='Configuration.xml':self.assertEqual(sha256(files[path]).hexdigest(),digest)
-        self.assertEqual(len(files),44)
+        self.assertEqual(len(files),47)
 
     def test_original_reference_section_and_callback_not_erased(self):
         c=self.config();cats={x.name:x for x in c.catalogs};product=cats['Номенклатура']
@@ -65,7 +65,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
 
     def test_caller_mapping_is_detached(self):
         files=source();c=import_main_demo_configuration(files,profile=PROFILE)
-        files.clear();self.assertEqual(len(c.files),44)
+        files.clear();self.assertEqual(len(c.files),47)
         self.assertEqual(canonical(c),c)
 
     def test_native_internal_info_uses_exact_matching_metadata_owners(self):
@@ -122,8 +122,11 @@ class MainDemoConfigurationTests(unittest.TestCase):
                  'CommonForms/OperationDraft/Ext/Form.xml':'cf2b4d0296fb5932b3000ed823e661649cd25346119d57575f67be52aa0df42e',
                  'Documents/Issue/Forms/Card/Ext/Form.xml':'2747be3390be238f91b80dcded8bdce77598ce648c6625475cfd449a5ea34222',
                  'Documents/Receipt/Forms/Card/Ext/Form.xml':'f01260926e2526025a0d58ba7859d7d7eda6fd0d5b733396b20c4cc0677dd97d'}
+        self.assertEqual(set(_NATIVE_LAYOUTS), set(prior) | {'CommonForms/DemoWelcome/Ext/Form.xml'})
         for path in _NATIVE_LAYOUTS:
-            self.assertEqual(sha256(projected[path]).hexdigest(),prior[path])
+            # Retain all historical digests; DemoWelcome is a new authored layout.
+            if path in prior:
+                self.assertEqual(sha256(projected[path]).hexdigest(),prior[path])
             native=ET.fromstring(files[path]); runtime=ET.fromstring(projected[path])
             self.assertEqual([n.find(V+'item/'+V+'content').text for n in native.iter(L+'Title')],
                              [n.text for n in runtime.iter(L+'Title')])
@@ -138,7 +141,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
         from unittest.mock import patch
         from yadinassi.configuration_main_demo import _NATIVE_LAYOUTS, _runtime_layout_projection
         import yadinassi.configuration_main_demo as module
-        path=_NATIVE_LAYOUTS[0]; raw=source()[path]
+        path='CommonForms/DraftDetails/Ext/Form.xml'; raw=source()[path]
         variants=(raw.replace(b'>ru<',b'>en<',1),
                   raw.replace(b'<v8:item>',b'<v8:item bad="1">',1),
                   raw.replace(b'Form.Command.Accept',b'Form.Command.Unknown',1))

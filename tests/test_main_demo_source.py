@@ -32,7 +32,7 @@ class MainDemoSourceTests(unittest.TestCase):
         self.assertEqual(set(by_kind['Document']), {'Receipt', 'Issue'})
         self.assertEqual(by_kind['AccumulationRegister'], ['Stock'])
         self.assertEqual(set(by_kind['Enum']), {'Units', 'States'})
-        self.assertEqual(set(by_kind['CommonForm']), {'OperationDraft', 'DraftDetails'})
+        self.assertEqual(set(by_kind['CommonForm']), {'OperationDraft', 'DraftDetails', 'DemoWelcome'})
         self.assertFalse((SOURCE / 'Catalogs/Products.xml').exists())
         self.assertFalse((SOURCE / 'Catalogs/Warehouses.xml').exists())
 
@@ -57,7 +57,7 @@ class MainDemoSourceTests(unittest.TestCase):
 
     def test_complete_bounded_xml_bsl_envelope(self):
         paths = [p for p in SOURCE.rglob('*') if p.is_file()]
-        self.assertEqual(len(paths), 44)
+        self.assertEqual(len(paths), 47)
         self.assertTrue(all(p.suffix in ('.xml', '.bsl') for p in paths))
         for path in paths:
             if path.suffix == '.xml':

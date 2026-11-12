@@ -40,15 +40,15 @@ class MainDemoDesignerTests(unittest.TestCase):
             sender=user,ref='codex/demo',inputs={'reviewed_sha':'a'*40})
         return e,c
 
-    def test_source_is_canonical_44_and_projection_is_exact_43(self):
+    def test_source_is_canonical_47_and_projection_is_exact_46(self):
         source=host.source_files()
-        self.assertEqual(len(source),44)
+        self.assertEqual(len(source),47)
         original=ast.literal_eval(ast.parse((ROOT/'yadinassi/main_demo_source.py').read_text()).body[1].value)
         self.assertEqual(host.SOURCE_SHA256,original)
         with tempfile.TemporaryDirectory() as temp:
             target=Path(temp)/'source';host.stage_source(target,source)
             self.assertEqual(host.dump_files(target),{n:raw for n,raw in source.items() if n!=host.MANIFEST})
-            self.assertEqual(len(host.dump_files(target)),43)
+            self.assertEqual(len(host.dump_files(target)),46)
 
     def test_projection_refuses_changed_or_extra_bytes(self):
         source=host.source_files()
@@ -275,7 +275,7 @@ class MainDemoDesignerTests(unittest.TestCase):
             value=host.diagnostics.check_excerpt(p,host.PLATFORM_FILES)
             self.assertEqual(value['state'],'read')
             self.assertIn('(12,7)',value['lines'][0]);self.assertIn('PendingDraft',value['lines'][0])
-            self.assertEqual(value['lines'][1],'[source:15]')
+            self.assertEqual(value['lines'][1],f"[source:{host.PLATFORM_FILES.index('CommonForms/DraftDetails/Ext/Form.xml')}]")
             self.assertTrue(host.diagnostics.check_valid(value,host.PLATFORM_FILES))
 
     def test_check_excerpt_redacts_paths_and_credentials(self):
