@@ -13,6 +13,7 @@ from .values import HostFunction
 
 # XML family, directory/English collection, Russian collection, full-name label.
 _FAMILIES = (
+    ('Language', 'Languages', 'Языки', 'Язык'),
     ('Subsystem', 'Subsystems', 'Подсистемы', 'Подсистема'),
     ('CommonModule', 'CommonModules', 'ОбщиеМодули', 'ОбщийМодуль'),
     ('SessionParameter', 'SessionParameters', 'ПараметрыСеанса', 'ПараметрСеанса'),
@@ -39,6 +40,7 @@ _COLLECTIONS = {name.casefold(): family for family in _FAMILIES for name in fami
 _FAMILY = {family[0]: family for family in _FAMILIES}
 _FULL_FAMILIES = {name.casefold(): family for family in _FAMILIES for name in (family[0], family[3])}
 _SCALARS = {
+    'languagecode': ('LanguageCode', str), 'кодязыка': ('LanguageCode', str),
     'comment': ('Comment', str), 'комментарий': ('Comment', str),
     'version': ('Version', str), 'версия': ('Version', str),
     'includeincommandinterface': ('IncludeInCommandInterface', bool),
@@ -168,6 +170,18 @@ class SourceMetadataRoot(SourceMetadataObject):
         return owner
 
     def get_member(self, name):
+        if name.casefold() in ('defaultlanguage', 'основнойязык'):
+            node = self._property('DefaultLanguage')
+            if node.attrib or len(node):
+                raise ValueError('unsupported source metadata language reference')
+            text = node.text or ''
+            parts = text.split('.')
+            if len(parts) != 2 or parts[0] != 'Language' or not parts[1].isidentifier():
+                raise ValueError('invalid source metadata default language reference')
+            language = self.find_by_full_name(text)
+            if language is None:
+                raise ValueError('source metadata default language is not declared')
+            return language
         if name.casefold() in ('findbyfullname', 'найтипополномуимени'):
             return HostFunction(name, self.find_by_full_name)
         return super().get_member(name)

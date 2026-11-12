@@ -171,3 +171,8 @@ Rich source metadata remains preserved even when an enum's runtime declaration
 is unsupported; accessing that enum reports the specific limitation. Manager
 module execution, forms and arbitrary metadata services are not implied by
 availability of an enum's declared values.
+
+`Metadata.Languages` exposes declared language metadata and its actual
+`LanguageCode`. `Metadata.DefaultLanguage` resolves the XML reference to that
+same declared metadata object; an absent, malformed or undeclared reference is
+an error, not a guess based on the host locale or the first language in a list.
