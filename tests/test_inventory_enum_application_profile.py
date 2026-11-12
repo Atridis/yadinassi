@@ -115,3 +115,18 @@ class InventoryEnumApplicationProfileTests(unittest.TestCase):
             with sqlite3.connect(path) as connection:
                 connection.execute("UPDATE inventory_profile SET profile='inventory-enum-v1'")
             with self.assertRaises(BackendError): SQLiteDBContext(path)
+
+    def test_foreign_configuration_hook_not_invoked_by_runtime(self):
+        from types import SimpleNamespace
+        from yadinassi.inventory_enum_runtime import bind
+        config=self.config()
+        class Foreign:
+            @property
+            def profile(self):raise AssertionError('foreign configuration hook')
+        with tempfile.TemporaryDirectory() as folder:
+            with SQLiteDBContext.create_inventory_enum_application(Path(folder)/'db.sqlite',config) as context:
+                original=context.backend.accumulation_configuration
+                try:
+                    context.backend.accumulation_configuration=Foreign()
+                    with self.assertRaises(BackendError):bind(SimpleNamespace(database_context=context),object())
+                finally:context.backend.accumulation_configuration=original

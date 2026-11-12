@@ -99,8 +99,9 @@ def bind(interpreter,metadata):
     backend=context.backend
     if type(backend) is not SQLiteCatalogBackend or backend.format_version!=16:return
     configuration=backend.accumulation_configuration
-    if (type(configuration), configuration.profile) not in ((InventoryEnumConfiguration, PROFILE),
-            (InventoryEnumApplicationConfiguration, FORMS_PROFILE)):
+    if (type(configuration) not in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration)
+            or (type(configuration), configuration.profile) not in ((InventoryEnumConfiguration, PROFILE),
+                (InventoryEnumApplicationConfiguration, FORMS_PROFILE))):
         raise BackendError('unsupported')
     namespace=BSLEnumerations(configuration.enumerations)
     metadata._enumerations=namespace
