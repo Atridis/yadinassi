@@ -40,6 +40,7 @@ Function AssignInputs(R)
  Return First+":"+Bit(Rejected)+":"+Cell(R.U);
 EndFunction
 Function ObserveCase(CaseNo,Stage)
+ Var UniqueLookupValue;
  If CaseNo=1 Then
   Stage="setup"; D=New TypeDescription("УникальныйИдентификатор");
   Stage="action";
@@ -96,16 +97,16 @@ Function ObserveCase(CaseNo,Stage)
   Stage="observe"; Return "S:"+(Cell(T[0].U)+":"+Cell(T[1].U));
  EndIf;
  If CaseNo=9 Then
-  Stage="setup"; T=TypedTable(); R=T.Add(); R.U=FixedUUID(); T.Add(); Key=New УникальныйИдентификатор("11111111-2222-4333-8444-555555555555");
+  Stage="setup"; T=TypedTable(); R=T.Add(); R.U=FixedUUID(); T.Add(); UniqueLookupValue=New УникальныйИдентификатор("11111111-2222-4333-8444-555555555555");
   Stage="action";
-  Try Found=T.Find(Key,"U"); Matches=T.FindRows(New Structure("U",Key));
+  Try Found=T.Find(UniqueLookupValue,"U"); Matches=T.FindRows(New Structure("U",UniqueLookupValue));
   Except Return "R:action"; EndTry;
   Stage="observe"; Return "S:"+(Bit(Found=R)+":"+RowsWitness(Matches,R));
  EndIf;
  If CaseNo=10 Then
-  Stage="setup"; T=TypedTable(); R=T.Add(); R.U=FixedUUID(); T.Add(); Key=New УникальныйИдентификатор("11111111-2222-4333-8444-555555555555");
+  Stage="setup"; T=TypedTable(); R=T.Add(); R.U=FixedUUID(); T.Add(); UniqueLookupValue=New УникальныйИдентификатор("11111111-2222-4333-8444-555555555555");
   Stage="action";
-  Try T.Indexes.Add("U"); Matches=T.FindRows(New Structure("U",Key));
+  Try T.Indexes.Add("U"); Matches=T.FindRows(New Structure("U",UniqueLookupValue));
   Except Return "R:action"; EndTry;
   Stage="observe"; Return "S:"+(RowsWitness(Matches,R));
  EndIf;

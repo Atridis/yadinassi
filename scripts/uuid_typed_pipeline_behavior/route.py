@@ -8,7 +8,7 @@ SCHEMA='native-1c-uuid_typed_pipeline-v1'
 STAGE_SCHEMA='native-1c-uuid_typed_pipeline-stage-v1'
 COUNT=16
 MAX_OUTPUT=131072
-SOURCE_SHA256='7c5a27b36c8bfb2efa26bfae64d0118a4eafd5d963d6140d2e3b043bac1d03ef'
+SOURCE_SHA256='ca2f966644536e3f8f02299f79f52e0076fad81384a453f8da2c455e8cb22b0c'
 def source():
     p=Path(__file__).with_name('observe.bsl')
     if p.is_symlink():raise ValueError('source symlink')

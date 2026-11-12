@@ -50,6 +50,9 @@ class UUIDAcquisitionTests(unittest.TestCase):
         self.assertEqual(source.count(b'For CaseNo = 1 To 16 Do'),1)
     def test_08_fixed_uuid_only(self):
         source=route.source().decode()
+        self.assertIn('Var UniqueLookupValue;',source)
+        self.assertNotIn(' Key=',source)
+        self.assertEqual(source.count('UniqueLookupValue=New УникальныйИдентификатор'),2)
         self.assertNotIn('New UUID()',source)
         self.assertNotIn('New УникальныйИдентификатор()',source)
         self.assertNotIn('Type("UUID")',source)
