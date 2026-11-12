@@ -33,7 +33,7 @@ class ModuleValidationTests(unittest.TestCase):
 
     def test_authority_and_reuse_flags_fail_closed(self):
         for flags in ({'Privileged': 'true'}, {'ClientOrdinaryApplication': 'true'},
-                      {'ExternalConnection': 'true'}, {'ReturnValuesReuse': 'DuringSession'},
+                      {'ExternalConnection': 'true'}, {'ReturnValuesReuse': 'Forever'},
                       {'Server': 'yes'}, {'ClientManagedApplication': 'false'}):
             with self.subTest(flags=flags), self.assertRaises(ValueError):
                 ConfigurationApplication.from_files(module_files([('Tools', CLIENT[1], flags)]))

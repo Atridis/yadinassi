@@ -265,3 +265,8 @@ scripts/native_1c_common_module_reuse_probe.sh text eol=lf
 scripts/native_1c_bootstrap/common_module_reuse_suite.py text eol=lf
 scripts/native_1c_bootstrap/run_common_module_reuse_stage.py text eol=lf
 tests/test_common_module_reuse_native_acquisition.py text eol=lf
+yadinassi/reusable_values.py text eol=lf
+tests/test_reusable_values.py text eol=lf
+tests/test_configuration_reusable_values.py text eol=lf
+tests/test_common_module_reuse_native_replay.py text eol=lf
+tests/fixtures/native_common_module_reuse_43130157790.json -text
