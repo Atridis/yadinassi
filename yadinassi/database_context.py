@@ -37,6 +37,14 @@ class SQLiteDBContext:
         return result
 
     @classmethod
+    def create_inventory_enum(cls, path, configuration):
+        """Fresh exact enum inventory profile; not an existing database upgrade."""
+        result = object.__new__(cls)
+        result._backend = SQLiteCatalogBackend.create_inventory_enum(path, configuration)
+        result.path = result._backend.path
+        return result
+
+    @classmethod
     def create_inventory_application(cls, path, configuration):
         """Fresh full-source inventory forms grant; no conversion of a core DB."""
         result = object.__new__(cls)

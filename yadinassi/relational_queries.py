@@ -17,6 +17,7 @@ from .catalog_backend import (BackendError, CatalogKey, CatalogScanRequest,
     CatalogValuePage, CatalogValueRow, CatalogSectionPage)
 from .catalog_types import BSLCatalogReference
 from .document_types import BSLDocumentReference
+from .enum_types import BSLEnumReference
 from .dates import BSLDate
 from .values import NULL
 
@@ -49,6 +50,7 @@ class _BoundMembership:
     values: tuple
     plan: object = None
     constant: bool = False
+    enum_membership: bool = False
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,8 @@ def _key(value):
     if type(value) is bool: return ('boolean', value)
     if type(value) is Decimal: return ('number', value)
     if type(value) is BSLDate: return ('datetime', value.ticks)
+    if type(value) is BSLEnumReference:
+        return ('enum_ref',id(value.value_type.snapshot),value.value_type.metadata_uuid.int,value.reference_uuid.int)
     if type(value) is BSLCatalogReference or type(value) is BSLDocumentReference:
         return ('document_ref' if type(value) is BSLDocumentReference else 'catalog_ref', id(value.value_type.snapshot),
                 value.value_type.metadata_uuid.int, value.reference_uuid.int)
@@ -112,7 +116,7 @@ def _compare(left, right, operator):
     if a[0] != b[0]: raise TypeError('Query comparison requires exact field type')
     if a[0] in ('catalog_ref', 'document_ref') and a[1:3] != b[1:3]:
         raise TypeError('Query references require same database and catalog')
-    if a[0] in ('catalog_ref', 'document_ref', 'boolean') and operator not in ('eq', 'ne'):
+    if a[0] in ('catalog_ref', 'document_ref', 'enum_ref', 'boolean') and operator not in ('eq', 'ne'):
         raise ValueError('Query value does not support ordering comparison')
     if operator == 'eq': return a == b
     if operator == 'ne': return a != b
@@ -124,12 +128,19 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None, information_registers=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None, information_registers=None, enum_scope=None):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
         self.catalogs, self.documents = catalogs, documents
         self.information_registers = information_registers
+        from .inventory_enum_runtime import query_binding
+        self.enum_scope = enum_scope
+        self.enum_binding=query_binding(catalogs)
+        for value in parameters.values():
+            if type(value) is BSLEnumReference:
+                if self.enum_binding is None:raise ValueError('Enum parameters require the explicit inventory enum profile')
+                self.enum_binding.owned_key(value)
         self._descriptors = {}
         self.memberships = []
         self.hierarchies = []
@@ -137,10 +148,11 @@ class _Plan:
         self._membership_sets = {}
         self.temporary_tables = temporary_tables or {}
         self.external_tables = external_tables or {}
-        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived),
+        self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived, query.virtual_condition),
                         *(join.source for join in query.joins))
         self.derived_plans = {}
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
+        condition_budget = enum_scope.condition_budget if enum_scope is not None else [0, 0]
         for index, source in enumerate(self.sources):
             if source.derived is not None:
                 from .query_sources import _UnionPlan
@@ -151,7 +163,7 @@ class _Plan:
                 plan_type = _UnionPlan if type(source.derived) is syntax.Union else _Plan
                 self.derived_plans[index] = plan_type(source.derived, catalogs, parameters,
                     self.temporary_tables, self.external_tables, documents=documents,
-                    information_registers=information_registers)
+                    information_registers=information_registers, enum_scope=enum_scope)
                 self.managers.append(None); self.sections.append(None)
                 continue
             if source.temporary or source.external:
@@ -166,7 +178,8 @@ class _Plan:
                 manager = documents.get_index(source.catalog)
             elif source.family == 'accumulation_register':
                 from .accumulation_queries import manager as accumulation_manager
-                manager = accumulation_manager(documents, source, self.parameters)
+                manager = accumulation_manager(documents, source, self.parameters,
+                    condition_budget=condition_budget)
             elif source.family == 'information_register':
                 from .recorder_queries import manager as recorder_manager
                 manager = recorder_manager(documents, source.catalog)
@@ -209,6 +222,7 @@ class _Plan:
             if type(order.field) is syntax.Field and len(order.field.parts) == 1 and order.field.parts[0].casefold() in aliases:
                 expression = aliases[order.field.parts[0].casefold()]
             else: expression = self.bind(order.field)
+            if self.describe(expression).kind=='enum_ref':raise ValueError('Enum query ordering is outside this profile')
             self.orders.append((expression, order.descending))
         expressions = (*self.projections, *(e for e, _ in self.orders), *self.condition_expressions(self.having))
         self.grouped = bool(self.groups or any(self.has_aggregate(e) for e in expressions))
@@ -223,15 +237,13 @@ class _Plan:
             if type(expression) is _BoundField:
                 column = expression.column
                 name = ('Код' if not projection.explicit_alias and column.field == 'code' else projection.alias)
-                column = _Column(name, column.field, column.kind, column.qualifiers,
-                                 column.custom, projection.explicit_alias)
+                column = replace(column, name=name, explicit_alias=projection.explicit_alias)
             else:
                 descriptor = self.describe(expression)
                 if descriptor.kind == 'null' and not allow_null:
                     raise TypeError('A NULL-only projection requires a typed expression')
-                column = _Column(projection.alias, None, descriptor.kind, descriptor.qualifiers,
-                                 descriptor.custom, True)
-            if column.kind in ('catalog_ref', 'document_ref'):
+                column = replace(descriptor, name=projection.alias, field=None, explicit_alias=True)
+            if column.kind in ('catalog_ref', 'document_ref', 'enum_ref'):
                 column = replace(column, reference_identity=self.reference_identity(expression))
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
@@ -256,6 +268,25 @@ class _Plan:
             for manager in member.plan.all_managers) + tuple(node.manager for node in self.hierarchies)
 
     def resolve_field(self, index, expression):
+        column=self._resolve_field(index,expression)
+        if column.kind=='enum_ref':
+            source=self.sources[index]
+            if self.enum_binding is None or source.temporary or source.external:
+                raise ValueError('Enum query source is outside this profile')
+            if source.derived is not None:
+                if self.enum_scope is None:
+                    raise ValueError('Enum derived source is outside this profile')
+                descriptor = self.enum_scope.require_descriptor(column.enum_descriptor)
+                typ = descriptor.value_type
+            else:
+                typ = self.enum_binding.value_type(column.custom.target_enum_id)
+                descriptor = (self.enum_scope.descriptor(column.custom.target_enum_id)
+                              if self.enum_scope is not None else None)
+            column=replace(column,reference_identity=(typ.snapshot,typ.metadata_uuid),
+                           enum_descriptor=descriptor)
+        return column
+
+    def _resolve_field(self, index, expression):
         from .queries import _field
         source = self.sources[index]
         if source.family == 'accumulation_register' and not (source.temporary or source.external):
@@ -313,7 +344,7 @@ class _Plan:
             if field is not None:
                 if expression.function in ('sum','avg') and self.describe(field).kind not in ('number', 'null'):
                     raise TypeError('SUM/AVG require a Number field')
-                if expression.function in ('min','max') and self.describe(field).kind in ('boolean','catalog_ref','document_ref'):
+                if expression.function in ('min','max') and self.describe(field).kind in ('boolean','catalog_ref','document_ref','enum_ref'):
                     raise TypeError('MIN/MAX require String, Number or Date')
             return _BoundAggregate(expression.function, field, expression.distinct)
         if type(expression) is not syntax.Field: return expression
@@ -356,12 +387,15 @@ class _Plan:
         if node.operator in ('is_null', 'is_not_null'):
             return syntax.Comparison(left, node.operator, None)
         if kind(left) != kind(right) and 'null' not in (kind(left), kind(right)): raise TypeError('Query comparison requires exact field type')
-        if kind(left) in ('boolean','catalog_ref','document_ref') and node.operator not in ('eq','ne'):
+        if kind(left) in ('boolean','catalog_ref','document_ref','enum_ref') and node.operator not in ('eq','ne'):
             raise ValueError('Query value does not support ordering comparison')
         if kind(left) == kind(right) and kind(left) in ('catalog_ref', 'document_ref'):
             a, b = self.reference_identity(left), self.reference_identity(right)
             if a[0] is not b[0] or a[1] != b[1]:
                 raise TypeError('Query references require same database and catalog')
+        if kind(left)==kind(right)=='enum_ref' and type(left) is _BoundField and type(right) is _BoundField:
+            a,b=self.reference_identity(left),self.reference_identity(right)
+            if a[0] is not b[0] or a[1]!=b[1]:raise TypeError('Mixed enum field comparison is outside this profile')
         return syntax.Comparison(left, node.operator, right)
 
     def storage_predicate(self, node, source, *, allow_or=False):
@@ -417,6 +451,12 @@ class _Plan:
     def membership(self, node, *, aggregates, source_limit):
         from .query_sources import _UnionPlan
         left = self.bind(node.field, aggregates=aggregates, source_limit=source_limit)
+        if self.describe(left).kind == 'enum_ref':
+            if self.enum_scope is None:
+                raise ValueError('Enum membership is outside this profile')
+            return self.enum_membership(node, left)
+        if self.enum_scope is not None:
+            raise ValueError('Direct enum reporting membership requires an enum operand')
         plan, constant = None, False
         if type(node.values) is syntax.Select or type(node.values) is syntax.Union:
             plan_type = _UnionPlan if type(node.values) is syntax.Union else _Plan
@@ -452,6 +492,50 @@ class _Plan:
                 self.reference_identity(left) if a.kind in ('catalog_ref','document_ref') else None,
                 self.reference_identity(value) if b.kind in ('catalog_ref','document_ref') else None)
         bound = _BoundMembership(left, values, plan, constant)
+        self.memberships.append(bound)
+        return bound
+
+    def enum_membership(self, node, left):
+        """Measured exact16 enum membership, not a global SQL NULL rewrite."""
+        from .query_sources import _UnionPlan
+        scope = self.enum_scope
+        scope.require_descriptor(self.describe(left).enum_descriptor)
+        plan = None
+        if type(node.values) in (syntax.Select, syntax.Union):
+            plan_type = _UnionPlan if type(node.values) is syntax.Union else _Plan
+            options = {'allow_null': True} if plan_type is _Plan else {}
+            plan = plan_type(node.values, self.catalogs, self.parameters,
+                documents=self.documents, information_registers=self.information_registers,
+                enum_scope=scope, **options)
+            if len(plan.columns) != 1:
+                raise ValueError('IN subquery requires exactly one column')
+            column = plan.columns[0]
+            if column.kind == 'enum_ref':
+                # Owned other-enum SELECT is a measured non-match, not a new
+                # compound output type or assignment-to-empty conversion.
+                scope.require_descriptor(column.enum_descriptor)
+            elif column.kind != 'null':
+                raise TypeError('Enum IN subquery requires an enum or NULL column')
+            values = ()
+        else:
+            # Parentheses preserve the distinction between a scalar singleton
+            # and an Array parameter. Bare IN &Array was refused by native.
+            if (type(node.values) is not tuple or len(node.values) != 1
+                    or type(node.values[0]) is not syntax.Parameter):
+                raise ValueError('Enum IN requires a parenthesized parameter or SELECT')
+            value = self.bind(node.values[0])
+            if (type(value) is not _ParameterList and type(value) is not BSLEnumReference
+                    and value is not NULL):
+                raise TypeError('Enum singleton IN requires an owned enum or NULL parameter')
+            values = value.values if type(value) is _ParameterList else (value,)
+            if len(values) > 256:
+                raise ValueError('Direct enum reporting parameter list limit exceeded')
+            for item in values:
+                if type(item) is BSLEnumReference:
+                    scope.value_descriptor(item)
+                elif item is not NULL and type(item) not in (str, Decimal):
+                    raise TypeError('Unsupported enum membership parameter kind')
+        bound = _BoundMembership(left, values, plan, True, True)
         self.memberships.append(bound)
         return bound
 
@@ -518,7 +602,7 @@ class _Plan:
                 branches, otherwise = expression.arguments
                 candidates = [value for _, value in branches] + [otherwise]
             else: candidates = expression.arguments
-            return next(self.reference_identity(e) for e in candidates if self.describe(e).kind in ('catalog_ref', 'document_ref'))
+            return next(self.reference_identity(e) for e in candidates if self.describe(e).kind in ('catalog_ref', 'document_ref', 'enum_ref'))
         return expression.value_type.snapshot, expression.value_type.metadata_uuid
 
     def describe(self, expression):
@@ -554,6 +638,11 @@ class _Plan:
                 kinds = {c.kind for _, c in typed}
                 if len(kinds) != 1: raise TypeError('Query conditional branches require the same type')
                 kind = typed[0][1].kind
+                if kind == 'enum_ref':
+                    if self.enum_scope is None:
+                        raise ValueError('Enum conditional expressions are outside this profile')
+                    self.enum_scope.require_same(tuple(c.enum_descriptor for _, c in typed))
+                    return typed[0][1]
                 if kind == 'number':
                     scale = max(c.qualifiers[1] for _, c in typed)
                     return column(kind, (38, scale, 'Any'))
@@ -574,6 +663,11 @@ class _Plan:
             if scale > 38: raise ValueError('Query expression Number scale exceeded')
             return column('number', (38, scale, 'Any'))
         if expression is NULL: return column('null')
+        if type(expression) is BSLEnumReference and self.enum_scope is not None:
+            descriptor = self.enum_scope.value_descriptor(expression)
+            typ = descriptor.value_type
+            return _Column('', None, 'enum_ref', (),
+                reference_identity=(typ.snapshot, typ.metadata_uuid), enum_descriptor=descriptor)
         kind = _key(expression)[0]
         if kind == 'number':
             scale = max(0, -expression.as_tuple().exponent)
@@ -672,7 +766,7 @@ class _Plan:
                 if not nonempty: return False
                 if left is NULL: return None
                 if _key(left) in keys: return True
-                return None if null else False
+                return False if node.enum_membership else None if null else False
             unknown = False
             for expression in node.values:
                 self._budget[2] += 1
@@ -861,9 +955,14 @@ class _Plan:
             if budget is None: budget = [0, 0]
             while len(budget) < 4: budget.append(0)
             self._budget = budget
-            self.prepare_memberships(view, budget)
-            self.prepare_hierarchies(view, budget)
-            sources = [self.load(i, view, budget) for i in range(len(self.sources))]
+            from contextlib import nullcontext
+            from .inventory_enum_runtime import read_snapshot
+            witness=(read_snapshot(self.catalogs._metadata._root,view)
+                     if self.enum_binding is not None else nullcontext())
+            with witness:
+                self.prepare_memberships(view, budget)
+                self.prepare_hierarchies(view, budget)
+                sources = [self.load(i, view, budget) for i in range(len(self.sources))]
         finally:
             if owner: view.close()
         rows = [(row,) for row in sources[0]]
