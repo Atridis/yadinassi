@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    COMMON_MODULE = "ОбщийМодуль"
     ACCUMULATION_RECORD_TYPE = "ВидДвиженияНакопления"
     USER_MESSAGE = "СообщениеПользователю"
     FORM = "ФормаКлиентскогоПриложения"

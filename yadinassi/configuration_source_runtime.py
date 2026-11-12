@@ -143,6 +143,8 @@ class SourceApplication:
                     if routine.is_async:
                         raise ValueError('Асинхронные повторно используемые модули пока не поддержаны')
                     self._reuse_routines[id(routine)] = (routine, child, definition.identity, reuse)
+            from .values import BSLType
+            child._self_module._platform_type = BSLType.COMMON_MODULE
             child._self_module.ready = True
             self._instances[instance_key] = child
             return child._self_module

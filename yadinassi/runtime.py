@@ -138,6 +138,7 @@ class _Module:
         self.interpreter = interpreter
         self.path = path
         self.ready = False
+        self._platform_type = None
 
     def __str__(self) -> str:
         raise TypeError("Строковое представление объекта модуля пока не поддерживается")

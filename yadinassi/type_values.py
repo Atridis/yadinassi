@@ -247,6 +247,8 @@ _BY_NAME = {name.casefold(): value_type
             if alias is not None
             for name in (value_type.value, alias)}
 
+_BY_NAME.update({"commonmodule": BSLType.COMMON_MODULE,
+                 "общиймодуль": BSLType.COMMON_MODULE})
 
 def type_by_name(name: object) -> BSLType:
     if type(name) is not str:
@@ -258,6 +260,11 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    # Only explicitly admitted metadata modules carry this identity. Standalone
+    # file modules and arbitrary host objects do not become common modules.
+    from .runtime import _Module
+    if type(value) is _Module and value._platform_type is BSLType.COMMON_MODULE:
+        return BSLType.COMMON_MODULE
     from .enum_types import BSLEnumType, BSLEnumReference
     from .enumerations import BSLEnumManager
     if type(value) is BSLEnumType: return BSLType.TYPE
