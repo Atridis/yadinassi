@@ -226,3 +226,7 @@ scripts/native_1c_regex_extensions_profile.py text eol=lf
 scripts/native_1c_regex_extensions_probe.sh text eol=lf
 scripts/native_1c_bootstrap/regex_extensions_suite.py text eol=lf
 tests/test_regex_extensions_native_acquisition.py text eol=lf
+
+# Recovered local regex extension tests; native fixture remains pending.
+tests/test_regex_extensions_parser.py text eol=lf
+tests/test_regex_extensions_vm.py text eol=lf
