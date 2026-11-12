@@ -3,6 +3,8 @@
 A new immutable grant, never a widening of historical demo or enum profiles.
 Import is pure: it neither executes stored code nor allocates a database.
 """
+from copy import deepcopy
+from functools import lru_cache
 from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
@@ -130,6 +132,18 @@ def import_main_demo_configuration(files, *, profile=None):
         commands,reports,_digest(projected.items()),catalog_handlers,inventory)
 
 
+@lru_cache(maxsize=1)
+def _parsed_source_witness(files):
+    """Private pure parse memo, never a database/owner/write admission.
+
+    The key contains exact immutable source bytes, not a config object or a
+    data_version. Nothing from this cached object is returned to a caller.
+    Failures are not cached. Database readers still independently verify their
+    actual bytes, marker, database identity and DDL in the current snapshot.
+    """
+    return import_main_demo_configuration(dict(files), profile=PROFILE)
+
+
 def canonical(configuration):
     if (type(configuration) is not MainDemoConfiguration
             or type(configuration.profile) is not str or configuration.profile != PROFILE
@@ -138,7 +152,18 @@ def canonical(configuration):
                    or type(x[1]) is not bytes for x in configuration.files)
             or len({p for p,raw in configuration.files}) != len(configuration.files)):
         raise ValueError('main demo configuration required')
-    fresh = import_main_demo_configuration(dict(configuration.files),profile=PROFILE)
+    # Rehash the full current envelope even on a parse-cache hit. Bounds and
+    # the closed path/hash set are checked before consulting process-local data.
+    if (len(configuration.files) != len(SOURCE_SHA256)
+            or any(len(raw) > xml.MAX_FILE_BYTES for _, raw in configuration.files)
+            or sum(len(raw) for _, raw in configuration.files) > xml.MAX_TOTAL_BYTES
+            or {p: sha256(raw).hexdigest() for p, raw in configuration.files} != SOURCE_SHA256):
+        raise ValueError('main demo source mismatch')
+    witness = _parsed_source_witness(tuple(sorted(configuration.files)))
+    # A caller may forge even frozen dataclasses via object.__setattr__. Compare
+    # every schema/handler/profile field, then return a detached copy so such a
+    # caller cannot poison the private positive parse witness for another owner.
+    fresh = deepcopy(witness)
     if not _same(fresh,configuration):
         raise ValueError('main demo source/schema divergence')
     return fresh
