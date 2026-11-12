@@ -54,5 +54,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-filters.png
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-fences.png
             ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-reopened.png
+            ${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/statement-historical.png
           if-no-files-found: error
           retention-days: 14

@@ -27,6 +27,10 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertEqual(names, ['periods_pages_exact_saved_totals', 'typed_filters_closed_choices',
             'raw_draft_retirement_delayed_page', 'natural_restart_new_setup_readonly_audit', 'historical_selection_external_deletion'])
         self.assertEqual(self.source.count('await scenario(scenarioNames['), 5)
+        names = re.findall(r"'([^']+)'", self.source.split('const screenshots=', 1)[1].split(';', 1)[0])
+        self.assertEqual(len(names), 5)
+        for name in names:
+            self.assertIn('/yadinassi-inventory-statement-browser-artifacts/' + name, self.workflow)
         self.contains('results.map(row=>row.name),scenarioNames', 'total:5')
 
     def test_exact_sixty_one_business_requests(self):
@@ -232,7 +236,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         paths = self.workflow.split('          path: |\n', 1)[1].split('          if-no-files-found:', 1)[0]
         self.assertEqual([p.strip() for p in paths.splitlines()], [
             '${{ runner.temp }}/yadinassi-inventory-statement-browser-artifacts/' + name for name in
-            ['result.json', 'manifest.json', 'statement-pages.png', 'statement-filters.png', 'statement-fences.png', 'statement-reopened.png']])
+            ['result.json', 'manifest.json', 'statement-pages.png', 'statement-filters.png', 'statement-fences.png', 'statement-reopened.png', 'statement-historical.png']])
         self.assertEqual(len(re.findall(r'uses: [^\n]+@[0-9a-f]{40}', self.workflow)), 3)
         for item in ('workflow_dispatch:', 'pull_request:', 'schedule:', 'secrets.'):
             self.assertNotIn(item, self.workflow)
