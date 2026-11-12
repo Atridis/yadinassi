@@ -60,6 +60,30 @@ class MainDemoHostTests(unittest.TestCase):
         self.assertEqual(self.rpc('select',epoch=self.host.epoch,surface='catalogs')['error'],'finish_current_surface')
         self.assertIn(opened['session'],self.host.owner.sessions)
 
+    def test_closed_document_replay_history_does_not_block_surface_switch(self):
+        self.rpc('select', epoch=self.host.epoch, surface='documents')
+        owner = self.host.owner
+        def dispatch(method, **params):
+            return self.rpc('dispatch', epoch=self.host.epoch, request={
+                'jsonrpc':'2.0', 'id':1, 'method':'application.'+method,
+                'params':params})['payload']['result']
+        dispatch('hello', protocol=APP_PROTOCOL)
+        opened = dispatch('open', entry=1, request='one')
+        self.assertIsNone(opened['error'])
+        sid = opened['session']
+        controller, _ = owner.sessions[sid]
+        closed = dispatch('form', session=sid, request={
+            'jsonrpc':'2.0', 'id':2, 'method':'form.event',
+            'params':{'event':'close', 'revision':controller.session.revision}})
+        self.assertIsNone(closed['error'])
+        self.assertNotIn(sid, owner.sessions)
+        self.assertIn('one', owner.operations)
+        replay = dispatch('open', entry=1, request='one')
+        self.assertEqual(replay['error'], 'retired_session')
+        self.assertFalse(owner.sessions)
+        self.assertIsNone(self.rpc('select', epoch=self.host.epoch, surface='catalogs')['error'])
+        self.assertEqual(binding(self.host.owner.backend.launch_snapshot()), self.expected)
+
     def test_clean_close_retires_owner_and_snapshot_never_replays(self):
         epoch=self.host.epoch
         self.assertIsNone(self.rpc('close',epoch=epoch)['error'])

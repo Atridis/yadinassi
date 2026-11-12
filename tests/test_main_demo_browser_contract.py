@@ -19,6 +19,9 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'allowedRequest(target,origin)', 'mainDemoLaunchOutputReader as launchOutputReader',
             'mainDemoAllowedRequest as allowedRequest', 'if(rpc>=180)',
             'startedAt+280000', 'startedAt+300000',
+            'report.progress={action:actionLog.length,name,state:',
+            'if(report.rpcTail.length>12)report.rpcTail.shift()',
+            'diagnosticMethods.has(value)',
             "assert.equal(results.length,2)", "assert.equal(actionLog.length,46",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):

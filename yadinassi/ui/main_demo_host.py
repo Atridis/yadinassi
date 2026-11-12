@@ -68,8 +68,10 @@ class MainDemoHost:
             return (not self.owner.closed and self.owner.editor is None
                     and self.owner._reference_chooser is None)
         owner = self.owner
+        # operations retains open-intent replay receipts after session retirement.
+        # It is history, not live work; sessions/pending/uncertain fence live owners.
         return not (owner.closed or owner.uncertain or owner.sessions or owner.pending
-                    or owner.choice or owner.dialogs or owner.inputs or owner.operations
+                    or owner.choice or owner.dialogs or owner.inputs
                     or owner._dispatch_active)
 
     def _retire(self):

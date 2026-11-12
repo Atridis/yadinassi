@@ -184,16 +184,26 @@ async function main(){
   await startHost();
   let dropApply=false, dropDocument=false, dropped=0, droppedDocument=0;
   const requests=[];
+  // Export only fixed protocol method names, never params, URLs or tokens.
+  const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
+    'editor.hello','editor.snapshot','editor.select','editor.open','editor.event',
+    'application.hello','application.catalog','application.open','application.openRecord',
+    'application.form','application.reference','application.report','application.reportSetup',
+    'form.hello','form.snapshot','form.event']);
+  const safeMethod=value=>diagnosticMethods.has(value)?value:'other';
+  report.rpcTail=[];
   await context.route('**/*',async route=>{
     const target=route.request().url();
     if(aborted||!allowedRequest(target,origin))return route.abort();
     if(new URL(target).pathname==='/rpc'){
       if(rpc>=180){aborted=true;abort();return route.abort();}
-      rpc++;
+      rpc++;report.rpcRequests=rpc;
       const request=route.request().postDataJSON();
       const inner=request.method==='demo.dispatch'?request.params.request:null;
       requests.push({method:request.method,inner:inner?.method,event:inner?.params?.event,
         action:inner?.params?.action?.action,nested:inner?.params?.request?.method});
+      report.rpcTail.push([safeMethod(request.method),safeMethod(inner?.method),safeMethod(inner?.params?.request?.method)]);
+      if(report.rpcTail.length>12)report.rpcTail.shift();
       const loseApply=dropApply&&inner?.params?.event==='referenceChoice'&&inner.params.action.action==='apply';
       const loseDocument=dropDocument&&inner?.method==='application.hello';
       if(loseApply||loseDocument){
@@ -215,8 +225,8 @@ async function main(){
   });
   page=await context.newPage();page.setDefaultTimeout(10000);
   await page.goto(url);
-  const actionLog=[];
-  const act=async(name,fn)=>{check();actionLog.push(name);await fn();check();};
+  const actionLog=[];report.actions=actionLog;report.actionCount=0;
+  const act=async(name,fn)=>{check();actionLog.push(name);report.actionCount=actionLog.length;report.progress={action:actionLog.length,name,state:'started'};await fn();check();report.progress.state='completed';};
   const click=async name=>act(name,()=>button(name).click());
   const catalog=async name=>act('catalog:'+name,()=>page.getByRole('navigation',{name:'Catalogs',exact:true}).getByRole('button',{name:new RegExp('^'+name+'\\s*›?$')}).click());
   const legacyDialog=()=>page.getByRole('dialog',{name:'Choose reference',exact:true});
@@ -252,18 +262,28 @@ async function main(){
   const active=()=>page.locator('.configuration-form-panels > section:not([hidden])');
   const docField=name=>active().getByLabel(name,{exact:true});
   const docButton=name=>active().getByRole('button',{name,exact:true});
-  const commit=async(name,text)=>act('document-input:'+name,async()=>{await docField(name).fill(text);await docField(name).press('Enter');});
+  const idle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
+  const replyFor=predicate=>page.waitForResponse(response=>{
+    if(new URL(response.url()).pathname!=='/rpc'||response.status()!==200)return false;
+    const packet=response.request().postDataJSON();
+    return packet.method==='demo.dispatch'&&predicate(packet.params.request);
+  },{timeout:remaining(10000)});
+  const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
+  const formEvent=event=>packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event;
+  const commit=async(name,text)=>act('document-input:'+name,()=>settled(
+    packet=>packet.method==='application.form'&&['change','cell'].includes(packet.params.request.params?.event),
+    async()=>{await docField(name).fill(text);await docField(name).press('Enter');}));
   const choose=async(label,code,title)=>{
-    await act('choose:'+label,()=>docButton('Choose '+label).click());
-    await act('apply:'+label,()=>page.getByRole('dialog').getByRole('button',{name:'Choose '+code+' '+title,exact:true}).click());
+    await act('choose:'+label,()=>settled(packet=>packet.method==='application.reference'&&packet.params.action.action==='begin',()=>docButton('Choose '+label).click()));
+    await act('apply:'+label,()=>settled(packet=>packet.method==='application.reference'&&packet.params.action.action==='apply',()=>page.getByRole('dialog').getByRole('button',{name:'Choose '+code+' '+title,exact:true}).click()));
     await page.getByRole('dialog').waitFor({state:'hidden'});
   };
   await scenario('same_database_document_report_recovery_return_to_original_catalog',async()=>{
     await click('Документы и отчёты');
-    await act('receipt-list',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Receipt card',exact:true}).click());
-    await click('New document');await commit('Document number','RQA1');
+    await act('receipt-list',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Receipt card',exact:true}).click()));
+    await act('New document',()=>settled(packet=>packet.method==='application.open',()=>button('New document').click()));await commit('Document number','RQA1');
     await choose('Warehouse','W000','Warehouse 000');
-    await act('add-line',()=>docButton('Add line').click());
+    await act('add-line',()=>settled(formEvent('command'),()=>docButton('Add line').click()));
     await choose('Product, row 1','000000001','Кабель USB-C');
     // Invalid local draft cannot blur-commit; lose a real readonly hello, not a business write.
     await commit('Quantity, row 1','3');
@@ -279,8 +299,8 @@ async function main(){
     assert.equal(await docField('Amount, row 1').inputValue(),'123x','document_local_draft_lost');
     assert.equal(await docField('Quantity, row 1').inputValue(),'3');
     await commit('Amount, row 1','123');
-    await act('write-document',()=>docButton('Write document').click());
-    await act('post-document',()=>docButton('Post document').click());
+    await act('write-document',()=>settled(formEvent('command'),()=>docButton('Write document').click()));
+    await act('post-document',()=>settled(formEvent('command'),()=>docButton('Post document').click()));
     await act('movement-report-tab',()=>page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock Movements',exact:true}).click());
     const reports=page.getByRole('region',{name:'Saved stock reports',exact:true});
     await act('report-start',()=>reports.getByLabel('From moment (inclusive)',{exact:true}).fill('2026-11-11T00:00:00'));
@@ -288,7 +308,7 @@ async function main(){
     await act('show-report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
     await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();await screenshot('editor.png');
     const saved=audit();verifyMainDemoAudit(saved,assert);
-    await act('close-document',()=>docButton('Close form').click());await active().waitFor({state:'detached'});
+    await act('close-document',()=>settled(formEvent('close'),()=>docButton('Close form').click()));await active().waitFor({state:'detached'});
     await click('Справочники');await catalog('Номенклатура');
     await act('select-product-row',()=>page.locator('.records tbody tr').first().click());await click('Open selected');await ready();
     assert.equal(await field('Description').inputValue(),'Кабель USB-C');
