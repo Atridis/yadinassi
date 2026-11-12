@@ -278,17 +278,21 @@ async function main(){
   const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
   // Observe only the existing browser response. Never dispatch a second request.
   const filterReply=async(method,action)=>{
+    report.filterStage='await-response';
     const waiting=replyFor(packet=>packet.method===method);
     const [response]=await Promise.all([waiting,action()]);
+    report.filterStage='read-response';
     const packet=response.request().postDataJSON();
     const bytes=await bounded(response.body(),remaining(rpcFetchMs),'filter_reply_body_timeout');
     assert.ok(bytes.length<=131072,'filter_reply_body_budget');
+    report.filterStage='validate-envelope';
     const body=JSON.parse(bytes.toString('utf8'));
     assert.equal(body.jsonrpc,'2.0');assert.equal(body.id,packet.id);
     assert.equal(body.result?.error,null);assert.equal(body.result?.state?.uncertain,false);
     const payload=body.result.payload;
     assert.equal(payload?.jsonrpc,'2.0');assert.equal(payload?.id,packet.params.request.id);
     assert.ok(payload.result&&!payload.error);assert.equal(payload.result.error,null);
+    report.filterStage='await-render-ready';
     await page.waitForFunction(()=>[...document.querySelectorAll('.configuration-catalog button')].some(b=>b.textContent==='Apply filters'&&!b.disabled),null,{timeout:remaining(rpcReplyMs)});
     return payload.result;
   };
@@ -339,11 +343,13 @@ async function main(){
     const listButton=label=>recordList.getByRole('button',{name:label,exact:true});
     const expectedFilters={deletion:'all',posting:'posted',dateFrom:'2026-11-11',dateTo:'2026-11-11',descending:false};
     const checkedList=async(result,total,filters)=>{
+      report.filterStage='validate-catalog';
       const value=result.state.catalog;assert.equal(value.navigation.total,total,'filter_exact_total');
       assert.equal(value.navigation.page,1);assert.equal(value.navigation.pages,1);
       assert.equal(value.rows.length,total,'filter_exact_rows');
       if(filters)assert.deepEqual(value.navigation.filters,filters,'filter_exact_navigation');
       else assert.equal(Object.hasOwn(value.navigation,'filters'),false,'reset_omits_default_filters');
+      report.filterStage='await-visible-rows';
       await page.waitForFunction(total=>document.querySelectorAll('.configuration-catalog tbody tr').length===total,total,{timeout:remaining(rpcReplyMs)});
       assert.equal(await recordList.locator('tbody tr').count(),total,'filter_visible_rows');
       if(total){assert.equal(value.rows[0].number,'RQA1');assert.equal(value.rows[0].posted,true);
@@ -357,7 +363,9 @@ async function main(){
     await act('report-repaint-retains-filter-draft',async()=>{
       const value=await filterReply('application.report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
       await checkedList(value,1,expectedFilters);
+      report.filterStage='validate-unapplied-draft';
       assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-12','filter_draft_lost_on_repaint');
+      report.filterStage='draft-preserved';
     });
     await act('refresh-restores-applied-filter',async()=>{
       const value=await filterReply('application.catalog',()=>listButton('Refresh records').click());
@@ -457,6 +465,8 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'filter_exact_total','filter_exact_rows','filter_exact_navigation','filter_visible_rows',
+  'filter_draft_lost_on_repaint','filter_reply_body_budget','filter_reply_body_timeout',
   'socket_path_too_long','unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
   'browser_uid_mismatch','browser_executable_mismatch','browser_command_budget',
   'browser_command_invalid','sandbox_command_missing','sandbox_disabled','unexpected_browser_transport',

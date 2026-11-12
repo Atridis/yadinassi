@@ -50,6 +50,9 @@ class MainDemoBrowserContractTests(unittest.TestCase):
                        'no_repeated_confirmation', 'memory_draft_changed_database', 'draft_applied_once',
                        "assert.equal(actionLog.length-start,22", "appliedAmount:'123.45',appliedCount:1"):
             self.assertIn(marker, text)
+        for stage in ('await-response', 'read-response', 'validate-envelope', 'await-render-ready',
+                      'validate-catalog', 'await-visible-rows', 'validate-unapplied-draft', 'draft-preserved'):
+            self.assertIn("report.filterStage='" + stage + "'", text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)

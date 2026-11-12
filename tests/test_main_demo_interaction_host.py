@@ -120,3 +120,18 @@ L=D.Lines.Add();L.Product=Карточка.Ссылка;L.Quantity=3;L.Amount=12
         values = dict(zip((c['name'] for c in report['columns']), report['rows'][0]))
         self.assertEqual(values['Unit'], {'type':'String','value':'Piece'})
         self.assertEqual(values['State'], {'type':'String','value':'Draft'})
+        self.event(app, sid, event='close')
+        catalog = self.rpc(app, 'catalog', entry=entry)['state']['catalog']
+        filters = {'deletion':'all','posting':'posted','dateFrom':'2026-11-12',
+                   'dateTo':'2026-11-12','descending':False}
+        filtered = self.rpc(app, 'catalogFilter', entry=entry,
+            snapshot=catalog['navigation']['snapshot'], query='', order='date', filters=filters)
+        self.assertIsNone(filtered['error'], filtered)
+        import copy
+        before = copy.deepcopy(filtered['state']['catalog'])
+        self.assertEqual(before['navigation']['total'], 1)
+        self.assertEqual(before['navigation']['filters'], filters)
+        repainted = self.rpc(app, 'report', report='StockMovements', at=None, start=None, end=None)
+        self.assertIsNone(repainted['error'], repainted)
+        self.assertEqual(repainted['state']['catalog'], before)
+        self.assertEqual(len(repainted['state']['report']['rows']), 1)

@@ -75,3 +75,11 @@ class MainDemoSourceTests(unittest.TestCase):
                 self.assertEqual([child.tag for child in form], [M+'Properties'])
                 self.assertEqual(form.findtext(M+'Properties/'+M+'Name'), 'Card')
                 self.assertEqual(form.findtext(M+'Properties/'+M+'FormType'), 'Managed')
+
+    def test_common_form_descriptors_only_declare_properties(self):
+        for name in ('OperationDraft', 'DraftDetails'):
+            with self.subTest(form=name):
+                form = ET.parse(SOURCE / f'CommonForms/{name}.xml').getroot().find(M+'CommonForm')
+                self.assertEqual([child.tag for child in form], [M+'Properties'])
+                self.assertEqual(form.findtext(M+'Properties/'+M+'Name'), name)
+                self.assertEqual(form.findtext(M+'Properties/'+M+'FormType'), 'Managed')
