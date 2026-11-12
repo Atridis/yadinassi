@@ -302,3 +302,10 @@ scripts/native_1c_enum_relational_ci_policy.py text eol=lf
 
 # Immutable independent direct enum relational capture and coverage mapping.
 tests/fixtures/native_inventory_enum_relational/* -text
+scripts/native_1c_uuid_typed_pipeline_profile.py text eol=lf
+scripts/native_1c_uuid_typed_pipeline_probe.sh text eol=lf
+scripts/native_1c_bootstrap/uuid_typed_pipeline_suite.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/route.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/fixture.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/__init__.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/observe.bsl text eol=lf
