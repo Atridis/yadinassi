@@ -1620,6 +1620,15 @@ class Interpreter:
                     raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
                 late_inputs[name] = value
             bindings[name] = value
+        # A local server cache hit cannot bypass transaction transfer admission.
+        if crossing or function.is_async:
+            from .database_transactions import forbid_transfer
+            forbid_transfer(self._transaction_backend())
+        scalar_server_reuse = (self._configuration_runtime is not None
+            and self._configuration_runtime.is_scalar_server_reuse(function))
+        if scalar_server_reuse:
+            from .invocation import _encode_scalar
+            for value in bindings.values(): _encode_scalar(value.get() if isinstance(value, _Reference) else value)
         reuse = None
         if self._configuration_runtime is not None:
             selected = self._configuration_runtime.reusable_call(self, owner, function, qualified)
@@ -1634,15 +1643,13 @@ class Interpreter:
                 found, cached = cache.lookup(key)
                 if found:
                     try:
+                        if scalar_server_reuse: _encode_scalar(cached)
                         cache.revalidate(key, self._configuration_runtime.reusable_values.measure(cached))
                     except (TypeError, ValueError):
                         cache.discard(key)
                         raise
                     return cached
                 reuse = (cache, cache.reserve(key))
-        if crossing or function.is_async:
-            from .database_transactions import forbid_transfer
-            forbid_transfer(self._transaction_backend())
         if crossing:
             # Native 8.3.27.1508: names remain storage, expression results remain
             # values/handles. Clone the complete packet only after actual effects.
@@ -1682,6 +1689,7 @@ class Interpreter:
                         (yield from owner.block(function.body))
                     except _Return as returned:
                         result = returned.value
+                    if scalar_server_reuse: _encode_scalar(result)
                     if crossing:
                         # Validate the entire outgoing packet before touching caller
                         # storage. Escaping errors never reach this normal-return path.
