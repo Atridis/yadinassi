@@ -128,3 +128,24 @@ def query_binding(catalogs):
     metadata=catalogs._metadata._root
     if type(metadata) is not BSLMetadata or metadata._enum_storage_scope is None:return None
     return binding(metadata)
+
+
+def query_owner(catalogs):
+    """No-I/O dispatch only; this never replaces a live binding check."""
+    from .catalogs import BSLCatalogs
+    from .metadata import BSLMetadata
+    if type(catalogs) is not BSLCatalogs:
+        return None
+    metadata = catalogs._metadata._root
+    if type(metadata) is not BSLMetadata or metadata._enum_storage_scope is None:
+        return None
+    scope = metadata._enum_storage_scope
+    if (type(scope) is not _EnumScope or type(scope.context) is not SQLiteDBContext
+            or type(scope.backend) is not SQLiteCatalogBackend
+            or type(scope.configuration) is not InventoryEnumConfiguration
+            or scope.configuration.profile != PROFILE or scope.backend.format_version != 16):
+        raise BackendError('unsupported')
+    scope._require_owner()
+    if scope.metadata is not metadata:
+        raise BackendError('closed')
+    return scope

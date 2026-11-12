@@ -253,6 +253,9 @@ class _Plan:
             if column.kind in ('catalog_ref', 'document_ref'):
                 from .query_reference_tables import bind_column
                 column = bind_column(column, catalogs, documents)
+            if column.kind == 'enum_ref' and self.enum_scope is not None:
+                from .query_enum_tables import binding
+                column = replace(column, reference_binding=binding(self.enum_scope, column.enum_descriptor))
             columns.append(column)
         if len({c.name.casefold() for c in columns}) != len(columns): raise ValueError('Duplicate localized query output column')
         self.columns = tuple(columns)
@@ -279,9 +282,9 @@ class _Plan:
         column=self._resolve_field(index,expression)
         if column.kind=='enum_ref':
             source=self.sources[index]
-            if self.enum_binding is None or source.temporary or source.external:
+            if self.enum_binding is None:
                 raise ValueError('Enum query source is outside this profile')
-            if source.derived is not None:
+            if source.derived is not None or source.temporary or source.external:
                 if self.enum_scope is None:
                     raise ValueError('Enum derived source is outside this profile')
                 descriptor = self.enum_scope.require_descriptor(column.enum_descriptor)

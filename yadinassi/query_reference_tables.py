@@ -105,7 +105,8 @@ def description_binding(description):
     if type(description) is not BSLTypeDescription:
         raise TypeError('Invalid reference query column description')
     binding = description._query_reference
-    if (type(binding) is not _Binding
+    from .query_enum_tables import _EnumBinding
+    if (type(binding) not in (_Binding, _EnumBinding)
             or type(description.types) is not tuple or len(description.types) != 2
             or description.types[0] is not binding.value_type or description.types[1] is not BSLType.NULL
             or description._query_scalar is not None):
@@ -168,7 +169,8 @@ def input_bindings(tables, catalogs, documents):
                 if column.kind in ('catalog_ref', 'document_ref'):
                     raise TypeError('Temporary reference column lacks an owned binding')
                 continue
-            if type(binding) is not _Binding:
+            from .query_enum_tables import _EnumBinding
+            if type(binding) not in (_Binding, _EnumBinding):
                 raise TypeError('Invalid temporary reference binding')
             binding.require_context(catalogs, documents)
             if id(binding) not in seen:
@@ -182,6 +184,10 @@ def validate_view(bindings, view):
     from .catalog_backend import BackendError
     for binding in bindings:
         binding.require_owner()
+        from .query_enum_tables import _EnumBinding
+        if type(binding) is _EnumBinding:
+            binding.storage._live()
+            continue
         metadata = binding.collection._metadata
         if (view.database_id != metadata._database_id
                 or view.configuration_generation != metadata._generation):
