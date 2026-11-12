@@ -4,7 +4,7 @@
 В navigation нет идентификаторов базы/записей; capabilities строк выдаёт broker.
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, date
 from hashlib import sha256
 import secrets
 import re
@@ -19,6 +19,34 @@ MAX_RECORDS = 8192
 MAX_BYTES = 4 * 1024 * 1024
 PAGE_SIZE = 50
 MAX_GENERATION = 2147483647
+
+
+DEFAULT_FILTERS = ('all', 'all', '', '', False)
+FILTER_NAMES = ('deletion', 'posting', 'dateFrom', 'dateTo', 'descending')
+
+
+def record_filters(value, *, document):
+    """Closed host-list predicates, never an executable query or native grant."""
+    if type(document) is not bool:
+        raise BackendError('invalid_input')
+    if value is None:
+        return DEFAULT_FILTERS
+    if type(value) is not dict or set(value) != set(FILTER_NAMES):
+        raise BackendError('invalid_input')
+    deletion, posting, start, end, descending = (value[k] for k in FILTER_NAMES)
+    if (type(deletion) is not str or deletion not in ('all', 'marked', 'unmarked')
+            or type(posting) is not str or posting not in ('all', 'posted', 'unposted')
+            or type(descending) is not bool):
+        raise BackendError('invalid_input')
+    for text in (start, end):
+        if type(text) is not str or (text and re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}', text) is None):
+            raise BackendError('invalid_input')
+        if text:
+            try: date.fromisoformat(text)
+            except ValueError: raise BackendError('invalid_input') from None
+    if (start and end and start > end) or (not document and (posting != 'all' or start or end)):
+        raise BackendError('invalid_input')
+    return deletion, posting, start, end, descending
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,18 +77,24 @@ class RecordPage:
     previous: str | None
     next: str | None
     rows: tuple[RecordRow, ...]
+    filters: tuple = DEFAULT_FILTERS
 
     @property
     def navigation(self):
-        return {name:getattr(self,name) for name in
+        result = {name:getattr(self,name) for name in
                 ('snapshot','page','pages','total','query','order','previous','next')}
+        if self.filters != DEFAULT_FILTERS:
+            result['filters'] = dict(zip(FILTER_NAMES, self.filters))
+        return result
 
 
 def validate_navigation(navigation, *, document, row_count):
     names = {'snapshot','page','pages','total','query','order','previous','next'}
-    if type(navigation) is not dict or set(navigation) != names or type(document) is not bool:
+    if type(navigation) is not dict or set(navigation) not in (names, names | {'filters'}) or type(document) is not bool:
         raise BackendError('invalid_input')
     n = navigation
+    filters = record_filters(n.get('filters'), document=document)
+    if 'filters' in n and filters == DEFAULT_FILTERS: raise BackendError('invalid_input')
     if (any(type(n[k]) is not int for k in ('page','pages','total')) or type(row_count) is not int
             or not 0 <= n['total'] <= MAX_RECORDS
             or n['pages'] != max(1,(n['total']+PAGE_SIZE-1)//PAGE_SIZE)
@@ -198,9 +232,10 @@ class RecordPages:
         self._entry = None
         self._query = ''
         self._order = None
+        self._filters = DEFAULT_FILTERS
 
     def capture(self, context, entry, catalog_schema=None, document_schema=None,
-                query='', order=None, page=0):
+                query='', order=None, page=0, filters=None):
         from ..database_context import SQLiteDBContext
         if (type(context) is not SQLiteDBContext or (catalog_schema is None) == (document_schema is None)
                 or type(page) is not int or page < 0):
@@ -211,7 +246,7 @@ class RecordPages:
             snapshot = load_record_snapshot(context.backend,
                 document_schema if document_schema is not None else catalog_schema,
                 document=document_schema is not None, source_files=self._source_files)
-            self.replace(snapshot,entry=entry,query=query,order=order)
+            self.replace(snapshot,entry=entry,query=query,order=order,filters=filters)
             self._page = min(max(1,page),max(1,(len(self._rows)+PAGE_SIZE-1)//PAGE_SIZE))
             return self._project()
         except BaseException:
@@ -230,7 +265,7 @@ class RecordPages:
             self.clear()
             raise BackendError('schema_changed')
 
-    def replace(self, snapshot, *, entry, query='', order=None, preserve_page=False):
+    def replace(self, snapshot, *, entry, query='', order=None, preserve_page=False, filters=None):
         if (type(snapshot) is not RecordSnapshot or type(entry) is not int or entry < 1
                 or type(preserve_page) is not bool or type(snapshot.document) is not bool
                 or type(snapshot.rows) is not tuple or len(snapshot.rows) > MAX_RECORDS
@@ -247,31 +282,42 @@ class RecordPages:
         order = order or ('date' if snapshot.document else 'code')
         if type(order) is not str or order not in (('date','number') if snapshot.document else ('code','description')):
             raise BackendError('invalid_input')
+        filters = record_filters(filters, document=snapshot.document)
         same = (self._snapshot is not None and self._entry == entry and self._query == query
-            and self._order == order and
+            and self._order == order and self._filters == filters and
             (self._snapshot.database_id,self._snapshot.generation,self._snapshot.source_digest,self._snapshot.schema_id) ==
             (snapshot.database_id,snapshot.generation,snapshot.source_digest,snapshot.schema_id))
         old_page = self._page if preserve_page and same else 1
         folded = query.casefold()
         rows = tuple(r for r in snapshot.rows if not folded or
                      any(folded in v.casefold() for v in (r.values[:1] if snapshot.document else r.values[:2])))
+        deletion, posting, start, end, descending = filters
+        def included(row):
+            if deletion != 'all' and row.values[2] != (deletion == 'marked'): return False
+            if snapshot.document:
+                if posting != 'all' and row.values[3] != (posting == 'posted'): return False
+                day = row.values[1].date().isoformat()
+                if start and day < start or end and day > end: return False
+            return True
+        rows = tuple(row for row in rows if included(row))
         def sort(row):
             a,b = row.values[:2]
             if snapshot.document: return (b,a,row.key.record_id.int) if order=='date' else (a.casefold(),b,row.key.record_id.int)
             return (a.casefold(),b.casefold(),row.key.record_id.int) if order=='code' else (b.casefold(),a.casefold(),row.key.record_id.int)
-        rows = tuple(sorted(rows,key=sort))
+        rows = tuple(sorted(rows,key=sort,reverse=descending))
         if self._generation >= MAX_GENERATION: raise BackendError('unsupported')
         self._generation += 1
         self._snapshot,self._entry,self._query,self._order = snapshot,entry,query,order
         self._rows = rows
+        self._filters = filters
         self._token = 'records-'+secrets.token_hex(16)+'-'+str(self._generation)
         self._page = min(old_page,max(1,(len(rows)+PAGE_SIZE-1)//PAGE_SIZE))
         return self._project()
 
-    def filter(self, context, *, query, order=None):
+    def filter(self, context, *, query, order=None, filters=None):
         self._verify_context(context)
         if self._snapshot is None: raise BackendError('invalid_input')
-        return self.replace(self._snapshot,entry=self._entry,query=query,order=order or self._order)
+        return self.replace(self._snapshot,entry=self._entry,query=query,order=order or self._order,filters=filters)
 
     def navigate(self, context, snapshot_token, cursor):
         self._verify_context(context)
@@ -291,4 +337,4 @@ class RecordPages:
             return value
         previous,next_page = token(self._page-1),token(self._page+1)
         return RecordPage(self._entry,self._token,self._page,pages,len(self._rows),self._query,
-            self._order,previous,next_page,self._rows[(self._page-1)*PAGE_SIZE:self._page*PAGE_SIZE])
+            self._order,previous,next_page,self._rows[(self._page-1)*PAGE_SIZE:self._page*PAGE_SIZE], self._filters)

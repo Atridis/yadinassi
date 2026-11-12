@@ -258,7 +258,7 @@ class ConfigurationBroker:
         previous = self.projections.get(page.entry)
         version = 1 if previous is None else previous['version'] + 1
         if version > 2147483647: raise ValueError('record version lifetime exhausted')
-        navigation = {name:getattr(page,name) for name in ('snapshot','page','pages','total','query','order','previous','next')}
+        navigation = page.navigation
         result = {'entry':page.entry,'version':version,'rows':rows,'navigation':navigation}
         encode_line(result)
         self.records, self.record_keys = records, keys
@@ -271,7 +271,7 @@ class ConfigurationBroker:
         previous = self.projections.get(entry, {}).get('navigation', {})
         page = self.record_pages.capture(context, entry, catalog_schema=definition.catalog_schema,
             document_schema=definition.document_schema, query=previous.get('query',''),
-            order=previous.get('order'), page=previous.get('page',0))
+            order=previous.get('order'), page=previous.get('page',0), filters=previous.get('filters'))
         return self._record_projection(page)
 
     def _report_service(self):
@@ -420,7 +420,10 @@ class ConfigurationBroker:
             if sid: raise ValueError('report has no form session')
             return self._report(payload)
         if operation in ('catalogPage','catalogFilter'):
-            _keys(payload, 'entry snapshot cursor' if operation=='catalogPage' else 'entry snapshot query order')
+            _keys(payload, 'entry snapshot cursor' if operation=='catalogPage' else
+                  'entry snapshot query order' + (' filters' if type(payload) is dict and 'filters' in payload else ''))
+            if 'filters' in payload and type(payload['filters']) is not dict:
+                raise ValueError('invalid record filters')
             if sid: raise ValueError('record navigation has no form session')
             try:
                 definition,context=self._catalog(payload['entry'])
@@ -429,7 +432,7 @@ class ConfigurationBroker:
                         or self.record_pages._entry!=payload['entry'] or self.record_pages._token!=payload['snapshot']):
                     raise ValueError('retired record snapshot')
                 page=(self.record_pages.navigate(context,payload['snapshot'],payload['cursor']) if operation=='catalogPage'
-                    else self.record_pages.filter(context,query=payload['query'],order=payload['order']))
+                    else self.record_pages.filter(context,query=payload['query'],order=payload['order'],filters=payload.get('filters')))
                 return self._record_projection(page)
             except Exception:
                 return {'error':'catalog_unavailable'}
@@ -1804,7 +1807,10 @@ class ConfigurationController:
                         self.report = None if error else projected
                         if operation == 'report' and (error or 'page' not in projected): self.report_setup = None
             elif method in ('application.catalogPage','application.catalogFilter'):
-                _keys(params,'entry snapshot cursor' if method.endswith('catalogPage') else 'entry snapshot query order')
+                _keys(params,'entry snapshot cursor' if method.endswith('catalogPage') else
+                      'entry snapshot query order' + (' filters' if type(params) is dict and 'filters' in params else ''))
+                if 'filters' in params and type(params['filters']) is not dict:
+                    raise ValueError('invalid record filters')
                 if self.catalog is None or params['entry']!=self.catalog['entry'] or params['snapshot']!=self.catalog['navigation']['snapshot']:
                     error='catalog_unavailable'
                 else:

@@ -8,6 +8,20 @@ const keys = (value, expected) => value && typeof value === 'object' && !Array.i
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const recordFilters = (value,document) => {
+  if(!keys(value,['deletion','posting','dateFrom','dateTo','descending'])||
+      !['all','marked','unmarked'].includes(value.deletion)||!['all','posted','unposted'].includes(value.posting)||typeof value.descending!=='boolean')return false;
+  const date=value=>{
+    if(value==='')return true;
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    const leap=y%4===0&&(y%100!==0||y%400===0);
+    return y>=1&&m>=1&&m<=12&&d>=1&&d<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][m-1];
+  };
+  return date(value.dateFrom)&&date(value.dateTo)&&(!value.dateFrom||!value.dateTo||value.dateFrom<=value.dateTo)&&
+    (document||value.posting==='all'&&value.dateFrom===''&&value.dateTo==='')&&
+    (value.deletion!=='all'||value.posting!=='all'||value.dateFrom!==''||value.dateTo!==''||value.descending);
+};
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
@@ -81,7 +95,8 @@ export function validateApplicationReply(reply, request, previous) {
     if (Object.hasOwn(catalog,'navigation')) {
       const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
       const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
-      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next']) ||
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next',...(Object.hasOwn(n,'filters')?['filters']:[])]) ||
+          (Object.hasOwn(n,'filters')&&!recordFilters(n.filters,doc)) ||
           typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
           !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
           n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
@@ -236,7 +251,8 @@ export class ApplicationClient {
       }
       if (['application.catalogPage','application.catalogFilter'].includes(method)) {
         const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
-        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order'])||
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order',...(Object.hasOwn(params,'filters')?['filters']:[])])||
+            (!isPage&&Object.hasOwn(params,'filters')&&!recordFilters(params.filters,this.state.entries.find(e=>e.id===c.entry).kind!=='catalog-object'))||
             params.entry!==c.entry||params.snapshot!==n.snapshot||
             (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
               !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {

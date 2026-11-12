@@ -58,7 +58,9 @@ export function mountApplication(environment, root, exchange = null) {
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
   picker.append(pickerTitle,pickerHelp,codeLabel,queryLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
-  let queryEntry=null,queryBaseline='',queryDraft='';
+  let queryEntry=null,queryDraft='',orderDraft='',filterDraft=null;
+  const defaultRecordFilters=()=>({deletion:'all',posting:'all',dateFrom:'',dateTo:'',descending:false});
+  const acceptedRecordDraft=catalog=>{queryEntry=catalog.entry;queryDraft=catalog.navigation.query;orderDraft=catalog.navigation.order;filterDraft={...(catalog.navigation.filters||defaultRecordFilters())};};
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -325,15 +327,39 @@ export function mountApplication(environment, root, exchange = null) {
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
     if (catalog.navigation) {
       const nav=catalog.navigation;
-      if(queryEntry!==catalog.entry||queryBaseline!==nav.query){queryEntry=catalog.entry;queryBaseline=nav.query;queryDraft=nav.query;}
+      if(queryEntry!==catalog.entry)acceptedRecordDraft(catalog);
       const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
       search.addEventListener('input',()=>{queryDraft=search.value;});
       const order=el('select');order.setAttribute('aria-label','Record order');
       for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
-      order.value=nav.order;
-      const apply=()=>{if(!unavailable())perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:queryDraft,order:order.value});};
+      order.value=orderDraft;order.addEventListener('change',()=>{orderDraft=order.value;});
+      const apply=(reset=false)=>{
+        if(unavailable())return;
+        const filters=reset?defaultRecordFilters():{...filterDraft};
+        const nondefault=filters.deletion!=='all'||filters.posting!=='all'||filters.dateFrom!==''||filters.dateTo!==''||filters.descending;
+        perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:reset?'':queryDraft,order:reset?(document?'date':'code'):orderDraft,...(nondefault?{filters}:{})});
+      };
+      const controls=[];
+      const choice=(label,key,values)=>{
+        const wrapper=el('label',label),input=el('select');input.setAttribute('aria-label',label);
+        for(const value of values){const option=el('option',value);option.value=value;input.append(option);}
+        input.value=filterDraft[key];input.addEventListener('change',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+      };
+      choice('Deletion filter','deletion',['all','unmarked','marked']);
+      if(document){
+        choice('Posting filter','posting',['all','posted','unposted']);
+        for(const [key,label] of [['dateFrom','Date from (inclusive)'],['dateTo','Date through (inclusive)']]){
+          const wrapper=el('label',label),input=el('input');input.type='date';input.value=filterDraft[key];input.setAttribute('aria-label',label);input.min='0001-01-01';input.max='9999-12-31';
+          input.addEventListener('input',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+        }
+      }
+      const descending=el('input'),descendingLabel=el('label','Descending order');descending.type='checkbox';descending.checked=filterDraft.descending;descending.setAttribute('aria-label','Descending order');
+      descending.addEventListener('change',()=>{filterDraft.descending=descending.checked;});descendingLabel.append(descending);actions.append(descendingLabel);controls.push(descending);
       search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
-      actions.append(search,order);const filter=button('Search records',actions,apply);
+      actions.append(search,order);const filter=button('Search records',actions,()=>apply());
+      const applyFilters=button('Apply filters',actions,()=>apply());
+      const resetFilters=button('Reset filters',actions,()=>apply(true));
+      for(const control of [...controls,applyFilters,resetFilters])control.disabled=unavailable();
       const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
       const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
       previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
@@ -422,6 +448,7 @@ export function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
+    if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
     status = result.error === 'form_capacity'
       ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
       : result.error ? `Application: ${result.error}` : '';
@@ -469,7 +496,7 @@ export function mountApplication(environment, root, exchange = null) {
     try { return await client.request(method,params); }
     catch(error) {
       if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
-      status = 'Application connection failed.'; paint();
+      status = error?.preDispatch&&method==='application.catalogFilter'?'Record filters are invalid. Check the dates and selected values.':'Application connection failed.'; paint();
     }
     finally { paint(); }
   }
