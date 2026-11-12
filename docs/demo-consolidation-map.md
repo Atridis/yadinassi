@@ -76,12 +76,6 @@ Phase 1 из 6749f5a уже включён: original demo собирается �
 - `docs/inventory-application-browser-qa.md`
 - `docs/configuration-inventory-application.md`
 
-### `examples/configuration-inventory-enum-application`: 4 файлов
-- `tests/test_configuration_inventory_enum_app.py`
-- `tests/browser_ui/inventory_enum_application_browser_qa.mjs`
-- `docs/inventory-enum-forms.md`
-- `docs/inventory-enum-browser-qa.md`
-
 ### `examples/configuration-posting-application`: 5 файлов
 - `tests/test_sqlite_launch_snapshot.py`
 - `tests/test_posting_application_browser_qa_contract.py`
@@ -149,3 +143,13 @@ Phase 1 из 6749f5a уже включён: original demo собирается �
 ## Реальный перенос inventory-правила
 
 В основной `Documents/Issue/Ext/ObjectModule.bsl` перенесён запрет отрицательного остатка из non-enum inventory. Enum-поля и прежние диагностические Mode 1/2 сохранены. Это новые исходные байты, поэтому прежний native результат к ним не относится; требуется свежий Designer load/check. Проверяется атомарный отказ и успешный повтор после исправления количества.
+
+## Удалённая копия enum-конфигурации
+
+`examples/configuration-inventory-enum-application` удалена: все 23 файла точно
+воспроизводились уже существующим генератором `tests/inventory_enum_application_fixture.py`.
+Новые копии в fixtures не создавались. Точный historical digest закреплён тестом;
+browser acquisition собирает ту же историческую базу генератором и связывает
+результат с обоими генераторами, non-enum forms и enum runtime source.
+Основная демо остаётся `examples/demo`; количество пользовательских XML-конфигураций
+снижено с 20 до 19. Остальные удаляются по мере фактического переноса сценариев.
