@@ -328,3 +328,19 @@ and excess-message/family counts are shown. There is no browser execute endpoint
 or retry that could repeat source effects. Closing diagnostics shuts down its
 loopback server; it does not imply a configuration lifecycle handler was run.
 The launch URL is a private per-launch capability; do not share it.
+
+### Explicit selected supported form
+
+`yadinassi --ui --configuration-source PATH --run-startup --source-form CommonForm.Main`
+performs real source startup first, then opens that declared managed form using
+the existing replicated-form renderer. No form is opened if startup fails or is
+cancelled. Only the selected form XML/BSL is compiled; unsupported controls and
+services fail explicitly. This is not a promise to render arbitrary native forms.
+
+This first interactive source path is memory-only: a scratch database, CRUD,
+object persistence and AtServerNoContext form endpoints are not admitted. Existing
+supported form attributes, server-create lifecycle, client commands and server
+replication are real, including source metadata and same-side common modules.
+Privileged modules still fail; form selection never grants roles. Closing the
+host releases the source runtime, not a claim of complete native application-exit
+lifecycle support. Other source forms are not automatically opened or fabricated.

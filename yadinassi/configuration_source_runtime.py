@@ -1,6 +1,6 @@
 """Explicit experimental startup of admitted sources, without storage grants.
 
-This is a headless execution attempt, not an activation of arbitrary metadata.
+This is a source-host execution attempt, not an activation of arbitrary metadata.
 Only reached modules are compiled. Unsupported platform services fail normally;
 source admission and the existing database/profile path remain independent.
 """
@@ -17,8 +17,8 @@ from .syntax.parser import parse
 
 
 class _SourceInterpreter(Interpreter):
-    def __init__(self, application, **kwargs):
-        super().__init__(output=application.output, **kwargs)
+    def __init__(self, application, *args, **kwargs):
+        super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
@@ -372,7 +372,8 @@ class SourceApplication:
         """No managed/ordinary client is hosted by this headless source runner.
 
         This is the actual host context, not an emulated native client mode.
-        The platform contract returns Undefined outside those two client modes.
+        The source host has no native ordinary/managed client mode, including when
+        its optional supported-form renderer is attached.
         """
         self.require_open()
         return None

@@ -83,20 +83,34 @@ def main(argv=None):
     parser.add_argument('--run-startup', action='store_true', help='Execute startup once before opening diagnostics')
     parser.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE')
     parser.add_argument('--source-compatibility-target', metavar='VERSION')
+    parser.add_argument('--source-form', metavar='FULL_NAME', help='Open one explicitly selected supported managed form after successful startup')
     parser.add_argument('--open-browser', action='store_true')
     args = parser.parse_args(argv)
     if not args.run_startup and (args.source_scratch_db or args.source_compatibility_target is not None):
         parser.error('scratch database and compatibility target require --run-startup')
-    server = shell = None
+    if args.source_form and (not args.run_startup or args.source_scratch_db):
+        parser.error('--source-form requires --run-startup without a scratch database')
+    server = shell = application = None
     try:
         path = Path(args.configuration_source)
         source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
-        shell = SourceShell(source, run_startup=args.run_startup,
-                            scratch_database=args.source_scratch_db,
-                            compatibility_target=args.source_compatibility_target)
-        server = LocalUIServer(shell, handler=SourceHandler)
-        print('Диагностика источника. Это не UI конфигурации: формы и CRUD не активированы; '
-              'попытка runtime завершена, активного сеанса нет.')
+        if args.source_form:
+            from ..source_forms import SourceFormController
+            from .form_app import FormHandler
+            application = SourceApplication(source, compatibility_target=args.source_compatibility_target)
+            if not application.start():
+                print('Запуск источника отменён; форма не открыта.', file=sys.stderr)
+                return 1
+            shell = SourceFormController(application, args.source_form)
+            server = LocalUIServer(shell, handler=FormHandler)
+            print('Выбранная поддерживаемая source-форма; memory-only, без CRUD и произвольной активации конфигурации.')
+        else:
+            shell = SourceShell(source, run_startup=args.run_startup,
+                                scratch_database=args.source_scratch_db,
+                                compatibility_target=args.source_compatibility_target)
+            server = LocalUIServer(shell, handler=SourceHandler)
+            print('Диагностика источника. Это не UI конфигурации: формы и CRUD не активированы; '
+                  'попытка runtime завершена, активного сеанса нет.')
         if args.source_compatibility_target is not None:
             print('Экспериментальный target: ' + args.source_compatibility_target + '; не установленная 1С.')
         print(server.launch_url, flush=True)
@@ -114,3 +128,5 @@ def main(argv=None):
             server.server_close()
         if shell is not None:
             shell.close()
+        if application is not None:
+            application.close()
