@@ -723,6 +723,13 @@ class ProvenanceTests(SyntheticFilesystemCase):
         restored = history.without_repository_inventory_budget(source)
         self.assertNotEqual(restored, source)
         self.assertEqual(history.without_repository_inventory_budget(restored), restored)
+        raw = source.encode('utf-8')
+        pin = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
+        self.assertEqual(history.historical_source_bytes('scripts/native_1c_full_host.py', raw, pin), restored.encode('utf-8'))
+        self.assertEqual(history.historical_source_bytes('other.py', raw, pin), raw)
+        self.assertEqual(history.historical_source_bytes('scripts/native_1c_full_host.py', raw, '0' * 64), raw)
+        with self.assertRaises(AssertionError):
+            history.historical_source_bytes('scripts/native_1c_full_host.py', raw + b'\n# drift', pin)
         for mutant in (source + "\n# unexpected", source.replace("65536 if args", "131072 if args")):
             with self.assertRaises(AssertionError):
                 history.without_repository_inventory_budget(mutant)

@@ -395,6 +395,17 @@ def without_repository_inventory_budget(source):
     return source
 
 
+def historical_source_bytes(path, raw, expected_sha256):
+    """Restore only the exact historical full-host inventory-budget layer.
+
+    Other paths and pins retain their actual bytes; evidence is never rewritten.
+    """
+    if (path == 'scripts/native_1c_full_host.py'
+            and expected_sha256 == '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'):
+        return without_repository_inventory_budget(raw.decode('utf-8')).encode('utf-8')
+    return raw
+
+
 def without_configuration_assets_provenance(source):
     """Hash-bound configuration layer, standalone or after reference assets."""
     base = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
