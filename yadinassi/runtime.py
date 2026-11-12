@@ -1049,6 +1049,9 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            return value.member(self, node.name)
         from .source_constants_runtime import SourceConstants
         if type(value) is SourceConstants:
             return value.member(self, node.name)

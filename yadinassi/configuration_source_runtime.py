@@ -44,9 +44,12 @@ class _SourceInterpreter(Interpreter):
         if key in ('metadata', 'метаданные'):
             self.application.require_open()
             return self.application.metadata
+        from .source_manager_modules import SourceManagers, MANAGER_NAMES
+        if key in MANAGER_NAMES:
+            self.application.require_open()
+            return SourceManagers(self.application, MANAGER_NAMES[key])
         # Source metadata does not grant operational storage managers.
-        if key in {'catalogs', 'справочники',
-                   'documents', 'документы', 'informationregisters',
+        if key in {'informationregisters',
                    'регистрысведений', 'accumulationregisters', 'регистрынакопления'}:
             raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
         if key in ('enums', 'перечисления'):
@@ -165,6 +168,41 @@ class SourceApplication:
             child._self_module._platform_type = BSLType.COMMON_MODULE
             child._self_module.ready = True
             self._instances[instance_key] = child
+            return child._self_module
+        except BaseException:
+            child.close()
+            raise
+
+    def manager_module(self, family, name, caller):
+        """Execute declared manager code, never synthesize storage operations."""
+        self.require_open()
+        caller._require_family()
+        if (caller._family_owner is not self.interpreter
+                or caller._scheduler is not self.interpreter._scheduler
+                or caller.execution_context != 'server'
+                or caller._scheduler._active_task is not None):
+            raise ValueError('source manager modules require owning synchronous server context')
+        definition = next((item for item in self.source.metadata
+                           if item.family == family and item.name.casefold() == name.casefold()), None)
+        if definition is None:
+            raise ValueError('Unknown source manager: ' + family + '.' + name)
+        key = ('manager', family, definition.name.casefold())
+        if key in self._instances:
+            return self._instances[key]._self_module
+        path = definition.path[:-4] + '/Ext/ManagerModule.bsl'
+        if path not in self.files:
+            raise ValueError('Source manager module unavailable; storage operations are not activated: ' + path)
+        from .configuration_modules import compile_module
+        program = compile_module(self.files[path], path, 'server', common=False)
+        if any(type(node) is not ast.Routine for node in program):
+            raise ValueError('Source manager module initialization is not supported: ' + path)
+        child = _SourceInterpreter(self, family_owner=self.interpreter,
+                                   compilation_profile=self.compilation_profile)
+        try:
+            child._logical_side = 'server'
+            child.execute_program(program)
+            child._self_module.ready = True
+            self._instances[key] = child
             return child._self_module
         except BaseException:
             child.close()

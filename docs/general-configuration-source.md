@@ -189,3 +189,15 @@ source `f3cd1ca0925a22baa4c9ef6ceedbaedeba174223`.
 This observation does not establish defaults of other scalar types, fixed-length
 strings, or unmeasured length qualifiers. No startup callbacks are skipped to
 manufacture a successful Get.
+
+### Source manager modules
+
+The source-only synchronous server can lazily call exported BSL routines from
+catalog, document, report and data-processor `Ext/ManagerModule.bsl` files.
+Both English and Russian namespace names are accepted. An unused module is not
+compiled; a reached unsupported statement reports its original module location.
+This does not activate database managers, CRUD, object modules or client/server
+transport. Missing manager source and unavailable platform operations fail
+explicitly. Manager initialization statements, asynchronous execution and direct
+qualified calls with omitted arguments remain outside this first runtime slice.
+A manager receiver is not mislabeled as a common-module platform type.
