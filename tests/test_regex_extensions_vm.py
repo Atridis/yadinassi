@@ -24,9 +24,13 @@ class RegexExtensionsVMTests(unittest.TestCase):
         r=api.str_find('ab','(?=(a))a');self.assertEqual((r._value,int(r._position)),('a',1));self.assertEqual(self.groups(r),[('a',1,1)])
     def test_negative_lookahead_discards_captures(self):
         r=api.str_find('b','(?!(a))b');self.assertEqual(r._value,'b');self.assertEqual(self.groups(r),[('',0,0)])
-    def test_positive_assertion_is_atomic(self):self.assertFalse(api.str_like('aab',r'(?=(a|aa))\1b'))
-    def test_atomic_assertion_does_not_prevent_outer_alternative(self):self.assertTrue(api.str_like('aab',r'(?=(a|aa))\1b|aab'))
-    def test_greedy_assertion_does_not_shrink_on_caller_failure(self):self.assertFalse(api.str_like('aaa',r'(?=(a+))\1a'))
+    def test_assertion_capture_escape_is_explicitly_closed(self):
+        with self.assertRaises(ValueError):api.str_like('aab',r'(?=(a|aa))\1b')
+    def test_alternative_does_not_bypass_closed_capture_escape(self):
+        with self.assertRaises(ValueError):api.str_like('aab',r'(?=(a|aa))\1b|aab')
+    def test_local_capture_reference_inside_assertion_is_retained(self):
+        self.assertTrue(api.str_like('aa',r'(?=(a)\1)aa'))
+        self.assertTrue(api.str_like('aa',r'(a)(?=\1)\1'))
     def test_nested_lookahead_uses_iterative_frames(self):self.assertTrue(api.str_like('a','(?='*20+'a'+')'*20+'a'))
     def test_negative_waits_for_all_inner_alternatives(self):
         self.assertFalse(api.str_like('b','(?!a|b)b'));self.assertTrue(api.str_like('c','(?!a|b)c'))
@@ -51,7 +55,7 @@ class RegexExtensionsVMTests(unittest.TestCase):
         with patch.object(limits,'MAX_STATES',2),self.assertRaises(RegexLimitError):api.str_like('a','(?=(?=(?=a)))a')
     def test_host_re_not_used_for_matching(self):
         with patch('re.compile',side_effect=AssertionError('host regex forbidden')),patch('re.search',side_effect=AssertionError('host regex forbidden')):
-            self.assertTrue(api.str_like('aA',r'(?i)(?=(a))a\1'))
+            self.assertTrue(api.str_like('aA',r'(?i)(a)(?=a)\1'))
     def test_matching_function_does_not_recurse(self):
         source=Path(api.__file__).with_name('regex_vm.py').read_text();tree=ast.parse(source);run=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run')
         self.assertFalse(any(isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='run' for n in ast.walk(run)))

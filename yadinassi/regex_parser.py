@@ -1,7 +1,8 @@
 """Bounded ordinary regex grammar. Unsupported extensions fail explicitly.
 
 Leading/scoped i/m/s, atomic lookahead and closed numeric references are
-locally implemented; native calibration is pending. Named groups, lookbehind,
+calibrated on the bounded native packet. References escaping an assertion-local
+capture scope are refused rather than claiming unmeasured search parity. Named groups, lookbehind,
 Unicode properties and atomic/possessive/conditional groups remain closed.
 """
 MAX_PATTERN = 4096
@@ -61,6 +62,9 @@ class Parser:
         self.i = 0
         self.groups = 0
         self.closed_groups = set()
+        self.group_scopes = {}
+        self.assertion_scope = ()
+        self.assertion_serial = 0
         self.budget = budget
 
     def error(self):
@@ -166,9 +170,17 @@ class Parser:
                 else: self.error()
             else:
                 self.groups += 1; group = self.groups
+                self.group_scopes[group] = self.assertion_scope
                 if group > MAX_GROUPS:
                     raise RegexLimitError('Регулярное выражение: слишком много групп')
-            node = self.alternation(depth + 1)
+            previous_scope = self.assertion_scope
+            if special is not None and special[0] == 'look':
+                self.assertion_serial += 1
+                self.assertion_scope = (*previous_scope, self.assertion_serial)
+            try:
+                node = self.alternation(depth + 1)
+            finally:
+                self.assertion_scope = previous_scope
             if self.take() != ')': self.error()
             if group is not None:
                 self.closed_groups.add(group)
@@ -189,6 +201,9 @@ class Parser:
                 number = number * 10 + ord(self.take()) - 48
                 if number > MAX_GROUPS: self.error()
             if number not in self.closed_groups: self.error()
+            scope = self.group_scopes[number]
+            if self.assertion_scope[:len(scope)] != scope:
+                raise ValueError('Регулярное выражение: ссылка на группу за пределами объявившего её lookahead пока не поддерживается')
             return ('backref', number)
         if c in 'dDsSwW': return ('category', c)
         if c in 'bB' and not in_class: return ('assert', c)

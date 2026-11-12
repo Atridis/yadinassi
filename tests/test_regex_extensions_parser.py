@@ -16,10 +16,12 @@ class RegexExtensionsParserTests(unittest.TestCase):
         n,g=self.parse('(?=(a))(?!(b))');self.assertEqual(g,2);self.assertEqual(n[1][0][:2],('look',True));self.assertEqual(n[1][1][:2],('look',False))
     def test_numeric_reference_requires_prior_closed_group(self):
         n,g=self.parse(r'(a)\1');self.assertEqual(n[1][1],('backref',1));self.assertEqual(g,1)
+        for pattern in (r'(a)(?=\1)',r'(?=(a)\1)',r'(?=(a)(?=\1))',r'((?=a)a)\1'):
+            with self.subTest(pattern=pattern):self.parse(pattern)
     def test_ten_is_group_ten_not_group_one_plus_literal(self):
         n,g=self.parse('(a)'*10+r'\10');self.assertEqual(g,10);self.assertEqual(n[1][-1],('backref',10))
     def test_self_forward_unknown_and_octal_references_refuse(self):
-        for pattern in (r'\1(a)',r'(\1a)',r'(a)\2',r'(a)\10',r'\0',r'[\1]'):
+        for pattern in (r'\1(a)',r'(\1a)',r'(a)\2',r'(a)\10',r'\0',r'[\1]',r'(?=(a))\1',r'(?!(a))\1',r'(?=(a))(?=\1)',r'(?=(?=(a))\1)'):
             with self.subTest(pattern=pattern),self.assertRaises(ValueError):self.parse(pattern)
     def test_unsupported_and_ambiguous_flags_refuse(self):
         for pattern in ('(?x)a','(?i-i)a','(?ii)a','(?-)a','(?i-)a','(?i--m)a','a(?i)b','(?i'):
