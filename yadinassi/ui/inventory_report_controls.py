@@ -10,7 +10,7 @@ from uuid import UUID
 
 from ..catalog_backend import BackendError, CatalogKey
 from ..document_backend import DocumentKey
-from ..configuration_inventory_application import canonical
+from ..inventory_host_operations import canonical
 from ..inventory_application_reports import (InventoryReports, InventoryReportFilter,
     InventoryReportChoices, InventoryReportChoice, InventoryReportResult,
     MAX_CHOICES, MAX_LABELS, MAX_LABEL_LENGTH, _statement_options)

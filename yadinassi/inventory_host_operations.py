@@ -9,7 +9,7 @@ from uuid import UUID
 
 from .catalog_backend import BackendError, CatalogKey, TabularSectionRows, TabularRow
 from .configuration_inventory_application import (
-    InventoryApplicationConfiguration, PROFILE, canonical,
+    InventoryApplicationConfiguration, PROFILE, canonical as scalar_canonical,
 )
 from . import database_transactions as transactions
 from .document_backend import DocumentDraft, DocumentKey, DocumentRevision
@@ -20,12 +20,23 @@ from .document_posting_host import (
 from .document_posting_values import DocumentWriteMode
 
 
+from .configuration_inventory_enum_application import (
+    InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE, canonical as enum_canonical)
+from .enum_storage_values import EnumKey
+
+
+def canonical(configuration):
+    return (enum_canonical(configuration) if type(configuration) is InventoryEnumApplicationConfiguration
+            else scalar_canonical(configuration))
+
+
 def _source_configuration(backend):
     """Read-only source check, not a root-execution grant for a form VM."""
     from .sqlite_catalog import SQLiteCatalogBackend
-    if (type(backend) is not SQLiteCatalogBackend or backend.format_version != 15
-            or type(backend.accumulation_configuration) is not InventoryApplicationConfiguration
-            or backend.accumulation_configuration.profile != PROFILE):
+    if (type(backend) is not SQLiteCatalogBackend or (backend.format_version, type(backend.accumulation_configuration),
+                getattr(backend.accumulation_configuration, 'profile', None)) not in (
+                    (15, InventoryApplicationConfiguration, PROFILE),
+                    (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE))):
         raise BackendError('unsupported')
     if backend._closed:
         raise BackendError('closed')
@@ -53,6 +64,8 @@ class InventoryRootOperation(transactions.RootOperation):
 def _immutable(value):
     if type(value) is tuple:
         return tuple(_immutable(item) for item in value)
+    if type(value) is EnumKey:
+        return EnumKey(value.database_id, value.enum_id, value.value_id)
     if type(value) is CatalogKey:
         if any(type(item) is not UUID for item in (value.database_id, value.catalog_id, value.record_id)):
             raise BackendError('invalid_input')
@@ -137,7 +150,13 @@ class InventoryRootOperations(RootPostingOperations):
                     if (type(value) is not CatalogKey or value.database_id != self._binding[0]
                             or value.catalog_id != field.target_catalog_id):
                         raise BackendError('conflict')
-                elif type(value) is CatalogKey:
+                elif field.kind == 'enum_ref':
+                    if (type(self.configuration) is not InventoryEnumApplicationConfiguration
+                            or type(value) is not EnumKey or value.database_id != self._binding[0]
+                            or value.enum_id != field.target_enum_id):
+                        raise BackendError('conflict')
+                    self.backend._enum_domain.encode(value, field.target_enum_id)
+                elif type(value) in (CatalogKey, EnumKey):
                     raise BackendError('invalid_input')
         references(schema.fields, draft.values)
         if tuple(s.section_id for s in draft.tabular_sections) != tuple(s.identity for s in schema.tabular_sections):
@@ -148,7 +167,7 @@ class InventoryRootOperations(RootPostingOperations):
             for row in section.rows:
                 references(definition.fields, row.values)
         return PostingOperationIntent(operation_id, *self._binding,
-            self.configuration.source_digest, PROFILE, form, command, grant.mode, draft, expected)
+            self.configuration.source_digest, self.configuration.profile, form, command, grant.mode, draft, expected)
 
     def execute(self, operation_id, draft, expected, *, form, command):
         require_inventory_host_root(self.backend)

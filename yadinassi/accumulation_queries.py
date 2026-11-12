@@ -69,6 +69,7 @@ def manager(documents, source, parameters, *, condition_budget=None):
     from .configuration_accumulation import AccumulationConfiguration
     from .configuration_accumulation_references import InventoryConfiguration
     from .configuration_inventory_application import InventoryApplicationConfiguration
+    from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
     from .configuration_inventory_enums import InventoryEnumConfiguration
     from .sqlite_catalog import SQLiteCatalogBackend
     if documents is None or documents._context is None:
@@ -77,7 +78,7 @@ def manager(documents, source, parameters, *, condition_budget=None):
     if type(backend) is not SQLiteCatalogBackend:
         raise ValueError('Accumulation query requires the accumulation profile')
     config = backend.accumulation_configuration
-    if type(config) not in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration):
+    if type(config) not in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration, InventoryEnumApplicationConfiguration):
         raise ValueError('Accumulation query requires the accumulation profile')
     matches = [schema for schema in config.registers
                if schema.name.casefold() == source.catalog.casefold()]
@@ -87,7 +88,7 @@ def manager(documents, source, parameters, *, condition_budget=None):
     from .accumulation_query_conditions import bind_condition
     result = AccumulationQueryManager(documents, matches[0])
     result.condition = bind_condition(result, source, parameters,
-        typed=type(config) is InventoryEnumConfiguration, budget=condition_budget)
+        typed=type(config) in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration), budget=condition_budget)
     return result
 
 

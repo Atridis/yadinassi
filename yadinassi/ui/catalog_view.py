@@ -156,14 +156,18 @@ class CatalogRepository:
         self._schemas = schemas
         return tuple(inventory)
 
-    def _fields(self, schema):
+    @staticmethod
+    def _summary_fields(schema):
         if (type(schema.fields) is not tuple or len(schema.fields) > 64 or
                 any(type(n) is not int or not 0 <= n <= 1024
                     for n in (schema.code_length, schema.description_length))):
             raise UIError('metadata_unavailable')
-        fields = [CatalogField('Code', 'string', (schema.code_length,)),
-                  CatalogField('Description', 'string', (schema.description_length,)),
-                  CatalogField('DeletionMark', 'boolean', ())]
+        return (CatalogField('Code', 'string', (schema.code_length,)),
+                CatalogField('Description', 'string', (schema.description_length,)),
+                CatalogField('DeletionMark', 'boolean', ()))
+
+    def _fields(self, schema):
+        fields = list(self._summary_fields(schema))
         names, identities = {'code', 'description', 'deletionmark', 'ref'}, set()
         catalog_ids = {item.identity for item in self._schemas}
         for field in schema.fields:
@@ -208,7 +212,8 @@ class CatalogRepository:
         encode_value(value)
         return value
 
-    def load(self, identity):
+    def load(self, identity, *, summary_only=False):
+        if type(summary_only) is not bool: raise TypeError("explicit summary projection required")
         uuid_text(identity, nonzero=True)
         info = next((item for item in self.inventory() if item.identity == identity), None)
         if info is None:
@@ -218,7 +223,7 @@ class CatalogRepository:
             if (type(schema) is not CatalogSchema or schema.identity != UUID(identity)
                     or schema not in self._schemas):
                 raise UIError('metadata_unavailable')
-            fields = self._fields(schema)
+            fields = self._summary_fields(schema) if summary_only else self._fields(schema)
             # The port refuses overflow rather than returning a misleading total.
             rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000))
             if type(rows) is not tuple or len(rows) > 1000:
@@ -240,8 +245,8 @@ class CatalogRepository:
                     raise UIError('catalog_identity')
                 if type(row.code) is not str or type(row.description) is not str or type(row.deletion_mark) is not bool:
                     raise UIError('unsupported_value')
-                values = (row.code, row.description, row.deletion_mark) + tuple(
-                    self._value(value, field) for field, value in zip(schema.fields, row.values))
+                values = (row.code, row.description, row.deletion_mark) + (() if summary_only else tuple(
+                    self._value(value, field) for field, value in zip(schema.fields, row.values)))
                 for value in values:
                     encode_value(value)
                 cards.append(CatalogCardSnapshot(CatalogRef(identity, record), info.name, fields, values))

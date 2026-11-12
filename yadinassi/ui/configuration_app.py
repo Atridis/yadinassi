@@ -57,10 +57,15 @@ def _parameters(values):
     return result
 
 
-def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False):
-    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application, reference_application, posting_application, inventory_application)) > 1:
+def load_application(root, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False):
+    if sum(bool(flag) for flag in (catalog_objects, application_host, document_objects, business_application, reference_application, posting_application, inventory_application, inventory_enum_application)) > 1:
         raise ValueError('configuration source profiles cannot be combined implicitly')
     files = read_configuration_directory(root)
+    if inventory_enum_application:
+        from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+        imported = import_inventory_application(files, inventory_runtime=PROFILE)
+        return load_configuration_forms(files, catalog_schemas=imported.catalogs, document_schemas=imported.documents,
+            reference_catalogs=imported.catalogs, posting_application=True, enum_definitions=imported.enumerations)
     if inventory_application:
         from ..configuration_inventory_application import import_inventory_application, PROFILE
         imported = import_inventory_application(files, inventory_runtime=PROFILE)
@@ -121,14 +126,19 @@ def _validate_report_projection(result, configuration, request):
 
 class ConfigurationBroker:
     """Server-process registry, bound to exactly one admitted configuration digest."""
-    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None, launch_route=None):
-        if inventory_application and any((application_host, business_application, reference_application, posting_application)):
+    def __init__(self, configuration, database=None, *, bind_interpreter=None, application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False, launch_binding=None, launch_route=None):
+        if inventory_enum_application and inventory_application:
+            raise ValueError("choose one explicit inventory profile")
+        if (inventory_application or inventory_enum_application) and any((application_host, business_application, reference_application, posting_application)):
             raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
-        self.inventory_application = inventory_application
-        self.reference_application = reference_application or inventory_application
-        self.posting_application = posting_application or inventory_application
+        self.inventory_application = inventory_application or inventory_enum_application
+        self.reference_application = reference_application or inventory_application or inventory_enum_application
+        self.posting_application = posting_application or inventory_application or inventory_enum_application
         self.posting_configuration = None
+        if inventory_enum_application:
+            from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+            self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if inventory_application:
             from ..configuration_inventory_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
@@ -217,7 +227,7 @@ class ConfigurationBroker:
         document = definition.document_schema
         if document is None:
             repository = CatalogRepository(context.backend, own_backend=False)
-            try: listing = repository.load(str(definition.catalog_schema.identity))
+            try: listing = repository.load(str(definition.catalog_schema.identity), summary_only=bool(definition.enum_targets))
             finally: repository.close()
         else:
             from ..document_backend import DocumentSelection
@@ -607,7 +617,7 @@ class ConfigurationBroker:
             if self.application is not None and self.application.interpreter.pending_promises:
                 raise ValueError('application tasks must finish before releasing a form')
             owned = self.objects.get(sid)
-            if self.posting_application and owned is not None and hasattr(owned, 'operations'): owned.close()
+            if owned is not None and ((self.posting_application and hasattr(owned, 'operations')) or self.inventory_application): owned.close()
             del self.sessions[sid]
             self.objects.pop(sid, None)
             try:
@@ -641,7 +651,7 @@ class ConfigurationBroker:
 
 
 class ConfigurationProcess(FormProcess):
-    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None):
+    def __init__(self, root, database=None, *, catalog_objects=False, application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False, launch_binding=None):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')
         environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
         command = ([sys.executable, '--configuration-ui-runtime', str(Path(root).resolve())]
@@ -659,6 +669,8 @@ class ConfigurationProcess(FormProcess):
             command += ['--reference-application']
         if posting_application:
             command += ['--posting-application']
+        if inventory_enum_application:
+            command += ['--inventory-enum-application']
         if inventory_application:
             command += ['--inventory-application']
         if document_objects:
@@ -669,7 +681,7 @@ class ConfigurationProcess(FormProcess):
 
 
 def serve_runtime(root, database=None, *, input_stream=None, output_stream=None, catalog_objects=False,
-                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, launch_binding=None):
+                  application_host=False, document_objects=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False, launch_binding=None):
     broker = None
     try:
         route = None
@@ -677,9 +689,9 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
             from .database_launch import configuration_route
             route = configuration_route(catalog_objects=catalog_objects, application_host=application_host,
                 document_objects=document_objects, business_application=business_application,
-                reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application)
+                reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application, inventory_enum_application=inventory_enum_application)
         broker = ConfigurationBroker(load_application(root, catalog_objects=catalog_objects,
-            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application, launch_binding=launch_binding, launch_route=route)
+            application_host=application_host, document_objects=document_objects, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application, inventory_enum_application=inventory_enum_application), database, application_host=application_host, business_application=business_application, reference_application=reference_application, posting_application=posting_application, inventory_application=inventory_application, inventory_enum_application=inventory_enum_application, launch_binding=launch_binding, launch_route=route)
         source = sys.stdin.buffer if input_stream is None else input_stream
         target = sys.stdout.buffer if output_stream is None else output_stream
         last_id = 0
@@ -709,14 +721,19 @@ def serve_runtime(root, database=None, *, input_stream=None, output_stream=None,
 class ConfigurationController:
     """Several forms, one serialized application queue; no nested event dispatch."""
     def __init__(self, configuration, exchange, *, initial_form=None, bind_interpreter=None,
-                 application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False):
-        if inventory_application and any((application_host, business_application, reference_application, posting_application)):
+                 application_host=False, business_application=False, reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False):
+        if inventory_enum_application and inventory_application:
+            raise ValueError("choose one explicit inventory profile")
+        if (inventory_application or inventory_enum_application) and any((application_host, business_application, reference_application, posting_application)):
             raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
-        self.inventory_application = inventory_application
-        self.reference_application = reference_application or inventory_application
-        self.posting_application = posting_application or inventory_application
+        self.inventory_application = inventory_application or inventory_enum_application
+        self.reference_application = reference_application or inventory_application or inventory_enum_application
+        self.posting_application = posting_application or inventory_application or inventory_enum_application
         self.posting_configuration = None
+        if inventory_enum_application:
+            from ..configuration_inventory_enum_application import import_inventory_application, PROFILE
+            self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
         if inventory_application:
             from ..configuration_inventory_application import import_inventory_application, PROFILE
             self.posting_configuration = import_inventory_application(dict(configuration.source_files), inventory_runtime=PROFILE)
@@ -1348,9 +1365,10 @@ class ConfigurationController:
                     return encode_line(result['form'])
                 return encode_line(self._call('form', sid, decode_line(raw)))
             reference_scope = None
-            if definition.reference_targets:
-                from ..form_references import FormReferenceScope
-                reference_scope = FormReferenceScope(targets={i: n for i, _, n in definition.reference_targets})
+            if definition.reference_targets or definition.enum_targets:
+                from ..form_references import FormReferenceScope, FormEnumTarget
+                reference_scope = FormReferenceScope(targets={**{i: n for i, _, n in definition.reference_targets},
+                    **{i:FormEnumTarget(n) for i,_,n in definition.enum_targets}})
             controller = FormController(definition.client_package(), exchange, parameters=parameters, reference_scope=reference_scope,
                 bind_interpreter=lambda vm: self._bind(sid, vm),
                 interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
@@ -1936,6 +1954,7 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--catalog-objects', action='store_true', help='Explicit scalar catalog object forms profile')
     parser.add_argument('--document-objects', action='store_true', help='Explicit non-posting document Object forms with bounded sections')
+    parser.add_argument('--inventory-enum-application', action='store_true', help='Explicit inventory enum forms profile')
     parser.add_argument('--inventory-application', action='store_true', help='Explicit inventory catalog/document forms and stock reports profile')
     parser.add_argument('--posting-application', action='store_true', help='Explicit host posting command extension')
     parser.add_argument('--reference-application', action='store_true', help='Explicit typed catalog-reference application profile')
@@ -1945,15 +1964,15 @@ def main(argv=None):
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application, args.inventory_application)) > 1:
+    if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application, args.inventory_application, args.inventory_enum_application)) > 1:
         parser.error('choose one explicit configuration source profile')
-    if (args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application) and args.f is None:
+    if (args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application or args.inventory_enum_application) and args.f is None:
         parser.error('document applications require --f with an existing explicitly created database')
     if args.runtime:
-        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, launch_binding=args.launch_binding)
+        return serve_runtime(args.configuration, args.f, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application, launch_binding=args.launch_binding)
     process = server = controller = None
     try:
-        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
+        configuration = load_application(args.configuration, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application)
         if args.launch_binding is not None:
             from .database_launch import verify_binding, configuration_route
             from ..sqlite_catalog import SQLiteCatalogBackend
@@ -1961,13 +1980,13 @@ def main(argv=None):
             try:
                 route = configuration_route(catalog_objects=args.catalog_objects, application_host=args.application_host,
                     document_objects=args.document_objects, business_application=args.business_application,
-                    reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
+                    reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application)
                 verify_binding(backend, args.launch_binding, dict(configuration.source_files), route=route)
             finally: backend.close()
-        process = ConfigurationProcess(args.configuration, args.f, launch_binding=args.launch_binding, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
-        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application)
+        process = ConfigurationProcess(args.configuration, args.f, launch_binding=args.launch_binding, catalog_objects=args.catalog_objects, application_host=args.application_host, document_objects=args.document_objects, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application)
+        controller = ConfigurationController(configuration, process.exchange, initial_form=args.form, application_host=args.application_host, business_application=args.business_application, reference_application=args.reference_application, posting_application=args.posting_application, inventory_application=args.inventory_application, inventory_enum_application=args.inventory_enum_application)
         server = LocalUIServer(controller, handler=ConfigurationHandler,
-            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application, idle_close=controller.idle_close)
+            browser_session=args.browser_session or args.application_host or args.document_objects or args.business_application or args.reference_application or args.posting_application or args.inventory_application or args.inventory_enum_application, idle_close=controller.idle_close)
         print('Trusted configuration forms. Open this private per-launch URL:')
         print(server.launch_url, flush=True)
         if args.open_browser:

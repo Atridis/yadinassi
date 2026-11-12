@@ -71,7 +71,8 @@ def _catalogs(connection, backend, storage):
     for identity, name, definition in connection.execute('SELECT identity,name,definition FROM catalog_schema ORDER BY identity'):
         schema = storage._schema(definition,
             allow_numbering=backend.storage_version in (4, 6, 7, 8, 9, 10),
-            allow_hierarchy=backend.storage_version == 10)
+            allow_hierarchy=backend.storage_version == 10,
+            enum_domain=backend._enum_domain if backend.format_version == 16 else None)
         if (identity, name) != (str(schema.identity), schema.name):
             raise BackendError('integrity')
         schemas.append(schema)
@@ -93,7 +94,25 @@ def _admit(backend, connection, entries, metadata, catalogs, storage):
     profile = storage._source_profile_for_issues(backend.activation_issues)
     version = backend.format_version
     try:
-        if version == 15:
+        if version == 16:
+            from .configuration_inventory_enum_application import (PROFILE, InventoryEnumApplicationConfiguration,
+                import_inventory_application)
+            marker = connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
+            if len(marker) != 1 or marker[0][:2] != (1, PROFILE):
+                raise BackendError('unsupported')
+            config = import_inventory_application(source, inventory_runtime=PROFILE)
+            if (type(config) is not InventoryEnumApplicationConfiguration
+                    or type(backend.accumulation_configuration) is not InventoryEnumApplicationConfiguration
+                    or config != backend.accumulation_configuration
+                    or marker != [(1, PROFILE, config.source_digest)]
+                    or not _same_schemas(config.catalogs, catalogs)
+                    or not _same_schemas(config.documents, backend._document_schemas)):
+                raise BackendError('schema_changed')
+            identity, name = config.identity, config.name
+            canonical_files = tuple((p, 'module' if p.endswith('.bsl') else 'xml', raw)
+                                    for p, raw in config.files)
+            profile, route = PROFILE, 'inventory-enum'
+        elif version == 15:
             from .configuration_inventory_application import (PROFILE, InventoryApplicationConfiguration,
                 import_inventory_application)
             marker = connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
@@ -196,7 +215,7 @@ def launch_snapshot(backend):
     # Foreign or pending owners are rejected by current() without adoption.
     if current(backend) is not None:
         raise BackendError('unsupported')
-    if backend.format_version not in (1, 2, 3, 4, 6, 7, 10, 11, 12, 13, 15):
+    if backend.format_version not in (1, 2, 3, 4, 6, 7, 10, 11, 12, 13, 15, 16):
         raise BackendError('unsupported')
     view = backend.begin_read()
     try:

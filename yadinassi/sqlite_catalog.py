@@ -753,6 +753,12 @@ class SQLiteCatalogBackend:
 
     @classmethod
     @_boundary
+    def create_inventory_enum_application(cls, path, configuration):
+        from .sqlite_inventory_enum_profile import create_application
+        return create_application(cls, path, configuration)
+
+    @classmethod
+    @_boundary
     def create_inventory_application(cls, path, configuration):
         from .sqlite_inventory_profile import create_application
         return create_application(cls, path, configuration)
