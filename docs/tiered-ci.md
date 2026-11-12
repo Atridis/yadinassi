@@ -75,7 +75,9 @@ required Linux/Windows/Intel platform. macOS ARM was excluded under the existing
 policy, not measured or treated as zero-cost. The profile is deliberately schema
 2: it records that historical matrix, not the new Windows shard configuration.
 It was generated with the pre-change `refresh_test_durations` implementation at
-`c5f8baadebb54bb3a7d79775b8a007ae6c62dec4`, using `--scope required-platforms`.
+public ancestor `799e4d3cc2924d15ce745faede1c9fba10510bae` (the producer,
+partition validator and CI gate are byte-identical to the local recovery
+candidate), using `--scope required-platforms`.
 
 Plan-only discovery on that presentation candidate found 10,912 IDs in 694
 whole fixture groups: 7,412 light, 3,500 heavy and 17 unknown/light IDs. Evaluating
