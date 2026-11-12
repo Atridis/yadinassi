@@ -129,14 +129,16 @@ class InventoryEnumQueryTests(unittest.TestCase):
                     P=product,StartAt=start,EndAt=end)._rows,((Decimal(9),),)*count)
             self.assertIsNone(self.context.backend._active)
 
-    def test_enum_condition_is_not_ordinary_enum_membership(self):
+    def test_enum_condition_and_new_direct_membership_have_separate_grants(self):
         self.seed_document();end=self.vm.execute('Date(2024,3,31,23,59,59)')
         self.assertEqual(self.query('SELECT QuantityBalance FROM '
             'AccumulationRegister.Stock.Balance(&EndAt,Unit=&U)',
             U=self.piece,EndAt=end)._rows,((Decimal(5),),))
         values=self.vm.execute('New Array');values.items.append(self.piece)
+        self.assertEqual(self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN (&Units)',Units=values)._rows,
+                         ((self.piece,),))
         with self.assertRaises(ValueError):
-            self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN (&Units)',Units=values)
+            self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN &Units',Units=values)
         self.assertEqual(self.query('SELECT Unit,SUM(QuantityBalance) AS N '
             'FROM AccumulationRegister.Stock.Balance(&EndAt) WHERE Unit=&U GROUP BY Unit',
             U=self.piece,EndAt=end)._rows,((self.piece,Decimal(5)),))

@@ -1,4 +1,4 @@
-"""Measured typed virtual predicates; old profiles and ordinary IN stay closed."""
+"""Measured typed virtual predicates; old profiles retain their previous grants."""
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
@@ -206,8 +206,8 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             db.execute('UPDATE accumulation_movement SET values_json=? WHERE record_id=?',('[]',str(key.record_id)))
         with self.assertRaises((BackendError,ValueError)):self.report('Unit=&U')
 
-    def test_ordinary_enum_membership_and_packages_remain_refused(self):
-        for text in ('SELECT Unit FROM Catalog.Products WHERE Unit IN (&V)',
+    def test_bare_ordinary_membership_and_packages_remain_refused(self):
+        for text in ('SELECT Unit FROM Catalog.Products WHERE Unit IN &V',
                 'SELECT QuantityBalance FROM '+REG+'Balance(&At,Unit IN (&V));SELECT Unit FROM Catalog.Products'):
             with self.assertRaises(ValueError):self.query(text,V=array(self.u)).execute()
 

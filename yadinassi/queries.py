@@ -47,6 +47,7 @@ class _Column:
     custom: object = None
     explicit_alias: bool = False
     reference_identity: object = None
+    enum_descriptor: object = None
 
 
 def _field(manager, field, source_alias, section=None):
@@ -266,6 +267,13 @@ class BSLQuery(BSLObject):
         key = name.casefold()
         if key not in self._parameters and len(self._parameters) >= _MAX_PARAMETERS:
             raise ValueError('Query parameter count limit exceeded')
+        from .values import NULL
+        if value is NULL:
+            from .inventory_enum_runtime import query_binding
+            if query_binding(self._catalogs) is None:
+                raise TypeError('NULL query parameters require the explicit inventory enum profile')
+            self._parameters[key] = value
+            return
         self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
 
     def execute_batch(self):
@@ -278,6 +286,12 @@ class BSLQuery(BSLObject):
     def execute(self):
         statements = syntax.parse_package(self._text)
         query = statements[0]
+        from .inventory_enum_runtime import query_binding
+        if query_binding(self._catalogs) is not None:
+            from .query_enum_reporting import execute_direct
+            return execute_direct(statements, self._catalogs, dict(self._parameters),
+                                  self._temp_tables_manager, self._documents,
+                                  self._information_registers)
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
                 or syntax.extended_filters(query)
                 or query.temporary or query.external

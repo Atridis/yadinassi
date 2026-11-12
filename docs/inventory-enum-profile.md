@@ -32,10 +32,12 @@ all enum decoding stays inside the current owner snapshot.
 
 The separately measured [typed virtual conditions](typed-virtual-dimension-predicates.md)
 add bounded dimension equality and parameter-array IN only inside stock virtual
-arguments. Ordinary enum membership is not enabled.
+arguments. [Direct enum reporting](direct-enum-relational-reports.md) separately
+adds bounded ordinary membership, same-enum CASE/ISNULL and internal derived/UNION
+composition within one Execute and one actual source snapshot.
 
-Enum ordering, MIN/MAX, mixed-enum field comparisons, ordinary enum conditional/membership
-expressions, derived/external/temp/UNION/package paths and reference Unload remain
+Enum ordering, MIN/MAX, mixed-enum field comparisons and compound outputs,
+external/temp/package paths and reference Unload remain
 explicitly outside this initial slice. No enum UI/editor/transport grant, native
 wire UUID codec, enum-valued numeric resource or arbitrary metadata XML is implied.
 

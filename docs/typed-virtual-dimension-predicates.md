@@ -1,8 +1,8 @@
 # Typed stock virtual-table predicates
 
 This is an explicit query extension for `inventory-enum-v1` (physical format 16),
-not a new storage format or migration. Existing scalar 14, reference 15, and
-forms-15 profiles retain their previous CatalogRef equality-only conditions.
+not a new storage format or migration. Existing scalar14, reference15 and
+forms15 condition admission is unchanged; no new scalar/array grant is implied.
 
 A stock query can select movements using declared String, Number, Boolean, Date,
 CatalogRef and EnumRef dimensions before the existing bounded reduction:
@@ -33,8 +33,9 @@ bounds still use the explicit practical host range, not a claimed platform limit
 Only unqualified `Dimension=&Parameter`, `Dimension IN (&ArrayParameter)`,
 parentheses and AND are admitted. IN requires its parentheses and one exact
 Array/FixedArray parameter. OR, NOT, inequality, literals, subqueries and arbitrary
-iterables are not added. Ordinary relational enum IN, enum packages, derived
-sources, ordering and Unload keep their existing refusals.
+iterables are not added here. Ordinary enum reporting is the separately measured
+[direct relational surface](direct-enum-relational-reports.md); persistent
+packages, ordering and reference Unload remain closed.
 
 Each direct Execute freezes array contents once, then binds every used member
 before opening its data-scan lease. Changing the Array after SetParameter affects

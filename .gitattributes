@@ -299,3 +299,6 @@ scripts/native_1c_inventory_enum_relational_profile.py text eol=lf
 scripts/native_1c_inventory_enum_relational_probe.sh text eol=lf
 scripts/native_1c_bootstrap/inventory_enum_relational_suite.py text eol=lf
 scripts/native_1c_enum_relational_ci_policy.py text eol=lf
+
+# Immutable independent direct enum relational capture and coverage mapping.
+tests/fixtures/native_inventory_enum_relational/* -text
