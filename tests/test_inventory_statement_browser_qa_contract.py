@@ -22,17 +22,17 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             with self.subTest(part=part):
                 self.assertIn(part, self.source)
 
-    def test_four_closed_scenarios(self):
+    def test_five_closed_scenarios(self):
         names = re.findall(r"'([^']+)'", self.source.split('const scenarioNames=', 1)[1].split(';', 1)[0])
         self.assertEqual(names, ['periods_pages_exact_saved_totals', 'typed_filters_closed_choices',
-            'raw_draft_retirement_delayed_page', 'natural_restart_new_setup_readonly_audit'])
-        self.assertEqual(self.source.count('await scenario(scenarioNames['), 4)
-        self.contains('results.map(row=>row.name),scenarioNames', 'total:4')
+            'raw_draft_retirement_delayed_page', 'natural_restart_new_setup_readonly_audit', 'historical_selection_external_deletion'])
+        self.assertEqual(self.source.count('await scenario(scenarioNames['), 5)
+        self.contains('results.map(row=>row.name),scenarioNames', 'total:5')
 
-    def test_exact_forty_six_business_requests(self):
+    def test_exact_sixty_one_business_requests(self):
         plan = json.loads(self.source.split('const businessPlan=', 1)[1].split(';', 1)[0].replace("'", '"'))
-        self.assertEqual([len(row) for row in plan], [8, 21, 12, 5])
-        self.assertEqual(sum(map(len, plan)), 46)
+        self.assertEqual([len(row) for row in plan], [8, 26, 12, 5, 10])
+        self.assertEqual(sum(map(len, plan)), 61)
         self.assertEqual(plan[2][9:12], ['close:', 'setup:open', 'report:None'])
         self.assertFalse(any(event.startswith(('change:', 'command:')) for scenario in plan for event in scenario))
         self.contains('businessEvents.slice(start),businessPlan[index]', "'business_rpc_plan_changed'",
@@ -53,7 +53,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             self.assertNotIn(item, self.fixture)
 
     def test_typed_seed_has_one_transaction_and_one_root_post(self):
-        create = self.fixture.split("if sys.argv[1]=='create':", 1)[1].split("elif sys.argv[1]=='audit':", 1)[0]
+        create = self.fixture.split("if mode=='create':", 1)[1].split("elif mode in ('audit','audit-after-mark'):", 1)[0]
         self.assertEqual(create.count('backend.begin_write('), 1)
         self.assertEqual(create.count('owner.commit()'), 1)
         self.assertEqual(create.count('operations.execute('), 1)
@@ -75,7 +75,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             "snap.route=='inventory' and snap.profile==PROFILE", '{f.path:f.content for f in snap.files}==files')
 
     def test_audit_uses_one_read_snapshot_and_no_report_or_write_api(self):
-        audit = self.fixture.split("elif sys.argv[1]=='audit':", 1)[1].split("else: raise AssertionError('fixture_mode')", 1)[0]
+        audit = self.fixture.split("elif mode in ('audit','audit-after-mark'):", 1)[1].split("elif mode=='mark-product':", 1)[0]
         self.assertEqual(audit.count('backend.begin_read()'), 1)
         for item in ('InventoryReports', 'InventoryRootOperations(', '.execute(', '.create(', '.commit(', 'Query(', 'Interpreter('):
             self.assertNotIn(item, audit)
@@ -109,7 +109,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
             "'report_period_request'", "'report_period_result'")
 
     def test_choice_bound_no_partial_and_exact_code(self):
-        self.contains("setup.choice.error,'too_many_matches'", "setup.choice.rows,[],'too_many_partial'",
+        self.contains("setup.choice.rows.length,32", "setup.choice.rows.length,20", "choicePage('Next')", "choicePage('Previous')", "refreshChoices()", "searchReferences('product 005')",
             "search('P001')", "[['P001','Product 001']]", "search('ABSENT')",
             "setup.choice.error,null", "'unissued_setup'", "'unissued_chooser'", "'unissued_row'")
 
@@ -169,7 +169,7 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertNotIn('page.waitForTimeout(', self.source)
 
     def test_real_natural_restart_new_setup_and_pages(self):
-        self.assertEqual(self.source.count('await naturalStop();'), 2)
+        self.assertEqual(self.source.count('await naturalStop();'), 3)
         self.contains("replyFor(packet=>packet.method==='application.close')", '{code:0,signal:null}',
             "'restarted_ticket_reused'", "'restarted_page_reused'", 'lastApplicationState.sessions.length,0')
         stop = self.source.split('async function naturalStop(){', 1)[1].split('let delayed=', 1)[0]
@@ -236,3 +236,17 @@ class InventoryStatementBrowserContractTests(unittest.TestCase):
         self.assertEqual(len(re.findall(r'uses: [^\n]+@[0-9a-f]{40}', self.workflow)), 3)
         for item in ('workflow_dispatch:', 'pull_request:', 'schedule:', 'secrets.'):
             self.assertNotIn(item, self.workflow)
+
+    def test_choice_navigation_is_separate_closed_capability(self):
+        self.contains("' choice query'", "' choice cursor'", "'unissued_choice_page'",
+            "report-choice-page-", "nav.total<=8192", "assert.notEqual(setup.choice.ticket,searchedTicket)")
+
+    def test_external_mark_is_typed_and_independently_audited(self):
+        self.contains("inventoryFixture('mark-product')", "inventoryFixture('audit-after-mark')",
+            "marked.before,initialAudit", "markedAudit,marked.after",
+            "markedAudit.invariantFingerprint,initialAudit.invariantFingerprint",
+            "externalTypedMarkOnly:true", "historical:true")
+        mark = self.fixture.split("elif mode=='mark-product':", 1)[1]
+        self.assertEqual(mark.count('owner.update('), 1)
+        self.assertIn("previous=run('audit')", mark)
+        self.assertIn("after=run('audit-after-mark')", mark)

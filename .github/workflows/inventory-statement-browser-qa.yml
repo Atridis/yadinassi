@@ -36,7 +36,7 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
-      - name: Acquire four paged stock statement flows with Chromium sandbox enabled
+      - name: Acquire five paged stock statement flows with Chromium sandbox enabled
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
