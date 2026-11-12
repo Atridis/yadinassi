@@ -15,7 +15,7 @@ from .configuration_source_constants import source_constant_definitions
 from .dates import BSLDate, TICKS_PER_SECOND
 from .sqlite_catalog import _private_parent
 
-_PROFILE = 'source-scalar-constants-v1'
+_PROFILE = 'source-scalar-constants-extensions-v2'
 _MAX_ENCODED_BYTES = 65536
 _MAX_NUMBER_TEXT = 256
 # Native fresh-DB observations, not inferred defaults of unrelated scalar types.
@@ -106,6 +106,8 @@ class SourceConstantStore:
             connection.execute('CREATE TABLE source_binding(singleton INTEGER PRIMARY KEY CHECK(singleton=1), profile TEXT NOT NULL, source_sha256 TEXT NOT NULL, configuration_uuid TEXT NOT NULL, schema_sha256 TEXT NOT NULL)')
             connection.execute('CREATE TABLE constant_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)')
             connection.execute('CREATE TABLE constant_value(identity TEXT PRIMARY KEY REFERENCES constant_schema(identity), value_json TEXT NOT NULL CHECK(length(value_json)<=65536))')
+            connection.execute('CREATE TABLE source_extension_registry(identity TEXT PRIMARY KEY, source_archive BLOB NOT NULL)')
+            connection.execute('CREATE TABLE source_extension_issues(identity TEXT PRIMARY KEY, description TEXT NOT NULL)')
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
             connection.executemany('INSERT INTO constant_schema VALUES(?,?,?)', rows)
             initial = [(str(item.identity), _encode('', item)) for item in definitions
@@ -143,6 +145,21 @@ class SourceConstantStore:
                 raise ValueError('source constants binding integrity')
         except sqlite3.Error:
             raise ValueError('source constants storage failure') from None
+
+    def require_empty_extension_registry(self):
+        self._open()
+        try:
+            self._connection.execute('BEGIN')
+            self._open()
+            extensions = self._connection.execute('SELECT identity,source_archive FROM source_extension_registry LIMIT 1').fetchone()
+            issues = self._connection.execute('SELECT identity,description FROM source_extension_issues LIMIT 1').fetchone()
+            if extensions is not None or issues is not None:
+                raise ValueError('populated extension registry is not supported by source host')
+        except sqlite3.Error:
+            raise ValueError('source extension registry storage failure') from None
+        finally:
+            if self._connection.in_transaction:
+                self._connection.execute('ROLLBACK')
 
     def has(self, name):
         self._open()

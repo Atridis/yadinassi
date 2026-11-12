@@ -46,7 +46,7 @@ class SourceConstantStoreTests(unittest.TestCase):
         store = self.store()
         with sqlite3.connect(self.path) as db:
             row = db.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding').fetchone()
-        self.assertEqual(row, ('source-scalar-constants-v1', store.source_sha256, str(store.config_uuid)))
+        self.assertEqual(row, ('source-scalar-constants-extensions-v2', store.source_sha256, str(store.config_uuid)))
 
     def test_existing_file_never_overwritten(self):
         self.path.write_bytes(b'owner data')

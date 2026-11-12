@@ -1270,7 +1270,8 @@ class Interpreter:
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         from .source_constants_runtime import ConstantCall
-        if type(function.function) is ConstantCall:
+        from .source_extensions import ExtensionCall
+        if type(function.function) in (ConstantCall, ExtensionCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1488,6 +1489,9 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        from .source_extensions import SourceExtensions
+        if type(receiver) is SourceExtensions and key in ('get', 'получить'):
+            return frozenset({0, 1})
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
             return frozenset({1, 2})
         if type(receiver) is BSLInternetProxy and key in {"set", "установить"}: return frozenset({2, 3, 4, 5})

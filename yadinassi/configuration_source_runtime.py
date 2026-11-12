@@ -51,6 +51,20 @@ class _SourceInterpreter(Interpreter):
                                                      require_value=require_value))
         return (yield from super().call(node, require_value=require_value))
 
+    def known_table_receiver(self, node):
+        from .source_extensions import SourceExtensions
+        value = self.known_receiver(node)
+        if type(value) is SourceExtensions:
+            return value
+        node = self.ungroup(node)
+        if (isinstance(node, ast.Name)
+                and node.name.casefold() in ('configurationextensions', 'расширенияконфигурации')
+                and not (self.locals is not None and node.name.casefold() in self.locals)
+                and not (self._has_module_context and node.name.casefold() in self.variables
+                         and (self.locals is None or node.name.casefold() in self.module_names))):
+            return self.application.extensions
+        return super().known_table_receiver(node)
+
     def visit_Name(self, node):
         key = node.name.casefold()
         if ((self.locals is not None and key in self.locals)
@@ -68,6 +82,12 @@ class _SourceInterpreter(Interpreter):
         if key in {'informationregisters',
                    'регистрысведений', 'accumulationregisters', 'регистрынакопления'}:
             raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
+        if key in ('configurationextensions', 'расширенияконфигурации'):
+            self.application.require_open()
+            return self.application.extensions
+        if key in ('configurationextensionssource', 'источникрасширенийконфигурации'):
+            from .source_extensions import SourceExtensionSources
+            return SourceExtensionSources()
         if key in ('enums', 'перечисления'):
             self.application.require_open()
             return self.application.enumerations
@@ -112,6 +132,8 @@ class SourceApplication:
         from .enumerations import BSLEnumerations
         enum_definitions, unsupported_enums, _ = source_enum_definitions(source)
         self.enumerations = BSLEnumerations(enum_definitions, unsupported=unsupported_enums)
+        from .source_extensions import SourceExtensions
+        self.extensions = SourceExtensions(self)
         self._instances = {}
         self._reuse_routines = {}
         self._global_exports = {}

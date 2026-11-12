@@ -210,3 +210,16 @@ Their exported names are indexed on the first unresolved call, without executing
 module initialization. Global return-value reuse is explicitly unsupported,
 rather than silently ignored. Named common-module reuse retains its existing
 implementation. These source-host checks are not a native compatibility claim.
+
+### Scratch extension inventory
+
+A newly created source scratch database now has a versioned, source-bound empty
+extension registry and application-issue registry. Server-only read operations
+`ConfigurationExtensions.Get()` and `GetSessionApplicationIssuesInformation()`
+read that actual registry. Database, SessionApplied and SessionDisabled select
+that host's empty extension state; none of them inspects another database.
+Missing tables, changed binding, or populated registry fail explicitly. There is
+no attachment, activation, mutation, filter evaluation, or implicit scratch
+creation. Existing databases are never opened or migrated. SafeMode blocks the
+read. The API shape follows the platform reference; this is not full native
+extension support or proof that a loaded configuration has no required extensions.
