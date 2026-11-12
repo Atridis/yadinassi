@@ -5,9 +5,10 @@ Only source-backed scalar properties are exposed. Unknown object properties,
 embedded fields, types, storage managers and absent declarations are not guessed.
 """
 import xml.etree.ElementTree as ET
+from io import BytesIO
 
 from .configuration_source import ConfigurationSource
-from .configuration_xml import MD
+from .configuration_xml import MD, XR, XSI
 from .metadata import _MetadataObject, _DeclaredMetadataCollection
 from .values import HostFunction
 
@@ -65,7 +66,21 @@ class SourceMetadataObject(_MetadataObject):
 
     def _object(self):
         if self._xml is None:
-            self._xml = ET.fromstring(self._root._files[self._entry.path])[0]
+            # Preserve QName namespace scopes as ElementTree does not expand
+            # attribute values such as xsi:type.
+            self._namespaces = {}
+            scopes, pending = [{}], {}
+            parser = ET.iterparse(BytesIO(self._root._files[self._entry.path]),
+                                  events=('start-ns', 'start', 'end'))
+            for event, value in parser:
+                if event == 'start-ns':
+                    pending[value[0]] = value[1]
+                elif event == 'start':
+                    scope = dict(scopes[-1]); scope.update(pending); pending.clear()
+                    scopes.append(scope); self._namespaces[value] = scope
+                else:
+                    scopes.pop()
+            self._xml = parser.root[0]
         return self._xml
 
     def _property(self, name):
@@ -153,6 +168,36 @@ class SourceMetadataRoot(SourceMetadataObject):
         entry = self._inventory['Configuration.xml']
         super().__init__(self, entry)
 
+    def _reference_collection(self, property_name, family):
+        """Resolve declared references only; metadata membership grants no rights."""
+        cache_key = 'reference:' + property_name
+        if cache_key in self._collections:
+            return self._collections[cache_key]
+        node = self._property(property_name)
+        if node.attrib or (node.text or '').strip():
+            raise ValueError('invalid source metadata reference collection: ' + property_name)
+        values = []
+        for child in node:
+            qname = child.get('{' + XSI + '}type', '').split(':')
+            prefix, local = (qname if len(qname) == 2 else ('', qname[0]))
+            if (child.tag != '{' + XR + '}Item' or len(child)
+                    or set(child.attrib) != {'{' + XSI + '}type'}
+                    or len(qname) > 2 or local != 'MDObjectRef'
+                    or self._namespaces[child].get(prefix) != XR
+                    or (child.tail or '').strip()):
+                raise ValueError('unsupported source metadata reference item: ' + property_name)
+            text = child.text or ''
+            parts = text.split('.')
+            if len(parts) != 2 or parts[0] != family or not parts[1].isidentifier():
+                raise ValueError('invalid source metadata reference: ' + text)
+            value = self.find_by_full_name(text)
+            if value is None:
+                raise ValueError('source metadata reference is not declared: ' + text)
+            values.append(value)
+        result = _DeclaredMetadataCollection(tuple(values))
+        self._collections[cache_key] = result
+        return result
+
     def find_by_full_name(self, name):
         if type(name) is not str:
             raise TypeError('metadata full name requires String')
@@ -170,6 +215,8 @@ class SourceMetadataRoot(SourceMetadataObject):
         return owner
 
     def get_member(self, name):
+        if name.casefold() in ('defaultroles', 'основныероли'):
+            return self._reference_collection('DefaultRoles', 'Role')
         if name.casefold() in ('objectproperties', 'свойстваобъектов'):
             from .source_metadata_properties import SourceObjectProperties
             return SourceObjectProperties()

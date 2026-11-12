@@ -276,3 +276,10 @@ The official syntax-reference inventory used for this slice lists modes through
 existence of that compatibility mode is also documented in the vendor's
 [release notes](https://v8.1c.ru/upload/static/new-contracts-1_0_7.pdf). This is
 source-admission evidence, not a native runtime witness for enum presentation.
+
+`Metadata.DefaultRoles` (`ОсновныеРоли`) resolves the configuration's XML role
+references against its declared roles. The immutable collection preserves source
+order and object identity for `Contains`. Empty means an explicitly empty XML
+property; missing, malformed, wrong-family, dangling, and duplicate references
+fail rather than silently disappearing. This is metadata membership only: it
+neither selects a current user nor grants any role or privilege.
