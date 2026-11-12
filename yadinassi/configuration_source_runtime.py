@@ -35,6 +35,22 @@ class _SourceInterpreter(Interpreter):
             return super().execute_program(program)
 
 
+    def call(self, node, *, require_value):
+        callee = self.ungroup(node.callee)
+        if (isinstance(callee, ast.Name)
+                and self._resolve_routine(callee.name) is None
+                and callee.name.casefold() not in self.functions
+                and not (self.locals is not None and callee.name.casefold() in self.locals)
+                and not (self._has_module_context and callee.name.casefold() in self.variables
+                         and (self.locals is None or callee.name.casefold() in self.module_names))
+                and callee.name.casefold() not in self._client_routine_names):
+            resolved = self.application.resolve_global(callee.name, self)
+            if resolved is not None:
+                routine, owner = resolved
+                return (yield from self.call_routine(routine, node.arguments, owner,
+                                                     require_value=require_value))
+        return (yield from super().call(node, require_value=require_value))
+
     def visit_Name(self, node):
         key = node.name.casefold()
         if ((self.locals is not None and key in self.locals)
@@ -98,6 +114,7 @@ class SourceApplication:
         self.enumerations = BSLEnumerations(enum_definitions, unsupported=unsupported_enums)
         self._instances = {}
         self._reuse_routines = {}
+        self._global_exports = {}
         self.side = None
         self.state = 'prepared'
         self.interpreter = _SourceInterpreter(self, compilation_profile=compilation_profile)
@@ -131,9 +148,9 @@ class SourceApplication:
                                       node.token.source, node.token.line, node.token.column)
         return program
 
-    def module(self, key, caller):
+    def module(self, key, caller, *, global_call=False):
         side = caller.execution_context
-        instance_key = (key, side)
+        instance_key = (key, side, global_call)
         if instance_key in self._instances:
             return self._instances[instance_key]._self_module
         definition = self.modules[key]
@@ -142,7 +159,8 @@ class SourceApplication:
         properties = {element.tag.rsplit('}', 1)[-1]: element.text
                       for element in properties_node}
         path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
-        if (properties.get('Global') == 'true'
+        if ((properties.get('Global') == 'true') != global_call
+                or (global_call and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse')
                 or properties.get('Privileged') == 'true'
                 or properties.get('ClientManagedApplication' if side == 'client' else 'Server') != 'true'
                 or properties.get('ReturnValuesReuse', 'DontUse') not in ('DontUse', 'DuringSession', 'DuringRequest')):
@@ -172,6 +190,36 @@ class SourceApplication:
         except BaseException:
             child.close()
             raise
+
+    def resolve_global(self, name, caller):
+        """Discover real exported routines, without executing unrelated modules."""
+        self.require_open()
+        side = caller.execution_context
+        if side not in self._global_exports:
+            from .configuration_modules import compile_module
+            exports = {}
+            for key, definition in self.modules.items():
+                root = ET.fromstring(self.files[definition.path])
+                properties = {element.tag.rsplit('}', 1)[-1]: element.text
+                              for element in root[0].find('{' + MD + '}Properties')}
+                if (properties.get('Global') != 'true'
+                        or properties.get('ClientManagedApplication' if side == 'client' else 'Server') != 'true'):
+                    continue
+                path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
+                if path not in self.files:
+                    raise ValueError('Missing global module source: ' + path)
+                program = compile_module(self.files[path], path, side, common=True)
+                for routine in program:
+                    if routine.exported:
+                        exports.setdefault(routine.name.casefold(), []).append(key)
+            self._global_exports[side] = exports
+        candidates = self._global_exports[side].get(name.casefold(), [])
+        if not candidates:
+            return None
+        if len(candidates) != 1:
+            raise ValueError('Ambiguous global source routine: ' + name)
+        receiver = self.module(candidates[0], caller, global_call=True)
+        return receiver.routine(name), receiver.interpreter
 
     def manager_module(self, family, name, caller):
         """Execute declared manager code, never synthesize storage operations."""

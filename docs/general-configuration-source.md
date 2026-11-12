@@ -201,3 +201,12 @@ transport. Missing manager source and unavailable platform operations fail
 explicitly. Manager initialization statements, asynchronous execution and direct
 qualified calls with omitted arguments remain outside this first runtime slice.
 A manager receiver is not mislabeled as a common-module platform type.
+
+Global common-module exported routines are resolved on the current execution
+side after local routine/value and built-in function bindings. Duplicate exported
+names fail explicitly; source loading grants neither privileged execution nor
+cross-side calls. Global modules remain unavailable through named-module access.
+Their exported names are indexed on the first unresolved call, without executing
+module initialization. Global return-value reuse is explicitly unsupported,
+rather than silently ignored. Named common-module reuse retains its existing
+implementation. These source-host checks are not a native compatibility claim.
