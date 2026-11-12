@@ -1,7 +1,7 @@
 """Fresh, source-bound scalar constants persisted in an isolated SQLite file.
 
-No existing database is opened or migrated. No native default is invented:
-Get before an explicit Set fails. This is a constants-only host capability, not
+No existing database is opened or migrated. Only explicitly measured fresh
+String defaults are persisted; other Get-before-Set operations fail. This is a constants-only host capability, not
 SQLiteDBContext and not activation of the configuration's other data objects.
 """
 from decimal import Decimal
@@ -18,6 +18,8 @@ from .sqlite_catalog import _private_parent
 _PROFILE = 'source-scalar-constants-v1'
 _MAX_ENCODED_BYTES = 65536
 _MAX_NUMBER_TEXT = 256
+# Native fresh-DB observations, not inferred defaults of unrelated scalar types.
+_MEASURED_EMPTY_STRING_LENGTHS = frozenset({64})
 
 
 def _json(value):
@@ -106,6 +108,10 @@ class SourceConstantStore:
             connection.execute('CREATE TABLE constant_value(identity TEXT PRIMARY KEY REFERENCES constant_schema(identity), value_json TEXT NOT NULL CHECK(length(value_json)<=65536))')
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
             connection.executemany('INSERT INTO constant_schema VALUES(?,?,?)', rows)
+            initial = [(str(item.identity), _encode('', item)) for item in definitions
+                       if item.kind == 'string' and not item.write_blockers
+                       and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
+            connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
             connection.execute('COMMIT')
             result = object.__new__(cls)
             result.path = absolute

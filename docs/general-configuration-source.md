@@ -151,9 +151,9 @@ SQLite values in the synchronous server-side source family. Supported storage
 values are exactly validated String, Number, Boolean and Date declarations.
 Unsupported declared types fail by name. Writes with unsupported constant-module
 hooks, data-history or validation policies fail rather than bypassing them.
-No missing initial constant value is fabricated: until native initialization
-semantics are established, `Get()` before an explicit `Set()` reports an
-uninitialized constant. Closing the application invalidates its managers.
+Only explicitly measured fresh String defaults are initialized in SQLite.
+For unmeasured declarations, `Get()` before an explicit `Set()` reports an
+uninitialized constant. The measured cases and provenance are listed below. Closing the application invalidates its managers.
 Source SafeMode rejects access to this database just like other external I/O;
 this is a conservative host restriction, not claimed native database parity.
 
@@ -176,3 +176,16 @@ availability of an enum's declared values.
 `LanguageCode`. `Metadata.DefaultLanguage` resolves the XML reference to that
 same declared metadata object; an absent, malformed or undeclared reference is
 an error, not a guess based on the host locale or the first language in a list.
+
+
+### Measured fresh String defaults
+
+A fresh `String(64, Variable)` constant, without unsupported write policies, is
+initialized to the empty string in the source constants database. Native 1C
+8.3.27.1508 confirmed initial Get, its String type and zero length, followed by
+Set/Get roundtrip in an owned disposable database:
+[run 43309356636](https://github.com/Atridis/yadinassi/actions/runs/43309356636),
+source `f3cd1ca0925a22baa4c9ef6ceedbaedeba174223`.
+This observation does not establish defaults of other scalar types, fixed-length
+strings, or unmeasured length qualifiers. No startup callbacks are skipped to
+manufacture a successful Get.
