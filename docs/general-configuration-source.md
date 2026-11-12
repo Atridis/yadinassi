@@ -305,6 +305,9 @@ collection. Reading this graph does not implement field Type descriptions,
 rights, CRUD, command execution or native enum values; unsupported operations
 remain explicit errors.
 
-External child Form/Template/Command file references are not exposed by this
-inline-child facade yet; requesting an external Command declaration fails
-explicitly instead of pretending it is an empty or executable command.
+File-backed Forms and Templates resolve declared owner-local XML descriptors.
+Commands accept inline metadata and explicit file-backed declarations, retaining
+source order. External descriptors must match the declared family and name;
+missing and undeclared files fail explicitly. Nested Ext/Form.xml contents are
+not interpreted by metadata lookup. This identifies objects only: it does not
+open a form, retrieve a template body, or execute a command.

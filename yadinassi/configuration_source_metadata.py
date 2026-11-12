@@ -79,9 +79,14 @@ _EMBEDDED_OWNERS = {
                 'BusinessProcess', 'Task', 'InformationRegister', 'AccumulationRegister',
                 'AccountingRegister', 'CalculationRegister', 'DocumentJournal'},
 }
-_COLLECTIONS = {name.casefold(): family for family in _FAMILIES + _EMBEDDED for name in family[1:3]}
-_FAMILY = {family[0]: family for family in _FAMILIES + _EMBEDDED}
-_FULL_FAMILIES = {name.casefold(): family for family in _FAMILIES + _EMBEDDED for name in (family[0], family[3])}
+_FILE_CHILDREN = (
+    ('Form', 'Forms', 'Формы', 'Форма'),
+    ('Template', 'Templates', 'Макеты', 'Макет'),
+)
+_FILE_OWNERS = _EMBEDDED_OWNERS['Command']
+_COLLECTIONS = {name.casefold(): family for family in _FAMILIES + _EMBEDDED + _FILE_CHILDREN for name in family[1:3]}
+_FAMILY = {family[0]: family for family in _FAMILIES + _EMBEDDED + _FILE_CHILDREN}
+_FULL_FAMILIES = {name.casefold(): family for family in _FAMILIES + _EMBEDDED + _FILE_CHILDREN for name in (family[0], family[3])}
 _SCALARS = {
     'languagecode': ('LanguageCode', str), 'кодязыка': ('LanguageCode', str),
     'comment': ('Comment', str), 'комментарий': ('Comment', str),
@@ -148,9 +153,20 @@ class SourceMetadataObject(_MetadataObject):
         nodes = self._object().findall('{' + MD + '}ChildObjects')
         if len(nodes) > 1:
             raise ValueError('ambiguous source ChildObjects')
-        values, identities = [], set()
+        values, identities, external_names = [], set(), []
         for node in nodes[0] if nodes else ():
             if node.tag != '{' + MD + '}' + family[0]:
+                continue
+            if family[0] == 'Command' and not node.attrib and not len(node):
+                name = node.text or ''
+                if not name.isidentifier() or len(name) > 128:
+                    raise ValueError('invalid external command name')
+                external_names.append(name)
+                child = self._file_child(family, name)
+                if child._entry.identity in identities:
+                    raise ValueError('duplicate embedded metadata identity')
+                identities.add(child._entry.identity)
+                values.append(child)
                 continue
             identity = _identity(node)
             if identity in identities:
@@ -168,20 +184,43 @@ class SourceMetadataObject(_MetadataObject):
             child._xml = node
             child._namespaces = self._namespaces
             values.append(child)
+        if family[0] == 'Command':
+            self._check_file_inventory(family, external_names)
         result = _DeclaredMetadataCollection(tuple(values))
         self._collections[family[0]] = result
         return result
 
+    def _file_prefix(self, family):
+        directory = '' if self._entry.family == 'Configuration' else self._entry.path[:-4] + '/'
+        return directory + family[1] + '/'
+
+    def _check_file_inventory(self, family, names):
+        prefix = self._file_prefix(family)
+        expected = {prefix + name + '.xml' for name in names}
+        actual = {path for path, entry in self._root._inventory.items()
+                  if entry.family == family[0] and path.startswith(prefix)
+                  and '/' not in path[len(prefix):]}
+        if expected != actual:
+            raise ValueError('source metadata declared files do not match inventory: ' + prefix)
+
+    def _file_child(self, family, name):
+        path = self._file_prefix(family) + name + '.xml'
+        entry = self._root._inventory.get(path)
+        if entry is None or entry.name != name or entry.family != family[0]:
+            raise ValueError('source metadata declaration/name mismatch: ' + path)
+        parent = None if self._entry.family == 'Configuration' else self
+        return self._root._objects.setdefault(path, SourceMetadataObject(self._root, entry, parent))
+
     def _collection(self, family):
         if family in _EMBEDDED:
             return self._embedded_collection(family)
-        if self._entry.family != 'Configuration' and not (
-                self._entry.family == 'Subsystem' and family[0] == 'Subsystem'):
+        if not (
+                self._entry.family == 'Configuration' and family in _FAMILIES
+                or self._entry.family == 'Subsystem' and family[0] == 'Subsystem'
+                or self._entry.family in _FILE_OWNERS and family in _FILE_CHILDREN):
             raise ValueError('source metadata child collection is unsupported: ' + family[1])
         if family[0] in self._collections:
             return self._collections[family[0]]
-        directory = '' if self._entry.family == 'Configuration' else self._entry.path[:-4] + '/'
-        prefix = directory + family[1] + '/'
         nodes = self._object().findall('{' + MD + '}ChildObjects')
         if len(nodes) > 1:
             raise ValueError('ambiguous source ChildObjects')
@@ -192,20 +231,8 @@ class SourceMetadataObject(_MetadataObject):
             if node.attrib or len(node) or not node.text or not node.text.isidentifier():
                 raise ValueError('unsupported source metadata child declaration')
             names.append(node.text)
-        expected = {prefix + name + '.xml' for name in names}
-        actual = {path for path, entry in self._root._inventory.items()
-                  if entry.family == family[0] and path.startswith(prefix)
-                  and '/' not in path[len(prefix):]}
-        if expected != actual:
-            raise ValueError('source metadata declared files do not match inventory: ' + prefix)
-        values = []
-        for name in names:
-            path = prefix + name + '.xml'
-            entry = self._root._inventory[path]
-            if entry.name != name or entry.family != family[0]:
-                raise ValueError('source metadata declaration/name mismatch: ' + path)
-            parent = None if self._entry.family == 'Configuration' else self
-            values.append(self._root._objects.setdefault(path, SourceMetadataObject(self._root, entry, parent)))
+        self._check_file_inventory(family, names)
+        values = [self._file_child(family, name) for name in names]
         result = _DeclaredMetadataCollection(tuple(values))
         self._collections[family[0]] = result
         return result
