@@ -311,3 +311,20 @@ source order. External descriptors must match the declared family and name;
 missing and undeclared files fail explicitly. Nested Ext/Form.xml contents are
 not interpreted by metadata lookup. This identifies objects only: it does not
 open a form, retrieve a template body, or execute a command.
+
+### Optional diagnostic browser shell
+
+`yadinassi --ui --configuration-source PATH --open-browser` opens read-only
+source diagnostics without executing BSL. Add `--run-startup` explicitly for one
+startup attempt before opening the shell. The source scratch database and
+compatibility-target options retain the same explicit opt-in requirements.
+
+This is **not the configuration's UI**: arbitrary managed forms, commands and
+CRUD are not activated. Startup is completed, cancelled or failed, and the
+runtime is closed before the diagnostic HTTP server opens. An error remains
+visible beside source inventory counts and bounded Message output; a failed
+startup is never presented as a running database. Output truncation is bounded
+and excess-message/family counts are shown. There is no browser execute endpoint
+or retry that could repeat source effects. Closing diagnostics shuts down its
+loopback server; it does not imply a configuration lifecycle handler was run.
+The launch URL is a private per-launch capability; do not share it.
