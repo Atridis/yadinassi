@@ -198,13 +198,27 @@ export class ApplicationClient {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
     this.ownedResults = null; this.dialogCapability = null; this.dialogs = []; this.retiredDialogs = new Set();
+    this.semanticUnknown = false; this.recoveryReadAccepted = false;
     this.inputCapability = null; this.inputs = []; this.retiredInputs = new Set();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
-  request(method, params) {
+  recoveryRead(method,params) {
+    const safe=method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method);
+    if(!safe||this.semanticUnknown)throw new FormError('transport');
+    return this.request(method,params,true);
+  }
+  finishReadRecovery() {
+    if(!this.recoveryReadAccepted||this.pending||this.semanticUnknown||this.state?.uncertain||this.state?.posting?.some(p=>['uncertain','committed'].includes(p.state)))throw new FormError('transport');
+    this.terminal=false;this.recoveryReadAccepted=false;
+  }
+  request(method, params, readRecovery=false) {
+    if(readRecovery){
+      this.recoveryReadAccepted=false;
+      if(!(method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method)))throw new FormError('transport');
+    }
     this.pending++;
     const operation = this.tail.then(async () => {
-      if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
       if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
@@ -291,7 +305,8 @@ export class ApplicationClient {
         this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs; this.inputCapability = inputNegotiated; this.inputs = nextInputs;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
-      if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
+      if (this.state.uncertain) { this.semanticUnknown=true; this.lock(); throw new FormError('transport'); }
+      if(readRecovery)this.recoveryReadAccepted=true;
       this.changed(result,request); return result;
     });
     this.tail = operation.catch(() => {});
@@ -302,8 +317,8 @@ export class ApplicationClient {
     if (!result.form) { this.lock(); throw new FormError('transport'); }
     return result.form;
   }
-  async form(session, request) {
-    const result = await this.request('application.form',{session,request});
+  async form(session, request, readRecovery=false) {
+    const result = await (readRecovery?this.recoveryRead('application.form',{session,request}):this.request('application.form',{session,request}));
     // A queued child opening can fail while the originating form event has a
     // valid authoritative reply. Keep that parent snapshot; never replay it.
     if (!result.form) { this.lock(); throw new FormError('transport'); }

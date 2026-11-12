@@ -19,6 +19,7 @@ from .configuration_inventory_application import (
     InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS)
 from .configuration_inventory_enum_application import (
     InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE)
+from .configuration_main_demo import MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE
 from .inventory_host_operations import canonical
 from .enum_storage_values import EnumKey
 from .document_backend import DocumentKey
@@ -344,7 +345,7 @@ def _enum_text(rows, configuration, domain):
     semantics. Empty values stay empty. Wrong database/target/value is refused
     by the same closed domain used by storage before any string is published.
     """
-    if type(configuration) is not InventoryEnumApplicationConfiguration:
+    if type(configuration) not in (InventoryEnumApplicationConfiguration, MainDemoConfiguration):
         raise BackendError('unsupported')
     names = {(enum.identity, value.identity): value.name
              for enum in configuration.enumerations for value in enum.values}
@@ -387,11 +388,12 @@ class InventoryReports:
         from .sqlite_catalog import SQLiteCatalogBackend
         b = self._backend
         if (type(b) is not SQLiteCatalogBackend or self._context.backend is not b
-                or type(b.accumulation_configuration) not in (InventoryApplicationConfiguration, InventoryEnumApplicationConfiguration)
+                or type(b.accumulation_configuration) not in (InventoryApplicationConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
                 or (b.format_version, type(b.accumulation_configuration),
                     b.accumulation_configuration.profile) not in (
                         (15, InventoryApplicationConfiguration, PROFILE),
-                        (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE))):
+                        (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE),
+                        (16, MainDemoConfiguration, MAIN_DEMO_PROFILE))):
             raise BackendError('unsupported')
         if b._closed:
             raise BackendError('closed')
@@ -428,7 +430,10 @@ class InventoryReports:
             terms += (CatalogComparison('code', 'eq', code),)
         request = CatalogScanRequest(predicate=terms[0] if len(terms) == 1 else CatalogPredicate('and', terms),
                                      order=(CatalogOrder('code'),), page_size=MAX_CHOICES)
-        if type(self._configuration) is InventoryEnumApplicationConfiguration:
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
             from .sqlite_inventory_enum_profile import admit
         else:
             from .sqlite_inventory_profile import admit
@@ -496,7 +501,10 @@ class InventoryReports:
         if code:
             terms += (CatalogComparison('code', 'eq', code),)
         predicate = terms[0] if len(terms) == 1 else CatalogPredicate('and', terms)
-        if type(self._configuration) is InventoryEnumApplicationConfiguration:
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
             from .sqlite_inventory_enum_profile import admit
         else:
             from .sqlite_inventory_profile import admit
@@ -577,7 +585,10 @@ class InventoryReports:
         filters = _statement_options(grant, periodicity, filters, self._binding)
         schema = next(s for s in self._configuration.registers if s.identity == grant.register_id)
         columns = _columns(schema, grant.view, periodicity)
-        if type(self._configuration) is InventoryEnumApplicationConfiguration:
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
             from .sqlite_inventory_enum_profile import admit
         else:
             from .sqlite_inventory_profile import admit
@@ -597,7 +608,7 @@ class InventoryReports:
             rows = (_statement_rows(port, schema, boundaries, periodicity, filters)
                     if grant.view == 'BalanceAndTurnovers'
                     else _rows(port, schema, grant.view, boundaries))
-            if type(current) is InventoryEnumApplicationConfiguration:
+            if type(current) in (InventoryEnumApplicationConfiguration, MainDemoConfiguration):
                 rows = _enum_text(rows, current, self._backend._enum_domain)
             if len(rows) * len(columns) > MAX_CELLS:
                 raise BackendError('unsupported')

@@ -8,6 +8,7 @@ from .configuration_posting_document import PostingDocumentSession
 from .inventory_host_operations import canonical
 from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
 from .inventory_host_operations import InventoryRootOperations, _source_configuration
+from .configuration_main_demo import MainDemoConfiguration
 from .documents import BSLDocumentObject
 
 
@@ -47,7 +48,7 @@ class InventoryDocumentSession(PostingDocumentSession):
     def __init__(self, context, schema, configuration, form, key=None, *, _opened=None):
         configuration = canonical(configuration)
         require_document_form_schema(schema, reference_fields=True,
-            enum_fields=type(configuration) is InventoryEnumApplicationConfiguration)
+            enum_fields=type(configuration) in (InventoryEnumApplicationConfiguration, MainDemoConfiguration))
         self.context, self.schema = context, schema
         self.configuration = canonical(configuration)
         if schema not in self.configuration.documents:

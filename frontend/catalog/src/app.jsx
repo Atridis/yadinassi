@@ -5,13 +5,27 @@ import {EditorClient,typedInput,readBoundedJSON,takeSessionCapability,
 import {createBrowserHost, AttachmentRefusal} from '../../form/src/attachment.mjs';
 import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresentation,isDeletionMarked,selectedReference,createSelectionModel} from './presentation.mjs';
 
-const browserHost=createBrowserHost(window,document.getElementById('app'));
+export function mountEditor(environment,root,exchange=null){
+if(!environment?.document||!root||exchange!==null&&typeof exchange!=='function')throw new TypeError('Invalid editor mount');
+const window=environment,document=environment.document;
+const {location,history}=environment;
+const fetch=(...args)=>environment.fetch(...args),matchMedia=(...args)=>environment.matchMedia(...args);
+const addEventListener=(...args)=>environment.addEventListener(...args),removeEventListener=(...args)=>environment.removeEventListener(...args);
+const confirm=(...args)=>environment.confirm(...args);
+const browserHost=exchange?{enabled:false,content:root,launcher:null,notify(){}}:createBrowserHost(environment,root);
+let disposed=false,readiness=false,leave=()=>false,pending=()=>true,recover=null,recoveryReady=()=>false,resolveReady,rejectReady;
+const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
+// Mark the rejection observed without changing the caller's ready promise.
+ready.catch(()=>{});
+const connected=value=>{readiness=true;resolveReady(value);return value;};
+const failed=error=>{rejectReady(error);};
 let token=browserHost.launcher;
 // The capability is memory-only: never store it with the presentation preference.
 // Reopen the launch URL after a page reload to reattach without replaying writes.
-const transport=browserHost.enabled?browserHost.transport:async request=>readBoundedJSON(await fetch('/rpc',{method:'POST',cache:'no-store',
+const underlyingTransport=exchange||(browserHost.enabled?browserHost.transport:async request=>readBoundedJSON(await fetch('/rpc',{method:'POST',cache:'no-store',
   credentials:'omit',headers:{'Content-Type':'application/x-ndjson','X-Yadinassi-Session':token||''},
-  body:JSON.stringify(request)+'\n'}));
+  body:JSON.stringify(request)+'\n'})));
+const transport=request=>{if(disposed)throw new Error('Editor mount destroyed');return underlyingTransport(request);};
 const client=new EditorClient(transport);
 const text=value=>value?.type==='String'?value.value:value?.type==='Boolean'?(value.value?'Yes':'No'):value?.value??'';
 const sectionReason=reason=>({
@@ -52,9 +66,12 @@ function App(){
   const changeTheme=value=>{setTheme(value);rememberTheme(window,value);};
   const editor=snapshot?.state?.editor;
   const localDirty=hasDraftChanges(editor,draft);
+  pending=()=>gate.current||lifecycle.current.pending||Boolean(recoveryRef.current)||client.uncertain;
+  leave=()=>!disposed&&readiness&&!gate.current&&!client.uncertain&&!client.snapshot?.state?.editor&&!client.snapshot?.state?.referenceChoice&&!recoveryRef.current&&!hasDraftChanges(client.snapshot?.state?.editor,draftRef.current)&&!lifecycle.current.pending;
   lifecycle.current={pending:Boolean(recoveredDraft)||localDirty||editor?.dirty||editor?.editingLocked||busy||client.uncertain,unknown:client.uncertain||Boolean(editor?.editingLocked)};
   useEffect(()=>{
     const connect=()=>{
+      if(disposed)return Promise.reject(new Error('Editor mount destroyed'));
       if(gate.current)throw new AttachmentRefusal('busy');
       if(browserHost.enabled&&client.uncertain)throw Error('Unknown previous outcome');
       gate.current=true;setBusy(true);setError('');
@@ -64,7 +81,7 @@ function App(){
           if(orphaned){recoveryRef.current=orphaned;setRecoveredDraft(orphaned);}}
         apply(Boolean(previousEditor)&&previousEditor===client.snapshot?.state?.editor?.editorId);
       };
-      return client.hello().then(sync).catch(e=>{sync();setError(e.message);if(browserHost.enabled)throw e;}).finally(()=>{gate.current=false;setBusy(false);});
+      return client.hello().then(sync).catch(e=>{sync();setError(e.message);if(browserHost.enabled||exchange)throw e;}).finally(()=>{gate.current=false;setBusy(false);});
     };
     const reattach=()=>{
       const incoming=takeSessionCapability(location,history);
@@ -72,11 +89,12 @@ function App(){
     };
     if(browserHost.enabled){
       browserHost.setPending(()=>lifecycle.current.pending,()=>lifecycle.current.unknown);
-      browserHost.start(connect);return()=>browserHost.attachment.dispose();
+      browserHost.start(connect).then(connected,failed);return()=>browserHost.attachment.dispose();
     }
+    if(exchange){connect().then(connected,failed);return;}
     addEventListener('hashchange',reattach);
-    if(token)connect();
-    else setError('Session capability missing. Reopen the URL printed by the launcher to reconnect.');
+    if(token)connect().then(connected,failed);
+    else {const message='Session capability missing. Reopen the URL printed by the launcher to reconnect.';setError(message);failed(new Error(message));}
     return()=>removeEventListener('hashchange',reattach);
   },[]);
   useEffect(()=>{browserHost.notify();},[localDirty,busy,snapshot,error,recoveredDraft]);
@@ -122,6 +140,9 @@ function App(){
     if(active&&!active.readOnly&&active.inputText!==value)
       run('change',{control:field.control,value:typedInput(field,value)});
   }
+  recover=()=>resync();
+  recoveryReady=()=>!gate.current&&!client.uncertain&&!client.snapshot?.state?.editor?.editingLocked;
+  const requestResync=()=>exchange?.recover?exchange.recover():resync();
   async function resync(){
     if(gate.current)return;gate.current=true;setBusy(true);
     const previous=client.snapshot?.state?.editor,raw=draftRef.current;
@@ -181,7 +202,7 @@ function App(){
       {Object.entries(recoveredDraft.fields).concat(Object.entries(recoveredDraft.rows)).map(([name,value])=><p>{name}: {String(value)}</p>)}
       <button disabled={busy} onClick={()=>{recoveryRef.current=null;setRecoveredDraft(null);}}>Dismiss recovered inputs</button></section>}
     {error&&<section role="alert" class="notice error"><strong>Action not completed</strong><span>{error}</span>
-      {client.uncertain&&token&&<button disabled={busy} onClick={resync}>Resynchronize — do not repeat Save</button>}</section>}
+      {client.uncertain&&token&&<button disabled={busy} onClick={requestResync}>Resynchronize — do not repeat Save</button>}</section>}
     {!snapshot&&<section class="panel empty">{busy?'Opening database…':'Use the host launcher to select a supported SQLite file.'}</section>}
     {state?.kind==='closed'&&<section class="panel empty"><h2>Database closed</h2><p>No further changes can be made in this session.</p></section>}
     {snapshot&&state.kind!=='closed'&&<div class={'workspace'+(editor?' has-editor':'')}>
@@ -289,7 +310,7 @@ function App(){
         <h2>Choose reference</h2>
         {error&&<p role="alert">{error}</p>}
         {client.uncertain&&<><p role="status">Outcome unknown. Read current state before choosing again; the previous action will not be repeated.</p>
-          <button disabled={busy} onClick={resync}>Resynchronize choice</button></>}
+          <button disabled={busy} onClick={requestResync}>Resynchronize choice</button></>}
         <label>Search references<input aria-label="Search references" type="search" maxLength={128} value={pickerQuery} disabled={busy||client.uncertain} onInput={event=>setPickerQuery(event.currentTarget.value)}/></label>
         <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'search',ticket:picker.ticket,query:pickerQuery}})}>Search references</button>
         <button disabled={busy||client.uncertain} onClick={()=>run('referenceChoice',{action:{action:'refresh',ticket:picker.ticket}})}>Refresh choices</button>
@@ -306,3 +327,10 @@ function App(){
   </main>;
 }
 render(<App/>,browserHost.content);
+return {ready,client,recoveryReady:()=>recoveryReady(),pending:()=>pending(),canLeave:()=>leave(),resume(){if(disposed||!recover)throw new Error('Editor mount unavailable');return recover();},destroy(){
+  if(disposed)return;disposed=true;
+  rejectReady(new Error('Editor mount destroyed'));
+  render(null,browserHost.content);
+}};
+}
+if(typeof window!=='undefined'&&window.document?.getElementById('app'))mountEditor(window,window.document.getElementById('app'));

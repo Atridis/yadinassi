@@ -380,5 +380,10 @@ scripts/native_1c_enum_relational_ci_policy.py text eol=lf
 # Immutable independent direct enum relational capture and coverage mapping.
 tests/fixtures/native_inventory_enum_relational/* -text
 
-# Exact authored main demo source, including original native catalog modules.
+# One canonical demo retains the original 18 XML/BSL files byte-for-byte.
+# No checkout newline rewriting is allowed for the mixed historical/authored source.
 examples/demo/** -text
+
+# Closed unified demo renderer assets and authored sources.
+frontend/main-demo/** text eol=lf
+yadinassi/ui/assets/main-demo/* text eol=lf

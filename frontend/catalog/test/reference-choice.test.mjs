@@ -40,7 +40,7 @@ test('lost Apply response is resolved by one snapshot read, never replay',async(
 });
 test('native modal exposes recovery even while business actions are uncertain',async()=>{
  const {readFile}=await import('node:fs/promises');const source=await readFile(new URL('../src/app.jsx',import.meta.url),'utf8');
- assert.ok(source.includes('<button disabled={busy} onClick={resync}>Resynchronize choice</button>'));
+ assert.ok(source.includes('<button disabled={busy} onClick={requestResync}>Resynchronize choice</button>'));
  assert.ok(source.includes('orphanedDraft(previous,current,raw)'));
  assert.ok(source.includes('hasDraftChanges(previous,raw)'));
 });

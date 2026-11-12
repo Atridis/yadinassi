@@ -502,6 +502,15 @@ function validateStatus(value, issued, previous) {
   return value;
 }
 function readOnlyRPC(request) {
+  if (['demo.hello','demo.snapshot'].includes(request.method))
+    return objectKeys(request.params,['protocol']) && request.params.protocol === 'yadinassi-main-demo/1';
+  if (request.method === 'demo.dispatch') {
+    const params=request.params,nested=params?.request;
+    if (!objectKeys(params,['epoch','request']) || typeof params.epoch !== 'string' || !/^[0-9a-f]{32}$/.test(params.epoch) ||
+        !objectKeys(nested,['jsonrpc','id','method','params']) || nested.jsonrpc !== '2.0' || !Number.isSafeInteger(nested.id) || nested.id < 1) return false;
+    if (['editor.hello','editor.snapshot','application.hello','application.snapshot'].includes(nested.method)) return true;
+    return nested.method === 'application.form' && ['form.hello','form.snapshot'].includes(nested.params?.request?.method);
+  }
   if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
   return ['workspace.form', 'application.form'].includes(request.method) &&
     ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
@@ -624,11 +633,36 @@ class BrowserAttachment {
     return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
   }
   dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async inspectDemo(callback) {
+    if (typeof callback !== 'function' || this.demoInspection || this.busy || this.rpcActive || this.suspended || this.info?.closed || this.info?.role !== 'writer') throw new AttachmentRefusal('not_writer');
+    const pin={attachment:this.info.attachment,generation:this.info.generation};
+    const current=()=>this.info?.role==='writer'&&!this.info.closed&&!this.suspended&&this.info.attachment===pin.attachment&&this.info.generation===pin.generation;
+    this.demoInspection={current,snapshot:null,epoch:null};
+    try {
+      const result=await callback();
+      const observed=this.demoInspection.snapshot;
+      if (!current()) throw new AttachmentRefusal('not_writer');
+      if (objectKeys(result,['protocol','epoch','ready']) && result.protocol==='yadinassi-main-demo/1' && result.ready===true &&
+          observed?.kind==='main-demo' && observed.uncertain===false && observed.epoch===result.epoch &&
+          this.demoInspection.epoch===result.epoch && !this.rpcActive) {
+        this.businessUnknown=false;this.paused=false;this.message='';
+      }
+      return result;
+    } finally { this.demoInspection=null;this.changed(); }
+  }
   async exchange(request) {
-    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (this.demoInspection && (!this.demoInspection.current() || !['demo.hello','demo.snapshot','demo.dispatch'].includes(request.method) || !readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (!this.demoInspection && !this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
     this.rpcActive++;
     try {
       const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (this.demoInspection) {
+        if (!this.demoInspection.current()) throw new AttachmentRefusal('not_writer');
+        const state=result?.result?.state;
+        if (request.method==='demo.snapshot' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null) this.demoInspection.snapshot=state;
+        if (request.method==='demo.dispatch' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null && state?.epoch===request.params.epoch &&
+            objectKeys(result.result.payload,['jsonrpc','id','result']) && result.result.payload.jsonrpc==='2.0' && result.result.payload.id===request.params.request.id) this.demoInspection.epoch=state.epoch;
+      }
       if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
       return result;
     } catch (error) {
@@ -680,7 +714,7 @@ function createBrowserHost(environment, root) {
   }
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
-  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+  return {enabled: true, inspect:callback=>attachment.inspectDemo(callback), content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
     setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
     setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
@@ -1339,6 +1373,12 @@ function mountForm(environment, root, options = {}) {
     try { return await (client.snapshot ? client.resync() : client.hello()); }
     finally { finish(); view.endOwnershipReconcile(); }
   }
+  async function recoverReadOnly() {
+    if(busy||!client||client.outcomeUnknown||client.snapshot?.uncertain)throw new FormError('transport');
+    busy=true;view.beginOwnershipReconcile();paint();
+    try { return await (client.snapshot?client.resync():client.hello()); }
+    finally { finish();view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -1379,7 +1419,7 @@ function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, recoverReadOnly, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -1935,13 +1975,27 @@ class ApplicationClient {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
     this.ownedResults = null; this.dialogCapability = null; this.dialogs = []; this.retiredDialogs = new Set();
+    this.semanticUnknown = false; this.recoveryReadAccepted = false;
     this.inputCapability = null; this.inputs = []; this.retiredInputs = new Set();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
-  request(method, params) {
+  recoveryRead(method,params) {
+    const safe=method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method);
+    if(!safe||this.semanticUnknown)throw new FormError('transport');
+    return this.request(method,params,true);
+  }
+  finishReadRecovery() {
+    if(!this.recoveryReadAccepted||this.pending||this.semanticUnknown||this.state?.uncertain||this.state?.posting?.some(p=>['uncertain','committed'].includes(p.state)))throw new FormError('transport');
+    this.terminal=false;this.recoveryReadAccepted=false;
+  }
+  request(method, params, readRecovery=false) {
+    if(readRecovery){
+      this.recoveryReadAccepted=false;
+      if(!(method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method)))throw new FormError('transport');
+    }
     this.pending++;
     const operation = this.tail.then(async () => {
-      if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
       if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
@@ -2028,7 +2082,8 @@ class ApplicationClient {
         this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs; this.inputCapability = inputNegotiated; this.inputs = nextInputs;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
-      if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
+      if (this.state.uncertain) { this.semanticUnknown=true; this.lock(); throw new FormError('transport'); }
+      if(readRecovery)this.recoveryReadAccepted=true;
       this.changed(result,request); return result;
     });
     this.tail = operation.catch(() => {});
@@ -2039,8 +2094,8 @@ class ApplicationClient {
     if (!result.form) { this.lock(); throw new FormError('transport'); }
     return result.form;
   }
-  async form(session, request) {
-    const result = await this.request('application.form',{session,request});
+  async form(session, request, readRecovery=false) {
+    const result = await (readRecovery?this.recoveryRead('application.form',{session,request}):this.request('application.form',{session,request}));
     // A queued child opening can fail while the originating form event has a
     // valid authoritative reply. Keep that parent snapshot; never replay it.
     if (!result.form) { this.lock(); throw new FormError('transport'); }
@@ -2059,6 +2114,8 @@ const {createBrowserHost, documentInstance} = __browserAttachment;
 const {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} = __configurationClient;
 
 function mountApplication(environment, root, exchange = null) {
+  let destroyed = false, recovering = false;
+  const demoRecovery = typeof exchange?.recover === 'function';
   const browserHost = exchange ? null : createBrowserHost(environment, root);
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
@@ -2432,6 +2489,7 @@ function mountApplication(environment, root, exchange = null) {
   }
   function paint() {
     browserHost?.notify();
+    shell.inert = recovering;
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
@@ -2450,7 +2508,7 @@ function mountApplication(environment, root, exchange = null) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
       entry.ownerNotice.textContent = client.inputs.some(value => value.owner === id) ? 'This form is paused for an input answer. Pending text is retained.' : client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
-      if (client.terminal) entry.mount?.lock();
+      if (client.terminal && !recovering) entry.mount?.lock();
       else entry.mount?.repaint();
     }
     postingPanel.replaceChildren();
@@ -2485,8 +2543,8 @@ function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status');
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
-      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
-        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
+      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request,recovering),isActive: () => active === id,
+        businessBlocked: () => recovering || Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice || dialogModal()),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
@@ -2538,8 +2596,11 @@ function mountApplication(environment, root, exchange = null) {
   });
   workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
+  const surfaceExchange = exchange;
+  exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
-  environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
+  const warnBeforeUnload = event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } };
+  environment.addEventListener('beforeunload',warnBeforeUnload);
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
   browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
     !pickerBusy && !client.state?.choice && mounts.size &&
@@ -2547,23 +2608,37 @@ function mountApplication(environment, root, exchange = null) {
     ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
       client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
+    if (destroyed) throw Error('Application mount destroyed');
     try {
-      if (client.terminal) throw Error('Unknown previous outcome');
+      if (client.semanticUnknown || client.terminal&&!demoRecovery) throw Error('Unknown semantic outcome');
+      recovering=demoRecovery;
+      paint();
       const retained = new Set(mounts.keys());
-      const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
+      const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
       for (const [id,entry] of mounts) {
-        if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+        if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }
+      if(demoRecovery)client.finishReadRecovery();
       return result;
     } finally {
+      recovering=false;
       // Reconciliation paints while the hello request is still pending.
       // Recompute controls after it settles; ownership and error gates remain.
       paint();
     }
   };
   paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
-  return {ready,client,mounts,show,pending,openForm,browserHost};
+  const canLeave = () => !destroyed && Boolean(client.state) && !pending() && !mounts.size && !openings.size;
+  const destroy = () => {
+    if (destroyed) return;
+    if (!canLeave()) throw Error('Finish current application surface');
+    destroyed = true;
+    environment.removeEventListener('beforeunload',warnBeforeUnload);
+    browserHost?.attachment?.dispose();
+    root.replaceChildren();
+  };
+  return {ready,client,mounts,show,pending,openForm,browserHost,canLeave,destroy,resume,recoveryReady:()=>!client.pending&&!client.terminal&&!client.state?.uncertain&&!client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))&&[...mounts.values()].every(e=>!e.mount.client?.busy&&!e.mount.client?.transportFailed&&!e.mount.client?.outcomeUnknown)};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));
 

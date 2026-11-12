@@ -54,6 +54,15 @@ function validateStatus(value, issued, previous) {
   return value;
 }
 function readOnlyRPC(request) {
+  if (['demo.hello','demo.snapshot'].includes(request.method))
+    return objectKeys(request.params,['protocol']) && request.params.protocol === 'yadinassi-main-demo/1';
+  if (request.method === 'demo.dispatch') {
+    const params=request.params,nested=params?.request;
+    if (!objectKeys(params,['epoch','request']) || typeof params.epoch !== 'string' || !/^[0-9a-f]{32}$/.test(params.epoch) ||
+        !objectKeys(nested,['jsonrpc','id','method','params']) || nested.jsonrpc !== '2.0' || !Number.isSafeInteger(nested.id) || nested.id < 1) return false;
+    if (['editor.hello','editor.snapshot','application.hello','application.snapshot'].includes(nested.method)) return true;
+    return nested.method === 'application.form' && ['form.hello','form.snapshot'].includes(nested.params?.request?.method);
+  }
   if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
   return ['workspace.form', 'application.form'].includes(request.method) &&
     ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
@@ -176,11 +185,36 @@ export class BrowserAttachment {
     return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
   }
   dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async inspectDemo(callback) {
+    if (typeof callback !== 'function' || this.demoInspection || this.busy || this.rpcActive || this.suspended || this.info?.closed || this.info?.role !== 'writer') throw new AttachmentRefusal('not_writer');
+    const pin={attachment:this.info.attachment,generation:this.info.generation};
+    const current=()=>this.info?.role==='writer'&&!this.info.closed&&!this.suspended&&this.info.attachment===pin.attachment&&this.info.generation===pin.generation;
+    this.demoInspection={current,snapshot:null,epoch:null};
+    try {
+      const result=await callback();
+      const observed=this.demoInspection.snapshot;
+      if (!current()) throw new AttachmentRefusal('not_writer');
+      if (objectKeys(result,['protocol','epoch','ready']) && result.protocol==='yadinassi-main-demo/1' && result.ready===true &&
+          observed?.kind==='main-demo' && observed.uncertain===false && observed.epoch===result.epoch &&
+          this.demoInspection.epoch===result.epoch && !this.rpcActive) {
+        this.businessUnknown=false;this.paused=false;this.message='';
+      }
+      return result;
+    } finally { this.demoInspection=null;this.changed(); }
+  }
   async exchange(request) {
-    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (this.demoInspection && (!this.demoInspection.current() || !['demo.hello','demo.snapshot','demo.dispatch'].includes(request.method) || !readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (!this.demoInspection && !this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
     this.rpcActive++;
     try {
       const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (this.demoInspection) {
+        if (!this.demoInspection.current()) throw new AttachmentRefusal('not_writer');
+        const state=result?.result?.state;
+        if (request.method==='demo.snapshot' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null) this.demoInspection.snapshot=state;
+        if (request.method==='demo.dispatch' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null && state?.epoch===request.params.epoch &&
+            objectKeys(result.result.payload,['jsonrpc','id','result']) && result.result.payload.jsonrpc==='2.0' && result.result.payload.id===request.params.request.id) this.demoInspection.epoch=state.epoch;
+      }
       if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
       return result;
     } catch (error) {
@@ -232,7 +266,7 @@ export function createBrowserHost(environment, root) {
   }
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
-  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+  return {enabled: true, inspect:callback=>attachment.inspectDemo(callback), content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
     setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
     setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};

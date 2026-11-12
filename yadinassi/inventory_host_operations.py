@@ -22,10 +22,14 @@ from .document_posting_values import DocumentWriteMode
 
 from .configuration_inventory_enum_application import (
     InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE, canonical as enum_canonical)
+from .configuration_main_demo import (MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE,
+    canonical as main_demo_canonical)
 from .enum_storage_values import EnumKey
 
 
 def canonical(configuration):
+    if type(configuration) is MainDemoConfiguration:
+        return main_demo_canonical(configuration)
     return (enum_canonical(configuration) if type(configuration) is InventoryEnumApplicationConfiguration
             else scalar_canonical(configuration))
 
@@ -33,10 +37,13 @@ def canonical(configuration):
 def _source_configuration(backend):
     """Read-only source check, not a root-execution grant for a form VM."""
     from .sqlite_catalog import SQLiteCatalogBackend
-    if (type(backend) is not SQLiteCatalogBackend or (backend.format_version, type(backend.accumulation_configuration),
-                getattr(backend.accumulation_configuration, 'profile', None)) not in (
+    if (type(backend) is not SQLiteCatalogBackend
+            or type(backend.accumulation_configuration) not in (InventoryApplicationConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+            or (backend.format_version, type(backend.accumulation_configuration),
+                backend.accumulation_configuration.profile) not in (
                     (15, InventoryApplicationConfiguration, PROFILE),
-                    (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE))):
+                    (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE),
+                    (16, MainDemoConfiguration, MAIN_DEMO_PROFILE))):
         raise BackendError('unsupported')
     if backend._closed:
         raise BackendError('closed')
@@ -151,7 +158,7 @@ class InventoryRootOperations(RootPostingOperations):
                             or value.catalog_id != field.target_catalog_id):
                         raise BackendError('conflict')
                 elif field.kind == 'enum_ref':
-                    if (type(self.configuration) is not InventoryEnumApplicationConfiguration
+                    if (type(self.configuration) not in (InventoryEnumApplicationConfiguration, MainDemoConfiguration)
                             or type(value) is not EnumKey or value.database_id != self._binding[0]
                             or value.enum_id != field.target_enum_id):
                         raise BackendError('conflict')

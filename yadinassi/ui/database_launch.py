@@ -26,16 +26,17 @@ ROUTES = {
     'posting': '--posting-application',
     'inventory': '--inventory-application',
     'inventory-enum': '--inventory-enum-application',
+    'main-demo': '--main-demo-application',
 }
 
 
 def configuration_route(*, catalog_objects=False, application_host=False,
                         document_objects=False, business_application=False,
-                        reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False):
+                        reference_application=False, posting_application=False, inventory_application=False, inventory_enum_application=False, main_demo_application=False):
     selected = [name for name, enabled in (
         ('catalog-forms', catalog_objects), ('application', application_host),
         ('documents', document_objects), ('business', business_application),
-        ('references', reference_application), ('posting', posting_application), ('inventory', inventory_application), ('inventory-enum', inventory_enum_application)) if enabled]
+        ('references', reference_application), ('posting', posting_application), ('inventory', inventory_application), ('inventory-enum', inventory_enum_application), ('main-demo', main_demo_application)) if enabled]
     if len(selected) != 1:
         raise ValueError('database UI requires one exact configuration grant')
     return selected[0]
@@ -99,6 +100,12 @@ def main(argv=None):
         options = ['--f', args.f, '--browser-session', '--launch-binding', expected]
         if args.open_browser:
             options.append('--open-browser')
+        if snapshot.route == 'main-demo':
+            if args.form:
+                parser.error('--form is unavailable in the unified demo navigation')
+            from . import main_demo_web
+            return main_demo_web.main(['--f', args.f, '--launch-binding', expected]
+                + (['--open-browser'] if args.open_browser else []))
         if snapshot.route == 'catalog':
             if args.form:
                 parser.error('--form requires an admitted configuration-form application')

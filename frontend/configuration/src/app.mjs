@@ -6,6 +6,8 @@ import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs
 import {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} from './client.mjs';
 
 export function mountApplication(environment, root, exchange = null) {
+  let destroyed = false, recovering = false;
+  const demoRecovery = typeof exchange?.recover === 'function';
   const browserHost = exchange ? null : createBrowserHost(environment, root);
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
@@ -379,6 +381,7 @@ export function mountApplication(environment, root, exchange = null) {
   }
   function paint() {
     browserHost?.notify();
+    shell.inert = recovering;
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
@@ -397,7 +400,7 @@ export function mountApplication(environment, root, exchange = null) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
       entry.ownerNotice.textContent = client.inputs.some(value => value.owner === id) ? 'This form is paused for an input answer. Pending text is retained.' : client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
-      if (client.terminal) entry.mount?.lock();
+      if (client.terminal && !recovering) entry.mount?.lock();
       else entry.mount?.repaint();
     }
     postingPanel.replaceChildren();
@@ -432,8 +435,8 @@ export function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status');
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
-      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
-        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
+      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request,recovering),isActive: () => active === id,
+        businessBlocked: () => recovering || Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice || dialogModal()),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
@@ -485,8 +488,11 @@ export function mountApplication(environment, root, exchange = null) {
   });
   workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
+  const surfaceExchange = exchange;
+  exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
-  environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
+  const warnBeforeUnload = event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } };
+  environment.addEventListener('beforeunload',warnBeforeUnload);
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
   browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
     !pickerBusy && !client.state?.choice && mounts.size &&
@@ -494,22 +500,36 @@ export function mountApplication(environment, root, exchange = null) {
     ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
       client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
+    if (destroyed) throw Error('Application mount destroyed');
     try {
-      if (client.terminal) throw Error('Unknown previous outcome');
+      if (client.semanticUnknown || client.terminal&&!demoRecovery) throw Error('Unknown semantic outcome');
+      recovering=demoRecovery;
+      paint();
       const retained = new Set(mounts.keys());
-      const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
+      const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
       for (const [id,entry] of mounts) {
-        if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+        if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }
+      if(demoRecovery)client.finishReadRecovery();
       return result;
     } finally {
+      recovering=false;
       // Reconciliation paints while the hello request is still pending.
       // Recompute controls after it settles; ownership and error gates remain.
       paint();
     }
   };
   paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
-  return {ready,client,mounts,show,pending,openForm,browserHost};
+  const canLeave = () => !destroyed && Boolean(client.state) && !pending() && !mounts.size && !openings.size;
+  const destroy = () => {
+    if (destroyed) return;
+    if (!canLeave()) throw Error('Finish current application surface');
+    destroyed = true;
+    environment.removeEventListener('beforeunload',warnBeforeUnload);
+    browserHost?.attachment?.dispose();
+    root.replaceChildren();
+  };
+  return {ready,client,mounts,show,pending,openForm,browserHost,canLeave,destroy,resume,recoveryReady:()=>!client.pending&&!client.terminal&&!client.state?.uncertain&&!client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))&&[...mounts.values()].every(e=>!e.mount.client?.busy&&!e.mount.client?.transportFailed&&!e.mount.client?.outcomeUnknown)};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));

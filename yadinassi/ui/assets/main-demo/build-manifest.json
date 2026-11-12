@@ -1,0 +1,24 @@
+{
+  "schema": "yadinassi-main-demo-assets/0",
+  "dependencies": {
+    "esbuild": "0.28.2"
+  },
+  "sources": {
+    "build.mjs": "79b1e5a17c66fa187d5f2fdf400f05f773ac7318df4962fe8cac01e2c9a31f5c",
+    "src/app.mjs": "7d52968f205c78f8cf34408e65c3ffd26aef14b54c881d3b8d869a918cea2307",
+    "src/client.mjs": "67e830fd96561c4113b526f40a3fe71b79a1782675b56d917865fb626bfbe14e",
+    "src/index.html": "658076414d8dddbd563271f97d3c23179d107c42453dd39b1d60fde3f21c8d8f",
+    "src/style.css": "d896b52a23d6ae5f6b40b73dcb31f0c1fd48e3c0dc56fe7e63aef1ed45ba30ab",
+    "../form/LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
+    "../catalog/package.json": "3d21d35754f9d16f1e07b239c27a8b31b6451efeb2f0189372203ae5e9266d09",
+    "../catalog/package-lock.json": "33747f75a1c0c7ad808932f1a4530ac0b9ed273f3fe7918413c8240ba49dbb92",
+    "../form/src/attachment.mjs": "7042d95bdd24f7d18bfda090884faef44b81ba88b23e641e138ddb7dc098593d",
+    "../form/src/client.mjs": "0c7ceb8574276b1b3249854087391ba4b8e341471948b58593fbaf6ffa5d27fd"
+  },
+  "outputs": {
+    "app.js": "ece2cf5d6566c521ca4afa4fdddf64c794447dad84aad36bd68efd79876175ba",
+    "index.html": "658076414d8dddbd563271f97d3c23179d107c42453dd39b1d60fde3f21c8d8f",
+    "style.css": "d896b52a23d6ae5f6b40b73dcb31f0c1fd48e3c0dc56fe7e63aef1ed45ba30ab",
+    "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"
+  }
+}
