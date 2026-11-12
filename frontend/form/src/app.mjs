@@ -59,7 +59,7 @@ export function mountForm(environment, root, options = {}) {
     const item = client.snapshot.items.find(item => item.name === action.control);
     const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
     if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
-        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+        !['FormCatalogRef', 'FormEnumRef'].includes(field.value.type)) throw new FormError('unavailable');
     return {value: field.value, controlId: item.controlId, tableId: item.tableId};
   }
   async function run(event, name, row) {
