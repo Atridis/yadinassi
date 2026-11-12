@@ -79,7 +79,7 @@ def metadata_form(raw):
     props=_one(form,MD+'Properties')
     # Captions, help flags, comments and Designer internal defaults do not
     # establish identity or execution semantics of these observed forms.
-    return form.get('uuid'),tuple(_sig(_one(props,MD+n),scopes) for n in ('Name','FormType','UsePurposes'))
+    return form.get('uuid'),tuple(_sig(_one(props,MD+n),scopes) for n in ('Name','FormType'))
 
 
 def managed_form(raw):

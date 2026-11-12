@@ -119,6 +119,7 @@ class EnumFormsMaterialTests(unittest.TestCase):
         raw=(ROOT/'Products/Card.xml').read_bytes()
         changed=raw.replace(b'<Comment/>',b'<Comment>Designer presentation</Comment>')
         changed=changed.replace(b'</Properties>',b'<DesignerDefault>true</DesignerDefault></Properties>')
+        changed=changed.replace(b'PersonalComputer',b'PlatformApplication')
         self.assertEqual(self.material.metadata_form(raw),self.material.metadata_form(changed))
         changed=raw.replace(b'<Name>Card</Name>',b'<Name>Other</Name>')
         self.assertNotEqual(self.material.metadata_form(raw),self.material.metadata_form(changed))
