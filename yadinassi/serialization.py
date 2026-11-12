@@ -298,7 +298,7 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
         if kind not in _CODECS:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
-        if depth and (kind is BSLType.UUID or (kind is BSLType.TYPE and value is BSLType.UUID)):
+        if depth and kind is BSLType.TYPE and value is BSLType.UUID:
             raise ValueError("Вложенная сериализация UUID пока не поддерживается")
         if kind is BSLType.UNDEFINED:
             self.emit('{"U"}')
@@ -856,12 +856,12 @@ class _Reader:
             self.fail()
         kind = _TYPES_BY_ID[group[1].text]
         if tag == 'T':
-            if kind is BSLType.UUID:
-                self.fail()  # UUID Type record inverse has not been measured.
+            if depth and kind is BSLType.UUID:
+                self.fail()  # Nested UUID Type records remain outside the measured scope.
             return kind
         body = group[2]
         if kind is BSLType.UUID:
-            if depth or type(body) is not _Atom:
+            if type(body) is not _Atom:
                 self.fail()
             try:
                 return canonical_codec_uuid(body.text)

@@ -412,3 +412,5 @@ scripts/uuid_typed_pipeline_behavior/route.py text eol=lf
 scripts/uuid_typed_pipeline_behavior/fixture.py text eol=lf
 scripts/uuid_typed_pipeline_behavior/__init__.py text eol=lf
 scripts/uuid_typed_pipeline_behavior/observe.bsl text eol=lf
+
+tests/fixtures/native_uuid_typed_pipeline_43270339666.json -text

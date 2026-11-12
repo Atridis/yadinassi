@@ -327,10 +327,8 @@ class BSLTypeDescription(BSLObject):
             qualifier_args = args
         if any(_is_reference_type(kind) for kind in types) and args:
             _unsupported('квалификаторы описания ссылки')
-        if BSLType.UUID in types and (type(source) is not str or args):
+        if BSLType.UUID in types and args:
             _unsupported("перегрузка конструктора УникальныйИдентификатор")
-        if type(source) is BSLTypeDescription and BSLType.UUID in source.types:
-            _unsupported("копирование описания УникальныйИдентификатор")
         object.__setattr__(self, "types", types)
         for index, (attribute, qualifier_type) in enumerate(_QUALIFIERS):
             supplied = qualifier_args[index] if index < len(qualifier_args) else None
