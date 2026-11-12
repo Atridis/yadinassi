@@ -512,7 +512,7 @@ def _prepare_enum_query_metadata(root, view):
     if type(root) is not BSLMetadata or type(view) is not DocumentView:
         raise BackendError('unsupported')
     scope = root._enum_storage_scope
-    if type(scope) is not _EnumScope or type(view._view) is not _View:
+    if type(scope) is not _EnumScope:
         raise BackendError('unsupported')
     scope._require_owner()
     scope._require_snapshot(view._view)

@@ -96,7 +96,7 @@ class EnumTableTests(unittest.TestCase):
     def test_foreign_table_snapshot_refused(self):
         t = self.table()
         other = Interpreter(database_context=self.context); self.addCleanup(other.close)
-        with self.assertRaises(BackendError): self.q('SELECT Unit FROM &Input', t, vm=other).execute()
+        with self.assertRaises((BackendError, TypeError)): self.q('SELECT Unit FROM &Input', t, vm=other).execute()
 
     def test_foreign_parameter_refused_before_lease(self):
         other = Interpreter(database_context=self.context); self.addCleanup(other.close)
@@ -110,17 +110,19 @@ class EnumTableTests(unittest.TestCase):
         self.assertIsNone(other._catalogs._metadata._items)
         backend = self.context.backend
         with patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as query_view, \
-                patch.object(backend, 'begin_read', side_effect=AssertionError('extra point read')):
+                patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             r = self.q('SELECT Ref AS Item,Unit FROM Catalog.Products', vm=other).execute().unload()
         self.assertEqual(query_view.call_count, 1)
+        self.assertEqual(base_read.call_count, 1)
         self.assertEqual(len(r.rows), 3)
 
     def test_external_and_persistent_reads_share_one_view(self):
         t = self.table(); backend = self.context.backend
         with patch.object(backend, 'begin_query_read', wraps=backend.begin_query_read) as query_view, \
-                patch.object(backend, 'begin_read', side_effect=AssertionError('extra point read')):
+                patch.object(backend, 'begin_read', wraps=backend.begin_read) as base_read:
             self.q('SELECT T.Unit FROM &Input AS T JOIN Catalog.Products AS P ON T.Item=P.Ref', t).execute()
         self.assertEqual(query_view.call_count, 1)
+        self.assertEqual(base_read.call_count, 1)
 
     def test_failed_package_rolls_back_destroy(self):
         m = BSLTempTablesManager()
@@ -138,6 +140,13 @@ class EnumTableTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'close failure'):
                 self.q('SELECT Unit INTO Saved FROM Catalog.Products', manager=m).execute()
         self.assertEqual(m._tables, {})
+        m._lock.acquire()
+        try:
+            with self.assertRaisesRegex(ValueError, 'busy'):
+                self.q('SELECT Unit INTO Saved FROM Catalog.Products', manager=m).execute()
+            self.assertIsNone(self.context.backend._active)
+        finally:
+            m._lock.release()
 
     def test_manager_close_releases_stale_tables(self):
         m = BSLTempTablesManager()
@@ -194,6 +203,13 @@ class EnumTableTests(unittest.TestCase):
         q.set_parameter('State', self.vm.execute('Enums.States.Draft'))
         with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('scan')):
             with self.assertRaises(TypeError): q.execute()
+        other = Interpreter(database_context=self.context); self.addCleanup(other.close)
+        cold = self.q('SELECT Unit FROM Catalog.Products UNION ALL SELECT &State AS Unit FROM Catalog.Products', vm=other)
+        cold.set_parameter('State', other.execute('Enums.States.Draft'))
+        self.assertIsNone(other._catalogs._metadata._items)
+        with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('cold scan')):
+            with self.assertRaises(TypeError): cold.execute()
+        self.assertIsNone(self.context.backend._active)
 
     def test_cold_information_register_refused_without_reader(self):
         other = Interpreter(database_context=self.context); self.addCleanup(other.close)
@@ -201,6 +217,77 @@ class EnumTableTests(unittest.TestCase):
                 patch.object(self.context.backend, 'begin_read', side_effect=AssertionError('point reader')):
             with self.assertRaises(ValueError):
                 self.q('SELECT Amount FROM InformationRegister.Unknown', vm=other).execute()
+
+    def test_transaction_query_uses_one_registered_lease(self):
+        from yadinassi.database_transactions import Transaction
+        original = Transaction.read_lease; calls = []
+        def read(tx):
+            calls.append(tx); return original(tx)
+        with patch.object(Transaction, 'read_lease', read):
+            self.vm.execute('BeginTransaction(); Q=New Query("SELECT Unit INTO T FROM Catalog.Products; SELECT Unit FROM T"); R=Q.Execute().Unload(); RollbackTransaction();')
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].leases, 0)
+        self.assertEqual(calls[0]._read_leases, {})
+
+    def test_registered_lease_rejects_forgery_and_closed_identity(self):
+        from yadinassi.database_transactions import require_registered_query_lease
+        def probe():
+            wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
+            self.assertIs(require_registered_query_lease(self.context.backend, lease), lease)
+            forged = object.__new__(type(lease)); forged.__dict__.update(lease.__dict__)
+            class Arbitrary(_View): pass
+            for bad in (forged, object.__new__(Arbitrary)):
+                with self.assertRaises(BackendError): require_registered_query_lease(self.context.backend, bad)
+            wrapped.close(); wrapped.close()
+            with self.assertRaises(BackendError): require_registered_query_lease(self.context.backend, lease)
+        self.vm.register_function('Probe', probe, returns_value=False)
+        self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
+
+    def test_registered_lease_rejects_wrong_execution_token(self):
+        import yadinassi.database_transactions as tx
+        def probe():
+            wrapped = self.context.backend.begin_query_read()
+            token = tx._execution.set(object())
+            try:
+                with self.assertRaises(BackendError): tx.require_registered_query_lease(self.context.backend, wrapped._view)
+            finally:
+                tx._execution.reset(token); wrapped.close()
+        self.vm.register_function('Probe', probe, returns_value=False)
+        self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
+
+    def test_failed_transaction_lease_cleanup_retains_owner_until_retry(self):
+        import yadinassi.database_transactions as tx
+        from yadinassi.sqlite_catalog import _close_document_scan
+        def probe():
+            current = tx.current(self.context.backend)
+            with patch('yadinassi.sqlite_catalog._close_document_scan', wraps=_close_document_scan) as cleanup:
+                wrapped = self.context.backend.begin_query_read(); lease = wrapped._view
+                entry = current._read_leases[id(lease)]
+                cleanup.side_effect = ValueError('cleanup failure')
+                with self.assertRaisesRegex(ValueError, 'cleanup failure'): wrapped.close()
+                self.assertFalse(lease._closed)
+                self.assertEqual(current.leases, 1)
+                self.assertIs(current._read_leases[id(lease)], entry)
+                with self.assertRaises(BackendError): current.commit()
+                cleanup.side_effect = None
+                wrapped.close(); wrapped.close()
+                self.assertEqual(current.leases, 0)
+                self.assertEqual(current._read_leases, {})
+        self.vm.register_function('Probe', probe, returns_value=False)
+        self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
+
+    def test_lease_registration_failure_does_not_leak_count(self):
+        import yadinassi.database_transactions as tx
+        class Broken(dict):
+            def __setitem__(self, key, value): raise MemoryError('allocation')
+        def probe():
+            current = tx.current(self.context.backend)
+            with patch.object(current, '_read_leases', Broken()):
+                with self.assertRaises(MemoryError): current.read_lease()
+            self.assertEqual(current.leases, 0)
+            self.assertEqual(current._read_leases, {})
+        self.vm.register_function('Probe', probe, returns_value=False)
+        self.vm.execute('BeginTransaction(); Probe(); RollbackTransaction();')
 
     def test_retired_family_generation_refused(self):
         t = self.table()

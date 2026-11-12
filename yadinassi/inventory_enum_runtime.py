@@ -36,10 +36,14 @@ class _EnumScope:
 
     def _require_snapshot(self, view):
         # Exact read-only view supplied by the getter, not selected from _active.
-        if (type(view) is not _View or view._backend is not self.backend
-                or view._operation_id is not None or self.backend._active is not view):
-            raise BackendError('unsupported')
-        view._require()
+        if type(view) is _View:
+            if (view._backend is not self.backend or view._operation_id is not None
+                    or self.backend._active is not view):
+                raise BackendError('unsupported')
+            view._require()
+        else:
+            from .database_transactions import require_registered_query_lease
+            require_registered_query_lease(self.backend, view)
         self._require_identity(view)
 
     def _require_identity(self, view):
@@ -80,11 +84,6 @@ def read_snapshot(metadata, document_view):
     if type(document_view) is DocumentView:view=document_view._view
     elif type(document_view) is _View:view=document_view
     else:raise BackendError('unsupported')
-    if type(view) is not _View:
-        # No arbitrary subclass admission. require_live will obtain a fresh
-        # non-owning lease only through the existing execution owner check.
-        yield
-        return
     scope._require_owner()
     scope._require_snapshot(view)
     token=_POINT_READ.set((scope,view))
