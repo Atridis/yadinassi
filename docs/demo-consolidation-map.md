@@ -1,6 +1,6 @@
 # Карта консолидации демо
 
-База: e73b31ab (#308). Каноническая пользовательская конфигурация: `examples/demo`. Корневой README не редактируется.
+База: e73b31ab (#308). Каноническая пользовательская конфигурация: `examples/demo`. Корневой README в этом блоке не редактируется.
 
 Phase 1 из 6749f5a уже включён: original demo собирается для исторических тестов из 18 канонических файлов и одного legacy root. Отдельная копия удалена.
 
@@ -45,13 +45,6 @@ Phase 1 из 6749f5a уже включён: original demo собирается �
 - `tests/browser_ui/document_form_fixture.py`
 - `tests/browser_ui/document_form_browser_qa.mjs`
 - `docs/configuration-document-forms.md`
-
-### `examples/configuration-form-results`: 5 файлов
-- `tests/test_configuration_results_browser_qa_contract.py`
-- `tests/test_configuration_form_results.py`
-- `tests/browser_ui/configuration_results_browser_qa.mjs`
-- `docs/configuration-results-browser-qa.md`
-- `docs/configuration-form-results.md`
 
 ### `examples/configuration-forms/counter`: 1 файлов
 - `docs/configuration-forms.md`
@@ -129,10 +122,15 @@ Phase 1 из 6749f5a уже включён: original demo собирается �
 - Forms/dialogs/results/value-input: основная демо уже имеет OperationDraft/DraftDetails; перенести общие UX сценарии, сохранить минимальные отрицательные parser fixtures отдельно.
 - Scalar editors и information-register posting: сначала включить соответствующую существенную функциональность в основную конфигурацию. Не маскировать различия простой заменой путей.
 
-## Merge blocker
-`README.md:59` указывает на удалённый `tests/fixtures/demo_cf/source`. Пользователь редактирует README; требуется его явное решение, файл здесь не менялся.
+## Условия объединения
 
-Нативные XML/BSL и source hashes #308 этим блоком не меняются. Нынешние 3 host-теста не являются browser/native проверкой и пока не разрешают удаление всех 19 старых конфигураций.
+В исходной базе e73b31ab README ещё ссылался на удалённый fixture. Исправление двух
+команд подготовлено отдельно в #308; при объединении сохранить его, не возвращать
+старые ссылки. Этот блок не редактирует корневой README.
+
+Правило нехватки остатка изменяет Issue BSL основной демо. Прежний native результат
+#308 к этим байтам не относится: нужен свежий Designer load/check. Не путать
+браузерную проверку пользовательских действий с нативной проверкой XML/BSL.
 
 ## Реальный перенос inventory-правила
 
@@ -156,3 +154,13 @@ browser acquisition собирает ту же историческую базу
 (8 файлов) удалена, число конфигураций теперь 18. Проверяется реальное исполнение
 CLI в разных процессах, reopen, отказ расхода, перепроведение и периодные отчёты.
 Historical native12 replay по-прежнему читает неизменные measured runtime sources.
+
+## Результаты дочерних форм перенесены
+
+После проверенного browser4/95 на fe9fe2a8 удалены 8 файлов пользовательской
+`configuration-form-results` и её отдельный browser workflow/harness. Три старых
+example-теста заменены уже существующими интегрированными lifecycle-тестами
+`test_main_demo_interaction_host`: основной источник, реальный брокер, отмена,
+KeepOpen, повторное открытие и однократное подтверждение без изменения SQLite.
+Негативные протокольные fixtures не удалены и не раздуваются копией старой базы.
+Количество пользовательских XML-конфигураций снижено с 18 до 17.
