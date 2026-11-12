@@ -64,7 +64,9 @@ class LocalRendererHTTPTests(unittest.TestCase):
 
     def test_no_cors_or_other_mutation_methods(self):
         for method in ('OPTIONS', 'PUT', 'DELETE'):
-            code, headers, unused = self.request(method)
+            # Rejection happens before body consumption. Do not race an unused
+            # JSON upload with the deliberate connection close on Windows.
+            code, headers, unused = self.request(method, body=b'')
             self.assertEqual(code, 405); self.assertNotIn('Access-Control-Allow-Origin', headers)
         self.bridge.exchange.assert_not_called()
 
