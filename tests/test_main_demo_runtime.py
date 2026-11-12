@@ -71,3 +71,25 @@ Q=New Query("SELECT SUM(Quantity) AS N FROM AccumulationRegister.Stock");S=Q.Exe
             code=cli.main(['--create-demo-db',str(path),'--import-xml',str(ROOT/'examples/demo')])
         self.assertEqual(code,0,err.getvalue())
         with SQLiteDBContext(path) as reopened:self.assertEqual(reopened.backend.accumulation_configuration.profile,PROFILE)
+
+    def test_duplicate_warehouse_section_refuses_without_persisting_candidate(self):
+        self.vm.execute(SEED+'Строка=Карточка.Склады.Добавить();Строка.Склад=Склад.Ссылка;')
+        with self.assertRaises(CatalogWriteRefused):self.vm.variables['карточка'].write()
+        self.vm.execute('Сохранено=Карточка.Ссылка.ПолучитьОбъект();Message(Сохранено.Склады.Количество());')
+        self.assertEqual(self.output,['1'])
+
+    def test_marked_warehouse_refuses_product_update(self):
+        self.vm.execute(SEED+'Склад.ПометкаУдаления=Истина;Склад.Записать();Карточка.Наименование="Новый кабель";')
+        with self.assertRaises(CatalogWriteRefused):self.vm.variables['карточка'].write()
+        self.vm.execute('Сохранено=Карточка.Ссылка.ПолучитьОбъект();Message(Сохранено.Наименование);')
+        self.assertEqual(self.output,['Кабель'])
+
+    def test_active_transaction_cannot_bypass_preparation(self):
+        from yadinassi import BSLRuntimeError
+        from yadinassi.database_transactions import current
+        self.vm.execute('Карточка=Справочники.Номенклатура.СоздатьЭлемент();')
+        # Enter through the actual execution boundary, never host-only begin().
+        with self.assertRaises((BackendError, BSLRuntimeError)):
+            self.vm.execute('НачатьТранзакцию();Карточка.Записать();')
+        self.assertIsNone(current(self.context.backend))
+        self.assertTrue(self.vm.variables['карточка'].is_new())
