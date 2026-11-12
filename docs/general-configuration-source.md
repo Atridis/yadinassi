@@ -242,3 +242,10 @@ sessions. It does not invent a native session number, user, authentication state
 or a native InfoBaseSession TypeOf identity. Those properties remain unavailable.
 Calls require the live owning server family and an explicitly created scratch
 database. Closed, foreign, client and asynchronous contexts are rejected.
+
+`Metadata.ScriptVariant` reads the declared XML value and exposes an opaque
+English/Russian identity, comparable with the read-only property domain
+`Metadata.ObjectProperties.ScriptVariant` by member name or string index. The
+runtime never assumes English from source code spelling. Missing, structured or
+unknown XML values and unsupported property domains fail explicitly. Native
+presentation and TypeOf identity are not yet claimed by this source facade.

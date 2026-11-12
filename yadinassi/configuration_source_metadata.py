@@ -170,6 +170,15 @@ class SourceMetadataRoot(SourceMetadataObject):
         return owner
 
     def get_member(self, name):
+        if name.casefold() in ('objectproperties', 'свойстваобъектов'):
+            from .source_metadata_properties import SourceObjectProperties
+            return SourceObjectProperties()
+        if name.casefold() in ('scriptvariant', 'вариантвстроенногоязыка'):
+            from .source_metadata_properties import script_variant
+            node = self._property('ScriptVariant')
+            if node.attrib or len(node):
+                raise ValueError('unsupported structured source ScriptVariant')
+            return script_variant(node.text or '')
         if name.casefold() in ('defaultlanguage', 'основнойязык'):
             node = self._property('DefaultLanguage')
             if node.attrib or len(node):
