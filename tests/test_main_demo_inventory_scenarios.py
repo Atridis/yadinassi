@@ -43,3 +43,32 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         after=self.reports().read('StockMovements')
         self.assertEqual(after.rows,before.rows)
         self.assertIn(UNAVAILABLE,dict(after.labels).values())
+
+    def test_shortage_refuses_without_persisting_document_or_movements(self):
+        from yadinassi import BSLRuntimeError
+        self.vm.execute(SEED + POST + 'D.Write(DocumentWriteMode.Posting);')
+        before=self.reports().read('StockMovements')
+        self.vm.execute('''I=Documents.Issue.CreateDocument();I.Number="i1";I.Date=Date(2024,1,2);
+I.Warehouse=Склад.Ссылка;I.State=Enums.States.Approved;R=I.Lines.Add();
+R.Product=Карточка.Ссылка;R.Unit=Enums.Units.Piece;R.Quantity=6;R.Amount=12;''')
+        with self.assertRaises(BSLRuntimeError):
+            self.vm.execute('I.Write(DocumentWriteMode.Posting);')
+        self.assertEqual(self.reports().read('StockMovements').rows,before.rows)
+        self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Document.Issue");S=Q.Execute().Select();S.Next();Message(S.N);')
+        self.assertEqual(self.output,['0'])
+        self.vm.execute('R.Quantity=5;I.Write(DocumentWriteMode.Posting);')
+        self.assertEqual(len(self.reports().read('StockMovements').rows),2)
+
+    def test_existing_cancel_and_exception_modes_remain_atomic(self):
+        from yadinassi import BSLRuntimeError
+        self.vm.execute(SEED + POST + 'D.Write(DocumentWriteMode.Posting);')
+        before=self.reports().read('StockMovements')
+        for mode in (1,2):
+            with self.subTest(mode=mode):
+                self.vm.execute('I=Documents.Issue.CreateDocument();I.Number="cancel";I.Date=Date(2024,1,2);'
+                    'I.Warehouse=Склад.Ссылка;R=I.Lines.Add();R.Product=Карточка.Ссылка;'
+                    'R.Unit=Enums.Units.Piece;R.Quantity=1;R.Amount=2;'
+                    f'I.AdditionalProperties.Insert("Mode",{mode});')
+                with self.assertRaises(BSLRuntimeError):
+                    self.vm.execute('I.Write(DocumentWriteMode.Posting);')
+                self.assertEqual(self.reports().read('StockMovements').rows,before.rows)

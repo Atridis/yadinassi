@@ -46,7 +46,7 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': 'a2816c3263ab8ea6bb82b299b27
  'CommonForms/OperationDraft/Ext/Form/Module.bsl': '31f9f03370889fc262a13ca0f89375440ee9d26a4c4734583a47007dc92f7006',
  'Configuration.xml': 'de4c8c950e6f39f8e9dc5bf828036670a61397e78be9e4da9370f8c31d06eca8',
  'Documents/Issue.xml': '4dd45972011a1e375ec1ccb65f87cec79647692c699f8bd8feb0fc60b6f08b4a',
- 'Documents/Issue/Ext/ObjectModule.bsl': '51d1231843b06360c0a77c73fb40a961d5fb6a67a1bd3f257505c2561e304c31',
+ 'Documents/Issue/Ext/ObjectModule.bsl': 'c3fc50dc1b1fe476f5b98f9aba72d4b9b20adcf8b5f005114fcee115f0bb67f2',
  'Documents/Issue/Forms/Card.xml': '6c2569339a0a3ffde1d50f8bc571a992c3c4df98032a750216f4103b5032227a',
  'Documents/Issue/Forms/Card/Ext/Form.xml': '1ff3c095f98426f1179a3f8c51b82f6bd3bd4dbd906837ecdfe2b85fd2848d32',
  'Documents/Issue/Forms/Card/Ext/Form/Module.bsl': '91325955fd484c274c86d184373be334f64177cf843f68707f78fff719f0f682',
