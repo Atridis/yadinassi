@@ -207,7 +207,7 @@ class AcquisitionContracts(unittest.TestCase):
         import tempfile
         from unittest.mock import patch
         _,suite=self.adapters()
-        with tempfile.TemporaryDirectory(prefix='compilation-dump-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='compilation-dump-',dir=ROOT.parent) as tmp:
             root=Path(tmp);(root/'Ext').mkdir()
             (root/'Ext/SessionModule.bsl').write_bytes(b'// owned regular source\n')
             from contextlib import nullcontext
@@ -232,7 +232,7 @@ class AcquisitionContracts(unittest.TestCase):
     def diagnostic(self,raw):
         import tempfile
         _,suite=self.adapters()
-        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
             root=Path(tmp);(root/'enterprise.log').write_bytes(raw)
             return suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics)
 
@@ -253,7 +253,7 @@ class AcquisitionContracts(unittest.TestCase):
     def test_30_symlink_not_read(self):
         import tempfile
         _,suite=self.adapters()
-        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
             root=Path(tmp);(root/'private').write_bytes(b'secret')
             try:
                 (root/'enterprise.log').symlink_to(root/'private')
@@ -271,7 +271,7 @@ class AcquisitionContracts(unittest.TestCase):
     def test_32_missing_log_closed(self):
         import tempfile
         _,suite=self.adapters()
-        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='compilation-diagnostic-',dir=ROOT.parent) as tmp:
             self.assertEqual(suite.failure_diagnostics.collect(Path(tmp),suite.full,suite.diagnostics)['category'],'evidence_invalid')
 
     def test_33_exact_projection_schema(self):
