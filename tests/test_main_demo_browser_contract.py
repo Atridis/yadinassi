@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,4)", "assert.equal(actionLog.length,95",
+            "assert.equal(results.length,5)", "assert.equal(actionLog.length,121",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
@@ -136,3 +136,15 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             self.assertIn("'" + code + "'", text.split('const safeFailureCodes=new Set([', 1)[1])
         self.assertNotIn('console.', body)
         self.assertNotIn('report.error', body)
+
+    def test_dialog_recovery_is_same_demo_actual_answer_and_readonly_inspection(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        for marker in ('dialog_confirmation_once_and_lost_answer_without_replay',
+                       'dialog_answer_count', 'dialog_answer_amount', 'dialog_answer_applied_before_delivery',
+                       'dialog_answer_repeated', 'dialog_escape_answered', 'dialog_owner_not_paused',
+                       'dialog_independent_draft_lost', 'dialog_loss_not_observed',
+                       'dialog_recovery_mutated', 'dialog_recovery_form_mutated',
+                       'dialog_raw_copy_lost', 'dialog_unknown_draft_unlocked', 'dialog_changed_database',
+                       'await stopHost();await startHost();await page.goto(url)',
+                       'assert.equal(actionLog.length-start,26'):
+            self.assertIn(marker, text)

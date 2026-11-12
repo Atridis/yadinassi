@@ -37,7 +37,7 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>signalGroup(browserGroup,'SIGKILL');
 const abort=()=>{aborted=true;for(const identity of [hostGroup,browserGroup])try{signalGroup(identity,'SIGKILL');}catch{report.status='FAIL';report.cleanup='owned_signal_failed';}};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:4};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:5};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>{
   const raw=execFileSync(python,[path.join(repo,'tests/browser_ui/main_demo_fixture.py'),mode,owned],
@@ -187,6 +187,7 @@ async function main(){
   await startHost();
   let dropApply=false, dropDocument=false, dropped=0, droppedDocument=0;
   let resultGate=null,dropOwnedResult=false,droppedOwnedResult=0;
+  let dialogGate=null,dropDialog=false,droppedDialog=0;
   const requests=[];const filterCapture=new MainDemoFilterCapture();
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
@@ -209,6 +210,30 @@ async function main(){
       report.rpcTail.push([safeMethod(request.method),safeMethod(inner?.method),safeMethod(inner?.params?.request?.method)]);
       if(report.rpcTail.length>12)report.rpcTail.shift();
       if(await filterCapture.route(route,origin,{fetchTimeout:remaining(rpcFetchMs),bodyTimeout:remaining(rpcFetchMs),bounded}))return;
+      if(inner?.method==='application.answerDialog'&&(dialogGate||dropDialog)){
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
+        try{
+          assert.equal(response.status(),200,'dialog_answer_http');
+          const bytes=await bounded(response.body(),remaining(rpcFetchMs),'dialog_answer_body_timeout');
+          assert.ok(bytes.length<=131072,'dialog_answer_body_budget');
+          const body=JSON.parse(bytes.toString('utf8'));
+          assert.equal(body.id,request.id,'dialog_answer_outer_id');
+          assert.equal(body.result?.payload?.id,inner.id,'dialog_answer_inner_id');
+          assert.equal(body.result?.error,null,'dialog_answer_outer_error');
+          const result=body.result?.payload?.result;
+          assert.equal(result?.error,null,'dialog_answer_inner_error');
+          assert.equal(result.form?.result?.error,null,'dialog_answer_form_error');
+          const values=result.form.result.state.items;
+          const count=Number(values.find(item=>item.name==='AppliedCountField')?.value?.value);
+          const amount=Number(values.find(item=>item.name==='AmountField')?.value?.value);
+          assert.equal(count,dropDialog?2:1,'dialog_answer_count');
+          assert.equal(amount,dropDialog?33:11,'dialog_answer_amount');
+          if(dropDialog){dropDialog=false;droppedDialog++;return route.abort('failed');}
+          const gate=dialogGate;dialogGate=null;gate.arrived();
+          await bounded(gate.wait,remaining(10000),'dialog_answer_gate_timeout');
+          return await route.fulfill({response,body:bytes});
+        }finally{await response.dispose();}
+      }
       const ownedAccept=inner?.method==='application.form'&&inner.params?.request?.method==='form.event'&&inner.params.request.params?.event==='command'&&inner.params.request.params.control==='AcceptButton';
       if(ownedAccept&&(resultGate||dropOwnedResult)){
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
@@ -561,14 +586,84 @@ async function main(){
     assert.equal(actionLog.length-start,14,'owned_result_action_count');
     report.ownedResultRecovery={delayedCompletionOnce:true,pausedOwnerCannotDispatch:true,independentRawDraftRetained:true,confirmedCloseLost:true,noReplay:true,copyPreserved:true,durableUnchanged:true};
   });
-  assert.equal(actionLog.length,95,'total_action_count');
+  await scenario('dialog_confirmation_once_and_lost_answer_without_replay',async()=>{
+    const saved=audit(),start=actionLog.length;
+    await act('dialog-restart-owned-host',async()=>{await stopHost();await startHost();await page.goto(url);});
+    await click('Документы, формы и отчёты');
+    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    const dialog=()=>page.locator('.configuration-dialog');
+    const answerButton=name=>dialog().getByRole('button',{name,exact:true});
+    const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
+    const command=label=>settled(formEvent('command'),()=>docButton(label).click());
+    const answer=label=>settled(packet=>packet.method==='application.answerDialog',()=>answerButton(label).click());
+    await act('dialog-owner-a',openOwner);
+    await act('dialog-child-a',()=>command('Подготовить изменения'));
+    await act('dialog-retain-independent-draft',()=>docField('Comment').fill('  dialog independent raw draft  '));
+    const childInput=await docField('Comment').getAttribute('id');
+    await act('dialog-owner-b',openOwner);
+    await act('dialog-child-b',()=>command('Подготовить изменения'));
+    await commit('Amount','11');
+    await act('dialog-return-first',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-first',()=>command('Применить черновик'));
+    const answersBefore=requests.filter(request=>request.inner==='application.answerDialog').length;
+    await act('dialog-escape-is-not-answer',async()=>{
+      await page.keyboard.press('Escape');assert.equal(await dialog().count(),1,'dialog_escape_closed');
+      assert.equal(await docButton('Подготовить изменения').isDisabled(),true,'dialog_owner_not_paused');
+      assert.equal(requests.filter(request=>request.inner==='application.answerDialog').length,answersBefore,'dialog_escape_answered');
+    });
+    let arrived,release;const atGate=new Promise(resolve=>{arrived=resolve;}),wait=new Promise(resolve=>{release=resolve;});
+    dialogGate={arrived,wait};
+    await act('dialog-delayed-yes-once',async()=>{
+      const reply=replyFor(packet=>packet.method==='application.answerDialog');
+      await answerButton('Yes').evaluate(node=>{node.click();node.click();});
+      try{await bounded(atGate,remaining(10000),'dialog_answer_not_received');
+        assert.equal(await answerButton('Yes').isDisabled(),true,'dialog_answer_busy_enabled');
+        assert.equal(Number(await docField('Amount').inputValue()),0,'dialog_answer_applied_before_delivery');
+      }finally{release();}
+      await reply;await idle();
+    });
+    assert.equal(requests.filter(request=>request.inner==='application.answerDialog').length,answersBefore+1,'dialog_answer_repeated');
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_first_amount');
+    const independent=page.locator('[id="'+childInput+'"]');
+    assert.equal(await independent.inputValue(),'  dialog independent raw draft  ','dialog_independent_draft_lost');
+    await act('dialog-no-repeat-without-pending',()=>command('Применить черновик'));
+    assert.equal(await dialog().count(),0,'dialog_empty_reconfirmed');
+    await act('dialog-prepare-no',()=>command('Подготовить изменения'));
+    await commit('Amount','22');
+    await act('dialog-return-no',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-no',()=>command('Применить черновик'));
+    await act('dialog-answer-no',()=>answer('No'));
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_no_applied');
+    await act('dialog-prepare-cancel',()=>command('Подготовить изменения'));
+    await commit('Amount','33');
+    await act('dialog-return-cancel',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-cancel',()=>command('Применить черновик'));
+    await act('dialog-answer-cancel',()=>answer('Cancel'));
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_cancel_applied');
+    await act('dialog-confirm-loss',()=>command('Применить черновик'));
+    dropDialog=true;
+    await act('dialog-lose-confirmed-answer',()=>answerButton('Yes').click());
+    await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
+    assert.equal(droppedDialog,1,'dialog_loss_not_observed');
+    const afterLoss=requests.length;
+    await act('dialog-readonly-inspection',()=>button('Восстановить состояние').click());await idle();
+    assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'dialog_recovery_mutated');
+    assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'dialog_recovery_form_mutated');
+    assert.ok((await page.locator('.draft-recovery-value').allTextContents()).includes('CommentField:   dialog independent raw draft  '),'dialog_raw_copy_lost');
+    assert.equal(await independent.isDisabled(),true,'dialog_unknown_draft_unlocked');
+    assert.deepEqual(audit(),saved,'dialog_changed_database');
+    assert.equal(actionLog.length-start,26,'dialog_action_count');
+    report.dialogRecovery={delayedAnswerOnce:true,escapeNotAnswer:true,noDiscarded:true,cancelDeferred:true,
+      confirmedAnswerLost:true,independentDraftRetained:true,copyPreserved:true,noReplay:true,durableUnchanged:true};
+  });
+  assert.equal(actionLog.length,121,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');
   assert.equal(git('rev-parse','HEAD'),report.sourceCommit,'source_commit_changed');
   for(const [name,digest] of Object.entries(source)){check();assert.equal(sha256(await readFile(path.join(repo,name))),digest,'source_bytes_changed');}
-  assert.equal(results.length,4);report.status='PASS';report.rpcRequests=rpc;
+  assert.equal(results.length,5);report.status='PASS';report.rpcRequests=rpc;
 }
 // Reserve 20 seconds for verified bounded cleanup within the 180s total.
 const deadline=setTimeout(abort,Math.max(0,workDeadline-Date.now()));
@@ -576,6 +671,7 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'dialog_answer_http','dialog_answer_body_timeout','dialog_answer_body_budget','dialog_answer_outer_id','dialog_answer_inner_id','dialog_answer_outer_error','dialog_answer_inner_error','dialog_answer_form_error','dialog_answer_count','dialog_answer_amount','dialog_answer_gate_timeout','dialog_escape_closed','dialog_owner_not_paused','dialog_escape_answered','dialog_answer_not_received','dialog_answer_busy_enabled','dialog_answer_applied_before_delivery','dialog_answer_repeated','dialog_first_amount','dialog_independent_draft_lost','dialog_empty_reconfirmed','dialog_no_applied','dialog_cancel_applied','dialog_loss_not_observed','dialog_recovery_mutated','dialog_recovery_form_mutated','dialog_raw_copy_lost','dialog_unknown_draft_unlocked','dialog_changed_database','dialog_action_count',
   'draft_response_wait_failed','draft_action_failed','draft_reply_timeout','draft_reply_read_failed',
   'draft_reply_budget','draft_reply_json','draft_outer_id','draft_outer_error','draft_uncertain',
   'draft_inner_id','draft_inner_error','draft_form_error','draft_idle_timeout',
@@ -631,4 +727,4 @@ finally{
   assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
-console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
+console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
