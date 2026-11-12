@@ -1,0 +1,65 @@
+name: Isolated direct constant string observations
+on:
+  push:
+    branches: [codex/native-constant-string-reviewed]
+permissions: {}
+concurrency:
+  group: native-constant-string-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: >-
+      github.event_name == 'push' &&
+      github.repository == 'Atridis/yadinassi' && github.repository_id == '359770628' &&
+      github.repository_owner_id == '30860798' && github.actor == 'Atridis' &&
+      github.actor_id == '30860798' && github.triggering_actor == 'Atridis' &&
+      github.event.sender.login == 'Atridis' && github.event.sender.id == 30860798 &&
+      github.event.sender.type == 'User' && github.event.repository.fork == false &&
+      github.ref == 'refs/heads/codex/native-constant-string-reviewed' &&
+      github.ref_type == 'branch' && github.event.deleted == false && github.event.forced == false
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: false
+          lfs: false
+      - name: Bind exact reviewed push before credentials
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+        run: python3 -I -B scripts/native_1c_constant_string_ci_policy.py bind
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned host dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
+      - name: Observe one String constant in a fresh isolated owned infobase
+        id: constant_string
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_constant_string_profile.py --execute-approved-image --export-native-outputs
+      - name: Upload bounded acquisition report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-constant_string-summary
+          path: native-smoke/constant_string.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload only validated observations and provenance
+        if: always() && steps.constant_string.outputs.constant_string_outputs_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-constant_string-observations
+          path: |
+            native-smoke/constant_string-outputs/constant_string.out
+            native-smoke/constant_string-outputs/provenance.json
+          if-no-files-found: error
+          retention-days: 7
