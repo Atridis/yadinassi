@@ -1,0 +1,626 @@
+{
+  "schema": "recovered-native-common-templates-v1",
+  "run_id": "43083042989",
+  "observations": [
+    "Текстовый документ",
+    "Первая строка\nSecond line",
+    "2",
+    "Первая строка\nSecond line",
+    "Двоичные данные",
+    "4",
+    "AAEC/w==",
+    "Первая строка\nSecond line",
+    "error",
+    "OwnedText",
+    "ОбщийМакет.OwnedText",
+    "returned:Первая строка\nSecond line"
+  ],
+  "summary": {
+    "comparison": null,
+    "configured_timezone": "Etc/UTC",
+    "container_cleanup_verified": true,
+    "docker_cli_reap_verified": true,
+    "host_source_sha256": {
+      "scripts/native_1c_common_template_profile.py": "750a27be1a2d9f1029f8a1351c4e175af2750c2371e1763ecb508693bfcb1c2d",
+      "scripts/native_1c_docker_lifecycle.py": "c9aa44e5115cfaef66184323e58f03e8cd816399e4d6fd5844c39247c4f0160d",
+      "scripts/native_1c_full_host.py": "5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133",
+      "scripts/native_1c_smoke.py": "d41b75e56bbc66b26c7103116302007b8df3a5318995934aacd13fd9c55b3d1d"
+    },
+    "image": "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728",
+    "interpreter": {
+      "comparison_driver_sha256": "5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133",
+      "dependencies": {
+        "prompt-toolkit": "3.0.53",
+        "pyuca": "1.2",
+        "tzdata": "2026.5",
+        "wcwidth": "0.8.2"
+      },
+      "map_contract_sha256": "8542e32eab844451bba6dd9569cf375f53ec5ba65a275dff039b380bd2eb2d69",
+      "python_version": "3.12.10",
+      "source_file_count": 231,
+      "source_sha256": "f86ac6a7c7ad520f5254f19385c89f88e9966d4a746572f65ad7638a42ede462"
+    },
+    "native_artifact_sha256": {
+      "common_template.out": "0cf7eb7a122aa3942eb4bc775879b4e9faec8c4cae4bec0326794327fdca0a19",
+      "provenance.json": "5569f2ab1ab78d6f8fa77cc7ec303d64393d67945599937637388d35f06b846b"
+    },
+    "native_measurement_accepted": true,
+    "native_report": {
+      "configuration_dumped": true,
+      "configuration_format": {
+        "element_count": 197,
+        "kind": "Configuration",
+        "known_elements": [
+          "BriefInformation",
+          "Comment",
+          "CompatibilityMode",
+          "ConfigurationExtensionCompatibilityMode",
+          "Copyright",
+          "DatabaseTablespacesUseMode",
+          "DefaultInterface",
+          "DefaultLanguage",
+          "DefaultRoles",
+          "DefaultRunMode",
+          "DefaultStyle",
+          "DetailedInformation",
+          "InterfaceCompatibilityMode",
+          "MainClientApplicationWindowMode",
+          "MobileApplicationURLs",
+          "ModalityUseMode",
+          "Name",
+          "NamePrefix",
+          "ScriptVariant",
+          "SynchronousPlatformExtensionAndAddInCallUseMode",
+          "Synonym",
+          "UseManagedFormInOrdinaryApplication",
+          "UseOrdinaryFormInManagedApplication",
+          "UsePurposes",
+          "Vendor",
+          "Version"
+        ],
+        "managed_application_module_present": false,
+        "namespace": "http://v8.1c.ru/8.3/MDClasses",
+        "root": "MetaDataObject",
+        "schema_version": "2.20",
+        "session_module_present": false,
+        "sha256": "3bf486bef9cdd28b4d449ec843b67d36b1ad75754196cb7a0b1c8a0fd9329b10"
+      },
+      "display_started": true,
+      "executable_available": true,
+      "infobase_created": true,
+      "libraries_resolved": true,
+      "native_tests_completed": true,
+      "nonroot": true,
+      "python_version": "3.10.12",
+      "runtime_version": "8.3.27.1508",
+      "runtime_version_source": "SystemInfo.AppVersion",
+      "schema": 1,
+      "security_settings_changed": true,
+      "stage2": {
+        "actual_version": "8.3.27.1508",
+        "bootstrap_verified": true,
+        "control_removed": true,
+        "diagnostics": {
+          "category": "none",
+          "identifier": null,
+          "line": null,
+          "managed_marker": "not_checked",
+          "module": null,
+          "native_exit_code": null,
+          "origin": "none",
+          "rendered_context": {
+            "head": [],
+            "omitted_middle": false,
+            "origin": "none",
+            "representation": "none",
+            "tail": []
+          },
+          "session_marker": "not_checked",
+          "source_frames": [],
+          "source_frames_truncated": false
+        },
+        "failed_stage": null,
+        "failure_kind": "none",
+        "launcher_built": true,
+        "modules_reimported": true,
+        "named_designer_verified": true,
+        "named_user_verified": true,
+        "protection_observation": {
+          "property_type": "UnsafeOperationProtectionDescription",
+          "stage": "verify",
+          "warning_type": "Boolean"
+        },
+        "schema": 1,
+        "security_change_attempted": true,
+        "security_settings_state": "verified",
+        "simple_epf_passed": true,
+        "simple_output_sha256": "f2d5520abdd07636584603079777054269d219d055f38f61187f0e121e6d5667",
+        "status": "ok",
+        "version_source": "SystemInfo.AppVersion"
+      },
+      "stage3": {
+        "case_diagnostics": [],
+        "completed": true,
+        "config_verified": true,
+        "configuration_validation": "owned-common-template-load-update-observation-v1",
+        "entered": true,
+        "failure_kind": "none",
+        "failure_phase": "final",
+        "incomplete": false,
+        "input_sha256": {
+          "integrational_tests/launcher_1c/Launcher.xml": "719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd",
+          "integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl": "ccac8b96c0ec92a14a47930fcbc095a2af42479de1a3255f7dbe84ca543c10af",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main.xml": "b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml": "cee17b4d8e3b91cb4455ce0f1df5d348961e18f1085ef0e0d61ccf3a4e389363",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl": "01092d0267bf3a260c81ddc792177fb15c74e34baef2a063703e28e36cf41686",
+          "integrational_tests/launcher_1c/TestModule.xml": "33cf0c96d6a11cf43ceeea49d1e1ba8fc2b9e2f57f9a0612f15ef1d5d4484558",
+          "integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl": "2ebc42c4106acf8626ac5e865afaa2f90e2b83d9b66f1c15b90ec1ec4d054885",
+          "integrational_tests/test_launcher.py": "8139d897d8bac4dae554f14bbc709b55eb0920acb0b9b48484f3069324663fea",
+          "scripts/catalog_object_behavior/Catalog.xml": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+          "scripts/catalog_object_behavior/SOURCE.json": "eb49c8cff1649f4d0d24634bea222e70bf29623a05e6a758fb90e2061cac1c27",
+          "scripts/catalog_object_behavior/__init__.py": "819b21faff3d04de562130ecf2e09476ec0bb6e1c2086704c01f091bdbac8dbf",
+          "scripts/catalog_object_behavior/fixture.py": "6093d0b429c7d404bda647bebc256519fd44a239cb7c23646e409fcd0183b87b",
+          "scripts/catalog_object_behavior/generated/Catalog.xml": "3414505a0fbab2d873777e0abf549f3e3868c8b0fa676c9b1d40774fe481545a",
+          "scripts/catalog_object_behavior/generated/observe.bsl": "0fea62289ef55ddb5ad3c3213842e3e0a019335c00c58759a75965a40655a8f0",
+          "scripts/catalog_object_behavior/generated/setup.json": "ad6a3cb83c6522c3619fc3d26da52c1f3a27871492d198947ac42d901e70a6a7",
+          "scripts/catalog_object_behavior/packet.py": "7ac32dc900e5011fb7f17de45be02ac3d0397edefde608246765f6f5105b5009",
+          "scripts/catalog_object_behavior/route.py": "14b6dae22e8e46ca9153d810e603a178e2a873ada8236d82fec245fad9648184",
+          "scripts/common_template_behavior/OwnedBinary.bin": "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
+          "scripts/common_template_behavior/OwnedBinary.xml": "23966752349b7133a78d709df4582dc70b80b14eeb1fbb0c8e834f3d51a2198d",
+          "scripts/common_template_behavior/OwnedText.txt": "1abc2f4e5f576401bff64a30328d79d9a466c38bbc6ff4e80c702860465f3bdb",
+          "scripts/common_template_behavior/OwnedText.xml": "fb920c988a4405717b013757d8f12d51f264741a93a83e9eb6420e56d971b63e",
+          "scripts/common_template_behavior/__init__.py": "608a053665a14b7d1b4ee53af8c9132c4353f2e04add6260425813422ece9c0d",
+          "scripts/common_template_behavior/fixture.py": "c22fae32b1eb9d770339d81e8bee7853b1ad76503116b63b442b30f823678b63",
+          "scripts/common_template_behavior/observe.bsl": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+          "scripts/common_template_behavior/route.py": "60e9a37134212cf816997d89289595aec623ee59bb93b0ae6a4296f847711a8e",
+          "scripts/native_1c_bootstrap/common_template_suite.py": "88ab555afb06b45e8e1b60250faf215dd4f0ba8c6488041b87dc9339f11f2a3b",
+          "scripts/native_1c_bootstrap/diagnostics.py": "99c3e37d2f28125f181f3c973359e09d405007aae4ef43f5d8da6e8a8fcd056c",
+          "scripts/native_1c_bootstrap/evidence_gates.py": "3f2b2135ab751bb4ef3e2dbaafcc11ef62e5bf5d9e22f00bc09672c5ce671201",
+          "scripts/native_1c_bootstrap/full_suite.py": "174440879c406f8042cf78625c7f9c0bdff507273125b2101cef27bc6cd04b04",
+          "scripts/native_1c_bootstrap/inject_modules.py": "96bc53b556b3940acb75c3b9fd219348e4d0aa5499450baf9ac6bbc2c93146d3",
+          "scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl": "3202dc1614d75792844d96faac398ff4847d8e8bd08d91d19929dd3ec0b09b49",
+          "scripts/native_1c_bootstrap/modules/SessionModule.bsl": "1768a8e0d2cc444f36e01b6c1d133be16574cefcda3d1b51890692860d075717",
+          "scripts/native_1c_bootstrap/run_stage.py": "07ed15d47555102fdac9a2ef0ed4717d5969f4faa961cb1c40bbb7c66666f509",
+          "scripts/native_1c_bootstrap/simple_smoke.bsl": "2a771501ff99dc45456c7a5a1b419940644919474924488d5b69bb17f55ac739",
+          "scripts/native_1c_common_template_probe.sh": "b44cf90416d47095e7eaa966b18a876f9aacba24db8c5783da962544897f6d6f"
+        },
+        "install_diagnostics": [],
+        "module_sha256": "ec0796772f88606b78aee3d18a44de39bfe77a56b5c0252b720cc80993b41a1a",
+        "module_verified_sha256": "ec0796772f88606b78aee3d18a44de39bfe77a56b5c0252b720cc80993b41a1a",
+        "native_error_category": "none",
+        "native_error_details": null,
+        "nonce": "191aa8f65db349e285e36f076cbe684a",
+        "output_sha256": "0cf7eb7a122aa3942eb4bc775879b4e9faec8c4cae4bec0326794327fdca0a19",
+        "output_size": 673,
+        "partial_observations": [
+          [
+            1,
+            "Текстовый документ"
+          ],
+          [
+            2,
+            "Первая строка\nSecond line"
+          ],
+          [
+            3,
+            "2"
+          ],
+          [
+            4,
+            "Первая строка\nSecond line"
+          ],
+          [
+            5,
+            "Двоичные данные"
+          ],
+          [
+            6,
+            "4"
+          ],
+          [
+            7,
+            "AAEC/w=="
+          ],
+          [
+            8,
+            "Первая строка\nSecond line"
+          ],
+          [
+            9,
+            "error"
+          ],
+          [
+            10,
+            "OwnedText"
+          ],
+          [
+            11,
+            "ОбщийМакет.OwnedText"
+          ],
+          [
+            12,
+            "returned:Первая строка\nSecond line"
+          ]
+        ],
+        "process_diagnostics": {
+          "classes": {
+            "display": 0,
+            "native": 0,
+            "other": 0,
+            "python": 0,
+            "session_bus": 0,
+            "shell": 0,
+            "unreadable": 0
+          },
+          "reason": "none",
+          "stage": "after_exit",
+          "unexpected_count": 0,
+          "zombie_count": 0
+        },
+        "process_exited": true,
+        "profile": "common-template-observation-v1",
+        "quiet": true,
+        "record_count": 12,
+        "redump_diagnostic": [],
+        "schema": "native-1c-common_template-stage-v1",
+        "source_sha256": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+        "status": "ok",
+        "witness_verified": true
+      },
+      "status": "ok"
+    },
+    "nonce": "191aa8f65db349e285e36f076cbe684a",
+    "platform": "linux/amd64",
+    "private_payloads_removed": true,
+    "profile": "common-template-observation-v1",
+    "repository": {
+      "commit": "83e4996869781c336373545a5dc4e096d3d4a0ac",
+      "github_run_attempt": "1",
+      "github_run_id": "43083042989",
+      "tree": "30c1eb17daa8e0b059e875b26ed9af886ddef6e6"
+    },
+    "runtime_parity_accepted": false,
+    "schema": "native-1c-common_template-host-v1",
+    "trusted_input_sha256": {
+      "integrational_tests/launcher_1c/Launcher.xml": "719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd",
+      "integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl": "ccac8b96c0ec92a14a47930fcbc095a2af42479de1a3255f7dbe84ca543c10af",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main.xml": "b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml": "cee17b4d8e3b91cb4455ce0f1df5d348961e18f1085ef0e0d61ccf3a4e389363",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl": "01092d0267bf3a260c81ddc792177fb15c74e34baef2a063703e28e36cf41686",
+      "integrational_tests/launcher_1c/TestModule.xml": "33cf0c96d6a11cf43ceeea49d1e1ba8fc2b9e2f57f9a0612f15ef1d5d4484558",
+      "integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl": "2ebc42c4106acf8626ac5e865afaa2f90e2b83d9b66f1c15b90ec1ec4d054885",
+      "integrational_tests/test_launcher.py": "8139d897d8bac4dae554f14bbc709b55eb0920acb0b9b48484f3069324663fea",
+      "scripts/catalog_object_behavior/Catalog.xml": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+      "scripts/catalog_object_behavior/SOURCE.json": "eb49c8cff1649f4d0d24634bea222e70bf29623a05e6a758fb90e2061cac1c27",
+      "scripts/catalog_object_behavior/__init__.py": "819b21faff3d04de562130ecf2e09476ec0bb6e1c2086704c01f091bdbac8dbf",
+      "scripts/catalog_object_behavior/fixture.py": "6093d0b429c7d404bda647bebc256519fd44a239cb7c23646e409fcd0183b87b",
+      "scripts/catalog_object_behavior/generated/Catalog.xml": "3414505a0fbab2d873777e0abf549f3e3868c8b0fa676c9b1d40774fe481545a",
+      "scripts/catalog_object_behavior/generated/observe.bsl": "0fea62289ef55ddb5ad3c3213842e3e0a019335c00c58759a75965a40655a8f0",
+      "scripts/catalog_object_behavior/generated/setup.json": "ad6a3cb83c6522c3619fc3d26da52c1f3a27871492d198947ac42d901e70a6a7",
+      "scripts/catalog_object_behavior/packet.py": "7ac32dc900e5011fb7f17de45be02ac3d0397edefde608246765f6f5105b5009",
+      "scripts/catalog_object_behavior/route.py": "14b6dae22e8e46ca9153d810e603a178e2a873ada8236d82fec245fad9648184",
+      "scripts/common_template_behavior/OwnedBinary.bin": "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
+      "scripts/common_template_behavior/OwnedBinary.xml": "23966752349b7133a78d709df4582dc70b80b14eeb1fbb0c8e834f3d51a2198d",
+      "scripts/common_template_behavior/OwnedText.txt": "1abc2f4e5f576401bff64a30328d79d9a466c38bbc6ff4e80c702860465f3bdb",
+      "scripts/common_template_behavior/OwnedText.xml": "fb920c988a4405717b013757d8f12d51f264741a93a83e9eb6420e56d971b63e",
+      "scripts/common_template_behavior/__init__.py": "608a053665a14b7d1b4ee53af8c9132c4353f2e04add6260425813422ece9c0d",
+      "scripts/common_template_behavior/fixture.py": "c22fae32b1eb9d770339d81e8bee7853b1ad76503116b63b442b30f823678b63",
+      "scripts/common_template_behavior/observe.bsl": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+      "scripts/common_template_behavior/route.py": "60e9a37134212cf816997d89289595aec623ee59bb93b0ae6a4296f847711a8e",
+      "scripts/native_1c_bootstrap/common_template_suite.py": "88ab555afb06b45e8e1b60250faf215dd4f0ba8c6488041b87dc9339f11f2a3b",
+      "scripts/native_1c_bootstrap/diagnostics.py": "99c3e37d2f28125f181f3c973359e09d405007aae4ef43f5d8da6e8a8fcd056c",
+      "scripts/native_1c_bootstrap/evidence_gates.py": "3f2b2135ab751bb4ef3e2dbaafcc11ef62e5bf5d9e22f00bc09672c5ce671201",
+      "scripts/native_1c_bootstrap/full_suite.py": "174440879c406f8042cf78625c7f9c0bdff507273125b2101cef27bc6cd04b04",
+      "scripts/native_1c_bootstrap/inject_modules.py": "96bc53b556b3940acb75c3b9fd219348e4d0aa5499450baf9ac6bbc2c93146d3",
+      "scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl": "3202dc1614d75792844d96faac398ff4847d8e8bd08d91d19929dd3ec0b09b49",
+      "scripts/native_1c_bootstrap/modules/SessionModule.bsl": "1768a8e0d2cc444f36e01b6c1d133be16574cefcda3d1b51890692860d075717",
+      "scripts/native_1c_bootstrap/run_stage.py": "07ed15d47555102fdac9a2ef0ed4717d5969f4faa961cb1c40bbb7c66666f509",
+      "scripts/native_1c_bootstrap/simple_smoke.bsl": "2a771501ff99dc45456c7a5a1b419940644919474924488d5b69bb17f55ac739",
+      "scripts/native_1c_common_template_probe.sh": "b44cf90416d47095e7eaa966b18a876f9aacba24db8c5783da962544897f6d6f"
+    }
+  },
+  "provenance": {
+    "comparison": null,
+    "configured_timezone": "Etc/UTC",
+    "container_cleanup_verified": true,
+    "docker_cli_reap_verified": true,
+    "host_source_sha256": {
+      "scripts/native_1c_common_template_profile.py": "750a27be1a2d9f1029f8a1351c4e175af2750c2371e1763ecb508693bfcb1c2d",
+      "scripts/native_1c_docker_lifecycle.py": "c9aa44e5115cfaef66184323e58f03e8cd816399e4d6fd5844c39247c4f0160d",
+      "scripts/native_1c_full_host.py": "5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133",
+      "scripts/native_1c_smoke.py": "d41b75e56bbc66b26c7103116302007b8df3a5318995934aacd13fd9c55b3d1d"
+    },
+    "image": "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728",
+    "interpreter": {
+      "comparison_driver_sha256": "5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133",
+      "dependencies": {
+        "prompt-toolkit": "3.0.53",
+        "pyuca": "1.2",
+        "tzdata": "2026.5",
+        "wcwidth": "0.8.2"
+      },
+      "map_contract_sha256": "8542e32eab844451bba6dd9569cf375f53ec5ba65a275dff039b380bd2eb2d69",
+      "python_version": "3.12.10",
+      "source_file_count": 231,
+      "source_sha256": "f86ac6a7c7ad520f5254f19385c89f88e9966d4a746572f65ad7638a42ede462"
+    },
+    "native_measurement_accepted": true,
+    "native_report": {
+      "configuration_dumped": true,
+      "configuration_format": {
+        "element_count": 197,
+        "kind": "Configuration",
+        "known_elements": [
+          "BriefInformation",
+          "Comment",
+          "CompatibilityMode",
+          "ConfigurationExtensionCompatibilityMode",
+          "Copyright",
+          "DatabaseTablespacesUseMode",
+          "DefaultInterface",
+          "DefaultLanguage",
+          "DefaultRoles",
+          "DefaultRunMode",
+          "DefaultStyle",
+          "DetailedInformation",
+          "InterfaceCompatibilityMode",
+          "MainClientApplicationWindowMode",
+          "MobileApplicationURLs",
+          "ModalityUseMode",
+          "Name",
+          "NamePrefix",
+          "ScriptVariant",
+          "SynchronousPlatformExtensionAndAddInCallUseMode",
+          "Synonym",
+          "UseManagedFormInOrdinaryApplication",
+          "UseOrdinaryFormInManagedApplication",
+          "UsePurposes",
+          "Vendor",
+          "Version"
+        ],
+        "managed_application_module_present": false,
+        "namespace": "http://v8.1c.ru/8.3/MDClasses",
+        "root": "MetaDataObject",
+        "schema_version": "2.20",
+        "session_module_present": false,
+        "sha256": "3bf486bef9cdd28b4d449ec843b67d36b1ad75754196cb7a0b1c8a0fd9329b10"
+      },
+      "display_started": true,
+      "executable_available": true,
+      "infobase_created": true,
+      "libraries_resolved": true,
+      "native_tests_completed": true,
+      "nonroot": true,
+      "python_version": "3.10.12",
+      "runtime_version": "8.3.27.1508",
+      "runtime_version_source": "SystemInfo.AppVersion",
+      "schema": 1,
+      "security_settings_changed": true,
+      "stage2": {
+        "actual_version": "8.3.27.1508",
+        "bootstrap_verified": true,
+        "control_removed": true,
+        "diagnostics": {
+          "category": "none",
+          "identifier": null,
+          "line": null,
+          "managed_marker": "not_checked",
+          "module": null,
+          "native_exit_code": null,
+          "origin": "none",
+          "rendered_context": {
+            "head": [],
+            "omitted_middle": false,
+            "origin": "none",
+            "representation": "none",
+            "tail": []
+          },
+          "session_marker": "not_checked",
+          "source_frames": [],
+          "source_frames_truncated": false
+        },
+        "failed_stage": null,
+        "failure_kind": "none",
+        "launcher_built": true,
+        "modules_reimported": true,
+        "named_designer_verified": true,
+        "named_user_verified": true,
+        "protection_observation": {
+          "property_type": "UnsafeOperationProtectionDescription",
+          "stage": "verify",
+          "warning_type": "Boolean"
+        },
+        "schema": 1,
+        "security_change_attempted": true,
+        "security_settings_state": "verified",
+        "simple_epf_passed": true,
+        "simple_output_sha256": "f2d5520abdd07636584603079777054269d219d055f38f61187f0e121e6d5667",
+        "status": "ok",
+        "version_source": "SystemInfo.AppVersion"
+      },
+      "stage3": {
+        "case_diagnostics": [],
+        "completed": true,
+        "config_verified": true,
+        "configuration_validation": "owned-common-template-load-update-observation-v1",
+        "entered": true,
+        "failure_kind": "none",
+        "failure_phase": "final",
+        "incomplete": false,
+        "input_sha256": {
+          "integrational_tests/launcher_1c/Launcher.xml": "719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd",
+          "integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl": "ccac8b96c0ec92a14a47930fcbc095a2af42479de1a3255f7dbe84ca543c10af",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main.xml": "b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml": "cee17b4d8e3b91cb4455ce0f1df5d348961e18f1085ef0e0d61ccf3a4e389363",
+          "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl": "01092d0267bf3a260c81ddc792177fb15c74e34baef2a063703e28e36cf41686",
+          "integrational_tests/launcher_1c/TestModule.xml": "33cf0c96d6a11cf43ceeea49d1e1ba8fc2b9e2f57f9a0612f15ef1d5d4484558",
+          "integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl": "2ebc42c4106acf8626ac5e865afaa2f90e2b83d9b66f1c15b90ec1ec4d054885",
+          "integrational_tests/test_launcher.py": "8139d897d8bac4dae554f14bbc709b55eb0920acb0b9b48484f3069324663fea",
+          "scripts/catalog_object_behavior/Catalog.xml": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+          "scripts/catalog_object_behavior/SOURCE.json": "eb49c8cff1649f4d0d24634bea222e70bf29623a05e6a758fb90e2061cac1c27",
+          "scripts/catalog_object_behavior/__init__.py": "819b21faff3d04de562130ecf2e09476ec0bb6e1c2086704c01f091bdbac8dbf",
+          "scripts/catalog_object_behavior/fixture.py": "6093d0b429c7d404bda647bebc256519fd44a239cb7c23646e409fcd0183b87b",
+          "scripts/catalog_object_behavior/generated/Catalog.xml": "3414505a0fbab2d873777e0abf549f3e3868c8b0fa676c9b1d40774fe481545a",
+          "scripts/catalog_object_behavior/generated/observe.bsl": "0fea62289ef55ddb5ad3c3213842e3e0a019335c00c58759a75965a40655a8f0",
+          "scripts/catalog_object_behavior/generated/setup.json": "ad6a3cb83c6522c3619fc3d26da52c1f3a27871492d198947ac42d901e70a6a7",
+          "scripts/catalog_object_behavior/packet.py": "7ac32dc900e5011fb7f17de45be02ac3d0397edefde608246765f6f5105b5009",
+          "scripts/catalog_object_behavior/route.py": "14b6dae22e8e46ca9153d810e603a178e2a873ada8236d82fec245fad9648184",
+          "scripts/common_template_behavior/OwnedBinary.bin": "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
+          "scripts/common_template_behavior/OwnedBinary.xml": "23966752349b7133a78d709df4582dc70b80b14eeb1fbb0c8e834f3d51a2198d",
+          "scripts/common_template_behavior/OwnedText.txt": "1abc2f4e5f576401bff64a30328d79d9a466c38bbc6ff4e80c702860465f3bdb",
+          "scripts/common_template_behavior/OwnedText.xml": "fb920c988a4405717b013757d8f12d51f264741a93a83e9eb6420e56d971b63e",
+          "scripts/common_template_behavior/__init__.py": "608a053665a14b7d1b4ee53af8c9132c4353f2e04add6260425813422ece9c0d",
+          "scripts/common_template_behavior/fixture.py": "c22fae32b1eb9d770339d81e8bee7853b1ad76503116b63b442b30f823678b63",
+          "scripts/common_template_behavior/observe.bsl": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+          "scripts/common_template_behavior/route.py": "60e9a37134212cf816997d89289595aec623ee59bb93b0ae6a4296f847711a8e",
+          "scripts/native_1c_bootstrap/common_template_suite.py": "88ab555afb06b45e8e1b60250faf215dd4f0ba8c6488041b87dc9339f11f2a3b",
+          "scripts/native_1c_bootstrap/diagnostics.py": "99c3e37d2f28125f181f3c973359e09d405007aae4ef43f5d8da6e8a8fcd056c",
+          "scripts/native_1c_bootstrap/evidence_gates.py": "3f2b2135ab751bb4ef3e2dbaafcc11ef62e5bf5d9e22f00bc09672c5ce671201",
+          "scripts/native_1c_bootstrap/full_suite.py": "174440879c406f8042cf78625c7f9c0bdff507273125b2101cef27bc6cd04b04",
+          "scripts/native_1c_bootstrap/inject_modules.py": "96bc53b556b3940acb75c3b9fd219348e4d0aa5499450baf9ac6bbc2c93146d3",
+          "scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl": "3202dc1614d75792844d96faac398ff4847d8e8bd08d91d19929dd3ec0b09b49",
+          "scripts/native_1c_bootstrap/modules/SessionModule.bsl": "1768a8e0d2cc444f36e01b6c1d133be16574cefcda3d1b51890692860d075717",
+          "scripts/native_1c_bootstrap/run_stage.py": "07ed15d47555102fdac9a2ef0ed4717d5969f4faa961cb1c40bbb7c66666f509",
+          "scripts/native_1c_bootstrap/simple_smoke.bsl": "2a771501ff99dc45456c7a5a1b419940644919474924488d5b69bb17f55ac739",
+          "scripts/native_1c_common_template_probe.sh": "b44cf90416d47095e7eaa966b18a876f9aacba24db8c5783da962544897f6d6f"
+        },
+        "install_diagnostics": [],
+        "module_sha256": "ec0796772f88606b78aee3d18a44de39bfe77a56b5c0252b720cc80993b41a1a",
+        "module_verified_sha256": "ec0796772f88606b78aee3d18a44de39bfe77a56b5c0252b720cc80993b41a1a",
+        "native_error_category": "none",
+        "native_error_details": null,
+        "nonce": "191aa8f65db349e285e36f076cbe684a",
+        "output_sha256": "0cf7eb7a122aa3942eb4bc775879b4e9faec8c4cae4bec0326794327fdca0a19",
+        "output_size": 673,
+        "partial_observations": [
+          [
+            1,
+            "Текстовый документ"
+          ],
+          [
+            2,
+            "Первая строка\nSecond line"
+          ],
+          [
+            3,
+            "2"
+          ],
+          [
+            4,
+            "Первая строка\nSecond line"
+          ],
+          [
+            5,
+            "Двоичные данные"
+          ],
+          [
+            6,
+            "4"
+          ],
+          [
+            7,
+            "AAEC/w=="
+          ],
+          [
+            8,
+            "Первая строка\nSecond line"
+          ],
+          [
+            9,
+            "error"
+          ],
+          [
+            10,
+            "OwnedText"
+          ],
+          [
+            11,
+            "ОбщийМакет.OwnedText"
+          ],
+          [
+            12,
+            "returned:Первая строка\nSecond line"
+          ]
+        ],
+        "process_diagnostics": {
+          "classes": {
+            "display": 0,
+            "native": 0,
+            "other": 0,
+            "python": 0,
+            "session_bus": 0,
+            "shell": 0,
+            "unreadable": 0
+          },
+          "reason": "none",
+          "stage": "after_exit",
+          "unexpected_count": 0,
+          "zombie_count": 0
+        },
+        "process_exited": true,
+        "profile": "common-template-observation-v1",
+        "quiet": true,
+        "record_count": 12,
+        "redump_diagnostic": [],
+        "schema": "native-1c-common_template-stage-v1",
+        "source_sha256": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+        "status": "ok",
+        "witness_verified": true
+      },
+      "status": "ok"
+    },
+    "nonce": "191aa8f65db349e285e36f076cbe684a",
+    "platform": "linux/amd64",
+    "private_payloads_removed": true,
+    "profile": "common-template-observation-v1",
+    "repository": {
+      "commit": "83e4996869781c336373545a5dc4e096d3d4a0ac",
+      "github_run_attempt": "1",
+      "github_run_id": "43083042989",
+      "tree": "30c1eb17daa8e0b059e875b26ed9af886ddef6e6"
+    },
+    "runtime_parity_accepted": false,
+    "schema": "native-1c-common_template-host-v1",
+    "trusted_input_sha256": {
+      "integrational_tests/launcher_1c/Launcher.xml": "719b5df645763c6adf04ccc9aa0265a312cf1677edb633dd702dd783258fe0bd",
+      "integrational_tests/launcher_1c/Launcher/Ext/ObjectModule.bsl": "ccac8b96c0ec92a14a47930fcbc095a2af42479de1a3255f7dbe84ca543c10af",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main.xml": "b21910e73df0952f79708abe9122615d545e41e498da8a6aa5396594d4ffdcb2",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form.xml": "cee17b4d8e3b91cb4455ce0f1df5d348961e18f1085ef0e0d61ccf3a4e389363",
+      "integrational_tests/launcher_1c/Launcher/Forms/Main/Ext/Form/Module.bsl": "01092d0267bf3a260c81ddc792177fb15c74e34baef2a063703e28e36cf41686",
+      "integrational_tests/launcher_1c/TestModule.xml": "33cf0c96d6a11cf43ceeea49d1e1ba8fc2b9e2f57f9a0612f15ef1d5d4484558",
+      "integrational_tests/launcher_1c/TestModule/Ext/ObjectModule.bsl": "2ebc42c4106acf8626ac5e865afaa2f90e2b83d9b66f1c15b90ec1ec4d054885",
+      "integrational_tests/test_launcher.py": "8139d897d8bac4dae554f14bbc709b55eb0920acb0b9b48484f3069324663fea",
+      "scripts/catalog_object_behavior/Catalog.xml": "810823e2481d9aa56f2526a778fc1c3df75597d183e8107e885db04ea19fc8dc",
+      "scripts/catalog_object_behavior/SOURCE.json": "eb49c8cff1649f4d0d24634bea222e70bf29623a05e6a758fb90e2061cac1c27",
+      "scripts/catalog_object_behavior/__init__.py": "819b21faff3d04de562130ecf2e09476ec0bb6e1c2086704c01f091bdbac8dbf",
+      "scripts/catalog_object_behavior/fixture.py": "6093d0b429c7d404bda647bebc256519fd44a239cb7c23646e409fcd0183b87b",
+      "scripts/catalog_object_behavior/generated/Catalog.xml": "3414505a0fbab2d873777e0abf549f3e3868c8b0fa676c9b1d40774fe481545a",
+      "scripts/catalog_object_behavior/generated/observe.bsl": "0fea62289ef55ddb5ad3c3213842e3e0a019335c00c58759a75965a40655a8f0",
+      "scripts/catalog_object_behavior/generated/setup.json": "ad6a3cb83c6522c3619fc3d26da52c1f3a27871492d198947ac42d901e70a6a7",
+      "scripts/catalog_object_behavior/packet.py": "7ac32dc900e5011fb7f17de45be02ac3d0397edefde608246765f6f5105b5009",
+      "scripts/catalog_object_behavior/route.py": "14b6dae22e8e46ca9153d810e603a178e2a873ada8236d82fec245fad9648184",
+      "scripts/common_template_behavior/OwnedBinary.bin": "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
+      "scripts/common_template_behavior/OwnedBinary.xml": "23966752349b7133a78d709df4582dc70b80b14eeb1fbb0c8e834f3d51a2198d",
+      "scripts/common_template_behavior/OwnedText.txt": "1abc2f4e5f576401bff64a30328d79d9a466c38bbc6ff4e80c702860465f3bdb",
+      "scripts/common_template_behavior/OwnedText.xml": "fb920c988a4405717b013757d8f12d51f264741a93a83e9eb6420e56d971b63e",
+      "scripts/common_template_behavior/__init__.py": "608a053665a14b7d1b4ee53af8c9132c4353f2e04add6260425813422ece9c0d",
+      "scripts/common_template_behavior/fixture.py": "c22fae32b1eb9d770339d81e8bee7853b1ad76503116b63b442b30f823678b63",
+      "scripts/common_template_behavior/observe.bsl": "549cf0392ecc091737b196c2a106c34a2a6fca50dd670856a1bfd3a664f476b9",
+      "scripts/common_template_behavior/route.py": "60e9a37134212cf816997d89289595aec623ee59bb93b0ae6a4296f847711a8e",
+      "scripts/native_1c_bootstrap/common_template_suite.py": "88ab555afb06b45e8e1b60250faf215dd4f0ba8c6488041b87dc9339f11f2a3b",
+      "scripts/native_1c_bootstrap/diagnostics.py": "99c3e37d2f28125f181f3c973359e09d405007aae4ef43f5d8da6e8a8fcd056c",
+      "scripts/native_1c_bootstrap/evidence_gates.py": "3f2b2135ab751bb4ef3e2dbaafcc11ef62e5bf5d9e22f00bc09672c5ce671201",
+      "scripts/native_1c_bootstrap/full_suite.py": "174440879c406f8042cf78625c7f9c0bdff507273125b2101cef27bc6cd04b04",
+      "scripts/native_1c_bootstrap/inject_modules.py": "96bc53b556b3940acb75c3b9fd219348e4d0aa5499450baf9ac6bbc2c93146d3",
+      "scripts/native_1c_bootstrap/modules/ManagedApplicationModule.bsl": "3202dc1614d75792844d96faac398ff4847d8e8bd08d91d19929dd3ec0b09b49",
+      "scripts/native_1c_bootstrap/modules/SessionModule.bsl": "1768a8e0d2cc444f36e01b6c1d133be16574cefcda3d1b51890692860d075717",
+      "scripts/native_1c_bootstrap/run_stage.py": "07ed15d47555102fdac9a2ef0ed4717d5969f4faa961cb1c40bbb7c66666f509",
+      "scripts/native_1c_bootstrap/simple_smoke.bsl": "2a771501ff99dc45456c7a5a1b419940644919474924488d5b69bb17f55ac739",
+      "scripts/native_1c_common_template_probe.sh": "b44cf90416d47095e7eaa966b18a876f9aacba24db8c5783da962544897f6d6f"
+    }
+  },
+  "zip_sha256": {
+    "observations": "cd20628867d0b3611c7bcde7cebf1f34d5c76539fe44c4183df44d51a70d1585",
+    "summary": "d2d6a0c17c1bc2728b1cdbd730a18491589b54a5cd08d43ecfb0b1e0a984866f"
+  }
+}

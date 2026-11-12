@@ -1088,7 +1088,7 @@ All normal/optimized local tests remain distinct from pending native40 parity.
 
 ## DOM XML (локальный bounded-профиль, native-калибровка ожидается)
 
-`ДокументDOM`, `ПостроительDOM`, `ЗаписьDOM`, узлы XML, коллекции дочерних узлов/элементов/атрибутов: создание, чтение существующим `ЧтениеXML`, навигация/изменение, clone/import, запись существующим `ЗаписьXML`. [Точный API и границы](docs/dom-family.md). Это не поддержка полного DOM/XPath/XDTO.
+`ДокументDOM`, `ПостроительDOM`, `ЗаписьDOM`, узлы XML, коллекции дочерних узлов/элементов/атрибутов: создание, чтение существующим `ЧтениеXML`, навигация/изменение, clone/import, запись существующим `ЗаписьXML`. [Точный API и границы](docs/dom-family.md). Обычные пути `DOMDocument.EvaluateXPathExpression` и `DOMNamespaceResolver` имеют отдельный [ограниченный измеренный профиль](docs/dom-xpath-runtime.md). Это не поддержка полного DOM/XPath/XDTO.
 
 ## XDTO (bounded ordinary profile, native calibration pending)
 

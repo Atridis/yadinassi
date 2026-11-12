@@ -66,5 +66,11 @@ class RegisterConfigurationRuntimeTests(unittest.TestCase):
             candidate['CommonModules/Tools.xml'] = candidate['CommonModules/Tools.xml'].replace(fragment, replacement)
             with self.subTest(fragment=fragment), self.assertRaises(ValueError):
                 import_configuration(candidate, module_runtime=MODULE_RUNTIME)
+        # Private session declarations are now admitted explicitly and remain
+        # inert during construction; they do not grant export/privilege rights.
         files['Ext/SessionModule.bsl'] = b'Procedure OnSessionStart() EndProcedure'
+        app = ConfigurationApplication.from_files(files)
+        self.assertEqual(app.state, 'prepared')
+        app.close(force=True)
+        files['Ext/SessionModule.bsl'] = b'Procedure OnSessionStart() Export EndProcedure'
         with self.assertRaises(ValueError): ConfigurationApplication.from_files(files)

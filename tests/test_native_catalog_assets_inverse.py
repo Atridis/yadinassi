@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class CatalogAssetsInverseTests(unittest.TestCase):
     def test_exact_inventory_layer_restores_unchanged_sqlite_source(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         restored = history.without_catalog_assets_provenance(source)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
                          '3eed042a41e51efebf4d9d4a184ffd8cf23226ace99970864648ac4779200b69')
@@ -22,6 +23,7 @@ class CatalogAssetsInverseTests(unittest.TestCase):
 
     def test_unknown_source_drift_and_missing_or_duplicate_hunk_reject(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         source = history.without_form_assets_provenance(source)
         contract = json.loads((ROOT / 'tests/catalog_assets_source_inverse.json').read_text())
         new = contract['edits'][0]['new']
@@ -31,6 +33,7 @@ class CatalogAssetsInverseTests(unittest.TestCase):
 
     def test_weakened_contract_or_hunk_cannot_rewrite_historical_source(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         path = ROOT / 'tests/catalog_assets_source_inverse.json'
         for field in ('base_sha256', 'candidate_sha256', 'old', 'new'):
             contract = json.loads(path.read_text())
@@ -43,6 +46,7 @@ class CatalogAssetsInverseTests(unittest.TestCase):
 class FormAssetsInverseTests(unittest.TestCase):
     def test_new_inventory_restores_exact_catalog_layer(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         restored = history.without_form_assets_provenance(source)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(),
                          'e83119e314deae20d6e0288cdbdaf00ad7d92c88236aed227c5c982ca4ee2db4')
@@ -52,6 +56,7 @@ class FormAssetsInverseTests(unittest.TestCase):
 
     def test_new_layer_rejects_unknown_source_and_inventory_drift(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         # Exercise this historical layer itself, after the newer exact inverse.
         source = history.without_workspace_assets_provenance(source)
         for changed in (source + '# drift\n', source.replace('("catalog", "form")', '("catalog", "other")'),
@@ -95,6 +100,7 @@ class WorkspaceAssetsInverseTests(unittest.TestCase):
 class ConfigurationAssetsInverseTests(unittest.TestCase):
     def test_exact_configuration_layer(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         source = source.replace(', \"reference-workspace\"', '', 1)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a')
         restored = history.without_configuration_assets_provenance(source)
@@ -106,6 +112,7 @@ class ConfigurationAssetsInverseTests(unittest.TestCase):
 
     def test_configuration_layer_rejects_source_drift(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         source = source.replace(', \"reference-workspace\"', '', 1)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '23b4f7cfc1ddeaf3c9fc9985180d7abad401f1e7809c669dd7b5e0624a6a690a')
         hunk = '              for renderer in ("catalog", "form", "workspace", "configuration") for name in\n'
@@ -149,6 +156,7 @@ class ReferenceWorkspaceAssetsInverseTests(unittest.TestCase):
 class CombinedConfigurationReferenceAssetsInverseTests(unittest.TestCase):
     def test_exact_union_restores_both_historical_sources(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133')
         reference = history.without_configuration_assets_provenance(source)
         self.assertEqual(hashlib.sha256(reference.encode()).hexdigest(), '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568')
@@ -160,6 +168,7 @@ class CombinedConfigurationReferenceAssetsInverseTests(unittest.TestCase):
 
     def test_combined_inverse_rejects_unknown_or_modified_union(self):
         source = (ROOT / 'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
+        source = history.without_repository_inventory_budget(source)
         hunk = '              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in\n'
         self.assertEqual(source.count(hunk), 1)
         for changed in (source+'# drift\n', source+hunk, source.replace(hunk, '', 1), source.replace('"configuration"','"unlisted"',1), source.replace('CASE_SECONDS = 10','CASE_SECONDS = 11',1)):

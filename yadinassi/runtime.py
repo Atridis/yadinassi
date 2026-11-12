@@ -6,6 +6,7 @@ from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYT
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .dom_xpath import BSLDOMNamespaceResolver
 from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, HASH_FUNCTIONS
 from .data_io import BSLDataReader, BSLDataWriter
@@ -45,6 +46,7 @@ from .chars import BSLChars, CHARS
 from .metadata import BSLCommonModuleMetadataCollection, BSLMetadata, BSLCatalogMetadataCollection, BSLDocumentMetadataCollection, is_metadata_collection, is_metadata_object
 from .catalogs import BSLCatalogs
 from .enumerations import BSLEnumerations, BSLEnumManager
+from .session_parameters import BSLSessionParameters
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .queries import BSLQuery
 from .query_packages import BSLTempTablesManager
@@ -239,7 +241,14 @@ class Interpreter:
         self._handled_errors: list[BSLRuntimeError | None] = []
         self._error_info_boundaries: list[int] = []
         self._execute_depth = [0]
+        from .common_templates import get_common_template_marker
+        self.register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
+        from . import temporary_storage
+        self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
+        self.register_function('ПолучитьИзВременногоХранилища',temporary_storage.get_marker,'GetFromTempStorage')
+        self.register_function('УдалитьИзВременногоХранилища',temporary_storage.delete_marker,'DeleteFromTempStorage',returns_value=False)
+        self.register_function('ЭтоАдресВременногоХранилища',temporary_storage.recognize_marker,'IsTempStorageURL')
         self.register_function("Вычислить", _eval_marker, "Eval")
         self.register_function("ВыполнитьОбработкуОповещения", run_callback_marker, "RunCallback")
         self.register_type("ОписаниеОповещения", callback_description_marker, "CallbackDescription")
@@ -282,6 +291,7 @@ class Interpreter:
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
         self.register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
         self.register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
+        self.register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
         self.register_type("ДокументDOM", BSLDOMDocument, "DOMDocument")
         self.register_type("ПостроительDOM", BSLDOMBuilder, "DOMBuilder")
         self.register_type("ЗаписьDOM", BSLDOMWriter, "DOMWriter")
@@ -873,6 +883,12 @@ class Interpreter:
             raise TypeError(f"Процедуру или функцию необходимо вызвать: {node.name}")
         if name in self.functions:
             return self.functions[name]
+        if name in ('sessionparameters','параметрысеанса'):
+            if self._configuration_runtime is None:
+                raise ValueError('session parameters require an explicit configuration application')
+            parameters=self._configuration_runtime.session_parameters
+            parameters._authorize(self)
+            return parameters
         if name in ("thisobject", "этотобъект"):
             if not self._has_module_context:
                 raise ValueError("Объект модуля недоступен в подпрограмме без контекста")
@@ -1025,6 +1041,8 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        if type(value) is BSLSessionParameters:
+            return (yield from value.read(self,node.name))
         if type(value) is _Module:
             self._require_module_storage_context()
             return value.get_member(node.name)
@@ -1034,6 +1052,10 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        if type(value) is BSLSessionParameters:
+            value._authorize(self)
+            index=(yield from self._visit(node.index))
+            return (yield from value.read(self,index))
         if (type(value) is BSLCommonModuleMetadataCollection
                 or any(type(value) is cls for cls in (BSLChars, BSLCatalogs, BSLDocuments))
                 or is_metadata_collection(value) or type(value) is BSLEnumerations or type(value) is BSLEnumManager):
@@ -1140,6 +1162,21 @@ class Interpreter:
             if self._configuration_runtime is None:
                 raise ValueError('ShowChooseItem requires an application-owned client dispatch')
             self._configuration_runtime.require_value_selection(self)
+        from .common_templates import get_common_template_marker
+        template_call=function.function is get_common_template_marker
+        if template_call:
+            if self._configuration_runtime is None:raise ValueError('common templates require an application')
+            self._configuration_runtime.common_templates.authorize(self)
+            if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
+        from . import temporary_storage
+        temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
+        if temporary_call:
+            if self._configuration_runtime is None:
+                raise ValueError('temporary storage requires an explicit application')
+            self._configuration_runtime.temporary_storage.authorize(self)
+            count=len(node.arguments)
+            if not (1<=count<=2 if function.function is temporary_storage.put_marker else count==1):
+                raise TypeError('temporary storage function arity')
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
@@ -1204,6 +1241,10 @@ class Interpreter:
             values.append(value)
         if choosing:
             return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
+        if template_call:
+            return self._configuration_runtime.common_templates.get(self,values[0])
+        if temporary_call:
+            return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
@@ -1907,6 +1948,11 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            if type(value) is BSLSessionParameters:
+                value._authorize(self)
+                name=node.target.name if isinstance(node.target,ast.Attribute) else (yield from self._visit(node.target.index))
+                value.write(self,name,(yield from self._visit(node.value)))
+                return
             if isinstance(node.target, ast.Attribute):
                 if type(value) is _Module:
                     self._require_module_storage_context()

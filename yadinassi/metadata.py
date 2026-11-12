@@ -316,6 +316,8 @@ class BSLMetadata(_MetadataObject):
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs,self)
         self._common_modules = None
         self._enumerations = None
+        self._session_parameters = None
+        self._common_templates = None
         self._enum_storage = None
         self._enum_storage_scope = None
         self._catalog_managers = self._document_managers = None
@@ -371,7 +373,9 @@ class BSLMetadata(_MetadataObject):
                       'catalog':self._catalogs,'справочник':self._catalogs,
                       'document':self._documents,'документ':self._documents,
                       'informationregister':self._information_registers,'регистрсведений':self._information_registers,
-                      'commonmodule':self._common_modules,'общиймодуль':self._common_modules}.get(parts[0].casefold())
+                      'commonmodule':self._common_modules,'общиймодуль':self._common_modules,
+                      'commontemplate':self._common_templates,'общиймакет':self._common_templates,
+                      'sessionparameter':self._session_parameters,'параметрсеанса':self._session_parameters}.get(parts[0].casefold())
         if collection is None: return None
         item = collection.find(parts[1])
         aliases = {'attribute':'attributes','реквизит':'attributes','dimension':'dimensions','измерение':'dimensions',
@@ -397,6 +401,10 @@ class BSLMetadata(_MetadataObject):
             if self._configuration_name is None: self._ensure_source_info()
             if self._configuration_name is None: raise ValueError('configuration metadata unavailable')
             return self._configuration_name if name.casefold() in ('name','имя') else ''
+        if name.casefold() in ('commontemplates','общиемакеты') and self._common_templates is not None:
+            return self._common_templates
+        if name.casefold() in ('sessionparameters','параметрысеанса') and self._session_parameters is not None:
+            return self._session_parameters
         if name.casefold() in ('commonmodules', 'общиемодули') and self._common_modules is not None:
             return self._common_modules
         if name.casefold() in ('enums', 'перечисления') and self._enumerations is not None:
@@ -495,6 +503,10 @@ def is_metadata_collection(value):
 def is_metadata_object(value):
     from .enumerations import EnumMetadata, EnumValueMetadata
     if type(value) is EnumMetadata or type(value) is EnumValueMetadata: return True
+    from .common_templates import CommonTemplateMetadata
+    if type(value) is CommonTemplateMetadata:return True
+    from .session_parameters import BSLSessionParameterMetadata
+    if type(value) is BSLSessionParameterMetadata: return True
     return is_metadata_collection(value) or any(type(value) is cls for cls in (
         BSLMetadata,BSLCatalogMetadata,BSLDocumentMetadata,BSLInformationRegisterMetadata,
         BSLCommonModuleMetadata,BSLAttributeMetadata,BSLTabularSectionMetadata,StandardAttributeDescription))
