@@ -22,6 +22,7 @@ class ExecutionContext:
     module_context_stack: list[bool] = field(default_factory=lambda: [True])
     state: dict[object, dict] = field(default_factory=dict)
     host_failure: BaseException | None = None
+    request_cache: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -344,6 +345,11 @@ class Scheduler:
 
     def run_inline(self, generator):
         """Execute a synchronous root without pumping or switching task context."""
+        root_request = self._inline_depth == 0 and self._active_task is None
+        context = self.active_context
+        previous_request = context.request_cache
+        if root_request:
+            context.request_cache = {}
         self._inline_depth += 1
         try:
             with self._scope():
@@ -356,6 +362,9 @@ class Scheduler:
             raise RuntimeError('Synchronous execution cannot suspend')
         finally:
             self._inline_depth -= 1
+            if root_request:
+                context.request_cache.clear()
+                context.request_cache = previous_request
 
     def run_until_idle(self, *, max_steps=100_000):
         """Drain ready work, with a host safety budget of 100,000 resumptions.

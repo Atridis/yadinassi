@@ -1,0 +1,65 @@
+name: Isolated owned server-module reuse observations
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+permissions: {}
+concurrency:
+  group: native-server-module-reuse-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+jobs:
+  observe:
+    if: >-
+      github.repository == 'Atridis/yadinassi' && github.repository_id == '359770628' &&
+      github.repository_owner_id == '30860798' && github.actor == 'Atridis' &&
+      github.actor_id == '30860798' && github.triggering_actor == 'Atridis' &&
+      github.event.pull_request.head.repo.full_name == 'Atridis/yadinassi' &&
+      github.event.pull_request.head.ref == 'codex/server-module-return-reuse' &&
+      github.event.pull_request.base.ref == 'main'
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 2
+          submodules: false
+          lfs: false
+      - name: Bind owner identity and exact merge parents before credentials
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: '{}'
+        run: python3 -I -B scripts/native_1c_ci_policy.py bind
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12.10'
+      - name: Install pinned host dependencies
+        run: python3 -m pip install --disable-pip-version-check --no-deps prompt-toolkit==3.0.53 pyuca==1.2 tzdata==2026.5 wcwidth==0.8.2
+      - name: Observe sixteen owned scalar server/client reusable-value observations in a fresh isolated infobase
+        id: results
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: python3 scripts/native_1c_server_module_reuse_profile.py --execute-approved-image --export-native-outputs
+      - name: Upload bounded acquisition report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-server-module-reuse-summary
+          path: native-smoke/server_module_reuse-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload only validated observations and provenance
+        if: always() && steps.results.outputs.server_module_reuse_outputs_ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: native-server-module-reuse-observations
+          path: |
+            native-smoke/server_module_reuse-outputs/server_module_reuse.out
+            native-smoke/server_module_reuse-outputs/provenance.json
+          if-no-files-found: error
+          retention-days: 7

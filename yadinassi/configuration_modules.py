@@ -27,6 +27,7 @@ class CommonModuleDefinition:
     client: bool
     server: bool
     server_call: bool
+    return_values_reuse: str = 'DontUse'
 
     @property
     def path(self):
@@ -72,13 +73,16 @@ def read_common_modules(files, names, used, issues):
         # They cannot be treated as descriptive metadata or successful no-ops.
         if flag('Privileged') or flag('ClientOrdinaryApplication') or flag('ExternalConnection'):
             _fail('unsupported common module execution mode')
-        if _text(props, 'ReturnValuesReuse', 'DontUse') != 'DontUse':
+        reuse = _text(props, 'ReturnValuesReuse', 'DontUse')
+        if reuse not in ('DontUse', 'DuringSession', 'DuringRequest'):
             _fail('common module return-value reuse unsupported')
+        if reuse != 'DontUse' and (global_module or client == server or (client and server_call)):
+            _fail('reusable common modules require an explicit measured side')
         if not client and not server:
             _fail('common module has no supported execution side')
         if server_call and (global_module or not server or client):
             _fail('invalid common module server-call combination')
-        result.append(CommonModuleDefinition(identity, name, global_module, client, server, server_call))
+        result.append(CommonModuleDefinition(identity, name, global_module, client, server, server_call, reuse))
     return tuple(result)
 
 
