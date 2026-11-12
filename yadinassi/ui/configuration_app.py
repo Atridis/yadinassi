@@ -1978,7 +1978,7 @@ class ConfigurationHandler(_Handler):
     methods = ('application.hello', 'application.snapshot', 'application.open',
                'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference',
                'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
-               'application.reportSetup', 'application.reportPage')
+               'application.reportSetup', 'application.reportPage', 'application.catalogPage', 'application.catalogFilter')
 
 
 def main(argv=None):

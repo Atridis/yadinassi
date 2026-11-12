@@ -96,3 +96,33 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
             'params':{'entry':listing['entry'],'record':row['key'],'request':'deleted-record'}})['result']
         self.assertEqual(result['error'],'invalid_record')
         self.assertIsNone(result['session']);self.assertFalse(self.app.uncertain)
+
+    def test_http_page_filter_and_transport_guards(self):
+        from http.client import HTTPConnection
+        from threading import Thread
+        from yadinassi.ui.configuration_app import ConfigurationHandler
+        from yadinassi.ui.local_app import LocalUIServer
+        from yadinassi.ui.protocol import encode_line, decode_line
+        self.seed(50)
+        server=LocalUIServer(self.app,handler=ConfigurationHandler)
+        thread=Thread(target=server.serve_forever,kwargs={'poll_interval':.01},daemon=True);thread.start()
+        try:
+            def call(method,params,*,origin=None,status=200):
+                connection=HTTPConnection(*server.server_address,timeout=10)
+                try:
+                    connection.request('POST','/rpc',encode_line({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params}),
+                        {'Origin':origin or server.origin,'Content-Type':'application/x-ndjson','X-Yadinassi-Session':server.token})
+                    response=connection.getresponse();raw=response.read();self.assertEqual(response.status,status)
+                    return decode_line(raw)['result'] if status==200 else None
+                finally:connection.close()
+            entry=self.app.names['catalog.warehouses.form.card']
+            first=call('catalog',{'entry':entry})['state']['catalog'];nav=first['navigation']
+            page_params={'entry':entry,'snapshot':nav['snapshot'],'cursor':nav['next']}
+            call('catalogPage',page_params,origin='https://untrusted.invalid',status=403)
+            call('catalogUnknown',page_params,status=400)
+            page=call('catalogPage',page_params)['state']['catalog'];self.assertEqual(page['navigation']['page'],2)
+            filtered=call('catalogFilter',{'entry':entry,'snapshot':page['navigation']['snapshot'],'query':'X0049','order':'code'})
+            self.assertIsNone(filtered['error']);self.assertEqual(filtered['state']['catalog']['navigation']['total'],1)
+            self.assertEqual(filtered['state']['catalog']['rows'][0]['code'],'X0049')
+        finally:
+            server.shutdown();server.server_close();thread.join(10)
