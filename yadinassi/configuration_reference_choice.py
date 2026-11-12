@@ -27,6 +27,7 @@ class ConfigurationReferenceChoice:
         self._projection = None
         self._choices = {}
         self._issued = 0
+        self._pages = None
 
     @property
     def active(self):
@@ -91,40 +92,20 @@ class ConfigurationReferenceChoice:
             if type(code) is not str or len(code)>128:raise ValueError('bounded enum name required')
             binding.storage._live()
             entry=binding.storage._entry(binding.enum_id)
-            if len(entry[7])-1>32:return [],{},'too_many_matches'
+            if len(entry[7])-1>32:return [],{},'too_many_matches',None,None
             rows=[];choices={}
             for declared,value in zip(entry[4].values,entry[7][1:]):
                 if code and declared.name!=code:continue
                 choice=token_hex(16);choices[choice]=binding.storage.key(value,binding.enum_id)
                 rows.append({'choice':choice,'code':declared.name,'description':binding.presentation(value)})
-            return rows,choices,None
-        manager=session._reference_managers[target]
-        if type(code) is not str or len(code)>manager._schema.code_length:
-            raise ValueError('bounded exact code required')
-        predicate=CatalogComparison('deletion_mark','eq',False)
-        if code: predicate=CatalogPredicate('and',(predicate,CatalogComparison('code','eq',code)))
-        view=manager._view()
+            return rows,choices,None,None,None
+        from .reference_choice_pages import load_choices, SnapshotLimit
         try:
-            page=view.scan_catalog_values(manager._schema.identity,
-                CatalogScanRequest(predicate=predicate,order=(CatalogOrder('code'),),page_size=32),('code','description'))
-            if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows)>32:
-                raise BackendError('integrity')
-            if page.continuation is not None:
-                if type(page.continuation) is not str or len(page.continuation)!=32: raise BackendError('integrity')
-                return [],{},'too_many_matches'
-            choices={};rows=[];seen=set()
-            for record in page.rows:
-                if (type(record) is not CatalogValueRow or type(record.key) is not CatalogKey
-                    or record.key.database_id!=view.database_id or record.key.catalog_id!=manager._schema.identity
-                    or type(record.key.record_id) is not UUID or not record.key.record_id.int or record.key in seen
-                    or type(record.values) is not tuple or len(record.values)!=2
-                    or any(type(v) is not str for v in record.values)
-                    or len(record.values[0])>manager._schema.code_length
-                    or len(record.values[1])>manager._schema.description_length): raise BackendError('integrity')
-                seen.add(record.key); choice=token_hex(16);choices[choice]=record.key
-                rows.append({'choice':choice,'code':record.values[0],'description':record.values[1]})
-            return rows,choices,None
-        finally: view.close()
+            pages=load_choices(session._reference_managers[target],code)
+            rows,choices,navigation=pages.project()
+            return rows,choices,None,pages,navigation
+        except SnapshotLimit:
+            return [],{},'snapshot_limit',None,None
 
     def _prepare_install(self, session, destination, value):
         value=destination['kind'].adjust_value(value)
@@ -166,25 +147,54 @@ class ConfigurationReferenceChoice:
                 changed=self._install(session,destination,destination['kind'].adjust_value())
                 return 'cleared' if changed else 'unchanged'
             if self._issued>=256: raise ValueError('reference choice limit')
-            rows,choices,error=self._scan(session,destination['target'],'')
+            rows,choices,error,pages,navigation=self._scan(session,destination['target'],'')
             token=token_hex(16);self._issued+=1
             projection={'ticket':token,'control':destination['control'],'row':destination['row'],
                 'column':destination['column'],'title':(session.reference_scope.targets[destination['target']].value_type.name if type(session.reference_scope.targets[destination['target']]) is FormEnumBinding else session._reference_managers[destination['target']]._schema.name),
                 'code':'','rows':rows,'error':error}
+            if type(session.reference_scope.targets[destination['target']]) is not FormEnumBinding:
+                projection['navigation']=navigation
             encode_line(projection)
+            self._pages=pages
             self._ticket=dict(destination,token=token);self._choices=choices;self._projection=projection
             return 'opened'
         if mode=='filter':
             self._keys(action,'action ticket code');destination=self._current(session,action['ticket'])
-            rows,choices,error=self._scan(session,destination['target'],action['code'])
+            rows,choices,error,pages,navigation=self._scan(session,destination['target'],action['code'])
             prospective=dict(self._projection,code=action['code'],rows=rows,error=error)
-            encode_line(prospective);self._projection=prospective;self._choices=choices
+            if type(session.reference_scope.targets[destination['target']]) is not FormEnumBinding:
+                prospective['navigation']=navigation
+            encode_line(prospective);self._projection=prospective;self._choices=choices;self._pages=pages
             return 'filtered'
+        if mode in ('search','page'):
+            self._keys(action,'action ticket query' if mode=='search' else 'action ticket cursor')
+            destination=self._current(session,action['ticket'])
+            if type(session.reference_scope.targets[destination['target']]) is FormEnumBinding:
+                raise ValueError('catalog navigation required')
+            from .reference_choice_pages import load_choices, SnapshotLimit
+            pages=deepcopy(self._pages)
+            error=None
+            try:
+                if mode=='search':
+                    if pages is None or not pages.full:
+                        pages=load_choices(session._reference_managers[destination['target']])
+                    pages.search(action['query'])
+                else:
+                    if pages is None:raise ValueError('choice snapshot unavailable')
+                    pages.turn(action['cursor'])
+                rows,choices,navigation=pages.project()
+            except SnapshotLimit:
+                rows,choices,navigation,pages,error=[],{},None,None,'snapshot_limit'
+            prospective=dict(self._projection,rows=rows,error=error,navigation=navigation)
+            if mode=='search':prospective['code']=''
+            encode_line(prospective)
+            self._projection,self._choices,self._pages=prospective,choices,pages
+            return 'filtered' if mode=='search' else 'paged'
         if mode=='cancel':
             self._keys(action,'action ticket')
             if self._ticket is None or type(action['ticket']) is not str or action['ticket']!=self._ticket['token']:
                 raise ValueError('retired reference choice ticket')
-            self._ticket=self._projection=None;self._choices={}
+            self._ticket=self._projection=None;self._choices={};self._pages=None
             return 'cancelled'
         if mode=='apply':
             self._keys(action,'action ticket choice');destination=self._current(session,action['ticket'])
@@ -195,7 +205,7 @@ class ConfigurationReferenceChoice:
             if type(binding) is FormEnumBinding:
                 value=binding.storage.value(key,binding.enum_id)
                 changed=self._install(session,destination,value)
-                self._ticket=self._projection=None;self._choices={}
+                self._ticket=self._projection=None;self._choices={};self._pages=None
                 return 'applied' if changed else 'unchanged'
             manager=session._reference_managers[destination['target']]
             view=manager._view()
@@ -204,6 +214,6 @@ class ConfigurationReferenceChoice:
                 if card is None or card.deletion_mark: raise BackendError('not_found')
             finally: view.close()
             changed=self._install(session,destination,manager._ref(key.record_id))
-            self._ticket=self._projection=None;self._choices={}
+            self._ticket=self._projection=None;self._choices={};self._pages=None
             return 'applied' if changed else 'unchanged'
         raise ValueError('unknown reference choice action')

@@ -1072,17 +1072,35 @@ class ConfigurationController:
     @staticmethod
     def _validate_choice(choice):
         if choice is None: return
+        if type(choice) is not dict: raise ValueError('reference choice dictionary required')
         import re
-        _keys(choice, 'ticket control row column title code rows error')
+        _keys(choice, 'ticket control row column title code rows error'+(' navigation' if 'navigation' in choice else ''))
         if (type(choice['ticket']) is not str or not re.fullmatch('[0-9a-f]{32}', choice['ticket'])
                 or type(choice['control']) is not str or len(choice['control']) > 128
                 or choice['row'] is not None and (type(choice['row']) is not int or not 1 <= choice['row'] <= 4096)
                 or choice['column'] is not None and (type(choice['column']) is not str or len(choice['column']) > 128)
                 or type(choice['title']) is not str or len(choice['title']) > 1024
                 or type(choice['code']) is not str or len(choice['code']) > 64
-                or choice['error'] not in (None, 'too_many_matches')
+                or choice['error'] not in (None, 'too_many_matches', 'snapshot_limit')
                 or type(choice['rows']) is not list or len(choice['rows']) > 32):
             raise ValueError('invalid bounded reference choice')
+        if choice['error'] is not None and choice['rows']:
+            raise ValueError('incomplete choice must not expose rows')
+        if 'navigation' not in choice:
+            if choice['error']=='snapshot_limit': raise ValueError('missing catalog navigation')
+        elif choice['navigation'] is None:
+            if choice['error']!='snapshot_limit': raise ValueError('missing bounded snapshot')
+        else:
+            n=choice['navigation'];_keys(n,'page pages total previous next query')
+            if (choice['error'] is not None or any(type(n[k]) is not int for k in ('page','pages','total'))
+                    or not 0<=n['total']<=8192 or n['pages']!=max(1,(n['total']+31)//32)
+                    or not 1<=n['page']<=n['pages'] or type(n['query']) is not str or len(n['query'])>128
+                    or len(choice['rows'])!=min(32,max(0,n['total']-(n['page']-1)*32))):
+                raise ValueError('invalid choice navigation')
+            for key,absent in (('previous',n['page']==1),('next',n['page']==n['pages'])):
+                if (n[key] is not None if absent else type(n[key]) is not str or re.fullmatch(r'reference-page-[0-9a-f]{32}',n[key]) is None):
+                    raise ValueError('invalid choice cursor')
+            if n['previous'] is not None and n['previous']==n['next']:raise ValueError('duplicate choice cursor')
         tokens = set()
         for row in choice['rows']:
             _keys(row, 'choice code description')

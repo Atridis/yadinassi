@@ -43,16 +43,18 @@ export function mountApplication(environment, root, exchange = null) {
   inputStatus.setAttribute('role','status'); inputActions.className = 'dialog-commands'; inputBody.className = 'typed-input-body';
   inputDialog.append(inputTitle,inputText,inputBody,inputStatus,inputActions);
 
-  let pickerBusy = false, pickerTicket = null, pickerReturn = null;
+  let pickerBusy = false, pickerTicket = null, pickerReturn = null, pickerQueryBaseline = null, pickerCodeBaseline = null;
   const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
   const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
   picker.className = 'panel reference-picker'; picker.setAttribute('role','dialog'); picker.setAttribute('aria-modal','true'); picker.hidden = true;
   pickerTitle.id = `reference-title-${instance}`; picker.setAttribute('aria-labelledby',pickerTitle.id);
   pickerCode.type = 'text'; pickerCode.maxLength = 64; pickerCode.autocomplete = 'off'; pickerCode.spellcheck = false;
   pickerCode.setAttribute('aria-label','Exact code'); codeLabel.append(pickerCode);
+  const queryLabel=el('label','Code or description'),pickerQuery=el('input');
+  pickerQuery.type='search';pickerQuery.maxLength=128;pickerQuery.setAttribute('aria-label','Reference search');queryLabel.append(pickerQuery);
   pickerHelp.textContent = 'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
-  picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
+  picker.append(pickerTitle,pickerHelp,codeLabel,queryLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
   let queryEntry=null,queryBaseline='',queryDraft='';
   const button = (text, parent, action) => {
@@ -83,12 +85,20 @@ export function mountApplication(environment, root, exchange = null) {
         /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.code))) {
       status = 'Enter an exact code of at most 64 characters.'; paint(); return;
     }
+    if(action.action==='search'&&(typeof action.query!=='string'||[...action.query].length>128||
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.query))){
+      status='Enter a search of at most 128 characters.';paint();return;
+    }
     // Do not route cancellation through native form validation or raw code parsing.
     pickerBusy = true; paint();
     try { await entry.mount.reference({...action,ticket}); }
     finally { pickerBusy = false; paint(); }
   }
   const filter = button('Find exact code',pickerActions,() => choose({action:'filter',code:pickerCode.value}));
+  const searchChoice=button('Search references',pickerActions,()=>choose({action:'search',query:pickerQuery.value}));
+  const previousChoice=button('Previous choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.previous}));
+  const nextChoice=button('Next choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.next}));
+  pickerQuery.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();choose({action:'search',query:pickerQuery.value});}});
   const cancel = button('Cancel selection',pickerActions,() => choose({action:'cancel'}));
   pickerCode.addEventListener('keydown',event => {
     if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); choose({action:'filter',code:pickerCode.value}); }
@@ -117,13 +127,21 @@ export function mountApplication(environment, root, exchange = null) {
       return;
     }
     const newTicket = pickerTicket !== choice.ticket;
-    if (newTicket) { pickerTicket = choice.ticket; pickerCode.value = choice.code; pickerReturn = choice; }
+    if (newTicket) { pickerTicket = choice.ticket; pickerReturn = choice; }
+    if(newTicket||pickerCodeBaseline!==choice.code){pickerCode.value=choice.code;pickerCodeBaseline=choice.code;}
     pickerTitle.textContent = 'Choose ' + choice.title;
     const disabled = pickerBusy || client.pending > 0 || client.terminal || client.state.uncertain;
     filter.disabled = cancel.disabled = pickerCode.disabled = disabled;
+    const paged=Object.hasOwn(choice,'navigation'),nav=choice.navigation;
+    for(const node of [queryLabel,searchChoice,previousChoice,nextChoice])node.hidden=!paged;
+    pickerQuery.disabled=searchChoice.disabled=disabled;
+    previousChoice.disabled=disabled||!nav?.previous;nextChoice.disabled=disabled||!nav?.next;
+    if(newTicket||pickerQueryBaseline!==(nav?.query??'')){pickerQuery.value=nav?.query??'';pickerQueryBaseline=nav?.query??'';}
+    pickerHelp.textContent=paged?'Search code or description in a bounded snapshot, or read fresh exact-code matches. Selection rechecks the saved record. Cancel keeps the current value.':'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
     pickerError.textContent = client.terminal ? 'The outcome may be unknown. Selection is locked; no request will be repeated.'
+      : choice.error === 'snapshot_limit' ? 'The complete result exceeds the supported snapshot budget. No partial rows are shown. Enter an exact code to narrow the read.'
       : choice.error === 'too_many_matches' ? 'Too many matches. Enter an exact code to continue.'
-      : status || (choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
+      : status || (nav ? `Page ${nav.page} of ${nav.pages}; ${nav.total} matching records` : choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
     pickerRows.replaceChildren();
     for (const row of choice.rows) {
       const entry = el('div'), description = el('span',row.code + ' · ' + row.description);
