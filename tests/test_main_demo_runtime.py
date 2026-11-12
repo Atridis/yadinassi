@@ -93,3 +93,22 @@ Q=New Query("SELECT SUM(Quantity) AS N FROM AccumulationRegister.Stock");S=Q.Exe
             self.vm.execute('НачатьТранзакцию();Карточка.Записать();')
         self.assertIsNone(current(self.context.backend))
         self.assertTrue(self.vm.variables['карточка'].is_new())
+
+    def test_original_forms_are_explicit_active_source_capabilities(self):
+        backend=self.context.backend;config=backend.accumulation_configuration
+        names={c.identity:c.name for c in config.catalogs}
+        self.assertEqual({names[x] for x in backend.active_form_catalogs()}, {'ВидыНоменклатуры','Номенклатура'})
+        for identity in backend.active_form_catalogs():
+            form=backend.read_form_source(identity)
+            self.assertEqual(form.identity.manifest_sha256,config.source_digest)
+            self.assertEqual(form.module_source,dict(config.files)[form.module_path])
+            self.assertEqual(backend.read_form_source(identity,expected=form.identity),form)
+
+    def test_original_form_identity_cannot_cross_source_or_catalog(self):
+        from dataclasses import replace
+        backend=self.context.backend;identity=backend.active_form_catalogs()[0]
+        form=backend.read_form_source(identity)
+        with self.assertRaises(BackendError):
+            backend.read_form_source(identity,expected=replace(form.identity,manifest_sha256='0'*64))
+        warehouse=next(c for c in backend.accumulation_configuration.catalogs if c.name=='Склады')
+        with self.assertRaises(BackendError):backend.read_form_source(warehouse.identity)

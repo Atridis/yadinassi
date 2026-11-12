@@ -1150,6 +1150,14 @@ class SQLiteCatalogBackend:
     def active_form_catalogs(self):
         """Host capability inventory, not arbitrary stored form execution."""
         if self._closed: raise BackendError('closed')
+        from .configuration_main_demo import MainDemoConfiguration
+        if self.format_version == 16 and type(self.accumulation_configuration) is MainDemoConfiguration:
+            view = self.begin_read()
+            try:
+                config = self._main_demo_source_snapshot(view._connection)
+                return tuple(c.identity for c in config.catalog_sources if c.default_object_form)
+            finally:
+                view.close()
         # This inventory authorizes only the historical imported-form adapter.
         # Generic object forms require the explicit configuration-form host.
         if self.storage_version != 6 or self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE): return ()
@@ -1272,7 +1280,9 @@ class SQLiteCatalogBackend:
         _uuid(catalog_id)
         if self._closed: raise BackendError('closed')
         business = _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE)
-        if self.storage_version not in (5, 6) and not business: raise BackendError('unsupported')
+        from .configuration_main_demo import MainDemoConfiguration
+        main_demo = self.format_version == 16 and type(self.accumulation_configuration) is MainDemoConfiguration
+        if self.storage_version not in (5, 6) and not business and not main_demo: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
         if expected is not None:
             if type(expected) is not ConfigurationSourceIdentity: raise BackendError('invalid_input')
@@ -1284,6 +1294,21 @@ class SQLiteCatalogBackend:
         connection = self._connect()
         try:
             connection.execute('BEGIN')
+            if main_demo:
+                config = self._main_demo_source_snapshot(connection)
+                catalog = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
+                if catalog is None: raise BackendError('not_found')
+                form = next((f for f in catalog.forms if catalog.default_object_form ==
+                            'Catalog.'+catalog.name+'.Form.'+f.name), None)
+                if form is None: raise BackendError('not_found')
+                identity = ConfigurationSourceIdentity(self.database_id, config.identity,
+                    self.configuration_generation, config.source_digest, catalog.identity, form.identity)
+                if expected is not None and expected != identity: raise BackendError('schema_changed')
+                files = dict(config.files)
+                return CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
+                    catalog.path, form.path, form.definition_path, form.module_path,
+                    files['Configuration.xml'], files[catalog.path], files[form.path],
+                    files[form.definition_path], files.get(form.module_path,b''), form.module_path in files)
             imported, catalogs, info, manifest = (self._business_source_snapshot(connection) if business else
                 self._demo_source_snapshot(connection) if self.storage_version == 6 else self._inert_source_snapshot(connection))
             if self.storage_version == 6 and catalog_id not in {s.identity for s in imported.catalogs}: raise BackendError('unsupported')
