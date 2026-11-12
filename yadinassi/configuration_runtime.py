@@ -98,6 +98,9 @@ class ConfigurationApplication:
                         raise ValueError('configuration information-register schema does not match the database')
                 finally:
                     view.close()
+        if side is not None and any(d.server and d.return_values_reuse != 'DontUse'
+                                    for d in configuration.common_modules):
+            raise ValueError('server reuse requires the measured local file-mode application')
         self.configuration = configuration
         self.state = 'prepared'
         self.last_exit_warning = ''
@@ -200,6 +203,10 @@ class ConfigurationApplication:
                 program = compile_module(sources[definition.path], definition.path, side, common=True)
                 if definition.return_values_reuse != 'DontUse' and any(r.is_async for r in program):
                     raise ValueError('asynchronous reusable common modules are unsupported')
+                if side == 'server' and definition.return_values_reuse != 'DontUse':
+                    if any(not r.is_function or any(not p.by_value or p.default is not None for p in r.parameters)
+                           for r in program):
+                        raise ValueError('server reuse requires explicit by-value scalar functions')
                 programs[name, side] = program
                 if definition.global_module:
                     for routine in program:
@@ -497,6 +504,10 @@ class ConfigurationApplication:
                      for obj, name in values]
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), arguments)
         self.interpreter.execute_program([ast.ExpressionStatement(routine.token, call)])
+
+    def is_scalar_server_reuse(self, routine):
+        entry = self._reuse_routines.get(id(routine))
+        return entry is not None and entry[0] is routine and entry[2].server
 
     def reusable_call(self, caller, owner, routine, qualified):
         entry = self._reuse_routines.get(id(routine))

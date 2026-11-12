@@ -1,4 +1,4 @@
-"""Bounded application-owned client reuse; not a global or distributed cache."""
+"""Bounded local application-owned reuse; not an IPC or server-pool cache."""
 from collections import OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
@@ -146,7 +146,8 @@ class ApplicationReusableValues:
         app=self._application()
         if (self._closed or app is None or caller._configuration_runtime is not app or caller._family_owner is not app.interpreter or caller._scheduler is not app.interpreter._scheduler):raise ValueError('foreign reusable owner')
         app.require_open();caller._require_family()
-        if app.state not in ('starting','running','before_exit','exiting') or caller.execution_context!='client':raise ValueError('active client application required')
+        sides = ('client', 'server') if app.side is None else ('client',)
+        if app.state not in ('starting','running','before_exit','exiting') or caller.execution_context not in sides:raise ValueError('active local application required')
         if caller._scheduler._active_task is not None:raise ValueError('async reusable continuations unsupported')
         return app
     @staticmethod

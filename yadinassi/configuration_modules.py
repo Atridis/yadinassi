@@ -76,8 +76,8 @@ def read_common_modules(files, names, used, issues):
         reuse = _text(props, 'ReturnValuesReuse', 'DontUse')
         if reuse not in ('DontUse', 'DuringSession', 'DuringRequest'):
             _fail('common module return-value reuse unsupported')
-        if reuse != 'DontUse' and (global_module or not client or server or server_call):
-            _fail('reusable common modules require the measured client-only profile')
+        if reuse != 'DontUse' and (global_module or client == server or (client and server_call)):
+            _fail('reusable common modules require an explicit measured side')
         if not client and not server:
             _fail('common module has no supported execution side')
         if server_call and (global_module or not server or client):
