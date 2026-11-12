@@ -154,13 +154,21 @@ def job_matrix(binding, *, heavy=False):
     for target, os_name, architecture in RUNNERS:
         if target not in platforms:
             continue
-        count = 2 if heavy and target == 'mac-x86' else 1
+        count = partition_count(target, heavy=heavy)
         for index in range(count):
             row = {'target': target, 'os': os_name, 'architecture': architecture}
             if heavy:
                 row.update(shard_count=count, shard_index=index)
             rows.append(row)
     return {'include': rows}
+
+
+def partition_count(platform, *, heavy):
+    # A fixed policy, not an input or environment override. Keep matrix and
+    # verifier in lockstep: Windows now needs the same two whole-group shards
+    # as Intel macOS after source-bound duration recalibration.
+    require(platform in PLATFORMS and type(heavy) is bool, 'partition policy')
+    return 2 if heavy and platform in ('windows', 'mac-x86') else 1
 
 
 def check_fresh(binding, fetch=api):
@@ -195,7 +203,7 @@ def coverage(binding, reports, heavy):
     platforms = required_platforms(binding)
     expected = {(p, 'light', 0) for p in platforms}
     if heavy:
-        expected |= {(p, 'heavy', i) for p in platforms for i in range(2 if p == 'mac-x86' else 1)}
+        expected |= {(p, 'heavy', i) for p in platforms for i in range(partition_count(p, heavy=True))}
     require(set(reports) == expected, 'missing/extra platform partition report')
     output = {}
     for platform in platforms:
@@ -206,7 +214,7 @@ def coverage(binding, reports, heavy):
             require(report['binding'] == binding, 'report source binding')
             require(report['platform'] == p and report['tier'] == tier and report['shard_index'] == index,
                     'partition identity')
-            count = 2 if p == 'mac-x86' and tier == 'heavy' else 1
+            count = partition_count(p, heavy=tier == 'heavy')
             require(report['shard_count'] == count, 'partition count')
             require(report['success'] is True, 'failed partition')
             chosen = ids(report['selected_ids']); executed = ids(report['executed_ids']); all_ids = ids(report['discovered_ids'])
@@ -266,7 +274,7 @@ def main():
         else:
             reports = {}
             paths = list(Path(args.reports).glob('**/partition.json'))
-            require(len(paths) <= 9, 'too many reports')
+            require(len(paths) <= 10, 'too many reports')
             for path in paths:
                 report = read_json(path)
                 key = (report['platform'], report['tier'], report['shard_index'])

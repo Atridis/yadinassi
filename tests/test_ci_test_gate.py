@@ -56,12 +56,12 @@ def reports(b):
         parts = [('light', 0, ['test_mod.A.test_light'])]
         if b['heavy']:
             parts += [('heavy', 0, ['test_mod.B.test_heavy'])]
-            if p == 'mac-x86':
+            if p in ('windows', 'mac-x86'):
                 parts += [('heavy', 1, ['test_mod.C.test_heavy'])]
         all_ids = [x for _, _, chosen in parts for x in chosen]
         for tier, index, chosen in parts:
             result[p,tier,index] = {'platform': p, 'tier': tier, 'shard_index': index,
-                'shard_count': 2 if p == 'mac-x86' and tier == 'heavy' else 1,
+                'shard_count': 2 if p in ('windows', 'mac-x86') and tier == 'heavy' else 1,
                 'binding': copy.deepcopy(b), 'selected_ids': chosen[:], 'executed_ids': chosen[:],
                 'skipped_fixture_ids': [], 'covered_ids': chosen[:], 'discovered_ids': all_ids[:],
                 'tests_run': len(chosen), 'success': True,
@@ -168,7 +168,7 @@ class CITestGateTests(unittest.TestCase):
                 self.assertEqual(verdict['required_coverage'], b['heavy'])
                 self.assertEqual(verdict['excluded_platforms'], [] if expected == gate.PLATFORMS else ['mac-arm'])
 
-    def test_all_matrices_preserve_os_architecture_and_intel_shards(self):
+    def test_all_matrices_preserve_os_architecture_and_windows_intel_shards(self):
         runners = [('windows', 'windows-2022', 'x64'), ('linux', 'ubuntu-22.04', 'x64'),
                    ('mac-x86', 'macos-15-intel', 'x64'), ('mac-arm', 'macos-15', 'arm64')]
         for b in (binding(True), binding(), push_binding('refs/heads/main'), push_binding(),
@@ -179,14 +179,14 @@ class CITestGateTests(unittest.TestCase):
                     for target, os_name, arch in runners:
                         if target not in gate.required_platforms(b):
                             continue
-                        count = 2 if heavy and target == 'mac-x86' else 1
+                        count = 2 if heavy and target in ('windows', 'mac-x86') else 1
                         for index in range(count):
                             row = {'target': target, 'os': os_name, 'architecture': arch}
                             if heavy:
                                 row.update(shard_count=count, shard_index=index)
                             expected.append(row)
                     self.assertEqual(gate.job_matrix(b, heavy=heavy), {'include': expected})
-                    self.assertEqual(len(expected), (5 if heavy else 4) - ('mac-arm' not in gate.required_platforms(b)))
+                    self.assertEqual(len(expected), (6 if heavy else 4) - ('mac-arm' not in gate.required_platforms(b)))
 
     def test_push_ref_cannot_be_forged_empty_deleted_or_unsupported(self):
         for ref in ('refs/heads/topic', 'refs/tags/', 'refs/tags//v1', 'refs/tags/../v1',
@@ -209,6 +209,36 @@ class CITestGateTests(unittest.TestCase):
         b = gate.admit('push', dict(push_event('refs/tags/v1'), after=A), C,
                        gate.REPOSITORY, ref='refs/tags/v1')
         self.assertEqual(gate.required_platforms(b), gate.PLATFORMS)
+
+    def test_windows_second_shard_is_required_not_an_optional_speed_hint(self):
+        for b in (binding(), push_binding('refs/heads/main'), push_binding(), dispatch_binding()):
+            original = reports(b)
+            self.assertIn(('windows', 'heavy', 1), original)
+            for mutation in ('missing', 'single_count', 'extra', 'duplicate_execution',
+                             'foreign_attempt', 'skipped_shard'):
+                changed = copy.deepcopy(original)
+                item = changed['windows', 'heavy', 1]
+                if mutation == 'missing': del changed['windows', 'heavy', 1]
+                elif mutation == 'single_count': item['shard_count'] = 1
+                elif mutation == 'extra': changed['windows', 'heavy', 2] = item
+                elif mutation == 'duplicate_execution':
+                    duplicate = changed['windows', 'heavy', 0]
+                    for key in ('selected_ids', 'executed_ids', 'covered_ids'):
+                        item[key] = duplicate[key][:]
+                elif mutation == 'foreign_attempt': item['binding']['run_attempt'] += 1
+                else: item['success'] = False
+                with self.subTest(ref=b['ref'], mutation=mutation), self.assertRaises(ValueError):
+                    gate.coverage(b, changed, True)
+
+    def test_windows_shards_do_not_change_light_or_package_platform_count(self):
+        for b in (binding(True), binding(), push_binding(), dispatch_binding()):
+            light = gate.job_matrix(b)['include']
+            heavy = gate.job_matrix(b, heavy=True)['include']
+            self.assertEqual(sum(row['target'] == 'windows' for row in light), 1)
+            self.assertEqual(sum(row['target'] == 'windows' for row in heavy), 2)
+            self.assertTrue(all(set(row) == {'target', 'os', 'architecture'} for row in light))
+        with self.assertRaises(ValueError): gate.partition_count('other', heavy=True)
+        with self.assertRaises(ValueError): gate.partition_count('windows', heavy=1)
 
     def test_binding_shape_phase_and_route_have_no_scope_override(self):
         for base in (binding(), push_binding(), dispatch_binding()):

@@ -1,5 +1,5 @@
 /** Read-only stock projections. A label is never a reference or write capability. */
-import {FormError, validateScalar, scalarText} from '../../form/src/client.mjs';
+import {FormError, validateScalar, readOnlyScalarText} from '../../form/src/client.mjs';
 const keys = (v,names) => v !== null && typeof v === 'object' && !Array.isArray(v) &&
   Object.keys(v).length === names.length && names.every(n => Object.hasOwn(v,n));
 const text = (v,n=1152) => typeof v === 'string' && v.length <= n*2 && [...v].length <= n &&
@@ -133,7 +133,12 @@ export function validateReportReply(result,request,previous) {
   }
 }
 export function reportCellText(cell) {
-  return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
+  return ['Catalog','Document'].includes(cell.type) ? cell.text : readOnlyScalarText(cell);
+}
+export function reportColumnTitle(column) {
+  // Presentation only; the unchanged exact source name is displayed alongside.
+  return column.name.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2');
 }
 export function createReportPanel(document, host, request, blocked, command=null) {
   const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
@@ -210,7 +215,14 @@ export function createReportPanel(document, host, request, blocked, command=null
     if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
-        for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
+        for(const column of result.columns){
+          const title=reportColumnTitle(column),th=el('th',title);th.setAttribute('scope','col');
+          if(title!==column.name){const original=el('small',column.name);original.className='configuration-report-source-name';th.append(original);}
+          header.append(th);
+        }head.append(header);table.append(head,body);
+        const viewport=el('div');viewport.className='configuration-report-table-scroll';
+        viewport.setAttribute('role','region');viewport.setAttribute('aria-label',report.title+' saved rows');
+        viewport.setAttribute('tabindex','0');viewport.append(table);
         for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
         const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
@@ -219,7 +231,7 @@ export function createReportPanel(document, host, request, blocked, command=null
           for(const filter of result.filters)output.append(el('p',filter.id+': '+(filter.mode==='all'?'All saved values':filter.text)));
         }
         const page=result.page;
-        output.append(el('p',page?`${page.total? page.offset+1:0}–${page.offset+result.rows.length} of ${page.total} saved rows. Pages share this detached snapshot. Refresh explicitly after another writer changes the database.`:`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),table);
+        output.append(el('p',page?`${page.total? page.offset+1:0}–${page.offset+result.rows.length} of ${page.total} saved rows. Pages share this detached snapshot. Refresh explicitly after another writer changes the database.`:`${result.rows.length} saved rows. Refresh explicitly after another writer changes the database.`),el('p','Dates have no timezone conversion. Focus the saved rows region to scroll wide tables with the keyboard.'),viewport);
         if(page){const nav=el('nav');nav.setAttribute('aria-label','Statement pages');
           for(const [label,cursor] of [['Previous saved page',page.previous],['Next saved page',page.next]])button(nav,label,disabled || cursor===null,()=>run('application.reportPage',{snapshot:page.snapshot,cursor}));output.append(nav);}
         if(!result.rows.length)output.append(el('p','No saved rows for these boundaries.'));

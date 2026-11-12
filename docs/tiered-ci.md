@@ -22,7 +22,7 @@
 Admission derives both JSON job matrices from its validated event binding;
 there is no input, environment flag or caller-provided platform list to select a
 smaller scope. Light and package jobs share exactly the same matrix. Heavy keeps
-two Intel shards and one shard for every other included platform. The existing
+two Windows shards, two Intel shards and one shard for every other included platform. The existing
 success-only light → heavy → package sequence remains intact. Ordinary PR/main
 macOS runner demand is 1 → 2 → 1; tags/manual remain 2 → 3 → 2.
 
@@ -31,7 +31,7 @@ connector can mark a PR Ready; it does not expose workflow_dispatch. Accordingly
 Ready is the normal trigger, with no new credential/browser service. A new head
 requires a new accepted candidate run.
 
-## Automatic classification and Intel balancing
+## Automatic classification and whole-group balancing
 
 `scripts/test_durations.json` is reviewed **data**, initially derived from all
 four completed main-accepted PR182 runs at head `8cd19562`, run41332191450. The
@@ -46,10 +46,11 @@ Unknown/new IDs force their complete group into light, so they run immediately.
 Missing history means all-light; malformed history is a failure, not an empty
 suite. Thus stale history may make a light run slower, but cannot omit tests.
 
-Heavy Intel groups are sorted longest-first and deterministically assigned to
+Heavy Windows and Intel groups are sorted longest-first and deterministically assigned to
 whichever of two jobs currently has the smaller estimated total (stable ID and
 job-index ties). No manually maintained shard membership lists exist. Other
-platforms use one heavy job. Each matrix job has its own runner/workspace/temp;
+platforms use one heavy job. Windows reuses the same deterministic Intel-weight
+placement; it does not acquire a second independent classification. Each matrix job has its own runner/workspace/temp;
 no concurrent shard shares a fixed `/tmp/onec-smoke` fixture directory.
 
 A plan-only discovery on the initial split candidate `63499ae1` found **7866 IDs**: 5403 light,
@@ -63,6 +64,40 @@ Every partition emits full discovered/selected/executed IDs, actual durations,
 result counts and fixture skips. A class/module `SkipTest` is accounted for as
 covered-but-not-executed, never fabricated execution. Failed class fixtures,
 missing/duplicate IDs or incomplete coverage cannot produce a passing full gate.
+
+## Required-platform recalibration from accepted #293
+
+The checked-in data now comes from accepted full run **43130946906, attempt 1**,
+exact merge source `0a1c06a47d719e94c82df270e9b4604a2085a77e` (head `e424d842`,
+base `8f936780`). All seven original partition archives were downloaded and
+checked against API size/SHA; the source-bound verdict covered 10,896 IDs on each
+required Linux/Windows/Intel platform. macOS ARM was excluded under the existing
+policy, not measured or treated as zero-cost. The profile is deliberately schema
+2: it records that historical matrix, not the new Windows shard configuration.
+It was generated with the pre-change `refresh_test_durations` implementation at
+`c5f8baadebb54bb3a7d79775b8a007ae6c62dec4`, using `--scope required-platforms`.
+
+Plan-only discovery on that presentation candidate found 10,912 IDs in 694
+whole fixture groups: 7,412 light, 3,500 heavy and 17 unknown/light IDs. Evaluating
+these groups against the accepted per-test durations gives the following
+**counterfactual sums, not new wall-clock measurements**:
+
+| Platform | New light | One/two heavy sums | Heavy plus all observed fixture overhead per shard |
+| --- | ---: | ---: | ---: |
+| Linux | 2m13s | 31m02s | 31m18s |
+| Windows, one shard (rejected) | 4m17s | 45m47s | 46m09s |
+| Windows, two shards | 4m17s | 24m49s / 20m58s | 25m11s / 21m20s |
+| macOS Intel, two shards | 4m55s | 39m55s / 39m54s | 40m32s / 40m31s |
+
+The one-shard Windows plan exceeds the unchanged 45-minute job cap before setup
+or upload, so the profile and Windows two-shard policy are one coherent change.
+The conservative column charges **all** original platform fixture overhead to
+**each** proposed shard; it is not measured fixture-group attribution. Bootstrap,
+upload, later source changes and runner variance are not predicted. New CI
+contract tests remain unknown/light, so final counts can increase. The future
+source-port optimization is not assumed in these estimates. A real candidate
+full run must still validate the new schedule; local data analysis cannot claim
+that run has passed. No test coverage, native gate or timeout is reduced.
 
 ## Source binding and mandatory merge procedure
 
@@ -84,7 +119,7 @@ not accepted. Unknown binding fields, including scope overrides, are rejected.
 
 Partitions are stamped with that binding; the final verdict downloads only that
 attempt's artifacts. For ordinary PR/main heavy runs it requires exactly three
-light and four heavy reports. Tags/manual require four light and five heavy
+light and five heavy reports. Tags/manual require four light and six heavy
 reports. Missing or extra platforms/partitions fail. Heavy runs must prove exact
 disjoint full-discovery coverage on **every required platform**, retain all
 package/compatibility job requirements, then reread current PR head AND main.
@@ -123,20 +158,52 @@ with elevated credentials. Only the release job retains contents-write access.
 
 ## Refresh data, not code
 
-Partition artifacts contain actual timings. After downloading all nine reports
-from one accepted **four-platform tag or manual heavy run** to a local directory, use:
+Partition artifacts contain actual timings. Download and independently verify
+all partitions from one accepted heavy run before calibration. To retain the
+four-platform requirement (the default), use a complete tag/manual run:
 
 ```sh
 python -m scripts.refresh_test_durations --reports downloaded-partitions \
-  --source TESTED_MERGE_SHA --run RUN_ID --output scripts/test_durations.json
+  --source TESTED_MERGE_SHA --run RUN_ID --attempt RUN_ATTEMPT \
+  --output scripts/test_durations.json
 ```
 
-The command requires all nine reports and `full_coverage=true`, same source/run
-binding, finite bounded numbers and all partition statuses. It parses JSON only; it neither executes
-artifact contents nor downloads, commits or publishes anything. Review the data
-change through a normal PR. Reduced PR/main, light-only or incomplete artifacts
-cannot replace the four-platform history. Zero weights for skipped cases never
-authorize skipping future tests.
+An ordinary PR/main run can instead calibrate **its three required platforms**
+explicitly, without claiming macOS ARM passed:
+
+```sh
+python -m scripts.refresh_test_durations --reports downloaded-partitions \
+  --source TESTED_MERGE_SHA --run RUN_ID --attempt RUN_ATTEMPT \
+  --scope required-platforms --output scripts/test_durations.json
+```
+
+Scope is derived from the exact event binding, never a caller-supplied platform
+list. The first form requires ten successful reports and full four-platform
+coverage. The second requires every report selected by that event: eight for
+ordinary PR/main, still ten for tag/manual. Both require disjoint complete
+coverage on each required platform, exact source/head/base/run/attempt binding,
+and finite bounded durations for every executed ID. Light-only, missing, extra,
+failed or mixed-attempt reports are rejected.
+
+New history schema 3 records the complete binding, actual required/excluded
+platforms and SHA-256 of each canonical parsed partition JSON. These fingerprints
+support later review; they do not authenticate artifacts or authorize merging.
+The existing schema 1 bootstrap data remains readable. Schema 2 retains its
+original one-Windows/two-Intel fingerprint layout; schema 3 requires the new
+two-Windows/two-Intel layout. Historical data never authorizes an old or partial
+CI verdict. The current refresh command requires the current complete matrix;
+for historical reproduction use the reviewed producer from that source.
+Calibration stores the
+maximum measured platform duration and Intel duration, not job upload/setup time.
+Wholly fixture-skipped IDs remain unknown rather than acquiring fictional zero
+measurements. Unknown IDs still keep their entire fixture group in light.
+
+This command only parses local JSON. It does not execute artifact contents,
+download, run tests, commit, publish or change CI gates. Review the data diff and
+plan-only discovery's exact disjoint union before publication. Per-test history
+excludes class/module fixture time and is not a production benchmark or a wall
+clock prediction. Recalibrate after substantial runtime changes; do not lower
+coverage or skip tests to make a slow light partition appear faster.
 
 Check policy changes with focused synthetic normal/-O regressions. Actual
 Windows/macOS and Python 3.10 behavior must still pass the relevant CI jobs; local
