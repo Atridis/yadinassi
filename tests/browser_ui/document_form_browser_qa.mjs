@@ -119,8 +119,7 @@ function applicationAllowedRequest(target){
 }
 async function startHost(){
   check();assert.ok(!host&&!hostGroup,'previous_host_live');
-  const args=['-m','yadinassi.ui.configuration_app',path.join(repo,'examples/configuration-document-forms'),
-    '--document-objects','--f',path.join(owned,'documents.sqlite')];
+  const args=['-m','yadinassi','--ui','--f',path.join(owned,'documents.sqlite')];
   host=spawn(python,args,{cwd:repo,env,detached:true,stdio:['ignore','pipe','ignore']});
   const parse=applicationLaunchReader();let settled=false;
   url=await bounded(new Promise((resolve,reject)=>{
@@ -175,7 +174,8 @@ function checkRequest(request){
   const packet=JSON.parse(raw);exactKeys(packet,'jsonrpc id method params');
   assert.equal(packet.jsonrpc,'2.0');assert.ok(Number.isSafeInteger(packet.id)&&packet.id>0);
   if(packet.method==='application.hello'){
-    exactKeys(packet.params,'protocol');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    exactKeys(packet.params,'protocol dialogCapability inputCapability');assert.equal(packet.params.inputCapability,'yadinassi-owned-input/1');assert.equal(packet.params.protocol,'yadinassi-configuration-app/3');
+    assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.catalog'){
     exactKeys(packet.params,'entry');assert.ok(Number.isSafeInteger(packet.params.entry)&&packet.params.entry>0);
   }else if(packet.method==='application.openRecord'){
@@ -223,7 +223,7 @@ async function screenshot(name){
 async function sourceBinding(){
   const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-document-forms','tests/browser_ui',
     'tests/test_configuration_document_forms.py','tests/test_configuration_document_replication.py','tests/test_configuration_document_admission.py',
-    'tests/test_document_form_browser_qa_contract.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
+    'tests/test_document_form_browser_qa_contract.py','tests/test_database_ui_launcher.py','tests/test_database_ui_launch_process.py','tests/test_sqlite_launch_snapshot.py','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   return {commit:git('rev-parse','HEAD'),tree:git('rev-parse','HEAD^{tree}'),source};
 }

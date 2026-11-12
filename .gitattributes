@@ -201,6 +201,44 @@ scripts/native_1c_docker_lifecycle.py text eol=lf
 scripts/native_1c_full_host.py text eol=lf
 scripts/native_1c_smoke.py text eol=lf
 
+# Exact authored typed-input source and isolated native controller.
+scripts/value_input_packet/Launcher.xml text eol=lf
+scripts/value_input_packet/Launcher/Ext/ObjectModule.bsl text eol=lf
+scripts/value_input_packet/Launcher/Forms/Main.xml text eol=lf
+scripts/value_input_packet/Launcher/Forms/Main/Ext/Form.xml text eol=lf
+scripts/value_input_packet/Launcher/Forms/Main/Ext/Form/Module.bsl text eol=lf
+scripts/value_input_packet/__init__.py text eol=lf
+scripts/value_input_packet/route.py text eol=lf
+scripts/native_1c_bootstrap/run_value_inputs_stage.py text eol=lf
+scripts/native_1c_bootstrap/value_input_controller.py text eol=lf
+scripts/native_1c_bootstrap/value_inputs_suite.py text eol=lf
+scripts/native_1c_value_inputs_probe.sh text eol=lf
+scripts/native_1c_value_inputs_profile.py text eol=lf
+
+# Retain reviewed predecessor acquisition checkout guards.
+scripts/dialog_packet/Launcher/Ext/ObjectModule.bsl text eol=lf
+scripts/dialog_packet/Launcher/Forms/Main/Ext/Form/Module.bsl text eol=lf
+scripts/dialog_packet/Launcher/Forms/Main/Ext/Form.xml text eol=lf
+scripts/dialog_packet/Launcher/Forms/Main.xml text eol=lf
+scripts/dialog_packet/Launcher.xml text eol=lf
+scripts/dialog_packet/__init__.py text eol=lf
+scripts/dialog_packet/observations.bsl text eol=lf
+scripts/dialog_packet/route.py text eol=lf
+scripts/form_results_packet/Launcher/Ext/ObjectModule.bsl text eol=lf
+scripts/form_results_packet/Launcher/Forms/Child/Ext/Form/Module.bsl text eol=lf
+scripts/form_results_packet/Launcher/Forms/Child/Ext/Form.xml text eol=lf
+scripts/form_results_packet/Launcher/Forms/Child.xml text eol=lf
+scripts/form_results_packet/Launcher/Forms/Main/Ext/Form/Module.bsl text eol=lf
+scripts/form_results_packet/Launcher/Forms/Main/Ext/Form.xml text eol=lf
+scripts/form_results_packet/Launcher/Forms/Main.xml text eol=lf
+scripts/form_results_packet/Launcher.xml text eol=lf
+scripts/form_results_packet/__init__.py text eol=lf
+scripts/form_results_packet/route.py text eol=lf
+scripts/native_1c_bootstrap/run_form_results_stage.py text eol=lf
+scripts/native_1c_form_results_probe.sh text eol=lf
+scripts/native_1c_bootstrap/run_dialogs_stage.py text eol=lf
+scripts/native_1c_dialogs_probe.sh text eol=lf
+
 # New owned enumeration acquisition inputs have source-bound byte hashes.
 scripts/enumeration_behavior/** text eol=lf
 scripts/native_1c_bootstrap/enumeration_suite.py text eol=lf
@@ -216,6 +254,14 @@ scripts/native_1c_inventory_probe.sh text eol=lf
 scripts/native_1c_inventory_reference_profile.py text eol=lf
 # Immutable native evidence must never be normalized by checkout or readers.
 tests/fixtures/native_inventory_reference/* -text
+
+# Independent period statement acquisition bytes.
+scripts/inventory_period_behavior/** text eol=lf
+scripts/native_1c_inventory_period_profile.py text eol=lf
+scripts/native_1c_inventory_period_probe.sh text eol=lf
+scripts/native_1c_bootstrap/inventory_period_suite.py text eol=lf
+# Independent native period capture is immutable on every checkout.
+tests/fixtures/native_inventory_period/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text

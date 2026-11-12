@@ -96,8 +96,10 @@ class PostingRuntime:
         self.documents = documents
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration, canonical_runtime as accumulation_canonical
-        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration)
-        self.configuration = (accumulation_canonical(configuration) if self.accumulation
+        from .configuration_inventory_application import InventoryApplicationConfiguration, canonical as application_canonical
+        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration)
+        self.configuration = (application_canonical(configuration) if type(configuration) is InventoryApplicationConfiguration else
+                              accumulation_canonical(configuration) if self.accumulation
                               else canonical(configuration))
         self._programs, self._events = compile_handlers(self.configuration)
     def movements(self, document):

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {APPLICATION_PROTOCOL,ApplicationClient,validateApplicationReply} from '../src/client.mjs';
-import {mountApplication} from '../src/app.mjs';
+import {mountApplication} from './application-fixtures.mjs';
 import {environment,all,buttons} from '../../form/test/fake-dom.mjs';
 import {state,reply,field,deferred} from '../../form/test/fixtures.mjs';
 const snapshot = (extra = {}) => ({kind:'application',lifecycle:'forms',messages:[],exitWarning:'',title:'Configuration',entries:[{id:1,title:'Welcome',kind:'form'},{id:2,title:'Details',kind:'form'}],sessions:[],active:null,uncertain:false,catalog:null,...extra});

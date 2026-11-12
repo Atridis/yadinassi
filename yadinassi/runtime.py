@@ -1,4 +1,5 @@
 from weakref import WeakValueDictionary
+from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -905,6 +906,12 @@ class Interpreter:
             return DATE_FRACTIONS
         if name in ("режимокругления", "roundmode"):
             return ROUND_MODES
+        if name in ('questiondialogmode', 'режимдиалогавопрос'):
+            from .form_dialogs import QUESTION_DIALOG_MODES
+            return QUESTION_DIALOG_MODES
+        if name in ('dialogreturncode', 'кодвозвратадиалога'):
+            from .form_dialogs import DIALOG_RETURN_CODES
+            return DIALOG_RETURN_CODES
         if name in ("форматдатыjson", "jsondateformat"):
             return JSON_DATE_FORMATS
         if name in ("вариантзаписидатыjson", "jsondatewritingvariant"):
@@ -1125,6 +1132,12 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        from .value_lists import _ChooseItemMarker
+        choosing = type(function.function) is _ChooseItemMarker
+        if choosing:
+            if self._configuration_runtime is None:
+                raise ValueError('ShowChooseItem requires an application-owned client dispatch')
+            self._configuration_runtime.require_value_selection(self)
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
@@ -1187,6 +1200,8 @@ class Interpreter:
             else:
                 value = (yield from self._visit(argument))
             values.append(value)
+        if choosing:
+            return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
@@ -1299,7 +1314,57 @@ class Interpreter:
         # operation/error-dialog protocol. Never silently discard a handler.
         if error_name is not None or error_module is not None:
             raise ValueError("Обработчик ошибки ОписаниеОповещения пока не поддерживается")
+        target = self._capture_form_callback(module)
+        if target is not None:
+            return BSLCallbackDescription(name, module, additional, _form_target=target)
         return BSLCallbackDescription(name, self._callback_module(module), additional)
+
+    def _capture_form_callback(self, receiver):
+        # Only the owned form interpreter overrides this closed enrollment seam.
+        return None
+
+    def callback_target(self, description, *, form_arity=2):
+        """Validate a value capability without executing or creating source."""
+        if type(form_arity) is not int or form_arity not in (1, 2):
+            raise ValueError('unsupported sealed form callback arity')
+        self._require_callback_context()
+        if type(description) is not BSLCallbackDescription:
+            raise TypeError('ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения')
+        from .callbacks import _FormCallbackTarget
+        target = description._form_target
+        if target is not None:
+            if type(target) is not _FormCallbackTarget or description.module is not target.receiver:
+                raise ValueError('invalid form callback capability')
+            owner = target.require(self)
+            if type(description.procedure_name) is not str or not description.procedure_name:
+                raise ValueError('callback procedure required')
+            routine = owner.routines.get(description.procedure_name.casefold())
+            if (routine is None or not routine.exported or routine.is_function or routine.is_async
+                    or routine.is_dual or not routine.module_context or routine.execution_context != 'client'
+                    or len(routine.parameters) != form_arity):
+                raise ValueError('form completion requires an exported synchronous client procedure with the granted arity')
+            return routine, owner
+        module = self._callback_module(description.module)
+        if module is None or not description.procedure_name:
+            raise ValueError('ОписаниеОповещения: не заданы имя процедуры и модуль')
+        routine = module.routine(description.procedure_name)
+        if routine.execution_context != 'client':
+            raise ValueError('Обработчик оповещения должен выполняться на клиенте')
+        return routine, module.interpreter
+
+    def dispatch_callback(self, description, result, token, *, result_argument=True):
+        """Shared value-based dispatch; host callers still own event admission."""
+        if type(result_argument) is not bool:
+            raise ValueError('explicit callback argument contract required')
+        routine, owner = self.callback_target(description, form_arity=2 if result_argument else 1)
+        if not result_argument and description._form_target is None:
+            raise ValueError('one-argument completion requires a sealed form target')
+        if description._form_target is not None:
+            if not owner._form_session._busy or owner._form_session.interpreter is not self:
+                raise ValueError('form callback requires its owning trusted event')
+        values = ([result] if result_argument else []) + [description.additional_parameters]
+        arguments = [ast.Literal(token, value) for value in values]
+        return (yield from self.call_routine(routine, arguments, owner, require_value=False))
 
     def _run_callback(self, node):
         self._require_callback_context()
@@ -1310,21 +1375,7 @@ class Interpreter:
         result = None
         if len(node.arguments) == 2 and not isinstance(node.arguments[1], ast.OmittedArgument):
             result = yield from self._visit(node.arguments[1])
-        if type(description) is not BSLCallbackDescription:
-            raise TypeError("ВыполнитьОбработкуОповещения: ожидается ОписаниеОповещения")
-        module = self._callback_module(description.module)
-        if module is None or not description.procedure_name:
-            raise ValueError("ОписаниеОповещения: не заданы имя процедуры и модуль")
-        routine = module.routine(description.procedure_name)
-        if routine.execution_context != "client":
-            raise ValueError("Обработчик оповещения должен выполняться на клиенте")
-        # Feed already evaluated values into ordinary routine dispatch. No caller
-        # variable alias is manufactured; shared objects keep normal identity.
-        # The same path owns Export, arity/defaults, frames, errors and Async.
-        arguments = [ast.Literal(node.token, result),
-                     ast.Literal(node.token, description.additional_parameters)]
-        return (yield from self.call_routine(routine, arguments, module.interpreter,
-                                            require_value=False))
+        return (yield from self.dispatch_callback(description, result, node.token))
 
     def known_receiver(self, node: ast.Node) -> object:
         """Read explicit receiver storage only, never factories or arbitrary fields."""
@@ -1535,6 +1586,10 @@ class Interpreter:
             promise = self._scheduler.start(owner._async_body(function, bindings),
                                             procedure=not function.is_function)
             return promise if function.is_function else None
+        input_call = (nullcontext() if self._configuration_runtime is None else
+                      self._configuration_runtime.input_call(self, owner,
+                          not crossing and caller_side == 'client' and function.execution_context == 'client'
+                          and function.module_context))
         previous = owner.locals
         # Fresh server module initialization precedes formal parameter storage.
         # One cleanup boundary encloses BOTH initializer and routine execution.
@@ -1544,26 +1599,27 @@ class Interpreter:
         from .database_transactions import admission
         with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                if crossing:
-                    for initializer in owner.server_initializers:
-                        yield from owner.block(initializer.body)
-                    owner.locals = bindings
-                result = None
-                try:
-                    (yield from owner.block(function.body))
-                except _Return as returned:
-                    result = returned.value
-                if crossing:
-                    # Validate the entire outgoing packet before touching caller
-                    # storage. Escaping errors never reach this normal-return path.
-                    packet = self._copy_context_packet(
-                        [result] + [bindings[name] for name, _ in copyback])
-                    result = packet[0]
-                    # Every output/result gets an independent per-occurrence copy.
-                    # Publish only after the whole packet validates and allocates.
-                    for (_, reference), value in zip(copyback, packet[1:]):
-                        reference.set(value)
-                return result
+                with input_call:
+                    if crossing:
+                        for initializer in owner.server_initializers:
+                            yield from owner.block(initializer.body)
+                        owner.locals = bindings
+                    result = None
+                    try:
+                        (yield from owner.block(function.body))
+                    except _Return as returned:
+                        result = returned.value
+                    if crossing:
+                        # Validate the entire outgoing packet before touching caller
+                        # storage. Escaping errors never reach this normal-return path.
+                        packet = self._copy_context_packet(
+                            [result] + [bindings[name] for name, _ in copyback])
+                        result = packet[0]
+                        # Every output/result gets an independent per-occurrence copy.
+                        # Publish only after the whole packet validates and allocates.
+                        for (_, reference), value in zip(copyback, packet[1:]):
+                            reference.set(value)
+                    return result
             finally:
                 owner._module_context_stack.pop()
                 owner._context_stack.pop()

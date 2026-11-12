@@ -75,10 +75,17 @@ def admit(connection,database_id,catalogs,documents,*,validate_rows=False):
     for path,kind,raw,digest in connection.execute('SELECT path,kind,content,sha256 FROM configuration_file'):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
         files[path]=raw
-    try:config=import_inventory_configuration(files,inventory_runtime=PROFILE)
-    except (ValueError,TypeError):raise BackendError('integrity') from None
     marker=connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
-    if marker!=[(1,PROFILE,config.source_digest)] or config.documents!=documents or config.catalogs!=catalogs:raise BackendError('integrity')
+    if len(marker)!=1 or marker[0][0]!=1:raise BackendError('integrity')
+    try:
+        if marker[0][1]==PROFILE:
+            config=import_inventory_configuration(files,inventory_runtime=PROFILE)
+        else:
+            from .configuration_inventory_application import PROFILE as UI_PROFILE, import_inventory_application
+            if marker[0][1]!=UI_PROFILE:raise BackendError('integrity')
+            config=import_inventory_application(files,inventory_runtime=UI_PROFILE)
+    except (ValueError,TypeError):raise BackendError('integrity') from None
+    if marker!=[(1,config.profile,config.source_digest)] or config.documents!=documents or config.catalogs!=catalogs:raise BackendError('integrity')
     info=connection.execute('SELECT configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
     if info!=(str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
     if connection.execute('SELECT COUNT(*) FROM accumulation_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')
@@ -104,9 +111,21 @@ def admit(connection,database_id,catalogs,documents,*,validate_rows=False):
 
 
 def create(cls,path,configuration):
-    s=_storage()
+    # The original public core creator remains exact-core only.
     try:config=canonical(configuration)
     except (ValueError,TypeError):raise BackendError('unsupported') from None
+    return _create(cls,path,config)
+
+
+def create_application(cls,path,configuration):
+    from .configuration_inventory_application import canonical as application_canonical
+    try:config=application_canonical(configuration)
+    except (ValueError,TypeError):raise BackendError('unsupported') from None
+    return _create(cls,path,config)
+
+
+def _create(cls,path,config):
+    s=_storage()
     _preflight_config(config)
     raw=os.fspath(path)
     if type(raw) is not str or raw.startswith(('file:','//','\\\\')) or '\x00' in raw:raise BackendError('invalid_input')
@@ -139,7 +158,7 @@ def create(cls,path,configuration):
             connection.execute('INSERT INTO accumulation_register_schema VALUES(?,?)',(str(schema.identity),s._json(schema_data(schema))))
             connection.executemany('INSERT INTO accumulation_register_document VALUES(?,?)',[(str(schema.identity),str(doc)) for doc in schema.recorder_documents])
         for path,content in config.files:connection.execute('INSERT INTO configuration_file VALUES(?,?,?,?)',(path,'module' if path.endswith('.bsl') else 'xml',content,hashlib.sha256(content).hexdigest()))
-        connection.execute('INSERT INTO inventory_profile VALUES(1,?,?)',(PROFILE,config.source_digest))
+        connection.execute('INSERT INTO inventory_profile VALUES(1,?,?)',(config.profile,config.source_digest))
         for ddl in s.transaction_profile.profile_index_ddls(7,config.catalogs,layout):connection.execute(ddl)
         connection.execute('PRAGMA application_id=%d'%s._APPLICATION_ID);connection.execute('PRAGMA user_version=15')
         admit(connection,database_id,config.catalogs,config.documents,validate_rows=True)

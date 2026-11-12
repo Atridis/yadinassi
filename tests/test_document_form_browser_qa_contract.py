@@ -25,7 +25,7 @@ class DocumentBrowserContractTests(unittest.TestCase):
         for forbidden in ['--no-sandbox','chromiumSandbox:false','executablePath:','sudo ','sysctl ']:self.assertNotIn(forbidden,self.source)
 
     def test_closed_source_and_fresh_database(self):
-        for text in ["'examples/configuration-document-forms'","'--document-objects'","'--f'",
+        for text in ["'examples/configuration-document-forms'","'--ui'","'--f'",
             "'tests/test_document_form_browser_qa_contract.py'","'tracked_checkout_dirty'","'source_binding_changed'",
             "git('rev-parse','HEAD^{tree}')"]:self.assertIn(text,self.source)
         self.assertIn('SQLiteCatalogBackend.create_document_forms',self.fixture)
@@ -70,3 +70,10 @@ class DocumentBrowserContractTests(unittest.TestCase):
         self.assertEqual([x.strip() for x in paths.splitlines()],['${{ runner.temp }}/yadinassi-document-form-browser-artifacts/'+n for n in ['result.json','manifest.json','document-new.png','document-written.png','document-reopened.png','document-independent.png','document-bounded.png']])
         for text in ['workflow_dispatch:','pull_request:','schedule:','secrets.']:self.assertNotIn(text,workflow)
         self.assertIn('permissions:\n  contents: read',workflow)
+
+    def test_stored_source_launch_has_no_external_directory_or_grant_flag(self):
+        args=self.source.split('const args=',1)[1].split(';',1)[0]
+        self.assertIn("'-m','yadinassi','--ui','--f'",args)
+        self.assertNotIn('examples/',args)
+        self.assertNotIn('--document-objects',args)
+        self.assertIn("'tests/test_sqlite_launch_snapshot.py'",self.source)

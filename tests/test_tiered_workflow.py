@@ -127,7 +127,13 @@ class TieredWorkflowTests(unittest.TestCase):
         self.assertIn("e['HEAVY_RESULT']==e['BUILD_RESULT']==expected", verdict)
 
     def test_main_jobs_have_bounded_timeouts_with_measured_headroom(self):
-        for job, minutes in (('light', 30), ('heavy', 45), ('build', 40), ('javascript', 5)):
+        import re
+        # Measured stock UI/source admission exceeds the old 30-minute cap
+        # on mac-x86. Keep other platforms and all test/coverage routing exact.
+        light = section(self.source, 'light').split('    steps:', 1)[0]
+        self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$', light, re.M),
+                         ["${{ matrix.target == 'mac-x86' && 45 || 30 }}"])
+        for job, minutes in (('heavy', 45), ('build', 40), ('javascript', 5)):
             block = section(self.source, job).split('    steps:', 1)[0]
             self.assertIn(f'    timeout-minutes: {minutes}\n', block)
 

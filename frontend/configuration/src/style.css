@@ -17,3 +17,20 @@
 .configuration-catalog tr[aria-selected="true"] { outline: none; background: #e2f1ed; }
 .configuration-catalog tr:focus { outline: 2px solid #2368b3; outline-offset: -2px; }
 @media (max-width: 850px) { .configuration-workarea.with-form { grid-template-columns: 1fr; } }
+
+.configuration-dialog { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%,-50%); width: min(540px, calc(100vw - 48px)); box-sizing: border-box; max-height: calc(100dvh - 48px); overflow: auto; background: #fff; box-shadow: 0 0 0 100vmax #18232c88; z-index: 10; }
+.configuration-dialog p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.configuration-dialog .dialog-commands { display: flex; flex-wrap: wrap; gap: 12px; }
+.configuration-dialog[data-locked="true"] { position: static; transform: none; width: auto; max-height: none; box-shadow: none; }
+
+.configuration-value-input .typed-input-body label { display: flex; gap: .75rem; align-items: center; margin: .5rem 0; overflow-wrap: anywhere; }
+.configuration-value-input .typed-input-body input[type="text"], .configuration-value-input .typed-input-body textarea { min-width: 0; width: 100%; }
+.configuration-value-input .typed-input-body [role="radiogroup"] { max-height: 45vh; overflow: auto; }
+.configuration-value-input[data-locked="true"] { position: static; max-width: none; margin-block: 1rem; }
+
+.configuration-reports { margin-top: 1.5rem; border-top: 1px solid #cbd5e1; padding-top: 1rem; overflow-x: auto; }
+.configuration-reports label { display: inline-flex; flex-direction: column; gap: .25rem; margin: .5rem .75rem .5rem 0; }
+.configuration-reports label[hidden] { display: none; }
+.configuration-reports table { border-collapse: collapse; min-width: 100%; }
+.configuration-reports td, .configuration-reports th { padding: .4rem .7rem; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: pre-wrap; }
+.configuration-reports nav { display: flex; flex-wrap: wrap; gap: .5rem; }

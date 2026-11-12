@@ -63,9 +63,10 @@ class BSLDocuments(BSLObject):
         if type(backend) is not SQLiteCatalogBackend: return None
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration
+        from .configuration_inventory_application import InventoryApplicationConfiguration
         configuration = backend.accumulation_configuration
         if configuration is None: configuration = backend.posting_configuration
-        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration): return None
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration): return None
         if self._posting_runtime is None:
             from .document_posting import PostingRuntime
             self._posting_runtime = PostingRuntime(self, configuration)
@@ -98,9 +99,10 @@ class BSLDocumentManager(BSLObject):
 
     def _assigned(self, field, value):
         from .configuration_accumulation_references import InventoryConfiguration
+        from .configuration_inventory_application import InventoryApplicationConfiguration
         from .catalog_types import BSLCatalogReference
         if (field.kind == 'catalog_ref'
-                and type(getattr(self._backend, 'accumulation_configuration', None)) is InventoryConfiguration):
+                and type(getattr(self._backend, 'accumulation_configuration', None)) in (InventoryConfiguration, InventoryApplicationConfiguration)):
             # Native inventory12 case 2: a wrong *catalog* target becomes the
             # target's typed empty value. This is assignment conversion only;
             # persisted rows, cross-database/family values and host forgeries

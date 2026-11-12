@@ -11,7 +11,9 @@ const modules = [
   ['browserAttachment','../form/src/attachment.mjs',['BROWSER_PROTOCOL', 'RESUME_KEY', 'AttachmentRefusal', 'documentInstance', 'readBrowserLaunch', 'BrowserAttachment', 'createBrowserHost']],
   ['formView','../form/src/view.mjs',['createFormView']],
   ['formApp','../form/src/app.mjs',['mountForm']],
-  ['configurationClient','src/client.mjs',['APPLICATION_PROTOCOL','validateApplicationReply','ApplicationClient']],
+  ['configurationReports','src/reports.mjs',['validReportRequest','validReportAction','validateReports','validateReportReply','reportCellText','createReportPanel']],
+  ['configurationInputs','src/inputs.mjs',['INPUT_CAPABILITY','inputField','validateInputs','validInputAnswer']],
+  ['configurationClient','src/client.mjs',['APPLICATION_PROTOCOL','DIALOG_CAPABILITY','validateApplicationReply','ApplicationClient']],
   ['configurationApp','src/app.mjs',['mountApplication']],
 ];
 let bundle = '/* Yadinassi Configuration forms. MIT license: LICENSE.txt. */\n';

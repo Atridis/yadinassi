@@ -17,6 +17,7 @@ const ERROR_MESSAGES = Object.freeze({
   invalid_input: 'Enter a supported value within the field limit.',
   unavailable: 'This control is unavailable or read-only.',
   draft_hidden: 'Unsubmitted inputs are on another page. Return to that page and apply them before running this action.',
+  owned_child_open: 'Finish or close the owned form before editing its owner.',
   draft_changed: 'The host changed or removed a pending edit. Review the latest values before running the action again.',
   session_missing: 'Reopen the complete URL printed by the launcher to reconnect. The session key is not stored in this browser.',
 });
@@ -1057,17 +1058,20 @@ function createFormView(document, root, handlers) {
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
     status.textContent = model.busy ? 'Working…' : !current ? 'Not connected' : current.uncertain || model.outcomeUnknown ? 'Outcome unknown'
+      : model.transportFailed ? 'Connection lost' : model.paused ? 'Paused' : model.locked && current.lifecycle === 'open' ? 'Locked'
       : current.lifecycle === 'open' ? 'Connected' : current.lifecycle === 'cancelled' ? 'Cancelled'
       : current.lifecycle === 'failed' ? 'Failed' : 'Closed';
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
-    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted;
+    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted || Boolean(model.refreshUnavailable);
     close.disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
     lock.textContent = model.outcomeUnknown || current?.uncertain
-      ? 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      ? model.refreshUnavailable ? 'The outcome is unknown and this session is locked. Copy pending edits before leaving. Refresh and replay are unavailable.'
+        : 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      : model.refreshUnavailable ? 'Editing is locked and refresh is unavailable. Copy pending edits before leaving. No command will be retried.'
       : 'Editing is locked. Use Refresh state to read the host’s result before continuing. No command will be retried.';
     empty.hidden = Boolean(current && current.kind !== 'closed' && current.items.some(item => item.visible));
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
@@ -1207,9 +1211,10 @@ function mountForm(environment, root, options = {}) {
     reference: options.onReference ? action => run('reference', action) : null,
     change: name => run('change', name), select: (name, row) => run('select', name, row), action: (event, name) => run(event, name), refresh: () => refresh(),
   });
-  const paint = () => view.render({paused: Boolean(options.referenceActive?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
+  const paint = () => view.render({paused: Boolean(options.referenceActive?.() || options.businessBlocked?.()), snapshot: client?.snapshot || null, busy, error, connected: Boolean(token),
     locked: client?.locked ?? true, outcomeUnknown: client?.outcomeUnknown || false,
-    transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false});
+    transportFailed: client?.transportFailed || false, exhausted: client?.exhausted || false,
+    refreshUnavailable: Boolean(options.transport && client?.transportFailed)});
   const showError = caught => { error = caught instanceof FormError || caught?.preDispatch === true ? caught.message : new FormError('transport').message; };
   const finish = () => {
     busy = false; paint(); options.onChange?.(); browserHost?.notify();
@@ -1259,7 +1264,7 @@ function mountForm(environment, root, options = {}) {
   }
   async function run(event, name, row) {
     if (['change', 'toggle'].includes(event) && options.isActive && !options.isActive()) return;
-    if (busy || !client || client.locked || options.referenceActive?.() && event !== 'reference') return;
+    if (busy || !client || client.locked || options.businessBlocked?.() || options.referenceActive?.() && event !== 'reference') return;
     const reference = event === 'reference';
     if (reference && !options.onReference) return;
     const referenceStart = reference && ['begin', 'clear'].includes(name?.action);
@@ -1300,6 +1305,7 @@ function mountForm(environment, root, options = {}) {
     busy = true; error = ''; paint();
     try {
       for (const change of changes) {
+        if (options.businessBlocked?.()) throw new FormError('owned_child_open');
         // An earlier handler may delete, retype or supersede a later draft. Do not
         // retarget it or run a command that silently lost part of the user's edit.
         const locator = Object.hasOwn(change, 'row') ? change : change.control;
@@ -1307,6 +1313,7 @@ function mountForm(environment, root, options = {}) {
         if (!pending.some(value => JSON.stringify(value) === JSON.stringify(change))) throw new FormError('draft_changed');
         await sendChange(change);
       }
+      if (options.businessBlocked?.()) throw new FormError('owned_child_open');
       if ((['command', 'select'].includes(event) || referenceStart) && !view.isAvailable(name)) throw new FormError('draft_changed');
       if (reference) {
         if (referenceStart) {
@@ -1332,7 +1339,7 @@ function mountForm(environment, root, options = {}) {
     finally { finish(); view.endOwnershipReconcile(); }
   }
   async function refresh() {
-    if (busy || !client || options.referenceActive?.() || options.transport && client.transportFailed) return;
+    if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
     try { await client.resync(); view.clearDrafts(); }
     catch (caught) { showError(caught); }
@@ -1351,6 +1358,18 @@ function mountForm(environment, root, options = {}) {
   });
   const hasPending = () => busy || Boolean(client?.snapshot?.dirty || client?.snapshot?.uncertain || client?.outcomeUnknown || client?.transportFailed || view.hasDrafts());
   const lock = () => { if (client) client.transportFailed = true; error = new FormError('transport').message; paint(); };
+  // A completion is an already executed trusted host event, not a second browser
+  // request. Preserve raw drafts/recovery and consume only its exact snapshot.
+  const adoptExternal = reply => {
+    if (!client || busy || client.busy || client.locked) throw new FormError('transport');
+    error = '';
+    try { client.adopt(reply,1); }
+    catch (caught) {
+      showError(caught);
+      if (client.transportFailed || client.outcomeUnknown) throw caught;
+    }
+    paint();
+  };
   paint();
   if (browserHost?.enabled) {
     client = new FormClient(browserHost.transport); token = 'attached';
@@ -1359,7 +1378,7 @@ function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

@@ -368,17 +368,20 @@ export function createFormView(document, root, handlers) {
     title.textContent = current?.title || 'Local form'; document.title = title.textContent + ' · Yadinassi';
     panel.setAttribute('aria-busy', model.busy ? 'true' : 'false');
     status.textContent = model.busy ? 'Working…' : !current ? 'Not connected' : current.uncertain || model.outcomeUnknown ? 'Outcome unknown'
+      : model.transportFailed ? 'Connection lost' : model.paused ? 'Paused' : model.locked && current.lifecycle === 'open' ? 'Locked'
       : current.lifecycle === 'open' ? 'Connected' : current.lifecycle === 'cancelled' ? 'Cancelled'
       : current.lifecycle === 'failed' ? 'Failed' : 'Closed';
     status.className = 'badge ' + (current?.uncertain || model.outcomeUnknown ? 'unsafe' : active ? 'connected' : '');
     revision.textContent = current ? 'Revision ' + current.revision : 'Local session';
-    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted;
+    refresh.disabled = model.paused || model.busy || !model.connected || model.exhausted || Boolean(model.refreshUnavailable);
     close.disabled = recovery.size > 0 || model.paused || model.busy || model.locked || !active;
     close.hidden = !current || current.kind === 'closed';
     error.textContent = model.error || ''; error.hidden = !model.error;
     lock.hidden = !(model.outcomeUnknown || current?.uncertain || model.transportFailed);
     lock.textContent = model.outcomeUnknown || current?.uncertain
-      ? 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      ? model.refreshUnavailable ? 'The outcome is unknown and this session is locked. Copy pending edits before leaving. Refresh and replay are unavailable.'
+        : 'This session is locked because the host cannot determine the outcome. Refresh can inspect state but cannot unlock or repeat the action.'
+      : model.refreshUnavailable ? 'Editing is locked and refresh is unavailable. Copy pending edits before leaving. No command will be retried.'
       : 'Editing is locked. Use Refresh state to read the host’s result before continuing. No command will be retried.';
     empty.hidden = Boolean(current && current.kind !== 'closed' && current.items.some(item => item.visible));
     empty.textContent = !current ? (model.busy ? 'Connecting to the local host…' : 'Open the complete launch URL to attach to a form.')
