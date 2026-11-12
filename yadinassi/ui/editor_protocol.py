@@ -12,7 +12,7 @@ from .protocol import (UIError, MAX_COUNTER, bounded_text, counter, decode_line,
 
 PROTOCOL = 'yadinassi-editor/0'
 _EVENTS = {'checkCard': {'reference'}, 'selectCatalog': {'catalog'}, 'create': set(), 'openCard': {'reference'},
-           'change': {'control', 'value'}, 'command': {'control'}, 'closeCard': set(),
+           'referenceChoice': {'action'}, 'change': {'control', 'value'}, 'command': {'control'}, 'closeCard': set(),
            'page': {'offset', 'limit'}, 'filterRecords': {'query', 'order'}, 'refreshRecords': set(), 'close': set(), 'addRow': {'section'},
            'deleteRow': {'section', 'row'}, 'changeRow': {'section', 'row', 'value'}}
 
@@ -35,7 +35,35 @@ def validate_request(value):
             raise UIError('invalid_message')
         counter(params['baseRevision'])
         if event == 'selectCatalog': uuid_text(params['catalog'], nonzero=True)
+        elif event == 'referenceChoice':
+            action = params['action']
+            if type(action) is not dict or type(action.get('action')) is not str:
+                raise UIError('invalid_message')
+            kind = action['action']
+            shapes = {'begin': {'control','section','row'}, 'search': {'ticket','query'},
+                      'page': {'ticket','cursor'}, 'apply': {'ticket','choice'},
+                      'cancel': {'ticket'}, 'clear': {'ticket'}, 'refresh': {'ticket'}}
+            if kind not in shapes or set(action) != {'action'} | shapes[kind]:
+                raise UIError('invalid_message')
+            if kind == 'begin':
+                if action['control'] is not None:
+                    bounded_text(action['control'],128)
+                    if action['section'] is not None or action['row'] is not None: raise UIError('invalid_message')
+                else:
+                    bounded_text(action['section'],512);uuid_text(action['row'],nonzero=True)
+            else:
+                import re
+                if type(action['ticket']) is not str or not re.fullmatch(r'[0-9a-f]{32}',action['ticket']):
+                    raise UIError('invalid_message')
+                if kind == 'search':
+                    bounded_text(action['query'],512)
+                    if len(action['query']) > 128: raise UIError('invalid_message')
+                elif kind == 'page':
+                    if type(action['cursor']) is not str or not re.fullmatch(r'legacy-reference-page-[0-9a-f]{32}',action['cursor']): raise UIError('invalid_message')
+                elif kind == 'apply':
+                    if type(action['choice']) is not str or not re.fullmatch(r'[0-9a-f]{32}',action['choice']): raise UIError('invalid_message')
         elif event in ('openCard', 'checkCard'):
+
             if event != 'checkCard' or params['reference'] is not None: decode_value(params['reference'])
         elif event in ('change', 'command'):
             bounded_text(params['control'], 128)
