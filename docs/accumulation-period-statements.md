@@ -4,8 +4,9 @@ The core query surface supports `BalanceAndTurnovers` / `ОстаткиИОбо�
 existing Balance accumulation registers. Two required named Date parameters
 select the interval. An optional literal `Day` / `День` or `Month` / `Месяц`
 adds a `Period` / `Период` column. The same two periodicities are available on
-`Turnovers` / `Обороты`. There is no Auto, Recorder, condition argument, omitted
-boundary or completion-mode argument in this closed subset.
+`Turnovers` / `Обороты`. There is no Auto, Recorder, omitted boundary or explicit completion-mode
+argument. The separate [typed source-condition surface](accumulation-query-conditions.md)
+adds CatalogRef dimension conditions and native optional-slot positions.
 
 ```bsl
 Q = New Query("SELECT S.Product,S.Warehouse,S.QuantityOpeningBalance,S.QuantityReceipt,S.QuantityExpense,S.QuantityTurnover,S.QuantityClosingBalance FROM AccumulationRegister.Stock.BalanceAndTurnovers(&StartAt,&EndAt) AS S");

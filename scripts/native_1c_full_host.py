@@ -1771,7 +1771,8 @@ def windows_fingerprints(root: Path) -> dict[str, str]:
 def repository_provenance(root: Path) -> dict:
     def git(*args):
         code, stdout, stderr = bounded_child(["git", "-C", str(root), *args], root,
-                                             stdout_limit=8192, stderr_limit=8192)
+                                             stdout_limit=(65536 if args[0] == "ls-files" else 8192),
+                                             stderr_limit=8192)
         if code != 0 or stderr:
             raise FullError("repository_identity_unverified")
         return stdout.decode("ascii").strip()

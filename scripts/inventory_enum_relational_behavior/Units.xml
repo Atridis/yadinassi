@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+<Enum uuid="5c2f95f3-3eb7-57c1-bd59-c081c75566d7"><InternalInfo>
+<xr:GeneratedType name="EnumRef.Units" category="Ref"><xr:TypeId>9a374c6b-99a7-5a2a-8cba-15194ad922a5</xr:TypeId><xr:ValueId>3b4df97e-6fd7-596e-b74d-df207c55a407</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="EnumManager.Units" category="Manager"><xr:TypeId>732d3e4c-c6bb-5de0-adab-82a96e31735a</xr:TypeId><xr:ValueId>b1629882-462c-55aa-9498-59175b5dfb3b</xr:ValueId></xr:GeneratedType>
+<xr:GeneratedType name="EnumList.Units" category="List"><xr:TypeId>6e81a3af-69fa-5cee-b22b-93dd942c9858</xr:TypeId><xr:ValueId>22996dce-f840-5e0e-9040-9d52168c6071</xr:ValueId></xr:GeneratedType>
+</InternalInfo><Properties><Name>Units</Name><Synonym/><Comment/><UseStandardCommands>false</UseStandardCommands><StandardAttributes/><Characteristics/><QuickChoice>true</QuickChoice><ChoiceMode>BothWays</ChoiceMode><DefaultListForm/><DefaultChoiceForm/><AuxiliaryListForm/><AuxiliaryChoiceForm/><ListPresentation/><ExtendedListPresentation/><Explanation/><ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput></Properties><ChildObjects>
+<EnumValue uuid="71daafd9-fce0-5312-a4f6-951fdb6244af"><Properties><Name>Piece</Name><Synonym><v8:item><v8:lang>en</v8:lang><v8:content>Piece</v8:content></v8:item></Synonym><Comment/></Properties></EnumValue>
+<EnumValue uuid="2e6e70f6-2dcc-5acd-b4b0-8c81e1b640b9"><Properties><Name>Pack</Name><Synonym></Synonym><Comment/></Properties></EnumValue>
+</ChildObjects></Enum></MetaDataObject>

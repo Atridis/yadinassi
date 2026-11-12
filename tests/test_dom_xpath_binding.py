@@ -71,3 +71,16 @@ class XPathBindingTests(unittest.TestCase):
         with self.assertRaises(ValueError):v.set_member('InvalidIteratorState',True)
         vm=Interpreter(lambda value:None)
         with self.assertRaises(Exception):vm.execute('V=New DOMXPathResult;')
+
+    def test_xpath_objects_and_types_have_explicit_closed_internal_codec_policy(self):
+        from yadinassi.serialization import value_to_string_internal, _UNSUPPORTED_CODEC_TYPES, _TYPE_IDS
+        from yadinassi.values import BSLType
+        d=self.doc()
+        resolver=BSLDOMNamespaceResolver(d)
+        result=d.evaluate_xpath_expression('.',d,resolver)
+        for value,kind in ((resolver,BSLType.DOM_NAMESPACE_RESOLVER),(result,BSLType.DOM_XPATH_RESULT)):
+            with self.subTest(kind=kind):
+                self.assertIn(kind,_UNSUPPORTED_CODEC_TYPES)
+                self.assertNotIn(kind,_TYPE_IDS)
+                for item in (value,kind):
+                    with self.assertRaises(ValueError):value_to_string_internal(item)

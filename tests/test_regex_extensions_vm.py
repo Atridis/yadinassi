@@ -57,5 +57,5 @@ class RegexExtensionsVMTests(unittest.TestCase):
         with patch('re.compile',side_effect=AssertionError('host regex forbidden')),patch('re.search',side_effect=AssertionError('host regex forbidden')):
             self.assertTrue(api.str_like('aA',r'(?i)(a)(?=a)\1'))
     def test_matching_function_does_not_recurse(self):
-        source=Path(api.__file__).with_name('regex_vm.py').read_text();tree=ast.parse(source);run=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run')
+        source=Path(api.__file__).with_name('regex_vm.py').read_text(encoding='utf-8');tree=ast.parse(source);run=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run')
         self.assertFalse(any(isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='run' for n in ast.walk(run)))

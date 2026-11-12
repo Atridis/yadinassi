@@ -1,0 +1,70 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" version="2.20" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema"><AccumulationRegister uuid="9ea1e3ef-4d1e-5933-b5ff-923cb2084491"><Properties><Name>Stock</Name>
+			<RegisterType>Balance</RegisterType>
+			<EnableTotalsSplitting>false</EnableTotalsSplitting>
+			</Properties><ChildObjects><Resource uuid="46e1434b-0ff9-5af2-a527-ba6dfb4a563a"><Properties><Name>Amount</Name>
+					<Type>
+						<v8:Type>xs:decimal</v8:Type>
+						<v8:NumberQualifiers>
+							<v8:Digits>10</v8:Digits>
+							<v8:FractionDigits>2</v8:FractionDigits>
+							<v8:AllowedSign>Any</v8:AllowedSign>
+						</v8:NumberQualifiers>
+					</Type>
+					</Properties></Resource><Resource uuid="1509e744-4c5a-5136-b92e-9bc88a4cea15"><Properties><Name>Quantity</Name>
+					<Type>
+						<v8:Type>xs:decimal</v8:Type>
+						<v8:NumberQualifiers>
+							<v8:Digits>10</v8:Digits>
+							<v8:FractionDigits>3</v8:FractionDigits>
+							<v8:AllowedSign>Any</v8:AllowedSign>
+						</v8:NumberQualifiers>
+					</Type>
+					</Properties></Resource><Attribute uuid="e4e876dc-d1eb-5eb5-9b7b-6367f048cb0a"><Properties><Name>Note</Name>
+					<Type>
+						<v8:Type>xs:string</v8:Type>
+						<v8:StringQualifiers>
+							<v8:Length>32</v8:Length>
+							<v8:AllowedLength>Variable</v8:AllowedLength>
+						</v8:StringQualifiers>
+					</Type>
+					</Properties></Attribute><Dimension uuid="277c63d2-4e4b-5746-9237-e74144a8b8d9"><Properties><Name>Product</Name>
+					<Type><v8:Type>cfg:CatalogRef.Products</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension><Dimension uuid="a609e70a-102e-5228-b1bf-556d1da7a164"><Properties><Name>Warehouse</Name>
+					<Type><v8:Type>cfg:CatalogRef.Warehouses</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension><Dimension uuid="976a068c-3177-5cf9-9d95-640820057040">
+				<Properties>
+					<Name>Unit</Name>
+					<Synonym />
+					<Comment />
+					<Type><v8:Type>cfg:EnumRef.Units</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties>
+			</Dimension>
+<Attribute uuid="6547f993-cc68-5277-b59b-ba19752ee912">
+				<Properties>
+					<Name>State</Name>
+					<Synonym />
+					<Comment />
+					<Type><v8:Type>cfg:EnumRef.States</v8:Type></Type>
+					</Properties>
+			</Attribute>
+<Dimension uuid="57fa9196-e886-56c7-83eb-275cee0f1488"><Properties><Name>Batch</Name>
+					<Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>32</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension>
+<Dimension uuid="36b37068-5784-5b26-9127-434f138b0291"><Properties><Name>Grade</Name>
+					<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>10</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension>
+<Dimension uuid="07b824d5-24db-54b5-8b85-467370a5b308"><Properties><Name>Reserved</Name>
+					<Type><v8:Type>xs:boolean</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension>
+<Dimension uuid="16f6a68f-b519-5465-9ad2-aec03b9c2c93"><Properties><Name>LotDate</Name>
+					<Type><v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension>
+</ChildObjects></AccumulationRegister></MetaDataObject>

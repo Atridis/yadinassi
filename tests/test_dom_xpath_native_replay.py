@@ -6,7 +6,7 @@ import unittest
 from yadinassi import Interpreter
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE = json.loads((ROOT/'tests/fixtures/native_dom_xpath_43093418847.json').read_text())
+FIXTURE = json.loads((ROOT/'tests/fixtures/native_dom_xpath_43093418847.json').read_text(encoding='utf-8'))
 SOURCE = (ROOT/'scripts/dom_xpath_behavior/observe.bsl').read_bytes()
 DEFINITIONS = SOURCE.decode().split('For CaseNo = 1 To 12 Do')[0]
 

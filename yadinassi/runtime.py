@@ -463,6 +463,8 @@ class Interpreter:
         if metadata is None:
             self._metadata._catalog_managers = self._catalogs
             self._metadata._document_managers = self._documents
+            from .inventory_enum_runtime import bind as bind_storage_enums
+            bind_storage_enums(self,self._metadata)
 
     def cancel_pending(self):
         """Cancel current cooperative work without retiring the module family."""
