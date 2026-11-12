@@ -81,7 +81,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         _enum_scope.require_current()
     elif _owned_view is not None:
         raise TypeError('A borrowed package view requires an enum report scope')
-    parameters = (_enum_scope.snapshot_parameters(parameters) if _enum_scope is not None
+    parameters = (_enum_scope.validate_frozen_parameters(parameters) if _enum_scope is not None
                   else snapshot_parameters(parameters))
     if manager is None: manager = BSLTempTablesManager()
     if type(manager) is not BSLTempTablesManager:

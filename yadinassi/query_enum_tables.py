@@ -106,6 +106,8 @@ def execute_report(statements, catalogs, parameters, manager, documents, informa
     for node in syntax.walk_nodes(statements):
         if type(node) in (syntax.Select, syntax.Source) and node.family == 'information_register':
             raise ValueError('Information-register sources remain outside the exact enum profile')
+        if type(node) in (syntax.Select, syntax.Source) and node.virtual_condition is not None:
+            _preflight_virtual_condition(node.virtual_condition)
         if type(node) is syntax.Hierarchy:
             raise ValueError('Enum report hierarchy queries remain outside this profile')
         if (type(node) is syntax.Predicate and node.kind == 'not'
@@ -174,3 +176,22 @@ def _preflight_parameters(owner, catalogs, parameters):
             elif type(value) is _ParameterList and type(member) is BSLDocumentReference:
                 raise TypeError('Document-reference lists remain outside enum reports')
     return frozen
+
+
+def _preflight_virtual_condition(node):
+    """Cheap syntax/work bound only; field/domain checks use fresh metadata."""
+    from . import query_parser as syntax
+    from .accumulation_movements import MAX_DIMENSIONS
+    pending, count = [(node, 0)], 0
+    while pending:
+        part, depth = pending.pop()
+        if depth > 16:
+            raise ValueError('Virtual dimension condition nesting limit exceeded')
+        if type(part) is syntax.Predicate:
+            if part.kind != 'and' or type(part.terms) is not tuple or not part.terms:
+                raise ValueError('Virtual dimension conditions support only AND')
+            pending.extend((child, depth + 1) for child in part.terms)
+        else:
+            count += 1
+            if count > MAX_DIMENSIONS:
+                raise ValueError('Virtual dimension condition term limit exceeded')

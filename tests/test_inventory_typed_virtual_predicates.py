@@ -176,7 +176,10 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             def __call__(self,*a):touched.append('call')
             def __eq__(self,other):touched.append('eq');return True
             def __hash__(self):touched.append('hash');return 1
-        for value in (self.w,replace(self.p,read_member=Hook()),replace(self.p,metadata=object())):
+        with patch('yadinassi.accumulation_queries.load', side_effect=AssertionError('no source scan')):
+            with self.assertRaises((TypeError,ValueError,BackendError)): self.report('Product IN (&V)',V=array(self.w))
+        self.assertIsNone(self.context.backend._active)
+        for value in (replace(self.p,read_member=Hook()),replace(self.p,metadata=object())):
             with patch.object(self.context.backend,'begin_query_read',side_effect=AssertionError('no query lease')):
                 with self.assertRaises((TypeError,ValueError,BackendError)):self.report('Product IN (&V)',V=array(value))
         self.assertEqual(touched,[])
@@ -186,9 +189,11 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             with self.assertRaises((TypeError,ValueError)):self.report('Unit IN (&V)',V=value)
 
     def test_all_terms_bound_and_limits_remain_closed(self):
+        with patch('yadinassi.accumulation_queries.load',side_effect=AssertionError('no source scan')):
+            with self.assertRaises(ValueError):self.report('Unit IN (&Empty) AND Missing=&U',Empty=array())
+            self.assertIsNone(self.context.backend._active)
         with patch.object(self.context.backend,'begin_query_read',side_effect=AssertionError('no query lease')):
-            for condition in ('Unit IN (&Empty) AND Missing=&U',' AND '.join(['Unit=&U']*17)):
-                with self.assertRaises(ValueError):self.report(condition,Empty=array())
+            with self.assertRaises(ValueError):self.report(' AND '.join(['Unit=&U']*17))
 
     def test_query_scalar_bounds_not_storage_qualifier_adjustment(self):
         for value in ('x'*4097,Decimal('NaN'),Decimal('1e99')):
@@ -206,10 +211,12 @@ class TypedVirtualRuntimeTests(unittest.TestCase):
             db.execute('UPDATE accumulation_movement SET values_json=? WHERE record_id=?',('[]',str(key.record_id)))
         with self.assertRaises((BackendError,ValueError)):self.report('Unit=&U')
 
-    def test_bare_ordinary_membership_and_packages_remain_refused(self):
-        for text in ('SELECT Unit FROM Catalog.Products WHERE Unit IN &V',
-                'SELECT QuantityBalance FROM '+REG+'Balance(&At,Unit IN (&V));SELECT Unit FROM Catalog.Products'):
-            with self.assertRaises(ValueError):self.query(text,V=array(self.u)).execute()
+    def test_bare_membership_refused_and_typed_package_composes(self):
+        with self.assertRaises(ValueError):
+            self.query('SELECT Unit FROM Catalog.Products WHERE Unit IN &V',V=array(self.u)).execute()
+        text = 'SELECT QuantityBalance FROM '+REG+'Balance(&At,Unit IN (&V));SELECT Unit FROM Catalog.Products'
+        self.assertEqual(self.query(text,V=array(self.u)).execute()._rows,
+                         self.query('SELECT Unit FROM Catalog.Products').execute()._rows)
 
     def test_legacy_profiles_do_not_gain_virtual_in(self):
         from yadinassi.configuration_accumulation_references import PROFILE as LEGACY
