@@ -13,6 +13,11 @@ class ProfileBindingTests(unittest.TestCase):
     def config(self):
         return import_configuration(module_files([CLIENT]), module_runtime=MODULE_RUNTIME)
 
+    def app(self):
+        app=ConfigurationApplication(self.config())
+        self.addCleanup(app.close,force=True)
+        return app
+
     def test_closed_configuration_admission(self):
         self.assertEqual(validate_configuration_compilation_profile('standalone'), 'standalone')
         for value in ('managed-thick-file','thin','server','',None,True,{}):
@@ -60,16 +65,17 @@ class ProfileBindingTests(unittest.TestCase):
             compile_session_module(b'',compilation_profile='managed-thick-file')
 
     def test_root_profile_bound(self):
-        app=ConfigurationApplication(self.config())
+        app=self.app()
         self.assertEqual(app.interpreter.compilation_profile,app.configuration.compilation_profile)
         self.assertEqual(app.interpreter._logical_side,'client')
 
     def test_from_files_explicit_profile(self):
         app=ConfigurationApplication.from_files(module_files([CLIENT]),compilation_profile='standalone')
+        self.addCleanup(app.close,force=True)
         self.assertEqual(app.configuration.compilation_profile,'standalone')
 
     def test_factory_profile_cannot_override(self):
-        app=ConfigurationApplication(self.config())
+        app=self.app()
         for value in ('managed-thick-file',True,None):
             with self.subTest(value=value),self.assertRaises((TypeError,ValueError)):
                 app._factory_compilation_profile({'compilation_profile':value})
@@ -85,13 +91,13 @@ class ProfileBindingTests(unittest.TestCase):
 
     def test_bound_child_cannot_change_profile(self):
         from yadinassi.runtime import Interpreter
-        app=ConfigurationApplication(self.config())
+        app=self.app()
         child=Interpreter(lambda value:None,family_owner=app.interpreter,
                           compilation_profile='managed-thick-file')
         with self.assertRaises(ValueError):app.bind_interpreter(child)
 
     def test_actual_child_inherits_profile(self):
-        app=ConfigurationApplication(self.config())
+        app=self.app()
         child=app.interpreter_factory(lambda value:None)
         self.assertEqual(child.compilation_profile,app.interpreter.compilation_profile)
         self.assertIs(child._family_owner,app.interpreter)
