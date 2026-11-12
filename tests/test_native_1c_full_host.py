@@ -682,6 +682,51 @@ class OrchestrationTests(SyntheticFilesystemCase):
 
 
 class ProvenanceTests(SyntheticFilesystemCase):
+    def test_large_git_inventory_has_separate_finite_budget_and_exact_membership(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "yadinassi").mkdir()
+            names = [f"yadinassi/module_{i:03d}_long_inventory_name.py" for i in range(240)]
+            helpers = ["scripts/native_infobase_fixture.py", "scripts/native_1c_tree_load_contract.py",
+                       "scripts/native_1c_tree_move_contract.py", "scripts/native_1c_tree_total_contract.py"]
+            for name in names:
+                (root / name).write_text("# owned", encoding="utf-8")
+            payload = ("\n".join(names + helpers) + "\n").encode("ascii")
+            self.assertGreater(len(payload), 8192)
+            self.assertLess(len(payload), 65536)
+            state = {"payload": payload}
+            def git(args, cwd, **limits):
+                command = args[3:]
+                self.assertEqual(limits["stderr_limit"], 8192)
+                self.assertEqual(limits["stdout_limit"], 65536 if command[0] == "ls-files" else 8192)
+                if command[0] == "ls-files":
+                    output = state["payload"]
+                elif command[0] == "status":
+                    output = b""
+                else:
+                    output = (b"c" if command[-1] == "HEAD^{commit}" else b"d") * 40
+                if len(output) > limits["stdout_limit"]:
+                    raise full.FullError("interpreter_output_limit")
+                return 0, output, b""
+            with mock.patch.object(full, "bounded_child", side_effect=git), mock.patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(full.repository_provenance(root), {"commit": "c" * 40, "tree": "d" * 40})
+                state["payload"] = payload + b"yadinassi/not_present.py\n"
+                with self.assertRaisesRegex(full.FullError, "repository_sources_unverified"):
+                    full.repository_provenance(root)
+                state["payload"] = b"x" * 65537
+                with self.assertRaisesRegex(full.FullError, "interpreter_output_limit"):
+                    full.repository_provenance(root)
+
+    def test_inventory_budget_inverse_rejects_mutation(self):
+        import test_native_async_fixture as history
+        source = (smoke.ROOT / "scripts/native_1c_full_host.py").read_text(encoding="utf-8")
+        restored = history.without_repository_inventory_budget(source)
+        self.assertNotEqual(restored, source)
+        self.assertEqual(history.without_repository_inventory_budget(restored), restored)
+        for mutant in (source + "\n# unexpected", source.replace("65536 if args", "131072 if args")):
+            with self.assertRaises(AssertionError):
+                history.without_repository_inventory_budget(mutant)
+
     def test_rejects_dirty_sha_mismatch_and_ignored_untracked_project_sources(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
