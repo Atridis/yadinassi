@@ -22,6 +22,9 @@ class _SourceInterpreter(Interpreter):
         self.application = application
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
+        from .source_host_session import SourceSessionCall
+        self.register_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
+                               'ПолучитьТекущийСеансИнформационнойБазы')
         self.register_function('CurrentRunMode', application.current_run_mode)
         self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
         self.register_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
@@ -120,6 +123,8 @@ class SourceApplication:
             raise TypeError('admitted ConfigurationSource required')
         if compilation_profile != 'standalone':
             raise ValueError('Запуск общего источника пока поддерживает только standalone профиль компиляции')
+        from .source_host_session import SourceHostSession
+        self.host_session = SourceHostSession(self)
         self.source = source
         self.output = output
         self.compilation_profile = compilation_profile

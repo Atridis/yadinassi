@@ -1271,7 +1271,8 @@ class Interpreter:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         from .source_constants_runtime import ConstantCall
         from .source_extensions import ExtensionCall
-        if type(function.function) in (ConstantCall, ExtensionCall):
+        from .source_host_session import SourceSessionCall
+        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall):
             return function.function.invoke(self, values)
         return function(*values)
 

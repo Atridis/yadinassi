@@ -234,3 +234,11 @@ Source-only String declarations may use `Length=0` with Variable allowed length.
 Assignments are bounded to 1,048,576 UTF-16 code units as a host resource limit,
 not truncated to that length. This opt-in does not expand the legacy database
 profile parser or invent an empty string default.
+
+The source scratch host exposes its own stable synchronous session identity via
+`GetCurrentInfoBaseSession()`. `GetBackgroundJob()` reports the real foreground
+origin as Undefined, as specified by the platform API for non-background
+sessions. It does not invent a native session number, user, authentication state
+or a native InfoBaseSession TypeOf identity. Those properties remain unavailable.
+Calls require the live owning server family and an explicitly created scratch
+database. Closed, foreign, client and asynchronous contexts are rejected.
