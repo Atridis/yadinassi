@@ -58,10 +58,23 @@ export function validateApplicationReply(reply, request, previous) {
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
+    if (!keys(catalog,['entry','version','rows',...(Object.hasOwn(catalog,'navigation')?['navigation']:[])]) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
     const kind = state.entries.find(entry => entry.id === catalog.entry).kind;
+    if (Object.hasOwn(catalog,'navigation')) {
+      const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
+      const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next']) ||
+          typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
+          !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
+          n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
+          !(doc?['date','number']:['code','description']).includes(n.order)||
+          !(n.page===1?n.previous===null:cursor(n.previous))||
+          !(n.page===n.pages?n.next===null:cursor(n.next))||(n.previous!==null&&n.previous===n.next)||
+          catalog.rows.length!==Math.min(50,Math.max(0,n.total-(n.page-1)*50))) throw new FormError('transport');
+    }
+
     const seen = new Set(), document = ['document-object','posting-document'].includes(kind), posting = kind === 'posting-document';
     for (const row of catalog.rows) {
       const fields = posting ? ['key','number','date','deletionMark','posted'] : document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
@@ -178,7 +191,7 @@ export class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -190,6 +203,15 @@ export class ApplicationClient {
       if (method === 'application.report' && !validReportRequest(params,this.state) ||
           ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
+      }
+      if (['application.catalogPage','application.catalogFilter'].includes(method)) {
+        const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order'])||
+            params.entry!==c.entry||params.snapshot!==n.snapshot||
+            (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
+              !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {
+          const error=new FormError('catalog_unavailable');error.preDispatch=true;throw error;
+        }
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||

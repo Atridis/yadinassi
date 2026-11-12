@@ -1761,10 +1761,23 @@ function validateApplicationReply(reply, request, previous) {
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
+    if (!keys(catalog,['entry','version','rows',...(Object.hasOwn(catalog,'navigation')?['navigation']:[])]) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
     const kind = state.entries.find(entry => entry.id === catalog.entry).kind;
+    if (Object.hasOwn(catalog,'navigation')) {
+      const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
+      const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next']) ||
+          typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
+          !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
+          n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
+          !(doc?['date','number']:['code','description']).includes(n.order)||
+          !(n.page===1?n.previous===null:cursor(n.previous))||
+          !(n.page===n.pages?n.next===null:cursor(n.next))||(n.previous!==null&&n.previous===n.next)||
+          catalog.rows.length!==Math.min(50,Math.max(0,n.total-(n.page-1)*50))) throw new FormError('transport');
+    }
+
     const seen = new Set(), document = ['document-object','posting-document'].includes(kind), posting = kind === 'posting-document';
     for (const row of catalog.rows) {
       const fields = posting ? ['key','number','date','deletionMark','posted'] : document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
@@ -1881,7 +1894,7 @@ class ApplicationClient {
       if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -1893,6 +1906,15 @@ class ApplicationClient {
       if (method === 'application.report' && !validReportRequest(params,this.state) ||
           ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
+      }
+      if (['application.catalogPage','application.catalogFilter'].includes(method)) {
+        const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order'])||
+            params.entry!==c.entry||params.snapshot!==n.snapshot||
+            (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
+              !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {
+          const error=new FormError('catalog_unavailable');error.preDispatch=true;throw error;
+        }
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
@@ -2035,6 +2057,7 @@ function mountApplication(environment, root, exchange = null) {
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
   picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
+  let queryEntry=null,queryBaseline='',queryDraft='';
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -2283,6 +2306,23 @@ function mountApplication(environment, root, exchange = null) {
     };
     const open = button('Open selected',actions,openSelected);
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    if (catalog.navigation) {
+      const nav=catalog.navigation;
+      if(queryEntry!==catalog.entry||queryBaseline!==nav.query){queryEntry=catalog.entry;queryBaseline=nav.query;queryDraft=nav.query;}
+      const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
+      search.addEventListener('input',()=>{queryDraft=search.value;});
+      const order=el('select');order.setAttribute('aria-label','Record order');
+      for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
+      order.value=nav.order;
+      const apply=()=>{if(!unavailable())perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:queryDraft,order:order.value});};
+      search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
+      actions.append(search,order);const filter=button('Search records',actions,apply);
+      const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
+      const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
+      previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
+      search.disabled=order.disabled=filter.disabled=unavailable();
+      const page=el('span',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching records`);page.setAttribute('aria-live','polite');actions.append(page);
+    }
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
     for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
@@ -2317,7 +2357,7 @@ function mountApplication(environment, root, exchange = null) {
       if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
-    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    catalogPanel.append(heading,actions,el('p','Records snapshot. Refresh shows external changes; Save refreshes this list without replacing other open drafts.'),table);
     if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
     paintSelection();
     workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';

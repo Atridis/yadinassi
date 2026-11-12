@@ -159,6 +159,9 @@ class ConfigurationBroker:
         self.objects = {}
         self.records = {}
         self.record_keys = {}
+        self.record_sequence = 0
+        from .record_pages import RecordPages
+        self.record_pages = RecordPages(dict(configuration.source_files))
         self.projections = {}
         self.record_context = None
         self.application = None
@@ -215,51 +218,49 @@ class ConfigurationBroker:
         return definition, context
 
     def _projection_preflight(self, entry, listing):
-        document = self.definitions[entry].document_schema is not None
-        cards = listing if document else listing.cards
-        needed = {(entry, card.key if document else card.reference) for card in cards} - self.record_keys.keys()
-        if len(cards) > 256 or len(self.record_keys) + len(needed) > 4096:
-            raise ValueError('catalog capability limit')
+        # This callback runs inside form-dispatch admission fences. Its value is
+        # only the freshly read saved-row witness, never a complete list. The
+        # complete page snapshot is acquired by the host after dispatch exits.
+        cards = listing if self.definitions[entry].document_schema is not None else listing.cards
+        if len(cards) != 1: raise ValueError('exact saved-row witness required')
+
+    def _record_projection(self, page):
+        from .protocol import CatalogRef
+        definition = self.definitions[page.entry]
+        document = definition.document_schema is not None
+        rows = []; records = {}; keys = {}
+        for row in page.rows:
+            if self.record_sequence >= 999999999: raise ValueError('record capability lifetime exhausted')
+            self.record_sequence += 1
+            key = 'record-' + str(self.record_sequence)
+            reference = row.key if document else CatalogRef(str(row.key.catalog_id), str(row.key.record_id))
+            identity = (page.entry, reference)
+            records[key] = identity; keys[identity] = key
+            if document:
+                number, date, deletion, posted = row.values
+                rows.append({'key':key,'number':number,'date':date.isoformat(sep=' '),
+                    'deletionMark':deletion, **({'posted':posted} if self.posting_application else {})})
+            else:
+                code, description, deletion = row.values
+                rows.append({'key':key,'code':code,'description':description,'deletionMark':deletion})
+        previous = self.projections.get(page.entry)
+        version = 1 if previous is None else previous['version'] + 1
+        if version > 2147483647: raise ValueError('record version lifetime exhausted')
+        navigation = {name:getattr(page,name) for name in ('snapshot','page','pages','total','query','order','previous','next')}
+        result = {'entry':page.entry,'version':version,'rows':rows,'navigation':navigation}
+        encode_line(result)
+        self.records, self.record_keys = records, keys
+        self.projections[page.entry] = result
+        return result
 
     def _records(self, entry):
-        from .catalog_view import CatalogRepository
+        self.records.clear(); self.record_keys.clear(); self.record_pages.clear()
         definition, context = self._catalog(entry)
-        document = definition.document_schema
-        if document is None:
-            repository = CatalogRepository(context.backend, own_backend=False)
-            try: listing = repository.load(str(definition.catalog_schema.identity), summary_only=bool(definition.enum_targets))
-            finally: repository.close()
-        else:
-            from ..document_backend import DocumentSelection
-            view = context.backend.begin_document_read()
-            try: listing = view.select_documents(document.identity, DocumentSelection())
-            finally: view.close()
-        try:
-            self._projection_preflight(entry, listing)
-        except ValueError:
-            return {'error': 'catalog_limit'}
-        rows = []
-        for card in (listing if document is not None else listing.cards):
-            identity = (entry, card.key if document is not None else card.reference)
-            key = self.record_keys.get(identity)
-            if key is None:
-                if len(self.record_keys) >= 4096:
-                    return {'error': 'catalog_limit'}
-                key = 'record-' + str(len(self.record_keys) + 1)
-                self.record_keys[identity] = key
-                self.records[key] = identity
-            if document is None:
-                rows.append({'key': key, 'code': card.values[0], 'description': card.values[1],
-                             'deletionMark': card.values[2]})
-            else:
-                rows.append({'key': key, 'number': card.number, 'date': card.date.isoformat(sep=' '),
-                             'deletionMark': card.deletion_mark, **({'posted': card.posted} if self.posting_application else {})})
-        previous = self.projections.get(entry)
-        version = 1 if previous is None else previous['version'] + (previous['rows'] != rows)
-        result = {'entry': entry, 'version': version, 'rows': rows}
-        encode_line(result)
-        self.projections[entry] = result
-        return result
+        previous = self.projections.get(entry, {}).get('navigation', {})
+        page = self.record_pages.capture(context, entry, catalog_schema=definition.catalog_schema,
+            document_schema=definition.document_schema, query=previous.get('query',''),
+            order=previous.get('order'), page=previous.get('page',0))
+        return self._record_projection(page)
 
     def _report_service(self):
         from ..inventory_application_reports import InventoryReports
@@ -406,6 +407,20 @@ class ConfigurationBroker:
         if operation == 'report':
             if sid: raise ValueError('report has no form session')
             return self._report(payload)
+        if operation in ('catalogPage','catalogFilter'):
+            _keys(payload, 'entry snapshot cursor' if operation=='catalogPage' else 'entry snapshot query order')
+            if sid: raise ValueError('record navigation has no form session')
+            try:
+                definition,context=self._catalog(payload['entry'])
+                current=self.projections.get(payload['entry'])
+                if (current is None or current['navigation']['snapshot']!=payload['snapshot']
+                        or self.record_pages._entry!=payload['entry'] or self.record_pages._token!=payload['snapshot']):
+                    raise ValueError('retired record snapshot')
+                page=(self.record_pages.navigate(context,payload['snapshot'],payload['cursor']) if operation=='catalogPage'
+                    else self.record_pages.filter(context,query=payload['query'],order=payload['order']))
+                return self._record_projection(page)
+            except Exception:
+                return {'error':'catalog_unavailable'}
         if operation == 'catalog':
             _keys(payload, 'entry')
             if sid:
@@ -495,6 +510,7 @@ class ConfigurationBroker:
                             dict(self.configuration.source_files), key=reference, reference_fields=self.reference_application,
                             _opened=opened)
                 if owned is not None:
+                    owned._paged_listing = True
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned,
                     interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
@@ -512,13 +528,19 @@ class ConfigurationBroker:
                 if owned is not None:
                     self.objects[sid] = owned
                 return {'session': sid, 'entry': entry}
-            except BaseException:
+            except BaseException as error:
                 for vm in (None if server is None else server.session.interpreter,
                            None if nocontext is None else nocontext._interpreter):
                     if vm is not None:
                         vm.close()
                 if context is not None:
                     context.close()
+                from ..catalog_backend import BackendError
+                # A listed record may disappear before a new form is allocated.
+                # Only exact missing-record failure before any form interpreter
+                # exists is a safe refusal; failed cleanup still propagates.
+                if reference is not None and server is None and nocontext is None and type(error) is BackendError and error.code=='not_found':
+                    return {'error':'invalid_record'}
                 raise
         if sid not in self.sessions:
             raise ValueError('retired session')
@@ -634,6 +656,8 @@ class ConfigurationBroker:
 
     def close(self):
         failure = None
+        self.record_pages.clear()
+        self.records.clear();self.record_keys.clear()
         if self.application is not None:
             self.application.close(force=True)
         for sid in list(self.sessions):
@@ -1203,13 +1227,16 @@ class ConfigurationController:
                             or len(new) > 12 or new in self.issued or type(result['entry']) is not int
                             or result['entry'] != payload['entry']):
                         raise ValueError('invalid new form identity')
-            elif operation == 'catalog':
+            elif operation in ('catalog','catalogPage','catalogFilter'):
                 if 'error' in result:
                     _keys(result, 'error')
                     if result['error'] not in ('catalog_limit', 'catalog_unavailable'):
                         raise ValueError('invalid catalog refusal')
                 else:
-                    _keys(result, 'entry version rows')
+                    _keys(result, 'entry version rows navigation' if 'navigation' in result else 'entry version rows')
+                    if 'navigation' in result:
+                        from .record_pages import validate_navigation
+                        validate_navigation(result['navigation'],document=self.definitions[result['entry']].document_schema is not None,row_count=len(result['rows']))
                     if (result['entry'] != payload['entry'] or type(result['entry']) is not int
                             or type(result['version']) is not int or result['version'] < 1
                             or result['version'] < self.catalog_versions.get(result['entry'], 0)
@@ -1222,7 +1249,7 @@ class ConfigurationController:
                         if document is not None and self.posting_application and type(row['posted']) is not bool: raise ValueError('invalid posted state')
                         key = row['key']
                         if (type(key) is not str or not key.startswith('record-') or not key[7:].isascii()
-                                or not key[7:].isdigit() or len(key) > 12 or key in seen
+                                or not key[7:].isdigit() or len(key) > 16 or key in seen
                                 or type(row['deletionMark']) is not bool):
                             raise ValueError('invalid object record')
                         if document:
@@ -1736,6 +1763,14 @@ class ConfigurationController:
                     else:
                         self.report = None if error else projected
                         if operation == 'report' and (error or 'page' not in projected): self.report_setup = None
+            elif method in ('application.catalogPage','application.catalogFilter'):
+                _keys(params,'entry snapshot cursor' if method.endswith('catalogPage') else 'entry snapshot query order')
+                if self.catalog is None or params['entry']!=self.catalog['entry'] or params['snapshot']!=self.catalog['navigation']['snapshot']:
+                    error='catalog_unavailable'
+                else:
+                    projected=self._call(method.removeprefix('application.'),payload=params)
+                    error=projected.get('error')
+                    if not error:self.catalog=projected
             elif method == 'application.catalog':
                 _keys(params, 'entry')
                 entry = params['entry']

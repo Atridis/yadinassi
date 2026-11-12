@@ -250,8 +250,9 @@ class FormDefinition:
                 owned.projection_preflight(result.listing)
             if len(result.listing.cards) > 256:
                 raise ValueError('catalog projection limit')
-            # Validate the whole bounded authoritative list, not merely the
-            # saved card's old eight-row page. No success with an unusable list.
+            # Legacy sessions provide the complete bounded list. A paged host
+            # provides only its freshly read saved-row witness here; the host
+            # acquires the complete summary snapshot after dispatch exits.
             encode_line({'entry': 64, 'version': 2147483647, 'rows': [
                 {'key': 'record-4096', 'code': card.values[0],
                  'description': card.values[1], 'deletionMark': card.values[2]}

@@ -149,7 +149,8 @@ class CatalogObjectSession:
         reference = CatalogRef(str(self.schema.identity), str(ref.reference_uuid))
         repository = CatalogRepository(self._backend, own_backend=False)
         try:
-            listing = repository.load(str(self.schema.identity), summary_only=self._enum_fields)
+            listing = repository.load(str(self.schema.identity), summary_only=self._enum_fields or getattr(self,"_paged_listing",False) is True,
+                record=ref.reference_uuid if getattr(self,"_paged_listing",False) is True else None)
         finally:
             repository.close()
         listing.card(reference)  # No success if the confirmed record is absent.

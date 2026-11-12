@@ -212,7 +212,8 @@ class CatalogRepository:
         encode_value(value)
         return value
 
-    def load(self, identity, *, summary_only=False):
+    def load(self, identity, *, summary_only=False, record=None):
+        if record is not None and (type(record) is not UUID or not record.int): raise UIError("catalog_identity")
         if type(summary_only) is not bool: raise TypeError("explicit summary projection required")
         uuid_text(identity, nonzero=True)
         info = next((item for item in self.inventory() if item.identity == identity), None)
@@ -225,7 +226,8 @@ class CatalogRepository:
                 raise UIError('metadata_unavailable')
             fields = self._summary_fields(schema) if summary_only else self._fields(schema)
             # The port refuses overflow rather than returning a misleading total.
-            rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000))
+            rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000)) if record is None else tuple(
+                row for row in (self._view.read_catalog(CatalogKey(self._identity[0],schema.identity,record)),) if row is not None)
             if type(rows) is not tuple or len(rows) > 1000:
                 raise UIError('message_limit')
             cards, seen = [], set()

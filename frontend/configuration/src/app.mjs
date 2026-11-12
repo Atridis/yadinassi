@@ -54,6 +54,7 @@ export function mountApplication(environment, root, exchange = null) {
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
   picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
+  let queryEntry=null,queryBaseline='',queryDraft='';
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -302,6 +303,23 @@ export function mountApplication(environment, root, exchange = null) {
     };
     const open = button('Open selected',actions,openSelected);
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    if (catalog.navigation) {
+      const nav=catalog.navigation;
+      if(queryEntry!==catalog.entry||queryBaseline!==nav.query){queryEntry=catalog.entry;queryBaseline=nav.query;queryDraft=nav.query;}
+      const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
+      search.addEventListener('input',()=>{queryDraft=search.value;});
+      const order=el('select');order.setAttribute('aria-label','Record order');
+      for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
+      order.value=nav.order;
+      const apply=()=>{if(!unavailable())perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:queryDraft,order:order.value});};
+      search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
+      actions.append(search,order);const filter=button('Search records',actions,apply);
+      const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
+      const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
+      previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
+      search.disabled=order.disabled=filter.disabled=unavailable();
+      const page=el('span',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching records`);page.setAttribute('aria-live','polite');actions.append(page);
+    }
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
     for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
@@ -336,7 +354,7 @@ export function mountApplication(environment, root, exchange = null) {
       if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
-    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    catalogPanel.append(heading,actions,el('p','Records snapshot. Refresh shows external changes; Save refreshes this list without replacing other open drafts.'),table);
     if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
     paintSelection();
     workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';

@@ -104,6 +104,7 @@ class EnumApplicationTests(unittest.TestCase):
         values=dict(zip((c['name'] for c in report['columns']),report['rows'][0]))
         self.assertEqual(values['Unit'],{'type':'String','value':'Piece'})
         self.assertEqual(values['State'],{'type':'String','value':'Draft'})
+        record=self.app.catalog['rows'][0]['key']  # Post refreshed and retired earlier capabilities.
         other=self.open('Document.Receipt.Form.Card',request='posted-reopen',record=record)
         self.assertTrue(self.broker.objects[other].object.get_member('Posted'))
         self.assertFalse(self.broker.objects[other].object.get_member('State').is_empty())
