@@ -101,6 +101,9 @@ class BSLAttributeMetadata(_MetadataObject):
         if key in ('synonym','синоним','comment','комментарий'): return ''
         if key in ('fullname','полноеимя'): return HostFunction(name, self.full_name)
         if key in ('type','тип'):
+            if self._field.kind == 'enum_ref':
+                from .inventory_enum_runtime import binding
+                binding(self._owner._root).value_type(self._field.target_enum_id)
             if self._description is None:
                 self._description = _field_description(self._field, self._owner._root)
             return self._description
@@ -186,6 +189,10 @@ def _scalar_description(kind, qualifiers=()):
 
 
 def _field_description(field, root):
+    if field.kind == 'enum_ref':
+        from .inventory_enum_runtime import binding
+        from .type_descriptions import _reference_description
+        return _reference_description(binding(root).value_type(field.target_enum_id))
     if field.kind == 'catalog_ref':
         from .type_descriptions import _reference_description
         if root is None or root._catalog_managers is None: raise ValueError('metadata type requires runtime binding')
@@ -309,6 +316,8 @@ class BSLMetadata(_MetadataObject):
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs,self)
         self._common_modules = None
         self._enumerations = None
+        self._enum_storage = None
+        self._enum_storage_scope = None
         self._catalog_managers = self._document_managers = None
         self._configuration_name = None
         self._identity = None

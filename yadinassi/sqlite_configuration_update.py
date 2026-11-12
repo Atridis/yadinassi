@@ -200,7 +200,8 @@ def apply(path, plan, *, maintenance=False):
         if db.execute('PRAGMA integrity_check').fetchall()!=[('ok',)] or db.execute('PRAGMA foreign_key_check').fetchone():raise BackendError('integrity')
         candidate=SimpleNamespace(_schemas=plan.target.catalogs,_document_schemas=plan.target.documents,
             _register_schemas=plan.target.information_registers,_layout=layout,storage_version=plan.base_profile,
-            format_version=12,database_id=plan.database_id,configuration_generation=plan.source_generation+1)
+            format_version=12,database_id=plan.database_id,configuration_generation=plan.source_generation+1,
+            _enum_domain=None)
         validator=_View(candidate,db,None)
         for schema in plan.target.catalogs:
             validator._validated_sources.clear()

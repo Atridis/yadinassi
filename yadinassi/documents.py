@@ -64,9 +64,10 @@ class BSLDocuments(BSLObject):
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration
         from .configuration_inventory_application import InventoryApplicationConfiguration
+        from .configuration_inventory_enums import InventoryEnumConfiguration
         configuration = backend.accumulation_configuration
         if configuration is None: configuration = backend.posting_configuration
-        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration): return None
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration): return None
         if self._posting_runtime is None:
             from .document_posting import PostingRuntime
             self._posting_runtime = PostingRuntime(self, configuration)
@@ -181,19 +182,22 @@ class BSLDocumentManager(BSLObject):
         standard = {'number':'number','date':'date','deletionmark':'deletion_mark','posted':'posted','ref':'ref'}
         definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
         view = self._view()
+        projected = (type(view) is DocumentView and view._view._operation_id is None
+                     and (key in standard or definition is not None))
+        from .inventory_enum_runtime import read_snapshot
         try:
-            if (type(view) is DocumentView and view._view._operation_id is None
-                    and (key in standard or definition is not None)):
-                field = standard[key] if key in standard else definition.identity
-                row = view.read_document_values(self._key(ref.reference_uuid),(field,))
-                if row is None: return _field(self._defaults(ref),name)
-                value = row.values[0]
-                if definition is not None: return self._logical(definition,value)
-                if key=='date': return _date_from_datetime(value)
-                if key=='ref': return self._ref(value.record_id)
-                return value
-            card = view.read_document(self._key(ref.reference_uuid))
-            return _field(self._defaults(ref) if card is None else self._fields(card),name)
+            with read_snapshot(self._catalogs._metadata._root,view):
+                if projected:
+                    field = standard[key] if key in standard else definition.identity
+                    row = view.read_document_values(self._key(ref.reference_uuid),(field,))
+                    if row is None: return _field(self._defaults(ref),name)
+                    value = row.values[0]
+                    if definition is not None: return self._logical(definition,value)
+                    if key=='date': return _date_from_datetime(value)
+                    if key=='ref': return self._ref(value.record_id)
+                    return value
+                card = view.read_document(self._key(ref.reference_uuid))
+                return _field(self._defaults(ref) if card is None else self._fields(card),name)
         finally: view.close()
     def _get_object(self,ref):
         card = self._read(ref.reference_uuid)

@@ -141,7 +141,7 @@ def snapshot_sources(statements, parameters):
     return result
 
 
-def _union_column(columns):
+def _union_column(columns, enum_scope=None):
     first = columns[0]
     typed = [c for c in columns if c.kind != 'null']
     if not typed: raise TypeError('UNION NULL column requires a typed arm')
@@ -163,20 +163,27 @@ def _union_column(columns):
     elif kind in ('catalog_ref', 'document_ref'):
         if any(c.reference_identity[0] is not identity[0] or c.reference_identity[1] != identity[1] for c in typed):
             raise TypeError('UNION references require same database and catalog')
-    return replace(first, kind=kind, qualifiers=qualifiers, custom=None, reference_identity=identity)
+    descriptor = None
+    if kind == 'enum_ref':
+        if enum_scope is None:
+            raise ValueError('Enum UNION output is outside this profile')
+        descriptor = enum_scope.require_same(tuple(c.enum_descriptor for c in typed))
+        identity = (descriptor.value_type.snapshot, descriptor.value_type.metadata_uuid)
+    return replace(first, kind=kind, qualifiers=qualifiers, custom=None,
+                   reference_identity=identity, enum_descriptor=descriptor)
 
 
 class _UnionPlan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None, enum_scope=None):
         from .relational_queries import _Plan
         self.query = query
         self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True, documents=documents,
-                                 information_registers=information_registers)
+                                 information_registers=information_registers, enum_scope=enum_scope)
                           for arm in query.arms)
         width = len(self.arms[0].columns)
         if any(len(arm.columns) != width for arm in self.arms):
             raise ValueError('UNION column counts must match')
-        self.columns = tuple(_union_column(columns) for columns in zip(*(arm.columns for arm in self.arms)))
+        self.columns = tuple(_union_column(columns, enum_scope) for columns in zip(*(arm.columns for arm in self.arms)))
         self.managers = tuple(manager for arm in self.arms for manager in arm.all_managers)
         self.all_managers = self.managers
         aliases = {p.alias.casefold(): i for i, p in enumerate(query.arms[0].projections)}
@@ -186,7 +193,10 @@ class _UnionPlan:
             if (type(order.field) is not syntax.Field or len(order.field.parts) != 1
                     or order.field.parts[0].casefold() not in aliases):
                 raise ValueError('UNION ORDER BY requires a first-arm output column')
-            self.orders.append((aliases[order.field.parts[0].casefold()], order.descending))
+            index = aliases[order.field.parts[0].casefold()]
+            if self.columns[index].kind == 'enum_ref':
+                raise ValueError('Enum UNION ordering is outside this profile')
+            self.orders.append((index, order.descending))
 
     def execute(self, view=None, budget=None):
         from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT
