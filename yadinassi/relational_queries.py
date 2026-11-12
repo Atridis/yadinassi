@@ -128,7 +128,7 @@ def _compare(left, right, operator):
 
 
 class _Plan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None, information_registers=None, enum_scope=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, allow_null=False, documents=None, information_registers=None, enum_scope=None, condition_budget=None):
         # Import here to keep the existing result/cursor API in one module.
         from .queries import _Column, _field
         self.query, self.parameters = query, parameters
@@ -151,8 +151,11 @@ class _Plan:
         self.sources = (syntax.Source(query.catalog, query.source_alias, query.section, query.temporary, query.external, query.family, query.period_boundary, query.derived, query.virtual_condition),
                         *(join.source for join in query.joins))
         self.derived_plans = {}
+        self.slice_conditions = {}
         self.managers, self.sections, self.fields = [], [], [[] for _ in self.sources]
-        condition_budget = enum_scope.condition_budget if enum_scope is not None else [0, 0]
+        condition_budget = (enum_scope.condition_budget if enum_scope is not None else
+                            condition_budget if condition_budget is not None else [0, 0])
+        self.condition_budget = condition_budget
         for index, source in enumerate(self.sources):
             if source.derived is not None:
                 from .query_sources import _UnionPlan
@@ -163,7 +166,7 @@ class _Plan:
                 plan_type = _UnionPlan if type(source.derived) is syntax.Union else _Plan
                 self.derived_plans[index] = plan_type(source.derived, catalogs, parameters,
                     self.temporary_tables, self.external_tables, documents=documents,
-                    information_registers=information_registers, enum_scope=enum_scope)
+                    information_registers=information_registers, enum_scope=enum_scope, condition_budget=condition_budget)
                 self.managers.append(None); self.sections.append(None)
                 continue
             if source.temporary or source.external:
@@ -202,6 +205,8 @@ class _Plan:
                     key=source.period_boundary.name.casefold()
                     if key not in self.parameters: raise ValueError('Missing period parameter')
                     moment(self.parameters[key])
+                    from .register_query_conditions import bind_condition
+                    self.slice_conditions[index] = bind_condition(manager, source.virtual_condition, self.parameters, condition_budget)
                     self.sections.append(None)
                     continue
                 matches = [item for item in manager._schema.tabular_sections
@@ -463,7 +468,7 @@ class _Plan:
             options = {'allow_null': True} if plan_type is _Plan else {}
             plan = plan_type(node.values, self.catalogs, self.parameters, self.temporary_tables,
                              self.external_tables, documents=self.documents,
-                             information_registers=self.information_registers, **options)
+                             information_registers=self.information_registers, condition_budget=self.condition_budget, **options)
             if len(plan.columns) != 1: raise ValueError('IN subquery requires exactly one column')
             values = ()
             right = plan.columns[0]
@@ -506,7 +511,7 @@ class _Plan:
             options = {'allow_null': True} if plan_type is _Plan else {}
             plan = plan_type(node.values, self.catalogs, self.parameters,
                 documents=self.documents, information_registers=self.information_registers,
-                enum_scope=scope, **options)
+                enum_scope=scope, condition_budget=self.condition_budget, **options)
             if len(plan.columns) != 1:
                 raise ValueError('IN subquery requires exactly one column')
             column = plan.columns[0]
@@ -849,7 +854,8 @@ class _Plan:
             if type(manager) is RecorderQueryManager:
                 return load_recorder(manager, columns, view, budget)
             from .register_queries import load_register
-            return load_register(manager, columns, view, budget, source=self.sources[index], parameters=self.parameters)
+            return load_register(manager, columns, view, budget, source=self.sources[index], parameters=self.parameters,
+                condition=self.slice_conditions.get(index))
         if self.sources[index].family == 'document':
             from .document_queries import load_documents
             return load_documents(manager, section, columns, view, budget,

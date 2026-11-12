@@ -174,11 +174,12 @@ def _union_column(columns, enum_scope=None):
 
 
 class _UnionPlan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None, enum_scope=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None, enum_scope=None, condition_budget=None):
         from .relational_queries import _Plan
         self.query = query
+        if condition_budget is None: condition_budget = [0, 0]
         self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True, documents=documents,
-                                 information_registers=information_registers, enum_scope=enum_scope)
+                                 information_registers=information_registers, enum_scope=enum_scope, condition_budget=condition_budget)
                           for arm in query.arms)
         width = len(self.arms[0].columns)
         if any(len(arm.columns) != width for arm in self.arms):

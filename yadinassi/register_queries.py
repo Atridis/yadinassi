@@ -65,7 +65,7 @@ def _record_values(manager, record, view, seen, digests, budget):
     return dict(zip((f.identity for f in schema.fields), values))
 
 
-def load_register(manager, columns, view, budget, *, source=None, parameters=None):
+def load_register(manager, columns, view, budget, *, source=None, parameters=None, condition=None):
     manager._check_view(view)
     rows, seen, digests, cursors = [], set(), set(), set()
     if source is not None and source.section is not None:
@@ -74,14 +74,17 @@ def load_register(manager, columns, view, budget, *, source=None, parameters=Non
         boundary=moment(parameters[source.period_boundary.name.casefold()])
         # Validate and charge the entire historical source before deriving the
         # slice, so projection and edge reduction do not bypass query budgets.
-        records=[];continuation=None
+        records=[];continuation=None;historical_count=0
+        if condition is not None: condition.require_current(manager)
         while True:
             page=view.scan_register(manager._schema.identity,RegisterScanRequest(1000,continuation))
             if type(page) is not RegisterPage or type(page.rows) is not tuple or len(page.rows)>1000:
                 raise BackendError('integrity')
             for record in page.rows:
-                _record_values(manager,record,view,seen,digests,budget);records.append(record)
-                if len(records)>syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
+                values=_record_values(manager,record,view,seen,digests,budget)
+                historical_count += 1
+                if condition is None or condition.matches(values): records.append(record)
+                if historical_count>syntax.MAX_ROWS: raise ValueError('Query input row limit exceeded')
             if page.continuation is None: break
             if not page.rows or type(page.continuation) is not str or len(page.continuation)!=32 or page.continuation in cursors: raise BackendError('integrity')
             continuation=page.continuation;cursors.add(continuation)

@@ -116,6 +116,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         tables = dict(manager._tables)
         result = BSLArray()
         budget = [0, 0]
+        condition_budget = [0, 0]
         result_cells = result_text = 0
         for statement in statements:
             if type(statement) is syntax.Destroy:
@@ -128,7 +129,7 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                     raise ValueError('Temporary table already exists')
                 plan_type = _UnionPlan if type(statement) is syntax.Union else _Plan
                 plan = plan_type(statement, catalogs, parameters, tables, external, documents=documents,
-                                 information_registers=information_registers)
+                                 information_registers=information_registers, condition_budget=condition_budget)
                 source_manager = next((m for m in plan.all_managers if m is not None), None)
                 if view is None and source_manager is not None:
                     view = (catalogs._context.backend.begin_query_read() if composite else _transaction_query_view(source_manager))
