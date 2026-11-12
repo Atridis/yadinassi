@@ -101,7 +101,12 @@ def read_source(connection, *, _prepared=None):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
         files[path]=raw;entries.append((path,kind,len(raw),digest))
     marker=connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
-    if len(marker)!=1 or marker[0][:2]!=(1,PROFILE):raise BackendError('integrity')
+    from .configuration_inventory_enum_application import (
+        PROFILE as UI_PROFILE, InventoryEnumApplicationConfiguration, import_inventory_application)
+    if len(marker)!=1 or marker[0][0]!=1 or marker[0][1] not in (PROFILE, UI_PROFILE):
+        raise BackendError('integrity')
+    profile=marker[0][1]
+    expected_type=InventoryEnumConfiguration if profile==PROFILE else InventoryEnumApplicationConfiguration
     info=connection.execute('SELECT database_uuid,configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
     if info is None:raise BackendError('integrity')
     database_id=_stored_uuid(info[0])
@@ -110,10 +115,11 @@ def read_source(connection, *, _prepared=None):
         info,tuple(marker),tuple(sorted(entries)))
     config=_prepared.lookup(key) if _prepared is not None else None
     if config is None:
-        try:config=import_inventory_enum_configuration(files,inventory_runtime=PROFILE)
+        try:config=(import_inventory_enum_configuration(files,inventory_runtime=profile) if profile==PROFILE
+                    else import_inventory_application(files,inventory_runtime=profile))
         except (ValueError,TypeError):raise BackendError('integrity') from None
-    if type(config) is not InventoryEnumConfiguration or config.profile!=PROFILE:raise BackendError('integrity')
-    if marker!=[(1,PROFILE,config.source_digest)]:raise BackendError('integrity')
+    if type(config) is not expected_type or config.profile!=profile:raise BackendError('integrity')
+    if marker!=[(1,profile,config.source_digest)]:raise BackendError('integrity')
     if info!=(str(database_id),str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
     domain=EnumValueDomain(database_id,config.enumerations)
     _validate_ddl(connection,config,domain)
@@ -150,6 +156,13 @@ def admit(connection,database_id,catalogs,documents,*,validate_rows=False,_prepa
 def create(cls,path,configuration):
     # The original public core creator remains exact-core only.
     try:config=canonical(configuration)
+    except (ValueError,TypeError):raise BackendError('unsupported') from None
+    return _create(cls,path,config)
+
+
+def create_application(cls,path,configuration):
+    from .configuration_inventory_enum_application import canonical as application_canonical
+    try:config=application_canonical(configuration)
     except (ValueError,TypeError):raise BackendError('unsupported') from None
     return _create(cls,path,config)
 

@@ -11,7 +11,7 @@ from uuid import UUID
 from .catalog_backend import (BackendError, CatalogComparison, CatalogPredicate,
     CatalogOrder, CatalogScanRequest, CatalogValuePage, CatalogValueRow, CatalogKey)
 from .form_model import BSLFormField, BSLFormTable
-from .form_references import is_reference
+from .form_references import is_reference, FormEnumBinding
 from .form_replication import _pack_state
 from .form_tables import validate_table_data
 from .ui.protocol import encode_line
@@ -86,6 +86,18 @@ class ConfigurationReferenceChoice:
         return now
 
     def _scan(self, session, target, code):
+        binding=session.reference_scope.targets[target]
+        if type(binding) is FormEnumBinding:
+            if type(code) is not str or len(code)>128:raise ValueError('bounded enum name required')
+            binding.storage._live()
+            entry=binding.storage._entry(binding.enum_id)
+            if len(entry[7])-1>32:return [],{},'too_many_matches'
+            rows=[];choices={}
+            for declared,value in zip(entry[4].values,entry[7][1:]):
+                if code and declared.name!=code:continue
+                choice=token_hex(16);choices[choice]=binding.storage.key(value,binding.enum_id)
+                rows.append({'choice':choice,'code':declared.name,'description':binding.presentation(value)})
+            return rows,choices,None
         manager=session._reference_managers[target]
         if type(code) is not str or len(code)>manager._schema.code_length:
             raise ValueError('bounded exact code required')
@@ -157,7 +169,7 @@ class ConfigurationReferenceChoice:
             rows,choices,error=self._scan(session,destination['target'],'')
             token=token_hex(16);self._issued+=1
             projection={'ticket':token,'control':destination['control'],'row':destination['row'],
-                'column':destination['column'],'title':session._reference_managers[destination['target']]._schema.name,
+                'column':destination['column'],'title':(session.reference_scope.targets[destination['target']].value_type.name if type(session.reference_scope.targets[destination['target']]) is FormEnumBinding else session._reference_managers[destination['target']]._schema.name),
                 'code':'','rows':rows,'error':error}
             encode_line(projection)
             self._ticket=dict(destination,token=token);self._choices=choices;self._projection=projection
@@ -178,7 +190,14 @@ class ConfigurationReferenceChoice:
             self._keys(action,'action ticket choice');destination=self._current(session,action['ticket'])
             if type(action['choice']) is not str or action['choice'] not in self._choices:
                 raise ValueError('unknown choice identity')
-            key=self._choices[action['choice']];manager=session._reference_managers[destination['target']]
+            key=self._choices[action['choice']]
+            binding=session.reference_scope.targets[destination['target']]
+            if type(binding) is FormEnumBinding:
+                value=binding.storage.value(key,binding.enum_id)
+                changed=self._install(session,destination,value)
+                self._ticket=self._projection=None;self._choices={}
+                return 'applied' if changed else 'unchanged'
+            manager=session._reference_managers[destination['target']]
             view=manager._view()
             try:
                 card=view.read_catalog(key)

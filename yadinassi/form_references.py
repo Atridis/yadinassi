@@ -43,18 +43,33 @@ class FormEnumBinding:
     """Exact canonical storage issuer; no callback or BSL constructor grant."""
     storage: object
     enum_id: UUID
+    sources: tuple = ()
 
     def __post_init__(self):
         if type(self.storage) is not EnumStorageBinding or type(self.enum_id) is not UUID:
             raise TypeError('canonical enum storage binding required')
         self.storage.value_type(self.enum_id)
+        if type(self.sources) is not tuple or len(self.sources)>64:
+            raise ValueError('bounded enrolled enum issuers required')
+        for source in self.sources:
+            if type(source) is not EnumStorageBinding or source._domain.database_id!=self.storage._domain.database_id:
+                raise ValueError('foreign enum issuer')
+            if source.value_type(self.enum_id).metadata_uuid!=self.value_type.metadata_uuid:
+                raise ValueError('foreign enum target')
 
     @property
     def value_type(self): return self.storage.value_type(self.enum_id)
     @property
     def empty(self): return self.storage.assigned(None,self.enum_id)
     def validate(self,value):
-        return self.storage.value(self.storage.key(value,self.enum_id),self.enum_id)
+        from .catalog_backend import BackendError
+        for source in (self.storage,*self.sources):
+            try:key=source.key(value,self.enum_id)
+            except BackendError as error:
+                if error.code!='invalid_input':raise
+                continue
+            return self.storage.value(key,self.enum_id)
+        raise ValueError('unregistered enum activation')
     def presentation(self,value): return str(self.validate(value))
 
 

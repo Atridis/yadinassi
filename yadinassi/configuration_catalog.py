@@ -35,13 +35,14 @@ class CatalogObjectSession:
     ``validate_result`` must preflight, not mutate external form state; adoption
     occurs only after it accepts the refreshed record and authoritative list.
     """
-    def __init__(self, context, schema, source_files, reference=None, *, reference_fields=False):
-        if type(reference_fields) is not bool:
+    def __init__(self, context, schema, source_files, reference=None, *, reference_fields=False, enum_fields=False, _interpreter=None):
+        if type(reference_fields) is not bool or type(enum_fields) is not bool:
             raise TypeError("explicit reference field admission required")
-        allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ())
+        allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ()) + (('enum_ref',) if enum_fields else ())
         if (type(schema) is not CatalogSchema or schema.hierarchy != 'none' or schema.tabular_sections
                 or any(f.kind not in allowed or (f.target_catalog_id is not None and
-                       not (reference_fields and f.kind == 'catalog_ref')) for f in schema.fields)):
+                       not (reference_fields and f.kind == 'catalog_ref')) or (f.target_enum_id is not None and
+                       not (enum_fields and f.kind == 'enum_ref')) for f in schema.fields)):
             raise ValueError('scalar catalog object form required')
         if (type(source_files) is not dict or not source_files
                 or any(type(k) is not str or type(v) is not bytes for k, v in source_files.items())):
@@ -58,8 +59,23 @@ class CatalogObjectSession:
         self.listing = None
         self._saving = False
         self.verify_source()
-        self.metadata = BSLCatalogMetadataCollection(context)
-        self.manager = BSLCatalogs(self.metadata, context).get_index(schema.name)
+        if enum_fields:
+            from .runtime import Interpreter
+            from .inventory_enum_runtime import binding
+            from .inventory_host_operations import _source_configuration
+            from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
+            if type(_source_configuration(context.backend)) is not InventoryEnumApplicationConfiguration:
+                raise BackendError('unsupported')
+            if type(_interpreter) is not Interpreter or _interpreter.database_context is not context:
+                raise BackendError('unsupported')
+            binding(_interpreter._metadata)
+            self.metadata = _interpreter._metadata._catalogs
+            self.manager = _interpreter._catalogs.get_index(schema.name)
+        else:
+            if _interpreter is not None:
+                raise BackendError('unsupported')
+            self.metadata = BSLCatalogMetadataCollection(context)
+            self.manager = BSLCatalogs(self.metadata, context).get_index(schema.name)
         if reference is None:
             self.object = self.manager.create_item()
         else:

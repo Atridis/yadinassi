@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from .catalog_backend import BackendError
 from .configuration_inventory_enums import InventoryEnumConfiguration, PROFILE
+from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration, PROFILE as FORMS_PROFILE
 from .database_context import SQLiteDBContext
 from .enum_storage_binding import EnumStorageBinding
 from .enumerations import BSLEnumerations
@@ -98,7 +99,8 @@ def bind(interpreter,metadata):
     backend=context.backend
     if type(backend) is not SQLiteCatalogBackend or backend.format_version!=16:return
     configuration=backend.accumulation_configuration
-    if type(configuration) is not InventoryEnumConfiguration or configuration.profile!=PROFILE:
+    if (type(configuration), configuration.profile) not in ((InventoryEnumConfiguration, PROFILE),
+            (InventoryEnumApplicationConfiguration, FORMS_PROFILE)):
         raise BackendError('unsupported')
     namespace=BSLEnumerations(configuration.enumerations)
     metadata._enumerations=namespace
