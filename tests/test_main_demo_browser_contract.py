@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,3)", "assert.equal(actionLog.length,81",
+            "assert.equal(results.length,4)", "assert.equal(actionLog.length,95",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
@@ -98,3 +98,13 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         support = (ROOT/'tests/browser_ui/main_demo_browser_support.mjs').read_text(encoding='utf-8')
         for marker in ('audit_line_quantity', 'audit_line_amount', 'audit_receipt_warehouse', 'audit_line_product', 'audit_product_section', 'audit_product_kind', 'audit_movement_product', 'audit_movement_warehouse'):
             self.assertIn(marker, support)
+
+    def test_owned_result_recovery_uses_real_completion_without_mutation_replay(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        for marker in ('owned_result_delayed_delivery_independent_draft_and_loss_without_replay',
+                       'owned_result_retired_before_delivery', 'owned_result_duplicate_accept',
+                       'owned_paused_dispatched', 'owned_independent_draft_lost',
+                       'owned_result_recovery_replayed', 'owned_result_raw_copy_lost',
+                       'owned_result_unknown_draft_unlocked', 'owned_result_changed_database',
+                       "assert.equal(actionLog.length-start,14", 'resultGate=null;gate.arrived()'):
+            self.assertIn(marker, text)

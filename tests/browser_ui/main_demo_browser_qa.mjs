@@ -36,7 +36,7 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>signalGroup(browserGroup,'SIGKILL');
 const abort=()=>{aborted=true;for(const identity of [hostGroup,browserGroup])try{signalGroup(identity,'SIGKILL');}catch{report.status='FAIL';report.cleanup='owned_signal_failed';}};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:3};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:4};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>{
   const raw=execFileSync(python,[path.join(repo,'tests/browser_ui/main_demo_fixture.py'),mode,owned],
@@ -185,6 +185,7 @@ async function main(){
   const probe=await context.newPage();probe.setDefaultTimeout(remaining(10000));await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
   await startHost();
   let dropApply=false, dropDocument=false, dropped=0, droppedDocument=0;
+  let resultGate=null,dropOwnedResult=false,droppedOwnedResult=0;
   const requests=[];
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
@@ -203,9 +204,33 @@ async function main(){
       const request=route.request().postDataJSON();
       const inner=request.method==='demo.dispatch'?request.params.request:null;
       requests.push({method:request.method,inner:inner?.method,event:inner?.params?.event,
-        action:inner?.params?.action?.action,nested:inner?.params?.request?.method});
+        action:inner?.params?.action?.action,nested:inner?.params?.request?.method,control:inner?.params?.request?.params?.control});
       report.rpcTail.push([safeMethod(request.method),safeMethod(inner?.method),safeMethod(inner?.params?.request?.method)]);
       if(report.rpcTail.length>12)report.rpcTail.shift();
+      const ownedAccept=inner?.method==='application.form'&&inner.params?.request?.method==='form.event'&&inner.params.request.params?.event==='command'&&inner.params.request.params.control==='AcceptButton';
+      if(ownedAccept&&(resultGate||dropOwnedResult)){
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
+        assert.equal(response.status(),200,'owned_result_http');
+        const bytes=await bounded(response.body(),remaining(rpcFetchMs),'owned_result_body_timeout');
+        assert.ok(bytes.length<=131072,'owned_result_body_budget');
+        const body=JSON.parse(bytes.toString('utf8'));
+        assert.equal(body.id,request.id,'owned_result_outer_id');
+        assert.equal(body.result?.payload?.id,inner.id,'owned_result_inner_id');
+        assert.equal(body.result?.error,null,'owned_result_outer_error');
+        const result=body.result?.payload?.result;
+        assert.equal(result?.error,null,'owned_result_inner_error');
+        assert.equal(result.updates.length,1,'owned_result_update_count');
+        assert.ok(!result.state.sessions.some(session=>session.id===inner.params.session),'owned_child_not_retired');
+        const update=result.updates[0];
+        assert.equal(update.form.result.error,null,'owned_result_update_error');
+        const values=update.form.result.state.items;
+        assert.equal(values.find(item=>item.name==='LastOutcomeField')?.value?.value,'Черновик ожидает подтверждения','owned_result_not_prepared');
+        assert.equal(Number(values.find(item=>item.name==='AppliedCountField')?.value?.value),0,'owned_result_applied_early');
+        if(dropOwnedResult){dropOwnedResult=false;droppedOwnedResult++;await response.dispose();return route.abort('failed');}
+        const gate=resultGate;resultGate=null;gate.arrived();
+        await bounded(gate.wait,remaining(10000),'owned_result_delivery_gate_timeout');
+        return route.fulfill({response});
+      }
       const loseApply=dropApply&&inner?.params?.event==='referenceChoice'&&inner.params.action.action==='apply';
       const loseDocument=dropDocument&&inner?.method==='application.hello';
       if(loseApply||loseDocument){
@@ -460,14 +485,72 @@ async function main(){
     assert.deepEqual(audit(),saved,'memory_draft_changed_database');
     report.operationDraft={keepOpenVeto:true,preparedReopened:true,childCancelPreserved:true,appliedAmount:'123.45',appliedCount:1,repeatDidNotApply:true,messageReadOnly:true,durableUnchanged:true};
   });
-  assert.equal(actionLog.length,81,'total_action_count');
+  await scenario('owned_result_delayed_delivery_independent_draft_and_loss_without_replay',async()=>{
+    const saved=audit(),start=actionLog.length;
+    await click('Документы, формы и отчёты');
+    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    const tabs=page.getByRole('navigation',{name:'Open forms',exact:true}).getByRole('button');
+    const panels=page.locator('.configuration-form-panels > section');
+    const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
+    const command=label=>settled(formEvent('command'),()=>docButton(label).click());
+    await act('recovery-open-owner-a',openOwner);
+    await act('recovery-open-child-a',()=>command('Подготовить изменения'));
+    await act('recovery-retain-raw-child-a',()=>docField('Comment').fill('  independent raw draft  '));
+    const childInput=await docField('Comment').getAttribute('id');
+    await act('recovery-inspect-paused-owner-a',()=>tabs.nth(0).click());
+    assert.equal(await docButton('Подготовить изменения').isDisabled(),true,'owned_paused_command_enabled');
+    assert.equal(await docButton('Close form').isDisabled(),true,'owned_paused_close_enabled');
+    const beforePaused=requests.length;
+    await act('recovery-paused-owner-cannot-dispatch',()=>docButton('Подготовить изменения').evaluate(node=>{node.click();node.click();}));
+    assert.equal(requests.length,beforePaused,'owned_paused_dispatched');
+    await act('recovery-return-child-a',()=>tabs.nth(1).click());
+    assert.equal(await docField('Comment').inputValue(),'  independent raw draft  ','owned_independent_draft_lost');
+    await act('recovery-open-owner-b',openOwner);
+    await act('recovery-open-child-b',()=>command('Подготовить изменения'));
+    await commit('Amount','42.50');
+    let arrived,release;const atGate=new Promise(resolve=>{arrived=resolve;}),wait=new Promise(resolve=>{release=resolve;});resultGate={arrived,wait};
+    const acceptBefore=requests.filter(request=>request.control==='AcceptButton').length;
+    await act('recovery-delayed-child-result',async()=>{
+      const reply=replyFor(formEvent('command'));
+      await docButton('Вернуть черновик').evaluate(node=>{node.click();node.click();});
+      try{
+        await bounded(atGate,remaining(10000),'owned_result_gate_not_reached');
+        assert.equal(await panels.count(),4,'owned_result_retired_before_delivery');
+        assert.equal(await docButton('Вернуть черновик').isDisabled(),true,'owned_result_busy_enabled');
+      }finally{release();}
+      await reply;await idle();
+    });
+    assert.equal(requests.filter(request=>request.control==='AcceptButton').length,acceptBefore+1,'owned_result_duplicate_accept');
+    assert.equal(await panels.count(),3,'owned_result_not_retired_after_delivery');
+    await act('recovery-reopen-prepared-child-b',()=>command('Подготовить изменения'));
+    assert.equal(await docField('Amount').inputValue(),'42.50','owned_result_reopen_value');
+    const independent=page.locator('[id="'+childInput+'"]');
+    assert.equal(await independent.inputValue(),'  independent raw draft  ','owned_independent_draft_lost');
+    dropOwnedResult=true;
+    await act('recovery-lose-confirmed-child-result',()=>docButton('Вернуть черновик').click());
+    await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
+    assert.equal(droppedOwnedResult,1,'owned_result_loss_not_observed');
+    const afterLoss=requests.length,acceptAfterLoss=requests.filter(request=>request.control==='AcceptButton').length;
+    await act('recovery-inspect-without-replay',()=>button('Восстановить состояние').click());
+    await idle();
+    assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'owned_result_recovery_mutated');
+    assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'owned_result_recovery_form_mutated');
+    assert.equal(requests.filter(request=>request.control==='AcceptButton').length,acceptAfterLoss,'owned_result_recovery_replayed');
+    const copy=page.locator('.draft-recovery-value');
+    assert.ok((await copy.allTextContents()).includes('CommentField:   independent raw draft  '),'owned_result_raw_copy_lost');
+    assert.equal(await independent.isDisabled(),true,'owned_result_unknown_draft_unlocked');
+    assert.deepEqual(audit(),saved,'owned_result_changed_database');
+    assert.equal(actionLog.length-start,14,'owned_result_action_count');
+    report.ownedResultRecovery={delayedCompletionOnce:true,pausedOwnerCannotDispatch:true,independentRawDraftRetained:true,confirmedCloseLost:true,noReplay:true,copyPreserved:true,durableUnchanged:true};
+  });
+  assert.equal(actionLog.length,95,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');
   assert.equal(git('rev-parse','HEAD'),report.sourceCommit,'source_commit_changed');
   for(const [name,digest] of Object.entries(source)){check();assert.equal(sha256(await readFile(path.join(repo,name))),digest,'source_bytes_changed');}
-  assert.equal(results.length,3);report.status='PASS';report.rpcRequests=rpc;
+  assert.equal(results.length,4);report.status='PASS';report.rpcRequests=rpc;
 }
 // Reserve 20 seconds for verified bounded cleanup within the 180s total.
 const deadline=setTimeout(abort,Math.max(0,workDeadline-Date.now()));
@@ -475,6 +558,8 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'owned_result_outer_id','owned_result_inner_id','owned_result_recovery_form_mutated',
+  'owned_child_not_navigation','owned_child_not_retired','owned_independent_draft_lost','owned_paused_close_enabled','owned_paused_command_enabled','owned_paused_dispatched','owned_result_action_count','owned_result_applied_early','owned_result_body_budget','owned_result_body_timeout','owned_result_busy_enabled','owned_result_changed_database','owned_result_delayed_delivery_independent_draft_and_loss_without_replay','owned_result_delivery_gate_timeout','owned_result_duplicate_accept','owned_result_gate_not_reached','owned_result_http','owned_result_inner_error','owned_result_loss_not_observed','owned_result_not_prepared','owned_result_not_retired_after_delivery','owned_result_outer_error','owned_result_raw_copy_lost','owned_result_recovery_mutated','owned_result_recovery_replayed','owned_result_reopen_value','owned_result_retired_before_delivery','owned_result_unknown_draft_unlocked','owned_result_update_count','owned_result_update_error',
   'filter_exact_total','filter_exact_rows','filter_exact_navigation','filter_visible_rows',
   'filter_draft_lost_on_repaint','filter_reply_body_budget','filter_reply_body_timeout',
   'socket_path_too_long','unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
@@ -521,4 +606,4 @@ finally{
   assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
-console.log(JSON.stringify({status:report.status,completed:results.length,total:3,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
+console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
