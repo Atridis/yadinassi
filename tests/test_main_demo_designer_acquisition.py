@@ -19,7 +19,7 @@ policy = load('native_1c_main_demo_ci_policy')
 class MainDemoDesignerTests(unittest.TestCase):
     def report(self):
         return dict(schema=host.SCHEMA,nonce='a'*32,status='ok',phase='complete',failure='none',
-            input_sha256={'fixture':'b'*64},source_sha256=host.SOURCE_SHA256,
+            check_excerpt=host.diagnostics.check_empty(),input_sha256={'fixture':'b'*64},source_sha256=host.SOURCE_SHA256,
             platform_sha256={n:host.SOURCE_SHA256[n] for n in host.PLATFORM_FILES},
             excluded_files=[host.MANIFEST],check_flags=list(host.CHECK_FLAGS),completed=list(host.PHASES),diagnostics=host.diagnostics.empty(),channels=dict(exit_code=0,channels={
                 name:dict(state='read',bytes=1,encoding='utf8',lines=['[hidden]'],result='zero')
@@ -267,3 +267,46 @@ class MainDemoDesignerTests(unittest.TestCase):
             p=Path(temp)/'out';p.write_bytes(b'x'*(host.diagnostics.MAX_BYTES+1))
             r=host.diagnostics.channel(p)
             self.assertEqual(r['state'],'budget');self.assertEqual(r['lines'],[])
+
+    def test_check_excerpt_preserves_readable_module_and_location(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'check.log'
+            p.write_text('{ОбщаяФорма.OperationDraft.Форма.Модуль(12,7)}: Переменная не определена (PendingDraft)\n/tmp/private/source/CommonForms/DraftDetails/Ext/Form.xml',encoding='utf-8')
+            value=host.diagnostics.check_excerpt(p,host.PLATFORM_FILES)
+            self.assertEqual(value['state'],'read')
+            self.assertIn('(12,7)',value['lines'][0]);self.assertIn('PendingDraft',value['lines'][0])
+            self.assertEqual(value['lines'][1],'[source:15]')
+            self.assertTrue(host.diagnostics.check_valid(value,host.PLATFORM_FILES))
+
+    def test_check_excerpt_redacts_paths_and_credentials(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'check.log';p.write_text('password=some private value\nC:\\private\\file.txt error\nhttps://private.example/secret',encoding='utf-8')
+            value=host.diagnostics.check_excerpt(p,host.PLATFORM_FILES)
+            self.assertEqual(value['state'],'read')
+            self.assertNotIn('private',str(value));self.assertNotIn('some',str(value))
+            self.assertTrue(host.diagnostics.check_valid(value,host.PLATFORM_FILES))
+
+    def test_check_excerpt_fails_closed_for_unsafe_or_oversized_content(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'check.log'
+            for raw in (b'x'*16385,b'bad\x00control',b'\xff',b'ghp_abcdefghijklmnopqrstuvwxyz1234567890'):
+                p.write_bytes(raw);value=host.diagnostics.check_excerpt(p,host.PLATFORM_FILES)
+                self.assertEqual(value['state'],'unavailable');self.assertEqual(value['lines'],[])
+            p.unlink();p.symlink_to(Path(temp)/'missing')
+            self.assertEqual(host.diagnostics.check_excerpt(p,host.PLATFORM_FILES)['reason'],'unsafe_file')
+
+    def test_check_excerpt_host_refuses_raw_paths_and_wrong_phase(self):
+        r=self.report();r['check_excerpt']=dict(state='read',reason='none',lines=['/private/file'])
+        with self.assertRaises(host.DemoError):self.validate(r)
+        r=self.report();r.update(status='failed',phase='load',failure='process_failed',completed=['create'])
+        r['check_excerpt']=dict(state='read',reason='none',lines=['Public diagnostic'])
+        with self.assertRaises(host.DemoError):self.validate(r)
+
+    def test_check_excerpt_truncates_only_after_scanning_all_input(self):
+        d=host.diagnostics
+        lines=d._check_text('line\n'*40,host.PLATFORM_FILES)
+        self.assertEqual(len(lines),32)
+        self.assertEqual(lines[-1],'[diagnostic truncated]')
+        self.assertTrue(d.check_valid(dict(state='read',reason='none',lines=lines),host.PLATFORM_FILES))
+        with self.assertRaises(ValueError):
+            d._check_text('line\n'*40+'ghp_abcdefghijklmnopqrstuvwxyz1234567890',host.PLATFORM_FILES)

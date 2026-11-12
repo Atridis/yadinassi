@@ -189,3 +189,93 @@ def channels_valid(value):
         if state not in ('read','empty','encoding') and size is not None:
             return False
     return True
+
+# Only for this public synthetic source in an isolated, credential-free container.
+# Not a general-purpose redactor for private configurations or user databases.
+CHECK_REASONS = ('none', 'missing', 'unsafe_file', 'budget', 'encoding', 'read_failed', 'sensitive')
+
+def check_empty():
+    return dict(state='not_reached', reason='none', lines=[])
+
+
+def _check_text(text, filenames):
+    import unicodedata
+    if any(unicodedata.category(c).startswith('C') and c not in '\n\r\t' for c in text):
+        raise ValueError('sensitive')
+    lines = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        # Omit the whole assignment/header, not just a guessed token fragment.
+        if re.search(r'(?i)(password|passwd|secret|token|authorization|cookie|api.?key|пароль|секрет)\s*[:=]', line):
+            lines.append('[redacted credential]')
+            continue
+        if re.search(r'(?i)\bBearer\s+\S+|-----BEGIN .*PRIVATE KEY|\b(?:gh[pousr]_|github_pat_|sk-|AKIA)[A-Za-z0-9_/-]+|\beyJ[A-Za-z0-9_-]+\.', line):
+            raise ValueError('sensitive')
+        normalized = line.replace('\\', '/')
+        # Replace only exact known source paths; never emit their private prefix.
+        for i, name in sorted(enumerate(filenames), key=lambda item: -len(item[1])):
+            normalized = re.sub(r'(?:[A-Za-z]:)?(?:/[^\s\"\'{}<>]*)?'+re.escape(name)+r'(?=$|[\s\"\'{}():,])',
+                                '[source:'+str(i)+']', normalized)
+        normalized = re.sub(r'https?://[^\s<>\"\']+|\b[^\s@]+@[^\s@]+', '[redacted address]', normalized, flags=re.I)
+        normalized = re.sub(r'(?:[A-Za-z]:/|/|\.\.?/)[^\s\"\'{}<>]+', '[redacted path]', normalized)
+        # Relative filesystem fragments not associated with the pinned inventory.
+        normalized = re.sub(r'\b[^\s/\"\'{}<>]+/[^\s\"\'{}<>]+', '[redacted path]', normalized)
+        if re.search(r'[A-Za-z0-9_+=-]{40,}|\b[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}\b', normalized):
+            raise ValueError('sensitive')
+        lines.append(normalized.strip())
+    # Scan/redact the entire bounded input before truncation, so a late secret
+    # cannot be hidden by the output budget. Preserve a useful diagnostic prefix.
+    if len(lines) > 32 or len('\n'.join(lines).encode('utf-8')) > 8192:
+        prefix = []
+        marker = '[diagnostic truncated]'
+        for line in lines:
+            if len(prefix) >= 31 or len('\n'.join(prefix + [line, marker]).encode('utf-8')) > 8192:
+                break
+            prefix.append(line)
+        return prefix + [marker]
+    return lines
+
+
+def check_excerpt(path, filenames):
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('unsafe_file')
+        if info.st_size > 16384:
+            raise ValueError('budget')
+        raw = path.read_bytes()
+        if len(raw) > 16384:
+            raise ValueError('budget')
+        try:
+            text = raw.decode('utf-16' if raw[:2] in (b'\xff\xfe', b'\xfe\xff') else 'utf-8-sig')
+        except UnicodeError:
+            raise ValueError('encoding') from None
+        return dict(state='read', reason='none', lines=_check_text(text, filenames))
+    except FileNotFoundError:
+        reason = 'missing'
+    except OSError:
+        reason = 'read_failed'
+    except ValueError as error:
+        reason = str(error) if str(error) in CHECK_REASONS else 'sensitive'
+    return dict(state='unavailable', reason=reason, lines=[])
+
+
+def check_valid(value, filenames):
+    if type(value) is not dict or set(value) != {'state','reason','lines'}:
+        return False
+    state, reason, lines = value['state'], value['reason'], value['lines']
+    if (type(state) is not str or state not in ('not_reached','read','unavailable')
+            or type(reason) is not str or reason not in CHECK_REASONS
+            or type(lines) is not list or any(type(x) is not str or not x or '\n' in x or '\r' in x for x in lines)):
+        return False
+    if state != 'read':
+        return not lines and (reason == 'none' if state == 'not_reached' else reason != 'none')
+    if reason != 'none':
+        return False
+    if any(not 0 <= int(i) < len(filenames) for line in lines for i in re.findall(r'\[source:([0-9]+)\]', line)):
+        return False
+    try:
+        return _check_text('\n'.join(lines), filenames) == lines
+    except ValueError:
+        return False
