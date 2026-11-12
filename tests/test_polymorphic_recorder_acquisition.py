@@ -73,3 +73,66 @@ class RecorderAcquisitionTests(unittest.TestCase):
         value=json.loads(raw)
         self.assertEqual(value['outputs'],[])
         self.assertFalse(value['report']['native_tests_completed'])
+
+class RecorderHostEnvelopeTests(unittest.TestCase):
+    nonce='b'*32
+
+    def fixture(self):
+        import base64
+        import native_1c_polymorphic_recorder_profile as host
+        hashes={p:'1'*64 for p in host.staged_files()};hashes[host.SOURCE]=route.SOURCE_SHA256
+        data=route.canonical(['ERR']*8)
+        stage=suite.empty_report(self.nonce)
+        module=host.FULL.digest(host.FULL.generated_module(route.program(None,self.nonce)))
+        stage.update({k:True for k in host.FLAGS})
+        stage.update(status='ok',failure_kind='none',failure_phase='final',input_sha256=hashes,
+                     source_sha256=route.SOURCE_SHA256,module_sha256=module,module_verified_sha256=module,
+                     output_sha256=host.FULL.digest(data),output_size=len(data),record_count=8,incomplete=False,
+                     partial_observations=[[i,'ERR'] for i in range(1,9)],
+                     process_diagnostics={**host.FULL.empty_process_diagnostics(),'stage':'after_exit','reason':'none'})
+        value=dict(schema=route.SCHEMA,profile=route.PROFILE,nonce=self.nonce,
+                   report={'status':'ok','native_tests_completed':True,'stage3':stage},
+                   outputs=[dict(name='polymorphic-recorder.out',size=len(data),sha256=host.FULL.digest(data),
+                                 data_b64=base64.b64encode(data).decode())])
+        return host,hashes,value
+
+    def validate(self,host,hashes,value):
+        # The stage validator is tested independently of the unchanged outer
+        # bootstrap validator. This does not prove native lifecycle containment.
+        return host.validate_envelope(json.dumps(value).encode(),self.nonce,hashes,validator=lambda raw,**kw:json.loads(raw))
+
+    def test_complete_bound_observations_are_not_parity(self):
+        host,hashes,value=self.fixture()
+        report,data=self.validate(host,hashes,value)
+        self.assertEqual(json.loads(data),['ERR']*8)
+        self.assertNotIn('runtime_parity_accepted',report)
+
+    def test_each_missing_lifecycle_flag_refuses_export(self):
+        host,hashes,_=self.fixture()
+        for flag in host.FLAGS:
+            _,_,value=self.fixture();value['report']['stage3'][flag]=False
+            with self.subTest(flag=flag),self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)
+
+    def test_changed_module_source_or_output_hash_refuses(self):
+        host,hashes,_=self.fixture()
+        for field in host.HASH_FIELDS:
+            _,_,value=self.fixture();value['report']['stage3'][field]='2'*64
+            with self.subTest(field=field),self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)
+
+    def test_case_text_or_partial_output_refuses(self):
+        host,hashes,value=self.fixture();value['report']['stage3']['case_diagnostics']=[{'raw':'secret'}]
+        with self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)
+        _,_,value=self.fixture();value['report']['stage3']['partial_observations'].pop()
+        with self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)
+
+    def test_manifest_is_closed_and_public_report_drops_transport_nonce(self):
+        host,hashes,value=self.fixture()
+        self.assertIn('scripts/native_1c_polymorphic_recorder_probe.sh',hashes)
+        self.assertIn('scripts/inventory_reference_behavior/Stock.xml',hashes)
+        self.assertNotIn(self.nonce,json.dumps(host.public_report(value)))
+        hashes['scripts/unexpected.py']='1'*64
+        with self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)
+
+    def test_failure_cannot_retain_exported_payload(self):
+        host,hashes,value=self.fixture();value['report']['stage3']['status']='failed'
+        with self.assertRaises(host.PolymorphicRecorderError):self.validate(host,hashes,value)

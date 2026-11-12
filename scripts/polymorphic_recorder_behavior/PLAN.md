@@ -60,3 +60,12 @@ failure envelope без raw text. Host profile/probe пока не подклю�
 checks адаптера/неуспешного lifecycle; их static assertions не доказывают native
 containment. Ранее 12 packet tests прошли normal/-O до этого слоя; суммарные20
 на новом слое ещё не выполнялись.
+
+Следующий source-only слой добавляет отдельные host profile и probe. Host validator
+проверяет exact schema/keys, все lifecycle flags, source/module/output hashes,
+полный набор наблюдений и отсутствие case diagnostic payload; export после
+verified owned-container cleanup и повторной source/provenance проверки.
+Public provenance удаляет transport nonce keys после внутренней валидации.
+Исторические helper sources только переиспользуются, их файлы не меняются.
+Добавлены шесть synthetic host-envelope tests: суммарный count26, ещё не выполнен.
+Наличие CLI не является разрешением на запуск: native execution/workflow по-прежнему0.

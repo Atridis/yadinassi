@@ -127,13 +127,9 @@ def run_suite(launcher,platform,launcher_epf,root,inputs,nonce):
         messages,_=full.read_native_result(case/'result.json')
         raw=full.secure_bytes(output,route.MAX_OUTPUT)
         if raw!=full.serialize_messages(messages):raise full.FullError('output_mismatch')
-        observations,errors=route.parse_attempt(raw,nonce)
+        values=route.parse_wire(raw,nonce)
+        observations=list(map(list,enumerate(values,1)))
         report['entered']=True;report['partial_observations']=observations
-        for number,stage,text in errors:
-            details=route.failure_details({'messages':[],'error':text},nonce)
-            category=diagnostics.summarize_text(text)['category']
-            context=diagnostics.rendered_context(text,'managed_marker')
-            report['case_diagnostics'].append(dict(case=number,stage=stage,category=category,details=details,context=context))
         report['incomplete']=len(observations)!=route.COUNT
         if report['incomplete']:raise full.FullError('invalid_result')
         values=[v for _,v in observations];report['completed']=True
