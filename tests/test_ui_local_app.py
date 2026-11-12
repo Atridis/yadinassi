@@ -27,7 +27,10 @@ class LocalRendererHTTPTests(unittest.TestCase):
 
     def request(self, method='POST', path='/rpc', body=None, headers=None):
         connection = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=3)
-        body = b'{"jsonrpc":"2.0","id":1,"method":"editor.hello","params":{}}\n' if body is None else body
+        # GET/static and method-refusal routes deliberately do not consume a body.
+        if body is None:
+            body = (b'{"jsonrpc":"2.0","id":1,"method":"editor.hello","params":{}}\n'
+                    if method == 'POST' else b'')
         values = {'Host': self.server.authority, 'Origin': self.server.origin,
             'Content-Type': 'application/x-ndjson', 'X-Yadinassi-Session': self.server.token,
             'Sec-Fetch-Site': 'same-origin'}
