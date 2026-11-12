@@ -27,6 +27,8 @@ class _SourceInterpreter(Interpreter):
         from .source_host_session import SourceSessionCall
         self.register_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
                                'ПолучитьТекущийСеансИнформационнойБазы')
+        self.register_function('InfoBaseConnectionString', SourceSessionCall(application.host_session, 'connection'),
+                               'СтрокаСоединенияИнформационнойБазы')
         self.register_function('CurrentRunMode', application.current_run_mode)
         self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
         self.register_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))

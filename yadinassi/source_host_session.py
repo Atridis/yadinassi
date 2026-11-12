@@ -41,5 +41,8 @@ class SourceSessionCall:
     def invoke(self, caller, values):
         if values:
             raise TypeError('source session query takes no arguments')
-        self.session.authorize(caller)
+        app = self.session.authorize(caller)
+        if self.current == 'connection':
+            # Explicit host identity, not native File/Srvr syntax or DB grants.
+            return 'SQLite=' + app.constant_store.path
         return self.session if self.current else self.session._background_job

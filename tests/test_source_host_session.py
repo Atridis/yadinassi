@@ -45,3 +45,17 @@ class SourceHostSessionTests(unittest.TestCase):
     def test_query_arity(self):
         with self.assertRaisesRegex(BSLError,'no arguments'):
             self.app('GetCurrentInfoBaseSession(1);')[0].start()
+
+    def test_real_source_sqlite_connection_identity(self):
+        a,out=self.app('Message(InfoBaseConnectionString());')
+        a.start()
+        self.assertEqual(out,['SQLite='+a.constant_store.path])
+        self.assertFalse(out[0].startswith(('File=', 'Srvr=')))
+
+    def test_connection_requires_explicit_scratch(self):
+        with self.assertRaisesRegex(BSLError,'explicit source scratch'):
+            self.app('InfoBaseConnectionString();',scratch=False)[0].start()
+
+    def test_connection_client_rejected(self):
+        with self.assertRaisesRegex(BSLError,'synchronous server'):
+            self.app('InfoBaseConnectionString();',server=False)[0].start()

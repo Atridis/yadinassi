@@ -283,3 +283,9 @@ order and object identity for `Contains`. Empty means an explicitly empty XML
 property; missing, malformed, wrong-family, dangling, and duplicate references
 fail rather than silently disappearing. This is metadata membership only: it
 neither selects a current user nor grants any role or privilege.
+
+In the owning synchronous server family, `InfoBaseConnectionString()` identifies
+an explicitly created scratch store as `SQLite=<absolute path>`, consistently
+with the host's SQLite database identity. It does not return native `File=` or
+`Srvr=` syntax, claim a 1CD database/server cluster, or activate database CRUD.
+Without the scratch store, or from a foreign/client context, it fails explicitly.
