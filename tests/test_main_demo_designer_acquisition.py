@@ -21,7 +21,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         return dict(schema=host.SCHEMA,nonce='a'*32,status='ok',phase='complete',failure='none',
             input_sha256={'fixture':'b'*64},source_sha256=host.SOURCE_SHA256,
             platform_sha256={n:host.SOURCE_SHA256[n] for n in host.PLATFORM_FILES},
-            excluded_files=[host.MANIFEST],check_flags=list(host.CHECK_FLAGS),completed=list(host.PHASES))
+            excluded_files=[host.MANIFEST],check_flags=list(host.CHECK_FLAGS),completed=list(host.PHASES),diagnostics=host.diagnostics.empty())
     def validate(self, value):
         return host.validate_report(json.dumps(value).encode(),'a'*32,{'fixture':'b'*64})
     def context(self):
@@ -191,3 +191,42 @@ class MainDemoDesignerTests(unittest.TestCase):
         self.assertIn("          NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}", env)
         self.assertIn('          GHCR_USER: ${{ github.actor }}', env)
         self.assertIn('          GHCR_TOKEN: ${{ github.token }}', env)
+
+    def test_private_diagnostic_exports_only_codes_and_fixed_file_ids(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'load.log'
+            p.write_text('Ошибка чтения XML: /private/secret/Documents/Receipt.xml token=secret',encoding='utf-8')
+            value=host.diagnostics.classify(p,host.PLATFORM_FILES)
+            self.assertEqual(value['codes'],['xml_parse'])
+            self.assertEqual(value['file_ids'],[host.PLATFORM_FILES.index('Documents/Receipt.xml')])
+            self.assertNotIn('secret',json.dumps(value))
+            self.assertTrue(host.diagnostics.valid(value,32))
+
+    def test_private_diagnostic_bounds_and_encoding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'load.log'
+            self.assertEqual(host.diagnostics.classify(p,())['reason'],'missing')
+            p.write_bytes(b'x'*(host.diagnostics.MAX_BYTES+1))
+            self.assertEqual(host.diagnostics.classify(p,())['reason'],'budget')
+            p.write_bytes(b'\xff')
+            self.assertEqual(host.diagnostics.classify(p,())['reason'],'encoding')
+            p.write_bytes('Неизвестное свойство'.encode('utf-16'))
+            self.assertEqual(host.diagnostics.classify(p,())['codes'],['unknown_property'])
+
+    def test_diagnostic_validator_rejects_text_unknown_ids_and_false_success(self):
+        for change in (dict(codes=['raw error']),dict(file_ids=[32]),dict(file_ids=[True]),
+                       dict(reason='private path'),dict(extra='secret')):
+            value=dict(state='classified',reason='none',codes=['unclassified'],file_ids=[])
+            value.update(change)
+            self.assertFalse(host.diagnostics.valid(value,32))
+        value=self.report()
+        value['diagnostics']=dict(state='classified',reason='none',codes=['unclassified'],file_ids=[])
+        with self.assertRaises(host.DemoError):self.validate(value)
+
+    def test_diagnostic_symlink_refused_and_unknown_log_not_exported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'load.log';p.write_text('private arbitrary diagnostic')
+            q=Path(temp)/'alias';q.symlink_to(p)
+            self.assertEqual(host.diagnostics.classify(q,())['reason'],'unsafe_file')
+            self.assertEqual(host.diagnostics.classify(p,()),
+                             dict(state='classified',reason='none',codes=['unclassified'],file_ids=[]))
