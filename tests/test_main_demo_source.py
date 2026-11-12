@@ -6,24 +6,23 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'examples/demo'
-ORIGINAL = ROOT / 'tests/fixtures/demo_cf/source'
+from legacy_demo_fixture import legacy_demo_files
 M = '{http://v8.1c.ru/8.3/MDClasses}'
 I = '{urn:yadinassi:inventory-application:1}'
 
 
 class MainDemoSourceTests(unittest.TestCase):
     def test_original_catalog_forms_handlers_and_identities_are_preserved(self):
-        originals = sorted(p for p in ORIGINAL.rglob('*') if p.is_file())
+        originals = legacy_demo_files()
         self.assertEqual(len(originals), 19)
-        for path in originals:
-            if path.name == 'Configuration.xml':
-                continue
-            with self.subTest(path=path.relative_to(ORIGINAL)):
-                self.assertEqual((SOURCE / path.relative_to(ORIGINAL)).read_bytes(), path.read_bytes())
+        for name, raw in originals.items():
+            if name != 'Configuration.xml':
+                with self.subTest(path=name):
+                    self.assertEqual((SOURCE / name).read_bytes(), raw)
 
     def test_one_configuration_declares_all_scenarios_without_duplicate_catalogs(self):
         root = ET.parse(SOURCE / 'Configuration.xml').getroot().find(M+'Configuration')
-        original = ET.parse(ORIGINAL / 'Configuration.xml').getroot().find(M+'Configuration')
+        original = ET.fromstring(legacy_demo_files()['Configuration.xml']).find(M+'Configuration')
         self.assertEqual(root.attrib['uuid'], original.attrib['uuid'])
         declarations = root.find(M+'ChildObjects')
         by_kind = {}
