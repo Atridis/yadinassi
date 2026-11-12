@@ -18,7 +18,7 @@ from yadinassi.ui.protocol import encode_line, decode_line
 class MainDemoInteractionHostTests(authored.OperationDraftTests):
     def host(self, files=None, **unused):
         full = source()
-        for name, raw in sources().items():
+        for name, raw in sources(raw=True).items():
             if name != 'Configuration.xml':
                 self.assertEqual(full[name], raw)
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)

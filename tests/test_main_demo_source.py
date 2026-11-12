@@ -83,3 +83,26 @@ class MainDemoSourceTests(unittest.TestCase):
                 self.assertEqual([child.tag for child in form], [M+'Properties'])
                 self.assertEqual(form.findtext(M+'Properties/'+M+'Name'), name)
                 self.assertEqual(form.findtext(M+'Properties/'+M+'FormType'), 'Managed')
+
+    def test_authored_layout_titles_and_commands_use_native_representation(self):
+        from hashlib import sha256
+        v = '{http://v8.1c.ru/8.1/data/core}'
+        l = '{http://v8.1c.ru/8.3/xcf/logform}'
+        before = {
+            'CommonForms/DraftDetails/Ext/Form.xml':'67f34e7bebf16a62bc8e8616bccc82d170d2bc13d7a543f30a16c03ad6251983',
+            'CommonForms/OperationDraft/Ext/Form.xml':'cf2b4d0296fb5932b3000ed823e661649cd25346119d57575f67be52aa0df42e',
+            'Documents/Issue/Forms/Card/Ext/Form.xml':'2747be3390be238f91b80dcded8bdce77598ce648c6625475cfd449a5ea34222',
+            'Documents/Receipt/Forms/Card/Ext/Form.xml':'f01260926e2526025a0d58ba7859d7d7eda6fd0d5b733396b20c4cc0677dd97d',
+        }
+        for path, digest in before.items():
+            with self.subTest(path=path):
+                raw = (SOURCE/path).read_bytes(); root = ET.fromstring(raw)
+                for title in root.iter(l+'Title'):
+                    self.assertEqual([n.tag for n in title], [v+'item'])
+                    self.assertEqual(title.findtext(v+'item/'+v+'lang'), 'ru')
+                    self.assertTrue(title.findtext(v+'item/'+v+'content'))
+                for command in root.iter(l+'CommandName'):
+                    self.assertTrue(command.text.startswith('Form.Command.'))
+                projected = re.sub(rb'<Title><v8:item><v8:lang>ru</v8:lang><v8:content>([^<]*)</v8:content></v8:item></Title>', rb'<Title>\1</Title>', raw)
+                projected = projected.replace(b'<CommandName>Form.Command.', b'<CommandName>')
+                self.assertEqual(sha256(projected).hexdigest(), digest)

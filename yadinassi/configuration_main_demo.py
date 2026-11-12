@@ -65,6 +65,59 @@ def _catalogs(source, inventory):
     return tuple(sorted(result, key=lambda c: str(c.identity)))
 
 
+_NATIVE_LAYOUTS = (
+    'CommonForms/DraftDetails/Ext/Form.xml',
+    'CommonForms/OperationDraft/Ext/Form.xml',
+    'Documents/Receipt/Forms/Card/Ext/Form.xml',
+    'Documents/Issue/Forms/Card/Ext/Form.xml',
+)
+
+
+def _runtime_layout_projection(path, raw):
+    """Closed native-to-runtime view; never alter the archived source bytes."""
+    import re
+    L = '{http://v8.1c.ru/8.3/xcf/logform}'
+    V = '{http://v8.1c.ru/8.1/data/core}'
+    if (type(path) is not str or path not in _NATIVE_LAYOUTS
+            or type(raw) is not bytes or sha256(raw).hexdigest() != SOURCE_SHA256[path]):
+        raise ValueError('main demo layout source mismatch')
+    root = ET.fromstring(raw)
+    if root.tag != L+'Form':
+        raise ValueError('main demo layout root mismatch')
+    titles = list(root.iter(L+'Title'))
+    for title in titles:
+        if title.attrib or (title.text or '').strip() or len(title) != 1:
+            raise ValueError('main demo localized title mismatch')
+        item = title[0]
+        if (item.tag != V+'item' or item.attrib or (item.text or '').strip()
+                or (item.tail or '').strip() or len(item) != 2):
+            raise ValueError('main demo localized title mismatch')
+        lang, content = item
+        if (lang.tag != V+'lang' or lang.text != 'ru' or lang.attrib or len(lang)
+                or (lang.tail or '').strip() or content.tag != V+'content'
+                or content.attrib or len(content) or (content.tail or '').strip()):
+            raise ValueError('main demo localized title mismatch')
+    declarations = root.find(L+'Commands')
+    known = {n.get('name') for n in declarations if n.tag == L+'Command'} if declarations is not None else set()
+    bindings = list(root.iter(L+'CommandName'))
+    for node in bindings:
+        if (node.attrib or len(node) or type(node.text) is not str
+                or not node.text.startswith('Form.Command.')
+                or node.text[len('Form.Command.'):] not in known):
+            raise ValueError('main demo command binding mismatch')
+    # Preserve all namespace declarations and QName-valued text verbatim.
+    projected, count = re.subn(
+        rb'<Title><v8:item><v8:lang>ru</v8:lang><v8:content>([^<]*)</v8:content></v8:item></Title>',
+        rb'<Title>\1</Title>', raw)
+    if count != len(titles):
+        raise ValueError('main demo title encoding mismatch')
+    projected, count = re.subn(rb'<CommandName>Form\.Command\.([^<]+)</CommandName>',
+                               rb'<CommandName>\1</CommandName>', projected)
+    if count != len(bindings):
+        raise ValueError('main demo command encoding mismatch')
+    return projected
+
+
 def _runtime_metadata_projection(source):
     """Strip only measured native identity sections after exact source admission.
 
@@ -94,6 +147,8 @@ def _runtime_metadata_projection(source):
         if count != len(expected):
             raise ValueError('main demo projection shape mismatch')
         result[path] = projected
+    for path in _NATIVE_LAYOUTS:
+        result[path] = _runtime_layout_projection(path, source[path])
     return result
 
 
