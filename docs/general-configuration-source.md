@@ -52,8 +52,8 @@ yadinassi --configuration-source configuration-source.zip --run-startup
 
 This source-only path is opt-in and does not take `--f` or create an ordinary
 SQLite database. Startup is headless, not a UI session. It uses the existing
-interpreter's standalone preprocessor context unless explicitly changed and does
-not claim native client/server or file-mode parity. Reached unsupported services
+interpreter's standalone preprocessor context (other profiles are currently
+refused on this path) and does not claim native client/server or file-mode parity. Reached unsupported services
 fail visibly; a successfully admitted package may fail to start. Common modules
 are compiled when reached instead of rejecting the entire package because an
 unused module contains unsupported syntax. The regular database-backed UI and

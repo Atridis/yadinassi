@@ -122,3 +122,32 @@ class SourceStartupTests(unittest.TestCase):
         self.assertTrue(app.start())
         self.assertEqual(output, ['42'])
         app.close()
+
+    def test_mobile_symbols_false_in_nonmobile_profiles(self):
+        from yadinassi.syntax.preprocessor import ConditionalCompilation, COMPILATION_PROFILES
+        for profile in COMPILATION_PROFILES:
+            for side in ('client', 'server', 'server_nocontext', 'dual_client', 'dual_server'):
+                for symbol in ('MobileClient', 'МобильныйКлиент', 'MobileStandaloneServer',
+                               'МобильныйАвтономныйСервер', 'MobileAppClient',
+                               'МобильноеПриложениеКлиент', 'MobileAppServer', 'МобильноеПриложениеСервер'):
+                    with self.subTest(profile=profile, side=side, symbol=symbol):
+                        policy = ConditionalCompilation('<test>', side, compilation_profile=profile)
+                        policy.process('#If ' + symbol + ' Then', 1, 1)
+                        self.assertFalse(policy.active)
+
+    def test_unknown_symbol_still_rejected(self):
+        from yadinassi.syntax.preprocessor import ConditionalCompilation
+        with self.assertRaisesRegex(BSLError, 'Неподдерживаемый символ'):
+            ConditionalCompilation('<test>').process('#If ImaginaryPlatform Then', 1, 1)
+
+    def test_keyword_property_names(self):
+        from yadinassi.runtime import Interpreter
+        vm = Interpreter(output=lambda x: None)
+        for key in ('Procedure', 'Процедура', 'Function', 'If', 'True', 'Return'):
+            with self.subTest(key=key):
+                self.assertEqual(vm.execute('s = New Structure("' + key + '", 1); s.' + key + ' = 42; s.' + key), 42)
+        vm.close()
+
+    def test_keyword_standalone_is_not_variable(self):
+        from yadinassi.syntax.parser import parse
+        with self.assertRaises(BSLError): parse('Procedure = 42;')
