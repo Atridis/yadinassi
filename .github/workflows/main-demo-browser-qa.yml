@@ -53,5 +53,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-browser-artifacts/list.png
             ${{ runner.temp }}/yadinassi-browser-artifacts/editor.png
             ${{ runner.temp }}/yadinassi-browser-artifacts/narrow.png
+            ${{ runner.temp }}/yadinassi-browser-artifacts/choice.png
           if-no-files-found: error
           retention-days: 14

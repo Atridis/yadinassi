@@ -30,11 +30,13 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         workflow = (ROOT/'.github/workflows/main-demo-browser-qa.yml').read_text(encoding='utf-8')
         self.assertIn('branches: [codex/main-demo-browser-reviewed]', workflow)
         self.assertIn('contents: read', workflow)
-        for screenshot in ('list.png', 'editor.png', 'narrow.png'):
+        for screenshot in ('list.png', 'editor.png', 'narrow.png', 'choice.png'):
             self.assertIn('/yadinassi-browser-artifacts/'+screenshot, workflow)
         self.assertNotIn("act('report-start'", text)
         self.assertNotIn("act('report-end'", text)
         self.assertIn('Movements has no period filter', text)
+        self.assertIn('narrow_choice_clipped', text)
+        self.assertIn('embedded_title_collapsed', text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)

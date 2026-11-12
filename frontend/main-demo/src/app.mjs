@@ -4,10 +4,17 @@ import {createBrowserHost} from '../../form/src/attachment.mjs';
 import {MainDemoClient} from './client.mjs';
 
 export function mountMainDemo(environment,root){
+  if(typeof environment.CSSScopeRule!=='function'){
+    root.textContent='Этот браузер не поддерживает изолированные стили приложения. Откройте демо в современном Chromium. Подключение к базе не выполнялось.';
+    return {unsupported:true,ready:Promise.resolve(false)};
+  }
   const host=createBrowserHost(environment,root),document=environment.document;
   const el=(tag,text='')=>{const n=document.createElement(tag);n.textContent=text;return n;};
   const shell=el('main'),title=el('h1','Единая демо'),nav=el('nav'),notice=el('p'),content=el('div');
+  shell.className='main-demo-shell';nav.className='main-demo-navigation';content.className='main-demo-surface';
+  title.className='main-demo-title';notice.className='main-demo-notice';
   const retry=el('button','Восстановить состояние');notice.setAttribute('role','status');
+  retry.className='main-demo-recover';
   shell.append(title,nav,notice,retry,content);host.content.replaceChildren(shell);
   let mount=null,mountedEpoch=null,busy=false,disposed=false;const timers=new Set();
   const client=new MainDemoClient(host.transport);
@@ -29,7 +36,7 @@ export function mountMainDemo(environment,root){
     if(client.state?.kind==='closed'){notice.textContent='Приложение закрыто.';return;}
     if(mount&&mountedEpoch===client.state.epoch){await mount.resume();return;}
     if(mount){if(!mount.canLeave())throw Error('Сохранён локальный черновик: автоматическое переключение запрещено.');mount.destroy();}
-    content.replaceChildren();mountedEpoch=client.state.epoch;
+    content.replaceChildren();content.className='main-demo-surface '+(client.state.surface==='catalogs'?'main-demo-catalog':'main-demo-documents');mountedEpoch=client.state.epoch;
     mount=client.state.surface==='catalogs'?mountEditor(environment,content,dispatch(mountedEpoch)):mountApplication(environment,content,dispatch(mountedEpoch));
     await mount.ready;
   }

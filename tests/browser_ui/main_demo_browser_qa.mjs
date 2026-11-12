@@ -108,7 +108,7 @@ async function recordsReady(){
     button=>button.textContent.trim()==='+ New record'&&!button.disabled));
 }
 async function screenshot(name){
-  assert.ok(['list.png','editor.png','narrow.png'].includes(name),'unexpected_screenshot');
+  assert.ok(['list.png','editor.png','narrow.png','choice.png'].includes(name),'unexpected_screenshot');
   assert.equal(new URL(page.url()).hash,'','capability_not_removed');
   await page.screenshot({path:path.join(output,name),fullPage:true,animations:'disabled',timeout:remaining(10000)});
 }
@@ -243,7 +243,12 @@ async function main(){
     await act('product-description',()=>field('Description').fill('Кабель USB-C'));
     await act('kind-reference',()=>field('ВидНоменклатуры').selectOption({label:'000000001 · Товары'}));
     await click('Add row to Склады');await click('Choose Склады row 1');
-    await legacyDialog().waitFor({state:'visible'});await click('Next choices');await click('Previous choices');
+    await legacyDialog().waitFor({state:'visible'});
+    await page.setViewportSize({width:390,height:844});
+    const choiceBounds=await legacyDialog().boundingBox();
+    assert.ok(choiceBounds&&choiceBounds.x>=0&&choiceBounds.x+choiceBounds.width<=390,'narrow_choice_clipped');
+    await screenshot('choice.png');await page.setViewportSize({width:1320,height:900});
+    await click('Next choices');await click('Previous choices');
     await act('warehouse-search-text',()=>field('Search references').fill('W069'));await click('Search references');
     dropApply=true;await click('W069 · Warehouse 069');
     await button('Resynchronize choice').waitFor({state:'visible'});assert.equal(dropped,1);
@@ -307,7 +312,10 @@ async function main(){
     const reports=page.getByRole('region',{name:'Saved stock reports',exact:true});
     // Movements has no period filter; only Turnovers/Statement expose bounds.
     await act('show-report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
-    await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();await screenshot('editor.png');
+    await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();
+    const headingBounds=await page.getByRole('heading',{name:'Receipt card',level:1,exact:true}).boundingBox();
+    assert.ok(headingBounds&&headingBounds.width>=200&&headingBounds.height<160,'embedded_title_collapsed');
+    await screenshot('editor.png');
     const saved=audit();verifyMainDemoAudit(saved,assert);
     await act('close-document',()=>settled(formEvent('close'),()=>docButton('Close form').click()));await active().waitFor({state:'detached'});
     await click('Справочники');await catalog('Номенклатура');
@@ -367,7 +375,7 @@ finally{
     try{await lstat(owned);throw Error('owned_directory_remains');}catch(error){if(error.code!=='ENOENT')throw error;}
   }catch{cleanupFailure('owned_directory_cleanup_unverified');}
   const images={};
-  for(const name of ['list.png','editor.png','narrow.png']){
+  for(const name of ['list.png','editor.png','narrow.png','choice.png']){
     try{const file=path.join(output,name),stat=await lstat(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=4*1024*1024);const bytes=await readFile(file);assert.equal(bytes.length,stat.size);images[name]={bytes:bytes.length,sha256:sha256(bytes)};}
     catch{await rm(path.join(output,name),{force:true});report.status='FAIL';report.artifacts='missing_or_invalid_screenshot';}
   }
@@ -376,7 +384,7 @@ finally{
   assert.ok(!tokens.some(token=>raw.includes(token)),'capability_leak');
   await writeFile(path.join(output,'result.json'),raw);
   await writeFile(path.join(output,'manifest.json'),JSON.stringify({schema:1,source:report.sourceCommit,tree:report.binding?.tree,resultSha256:sha256(raw),images},null,2)+'\n');
-  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png'].includes(name)));
+  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
 console.log(JSON.stringify({status:report.status,completed:results.length,total:2,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
