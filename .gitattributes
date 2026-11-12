@@ -257,3 +257,11 @@ tests/fixtures/native_inventory_reference/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Source-bound client reusable-value observations.
+scripts/common_module_reuse_packet/** text eol=lf
+scripts/native_1c_common_module_reuse_profile.py text eol=lf
+scripts/native_1c_common_module_reuse_probe.sh text eol=lf
+scripts/native_1c_bootstrap/common_module_reuse_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_common_module_reuse_stage.py text eol=lf
+tests/test_common_module_reuse_native_acquisition.py text eol=lf
