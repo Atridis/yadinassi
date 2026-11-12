@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import {childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
+import {MainDemoFilterCapture} from './main_demo_filter_capture.mjs';
 import {mainDemoLaunchOutputReader as launchOutputReader,mainDemoAllowedRequest as allowedRequest,verifyMainDemoAudit} from './main_demo_browser_support.mjs';
 const args=process.argv.slice(2);
 assert.equal(args.length,0,'invalid_arguments');
@@ -128,7 +129,7 @@ async function main(){
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
   const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','frontend/catalog','frontend/configuration','frontend/main-demo','frontend/form','examples/demo','.github/workflows/main-demo-browser-qa.yml').split('\0').filter(Boolean);
   for(const required of ['.github/workflows/main-demo-browser-qa.yml','tests/browser_ui/main_demo_browser_qa.mjs','tests/browser_ui/main_demo_fixture.py',
-    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
+    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_filter_capture.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
     'frontend/catalog/src/app.jsx','frontend/main-demo/src/app.mjs','frontend/configuration/src/app.mjs'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
@@ -186,7 +187,7 @@ async function main(){
   await startHost();
   let dropApply=false, dropDocument=false, dropped=0, droppedDocument=0;
   let resultGate=null,dropOwnedResult=false,droppedOwnedResult=0;
-  const requests=[];
+  const requests=[];const filterCapture=new MainDemoFilterCapture();
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
     'editor.hello','editor.snapshot','editor.select','editor.open','editor.event',
@@ -207,6 +208,7 @@ async function main(){
         action:inner?.params?.action?.action,nested:inner?.params?.request?.method,control:inner?.params?.request?.params?.control});
       report.rpcTail.push([safeMethod(request.method),safeMethod(inner?.method),safeMethod(inner?.params?.request?.method)]);
       if(report.rpcTail.length>12)report.rpcTail.shift();
+      if(await filterCapture.route(route,origin,{fetchTimeout:remaining(rpcFetchMs),bodyTimeout:remaining(rpcFetchMs),bounded}))return;
       const ownedAccept=inner?.method==='application.form'&&inner.params?.request?.method==='form.event'&&inner.params.request.params?.event==='command'&&inner.params.request.params.control==='AcceptButton';
       if(ownedAccept&&(resultGate||dropOwnedResult)){
         const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
@@ -303,12 +305,16 @@ async function main(){
   const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
   // Observe only the existing browser response. Never dispatch a second request.
   const filterReply=async(method,action)=>{
+    const capture=filterCapture.begin(method);
+    try{
     report.filterStage='await-response';
     const waiting=replyFor(packet=>packet.method===method);
-    const [response]=await Promise.all([waiting,action()]);
+    const [response]=await Promise.all([waiting,action(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
     report.filterStage='read-response';
     const packet=response.request().postDataJSON();
-    const bytes=await bounded(response.body(),remaining(rpcFetchMs),'filter_reply_body_timeout');
+    const captured=filterCapture.consume(capture,packet.id);
+    assert.equal(captured.packet.params.request.id,packet.params.request.id,'filter_capture_consumer_inner_id');
+    const bytes=captured.bytes;
     assert.ok(bytes.length<=131072,'filter_reply_body_budget');
     report.filterStage='validate-envelope';
     const body=JSON.parse(bytes.toString('utf8'));
@@ -320,6 +326,7 @@ async function main(){
     report.filterStage='await-render-ready';
     await page.waitForFunction(()=>[...document.querySelectorAll('.configuration-catalog button')].some(b=>b.textContent==='Apply filters'&&!b.disabled),null,{timeout:remaining(rpcReplyMs)});
     return payload.result;
+    }finally{filterCapture.clear(capture);}
   };
   const formEvent=event=>packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event;
   const commit=async(name,text)=>act('document-input:'+name,()=>settled(
@@ -558,6 +565,10 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'filter_capture_pending','filter_capture_method','filter_capture_duplicate','filter_capture_request_origin',
+  'filter_capture_response_origin','filter_capture_request_id','filter_capture_http','filter_capture_json',
+  'filter_capture_outer_id','filter_capture_inner_id','filter_capture_retired','filter_capture_failed',
+  'filter_capture_cleanup','filter_capture_transport','filter_capture_timeout','filter_capture_consumed','filter_capture_consumer_id','filter_capture_consumer_inner_id',
   'owned_result_outer_id','owned_result_inner_id','owned_result_recovery_form_mutated',
   'owned_child_not_navigation','owned_child_not_retired','owned_independent_draft_lost','owned_paused_close_enabled','owned_paused_command_enabled','owned_paused_dispatched','owned_result_action_count','owned_result_applied_early','owned_result_body_budget','owned_result_body_timeout','owned_result_busy_enabled','owned_result_changed_database','owned_result_delayed_delivery_independent_draft_and_loss_without_replay','owned_result_delivery_gate_timeout','owned_result_duplicate_accept','owned_result_gate_not_reached','owned_result_http','owned_result_inner_error','owned_result_loss_not_observed','owned_result_not_prepared','owned_result_not_retired_after_delivery','owned_result_outer_error','owned_result_raw_copy_lost','owned_result_recovery_mutated','owned_result_recovery_replayed','owned_result_reopen_value','owned_result_retired_before_delivery','owned_result_unknown_draft_unlocked','owned_result_update_count','owned_result_update_error',
   'filter_exact_total','filter_exact_rows','filter_exact_navigation','filter_visible_rows',

@@ -108,3 +108,17 @@ class MainDemoBrowserContractTests(unittest.TestCase):
                        'owned_result_unknown_draft_unlocked', 'owned_result_changed_database',
                        "assert.equal(actionLog.length-start,14", 'resultGate=null;gate.arrived()'):
             self.assertIn(marker, text)
+
+    def test_filter_capture_is_single_request_exact_byte_observer(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        capture = (ROOT/'tests/browser_ui/main_demo_filter_capture.mjs').read_text(encoding='utf-8')
+        body = text.split('const filterReply=async(method,action)=>{', 1)[1].split('const formEvent=', 1)[0]
+        self.assertNotIn('response.body()', body)
+        for marker in ('filterCapture.begin(method)', 'filterCapture.consume(capture,packet.id)',
+                       'finally{filterCapture.clear(capture);}', 'captured.packet.params.request.id'):
+            self.assertIn(marker, body)
+        for marker in ('maxRedirects:0,maxRetries:0', 'bytes.length<=131072',
+                       'route.fulfill({response,body:bytes})', 'filter_capture_duplicate',
+                       'filter_capture_request_origin', 'filter_capture_response_origin',
+                       'filter_capture_outer_id', 'filter_capture_inner_id', 'response.dispose()'):
+            self.assertIn(marker, capture)

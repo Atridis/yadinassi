@@ -54,6 +54,10 @@ class InventoryApplicationSourceTests(unittest.TestCase):
         # Historical business-rule variant differs only in the two handlers.
         for name in ('Receipt','Issue'):
             path=f'Documents/{name}/Ext/ObjectModule.bsl';files[path]=source()[path]
+        # Preserve the deleted eight-file source independently of current forms.
+        self.assertEqual(sha256(b''.join(path.encode()+b'\0'+sha256(raw).digest()
+            for path,raw in sorted(files.items()))).hexdigest(),
+            '26aa062acf79d087f5205aa85632da3546c52506ca133b3ace2bed77ff1e9030')
         baseline=import_inventory_configuration(files,inventory_runtime=CORE_PROFILE)
         for name in ('identity','name','catalogs','documents','registers','handlers'):
             self.assertEqual(getattr(config,name),getattr(baseline,name),name)
