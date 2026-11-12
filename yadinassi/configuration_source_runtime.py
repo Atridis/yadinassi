@@ -49,6 +49,9 @@ class _SourceInterpreter(Interpreter):
                    'регистрысведений', 'accumulationregisters', 'регистрынакопления',
                    'enums', 'перечисления'}:
             raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
+        if key in ('constants', 'константы'):
+            from .source_constants_runtime import SourceConstants
+            return SourceConstants(self.application)
         if key in ('sessionparameters', 'параметрысеанса'):
             self.application.session_parameters._authorize(self)
             return self.application.session_parameters
@@ -70,7 +73,7 @@ def _walk(value):
 
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
-    def __init__(self, source, *, output=print, compilation_profile='standalone'):
+    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
         if compilation_profile != 'standalone':
@@ -97,6 +100,14 @@ class SourceApplication:
         self.reusable_values = ApplicationReusableValues(self, source_family=self.interpreter)
         from .safe_mode import SourceSafeMode
         self.safe_mode = SourceSafeMode(self)
+        self.constant_store = None
+        if scratch_database is not None:
+            from .source_constant_store import SourceConstantStore
+            try:
+                self.constant_store = SourceConstantStore.create(scratch_database, source)
+            except BaseException:
+                self.close()
+                raise
         self._session_owner = None
         self._session_handler = None
 
@@ -252,6 +263,8 @@ class SourceApplication:
                                            self._session_owner, require_value=False)
 
     def close(self):
+        if self.constant_store is not None:
+            self.constant_store.close()
         self.session_parameters.close()
         self.reusable_values.close()
         self.interpreter.close()

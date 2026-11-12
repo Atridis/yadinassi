@@ -128,3 +128,31 @@ The source host does not grant native server privileges or emulate a managed
 client's no-op setter. Counter state belongs to one live application and execution
 context, not a process-wide flag. The platform reference informed the design;
 a native parity witness has not been run for this subset.
+
+## Fresh scalar constants storage
+
+For an explicit storage-backed startup experiment, create a **new**, separately
+owned SQLite artifact:
+
+```sh
+yadinassi --configuration-source path/to/xml --run-startup --source-scratch-db owned-directory/constants.sqlite
+```
+
+The destination must not already exist. Its parent must be an existing owned,
+non-symlink directory (with no group/world write permissions on POSIX). This
+constants-only profile is bound to the entire source digest, configuration UUID
+and admitted scalar declarations. It does not open, migrate or grant access to an
+existing application database and cannot be combined with `--f`. The resulting
+file is retained after success or failure for inspection; this experimental path
+currently has no reopen command. Do not treat it as a complete configuration DB.
+
+`Constants.<Name>.Get()` and `.Set(value)` (and Russian aliases) operate on real
+SQLite values in the synchronous server-side source family. Supported storage
+values are exactly validated String, Number, Boolean and Date declarations.
+Unsupported declared types fail by name. Writes with unsupported constant-module
+hooks, data-history or validation policies fail rather than bypassing them.
+No missing initial constant value is fabricated: until native initialization
+semantics are established, `Get()` before an explicit `Set()` reports an
+uninitialized constant. Closing the application invalidates its managers.
+Source SafeMode rejects access to this database just like other external I/O;
+this is a conservative host restriction, not claimed native database parity.

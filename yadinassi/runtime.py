@@ -1049,6 +1049,9 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_constants_runtime import SourceConstants
+        if type(value) is SourceConstants:
+            return value.member(self, node.name)
         if type(value) is BSLSessionParameters:
             return (yield from value.read(self,node.name))
         if type(value) is _Module:
@@ -1263,6 +1266,9 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
+        from .source_constants_runtime import ConstantCall
+        if type(function.function) is ConstantCall:
+            return function.function.invoke(self, values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
