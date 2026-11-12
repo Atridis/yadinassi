@@ -243,6 +243,8 @@ class Interpreter:
         self._execute_depth = [0]
         from .common_templates import get_common_template_marker
         self.register_function('ПолучитьОбщийМакет',get_common_template_marker,'GetCommonTemplate')
+        from .reusable_values import refresh_reusable_marker
+        self.register_function('ОбновитьПовторноИспользуемыеЗначения',refresh_reusable_marker,'RefreshReusableValues',returns_value=False)
         self._eval_depth = [0]  # Shared by imported modules, like the handler stack.
         from . import temporary_storage
         self.register_function('ПоместитьВоВременноеХранилище',temporary_storage.put_marker,'PutToTempStorage')
@@ -1120,7 +1122,7 @@ class Interpreter:
                     owner = known_receiver.interpreter
                     routine = known_receiver.routine(callee.name)
         if routine is not None:
-            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value))
+            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=isinstance(callee, ast.Attribute)))
         # Existing host calls reject omitted arguments before receiver effects.
         # Native table/list methods need optional holes; admit them only for a known
         # exact built-in receiver (a variable or its Columns property). We never
@@ -1146,7 +1148,7 @@ class Interpreter:
             receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
-                                         receiver.interpreter, require_value=require_value))
+                                         receiver.interpreter, require_value=require_value, qualified=True))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
             function = receiver.get_method(callee.name)
@@ -1154,6 +1156,14 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        from .reusable_values import refresh_reusable_marker
+        refresh_call = function.function is refresh_reusable_marker
+        if refresh_call:
+            if self._configuration_runtime is None:
+                raise ValueError('reusable values require a configuration application')
+            self._configuration_runtime.reusable_values.authorize(self)
+            if node.arguments:
+                raise TypeError('RefreshReusableValues requires no arguments')
         from .value_lists import _ChooseItemMarker
         choosing = type(function.function) is _ChooseItemMarker
         if choosing:
@@ -1237,6 +1247,8 @@ class Interpreter:
             else:
                 value = (yield from self._visit(argument))
             values.append(value)
+        if refresh_call:
+            return self._configuration_runtime.reusable_values.refresh(self)
         if choosing:
             return self._configuration_runtime.dispatch_value_selection(self, function.function.source, values)
         if template_call:
@@ -1541,7 +1553,7 @@ class Interpreter:
         return None
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
-                     owner: "Interpreter", *, require_value: bool) -> object:
+                     owner: "Interpreter", *, require_value: bool, qualified: bool = False) -> object:
         self._require_family()
         owner._require_family()
         if self._configuration_runtime is not None:
@@ -1608,6 +1620,26 @@ class Interpreter:
                     raise TypeError("Межконтекстная передача ссылок на свойства пока не поддерживается")
                 late_inputs[name] = value
             bindings[name] = value
+        reuse = None
+        if self._configuration_runtime is not None:
+            selected = self._configuration_runtime.reusable_call(self, owner, function, qualified)
+            if selected is not None:
+                from .reusable_values import argument_key
+                cache, identity = selected
+                actuals = tuple(value.get() if isinstance(value, _Reference) else value for value in bindings.values())
+                key = argument_key(actuals)
+                if key is None:
+                    raise ValueError('unsupported reusable common-module argument')
+                key = (*identity, key)
+                found, cached = cache.lookup(key)
+                if found:
+                    try:
+                        cache.revalidate(key, self._configuration_runtime.reusable_values.measure(cached))
+                    except (TypeError, ValueError):
+                        cache.discard(key)
+                        raise
+                    return cached
+                reuse = (cache, cache.reserve(key))
         if crossing or function.is_async:
             from .database_transactions import forbid_transfer
             forbid_transfer(self._transaction_backend())
@@ -1660,6 +1692,10 @@ class Interpreter:
                         # Publish only after the whole packet validates and allocates.
                         for (_, reference), value in zip(copyback, packet[1:]):
                             reference.set(value)
+                    if reuse is not None:
+                        self._configuration_runtime.reusable_values.authorize(self)
+                        cache, reservation = reuse
+                        cache.publish(reservation, result, self._configuration_runtime.reusable_values.measure(result))
                     return result
             finally:
                 owner._module_context_stack.pop()
