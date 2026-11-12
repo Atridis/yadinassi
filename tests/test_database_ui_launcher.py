@@ -162,7 +162,7 @@ class DatabaseRouteTests(unittest.TestCase):
 
     def test_configuration_routes_use_private_stored_source(self):
         for route,flag in ui.ROUTES.items():
-            if route=='catalog':continue
+            if route in ('catalog', 'main-demo'):continue
             snapshot=replace(Snapshot(),route=route);self.backend.launch_snapshot.return_value=snapshot
             seen=[]
             def app(args):
@@ -173,6 +173,18 @@ class DatabaseRouteTests(unittest.TestCase):
             with mock.patch.object(configuration_app,'main',side_effect=app):
                 self.assertEqual(ui.main(['--f','owned','--form','CommonForm.Main']),9)
             self.assertFalse(seen[0].exists())
+
+    def test_main_demo_handoff_and_initial_form_refusal(self):
+        from yadinassi.ui import main_demo_web
+        snapshot = replace(Snapshot(), route='main-demo')
+        self.backend.launch_snapshot.return_value = snapshot
+        with mock.patch.object(main_demo_web, 'main', return_value=11) as app:
+            self.assertEqual(ui.main(['--f', 'owned', '--open-browser']), 11)
+        app.assert_called_once_with(['--f', 'owned', '--launch-binding',
+                                     ui.binding(snapshot), '--open-browser'])
+        with mock.patch.object(main_demo_web, 'main') as app, redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            ui.main(['--f', 'owned', '--form', 'CommonForm.Main'])
+        app.assert_not_called()
 
     def test_catalog_initial_form_refused(self):
         with mock.patch.object(local_app,'main') as app, redirect_stderr(StringIO()),self.assertRaises(SystemExit):

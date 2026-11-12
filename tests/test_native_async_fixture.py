@@ -376,8 +376,26 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_main_demo_assets_provenance(source):
+    """Restore the exact prior renderer inventory; never rewrite native evidence."""
+    base = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
+    candidate = 'ae7c7d309d2faec1d3318df32d050ceb7b50fa7d2b4b1d6e7905990472babdc3'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest != candidate:
+        return source  # Older layers enforce their own exact outer identity.
+    old = 'for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in'
+    new = 'for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo") for name in'
+    if source.count(new) != 1:
+        raise AssertionError('main demo inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('main demo inventory inner source identity')
+    return source
+
+
 def without_repository_inventory_budget(source):
     """Exact inverse of the bounded Git inventory budget, not native evidence."""
+    source = without_main_demo_assets_provenance(source)
     base = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
     candidate = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()

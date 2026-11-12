@@ -12,7 +12,7 @@ def sources(root=Path(__file__).resolve().parents[1] / "examples" / "demo", *, r
     else:
         from yadinassi.configuration_main_demo import (PROFILE, import_main_demo_configuration,
                                                        _runtime_metadata_projection)
-        full = {str(path.relative_to(root)): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+        full = {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob('*') if path.is_file()}
         admitted = import_main_demo_configuration(full, profile=PROFILE)
         source = _runtime_metadata_projection(dict(admitted.files))
     files = {path: source[path] for path in paths}

@@ -43,7 +43,7 @@ class MainDemoDesignerTests(unittest.TestCase):
     def test_source_is_canonical_39_and_projection_is_exact_38(self):
         source=host.source_files()
         self.assertEqual(len(source),39)
-        original=ast.literal_eval(ast.parse((ROOT/'yadinassi/main_demo_source.py').read_text()).body[1].value)
+        original=ast.literal_eval(ast.parse((ROOT/'yadinassi/main_demo_source.py').read_text(encoding='utf-8')).body[1].value)
         self.assertEqual(host.SOURCE_SHA256,original)
         with tempfile.TemporaryDirectory() as temp:
             target=Path(temp)/'source';host.stage_source(target,source)
@@ -74,7 +74,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         for flag in host.CHECK_FLAGS:self.assertIn(flag,flat)
 
     def test_container_isolation_and_pinned_image(self):
-        command=host.container_command(Path('/tmp/staged'),'a'*32)
+        command=host.container_command((Path(tempfile.gettempdir()).resolve()/'staged'),'a'*32)
         for flag,value in (('--network','none'),('--user','1000:1000'),('--cap-drop','ALL'),
                 ('--security-opt','no-new-privileges:true'),('--pull','never'),('--platform','linux/amd64')):
             self.assertEqual(command[command.index(flag)+1],value)
@@ -82,7 +82,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         self.assertEqual(command.count('--mount'),1)
         self.assertIn('readonly',command[command.index('--mount')+1])
         self.assertNotIn('GHCR_TOKEN',' '.join(command))
-        with self.assertRaises(host.DemoError):host.container_command(Path('/tmp/a,b'),'a'*32)
+        with self.assertRaises(host.DemoError):host.container_command((Path(tempfile.gettempdir()).resolve()/'a,b'),'a'*32)
 
     def test_success_report_is_exact(self):
         self.assertEqual(self.validate(self.report())['status'],'ok')
@@ -132,8 +132,8 @@ class MainDemoDesignerTests(unittest.TestCase):
         with self.assertRaises(ValueError):policy.admission(bad,c)
 
     def test_embedded_admission_matches_policy_before_checkout(self):
-        workflow=(ROOT/'.github/workflows/native-1c-main-demo-designer.yml').read_text()
-        script=(ROOT/'scripts/native_1c_main_demo_ci_policy.py').read_text()
+        workflow=(ROOT/'.github/workflows/native-1c-main-demo-designer.yml').read_text(encoding='utf-8')
+        script=(ROOT/'scripts/native_1c_main_demo_ci_policy.py').read_text(encoding='utf-8')
         start='# BEGIN MAIN DEMO ADMISSION';end='# END MAIN DEMO ADMISSION'
         inline=workflow.split(start,1)[1].split(end,1)[0]
         inline='\n'.join(line[10:] if line.startswith(' '*10) else line for line in inline.splitlines())
@@ -146,7 +146,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         self.assertEqual(workflow.count("${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}"), 3)
 
     def test_bootstrap_private_display_and_bus(self):
-        shell=(ROOT/'scripts/native_1c_main_demo_designer.sh').read_text()
+        shell=(ROOT/'scripts/native_1c_main_demo_designer.sh').read_text(encoding='utf-8')
         self.assertIn('-rfbport -1 -nolisten tcp',shell)
         self.assertIn('/usr/bin/dbus-run-session -- python3',shell)
         self.assertIn('native_1c_main_demo_designer.py --inside-container',shell)
@@ -155,7 +155,7 @@ class MainDemoDesignerTests(unittest.TestCase):
         self.assertNotIn('ENTERPRISE', executable)
 
     def test_host_cleanup_precedes_report_and_no_payload_export(self):
-        source=(ROOT/'scripts/native_1c_main_demo_designer.py').read_text()
+        source=(ROOT/'scripts/native_1c_main_demo_designer.py').read_text(encoding='utf-8')
         tree=ast.parse(source)
         run=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='run_host')
         ret=next(n for n in run.body if isinstance(n,ast.Return))
@@ -185,7 +185,7 @@ class MainDemoDesignerTests(unittest.TestCase):
             with self.subTest(key=key),self.assertRaises(ValueError):policy.admission(e,bad)
 
     def test_execution_step_supplies_its_own_admission_environment(self):
-        workflow = (ROOT/'.github/workflows/native-1c-main-demo-designer.yml').read_text()
+        workflow = (ROOT/'.github/workflows/native-1c-main-demo-designer.yml').read_text(encoding='utf-8')
         steps = workflow.split('      - name: ')
         execution, = [step for step in steps if '--execute-approved-image' in step]
         env = execution.split('        env:\n', 1)[1].split('        run:', 1)[0]

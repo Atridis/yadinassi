@@ -25,7 +25,7 @@ class MainDemoStorageAdmissionTests(unittest.TestCase):
         config=self.config()
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'main.sqlite'
-            self.assertEqual(create_main_demo(str,path,config),str(path))
+            self.assertEqual(create_main_demo(str,path,config),str(path.resolve()))
             db=self.open(path);fresh,domain,_=read_source(db)
             self.assertEqual(fresh,config)
             self.assertEqual(db.execute('PRAGMA user_version').fetchone(),(16,))
