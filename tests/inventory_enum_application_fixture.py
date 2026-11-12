@@ -25,4 +25,7 @@ def source():
                 core[path] = before + b'<Form>Card</Form></ChildObjects>' + after
     path='Catalogs/Products/Forms/Card/Ext/Form.xml'
     core[path]=core[path].replace(b'</ChildItems>', b'<InputField name="UnitInput" id="30"><Title>Unit</Title><DataPath>Object.Unit</DataPath><Events><Event name="OnChange">Changed</Event></Events></InputField></ChildItems>')
+    for name in ('Receipt','Issue'):
+        path=f'Documents/{name}/Forms/Card/Ext/Form.xml'
+        core[path]=core[path].replace(b'</ChildItems>', b'<InputField name="StateInput" id="30"><Title>State</Title><DataPath>Object.State</DataPath><Events><Event name="OnChange">Changed</Event></Events></InputField></ChildItems>')
     return core

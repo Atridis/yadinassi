@@ -66,6 +66,8 @@ class EnumApplicationTests(unittest.TestCase):
         self.assertEqual(report['rows'],[])
 
     def test_summary_projection_preserves_schema_bounds(self):
+        example=Path(__file__).resolve().parents[1]/"examples/configuration-inventory-enum-application"
+        self.assertEqual({p.relative_to(example).as_posix():p.read_bytes() for p in example.rglob("*") if p.is_file()},source())
         from dataclasses import replace
         from yadinassi.ui.catalog_view import CatalogRepository
         from yadinassi.ui.protocol import UIError
@@ -73,3 +75,39 @@ class EnumApplicationTests(unittest.TestCase):
         for forged in (replace(schema,code_length=True),replace(schema,description_length=1025),
                        replace(schema,fields=list(schema.fields)),replace(schema,fields=schema.fields*65)):
             with self.assertRaises(UIError):CatalogRepository._summary_fields(forged)
+
+    def test_document_enum_header_rows_post_unpost_reopen_and_reports(self):
+        from decimal import Decimal
+        for name,code in (('Products','P1'),('Warehouses','W1')):
+            sid=self.open('Catalog.'+name+'.Form.Card')
+            self.event(sid,'change',control='CodeInput',value=code)
+            self.event(sid,'change',control='DescriptionInput',value=name)
+            if name=='Products':self.choose(sid,'UnitInput')
+            self.event(sid,control='SaveButton')
+        entry=self.app.names['document.receipt.form.card'];self.rpc('catalog',entry=entry)
+        sid=self.open('Document.Receipt.Form.Card')
+        self.event(sid,'change',control='NumberInput',value='R1')
+        self.choose(sid,'WarehouseInput');self.choose(sid,'StateInput')
+        self.event(sid,control='AddLineButton')
+        table=next(i for i in self.app.sessions[sid][0]._snapshot()['items'] if i['kind']=='table')
+        row=table['rows'][0]['id']
+        self.choose(sid,'LinesTable',row,'Product');self.choose(sid,'LinesTable',row,'Unit')
+        self.event(sid,'cell',control='LinesTable',row=row,column='Quantity',value=Decimal(2))
+        self.event(sid,'cell',control='LinesTable',row=row,column='Amount',value=Decimal(10))
+        self.event(sid,control='WriteButton')
+        self.assertEqual(len(self.app.catalog['rows']),1)
+        record=self.app.catalog['rows'][0]['key']
+        self.event(sid,control='PostButton')
+        self.assertTrue(self.broker.objects[sid].object.get_member('Posted'))
+        report=self.rpc('report',report='StockMovements',at=None,start=None,end=None)['state']['report']
+        self.assertEqual(len(report['rows']),1)
+        values=dict(zip((c['name'] for c in report['columns']),report['rows'][0]))
+        self.assertEqual(values['Unit'],{'type':'String','value':'Piece'})
+        self.assertEqual(values['State'],{'type':'String','value':'Draft'})
+        other=self.open('Document.Receipt.Form.Card',request='posted-reopen',record=record)
+        self.assertTrue(self.broker.objects[other].object.get_member('Posted'))
+        self.assertFalse(self.broker.objects[other].object.get_member('State').is_empty())
+        self.event(other,control='UndoPostingButton')
+        self.assertFalse(self.broker.objects[other].object.get_member('Posted'))
+        report=self.rpc('report',report='StockMovements',at=None,start=None,end=None)['state']['report']
+        self.assertEqual(report['rows'],[])
