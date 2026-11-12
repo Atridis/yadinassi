@@ -57,7 +57,7 @@ class MainDemoSourceTests(unittest.TestCase):
 
     def test_complete_bounded_xml_bsl_envelope(self):
         paths = [p for p in SOURCE.rglob('*') if p.is_file()]
-        self.assertEqual(len(paths), 39)
+        self.assertEqual(len(paths), 44)
         self.assertTrue(all(p.suffix in ('.xml', '.bsl') for p in paths))
         for path in paths:
             if path.suffix == '.xml':

@@ -177,3 +177,12 @@ KeepOpen, повторное открытие и однократное подт
 Welcome/counter пока не удалены: помимо прямых ссылок их динамически используют
 configuration_forms/app/application_profile/layouts, empty-date и browser
 проверки. Их нельзя объявлять неиспользуемыми по одному текстовому grep.
+
+## Перенос lifecycle и общих модулей
+
+В основной демо подготовлен managed startup с цепочкой client DemoTools →
+server-call DemoService. Общие модули не получают database_context; исходные
+формы, объектные обработчики и их отдельные grants сохранены. Источник44,
+Designer projection43: старое native/browser evidence к нему не относится.
+Application-host/business ещё не удалены: их навигационные сценарии должны
+быть перенесены и проверены до удаления исходных конфигураций.

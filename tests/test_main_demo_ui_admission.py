@@ -40,7 +40,7 @@ class MainDemoUIAdmissionTests(unittest.TestCase):
         config = self.config()
         forms = document_forms(config)
         self.assertEqual(dict(forms.source_files), source())
-        self.assertEqual(len(forms.source_files), 39)
+        self.assertEqual(len(forms.source_files), 44)
         self.assertEqual(forms.source_files['Configuration.xml'], source()['Configuration.xml'])
         digest = sha256()
         for path, raw in sorted(source().items()):

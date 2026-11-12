@@ -44,7 +44,11 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': 'a2816c3263ab8ea6bb82b299b27
  'CommonForms/OperationDraft.xml': '833a48959f40084a5550d49236df256e44f4060cb9cc2235d9edb96ae7cf0dcb',
  'CommonForms/OperationDraft/Ext/Form.xml': '33e1afff136c3bbdda92121d31c298e520cbffe6171910c8fcd6804847c5f84d',
  'CommonForms/OperationDraft/Ext/Form/Module.bsl': '31f9f03370889fc262a13ca0f89375440ee9d26a4c4734583a47007dc92f7006',
- 'Configuration.xml': 'de4c8c950e6f39f8e9dc5bf828036670a61397e78be9e4da9370f8c31d06eca8',
+ 'CommonModules/DemoService.xml': '5f29f464788769b33615fe3920335842f58355ec5f23861b1c1018f1e4a70e36',
+ 'CommonModules/DemoService/Ext/Module.bsl': '6896d4e8cb17cb2740397209d9a7e0c630a8d6d7db483cb4ed7ba882074089cb',
+ 'CommonModules/DemoTools.xml': '0450279ff014eca7e30e2ea6d37b18e9c8942106c0b415225a2ffec246dac483',
+ 'CommonModules/DemoTools/Ext/Module.bsl': '6893ec3d0267cbf1cf115e4d9118ae13528a5562160f7e2bdd8bddb768a4f828',
+ 'Configuration.xml': 'df057ffe3a05f21397f27c02a694dc68901e44872d019b61bf957bce5f803079',
  'Documents/Issue.xml': '4dd45972011a1e375ec1ccb65f87cec79647692c699f8bd8feb0fc60b6f08b4a',
  'Documents/Issue/Ext/ObjectModule.bsl': 'c3fc50dc1b1fe476f5b98f9aba72d4b9b20adcf8b5f005114fcee115f0bb67f2',
  'Documents/Issue/Forms/Card.xml': '6c2569339a0a3ffde1d50f8bc571a992c3c4df98032a750216f4103b5032227a',
@@ -60,6 +64,7 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': 'a2816c3263ab8ea6bb82b299b27
  'Ext/ClientApplicationInterface.xml': '407d37fdc9c46dc9ef03573c8241f574c382e329cc9670bf5eba0d529860b16a',
  'Ext/CommandInterface.xml': 'b36fdd6e977f07daa40e5b4efd4bf8ad1c536f08402642df470587600848315a',
  'Ext/HomePageWorkArea.xml': '16188438d96e87c4103ba71fe773543c1b71f3ca98e93476f3174d816672010e',
+ 'Ext/ManagedApplicationModule.bsl': '54c591d67a643c1b201e814e51fa6be85f774f0a7ae90dae656a0efe82657311',
  'InventoryApplication.xml': 'f5e2f1e13d63484bf536d150b6e9eddbd83058f1422657d7aec11442a235993a',
  'Languages/Русский.xml': 'e0438b24e18c15da067173886270b2a4806aff1ea97031b2211c3f586181cf3c',
  'Subsystems/НормативнаяИнформация.xml': 'e824868068ac9018757c8fea8adbe4eee1c597a82e0fd6d8215c8d2f94858412'}
@@ -133,7 +138,7 @@ def dump_files(root):
 def source_files(root=ROOT):
     files = dump_files(root / SOURCE_ROOT)
     require({n: digest(raw) for n, raw in files.items()} == SOURCE_SHA256)
-    require(len(files) == 39 and len(PLATFORM_FILES) == 38 and MANIFEST in files)
+    require(len(files) == 44 and len(PLATFORM_FILES) == 43 and MANIFEST in files)
     return files
 
 
