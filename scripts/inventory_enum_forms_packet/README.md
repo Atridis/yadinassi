@@ -22,14 +22,15 @@ semantic expectations.
 
 Source-bound host/stage routing is implemented in
 `native_1c_owned_enum_forms_profile.py` and its separate probe/stage. The fresh
-configuration material check refuses unknown nodes/attributes; only finite
-known passive defaults and metadata versions 2.4/2.20 are admitted. Executable
-modules, event bindings, object types and source inventories remain checked.
+configuration material check retains enum/schema identity, exact executable
+modules, form UUID/type, Object binding and event names. Passive Designer
+presentation/default XML is not a parity oracle. No new events, attributes,
+commands or controls are admitted by the form projection.
 Nonce-bound completion, all eight records, all thirty lifecycle events, process
 exit and owned cleanup are required. New platform redump differences require an
 observed, reviewed policy change; they are not silently ignored.
 
-Current status: preparation/material offline tests passed; new route/host/stage
-composition remains unexecuted pending its separate review and announced test
-counts. Native acquisition, workflow publication and expected-output capture
-have not occurred.
+Current status: preparation checks passed; native load/update succeeded, while
+the first strict material-redump projection prevented observation. The projection
+now checks execution-relevant material instead of passive XML defaults. Native
+observations remain unacquired until a fresh source-bound run is verified.

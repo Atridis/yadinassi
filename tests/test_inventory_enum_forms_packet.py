@@ -93,7 +93,7 @@ class EnumFormsMaterialTests(unittest.TestCase):
 
     def test_unknown_root_behavior_refused(self):
         raw=(ROOT/'Products/Form.xml').read_bytes()
-        for extra in (b'<UnknownBehavior/>',b'<Command name="Write"/>',b'<Events/>'):
+        for extra in (b'<Event name="OnClose">Injected</Event>',b'<Command name="Write"/>',b'<Events/>'):
             with self.subTest(extra=extra), self.assertRaises(ValueError):
                 self.material.managed_form(raw.replace(b'</Form>',extra+b'</Form>'))
 
@@ -115,16 +115,19 @@ class EnumFormsMaterialTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.material.managed_form(raw.replace(b'</Form>',injected+b'</Form>'))
 
-    def test_metadata_unknown_property_refused(self):
+    def test_metadata_passive_properties_do_not_define_parity(self):
         raw=(ROOT/'Products/Card.xml').read_bytes()
-        with self.assertRaises(ValueError):
-            self.material.metadata_form(raw.replace(b'</Properties>',b'<UnknownBehavior>true</UnknownBehavior></Properties>'))
+        changed=raw.replace(b'<Comment/>',b'<Comment>Designer presentation</Comment>')
+        changed=changed.replace(b'</Properties>',b'<DesignerDefault>true</DesignerDefault></Properties>')
+        self.assertEqual(self.material.metadata_form(raw),self.material.metadata_form(changed))
+        changed=raw.replace(b'<Name>Card</Name>',b'<Name>Other</Name>')
+        self.assertNotEqual(self.material.metadata_form(raw),self.material.metadata_form(changed))
 
-    def test_metadata_passive_defaults_are_finite(self):
-        raw=(ROOT/'Products/Card.xml').read_bytes()
-        for value in (raw.replace(b'<Comment/>',b'<Comment><Injected/></Comment>'),
-                      raw.replace(b'<IncludeHelpInContents>false',b'<IncludeHelpInContents>true')):
-            with self.assertRaises(ValueError): self.material.metadata_form(value)
+    def test_form_passive_defaults_do_not_define_parity(self):
+        raw=(ROOT/'Products/Form.xml').read_bytes()
+        changed=raw.replace(b'</Form>',b'<Title>Designer presentation</Title><AutoTitle>false</AutoTitle></Form>')
+        changed=changed.replace(b'<MainAttribute>',b'<SavedData>true</SavedData><MainAttribute>')
+        self.assertEqual(self.material.managed_form(raw),self.material.managed_form(changed))
 
     def test_type_and_event_binding_changes_are_material(self):
         raw=(ROOT/'Products/Form.xml').read_bytes()
