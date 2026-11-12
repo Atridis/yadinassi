@@ -12,6 +12,8 @@ import {mainDemoLaunchOutputReader as launchOutputReader,mainDemoAllowedRequest 
 const args=process.argv.slice(2);
 assert.equal(args.length,0,'invalid_arguments');
 const startedAt=Date.now();
+// Match existing transport/observer budgets; do not shorten a valid in-flight RPC.
+const rpcFetchMs=35000,rpcReplyMs=50000;
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
@@ -208,7 +210,7 @@ async function main(){
       const loseDocument=dropDocument&&inner?.method==='application.hello';
       if(loseApply||loseDocument){
         if(loseApply)dropApply=false;else dropDocument=false;
-        const response=await route.fetch({timeout:remaining(10000),maxRedirects:0,maxRetries:0});
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
         assert.equal(response.status(),200,'lost_response_http_failure');
         const bytes=await bounded(response.body(),remaining(10000),'lost_response_body_timeout');
         assert.ok(bytes.length<=131072,'lost_response_body_budget');
@@ -267,7 +269,7 @@ async function main(){
     if(new URL(response.url()).pathname!=='/rpc'||response.status()!==200)return false;
     const packet=response.request().postDataJSON();
     return packet.method==='demo.dispatch'&&predicate(packet.params.request);
-  },{timeout:remaining(10000)});
+  },{timeout:remaining(rpcReplyMs)});
   const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
   const formEvent=event=>packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event;
   const commit=async(name,text)=>act('document-input:'+name,()=>settled(

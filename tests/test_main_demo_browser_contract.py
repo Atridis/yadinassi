@@ -19,6 +19,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'allowedRequest(target,origin)', 'mainDemoLaunchOutputReader as launchOutputReader',
             'mainDemoAllowedRequest as allowedRequest', 'if(rpc>=180)',
             'startedAt+280000', 'startedAt+300000',
+            'rpcFetchMs=35000,rpcReplyMs=50000', 'timeout:remaining(rpcReplyMs)',
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
@@ -38,7 +39,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
     def test_response_loss_is_after_backend_and_recovery_has_no_replay(self):
         text = HARNESS.read_text(encoding='utf-8')
         for required in (
-            'route.fetch({timeout:remaining(10000),maxRedirects:0,maxRetries:0})',
+            'route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0})',
             'bytes.length<=131072', "return route.abort('failed')",
             "['demo.snapshot','editor.snapshot']",
             "['demo.snapshot','application.hello','application.form']",
