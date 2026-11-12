@@ -642,7 +642,9 @@ class Interpreter:
                 expression = parse_expression(text)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            return (yield from self._visit(expression))
+            from .safe_mode import routine_frame
+            with routine_frame(self, self):
+                return (yield from self._visit(expression))
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
@@ -677,7 +679,10 @@ class Interpreter:
                     lambda value, name=name: scope.__setitem__(name, value))
                 for name, item in scope.items()
             }
-            (yield from self.block(program))
+            # Dynamic code may inherit restrictions, never own its caller's counter.
+            from .safe_mode import routine_frame
+            with routine_frame(self, self):
+                (yield from self.block(program))
         except RecursionError:
             raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
         finally:
@@ -1574,6 +1579,9 @@ class Interpreter:
                          and self._configuration_runtime.is_common_routine(function))):
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = caller_side == "client" and function.execution_context == "server"
+        if crossing or function.is_async:
+            from .safe_mode import require_transfer
+            require_transfer('cross-context or asynchronous calls')
         invocation = owner._invocation_bindings.get(function.name.casefold())
         invocation = invocation[1] if invocation and invocation[0] is function else None
         if invocation is not None and not crossing:
@@ -1682,7 +1690,8 @@ class Interpreter:
         from .database_transactions import admission
         with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                with input_call:
+                from .safe_mode import routine_frame
+                with input_call, routine_frame(self, owner):
                     if crossing:
                         for initializer in owner.server_initializers:
                             yield from owner.block(initializer.body)
@@ -1732,6 +1741,8 @@ class Interpreter:
             self.locals = previous
 
     def visit_Await(self, node: ast.Await):
+        from .safe_mode import require_transfer
+        require_transfer('Await')
         from .database_transactions import forbid_transfer
         forbid_transfer(self._transaction_backend())
         value = yield from self._visit(node.operand)

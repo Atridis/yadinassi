@@ -103,3 +103,28 @@ schema. Existing closed-profile metadata and storage grants are unchanged.
 The ordinary `Execute expression;` statement form reuses the existing Execute
 fragment parser and safety boundaries; the parenthesized spelling stays valid.
 Safe-mode/privilege APIs are not replaced with successful no-ops by this host.
+
+## Restricted source execution
+
+The source-only host implements a **Boolean-only, synchronous subset** of
+`SetSafeMode` / `SafeMode` (and their Russian aliases). Each routine owns its
+nested enable count. A callee cannot disable a caller's restriction, and its
+own enables are removed on return or failure. Dynamic `Execute` and `Eval`
+fragments inherit restrictions but use a separate counter frame, so they cannot
+release the caller's restriction. These source-host rules are not a claim of
+complete native SafeMode compatibility or a sandbox for hostile Python code.
+
+Restricted execution denies filesystem and network effects at their actual
+operation boundary, including reads/writes using a handle opened before entry,
+HTTP body-file reads, ZIP extraction and deferred JSON/XML output. Pure in-memory
+operations and cleanup of resources remain available. Files already read into
+memory are not retroactively erased. Unrestricted source execution retains the
+normal host capabilities; merely loading a source package does not enable this
+mode automatically.
+
+String security profiles, privilege changes, asynchronous or cross-context
+transfers from an active restricted frame are unsupported and fail explicitly.
+The source host does not grant native server privileges or emulate a managed
+client's no-op setter. Counter state belongs to one live application and execution
+context, not a process-wide flag. The platform reference informed the design;
+a native parity witness has not been run for this subset.

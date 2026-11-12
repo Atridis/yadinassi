@@ -25,6 +25,14 @@ class _SourceInterpreter(Interpreter):
         self.register_function('ТекущийРежимЗапуска', application.current_run_mode)
         self.register_function('RefreshReusableValues', lambda: application.reusable_values.refresh(self))
         self.register_function('ОбновитьПовторноИспользуемыеЗначения', lambda: application.reusable_values.refresh(self))
+        self.register_function('SetSafeMode', lambda enabled: application.safe_mode.set(enabled),
+                               'УстановитьБезопасныйРежим', returns_value=False)
+        self.register_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')
+
+    def execute_program(self, program):
+        with self.application.safe_mode.execution():
+            return super().execute_program(program)
+
 
     def visit_Name(self, node):
         key = node.name.casefold()
@@ -87,6 +95,8 @@ class SourceApplication:
             source_family=self.interpreter, unsupported=unsupported)
         from .reusable_values import ApplicationReusableValues
         self.reusable_values = ApplicationReusableValues(self, source_family=self.interpreter)
+        from .safe_mode import SourceSafeMode
+        self.safe_mode = SourceSafeMode(self)
         self._session_owner = None
         self._session_handler = None
 
