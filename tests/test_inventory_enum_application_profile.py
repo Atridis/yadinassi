@@ -1,4 +1,5 @@
 """Explicit full-source format16 grant and host-family isolation contracts."""
+from contextlib import closing
 from dataclasses import replace
 import tempfile
 from pathlib import Path
@@ -112,7 +113,7 @@ class InventoryEnumApplicationProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)/'db.sqlite'
             SQLiteDBContext.create_inventory_enum_application(path, config).close()
-            with sqlite3.connect(path) as connection:
+            with closing(sqlite3.connect(path)) as connection, connection:
                 connection.execute("UPDATE inventory_profile SET profile='inventory-enum-v1'")
             with self.assertRaises(BackendError): SQLiteDBContext(path)
 

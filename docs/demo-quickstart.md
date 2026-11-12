@@ -10,7 +10,7 @@ Python 3.10+ с установленными зависимостями прое
 Выполните из корня репозитория:
 
 ```console
-python -m yadinassi --create-demo-db demo.sqlite --import-xml tests/fixtures/demo_cf/source
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
 python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
@@ -23,13 +23,13 @@ URL. Без `--open-browser` браузер автоматически не за
 `python -m yadinassi` можно заменить на `yadinassi`: общий `--ui`
 работает одинаково в пакете, исходниках и автономной сборке.
 Пакет не содержит XML-исходники демо: `--import-xml` должен указывать на
-`tests/fixtures/demo_cf/source` из соответствующего checkout репозитория.
+`examples/demo` из соответствующего checkout репозитория.
 
 Автономный бинарник принимает ту же команду создания, а редактор выбирается
 первым аргументом `--ui`:
 
 ```console
-yadinassi --create-demo-db demo.sqlite --import-xml /path/to/yadinassi/tests/fixtures/demo_cf/source
+yadinassi --create-demo-db demo.sqlite --import-xml /path/to/yadinassi/examples/demo
 yadinassi --ui --f demo.sqlite --open-browser
 ```
 

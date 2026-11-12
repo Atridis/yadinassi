@@ -76,7 +76,10 @@ class BusinessExampleTests(unittest.TestCase):
         self.event(order, 'close'); self.assertIn(order, self.app.sessions)
         saved = self.event(order, control='WriteButton')
         record = saved['state']['catalog']['rows'][0]['key']
-        self.event(order, 'close')
+        closed = self.event(order, 'close')
+        with self.assertRaisesRegex(ValueError, 'record is not in the selected catalog projection'):
+            self.rpc('openRecord', entry=entry, request='stale-reopen', record=record)
+        record = closed['state']['catalog']['rows'][0]['key']
         reopened = self.rpc('openRecord', entry=entry, request='reopen', record=record)['session']
         form = self.app.sessions[reopened][0].session.form
         self.assertEqual(form._data['status'], 'Rows loaded: 1')

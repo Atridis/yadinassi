@@ -1,3 +1,8 @@
+# Authored XML/BSL examples participate in byte-bound source grants.
+# More specific immutable/historical policies below still take precedence.
+examples/**/*.xml text eol=lf
+examples/**/*.bsl text eol=lf
+
 # Keep pinned upstream Unicode data byte-exact on every checkout.
 yadinassi/data/*.txt -text
 
@@ -130,9 +135,6 @@ tests/fixtures/value_storage/* -text
 
 # Source-bound ValueStorage fixed-profile measurement.
 integrational_tests/measurements/value_storage.bsl text eol=lf
-
-# Exact original source archive for the bounded demo_kinds_v1 profile.
-tests/fixtures/demo_cf/source/** -text
 
 # Deterministic replicated form renderer manifests must hash the same on every OS.
 frontend/form/** text eol=lf
@@ -387,3 +389,34 @@ examples/demo/** -text
 # Closed unified demo renderer assets and authored sources.
 frontend/main-demo/** text eol=lf
 yadinassi/ui/assets/main-demo/* text eol=lf
+# Authored inventory form sources must match their byte-pinned core projection.
+examples/configuration-inventory-application/** text eol=lf
+examples/configuration-inventory-enum-application/** text eol=lf
+
+# Source-bound client reusable-value observations.
+scripts/common_module_reuse_packet/** text eol=lf
+scripts/native_1c_common_module_reuse_profile.py text eol=lf
+scripts/native_1c_common_module_reuse_probe.sh text eol=lf
+scripts/native_1c_bootstrap/common_module_reuse_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_common_module_reuse_stage.py text eol=lf
+tests/test_common_module_reuse_native_acquisition.py text eol=lf
+yadinassi/reusable_values.py text eol=lf
+tests/test_reusable_values.py text eol=lf
+tests/test_configuration_reusable_values.py text eol=lf
+tests/test_common_module_reuse_native_replay.py text eol=lf
+tests/fixtures/native_common_module_reuse_43130157790.json -text
+
+# Source-bound server reusable-value observations; immutable evidence is raw bytes.
+scripts/server_module_reuse_packet/** text eol=lf
+scripts/native_1c_server_module_reuse_profile.py text eol=lf
+scripts/native_1c_server_module_reuse_probe.sh text eol=lf
+scripts/native_1c_bootstrap/server_module_reuse_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_server_module_reuse_stage.py text eol=lf
+tests/test_server_module_reuse_packet.py text eol=lf
+tests/test_server_module_reuse_native_acquisition.py text eol=lf
+tests/test_server_module_reuse_native_replay.py text eol=lf
+tests/test_configuration_server_reuse.py text eol=lf
+tests/fixtures/native_server_module_reuse_43165393593.json -text
+
+# Immutable historical demo root; remaining original bytes live in examples/demo.
+tests/fixtures/legacy_demo_root.xml -text

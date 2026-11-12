@@ -18,6 +18,7 @@ from .main_demo_source import SOURCE_SHA256
 PROFILE = 'main-demo-v1'
 FORMAT_VERSION = 16
 M = '{' + xml.MD + '}'
+COMMON_FORMS = frozenset(('commonform.operationdraft', 'commonform.draftdetails'))
 
 @dataclass(frozen=True, slots=True)
 class MainDemoConfiguration:
@@ -108,7 +109,7 @@ def import_main_demo_configuration(files, *, profile=None):
         registers.append(_register(source[path],name,owners,used,
                                    targets=targets,enum_targets=enum_targets))
     # Original native catalog forms use their own bound policy. The strict
-    # document form loader receives only document declarations, never a fake
+    # form loader receives document and the two closed common-form declarations, never a fake
     # generic grant for those original catalog modules or their list form.
     from .configuration_forms import load_configuration_forms
     form_source = dict(source)
@@ -116,13 +117,16 @@ def import_main_demo_configuration(files, *, profile=None):
     form_config = form_root.find(M+'Configuration')
     children = form_config.find(M+'ChildObjects')
     for node in list(children):
-        if node.tag != M+'Document': children.remove(node)
+        if node.tag not in (M+'Document', M+'CommonForm'): children.remove(node)
     form_source['Configuration.xml'] = ET.tostring(form_root,encoding='utf-8')
     forms = load_configuration_forms(form_source, document_schemas=tuple(documents),
         reference_catalogs=catalogs, posting_application=True, enum_definitions=enumerations)
-    if set(forms.forms) != form_names:
-        raise ValueError('main demo document forms mismatch')
-    commands, reports = _manifest(source[MANIFEST],forms.forms,source,tuple(registers))
+    if set(forms.forms) != form_names | COMMON_FORMS:
+        raise ValueError('main demo document/common forms mismatch')
+    # Common forms are UI-only forms, not inventory commands or posting owners.
+    # Keep the existing global inventory manifest admission unchanged.
+    document_forms = {name: forms.forms[name] for name in form_names}
+    commands, reports = _manifest(source[MANIFEST],document_forms,source,tuple(registers))
     catalog_handlers = tuple((c.identity, 'Catalogs/'+c.name+'/Ext/ObjectModule.bsl',
         sha256(source['Catalogs/'+c.name+'/Ext/ObjectModule.bsl']).hexdigest())
         for c in catalogs if 'Catalogs/'+c.name+'/Ext/ObjectModule.bsl' in source)

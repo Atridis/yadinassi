@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class InventoryEnumBrowserQAContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source=(ROOT/'tests/browser_ui/inventory_enum_application_browser_qa.mjs').read_text()
+        cls.source=(ROOT/'tests/browser_ui/inventory_enum_application_browser_qa.mjs').read_text(encoding='utf-8')
 
     def test_six_scenarios_and_exact_business_requests(self):
         names=ast.literal_eval(self.source.split('const scenarioNames=',1)[1].split(';',1)[0])
@@ -61,7 +61,7 @@ class InventoryEnumBrowserQAContractTests(unittest.TestCase):
             self.assertIn(token,self.source)
 
     def test_ci_is_exact_opt_in_and_keeps_readonly_sandbox_route(self):
-        workflow=(ROOT/'.github/workflows/inventory-enum-application-browser-qa.yml').read_text()
+        workflow=(ROOT/'.github/workflows/inventory-enum-application-browser-qa.yml').read_text(encoding='utf-8')
         self.assertIn('branches: [codex/inventory-enum-application-browser-reviewed]',workflow)
         self.assertIn('contents: read',workflow)
         self.assertIn('persist-credentials: false',workflow)

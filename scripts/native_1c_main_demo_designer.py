@@ -38,15 +38,21 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': '7979da48a1a1c122e8d9dcd21ea
  'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml': 'ba70bc4129509c979033632d305d4866e0e311f5e25322369bdf3998b055add6',
  'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl': '86bccc60f288b6d8bec57dd01701b3535a73c297b1a42a97d2f5528f066426e3',
  'Catalogs/Склады.xml': '3f123ebb7eed85b1b845ae8867749e91cde2d6154cd6e8b5da16a74c9658bb3a',
- 'Configuration.xml': '8deb0314f711790f9ea02d3fdcdf2c34403e7f249f55038ed3146859053f346c',
+ 'CommonForms/DraftDetails.xml': '3b325ddaa9be3699c1ead8b12554a9fed85fa260a0a37ccc882983dffa906bc2',
+ 'CommonForms/DraftDetails/Ext/Form.xml': '67f34e7bebf16a62bc8e8616bccc82d170d2bc13d7a543f30a16c03ad6251983',
+ 'CommonForms/DraftDetails/Ext/Form/Module.bsl': '7aa474668ff24b52d4ef601da73791768de3b15c14b92f982176d40b93c9bd12',
+ 'CommonForms/OperationDraft.xml': 'cee0166147e3dc417632c19a1160f0c0aabf39746fd0b3697b673a3cc6c13e6d',
+ 'CommonForms/OperationDraft/Ext/Form.xml': 'cf2b4d0296fb5932b3000ed823e661649cd25346119d57575f67be52aa0df42e',
+ 'CommonForms/OperationDraft/Ext/Form/Module.bsl': '8f29ee3bf4e1c5f1f751264faadb219259ea6c45889071e573def52ffe91f428',
+ 'Configuration.xml': 'de4c8c950e6f39f8e9dc5bf828036670a61397e78be9e4da9370f8c31d06eca8',
  'Documents/Issue.xml': '3c51f6281c269656b34595dad6643545f89b2b45765add3d684b405fc93ffe01',
  'Documents/Issue/Ext/ObjectModule.bsl': '51d1231843b06360c0a77c73fb40a961d5fb6a67a1bd3f257505c2561e304c31',
- 'Documents/Issue/Forms/Card.xml': 'f7a74655b89d68cb73237de280c87fde99fe18ed31e3b9ecac92302177de905d',
+ 'Documents/Issue/Forms/Card.xml': '6c2569339a0a3ffde1d50f8bc571a992c3c4df98032a750216f4103b5032227a',
  'Documents/Issue/Forms/Card/Ext/Form.xml': '2747be3390be238f91b80dcded8bdce77598ce648c6625475cfd449a5ea34222',
  'Documents/Issue/Forms/Card/Ext/Form/Module.bsl': '91325955fd484c274c86d184373be334f64177cf843f68707f78fff719f0f682',
  'Documents/Receipt.xml': 'f27a24ac214549a5a8dc83884d7425c29151e00de51e3ee2f66761704c4d0fcd',
  'Documents/Receipt/Ext/ObjectModule.bsl': 'ee0baf274a8788c263406d5d7a21628da643e087ae5d73d41554d2beda06dd39',
- 'Documents/Receipt/Forms/Card.xml': '7126b8259254fd467355331a6ee84c0afd07c0c82b17d960335fac6fc394ed28',
+ 'Documents/Receipt/Forms/Card.xml': '24d9c85bc1b51611525be52c2514c8de4c195f8c50913f6061f4e2d138f6db9d',
  'Documents/Receipt/Forms/Card/Ext/Form.xml': 'f01260926e2526025a0d58ba7859d7d7eda6fd0d5b733396b20c4cc0677dd97d',
  'Documents/Receipt/Forms/Card/Ext/Form/Module.bsl': '91325955fd484c274c86d184373be334f64177cf843f68707f78fff719f0f682',
  'Enums/States.xml': '2b080e1e003c14407e5d1962224de589c70755f87af711fca2ebc6517f923fb5',
@@ -127,7 +133,7 @@ def dump_files(root):
 def source_files(root=ROOT):
     files = dump_files(root / SOURCE_ROOT)
     require({n: digest(raw) for n, raw in files.items()} == SOURCE_SHA256)
-    require(len(files) == 33 and len(PLATFORM_FILES) == 32 and MANIFEST in files)
+    require(len(files) == 39 and len(PLATFORM_FILES) == 38 and MANIFEST in files)
     return files
 
 

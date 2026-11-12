@@ -63,7 +63,7 @@ Q=New Query("SELECT SUM(Quantity) AS N FROM AccumulationRegister.Stock");S=Q.Exe
     def test_launch_snapshot_preserves_main_demo_route(self):
         snapshot=launch_snapshot(self.context.backend)
         self.assertEqual((snapshot.profile,snapshot.route),(PROFILE,'main-demo'))
-        self.assertEqual(len(snapshot.files),33)
+        self.assertEqual(len(snapshot.files),39)
 
     def test_cli_creates_one_main_demo_from_canonical_xml(self):
         path=self.path.with_name('cli.sqlite');out=StringIO();err=StringIO()

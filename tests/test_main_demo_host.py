@@ -56,7 +56,7 @@ class MainDemoHostTests(unittest.TestCase):
             return self.rpc('dispatch',epoch=self.host.epoch,request={
                 'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params})['payload']['result']
         dispatch('hello',protocol=APP_PROTOCOL)
-        opened=dispatch('open',entry=1,request='one');self.assertIsNone(opened['error'])
+        opened=dispatch('open',entry=self.host.owner.names['document.receipt.form.card'],request='one');self.assertIsNone(opened['error'])
         self.assertEqual(self.rpc('select',epoch=self.host.epoch,surface='catalogs')['error'],'finish_current_surface')
         self.assertIn(opened['session'],self.host.owner.sessions)
 
@@ -68,7 +68,7 @@ class MainDemoHostTests(unittest.TestCase):
                 'jsonrpc':'2.0', 'id':1, 'method':'application.'+method,
                 'params':params})['payload']['result']
         dispatch('hello', protocol=APP_PROTOCOL)
-        opened = dispatch('open', entry=1, request='one')
+        opened = dispatch('open', entry=owner.names['document.receipt.form.card'], request='one')
         self.assertIsNone(opened['error'])
         sid = opened['session']
         controller, _ = owner.sessions[sid]
@@ -78,7 +78,7 @@ class MainDemoHostTests(unittest.TestCase):
         self.assertIsNone(closed['error'])
         self.assertNotIn(sid, owner.sessions)
         self.assertIn('one', owner.operations)
-        replay = dispatch('open', entry=1, request='one')
+        replay = dispatch('open', entry=owner.names['document.receipt.form.card'], request='one')
         self.assertEqual(replay['error'], 'retired_session')
         self.assertFalse(owner.sessions)
         self.assertIsNone(self.rpc('select', epoch=self.host.epoch, surface='catalogs')['error'])

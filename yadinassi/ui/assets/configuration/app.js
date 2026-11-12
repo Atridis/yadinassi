@@ -1785,6 +1785,20 @@ const keys = (value, expected) => value && typeof value === 'object' && !Array.i
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const recordFilters = (value,document) => {
+  if(!keys(value,['deletion','posting','dateFrom','dateTo','descending'])||
+      !['all','marked','unmarked'].includes(value.deletion)||!['all','posted','unposted'].includes(value.posting)||typeof value.descending!=='boolean')return false;
+  const date=value=>{
+    if(value==='')return true;
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    const leap=y%4===0&&(y%100!==0||y%400===0);
+    return y>=1&&m>=1&&m<=12&&d>=1&&d<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][m-1];
+  };
+  return date(value.dateFrom)&&date(value.dateTo)&&(!value.dateFrom||!value.dateTo||value.dateFrom<=value.dateTo)&&
+    (document||value.posting==='all'&&value.dateFrom===''&&value.dateTo==='')&&
+    (value.deletion!=='all'||value.posting!=='all'||value.dateFrom!==''||value.dateTo!==''||value.descending);
+};
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
@@ -1843,7 +1857,7 @@ function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
+        !['form','owned-form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
@@ -1858,7 +1872,8 @@ function validateApplicationReply(reply, request, previous) {
     if (Object.hasOwn(catalog,'navigation')) {
       const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
       const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
-      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next']) ||
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next',...(Object.hasOwn(n,'filters')?['filters']:[])]) ||
+          (Object.hasOwn(n,'filters')&&!recordFilters(n.filters,doc)) ||
           typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
           !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
           n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
@@ -1882,6 +1897,7 @@ function validateApplicationReply(reply, request, previous) {
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
+    if (state.entries.find(value => value.id === session.entry).kind === 'owned-form' && (!ownedResults || session.owner === null)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
     if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
     if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
@@ -1909,7 +1925,7 @@ function validateApplicationReply(reply, request, previous) {
       const children = state.sessions.filter(value => value.owner === session.id);
       if (children.length > 1 || children.length && (dialogOwners.has(session.id) || inputOwners.has(session.id)) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id) || inputOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
-      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      if (owner !== null && !['form','owned-form'].includes(state.entries.find(value => value.id === session.entry).kind)) throw new FormError('transport');
       while (owner !== null) {
         const parent = nodes.get(owner);
         if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
@@ -1996,6 +2012,9 @@ class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
+      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+        const error = new FormError('open_failed'); error.preDispatch = true; throw error;
+      }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
       if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
@@ -2013,7 +2032,8 @@ class ApplicationClient {
       }
       if (['application.catalogPage','application.catalogFilter'].includes(method)) {
         const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
-        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order'])||
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order',...(Object.hasOwn(params,'filters')?['filters']:[])])||
+            (!isPage&&Object.hasOwn(params,'filters')&&!recordFilters(params.filters,this.state.entries.find(e=>e.id===c.entry).kind!=='catalog-object'))||
             params.entry!==c.entry||params.snapshot!==n.snapshot||
             (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
               !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {
@@ -2166,7 +2186,9 @@ function mountApplication(environment, root, exchange = null) {
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
   picker.append(pickerTitle,pickerHelp,codeLabel,queryLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
-  let queryEntry=null,queryBaseline='',queryDraft='';
+  let queryEntry=null,queryDraft='',orderDraft='',filterDraft=null;
+  const defaultRecordFilters=()=>({deletion:'all',posting:'all',dateFrom:'',dateTo:'',descending:false});
+  const acceptedRecordDraft=catalog=>{queryEntry=catalog.entry;queryDraft=catalog.navigation.query;orderDraft=catalog.navigation.order;filterDraft={...(catalog.navigation.filters||defaultRecordFilters())};};
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -2433,15 +2455,39 @@ function mountApplication(environment, root, exchange = null) {
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
     if (catalog.navigation) {
       const nav=catalog.navigation;
-      if(queryEntry!==catalog.entry||queryBaseline!==nav.query){queryEntry=catalog.entry;queryBaseline=nav.query;queryDraft=nav.query;}
+      if(queryEntry!==catalog.entry)acceptedRecordDraft(catalog);
       const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
       search.addEventListener('input',()=>{queryDraft=search.value;});
       const order=el('select');order.setAttribute('aria-label','Record order');
       for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
-      order.value=nav.order;
-      const apply=()=>{if(!unavailable())perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:queryDraft,order:order.value});};
+      order.value=orderDraft;order.addEventListener('change',()=>{orderDraft=order.value;});
+      const apply=(reset=false)=>{
+        if(unavailable())return;
+        const filters=reset?defaultRecordFilters():{...filterDraft};
+        const nondefault=filters.deletion!=='all'||filters.posting!=='all'||filters.dateFrom!==''||filters.dateTo!==''||filters.descending;
+        perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:reset?'':queryDraft,order:reset?(document?'date':'code'):orderDraft,...(nondefault?{filters}:{})});
+      };
+      const controls=[];
+      const choice=(label,key,values)=>{
+        const wrapper=el('label',label),input=el('select');input.setAttribute('aria-label',label);
+        for(const value of values){const option=el('option',value);option.value=value;input.append(option);}
+        input.value=filterDraft[key];input.addEventListener('change',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+      };
+      choice('Deletion filter','deletion',['all','unmarked','marked']);
+      if(document){
+        choice('Posting filter','posting',['all','posted','unposted']);
+        for(const [key,label] of [['dateFrom','Date from (inclusive)'],['dateTo','Date through (inclusive)']]){
+          const wrapper=el('label',label),input=el('input');input.type='date';input.value=filterDraft[key];input.setAttribute('aria-label',label);input.min='0001-01-01';input.max='9999-12-31';
+          input.addEventListener('input',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+        }
+      }
+      const descending=el('input'),descendingLabel=el('label','Descending order');descending.type='checkbox';descending.checked=filterDraft.descending;descending.setAttribute('aria-label','Descending order');
+      descending.addEventListener('change',()=>{filterDraft.descending=descending.checked;});descendingLabel.append(descending);actions.append(descendingLabel);controls.push(descending);
       search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
-      actions.append(search,order);const filter=button('Search records',actions,apply);
+      actions.append(search,order);const filter=button('Search records',actions,()=>apply());
+      const applyFilters=button('Apply filters',actions,()=>apply());
+      const resetFilters=button('Reset filters',actions,()=>apply(true));
+      for(const control of [...controls,applyFilters,resetFilters])control.disabled=unavailable();
       const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
       const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
       previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
@@ -2498,6 +2544,7 @@ function mountApplication(environment, root, exchange = null) {
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
+      if (entry.kind === 'owned-form') continue;
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
@@ -2530,6 +2577,7 @@ function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
+    if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
     status = result.error === 'form_capacity'
       ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
       : result.error ? `Application: ${result.error}` : '';
@@ -2577,7 +2625,7 @@ function mountApplication(environment, root, exchange = null) {
     try { return await client.request(method,params); }
     catch(error) {
       if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
-      status = 'Application connection failed.'; paint();
+      status = error?.preDispatch&&method==='application.catalogFilter'?'Record filters are invalid. Check the dates and selected values.':'Application connection failed.'; paint();
     }
     finally { paint(); }
   }

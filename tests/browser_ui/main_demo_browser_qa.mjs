@@ -108,7 +108,7 @@ async function recordsReady(){
     button=>button.textContent.trim()==='+ New record'&&!button.disabled));
 }
 async function screenshot(name){
-  assert.ok(['list.png','editor.png','narrow.png'].includes(name),'unexpected_screenshot');
+  assert.ok(['list.png','editor.png','narrow.png','choice.png'].includes(name),'unexpected_screenshot');
   assert.equal(new URL(page.url()).hash,'','capability_not_removed');
   await page.screenshot({path:path.join(output,name),fullPage:true,animations:'disabled',timeout:remaining(10000)});
 }
@@ -189,7 +189,7 @@ async function main(){
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
     'editor.hello','editor.snapshot','editor.select','editor.open','editor.event',
-    'application.hello','application.catalog','application.open','application.openRecord',
+    'application.hello','application.catalog','application.catalogFilter','application.catalogPage','application.open','application.openRecord',
     'application.form','application.reference','application.report','application.reportSetup',
     'form.hello','form.snapshot','form.event']);
   const safeMethod=value=>diagnosticMethods.has(value)?value:'other';
@@ -243,7 +243,12 @@ async function main(){
     await act('product-description',()=>field('Description').fill('Кабель USB-C'));
     await act('kind-reference',()=>field('ВидНоменклатуры').selectOption({label:'000000001 · Товары'}));
     await click('Add row to Склады');await click('Choose Склады row 1');
-    await legacyDialog().waitFor({state:'visible'});await click('Next choices');await click('Previous choices');
+    await legacyDialog().waitFor({state:'visible'});
+    await page.setViewportSize({width:390,height:844});
+    const choiceBounds=await legacyDialog().boundingBox();
+    assert.ok(choiceBounds&&choiceBounds.x>=0&&choiceBounds.x+choiceBounds.width<=390,'narrow_choice_clipped');
+    await screenshot('choice.png');await page.setViewportSize({width:1320,height:900});
+    await click('Next choices');await click('Previous choices');
     await act('warehouse-search-text',()=>field('Search references').fill('W069'));await click('Search references');
     dropApply=true;await click('W069 · Warehouse 069');
     await button('Resynchronize choice').waitFor({state:'visible'});assert.equal(dropped,1);
@@ -271,6 +276,22 @@ async function main(){
     return packet.method==='demo.dispatch'&&predicate(packet.params.request);
   },{timeout:remaining(rpcReplyMs)});
   const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
+  // Observe only the existing browser response. Never dispatch a second request.
+  const filterReply=async(method,action)=>{
+    const waiting=replyFor(packet=>packet.method===method);
+    const [response]=await Promise.all([waiting,action()]);
+    const packet=response.request().postDataJSON();
+    const bytes=await bounded(response.body(),remaining(rpcFetchMs),'filter_reply_body_timeout');
+    assert.ok(bytes.length<=131072,'filter_reply_body_budget');
+    const body=JSON.parse(bytes.toString('utf8'));
+    assert.equal(body.jsonrpc,'2.0');assert.equal(body.id,packet.id);
+    assert.equal(body.result?.error,null);assert.equal(body.result?.state?.uncertain,false);
+    const payload=body.result.payload;
+    assert.equal(payload?.jsonrpc,'2.0');assert.equal(payload?.id,packet.params.request.id);
+    assert.ok(payload.result&&!payload.error);assert.equal(payload.result.error,null);
+    await page.waitForFunction(()=>[...document.querySelectorAll('.configuration-catalog button')].some(b=>b.textContent==='Apply filters'&&!b.disabled),null,{timeout:remaining(rpcReplyMs)});
+    return payload.result;
+  };
   const formEvent=event=>packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event;
   const commit=async(name,text)=>act('document-input:'+name,()=>settled(
     packet=>packet.method==='application.form'&&['change','cell'].includes(packet.params.request.params?.event),
@@ -281,7 +302,7 @@ async function main(){
     await page.getByRole('dialog').waitFor({state:'hidden'});
   };
   await scenario('same_database_document_report_recovery_return_to_original_catalog',async()=>{
-    await click('Документы и отчёты');
+    await click('Документы, формы и отчёты');
     await act('receipt-list',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Receipt card',exact:true}).click()));
     await act('New document',()=>settled(packet=>packet.method==='application.open',()=>button('New document').click()));await commit('Document number','RQA1');
     await choose('Warehouse','W000','Warehouse 000');
@@ -307,9 +328,60 @@ async function main(){
     const reports=page.getByRole('region',{name:'Saved stock reports',exact:true});
     // Movements has no period filter; only Turnovers/Statement expose bounds.
     await act('show-report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
-    await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();await screenshot('editor.png');
+    await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();
+    const headingBounds=await page.getByRole('heading',{name:'Receipt card',level:1,exact:true}).boundingBox();
+    assert.ok(headingBounds&&headingBounds.width>=200&&headingBounds.height<160,'embedded_title_collapsed');
+    await screenshot('editor.png');
     const saved=audit();verifyMainDemoAudit(saved,assert);
     await act('close-document',()=>settled(formEvent('close'),()=>docButton('Close form').click()));await active().waitFor({state:'detached'});
+    const recordList=page.locator('.configuration-catalog');
+    const listField=label=>recordList.getByLabel(label,{exact:true});
+    const listButton=label=>recordList.getByRole('button',{name:label,exact:true});
+    const expectedFilters={deletion:'all',posting:'posted',dateFrom:'2026-11-11',dateTo:'2026-11-11',descending:false};
+    const checkedList=async(result,total,filters)=>{
+      const value=result.state.catalog;assert.equal(value.navigation.total,total,'filter_exact_total');
+      assert.equal(value.navigation.page,1);assert.equal(value.navigation.pages,1);
+      assert.equal(value.rows.length,total,'filter_exact_rows');
+      if(filters)assert.deepEqual(value.navigation.filters,filters,'filter_exact_navigation');
+      else assert.equal(Object.hasOwn(value.navigation,'filters'),false,'reset_omits_default_filters');
+      await page.waitForFunction(total=>document.querySelectorAll('.configuration-catalog tbody tr').length===total,total,{timeout:remaining(rpcReplyMs)});
+      assert.equal(await recordList.locator('tbody tr').count(),total,'filter_visible_rows');
+      if(total){assert.equal(value.rows[0].number,'RQA1');assert.equal(value.rows[0].posted,true);
+        await recordList.getByRole('cell',{name:'RQA1',exact:true}).waitFor();}
+    };
+    await act('filter-posted',()=>listField('Posting filter').selectOption('posted'));
+    await act('filter-date-from',()=>listField('Date from (inclusive)').fill('2026-11-11'));
+    await act('filter-date-through',()=>listField('Date through (inclusive)').fill('2026-11-11'));
+    await act('apply-posted-day',async()=>checkedList(await filterReply('application.catalogFilter',()=>listButton('Apply filters').click()),1,expectedFilters));
+    await act('unapplied-date-draft',()=>listField('Date through (inclusive)').fill('2026-11-12'));
+    await act('report-repaint-retains-filter-draft',async()=>{
+      const value=await filterReply('application.report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
+      await checkedList(value,1,expectedFilters);
+      assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-12','filter_draft_lost_on_repaint');
+    });
+    await act('refresh-restores-applied-filter',async()=>{
+      const value=await filterReply('application.catalog',()=>listButton('Refresh records').click());
+      await checkedList(value,1,expectedFilters);
+      await page.waitForFunction(()=>document.querySelector('.configuration-catalog [aria-label="Date through (inclusive)"]')?.value==='2026-11-11',null,{timeout:remaining(rpcReplyMs)});
+      assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-11','refresh_did_not_restore_applied_date');
+      assert.equal(await listField('Posting filter').inputValue(),'posted');
+    });
+    await act('excluded-date-from',()=>listField('Date from (inclusive)').fill('2026-11-12'));
+    await act('excluded-date-through',()=>listField('Date through (inclusive)').fill('2026-11-12'));
+    await act('apply-excluded-posted-day',async()=>checkedList(await filterReply('application.catalogFilter',()=>listButton('Apply filters').click()),0,{...expectedFilters,dateFrom:'2026-11-12',dateTo:'2026-11-12'}));
+    await act('restore-date-from',()=>listField('Date from (inclusive)').fill('2026-11-11'));
+    await act('restore-date-through',()=>listField('Date through (inclusive)').fill('2026-11-11'));
+    await act('filter-unposted',()=>listField('Posting filter').selectOption('unposted'));
+    await act('apply-unposted-day',async()=>checkedList(await filterReply('application.catalogFilter',()=>listButton('Apply filters').click()),0,{...expectedFilters,posting:'unposted'}));
+    await act('reset-record-filters',async()=>{
+      await checkedList(await filterReply('application.catalogFilter',()=>listButton('Reset filters').click()),1,null);
+      await page.waitForFunction(()=>document.querySelector('.configuration-catalog [aria-label="Posting filter"]')?.value==='all',null,{timeout:remaining(rpcReplyMs)});
+      assert.equal(await listField('Posting filter').inputValue(),'all');assert.equal(await listField('Deletion filter').inputValue(),'all');
+      assert.equal(await listField('Date from (inclusive)').inputValue(),'');assert.equal(await listField('Date through (inclusive)').inputValue(),'');
+      assert.equal(await listField('Descending order').isChecked(),false);
+    });
+    assert.deepEqual(audit(),saved,'readonly_record_filters_changed_database');
+    report.recordFilters={postedOnDay:1,dateExcluded:0,unpostedOnDay:0,reset:1,unappliedDraftSurvivedPaint:true,refreshRestoredApplied:true,durableUnchanged:true};
     await click('Справочники');await catalog('Номенклатура');
     await act('select-product-row',()=>page.locator('.records tbody tr').first().click());await click('Open selected');await ready();
     assert.equal(await field('Description').inputValue(),'Кабель USB-C');
@@ -320,7 +392,7 @@ async function main(){
     await click('← Back to records');await recordsReady();
     // Process cleanup is owned and verified below; no hidden business close API.
   });
-  assert.equal(actionLog.length,44,'total_action_count');
+  assert.equal(actionLog.length,59,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
@@ -367,7 +439,7 @@ finally{
     try{await lstat(owned);throw Error('owned_directory_remains');}catch(error){if(error.code!=='ENOENT')throw error;}
   }catch{cleanupFailure('owned_directory_cleanup_unverified');}
   const images={};
-  for(const name of ['list.png','editor.png','narrow.png']){
+  for(const name of ['list.png','editor.png','narrow.png','choice.png']){
     try{const file=path.join(output,name),stat=await lstat(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=4*1024*1024);const bytes=await readFile(file);assert.equal(bytes.length,stat.size);images[name]={bytes:bytes.length,sha256:sha256(bytes)};}
     catch{await rm(path.join(output,name),{force:true});report.status='FAIL';report.artifacts='missing_or_invalid_screenshot';}
   }
@@ -376,7 +448,7 @@ finally{
   assert.ok(!tokens.some(token=>raw.includes(token)),'capability_leak');
   await writeFile(path.join(output,'result.json'),raw);
   await writeFile(path.join(output,'manifest.json'),JSON.stringify({schema:1,source:report.sourceCommit,tree:report.binding?.tree,resultSha256:sha256(raw),images},null,2)+'\n');
-  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png'].includes(name)));
+  assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
 console.log(JSON.stringify({status:report.status,completed:results.length,total:2,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;

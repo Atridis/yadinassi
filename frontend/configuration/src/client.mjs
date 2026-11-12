@@ -8,6 +8,20 @@ const keys = (value, expected) => value && typeof value === 'object' && !Array.i
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const recordFilters = (value,document) => {
+  if(!keys(value,['deletion','posting','dateFrom','dateTo','descending'])||
+      !['all','marked','unmarked'].includes(value.deletion)||!['all','posted','unposted'].includes(value.posting)||typeof value.descending!=='boolean')return false;
+  const date=value=>{
+    if(value==='')return true;
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    const leap=y%4===0&&(y%100!==0||y%400===0);
+    return y>=1&&m>=1&&m<=12&&d>=1&&d<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][m-1];
+  };
+  return date(value.dateFrom)&&date(value.dateTo)&&(!value.dateFrom||!value.dateTo||value.dateFrom<=value.dateTo)&&
+    (document||value.posting==='all'&&value.dateFrom===''&&value.dateTo==='')&&
+    (value.deletion!=='all'||value.posting!=='all'||value.dateFrom!==''||value.dateTo!==''||value.descending);
+};
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
@@ -66,7 +80,7 @@ export function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
+        !['form','owned-form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
@@ -81,7 +95,8 @@ export function validateApplicationReply(reply, request, previous) {
     if (Object.hasOwn(catalog,'navigation')) {
       const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
       const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
-      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next']) ||
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next',...(Object.hasOwn(n,'filters')?['filters']:[])]) ||
+          (Object.hasOwn(n,'filters')&&!recordFilters(n.filters,doc)) ||
           typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
           !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
           n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
@@ -105,6 +120,7 @@ export function validateApplicationReply(reply, request, previous) {
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
+    if (state.entries.find(value => value.id === session.entry).kind === 'owned-form' && (!ownedResults || session.owner === null)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
     if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
     if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
@@ -132,7 +148,7 @@ export function validateApplicationReply(reply, request, previous) {
       const children = state.sessions.filter(value => value.owner === session.id);
       if (children.length > 1 || children.length && (dialogOwners.has(session.id) || inputOwners.has(session.id)) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id) || inputOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
-      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      if (owner !== null && !['form','owned-form'].includes(state.entries.find(value => value.id === session.entry).kind)) throw new FormError('transport');
       while (owner !== null) {
         const parent = nodes.get(owner);
         if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
@@ -219,6 +235,9 @@ export class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
+      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+        const error = new FormError('open_failed'); error.preDispatch = true; throw error;
+      }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
       if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
@@ -236,7 +255,8 @@ export class ApplicationClient {
       }
       if (['application.catalogPage','application.catalogFilter'].includes(method)) {
         const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
-        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order'])||
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order',...(Object.hasOwn(params,'filters')?['filters']:[])])||
+            (!isPage&&Object.hasOwn(params,'filters')&&!recordFilters(params.filters,this.state.entries.find(e=>e.id===c.entry).kind!=='catalog-object'))||
             params.entry!==c.entry||params.snapshot!==n.snapshot||
             (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
               !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {

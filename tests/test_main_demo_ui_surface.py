@@ -12,10 +12,10 @@ from yadinassi.ui.protocol import encode_line, decode_line
 from yadinassi.ui.database_launch import binding, configuration_route
 
 class MainDemoUISurfaceTests(unittest.TestCase):
-    def test_loader_has_only_documents_and_rejects_mixed_grants(self):
+    def test_loader_has_declared_document_and_common_forms_and_rejects_mixed_grants(self):
         forms = load_application(ROOT/'examples/demo', main_demo_application=True)
-        self.assertEqual(len(forms.forms), 2)
-        self.assertTrue(all(f.document_schema is not None for f in forms.forms.values()))
+        self.assertEqual(len(forms.forms), 4)
+        self.assertEqual(sum(f.document_schema is not None for f in forms.forms.values()), 2)
         with self.assertRaises(ValueError):
             load_application(ROOT/'examples/demo', main_demo_application=True, inventory_enum_application=True)
 
@@ -37,7 +37,7 @@ class MainDemoUISurfaceTests(unittest.TestCase):
                 return app.exchange({'jsonrpc':'2.0','id':1,'method':'application.'+method,'params':params})['result']
             try:
                 self.assertIsNone(rpc('hello', protocol=PROTOCOL)['error'])
-                opened = rpc('open', entry=1, request='new');self.assertIsNone(opened['error'])
+                opened = rpc('open', entry=app.names['document.receipt.form.card'], request='new');self.assertIsNone(opened['error'])
                 sid = opened['session'];self.assertIsNotNone(sid)
                 written = rpc('form', session=sid, request={'jsonrpc':'2.0','id':1,'method':'form.event',
                     'params':{'event':'command','control':'WriteButton','revision':app.sessions[sid][0].session.revision}})

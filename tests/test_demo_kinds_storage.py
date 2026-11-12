@@ -16,11 +16,11 @@ from yadinassi.sqlite_catalog import SQLiteCatalogBackend, _View
 from yadinassi.form_event_simulation import VerifiedFormDraftSession
 from test_catalog_commit_cleanup_recovery import FaultConnection
 
-SOURCE = Path(__file__).parent / 'fixtures/demo_cf/source'
+from legacy_demo_fixture import legacy_demo_files
 
 
 def files():
-    return {p.relative_to(SOURCE).as_posix(): p.read_bytes() for p in SOURCE.rglob('*') if p.is_file()}
+    return legacy_demo_files()
 
 
 class DemoKindsStorageTests(unittest.TestCase):

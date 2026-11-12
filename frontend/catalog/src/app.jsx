@@ -8,6 +8,7 @@ import {readTheme,rememberTheme,resolvedTheme,workspacePreview,listCheckPresenta
 export function mountEditor(environment,root,exchange=null){
 if(!environment?.document||!root||exchange!==null&&typeof exchange!=='function')throw new TypeError('Invalid editor mount');
 const window=environment,document=environment.document;
+const themeTarget=exchange?root:document.documentElement;
 const {location,history}=environment;
 const fetch=(...args)=>environment.fetch(...args),matchMedia=(...args)=>environment.matchMedia(...args);
 const addEventListener=(...args)=>environment.addEventListener(...args),removeEventListener=(...args)=>environment.removeEventListener(...args);
@@ -58,8 +59,8 @@ function App(){
   const changeRow=(section,row,value)=>setDraft(previous=>({...previous,rows:{...previous.rows,[rowDraftKey(section,row)]:value}}));
   useEffect(()=>{
     const system=matchMedia('(prefers-color-scheme: dark)');
-    const paint=()=>{document.documentElement.dataset.theme=resolvedTheme(theme,system.matches);
-      document.documentElement.dataset.themePreference=theme;};
+    const paint=()=>{themeTarget.dataset.theme=resolvedTheme(theme,system.matches);
+      themeTarget.dataset.themePreference=theme;};
     paint();system.addEventListener('change',paint);
     return()=>system.removeEventListener('change',paint);
   },[theme]);

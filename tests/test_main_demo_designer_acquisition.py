@@ -40,15 +40,15 @@ class MainDemoDesignerTests(unittest.TestCase):
             sender=user,ref='codex/demo',inputs={'reviewed_sha':'a'*40})
         return e,c
 
-    def test_source_is_canonical_33_and_projection_is_exact_32(self):
+    def test_source_is_canonical_39_and_projection_is_exact_38(self):
         source=host.source_files()
-        self.assertEqual(len(source),33)
+        self.assertEqual(len(source),39)
         original=ast.literal_eval(ast.parse((ROOT/'yadinassi/main_demo_source.py').read_text()).body[1].value)
         self.assertEqual(host.SOURCE_SHA256,original)
         with tempfile.TemporaryDirectory() as temp:
             target=Path(temp)/'source';host.stage_source(target,source)
             self.assertEqual(host.dump_files(target),{n:raw for n,raw in source.items() if n!=host.MANIFEST})
-            self.assertEqual(len(host.dump_files(target)),32)
+            self.assertEqual(len(host.dump_files(target)),38)
 
     def test_projection_refuses_changed_or_extra_bytes(self):
         source=host.source_files()
@@ -202,7 +202,7 @@ class MainDemoDesignerTests(unittest.TestCase):
             self.assertEqual(value['codes'],['xml_parse'])
             self.assertEqual(value['file_ids'],[host.PLATFORM_FILES.index('Documents/Receipt.xml')])
             self.assertNotIn('secret',json.dumps(value))
-            self.assertTrue(host.diagnostics.valid(value,32))
+            self.assertTrue(host.diagnostics.valid(value,38))
 
     def test_private_diagnostic_bounds_and_encoding(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -216,11 +216,11 @@ class MainDemoDesignerTests(unittest.TestCase):
             self.assertEqual(host.diagnostics.classify(p,())['codes'],['unknown_property'])
 
     def test_diagnostic_validator_rejects_text_unknown_ids_and_false_success(self):
-        for change in (dict(codes=['raw error']),dict(file_ids=[32]),dict(file_ids=[True]),
+        for change in (dict(codes=['raw error']),dict(file_ids=[38]),dict(file_ids=[True]),
                        dict(reason='private path'),dict(extra='secret')):
             value=dict(state='classified',reason='none',codes=['unclassified'],file_ids=[])
             value.update(change)
-            self.assertFalse(host.diagnostics.valid(value,32))
+            self.assertFalse(host.diagnostics.valid(value,38))
         value=self.report()
         value['diagnostics']=dict(state='classified',reason='none',codes=['unclassified'],file_ids=[])
         with self.assertRaises(host.DemoError):self.validate(value)

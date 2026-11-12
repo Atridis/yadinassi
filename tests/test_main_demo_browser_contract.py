@@ -23,18 +23,29 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,2)", "assert.equal(actionLog.length,44",
+            "assert.equal(results.length,2)", "assert.equal(actionLog.length,59",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
         workflow = (ROOT/'.github/workflows/main-demo-browser-qa.yml').read_text(encoding='utf-8')
         self.assertIn('branches: [codex/main-demo-browser-reviewed]', workflow)
         self.assertIn('contents: read', workflow)
-        for screenshot in ('list.png', 'editor.png', 'narrow.png'):
+        for screenshot in ('list.png', 'editor.png', 'narrow.png', 'choice.png'):
             self.assertIn('/yadinassi-browser-artifacts/'+screenshot, workflow)
         self.assertNotIn("act('report-start'", text)
         self.assertNotIn("act('report-end'", text)
         self.assertIn('Movements has no period filter', text)
+        self.assertIn('narrow_choice_clipped', text)
+        self.assertIn('embedded_title_collapsed', text)
+        for marker in ('filter_exact_total', 'filter_exact_rows', 'filter_exact_navigation',
+                       'filter_draft_lost_on_repaint', 'refresh_did_not_restore_applied_date',
+                       'reset_omits_default_filters', 'readonly_record_filters_changed_database',
+                       'filter_reply_body_budget'):
+            self.assertIn(marker, text)
+        self.assertIn('assert.equal(payload?.id,packet.params.request.id)', text)
+        self.assertIn("postedOnDay:1,dateExcluded:0,unpostedOnDay:0,reset:1", text)
+        self.assertIn("apply-excluded-posted-day", text)
+        self.assertIn("0,{...expectedFilters,dateFrom:'2026-11-12',dateTo:'2026-11-12'}", text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)

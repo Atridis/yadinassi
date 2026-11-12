@@ -78,6 +78,36 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
         self.assertEqual(self.broker.objects[sid].object.get_member('Number'),'R0050')
         filtered=self.rpc('catalogFilter',entry=entry,snapshot=page['navigation']['snapshot'],query='R000',order='number')['state']['catalog']
         self.assertEqual(filtered['navigation']['total'],10)
+        bounded=self.rpc('catalogFilter',entry=entry,snapshot=filtered['navigation']['snapshot'],
+            query='',order='date',filters={'deletion':'unmarked','posting':'unposted',
+                'dateFrom':'2024-01-02','dateTo':'2024-01-31','descending':True})['state']['catalog']
+        self.assertEqual(bounded['navigation']['total'],0)
+        refreshed=self.rpc('catalog',entry=entry)['state']['catalog']
+        self.assertEqual(refreshed['navigation']['filters'],bounded['navigation']['filters'])
+        self.assertEqual(refreshed['navigation']['total'],0)
+
+    def test_filters_survive_save_refresh_and_reset_revokes_old_targets(self):
+        self.seed(2)
+        first=self.listing()
+        filters={'deletion':'unmarked','posting':'all','dateFrom':'','dateTo':'','descending':True}
+        selected=self.rpc('catalogFilter',entry=first['entry'],snapshot=first['navigation']['snapshot'],
+            query='X',order='code',filters=filters)['state']['catalog']
+        self.assertEqual([r['code'] for r in selected['rows']],['X0001','X0000'])
+        sid=self.open('Catalog.Warehouses.Form.Card',record=selected['rows'][0]['key'],request='filtered-save')
+        self.event(sid,'change',control='DescriptionInput',value='changed under filter')
+        self.event(sid,control='SaveButton')
+        self.assertEqual(self.app.catalog['navigation']['filters'],filters)
+        self.assertEqual(self.app.catalog['navigation']['query'],'X')
+        self.assertTrue(any(r['description']=='changed under filter' for r in self.app.catalog['rows']))
+        refreshed=self.listing()
+        self.assertEqual(refreshed['navigation']['filters'],filters)
+        old=refreshed['navigation']['snapshot']
+        reset=self.rpc('catalogFilter',entry=first['entry'],snapshot=old,query='',order='code')['state']['catalog']
+        self.assertNotIn('filters',reset['navigation'])
+        self.assertEqual(reset['navigation']['total'],3)
+        denied=self.broker.exchange({'operation':'catalogFilter','session':'','payload':{
+            'entry':first['entry'],'snapshot':old,'query':'','order':'code','filters':filters}})
+        self.assertEqual(denied,{'error':'catalog_unavailable'})
 
     def test_external_delete_before_open_is_safe_refusal(self):
         import sqlite3
@@ -89,7 +119,7 @@ class ConfigurationRecordPagesTests(unittest.TestCase):
             table=quote_identifier(context.backend._layout.table_name(schema.identity))
         # A separate writer edits only this test's freshly generated database.
         from yadinassi.sqlite_query_indexes import register_query_collations
-        with sqlite3.connect(self.path) as writer:
+        with closing(sqlite3.connect(self.path)) as writer, writer:
             register_query_collations(writer)
             writer.execute('DELETE FROM '+table+' WHERE code=?',('X0000',))
         result=self.app.exchange({'jsonrpc':'2.0','id':1,'method':'application.openRecord',

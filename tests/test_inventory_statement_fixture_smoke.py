@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class StatementFixtureSmokeTests(unittest.TestCase):
     def test_external_mark_preserves_all_other_saved_data(self):
-        source = (ROOT / 'tests/browser_ui/inventory_statement_browser_qa.mjs').read_text()
+        source = (ROOT / 'tests/browser_ui/inventory_statement_browser_qa.mjs').read_text(encoding='utf-8')
         fixture = source.split('const fixtureCode=String.raw`', 1)[1].split('`;', 1)[0]
         with tempfile.TemporaryDirectory() as owned:
             def run(mode):

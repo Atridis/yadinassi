@@ -61,7 +61,7 @@ class RegisterConfigurationRuntimeTests(unittest.TestCase):
         files = combined_files()
         self.assertTrue(import_configuration(files).activation_issues)
         for fragment, replacement in ((b'<Privileged>false', b'<Privileged>true'),
-                (b'<ReturnValuesReuse>DontUse', b'<ReturnValuesReuse>DuringSession')):
+                (b'<ReturnValuesReuse>DontUse', b'<ReturnValuesReuse>Forever')):
             candidate = dict(files)
             candidate['CommonModules/Tools.xml'] = candidate['CommonModules/Tools.xml'].replace(fragment, replacement)
             with self.subTest(fragment=fragment), self.assertRaises(ValueError):
