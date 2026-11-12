@@ -23,4 +23,6 @@ def source():
             else:
                 before, after = core[path].rsplit(b'</ChildObjects>', 1)
                 core[path] = before + b'<Form>Card</Form></ChildObjects>' + after
+    path='Catalogs/Products/Forms/Card/Ext/Form.xml'
+    core[path]=core[path].replace(b'</ChildItems>', b'<InputField name="UnitInput" id="30"><Title>Unit</Title><DataPath>Object.Unit</DataPath><Events><Event name="OnChange">Changed</Event></Events></InputField></ChildItems>')
     return core

@@ -227,7 +227,7 @@ class ConfigurationBroker:
         document = definition.document_schema
         if document is None:
             repository = CatalogRepository(context.backend, own_backend=False)
-            try: listing = repository.load(str(definition.catalog_schema.identity))
+            try: listing = repository.load(str(definition.catalog_schema.identity), summary_only=bool(definition.enum_targets))
             finally: repository.close()
         else:
             from ..document_backend import DocumentSelection

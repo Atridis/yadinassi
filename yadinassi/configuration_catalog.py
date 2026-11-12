@@ -49,6 +49,7 @@ class CatalogObjectSession:
             raise TypeError('exact configuration source bytes required')
         context.require_active(tabular_sections=True)
         self.context, self.schema = context, schema
+        self._enum_fields = enum_fields
         self._backend = context.backend
         self._sources = MappingProxyType(dict(source_files))
         self._identity = None
@@ -148,7 +149,7 @@ class CatalogObjectSession:
         reference = CatalogRef(str(self.schema.identity), str(ref.reference_uuid))
         repository = CatalogRepository(self._backend, own_backend=False)
         try:
-            listing = repository.load(str(self.schema.identity))
+            listing = repository.load(str(self.schema.identity), summary_only=self._enum_fields)
         finally:
             repository.close()
         listing.card(reference)  # No success if the confirmed record is absent.
