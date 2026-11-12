@@ -22,6 +22,8 @@ class _SourceInterpreter(Interpreter):
         self.application = application
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
+        from .source_system_info import SourceSystemInfo
+        self.register_type('SystemInfo', lambda: SourceSystemInfo(application), 'СистемнаяИнформация')
         from .source_host_session import SourceSessionCall
         self.register_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
                                'ПолучитьТекущийСеансИнформационнойБазы')
@@ -118,11 +120,13 @@ def _walk(value):
 
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
-    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None):
+    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, compatibility_target=None):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
         if compilation_profile != 'standalone':
             raise ValueError('Запуск общего источника пока поддерживает только standalone профиль компиляции')
+        from .source_system_info import validate_target
+        self.compatibility_target = validate_target(compatibility_target)
         from .source_host_session import SourceHostSession
         self.host_session = SourceHostSession(self)
         self.source = source

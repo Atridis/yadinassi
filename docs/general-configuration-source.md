@@ -249,3 +249,16 @@ English/Russian identity, comparable with the read-only property domain
 runtime never assumes English from source code spelling. Missing, structured or
 unknown XML values and unsupported property domains fail explicitly. Native
 presentation and TypeOf identity are not yet claimed by this source facade.
+
+### Explicit compatibility experiments
+
+`--source-compatibility-target X.Y.Z.W` is an opt-in source-startup experiment.
+It makes source `SystemInfo.AppVersion` report the selected compatibility target,
+not an installed 1C:Enterprise version. Without that option AppVersion fails
+explicitly. The CLI prints the target and actual yadinassi version separately,
+with a warning that this is neither native 1C nor a compatibility guarantee.
+`SystemInfo.YadinassiVersion`, `CompatibilityTarget` and `IsCompatibilityTarget`
+are explicit source-host introspection properties; they are not native 1C API
+claims. Other unimplemented system properties remain errors. No target is selected
+implicitly from the XML or host OS, and existing database/profile modes do not
+accept this option.
