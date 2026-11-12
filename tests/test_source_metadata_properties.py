@@ -37,3 +37,28 @@ class SourceMetadataPropertyTests(unittest.TestCase):
 
     def test_unsupported_property_explicit(self):
         with self.assertRaisesRegex(BSLError,'enumeration is not supported'):self.run_source('English','Message(Metadata.ObjectProperties.Future);')
+
+
+class SourceCompatibilityModeTests(unittest.TestCase):
+    def run_source(self, value, code):
+        s=source(('Procedure OnStart()\n'+code+'\nEndProcedure').encode())
+        files={f.path:f.content for f in s.files}
+        files['Configuration.xml']=files['Configuration.xml'].replace(b'</Properties>',('<CompatibilityMode>'+value+'</CompatibilityMode></Properties>').encode())
+        out=[];app=SourceApplication(import_source(files),output=out.append);self.addCleanup(app.close)
+        app.start();return out
+
+    def test_source_identity_and_canonical_text(self):
+        self.assertEqual(self.run_source('Version8_3_24','Message(Metadata.CompatibilityMode=Metadata.ObjectProperties.CompatibilityMode.Version8_3_24); Message(Metadata.CompatibilityMode);'),['Да','Version8_3_24'])
+
+    def test_dontuse_not_inferred_from_target(self):
+        self.assertEqual(self.run_source('DontUse','Message(Metadata.CompatibilityMode=Metadata.ObjectProperties.CompatibilityMode.DontUse);'),['Да'])
+
+    def test_general_version_digit_extraction(self):
+        self.assertEqual(self.run_source('Version8_3_24','M=Metadata.CompatibilityMode; Message(StrConcat(StrSplit(M, StrConcat(StrSplit(M,"1234567890",False),""),False),"."));'),['8.3.24'])
+
+    def test_future_unknown_stays_error(self):
+        with self.assertRaisesRegex(BSLError,'unknown source CompatibilityMode'):
+            self.run_source('FutureMode','Message(Metadata.CompatibilityMode);')
+
+    def test_russian_domain_aliases(self):
+        self.assertEqual(self.run_source('Version8_3_24','Message(Метаданные.РежимСовместимости=Метаданные.СвойстваОбъектов.РежимСовместимости.Версия8_3_24);'),['Да'])

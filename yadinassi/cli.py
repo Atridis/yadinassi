@@ -197,7 +197,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.source_compatibility_target is not None:
                     print('Экспериментальный compatibility target: ' + args.source_compatibility_target
                           + '; фактический runtime: yadinassi ' + __version__
-                          + '. Это не установленная 1С и не гарантия совместимости.', file=sys.stderr)
+                          + '. Это не установленная 1С и не гарантия совместимости. '
+                          + 'Строковые представления source-перечислений метаданных канонические XML, не native-локализация.', file=sys.stderr)
                 started = application.start()
                 print('Обработчики запуска завершены.' if started else 'Запуск отменён обработчиком.')
             return 0

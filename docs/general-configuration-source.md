@@ -262,3 +262,17 @@ are explicit source-host introspection properties; they are not native 1C API
 claims. Other unimplemented system properties remain errors. No target is selected
 implicitly from the XML or host OS, and existing database/profile modes do not
 accept this option.
+
+`Metadata.CompatibilityMode` likewise preserves its admitted XML enum identity;
+DontUse is never inferred from the selected experiment target. Supported values
+are DontUse, Version8_1, Version8_2_13/16 and Version8_3_1 through Version8_3_24.
+This only exposes source metadata: it does not implement version-dependent native
+platform behavior. String conversion deliberately returns the canonical XML token
+(for example Version8_3_24), not a claimed native localized presentation. Code
+that depends on exact native enum display text can therefore behave differently;
+the experimental CLI warning calls out this boundary. Unknown values still fail.
+The official syntax-reference inventory used for this slice lists modes through
+8.3.23. The 8.3.24 source token is retained from an actual XML declaration; the
+existence of that compatibility mode is also documented in the vendor's
+[release notes](https://v8.1c.ru/upload/static/new-contracts-1_0_7.pdf). This is
+source-admission evidence, not a native runtime witness for enum presentation.

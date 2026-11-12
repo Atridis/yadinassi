@@ -173,6 +173,12 @@ class SourceMetadataRoot(SourceMetadataObject):
         if name.casefold() in ('objectproperties', 'свойстваобъектов'):
             from .source_metadata_properties import SourceObjectProperties
             return SourceObjectProperties()
+        if name.casefold() in ('compatibilitymode', 'режимсовместимости'):
+            from .source_metadata_properties import compatibility_mode
+            node = self._property('CompatibilityMode')
+            if node.attrib or len(node):
+                raise ValueError('unsupported structured source CompatibilityMode')
+            return compatibility_mode(node.text or '')
         if name.casefold() in ('scriptvariant', 'вариантвстроенногоязыка'):
             from .source_metadata_properties import script_variant
             node = self._property('ScriptVariant')
