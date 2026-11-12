@@ -1,6 +1,6 @@
-# Original demo kinds and warehouses
+# Historical kinds/directories compatibility and the current main demo
 
-The fresh `demo_directories_v1` source profile adds the original **Склады**
+The historical `demo_directories_v1` source profile added the original **Склады**
 catalog beside **ВидыНоменклатуры** in the local catalog application. You can
 create, edit, save, close and reopen both catalogs in one SQLite database.
 Each catalog has its own nine-digit decimal code counter.
@@ -13,7 +13,7 @@ automatic numbering. Warehouse names are not subject to the kind form's
 three-character rule, and the host does not invent a warehouse handler.
 
 This is a bounded local application, not native standard-form parity.
-**Номенклатура remains archived and unavailable for editing.** Its original
+**In that historical partial profile, Номенклатура remains archived and unavailable for editing.** Its original
 object validation, kind reference and warehouse rows are not silently skipped.
 Warehouse records are a practical prerequisite for that later product flow,
 not a claim that product references or tabular editing already work.
@@ -22,19 +22,18 @@ not a claim that product references or tabular editing already work.
 
 Use a fresh, disposable destination that does not already exist:
 
-```python
-from pathlib import Path
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-
-root = Path("tests/fixtures/demo_cf/source")
-files = {p.relative_to(root).as_posix(): p.read_bytes()
-         for p in root.rglob("*") if p.is_file()}
-backend = SQLiteCatalogBackend.create_demo_directories("demo-directories.sqlite", files)
-backend.close()
+```console
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
-Launch `python -m yadinassi.ui.local_app --f demo-directories.sqlite`, open its
-printed local session URL and select **Склады**. Create a record, enter its
+These commands use the one current `main-demo-v1` configuration. The partial
+profiles described below remain compatibility behavior for existing databases,
+not additional demo sources or recommended new databases. The exact historical
+root XML survives only in a test-only fixture assembled with pinned original
+catalog/form/handler bytes from `examples/demo`.
+
+In the current main demo, select **Склады**. Create a record, enter its
 Description, leave Code blank and Save. Close the card and database, restart
 the application with the same file and reopen the saved record. Select
 **ВидыНоменклатуры** to use the existing original-handler editor.

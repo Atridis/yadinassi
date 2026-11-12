@@ -109,7 +109,12 @@ def _definitions(configuration):
             enumerate(sorted(configuration.forms.items()), 1)}
 
 
-def _runtime(configuration, side, *, business_application=False, reference_application=False, **kwargs):
+def _runtime(configuration, side, *, business_application=False, reference_application=False, main_demo_application=False, **kwargs):
+    if main_demo_application:
+        from ..configuration_main_demo import import_main_demo_configuration, PROFILE
+        from .main_demo import form_family
+        admitted = import_main_demo_configuration(dict(configuration.source_files), profile=PROFILE)
+        return form_family(admitted, side=side, **kwargs)
     from ..configuration_application_profile import import_application_configuration
     from ..configuration_runtime import ConfigurationApplication
     if reference_application:
@@ -136,6 +141,7 @@ class ConfigurationBroker:
         if (inventory_application or inventory_enum_application or main_demo_application) and any((application_host, business_application, reference_application, posting_application)):
             raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
+        self.main_demo_application = main_demo_application
         self.inventory_application = inventory_application or inventory_enum_application or main_demo_application
         self.reference_application = reference_application or inventory_application or inventory_enum_application or main_demo_application
         self.posting_application = posting_application or inventory_application or inventory_enum_application or main_demo_application
@@ -178,15 +184,15 @@ class ConfigurationBroker:
         self.record_context = None
         self.application = None
         self.application_invocation = None
-        if (application_host or business_application or reference_application) and bind_interpreter is not None:
+        if (main_demo_application or application_host or business_application or reference_application) and bind_interpreter is not None:
             raise ValueError('application owns its interpreter family')
         if launch_binding is not None:
             if database is None: raise ValueError('database UI binding requires database')
             self.record_context = self._open_context()
-        if application_host or business_application or reference_application:
-            context = self.record_context if self.record_context is not None else (None if database is None else SQLiteDBContext(database))
+        if main_demo_application or application_host or business_application or reference_application:
+            context = self.record_context if self.record_context is not None else (self._open_context() if main_demo_application else None if database is None else SQLiteDBContext(database))
             try:
-                self.application = _runtime(configuration, 'server', business_application=business_application, reference_application=reference_application, database_context=context, output=lambda value: None)
+                self.application = _runtime(configuration, 'server', business_application=business_application, reference_application=reference_application, main_demo_application=main_demo_application, database_context=None if main_demo_application else context, output=lambda value: None)
                 self.record_context = context
                 if self.application.server_endpoints:
                     self.application_invocation = InvocationServer.from_handlers(
@@ -197,9 +203,14 @@ class ConfigurationBroker:
 
     def _open_context(self):
         if self.database is None:
+            if self.main_demo_application: raise ValueError('main demo database required')
             return None
         context = SQLiteDBContext(self.database)
         try:
+            if self.main_demo_application:
+                from .main_demo import require_backend
+                if require_backend(context.backend) != self.posting_configuration:
+                    raise ValueError('main demo source mismatch')
             if self.launch_binding is not None:
                 from .database_launch import verify_binding
                 verify_binding(context.backend, self.launch_binding,
@@ -527,6 +538,10 @@ class ConfigurationBroker:
                 if owned is not None:
                     owned._paged_listing = True
                     owned.projection_preflight = lambda listing, entry=entry: self._projection_preflight(entry, listing)
+                if self.main_demo_application and definition.catalog_schema is None and definition.document_schema is None:
+                    # A verified database is a launch fence, not CommonForm data authority.
+                    context.close()
+                    context = None
                 server = definition.create_server(parameters=values, database_context=context, object_session=owned,
                     interpreter_factory=None if self.application is None else self.application.form_interpreter_factory)
                 server._allow_host_sync = self.application is not None
@@ -768,6 +783,7 @@ class ConfigurationController:
         if (inventory_application or inventory_enum_application or main_demo_application) and any((application_host, business_application, reference_application, posting_application)):
             raise ValueError('inventory is a separate explicit source profile')
         self.configuration = configuration
+        self.main_demo_application = main_demo_application
         self.inventory_application = inventory_application or inventory_enum_application or main_demo_application
         self.reference_application = reference_application or inventory_application or inventory_enum_application or main_demo_application
         self.posting_application = posting_application or inventory_application or inventory_enum_application or main_demo_application
@@ -825,14 +841,14 @@ class ConfigurationController:
         self.application = None
         self.application_messages = []
         self._dispatch_active = False
-        if application_host or business_application or reference_application:
+        if main_demo_application or application_host or business_application or reference_application:
             if bind_interpreter is not None:
                 raise ValueError('application owns its interpreter family')
             service = HostFunction('OpenForm', self._application_open_form, returns_value=False)
             query = HostFunction('ShowQueryBox', self._application_show_question, returns_value=False)
             warning = HostFunction('ShowMessageBox', self._application_show_warning, returns_value=False)
             value_input = HostFunction('ShowInputValue', self._application_show_input, returns_value=False)
-            self.application = _runtime(configuration, 'client', business_application=business_application, reference_application=reference_application, output=self._application_message,
+            self.application = _runtime(configuration, 'client', business_application=business_application, reference_application=reference_application, main_demo_application=main_demo_application, output=self._application_message,
                 host_services={'OpenForm': service, 'ОткрытьФорму': service,
                     'ShowQueryBox': query, 'ПоказатьВопрос': query,
                     'ShowMessageBox': warning, 'ПоказатьПредупреждение': warning,
@@ -951,6 +967,17 @@ class ConfigurationController:
             self._lock()
             raise
 
+    def _main_demo_memory_owner(self, sid):
+        if not self.main_demo_application or sid not in self.sessions:
+            return False
+        definition = self.definitions[self.sessions[sid][1]]
+        return (definition.name.casefold() in ('commonform.operationdraft', 'commonform.draftdetails')
+                and definition.catalog_schema is None and definition.document_schema is None)
+
+    def _owned_only_entry(self, entry):
+        return (self.main_demo_application and entry in self.definitions
+                and self.definitions[entry].name.casefold() == 'commonform.draftdetails')
+
     def _owner_blocked(self, sid):
         return sid in self.owner_children or sid in self.owner_dialogs or sid in self.owner_inputs
 
@@ -964,6 +991,7 @@ class ConfigurationController:
         controller = self.sessions.get(sid, (None, None))[0]
         session = None if controller is None else controller.session
         if (not self._dialog_capability or not self._dispatch_active or self.uncertain
+                or self.main_demo_application and not self._main_demo_memory_owner(sid)
                 or self.application is None or self.application.state != 'running'
                 or self._completion_owner is not None or session is None
                 or session.interpreter.execution_context != 'client'
@@ -1022,7 +1050,7 @@ class ConfigurationController:
             controller = self.sessions.get(sid, (None, None))[0]
             session = None if controller is None else controller.session
             definition = self.definitions[entry]
-            if (self.posting_application or session is None or owner is not session.form
+            if (self.posting_application and not self._main_demo_memory_owner(sid) or session is None or owner is not session.form
                     or not session._busy or session.state != 'open' or session._event_phase is not None
                     or session._completion_active or sid in self.owner_children
                     or self.choice is not None
@@ -1408,6 +1436,8 @@ class ConfigurationController:
         self._close_requests[sid] = freeze_result(value)
 
     def _open(self, entry, parameters, record=None, *, owned=None):
+        if owned is None and self._owned_only_entry(entry):
+            return None, None, 'open_failed'
         if len(self.sessions) >= MAX_FORMS or len(self.issued) >= MAX_SESSIONS:
             return None, None, 'capacity'
         result = self._call('create', payload={'entry': entry,
@@ -1707,7 +1737,7 @@ class ConfigurationController:
         from .report_protocol import declarations, has_statements
         return {'kind': 'closed' if self.closed else 'application', 'title': self.configuration.title,
                 'entries': [{'id': entry, 'title': definition.title,
-                             'kind': ('posting-document' if definition.posting_application else 'document-object' if definition.document_schema is not None else
+                             'kind': ('owned-form' if self._owned_only_entry(entry) else 'posting-document' if definition.posting_application else 'document-object' if definition.document_schema is not None else
                                       'form' if definition.catalog_schema is None else 'catalog-object')} for entry, definition in self.definitions.items()],
                 'sessions': [{'id': sid, 'entry': entry, 'title': controller.session.form.title or self.definitions[entry].title,
                               **({'owner': self.owned_results[sid].owner if sid in self.owned_results else None,

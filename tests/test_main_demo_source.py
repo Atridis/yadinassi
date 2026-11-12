@@ -6,24 +6,23 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'examples/demo'
-ORIGINAL = ROOT / 'tests/fixtures/demo_cf/source'
+from legacy_demo_fixture import legacy_demo_files
 M = '{http://v8.1c.ru/8.3/MDClasses}'
 I = '{urn:yadinassi:inventory-application:1}'
 
 
 class MainDemoSourceTests(unittest.TestCase):
     def test_original_catalog_forms_handlers_and_identities_are_preserved(self):
-        originals = sorted(p for p in ORIGINAL.rglob('*') if p.is_file())
+        originals = legacy_demo_files()
         self.assertEqual(len(originals), 19)
-        for path in originals:
-            if path.name == 'Configuration.xml':
-                continue
-            with self.subTest(path=path.relative_to(ORIGINAL)):
-                self.assertEqual((SOURCE / path.relative_to(ORIGINAL)).read_bytes(), path.read_bytes())
+        for name, raw in originals.items():
+            if name != 'Configuration.xml':
+                with self.subTest(path=name):
+                    self.assertEqual((SOURCE / name).read_bytes(), raw)
 
     def test_one_configuration_declares_all_scenarios_without_duplicate_catalogs(self):
         root = ET.parse(SOURCE / 'Configuration.xml').getroot().find(M+'Configuration')
-        original = ET.parse(ORIGINAL / 'Configuration.xml').getroot().find(M+'Configuration')
+        original = ET.fromstring(legacy_demo_files()['Configuration.xml']).find(M+'Configuration')
         self.assertEqual(root.attrib['uuid'], original.attrib['uuid'])
         declarations = root.find(M+'ChildObjects')
         by_kind = {}
@@ -33,6 +32,7 @@ class MainDemoSourceTests(unittest.TestCase):
         self.assertEqual(set(by_kind['Document']), {'Receipt', 'Issue'})
         self.assertEqual(by_kind['AccumulationRegister'], ['Stock'])
         self.assertEqual(set(by_kind['Enum']), {'Units', 'States'})
+        self.assertEqual(set(by_kind['CommonForm']), {'OperationDraft', 'DraftDetails'})
         self.assertFalse((SOURCE / 'Catalogs/Products.xml').exists())
         self.assertFalse((SOURCE / 'Catalogs/Warehouses.xml').exists())
 
@@ -57,9 +57,21 @@ class MainDemoSourceTests(unittest.TestCase):
 
     def test_complete_bounded_xml_bsl_envelope(self):
         paths = [p for p in SOURCE.rglob('*') if p.is_file()]
-        self.assertEqual(len(paths), 33)
+        self.assertEqual(len(paths), 39)
         self.assertTrue(all(p.suffix in ('.xml', '.bsl') for p in paths))
         for path in paths:
             if path.suffix == '.xml':
                 with self.subTest(path=path.relative_to(SOURCE)):
                     ET.parse(path)
+
+    def test_document_form_descriptors_do_not_declare_unsupported_child_objects(self):
+        # Designer rejects ChildObjects on metadata Form (not the Ext/Form layout).
+        expected = {'Receipt': '76eaf69d-2f5a-59f4-98f6-d62742c51881',
+                    'Issue': '5caedcf5-cc3b-5979-93a8-98af5e0d39fa'}
+        for name, identity in expected.items():
+            with self.subTest(document=name):
+                form = ET.parse(SOURCE / f'Documents/{name}/Forms/Card.xml').getroot().find(M+'Form')
+                self.assertEqual(form.attrib['uuid'], identity)
+                self.assertEqual([child.tag for child in form], [M+'Properties'])
+                self.assertEqual(form.findtext(M+'Properties/'+M+'Name'), 'Card')
+                self.assertEqual(form.findtext(M+'Properties/'+M+'FormType'), 'Managed')

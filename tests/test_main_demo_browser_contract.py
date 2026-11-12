@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,2)", "assert.equal(actionLog.length,59",
+            "assert.equal(results.length,3)", "assert.equal(actionLog.length,81",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
@@ -46,6 +46,10 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         self.assertIn("postedOnDay:1,dateExcluded:0,unpostedOnDay:0,reset:1", text)
         self.assertIn("apply-excluded-posted-day", text)
         self.assertIn("0,{...expectedFilters,dateFrom:'2026-11-12',dateTo:'2026-11-12'}", text)
+        for marker in ('owned_child_not_navigation', 'draft_keep_open_veto', 'prepared_draft_reopened',
+                       'no_repeated_confirmation', 'memory_draft_changed_database', 'draft_applied_once',
+                       "assert.equal(actionLog.length-start,22", "appliedAmount:'123.45',appliedCount:1"):
+            self.assertIn(marker, text)
         self.assertNotIn('--no-sandbox', text)
         self.assertNotIn('page.evaluate(', text)
         self.assertNotIn('addInitScript', text)

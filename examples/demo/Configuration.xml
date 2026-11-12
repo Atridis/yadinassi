@@ -94,6 +94,8 @@
 			<AccumulationRegister>Stock</AccumulationRegister>
 			<Enum>Units</Enum>
 			<Enum>States</Enum>
+			<CommonForm>OperationDraft</CommonForm>
+			<CommonForm>DraftDetails</CommonForm>
 		</ChildObjects>
 	</Configuration>
 </MetaDataObject>

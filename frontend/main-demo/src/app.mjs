@@ -57,7 +57,7 @@ export function mountMainDemo(environment,root){
     catch(error){notice.textContent=error.message;}
     finally{busy=false;paint();}
   }
-  for(const [surface,label] of [['catalogs','Справочники'],['documents','Документы и отчёты']]){
+  for(const [surface,label] of [['catalogs','Справочники'],['documents','Документы, формы и отчёты']]){
     const button=el('button',label);button.addEventListener('click',()=>select(surface));nav.append(button);buttons.push([button,surface]);
   }
   retry.addEventListener('click',recover);

@@ -416,6 +416,7 @@ export function mountApplication(environment, root, exchange = null) {
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
+      if (entry.kind === 'owned-form') continue;
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);

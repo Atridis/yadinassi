@@ -134,7 +134,8 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assert_route(b, files, 'catalog')
 
     def test_three_exact_demo_grants_use_catalog_route(self):
-        files = files_at('tests/fixtures/demo_cf/source')
+        from legacy_demo_fixture import legacy_demo_files
+        files = legacy_demo_files()
         for name in ('kinds','directories','products'):
             with self.subTest(profile=name):
                 self.path = Path(self.temp.name) / (name+'.sqlite')
@@ -212,7 +213,8 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(),before)
 
     def test_inert_v5_source_not_activated(self):
-        files = files_at('tests/fixtures/demo_cf/source')
+        from legacy_demo_fixture import legacy_demo_files
+        files = legacy_demo_files()
         b = self.retain(SQLiteCatalogBackend.create(self.path,import_inert_configuration(files),activate=False))
         self.assertEqual(b.format_version,5)
         self.assert_refused(b)

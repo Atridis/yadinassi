@@ -36,7 +36,7 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>signalGroup(browserGroup,'SIGKILL');
 const abort=()=>{aborted=true;for(const identity of [hostGroup,browserGroup])try{signalGroup(identity,'SIGKILL');}catch{report.status='FAIL';report.cleanup='owned_signal_failed';}};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-recovery',expectedScenarios:2};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:3};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>{
   const raw=execFileSync(python,[path.join(repo,'tests/browser_ui/main_demo_fixture.py'),mode,owned],
@@ -302,7 +302,7 @@ async function main(){
     await page.getByRole('dialog').waitFor({state:'hidden'});
   };
   await scenario('same_database_document_report_recovery_return_to_original_catalog',async()=>{
-    await click('Документы и отчёты');
+    await click('Документы, формы и отчёты');
     await act('receipt-list',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Receipt card',exact:true}).click()));
     await act('New document',()=>settled(packet=>packet.method==='application.open',()=>button('New document').click()));await commit('Document number','RQA1');
     await choose('Warehouse','W000','Warehouse 000');
@@ -392,14 +392,64 @@ async function main(){
     await click('← Back to records');await recordsReady();
     // Process cleanup is owned and verified below; no hidden business close API.
   });
-  assert.equal(actionLog.length,59,'total_action_count');
+  await scenario('owned_operation_draft_confirmation_without_database_write',async()=>{
+    const saved=audit();const start=actionLog.length;
+    await page.setViewportSize({width:1320,height:980});
+    await click('Документы, формы и отчёты');
+    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    assert.equal(await nav.getByRole('button',{name:'Подготовка изменений',exact:true}).count(),0,'owned_child_not_navigation');
+    const observed=async(method,action)=>{
+      const waiting=replyFor(packet=>packet.method===method);
+      const [response]=await Promise.all([waiting,action()]);
+      const packet=response.request().postDataJSON();
+      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_reply_timeout');
+      assert.ok(bytes.length<=131072,'draft_reply_budget');
+      const body=JSON.parse(bytes.toString('utf8'));
+      assert.equal(body.id,packet.id);assert.equal(body.result?.error,null);assert.equal(body.result?.state?.uncertain,false);
+      const payload=body.result.payload;assert.equal(payload?.id,packet.params.request.id);
+      assert.ok(!payload.error&&payload.result);assert.equal(payload.result.error,null);
+      await idle();return payload.result;
+    };
+    const command=async(label)=>{let result;await act('draft:'+label,async()=>{result=await observed('application.form',()=>docButton(label).click());});return result;};
+    const answer=async(label)=>{let result;await act('draft-answer:'+label,async()=>{result=await observed('application.answerDialog',()=>page.locator('.configuration-dialog').getByRole('button',{name:label,exact:true}).click());});return result;};
+    const ownerValues=(result,amount,count)=>{
+      const forms=[result.form,...(result.updates||[]).map(update=>update.form)].filter(Boolean);
+      const owner=forms.find(form=>form.result.state.items.some(item=>item.name==='AppliedCountField'));
+      assert.ok(owner,'draft_owner_projection_missing');
+      const value=name=>owner.result.state.items.find(item=>item.name===name).value;
+      assert.equal(value('AmountField').type,'Number');assert.equal(Number(value('AmountField').value),amount,'draft_amount');
+      assert.equal(Number(value('AppliedCountField').value),count,'draft_applied_once');
+    };
+    await act('open-operation-draft',()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click()));
+    await command('Подготовить изменения');
+    await commit('DraftTitle','Поставка кабеля');await commit('Amount','123.45');await commit('Comment','Подготовлено без записи');
+    await act('draft-keep-open',()=>settled(formEvent('change'),()=>docField('KeepOpen').check()));
+    const veto=await command('Вернуть черновик');
+    assert.equal(veto.state.sessions.length,2,'draft_keep_open_veto');assert.equal(veto.updates.length,0);
+    await docField('Amount').waitFor();assert.equal(await docField('Amount').inputValue(),'123.45');
+    await act('draft-allow-close',()=>settled(formEvent('change'),()=>docField('KeepOpen').uncheck()));
+    ownerValues(await command('Вернуть черновик'),0,0);
+    await command('Применить черновик');ownerValues(await answer('Cancel'),0,0);
+    await command('Подготовить изменения');
+    await docField('Amount').waitFor();assert.equal(await docField('Amount').inputValue(),'123.45','prepared_draft_reopened');
+    await commit('Amount','99');ownerValues(await command('Отмена'),0,0);
+    await command('Применить черновик');ownerValues(await answer('Yes'),123.45,1);
+    const repeat=await command('Применить черновик');ownerValues(repeat,123.45,1);assert.deepEqual(repeat.dialogs,[],'no_repeated_confirmation');
+    await command('О черновике');ownerValues(await answer('Continue'),123.45,1);
+    await command('Close form');await active().waitFor({state:'detached'});
+    await click('Справочники');
+    assert.equal(actionLog.length-start,22,'draft_action_count');
+    assert.deepEqual(audit(),saved,'memory_draft_changed_database');
+    report.operationDraft={keepOpenVeto:true,preparedReopened:true,childCancelPreserved:true,appliedAmount:'123.45',appliedCount:1,repeatDidNotApply:true,messageReadOnly:true,durableUnchanged:true};
+  });
+  assert.equal(actionLog.length,81,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');
   assert.equal(git('rev-parse','HEAD'),report.sourceCommit,'source_commit_changed');
   for(const [name,digest] of Object.entries(source)){check();assert.equal(sha256(await readFile(path.join(repo,name))),digest,'source_bytes_changed');}
-  assert.equal(results.length,2);report.status='PASS';report.rpcRequests=rpc;
+  assert.equal(results.length,3);report.status='PASS';report.rpcRequests=rpc;
 }
 // Reserve 20 seconds for verified bounded cleanup within the 180s total.
 const deadline=setTimeout(abort,Math.max(0,workDeadline-Date.now()));
@@ -451,4 +501,4 @@ finally{
   assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
-console.log(JSON.stringify({status:report.status,completed:results.length,total:2,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
+console.log(JSON.stringify({status:report.status,completed:results.length,total:3,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;

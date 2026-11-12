@@ -3,28 +3,9 @@ from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
 
-ROOT = Path(__file__).parent / 'fixtures' / 'demo_cf' / 'source'
-FILES = (
-    'Catalogs/ВидыНоменклатуры.xml',
-    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml',
-    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form.xml',
-    'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
-    'Catalogs/Номенклатура.xml',
-    'Catalogs/Номенклатура/Ext/ObjectModule.bsl',
-    'Catalogs/Номенклатура/Forms/ФормаСписка.xml',
-    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form.xml',
-    'Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl',
-    'Catalogs/Номенклатура/Forms/ФормаЭлемента.xml',
-    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml',
-    'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
-    'Catalogs/Склады.xml',
-    'Configuration.xml',
-    'Ext/ClientApplicationInterface.xml',
-    'Ext/CommandInterface.xml',
-    'Ext/HomePageWorkArea.xml',
-    'Languages/Русский.xml',
-    'Subsystems/НормативнаяИнформация.xml',
-)
+ROOT = Path(__file__).resolve().parents[1] / 'examples/demo'
+from yadinassi.main_demo_source import SOURCE_SHA256
+FILES = tuple(sorted(SOURCE_SHA256))
 
 
 class DemoSourceTests(unittest.TestCase):

@@ -80,7 +80,7 @@ export function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
+        !['form','owned-form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
@@ -120,6 +120,7 @@ export function validateApplicationReply(reply, request, previous) {
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
+    if (state.entries.find(value => value.id === session.entry).kind === 'owned-form' && (!ownedResults || session.owner === null)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
     if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
     if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
@@ -147,7 +148,7 @@ export function validateApplicationReply(reply, request, previous) {
       const children = state.sessions.filter(value => value.owner === session.id);
       if (children.length > 1 || children.length && (dialogOwners.has(session.id) || inputOwners.has(session.id)) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id) || inputOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
-      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      if (owner !== null && !['form','owned-form'].includes(state.entries.find(value => value.id === session.entry).kind)) throw new FormError('transport');
       while (owner !== null) {
         const parent = nodes.get(owner);
         if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
@@ -234,6 +235,9 @@ export class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
+      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+        const error = new FormError('open_failed'); error.preDispatch = true; throw error;
+      }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
       if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||

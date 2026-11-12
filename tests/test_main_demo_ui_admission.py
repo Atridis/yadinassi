@@ -24,20 +24,23 @@ class MainDemoUIAdmissionTests(unittest.TestCase):
         self.addCleanup(context.close)
         return context.backend
 
-    def test_document_projection_grants_only_two_document_forms(self):
+    def test_projection_grants_documents_and_declared_common_forms_not_catalogs(self):
         config = self.config()
         forms = document_forms(config)
-        self.assertEqual(set(forms.forms), {'document.receipt.form.card', 'document.issue.form.card'})
+        self.assertEqual(set(forms.forms), {'document.receipt.form.card', 'document.issue.form.card', 'commonform.operationdraft', 'commonform.draftdetails'})
         for definition in forms.forms.values():
             self.assertIsNone(definition.catalog_schema)
-            self.assertIn(definition.document_schema, config.documents)
+            if not definition.name.startswith("CommonForm."):
+                self.assertIn(definition.document_schema, config.documents)
+            else:
+                self.assertIsNone(definition.document_schema)
         self.assertFalse(any(name.startswith('catalog.') for name in forms.forms))
 
     def test_source_witness_retains_all_original_bytes_and_is_immutable(self):
         config = self.config()
         forms = document_forms(config)
         self.assertEqual(dict(forms.source_files), source())
-        self.assertEqual(len(forms.source_files), 33)
+        self.assertEqual(len(forms.source_files), 39)
         self.assertEqual(forms.source_files['Configuration.xml'], source()['Configuration.xml'])
         digest = sha256()
         for path, raw in sorted(source().items()):

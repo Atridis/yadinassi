@@ -30,7 +30,7 @@ class MainDemoConfigurationTests(unittest.TestCase):
         files=source()
         for path,digest in _DEMO_KINDS_SOURCE_SHA256.items():
             if path!='Configuration.xml':self.assertEqual(sha256(files[path]).hexdigest(),digest)
-        self.assertEqual(len(files),33)
+        self.assertEqual(len(files),39)
 
     def test_original_reference_section_and_callback_not_erased(self):
         c=self.config();cats={x.name:x for x in c.catalogs};product=cats['Номенклатура']
@@ -65,5 +65,5 @@ class MainDemoConfigurationTests(unittest.TestCase):
 
     def test_caller_mapping_is_detached(self):
         files=source();c=import_main_demo_configuration(files,profile=PROFILE)
-        files.clear();self.assertEqual(len(c.files),33)
+        files.clear();self.assertEqual(len(c.files),39)
         self.assertEqual(canonical(c),c)

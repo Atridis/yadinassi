@@ -27,8 +27,8 @@ class InventoryFormsCheckoutTests(unittest.TestCase):
 
     def test_every_authored_source_has_explicit_checkout_policy(self):
         names = self.sources()
-        self.assertEqual(len(names), 273)
-        self.assertEqual(sum(name.startswith("examples/demo/") for name in names), 33)
+        self.assertEqual(len(names), 279)
+        self.assertEqual(sum(name.startswith("examples/demo/") for name in names), 39)
         with tempfile.TemporaryDirectory(prefix='owned-ui-attributes-') as temporary:
             root = Path(temporary)
             (root / '.gitattributes').write_bytes((ROOT / '.gitattributes').read_bytes())
