@@ -159,7 +159,42 @@ def main(argv: list[str] | None = None) -> int:
                         help='read-only source/schema/compile preflight; creates no database')
     parser.add_argument('--report-json', action='store_true',
                         help='bounded machine-readable preflight report; requires --check-xml')
+    parser.add_argument('--configuration-source', metavar='PATH',
+                        help='экспериментальный источник XML/архив без активации базы')
+    parser.add_argument('--save-source', metavar='ARCHIVE',
+                        help='сохранить загруженный источник в проверяемый архив')
+    parser.add_argument('--run-startup', action='store_true',
+                        help='явно исполнить запуск источника без базы и UI')
     args = parser.parse_args(arguments)
+    if args.configuration_source is not None:
+        if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
+                args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
+                args.numbering_policy, args.inactive, args.report_json)):
+            parser.error('--configuration-source не совмещается с режимами базы/профилей/BSL')
+        from .configuration_source import load_source_directory, load_source_archive, save_source_archive
+        from .configuration_source_runtime import SourceApplication
+        application = None
+        try:
+            path = Path(args.configuration_source)
+            source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
+            if args.save_source:
+                save_source_archive(args.save_source, source)
+            print('Источник загружен: ' + source.name + '; файлов: ' + str(len(source.files))
+                  + '. База данных и UI не активированы.')
+            if args.run_startup:
+                application = SourceApplication(source, compilation_profile=args.preprocessor_profile)
+                started = application.start()
+                print('Обработчики запуска завершены.' if started else 'Запуск отменён обработчиком.')
+            return 0
+        except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
+            print('yadinassi: запуск/загрузка источника: ' + str(error), file=sys.stderr)
+            return 1
+        finally:
+            if application is not None:
+                application.close()
+    if args.save_source or args.run_startup:
+        parser.error('--save-source/--run-startup требует --configuration-source')
+
     demo = args.create_demo_db is not None
     from .configuration_diagnostics import from_exception
     if args.report_json and args.check_xml is None:
