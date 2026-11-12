@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><CommonModule uuid="77238e83-8935-5bc3-808f-42ab632f86cd"><Properties><Name>DualProbe</Name><Synonym/><Comment/><Global>false</Global><ClientManagedApplication>true</ClientManagedApplication><Server>true</Server><ServerCall>false</ServerCall><ExternalConnection>false</ExternalConnection><ClientOrdinaryApplication>false</ClientOrdinaryApplication><Privileged>false</Privileged><ReturnValuesReuse>DontUse</ReturnValuesReuse></Properties></CommonModule></MetaDataObject>

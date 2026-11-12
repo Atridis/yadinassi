@@ -1,0 +1,36 @@
+# Измерение профиля компиляции модулей
+
+Пакет только собирает наблюдения Linux 1С 8.3.27.1508 в управляемом файловом режиме. Он не включает реализацию нового профиля yadinassi и не заявляет соответствие runtime.
+
+Собственная временная конфигурация содержит три неглобальных общих модуля: ClientProbe (клиент), ServerProbe (сервер, ServerCall), DualProbe (клиент и сервер), все DontUse. Единственный параметр сеанса CPState имеет тип String. Новых ролей и прав нет.
+
+До добавления исходников адаптер проверяет исходную синтетическую конфигурацию, сохранённые bootstrap/verify markers, отсутствие control.json и точные отрендеренные application/session модули. Код контроля пользователей и защиты сохраняется. Измерительные вставки возможны только при единственном точном anchor; отсутствующий или дублированный anchor означает отказ.
+
+В SessionParametersSetting вставляется запись наблюдаемой RU/EN маски в CPState. В application startup инициализируется CPStartup и находится намеренно исключённое условие Client And Not Client. Дополнительные функции содержат исходные директивы, а не таблицу предполагаемых ответов.
+
+## Шестнадцать групп
+
+1. RU/EN desktop маски application module.
+2. Четыре маски session module при запуске: desktop EN/RU и mobile EN/RU.
+3. RU/EN desktop маски client-only common module.
+4. RU/EN desktop маски server-only common module.
+5. RU/EN desktop маски dual common module с клиента.
+6. RU/EN desktop маски dual common module через ServerProbe.
+7. Доступность guarded ClientExport из клиента.
+8. Доступность guarded ServerExport из клиента.
+9. Доступность обоих guarded экспортов из сервера.
+10. Четыре mobile маски dual common module: EN/RU с клиента и EN/RU через сервер.
+11. MobileAppClient/MobileAppServer в application, EN.
+12. МобильноеПриложениеКлиент/МобильноеПриложениеСервер в application, RU.
+13. Обе mobile маски client-only common module.
+14. Обе mobile маски server-only common module.
+15. Отсутствие побочного эффекта исключённой startup ветви.
+16. Недоступность исключённого экспорта, во втором реальном client event.
+
+Desktop биты в порядке: Client, Server, AtClient, AtServer, ThickClientManagedApplication, ThickClientOrdinaryApplication, ThinClient, WebClient, ExternalConnection. Mobile биты: MobileAppClient, MobileAppServer. Возможность компиляции не предоставляет право вызова на другой стороне.
+
+CP07/08/09/16 используют динамический вызов и возвращают 99 при наблюдаемом отказе, без выгрузки текста ошибки. Остальные ошибки не превращаются в успешное наблюдение: внешний guard пишет error marker, host отклоняет пакет. Наружу допускаются только CP1..CP16, целые коды 0..999 и до четырёх компонентов; никаких UUID, путей или ошибок. Исходный nonce находится только в частном marker; source/module/prepare hashes, prefix первого события, ownership, census и cleanup проверяются исходным guard-механизмом.
+
+MobileClient/MobileStandaloneServer, thin/web/client-server/external режимы и новые runtime API не включены. Шаблон workflow закреплён за отдельной веткой; до независимого review, уведомления о числе проверок и разрешённого запуска никакие CI/native прогоны не выполняются.
+
+Официальные описания: https://1c-dn.com/library/preprocessor_instructions/ и https://1c-dn.com/library/using_compilation_directives/ . Общие описания не заменяют измерения конкретной версии и вида модуля.

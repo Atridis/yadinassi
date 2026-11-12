@@ -265,3 +265,10 @@ tests/fixtures/native_inventory_period/* -text
 
 # Preserve the exact native enumeration evidence bytes on every platform.
 tests/fixtures/native_enumeration_43035110558.json -text
+
+# Exact owned compilation-profile observation sources.
+scripts/compilation_profile_packet/** text eol=lf
+scripts/native_1c_compilation_profile.py text eol=lf
+scripts/native_1c_compilation_profile_probe.sh text eol=lf
+scripts/native_1c_bootstrap/compilation_profile_suite.py text eol=lf
+scripts/native_1c_bootstrap/run_compilation_profile_stage.py text eol=lf
