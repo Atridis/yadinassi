@@ -86,7 +86,20 @@ def read_common_modules(files, names, used, issues):
     return tuple(result)
 
 
-def compile_module(content, path, side, *, common):
+def validate_configuration_compilation_profile(profile):
+    """Closed admission, separate from interpreter execution-side authority.
+
+    Configuration module-kind native evidence is still pending; the existing
+    standalone semantics are the only admitted configuration profile.
+    """
+    if type(profile) is not str:
+        raise TypeError('configuration compilation profile must be a string')
+    if profile != 'standalone':
+        raise ValueError('unsupported configuration compilation profile')
+    return profile
+
+
+def compile_module(content, path, side, *, common, compilation_profile='standalone'):
     """Reuse the normal lexer/parser; the metadata chooses an unannotated side.
 
     Conditional Client/Server branches use the existing standalone symbol
@@ -94,8 +107,9 @@ def compile_module(content, path, side, *, common):
     """
     if type(content) is not bytes or type(path) is not str or side not in ('client', 'server'):
         raise TypeError('invalid configuration module input')
+    compilation_profile = validate_configuration_compilation_profile(compilation_profile)
     text = content.decode('utf-8-sig')
-    tokens = Lexer(text, '<configuration:' + path + '>', execution_context=side).tokens()
+    tokens = Lexer(text, '<configuration:' + path + '>', execution_context=side, compilation_profile=compilation_profile).tokens()
     if any(t.kind in _ANNOTATIONS or t.kind == 'IMPORT' for t in tokens):
         raise ValueError('configured module annotations/imports are outside this profile')
     program = Parser(tokens).parse()
@@ -114,8 +128,8 @@ def compile_module(content, path, side, *, common):
 
 
 
-def compile_session_module(content):
-    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True)
+def compile_session_module(content, *, compilation_profile='standalone'):
+    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True,compilation_profile=compilation_profile)
     handlers=[]
     for routine in program:
         if routine.exported:
@@ -131,6 +145,7 @@ def compile_session_module(content):
 
 def validate_module_sources(configuration):
     """Preflight all admitted bodies without running initializers or handlers."""
+    profile = validate_configuration_compilation_profile(configuration.compilation_profile)
     files = {entry.path: entry.content for entry in configuration.files}
     total = 0
     for module in configuration.common_modules:
@@ -139,14 +154,14 @@ def validate_module_sources(configuration):
         for side, enabled in (('client', module.client), ('server', module.server)):
             if enabled:
                 with location(stage='compile', file=module.path):
-                    program = compile_module(files[module.path], module.path, side, common=True)
+                    program = compile_module(files[module.path], module.path, side, common=True, compilation_profile=profile)
                 total += len(program)
-    session, _ = compile_session_module(files.get('Ext/SessionModule.bsl',b''))
+    session, _ = compile_session_module(files.get('Ext/SessionModule.bsl',b''), compilation_profile=profile)
     total += len(session)
     app = 'Ext/ManagedApplicationModule.bsl'
     if app in files:
         with location(stage='compile', file=app):
-            program = compile_module(files[app], app, 'client', common=False)
+            program = compile_module(files[app], app, 'client', common=False, compilation_profile=profile)
         total += sum(type(node) is ast.Routine for node in program)
     if total > MAX_ROUTINES:
         raise ValueError('configuration runtime routine bound')

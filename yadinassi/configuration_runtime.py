@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from decimal import localcontext
 from .native_targets import target_context
 
-from .configuration_modules import MODULE_RUNTIME, compile_module, compile_session_module
+from .configuration_modules import (MODULE_RUNTIME, compile_module, compile_session_module,
+                                    validate_configuration_compilation_profile)
 from .configuration_xml import ConfigurationImport, import_configuration
 from .errors import BSLError
 from .metadata import BSLCommonModuleMetadataCollection
@@ -39,6 +40,7 @@ class ConfigurationApplication:
         from .runtime import Interpreter
         if type(configuration) is not ConfigurationImport or configuration.module_runtime != MODULE_RUNTIME:
             raise TypeError('an explicitly compiled configuration is required')
+        profile = validate_configuration_compilation_profile(configuration.compilation_profile)
         if side not in (None, 'client', 'server'):
             raise ValueError('invalid application process side')
         if server_exchange is not None and (side != 'client' or not callable(server_exchange)):
@@ -69,7 +71,7 @@ class ConfigurationApplication:
         canonical = (import_reference_configuration(sources) if references else
                      import_business_configuration(sources) if business else
                      import_application_configuration(sources) if composed else
-                     import_configuration(sources, numbering_policy=numbering, module_runtime=MODULE_RUNTIME))
+                     import_configuration(sources, numbering_policy=numbering, module_runtime=MODULE_RUNTIME, compilation_profile=profile))
         if configuration != canonical or (configuration.activation_issues and not (composed or business or references)):
             raise ValueError('configuration cannot be activated')
         if database_context is not None:
@@ -105,7 +107,7 @@ class ConfigurationApplication:
         self.state = 'prepared'
         self.last_exit_warning = ''
         self.interpreter = Interpreter(self._message, native_target=native_target,
-                                       database_context=database_context)
+                                       database_context=database_context, compilation_profile=profile)
         from .xdto_packages import load_packages
         self._xdto_factory = load_packages(self.interpreter._xdto_factory, configuration.xdto_packages)
         if side == 'server':
@@ -130,8 +132,8 @@ class ConfigurationApplication:
         self._global_names = set()
         self._metadata = BSLCommonModuleMetadataCollection(configuration.common_modules)
         self._program = compile_module(sources.get('Ext/ManagedApplicationModule.bsl', b''),
-                                       'Ext/ManagedApplicationModule.bsl', 'client', common=False)
-        self._session_program,self._session_handler=compile_session_module(sources.get('Ext/SessionModule.bsl',b''))
+                                       'Ext/ManagedApplicationModule.bsl', 'client', common=False, compilation_profile=profile)
+        self._session_program,self._session_handler=compile_session_module(sources.get('Ext/SessionModule.bsl',b''), compilation_profile=profile)
         self._session_owner=None
         from .session_parameters import BSLSessionParameters
         self.session_parameters=BSLSessionParameters(self,configuration.session_parameters)
@@ -148,9 +150,9 @@ class ConfigurationApplication:
         self._preflight(sources)
 
     @classmethod
-    def from_files(cls, files, *, numbering_policy='explicit', **kwargs):
+    def from_files(cls, files, *, numbering_policy='explicit', compilation_profile='standalone', **kwargs):
         configuration = import_configuration(files, numbering_policy=numbering_policy,
-                                              module_runtime=MODULE_RUNTIME)
+                                              module_runtime=MODULE_RUNTIME, compilation_profile=compilation_profile)
         return cls(configuration, **kwargs)
 
     @classmethod
@@ -210,7 +212,8 @@ class ConfigurationApplication:
             for side, enabled in (('client', definition.client), ('server', definition.server)):
                 if not enabled:
                     continue
-                program = compile_module(sources[definition.path], definition.path, side, common=True)
+                program = compile_module(sources[definition.path], definition.path, side, common=True,
+                                         compilation_profile=self.interpreter.compilation_profile)
                 if definition.return_values_reuse != 'DontUse' and any(r.is_async for r in program):
                     raise ValueError('asynchronous reusable common modules are unsupported')
                 if side == 'server' and definition.return_values_reuse != 'DontUse':
@@ -351,9 +354,17 @@ class ConfigurationApplication:
             self.interpreter.user_messages.set_sink(None)
             self._event_output = None
 
+    def _factory_compilation_profile(self, kwargs):
+        profile = self.interpreter.compilation_profile
+        requested = kwargs.get('compilation_profile', profile)
+        if validate_configuration_compilation_profile(requested) != profile:
+            raise ValueError('application compilation profile cannot change in child')
+        kwargs['compilation_profile'] = profile
+
     def interpreter_factory(self, output, **kwargs):
         from .runtime import Interpreter
         self.require_open()
+        self._factory_compilation_profile(kwargs)
         child = Interpreter(output, native_target=self.interpreter.native_target,
                             family_owner=self.interpreter, **kwargs)
         # Independently dispatched form/NoContext VMs are not transaction roots.
@@ -367,6 +378,7 @@ class ConfigurationApplication:
     def form_interpreter_factory(self, session, output, **kwargs):
         from .form_runtime import _FormInterpreter
         self.require_open()
+        self._factory_compilation_profile(kwargs)
         child = _FormInterpreter(session, output, native_target=self.interpreter.native_target,
                                  family_owner=self.interpreter, **kwargs)
         # Independently dispatched form/NoContext VMs are not transaction roots.
@@ -390,7 +402,8 @@ class ConfigurationApplication:
         from .runtime import Interpreter
         if (not isinstance(interpreter, Interpreter)
                 or interpreter._scheduler is not self.interpreter._scheduler
-                or interpreter._family_owner is not self.interpreter):
+                or interpreter._family_owner is not self.interpreter
+                or interpreter.compilation_profile != self.interpreter.compilation_profile):
             raise ValueError('configuration module must belong to this scheduler family')
         interpreter._require_family()
         interpreter._configuration_runtime = self

@@ -66,6 +66,7 @@ class ConfigurationImport:
     session_parameters: tuple = ()
     common_templates: tuple = ()
     xdto_packages: tuple = ()
+    compilation_profile: str = 'standalone'
 
 
 def _fail(reason):
@@ -607,7 +608,8 @@ def _register_schema(raw, name, targets, used, issues, *, recorder_profile=False
         tuple(groups['Resource']), tuple(groups['Attribute']), _text(props, 'InformationRegisterPeriodicity'))
 
 
-def import_configuration(files, *, numbering_policy='explicit', module_runtime=None):
+def import_configuration(files, *, numbering_policy='explicit', module_runtime=None,
+                         compilation_profile='standalone'):
     """Import closed XML; decimal_v1 is an explicit local numbering choice.
 
     It does not assert native numbering parity or waive other activation gates.
@@ -615,7 +617,9 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
     with location(file='Configuration.xml'):
         if type(numbering_policy) is not str or numbering_policy not in ('explicit', 'decimal_v1'):
             _fail('unsupported numbering policy')
-        from .configuration_modules import MODULE_RUNTIME, read_common_modules, validate_module_sources
+        from .configuration_modules import (MODULE_RUNTIME, read_common_modules, validate_module_sources,
+                                            validate_configuration_compilation_profile)
+        compilation_profile = validate_configuration_compilation_profile(compilation_profile)
         if module_runtime is not None and (type(module_runtime) is not str or module_runtime != MODULE_RUNTIME):
             _fail('unsupported module runtime profile')
         accepted = _accept_source_files(files,templates=module_runtime is not None)
@@ -831,7 +835,7 @@ def import_configuration(files, *, numbering_policy='explicit', module_runtime=N
                           ' (individual paths retained in configuration files)')
         else:
             issues.extend(unknown_module_issues)
-        result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),enumerations=enumerations,session_parameters=session_parameters,common_templates=common_templates,xdto_packages=xdto_packages)
+        result = ConfigurationImport(config_uuid,name,tuple(catalogs),tuple(accepted),tuple(modules),tuple(sorted(set(issues))),tuple(documents),common_modules,module_runtime,tuple(registers),enumerations=enumerations,session_parameters=session_parameters,common_templates=common_templates,xdto_packages=xdto_packages,compilation_profile=compilation_profile)
         if module_runtime is not None:
             validate_module_sources(result)
         return result
