@@ -70,7 +70,10 @@ def _encode(value, definition):
         from .source_storage_codec import encode_storage
         encoded = ['value_storage', encode_storage(value)]
     elif kind == 'string':
-        validate_string(value, definition.qualifiers[0])
+        length = definition.qualifiers[0]
+        validate_string(value, length or 65536)
+        if definition.qualifiers[1:] == ('Fixed',) and len(value.encode('utf-16-le')) != length * 2:
+            raise ValueError('constant Fixed String requires exact UTF-16 length')
         encoded = ['string', value]
     elif kind == 'boolean':
         if type(value) is not bool:
@@ -90,6 +93,11 @@ def _encode(value, definition):
         value.require_known()
         if value.ticks % TICKS_PER_SECOND:
             raise ValueError('constant Date requires whole seconds')
+        day = 86400 * TICKS_PER_SECOND
+        fraction = definition.qualifiers[0]
+        if ((fraction == 'Date' and value.ticks % day)
+                or (fraction == 'Time' and value.ticks >= day)):
+            raise ValueError('constant Date does not fit date fractions')
         encoded = ['datetime', str(value.ticks)]
     else:
         raise ValueError('unsupported constant type')

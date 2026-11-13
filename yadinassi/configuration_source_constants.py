@@ -107,7 +107,7 @@ def _constant_type(props, namespaces, enum_namespace):
         else:
             wrapper = Element('{' + MD + '}Type')
             wrapper.extend([node, *chosen])
-            kind, qualifiers, target = _type({**props, '{' + MD + '}Type':wrapper}, namespaces, {})
+            kind, qualifiers, target = _source_scalar_type(props, namespaces, wrapper)
             if target is not None or kind not in ('string', 'number', 'boolean', 'datetime'):
                 raise ValueError('unsupported source constant type')
         if any(k == kind and (kind != 'enum_ref' or q[0] == qualifiers[0]) for k, q in variants):
@@ -118,3 +118,39 @@ def _constant_type(props, namespaces, enum_namespace):
     if len(variants) == 1:
         return variants[0]
     return 'composite', tuple(sorted(variants))
+
+
+def _source_scalar_type(props, namespaces, wrapper):
+    """Reuse closed scalar envelope checks, extending only known scalar qualifier forms.
+
+    This admits metadata; runtime still refuses conversions/padding/truncation.
+    """
+    from copy import deepcopy
+    fixed = False
+    fraction = None
+    for index, node in enumerate(tuple(wrapper)):
+        if node.tag == '{' + V8 + '}StringQualifiers':
+            allowed = node.find('{' + V8 + '}AllowedLength')
+            if allowed is not None and (allowed.text or '').strip() == 'Fixed':
+                cloned = deepcopy(node)
+                cloned.find('{' + V8 + '}AllowedLength').text = 'Variable'
+                wrapper[index] = cloned
+                fixed = True
+        elif node.tag == '{' + V8 + '}DateQualifiers':
+            part = node.find('{' + V8 + '}DateFractions')
+            if part is not None and (part.text or '').strip() in ('Date', 'Time'):
+                fraction = (part.text or '').strip()
+                cloned = deepcopy(node)
+                cloned.find('{' + V8 + '}DateFractions').text = 'DateTime'
+                wrapper[index] = cloned
+    kind, qualifiers, target = _type({**props, '{' + MD + '}Type':wrapper}, namespaces, {},
+                                     source_unbounded_string=True)
+    if fixed:
+        if kind != 'string' or qualifiers[0] == 0:
+            raise ValueError('fixed string requires a positive length')
+        qualifiers = (qualifiers[0], 'Fixed')
+    if fraction is not None:
+        if kind != 'datetime':
+            raise ValueError('date fraction requires Date')
+        qualifiers = (fraction,)
+    return kind, qualifiers, target

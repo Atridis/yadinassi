@@ -96,7 +96,7 @@ class CompositeConstantsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'uninitialized'):store.get('Choice')
 
     def test_invalid_union_members_are_not_partially_admitted(self):
-        for types in (TYPES+'<v8:Type>cfg:CatalogRef.Unknown</v8:Type>',TYPES+'<v8:Type>xs:boolean</v8:Type>',TYPES+'<v8:Unknown/>',TYPES.replace('v8:UUID','xs:UUID'),TYPES.replace('<v8:Length>64','<v8:Length>0')):
+        for types in (TYPES+'<v8:Type>cfg:CatalogRef.Unknown</v8:Type>',TYPES+'<v8:Type>xs:boolean</v8:Type>',TYPES+'<v8:Unknown/>',TYPES.replace('v8:UUID','xs:UUID'),TYPES.replace('<v8:Length>64','<v8:Length>4097')):
             _,unsupported,_=source_constant_definitions(package(types))
             self.assertIn('choice',unsupported)
 
