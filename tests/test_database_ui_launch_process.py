@@ -50,8 +50,10 @@ class StoredSourceProcessTests(unittest.TestCase):
                 event('command',control='NewLineButton')
                 event('cell',control='LinesTable',row=1,column='Label',value=encode_value('Stored source row'))
                 saved=event('command',control='WriteButton');rows=saved['state']['catalog']['rows']
-                self.assertEqual(len(rows),1);event('close')
-                reopened=rpc('openRecord',entry=1,request='reopen',record=rows[0]['key'])['session']
+                self.assertEqual(len(rows),1);closed=event('close')
+                with self.assertRaisesRegex(ValueError, 'record is not in the selected catalog projection'):
+                    rpc('openRecord',entry=1,request='stale-reopen',record=rows[0]['key'])
+                reopened=rpc('openRecord',entry=1,request='reopen',record=closed['state']['catalog']['rows'][0]['key'])['session']
                 table=next(iter(app.sessions[reopened][0].session.form._tables.values()))
                 self.assertEqual(table._snapshot().rows[0][1][0],'Stored source row')
                 return 0

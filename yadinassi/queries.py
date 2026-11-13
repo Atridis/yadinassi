@@ -48,6 +48,7 @@ class _Column:
     explicit_alias: bool = False
     reference_identity: object = None
     enum_descriptor: object = None
+    reference_binding: object = None
 
 
 def _field(manager, field, source_alias, section=None):
@@ -277,8 +278,11 @@ class BSLQuery(BSLObject):
         self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
 
     def execute_batch(self):
-        from .inventory_enum_runtime import query_binding
-        if query_binding(self._catalogs) is not None:raise ValueError('Enum inventory query packages are outside this profile')
+        from .inventory_enum_runtime import query_owner
+        if query_owner(self._catalogs) is not None:
+            from .query_enum_tables import execute_report
+            return execute_report(syntax.parse_package(self._text), self._catalogs, dict(self._parameters),
+                                  self._temp_tables_manager, self._documents, self._information_registers)
         from .query_packages import execute_package
         return execute_package(syntax.parse_package(self._text), self._catalogs,
                                dict(self._parameters), self._temp_tables_manager, self._documents, self._information_registers)
@@ -286,12 +290,12 @@ class BSLQuery(BSLObject):
     def execute(self):
         statements = syntax.parse_package(self._text)
         query = statements[0]
-        from .inventory_enum_runtime import query_binding
-        if query_binding(self._catalogs) is not None:
-            from .query_enum_reporting import execute_direct
-            return execute_direct(statements, self._catalogs, dict(self._parameters),
+        from .inventory_enum_runtime import query_owner
+        if query_owner(self._catalogs) is not None:
+            from .query_enum_tables import execute_report
+            return execute_report(statements, self._catalogs, dict(self._parameters),
                                   self._temp_tables_manager, self._documents,
-                                  self._information_registers)
+                                  self._information_registers).items[-1]
         if (len(statements) != 1 or type(query) is not syntax.Select or query.into is not None
                 or syntax.extended_filters(query)
                 or query.temporary or query.external
@@ -410,6 +414,9 @@ class BSLQueryResult(BSLObject):
     def unload(self):
         # Refuse the whole operation before creating an incorrectly untyped
         # dynamic column. Scalar descriptions derive from the admitted schema.
+        if any(column.reference_binding is not None for column in self._columns):
+            from .query_reference_tables import unload
+            return unload(self._columns, self._rows)
         descriptions = tuple(_description(column) for column in self._columns)
         table = BSLValueTable()
         for column, description in zip(self._columns, descriptions):

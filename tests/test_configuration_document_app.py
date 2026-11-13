@@ -47,8 +47,10 @@ class DocumentApplicationTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(set(rows[0]), {'key','number','date','deletionMark'})
         self.assertTrue(rows[0]['number']); self.assertNotIn(str(self.path), repr(saved))
-        self.event(sid, 'close')
-        reopened = self.open('second', rows[0]['key'])
+        closed = self.event(sid, 'close')
+        with self.assertRaisesRegex(ValueError, 'record is not in the selected catalog projection'):
+            self.open('stale-second', rows[0]['key'])
+        reopened = self.open('second', closed['state']['catalog']['rows'][0]['key'])
         form = self.app.sessions[reopened][0].session.form
         self.assertEqual(next(iter(form._tables.values()))._snapshot().rows[0][1][0], 'Owned process row')
         self.assertEqual(form._data['status'], 'Rows loaded: 1')

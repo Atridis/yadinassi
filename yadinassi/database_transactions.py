@@ -157,6 +157,7 @@ class Transaction:
         self.participants = ()
         self.prepared = None
         self.leases = 0
+        self._read_leases = {}
         self.unit = backend.begin_unit_of_work(uuid4() if operation_id is None else operation_id)
 
     def _open(self):
@@ -274,18 +275,59 @@ class Transaction:
             def _cache_validation_allowed(self): return False
             def close(self):
                 if not self._closed:
+                    if transaction._read_leases.get(id(self)) is not entry or self is not lease:
+                        raise BackendError('unsupported')
                     self._scan_cursor = None
                     _close_document_scan(self)
                     self._validated_sources.clear()
                     self._closed = True
-                    transaction.leases -= 1
+                    if transaction._read_leases.get(id(self)) is entry:
+                        del transaction._read_leases[id(self)]
+                        transaction.leases -= 1
             def _require(self, write=False, mutate=False):
                 if write or mutate: raise BackendError('unsupported')
                 return super()._require()
         if self.unit.state != 'open': raise BackendError('uncertain_commit')
         lease = Lease(self.backend, self.unit._view._connection, None)
-        self.leases += 1
+        entry = (Lease, lease)
+        previous_count = self.leases
+        try:
+            self._read_leases[id(lease)] = entry
+            self.leases += 1
+        except BaseException:
+            if self._read_leases.get(id(lease)) is entry:
+                del self._read_leases[id(lease)]
+            self.leases = previous_count
+            lease._closed = True
+            raise
         return lease
+
+
+
+def require_registered_query_lease(backend, lease):
+    """Accept only a read lease actually issued to the current execution owner."""
+    from .sqlite_transactions import UnitOfWork
+    from .sqlite_catalog import _View
+    transaction = current(backend)
+    if (type(transaction) is not Transaction or _execution.get() is None
+            or _execution_backend.get() is not backend
+            or transaction.owner is not _execution.get()
+            or type(transaction.unit) is not UnitOfWork or transaction.unit.state != 'open'
+            or type(transaction._read_leases) is not dict):
+        raise BackendError('unsupported')
+    entry = transaction._read_leases.get(id(lease))
+    if (type(entry) is not tuple or len(entry) != 2 or entry[0] is not type(lease) or entry[1] is not lease):
+        raise BackendError('unsupported')
+    owner = transaction.unit._view
+    if (type(owner) is not _View or backend._active is not owner
+            or lease._backend is not backend or lease._connection is not owner._connection
+            or lease._operation_id is not None or lease._closed or lease._poisoned
+            or lease.database_id != owner.database_id
+            or lease.configuration_generation != owner.configuration_generation):
+        raise BackendError('closed')
+    owner._require()
+    lease._require()
+    return lease
 
 
 def query_view(manager):

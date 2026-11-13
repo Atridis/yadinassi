@@ -83,6 +83,9 @@ def _checked_reference_type(kind, *, reference_only=True):
 
 def _reference_description_kind(description):
     """Validate the narrow immutable reference-descriptor state, when present."""
+    if description._query_reference is not None:
+        from .query_reference_tables import description_binding
+        return description_binding(description).value_type
     kinds = description.types
     if type(kinds) is not tuple or len(kinds) > _MAX_TYPE_ARGUMENT:
         raise ValueError('ОписаниеТипов: недопустимый состав типов')
@@ -302,9 +305,10 @@ class BSLTypeDescription(BSLObject):
     # Preserve ordinary descriptors' exact five-field host shape. Only the
     # internal query factory installs an instance marker for nullable metadata.
     _query_scalar = None
+    _query_reference = None
 
     def __init__(self, source=None, *args):
-        if type(source) is BSLTypeDescription and source._query_scalar is not None:
+        if type(source) is BSLTypeDescription and (source._query_scalar is not None or source._query_reference is not None):
             _unsupported("копирование nullable описания результата запроса")
         if type(source) is BSLTypeDescription:
             reference = _reference_description_kind(source)
@@ -387,6 +391,9 @@ class BSLTypeDescription(BSLObject):
         return kind in self.types
 
     def adjust_value(self, value=_OMITTED):
+        if self._query_reference is not None:
+            from .query_reference_tables import description_binding
+            return description_binding(self).value(value)
         reference = _reference_description_kind(self)
         if reference is not None:
             # Official AdjustValue returns an already matching value unchanged.

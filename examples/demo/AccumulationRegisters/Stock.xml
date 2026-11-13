@@ -1,0 +1,79 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" version="2.20" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema"><AccumulationRegister uuid="9ea1e3ef-4d1e-5933-b5ff-923cb2084491"><!-- InternalInfo adapted from scripts/inventory_enum_behavior/Stock.xml, derived from vanessa-opensource/add. SPDX-License-Identifier: MPL-2.0. See ../../../scripts/accumulation_register_behavior/public_source/vanessa_add/NOTICE.md, SOURCE.json and LICENSE. This Source Code Form is subject to the Mozilla Public License, v. 2.0: https://mozilla.org/MPL/2.0/ --><InternalInfo xmlns:xr="http://v8.1c.ru/8.3/xcf/readable">
+			<xr:GeneratedType name="AccumulationRegisterRecord.Stock" category="Record">
+				<xr:TypeId>852cade9-d636-56b7-afa5-351c1de3a1e1</xr:TypeId>
+				<xr:ValueId>ce24150f-06b9-5216-bfec-0162b1f50e2d</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccumulationRegisterManager.Stock" category="Manager">
+				<xr:TypeId>1ac73207-b36e-541e-a3cc-b9dfe9228a32</xr:TypeId>
+				<xr:ValueId>6b77382d-2723-5146-b2f5-ae1c43b9b89c</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccumulationRegisterSelection.Stock" category="Selection">
+				<xr:TypeId>6b184999-4bac-52ea-8f34-bbaad03eaa8d</xr:TypeId>
+				<xr:ValueId>4a69438a-b5a8-51a7-924b-ff233f8fa29a</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccumulationRegisterList.Stock" category="List">
+				<xr:TypeId>7446c7fa-cc68-5956-886a-90ac1fa37a7b</xr:TypeId>
+				<xr:ValueId>61aebffc-ba33-5f5d-8640-7682d9d6f134</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccumulationRegisterRecordSet.Stock" category="RecordSet">
+				<xr:TypeId>96a14bfa-34de-5220-9090-1476f6b159f0</xr:TypeId>
+				<xr:ValueId>40e73f05-e024-53c7-a6f5-025cc4c4a7b1</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccumulationRegisterRecordKey.Stock" category="RecordKey">
+				<xr:TypeId>56167775-8936-5e39-aeba-7be9d0df2d44</xr:TypeId>
+				<xr:ValueId>2945aa9c-732d-5bd8-8356-d5e82e8c6239</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>Stock</Name>
+			<RegisterType>Balance</RegisterType>
+			<EnableTotalsSplitting>false</EnableTotalsSplitting>
+			</Properties><ChildObjects><Resource uuid="46e1434b-0ff9-5af2-a527-ba6dfb4a563a"><Properties><Name>Amount</Name>
+					<Type>
+						<v8:Type>xs:decimal</v8:Type>
+						<v8:NumberQualifiers>
+							<v8:Digits>10</v8:Digits>
+							<v8:FractionDigits>2</v8:FractionDigits>
+							<v8:AllowedSign>Any</v8:AllowedSign>
+						</v8:NumberQualifiers>
+					</Type>
+					</Properties></Resource><Resource uuid="1509e744-4c5a-5136-b92e-9bc88a4cea15"><Properties><Name>Quantity</Name>
+					<Type>
+						<v8:Type>xs:decimal</v8:Type>
+						<v8:NumberQualifiers>
+							<v8:Digits>10</v8:Digits>
+							<v8:FractionDigits>3</v8:FractionDigits>
+							<v8:AllowedSign>Any</v8:AllowedSign>
+						</v8:NumberQualifiers>
+					</Type>
+					</Properties></Resource><Attribute uuid="e4e876dc-d1eb-5eb5-9b7b-6367f048cb0a"><Properties><Name>Note</Name>
+					<Type>
+						<v8:Type>xs:string</v8:Type>
+						<v8:StringQualifiers>
+							<v8:Length>32</v8:Length>
+							<v8:AllowedLength>Variable</v8:AllowedLength>
+						</v8:StringQualifiers>
+					</Type>
+					</Properties></Attribute><Dimension uuid="277c63d2-4e4b-5746-9237-e74144a8b8d9"><Properties><Name>Product</Name>
+					<Type><v8:Type>cfg:CatalogRef.Номенклатура</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension><Dimension uuid="a609e70a-102e-5228-b1bf-556d1da7a164"><Properties><Name>Warehouse</Name>
+					<Type><v8:Type>cfg:CatalogRef.Склады</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties></Dimension><Dimension uuid="976a068c-3177-5cf9-9d95-640820057040">
+				<Properties>
+					<Name>Unit</Name>
+					<Synonym />
+					<Comment />
+					<Type><v8:Type>cfg:EnumRef.Units</v8:Type></Type>
+					<UseInTotals>true</UseInTotals>
+				</Properties>
+			</Dimension>
+<Attribute uuid="6547f993-cc68-5277-b59b-ba19752ee912">
+				<Properties>
+					<Name>State</Name>
+					<Synonym />
+					<Comment />
+					<Type><v8:Type>cfg:EnumRef.States</v8:Type></Type>
+					</Properties>
+			</Attribute>
+</ChildObjects></AccumulationRegister></MetaDataObject>

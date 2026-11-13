@@ -753,6 +753,18 @@ class SQLiteCatalogBackend:
 
     @classmethod
     @_boundary
+    def create_main_demo(cls, path, configuration):
+        from .sqlite_inventory_enum_profile import create_main_demo
+        return create_main_demo(cls, path, configuration)
+
+    @classmethod
+    @_boundary
+    def create_inventory_enum_application(cls, path, configuration):
+        from .sqlite_inventory_enum_profile import create_application
+        return create_application(cls, path, configuration)
+
+    @classmethod
+    @_boundary
     def create_inventory_application(cls, path, configuration):
         from .sqlite_inventory_profile import create_application
         return create_application(cls, path, configuration)
@@ -1065,6 +1077,10 @@ class SQLiteCatalogBackend:
         """
         _uuid(catalog_id)
         if self._closed: raise BackendError('closed')
+        if self.format_version == 16:
+            from .configuration_main_demo import MainDemoConfiguration
+            if type(self.accumulation_configuration) is MainDemoConfiguration:
+                return self._main_demo_write_source(catalog_id, expected=expected)
         profile = _source_profile_for_issues(self.activation_issues)
         business = profile in (BUSINESS_PROFILE, REFERENCE_PROFILE)
         if not business and (self.storage_version != 6 or profile not in (DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE)):
@@ -1093,6 +1109,38 @@ class SQLiteCatalogBackend:
         finally:
             connection.close()
 
+    def _main_demo_source_snapshot(self, connection):
+        from .configuration_main_demo import MainDemoConfiguration, PROFILE, _same
+        from .sqlite_inventory_enum_profile import read_source
+        config, domain, _ = read_source(connection, _prepared=self._prepared_source)
+        if (type(config) is not MainDemoConfiguration or config.profile != PROFILE
+                or domain.database_id != self.database_id
+                or not _same(config, self.accumulation_configuration)):
+            raise BackendError('schema_changed')
+        return config
+
+    def _main_demo_write_source(self, catalog_id, *, expected=None):
+        if self._active is not None: raise BackendError('busy')
+        connection = self._connect()
+        try:
+            connection.execute('BEGIN')
+            config = self._main_demo_source_snapshot(connection)
+            owner = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
+            if owner is None: raise BackendError('not_found')
+            grant = next((g for g in config.catalog_handlers if g[0] == catalog_id), None)
+            if grant is None: return None
+            form = next(f for f in owner.forms if owner.default_object_form ==
+                        'Catalog.' + owner.name + '.Form.' + f.name)
+            identity = ConfigurationSourceIdentity(self.database_id, config.identity,
+                self.configuration_generation, config.source_digest, owner.identity, form.identity)
+            if expected is not None and (type(expected) is not ConfigurationSourceIdentity or expected != identity):
+                raise BackendError('schema_changed')
+            raw = dict(config.files)[grant[1]]
+            if hashlib.sha256(raw).hexdigest() != grant[2]: raise BackendError('integrity')
+            return raw.decode('utf-8-sig')
+        finally:
+            connection.close()
+
     def _demo_profile(self):
         profile = _source_profile_for_issues(self.activation_issues)
         if profile is None: raise BackendError('schema_changed')
@@ -1102,6 +1150,14 @@ class SQLiteCatalogBackend:
     def active_form_catalogs(self):
         """Host capability inventory, not arbitrary stored form execution."""
         if self._closed: raise BackendError('closed')
+        from .configuration_main_demo import MainDemoConfiguration
+        if self.format_version == 16 and type(self.accumulation_configuration) is MainDemoConfiguration:
+            view = self.begin_read()
+            try:
+                config = self._main_demo_source_snapshot(view._connection)
+                return tuple(c.identity for c in config.catalog_sources if c.default_object_form)
+            finally:
+                view.close()
         # This inventory authorizes only the historical imported-form adapter.
         # Generic object forms require the explicit configuration-form host.
         if self.storage_version != 6 or self._demo_profile() in (CATALOG_FORMS_PROFILE, APPLICATION_PROFILE): return ()
@@ -1224,7 +1280,9 @@ class SQLiteCatalogBackend:
         _uuid(catalog_id)
         if self._closed: raise BackendError('closed')
         business = _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE)
-        if self.storage_version not in (5, 6) and not business: raise BackendError('unsupported')
+        from .configuration_main_demo import MainDemoConfiguration
+        main_demo = self.format_version == 16 and type(self.accumulation_configuration) is MainDemoConfiguration
+        if self.storage_version not in (5, 6) and not business and not main_demo: raise BackendError('unsupported')
         if self._active is not None: raise BackendError('busy')
         if expected is not None:
             if type(expected) is not ConfigurationSourceIdentity: raise BackendError('invalid_input')
@@ -1236,6 +1294,21 @@ class SQLiteCatalogBackend:
         connection = self._connect()
         try:
             connection.execute('BEGIN')
+            if main_demo:
+                config = self._main_demo_source_snapshot(connection)
+                catalog = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
+                if catalog is None: raise BackendError('not_found')
+                form = next((f for f in catalog.forms if catalog.default_object_form ==
+                            'Catalog.'+catalog.name+'.Form.'+f.name), None)
+                if form is None: raise BackendError('not_found')
+                identity = ConfigurationSourceIdentity(self.database_id, config.identity,
+                    self.configuration_generation, config.source_digest, catalog.identity, form.identity)
+                if expected is not None and expected != identity: raise BackendError('schema_changed')
+                files = dict(config.files)
+                return CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
+                    catalog.path, form.path, form.definition_path, form.module_path,
+                    files['Configuration.xml'], files[catalog.path], files[form.path],
+                    files[form.definition_path], files.get(form.module_path,b''), form.module_path in files)
             imported, catalogs, info, manifest = (self._business_source_snapshot(connection) if business else
                 self._demo_source_snapshot(connection) if self.storage_version == 6 else self._inert_source_snapshot(connection))
             if self.storage_version == 6 and catalog_id not in {s.identity for s in imported.catalogs}: raise BackendError('unsupported')
@@ -1771,6 +1844,17 @@ class _View:
         """Exact list/object bytes admitted in this same read-only snapshot."""
         self._require()
         backend = self._backend
+        if backend.format_version == 16:
+            from .configuration_main_demo import MainDemoConfiguration
+            if type(backend.accumulation_configuration) is MainDemoConfiguration:
+                if self._operation_id is not None: raise BackendError('unsupported')
+                config = backend._main_demo_source_snapshot(self._connection)
+                product = next(c for c in config.catalogs if c.name == 'Номенклатура')
+                if product.identity != catalog_id: raise BackendError('unsupported')
+                files = dict(config.files)
+                base = 'Catalogs/Номенклатура/'
+                return (files[base+'Forms/ФормаСписка/Ext/Form/Module.bsl'],
+                        files[base+'Ext/ObjectModule.bsl'])
         if (self._operation_id is not None or backend.storage_version != 6
                 or backend._demo_profile() != DEMO_PRODUCTS_PROFILE):
             raise BackendError('unsupported')

@@ -1,0 +1,261 @@
+"""One exact-source demo: original catalog policy plus inventory documents.
+
+A new immutable grant, never a widening of historical demo or enum profiles.
+Import is pure: it neither executes stored code nor allocates a database.
+"""
+from copy import deepcopy
+from functools import lru_cache
+from dataclasses import dataclass
+from hashlib import sha256
+from uuid import UUID
+import xml.etree.ElementTree as ET
+from . import configuration_xml as xml
+from .catalog_backend import CatalogSchema, FieldSchema, TabularSectionSchema
+from .configuration_inventory_enums import _same, _enumerations, _document, _register
+from .configuration_inventory_application import MANIFEST, _project_owner, _manifest
+from .main_demo_source import SOURCE_SHA256
+
+PROFILE = 'main-demo-v1'
+FORMAT_VERSION = 16
+M = '{' + xml.MD + '}'
+COMMON_FORMS = frozenset(('commonform.operationdraft', 'commonform.draftdetails'))
+
+@dataclass(frozen=True, slots=True)
+class MainDemoConfiguration:
+    identity: UUID
+    name: str
+    files: tuple
+    catalogs: tuple
+    documents: tuple
+    registers: tuple
+    handlers: tuple
+    enumerations: tuple
+    profile: str
+    source_digest: str
+    commands: tuple
+    reports: tuple
+    core_projection_digest: str
+    catalog_handlers: tuple
+    catalog_sources: tuple
+
+
+def _digest(files):
+    return sha256(b''.join(p.encode('utf-8') + b'\0' + sha256(raw).digest()
+                           for p, raw in sorted(files))).hexdigest()
+
+
+def _catalogs(source, inventory):
+    owners = {c.name: c for c in inventory}
+    kinds, warehouses, products = (owners[n] for n in ('ВидыНоменклатуры', 'Склады', 'Номенклатура'))
+    # These schema projections are authorised only after the complete exact-byte
+    # envelope, including original object/form modules, has been checked.
+    obj, _ = xml._object(source[products.path], 'Catalog')
+    children = obj.find(M+'ChildObjects')
+    attribute, = children.findall(M+'Attribute')
+    section, = children.findall(M+'TabularSection')
+    row, = section.find(M+'ChildObjects').findall(M+'Attribute')
+    result = (
+        CatalogSchema(kinds.identity, kinds.name, 9, 100, numbering='decimal_v1'),
+        CatalogSchema(warehouses.identity, warehouses.name, 9, 100, numbering='decimal_v1'),
+        CatalogSchema(products.identity, products.name, 9, 150,
+            (FieldSchema(UUID(attribute.get('uuid')), 'ВидНоменклатуры', 'catalog_ref', (), kinds.identity),),
+            (TabularSectionSchema(UUID(section.get('uuid')), 'Склады',
+                (FieldSchema(UUID(row.get('uuid')), 'Склад', 'catalog_ref', (), warehouses.identity),)),),
+            numbering='decimal_v1'))
+    return tuple(sorted(result, key=lambda c: str(c.identity)))
+
+
+_NATIVE_LAYOUTS = (
+    'CommonForms/DraftDetails/Ext/Form.xml',
+    'CommonForms/OperationDraft/Ext/Form.xml',
+    'Documents/Receipt/Forms/Card/Ext/Form.xml',
+    'Documents/Issue/Forms/Card/Ext/Form.xml',
+)
+
+
+def _runtime_layout_projection(path, raw):
+    """Closed native-to-runtime view; never alter the archived source bytes."""
+    import re
+    L = '{http://v8.1c.ru/8.3/xcf/logform}'
+    V = '{http://v8.1c.ru/8.1/data/core}'
+    if (type(path) is not str or path not in _NATIVE_LAYOUTS
+            or type(raw) is not bytes or sha256(raw).hexdigest() != SOURCE_SHA256[path]):
+        raise ValueError('main demo layout source mismatch')
+    root = ET.fromstring(raw)
+    if root.tag != L+'Form':
+        raise ValueError('main demo layout root mismatch')
+    titles = list(root.iter(L+'Title'))
+    for title in titles:
+        if title.attrib or (title.text or '').strip() or len(title) != 1:
+            raise ValueError('main demo localized title mismatch')
+        item = title[0]
+        if (item.tag != V+'item' or item.attrib or (item.text or '').strip()
+                or (item.tail or '').strip() or len(item) != 2):
+            raise ValueError('main demo localized title mismatch')
+        lang, content = item
+        if (lang.tag != V+'lang' or lang.text != 'ru' or lang.attrib or len(lang)
+                or (lang.tail or '').strip() or content.tag != V+'content'
+                or content.attrib or len(content) or (content.tail or '').strip()):
+            raise ValueError('main demo localized title mismatch')
+    declarations = root.find(L+'Commands')
+    known = {n.get('name') for n in declarations if n.tag == L+'Command'} if declarations is not None else set()
+    bindings = list(root.iter(L+'CommandName'))
+    for node in bindings:
+        if (node.attrib or len(node) or type(node.text) is not str
+                or not node.text.startswith('Form.Command.')
+                or node.text[len('Form.Command.'):] not in known):
+            raise ValueError('main demo command binding mismatch')
+    # Preserve all namespace declarations and QName-valued text verbatim.
+    projected, count = re.subn(
+        rb'<Title><v8:item><v8:lang>ru</v8:lang><v8:content>([^<]*)</v8:content></v8:item></Title>',
+        rb'<Title>\1</Title>', raw)
+    if count != len(titles):
+        raise ValueError('main demo title encoding mismatch')
+    projected, count = re.subn(rb'<CommandName>Form\.Command\.([^<]+)</CommandName>',
+                               rb'<CommandName>\1</CommandName>', projected)
+    if count != len(bindings):
+        raise ValueError('main demo command encoding mismatch')
+    return projected
+
+
+def _runtime_metadata_projection(source):
+    """Strip only measured native identity sections after exact source admission.
+
+    This private projection is not a generic XML import capability. Original
+    files remain the canonical persisted/exported/native source envelope.
+    """
+    import re
+    owners = {
+        'Documents/Receipt.xml': ('8cf22ebb-2c35-58b8-9dc5-85da7eb3d6ee',
+                                 '262e03a6-3d12-5852-80c3-b7cfee187839'),
+        'Documents/Issue.xml': ('0e9acacb-6885-56c2-b1f1-fabadccaad91',
+                               'd8ef5b5f-7ca3-5d6b-8ffd-d19cbbd33f9b'),
+        'AccumulationRegisters/Stock.xml': ('9ea1e3ef-4d1e-5933-b5ff-923cb2084491',),
+    }
+    result = dict(source)
+    for path, expected in owners.items():
+        raw = source[path]
+        if type(raw) is not bytes or sha256(raw).hexdigest() != SOURCE_SHA256[path]:
+            raise ValueError('main demo projection source mismatch')
+        root = ET.fromstring(raw)
+        actual = tuple(n.get('uuid') for n in root.iter()
+                       if n.find(M+'InternalInfo') is not None)
+        if actual != expected:
+            raise ValueError('main demo projection owner mismatch')
+        projected, count = re.subn(rb'<InternalInfo(?: xmlns:xr="[^"]+")?>.*?</InternalInfo>',
+                                  b'', raw, flags=re.S)
+        if count != len(expected):
+            raise ValueError('main demo projection shape mismatch')
+        result[path] = projected
+    for path in _NATIVE_LAYOUTS:
+        result[path] = _runtime_layout_projection(path, source[path])
+    return result
+
+
+def import_main_demo_configuration(files, *, profile=None):
+    if type(profile) is not str or profile != PROFILE:
+        raise ValueError('explicit main demo source grant required')
+    accepted = xml._accept_source_files(files)
+    source = {f.path: f.content for f in accepted}
+    if {p: sha256(raw).hexdigest() for p, raw in source.items()} != SOURCE_SHA256:
+        raise ValueError('main demo source mismatch')
+    runtime_source = _runtime_metadata_projection(source)
+    # Inert inventory checks catalog/form identities without granting execution.
+    archive, inventory = xml._inert_configuration(source)
+    catalogs = _catalogs(source, inventory)
+    root, _ = xml._object(source['Configuration.xml'], 'Configuration')
+    declarations = {}
+    for node in root.find(M+'ChildObjects'):
+        kind = node.tag.removeprefix(M)
+        if kind in ('Catalog', 'Document', 'AccumulationRegister', 'Enum'):
+            name = xml._name(node.text or '')
+            declarations[kind, name] = kind+'s/'+name+'.xml'
+    used = {archive.config_uuid}
+    for catalog in catalogs:
+        used.add(catalog.identity)
+        used.update(f.identity for f in catalog.fields)
+        for section in catalog.tabular_sections:
+            used.add(section.identity); used.update(f.identity for f in section.fields)
+    enum_names = tuple(n for kind,n in declarations if kind == 'Enum')
+    enumerations = _enumerations(source, enum_names, used)
+    enum_targets = {e.name.casefold():e.identity for e in enumerations}
+    targets = {c.name.casefold():c.identity for c in catalogs}
+    documents, handlers, registers, links = [], [], [], {}
+    expected, form_names, projected = set(), set(), {}
+    for (kind, name), path in declarations.items():
+        if kind != 'Document': continue
+        raw = _project_owner(runtime_source, path, kind, name, expected, form_names)
+        projected[path] = raw
+        document, recorders = _document(raw, name, declarations, used,
+                                        targets=targets, enum_targets=enum_targets)
+        documents.append(document); links[document.identity] = recorders
+        module = 'Documents/'+name+'/Ext/ObjectModule.bsl'
+        handlers.append((document.identity,module,sha256(source[module]).hexdigest()))
+    for (kind, name), path in declarations.items():
+        if kind != 'AccumulationRegister': continue
+        owners = tuple(sorted((d for d,r in links.items() if name in r),key=str))
+        registers.append(_register(runtime_source[path],name,owners,used,
+                                   targets=targets,enum_targets=enum_targets))
+    # Original native catalog forms use their own bound policy. The strict
+    # form loader receives document and the two closed common-form declarations, never a fake
+    # generic grant for those original catalog modules or their list form.
+    from .configuration_forms import load_configuration_forms
+    form_source = dict(runtime_source)
+    _, _, form_root = xml._object(source['Configuration.xml'], 'Configuration', include_root=True)
+    form_config = form_root.find(M+'Configuration')
+    children = form_config.find(M+'ChildObjects')
+    for node in list(children):
+        if node.tag not in (M+'Document', M+'CommonForm'): children.remove(node)
+    form_source['Configuration.xml'] = ET.tostring(form_root,encoding='utf-8')
+    forms = load_configuration_forms(form_source, document_schemas=tuple(documents),
+        reference_catalogs=catalogs, posting_application=True, enum_definitions=enumerations)
+    if set(forms.forms) != form_names | COMMON_FORMS:
+        raise ValueError('main demo document/common forms mismatch')
+    # Common forms are UI-only forms, not inventory commands or posting owners.
+    # Keep the existing global inventory manifest admission unchanged.
+    document_forms = {name: forms.forms[name] for name in form_names}
+    commands, reports = _manifest(source[MANIFEST],document_forms,source,tuple(registers))
+    catalog_handlers = tuple((c.identity, 'Catalogs/'+c.name+'/Ext/ObjectModule.bsl',
+        sha256(source['Catalogs/'+c.name+'/Ext/ObjectModule.bsl']).hexdigest())
+        for c in catalogs if 'Catalogs/'+c.name+'/Ext/ObjectModule.bsl' in source)
+    original = tuple(sorted(source.items()))
+    return MainDemoConfiguration(archive.config_uuid,archive.name,original,catalogs,
+        tuple(sorted(documents,key=lambda d:str(d.identity))),tuple(registers),tuple(handlers),enumerations,PROFILE,_digest(original),
+        commands,reports,_digest(projected.items()),catalog_handlers,inventory)
+
+
+@lru_cache(maxsize=1)
+def _parsed_source_witness(files):
+    """Private pure parse memo, never a database/owner/write admission.
+
+    The key contains exact immutable source bytes, not a config object or a
+    data_version. Nothing from this cached object is returned to a caller.
+    Failures are not cached. Database readers still independently verify their
+    actual bytes, marker, database identity and DDL in the current snapshot.
+    """
+    return import_main_demo_configuration(dict(files), profile=PROFILE)
+
+
+def canonical(configuration):
+    if (type(configuration) is not MainDemoConfiguration
+            or type(configuration.profile) is not str or configuration.profile != PROFILE
+            or type(configuration.files) is not tuple
+            or any(type(x) is not tuple or len(x)!=2 or type(x[0]) is not str
+                   or type(x[1]) is not bytes for x in configuration.files)
+            or len({p for p,raw in configuration.files}) != len(configuration.files)):
+        raise ValueError('main demo configuration required')
+    # Rehash the full current envelope even on a parse-cache hit. Bounds and
+    # the closed path/hash set are checked before consulting process-local data.
+    if (len(configuration.files) != len(SOURCE_SHA256)
+            or any(len(raw) > xml.MAX_FILE_BYTES for _, raw in configuration.files)
+            or sum(len(raw) for _, raw in configuration.files) > xml.MAX_TOTAL_BYTES
+            or {p: sha256(raw).hexdigest() for p, raw in configuration.files} != SOURCE_SHA256):
+        raise ValueError('main demo source mismatch')
+    witness = _parsed_source_witness(tuple(sorted(configuration.files)))
+    # A caller may forge even frozen dataclasses via object.__setattr__. Compare
+    # every schema/handler/profile field, then return a detached copy so such a
+    # caller cannot poison the private positive parse witness for another owner.
+    fresh = deepcopy(witness)
+    if not _same(fresh,configuration):
+        raise ValueError('main demo source/schema divergence')
+    return fresh

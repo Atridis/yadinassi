@@ -168,7 +168,7 @@ Message(A[2].IsEmpty());M.Close();''')
         self.assertEqual(self.rows(text), (('01',),))
         result = self.query('SELECT Category FROM Catalog.Products UNION SELECT Ref FROM Catalog.Categories').execute()
         self.assertEqual(len(result._rows), 1)
-        with self.assertRaises(ValueError): result.unload()
+        self.assertEqual(result.unload().rows[0].get_member('Category'), result._rows[0][0])
 
     def test_union_wrong_reference_family_or_snapshot_rejected_before_scan(self):
         other = Interpreter(database_context=self.context)
