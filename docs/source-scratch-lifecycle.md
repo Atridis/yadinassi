@@ -375,14 +375,14 @@ SQL, native temporary-table parity или автоматических defaults 
 
 Декларация константы может содержать единственный
 `<v8:TypeSet>cfg:DefinedType.Name</v8:TypeSet>`. Resolver читает объявленный
-DefinedType из того же source, разрешает цепочку не длиннее 16 объектов и
+DefinedType из того же source без вложенных DefinedType и
 передаёт итоговую декларацию прежнему закрытому codec. Поддерживаются только
 уже доступные scalar/composite/UUID/ValueStorage/enum типы и их qualifiers.
-Неизвестная ссылка, цикл, слишком длинная цепочка, смешивание TypeSet с
+Неизвестная ссылка, вложенный DefinedType (включая циклы), смешивание TypeSet с
 другими типами или переопределениями qualifiers остаются именованной ошибкой.
 Неподдержанный DefinedType, который никто не использует, не активируется.
 
-UUID и имя каждого объекта цепочки входят в schema binding. Source update
+UUID и имя объекта DefinedType входят в schema binding. Source update
 не разрешает незаметно заменить alias другим объектом, изменить его тип или
 переписать alias на прямую декларацию. Значения остаются прежними при отказе.
 Старый формат schema для прямых деклараций не меняется. Начальные значения
@@ -392,6 +392,7 @@ UUID и имя каждого объекта цепочки входят в sche
 
 Контракт именованных типов и qualifiers основан на
 [официальных рекомендациях DefinedType](https://1c-dn.com/library/using_defined_types/).
+Developer Guide §5.5.11 прямо запрещает включать DefinedType в другой DefinedType.
 Resolver не загружает Python/BSL-код и не разрешает произвольные host-типы.
 
 ### Дополнительные qualifiers source-констант

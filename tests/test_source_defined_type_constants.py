@@ -58,16 +58,16 @@ class DefinedTypeConstantTests(unittest.TestCase):
         for value in (True,'text',None):store.set('Choice',value);self.assertEqual(store.get('Choice'),value)
 
     def test_chained_alias(self):
-        source=package({'Setting':alias('Leaf'),'Leaf':BOOL});store=self.store(source)
-        self.assertEqual(len(store._definition('Choice').type_dependencies),2);store.set('Choice',False);self.assertIs(store.get('Choice'),False)
+        _,errors,_=source_constant_definitions(package({'Setting':alias('Leaf'),'Leaf':BOOL}))
+        self.assertIn('nested DefinedType unsupported',errors['choice'])
 
     def test_cycle_is_named_failure(self):
         defs,errors,_=source_constant_definitions(package({'Setting':alias('Leaf'),'Leaf':alias('Setting')}))
-        self.assertIn('cyclic',errors['choice']);self.assertIn('Text',[d.name for d in defs])
+        self.assertIn('nested DefinedType unsupported',errors['choice']);self.assertIn('Text',[d.name for d in defs])
 
     def test_excessive_chain(self):
         types={'Setting':alias('D0')};types.update({'D'+str(i):alias('D'+str(i+1)) for i in range(16)});types['D16']=BOOL
-        _,errors,_=source_constant_definitions(package(types));self.assertIn('excessive',errors['choice'])
+        _,errors,_=source_constant_definitions(package(types));self.assertIn('nested DefinedType unsupported',errors['choice'])
 
     def test_unknown_defined_type(self):
         _,errors,_=source_constant_definitions(package(constant=alias('Absent')));self.assertIn('unknown DefinedType',errors['choice'])

@@ -28,7 +28,6 @@ class SourceDefinedTypes:
 
     def resolve(self, props, namespaces):
         dependencies = []
-        seen = set()
         while True:
             node = props.get('{' + MD + '}Type')
             if node is None:
@@ -36,6 +35,8 @@ class SourceDefinedTypes:
             aliases = [n for n in node if n.tag == '{' + V8 + '}TypeSet']
             if not aliases:
                 return props, namespaces, tuple(dependencies)
+            if dependencies:
+                raise ValueError('nested DefinedType unsupported')
             if self.inventory_error:
                 raise ValueError(self.inventory_error)
             if (node.attrib or (node.text or '').strip() or len(node) != 1
@@ -46,9 +47,6 @@ class SourceDefinedTypes:
             if namespace != CFG or not target.startswith('DefinedType.'):
                 raise ValueError('unsupported source type set')
             key = target[len('DefinedType.'):].casefold()
-            if key in seen or len(seen) >= 16:
-                raise ValueError('cyclic or excessive DefinedType chain')
-            seen.add(key)
             name = self.names.get(key)
             if name is None:
                 raise ValueError('unknown DefinedType: ' + target)
