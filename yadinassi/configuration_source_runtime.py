@@ -18,6 +18,9 @@ from .syntax.parser import parse
 
 class _SourceInterpreter(Interpreter):
     def __init__(self, application, *args, **kwargs):
+        selected = kwargs.setdefault('compilation_profile', application.compilation_profile)
+        if selected != application.compilation_profile:
+            raise ValueError('source interpreter compilation profile mismatch')
         super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
         self._metadata._enumerations = application.enumerations
@@ -125,15 +128,15 @@ class SourceApplication:
     def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, compatibility_target=None):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
-        if compilation_profile != 'standalone':
-            raise ValueError('Запуск общего источника пока поддерживает только standalone профиль компиляции')
+        from .syntax.preprocessor import validate_compilation_profile
+        compilation_profile = validate_compilation_profile(compilation_profile)
         from .source_system_info import validate_target
         self.compatibility_target = validate_target(compatibility_target)
         from .source_host_session import SourceHostSession
         self.host_session = SourceHostSession(self)
         self.source = source
         self.output = output
-        self.compilation_profile = compilation_profile
+        self._compilation_profile = compilation_profile
         self.files = {item.path: item.content for item in source.files}
         from .configuration_source_metadata import SourceMetadataRoot
         self.metadata = SourceMetadataRoot(source)
@@ -171,6 +174,10 @@ class SourceApplication:
         self._session_owner = None
         self._session_handler = None
 
+    @property
+    def compilation_profile(self):
+        return self._compilation_profile
+
     def _program(self, path):
         program = parse(self.files.get(path, b'').decode('utf-8-sig'),
                         '<configuration:' + path + '>',
@@ -204,7 +211,8 @@ class SourceApplication:
                                    compilation_profile=self.compilation_profile)
         try:
             from .configuration_modules import compile_module
-            program = compile_module(self.files[path], path, side, common=True)
+            program = compile_module(self.files[path], path, side, common=True,
+                                     compilation_profile=self.compilation_profile)
             child._logical_side = side
             if any(not isinstance(node, ast.Routine) for node in program):
                 raise ValueError('Общий модуль содержит неподдерживаемую инициализацию: ' + path)
@@ -241,7 +249,8 @@ class SourceApplication:
                 path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
                 if path not in self.files:
                     raise ValueError('Missing global module source: ' + path)
-                program = compile_module(self.files[path], path, side, common=True)
+                program = compile_module(self.files[path], path, side, common=True,
+                                     compilation_profile=self.compilation_profile)
                 for routine in program:
                     if routine.exported:
                         exports.setdefault(routine.name.casefold(), []).append(key)
@@ -274,7 +283,8 @@ class SourceApplication:
         if path not in self.files:
             raise ValueError('Source manager module unavailable; storage operations are not activated: ' + path)
         from .configuration_modules import compile_module
-        program = compile_module(self.files[path], path, 'server', common=False)
+        program = compile_module(self.files[path], path, 'server', common=False,
+                                 compilation_profile=self.compilation_profile)
         if any(type(node) is not ast.Routine for node in program):
             raise ValueError('Source manager module initialization is not supported: ' + path)
         child = _SourceInterpreter(self, family_owner=self.interpreter,
@@ -319,7 +329,8 @@ class SourceApplication:
                 self._instances['<session>'] = session
                 session._logical_side = 'server'
                 from .configuration_modules import compile_session_module
-                program, self._session_handler = compile_session_module(self.files[session_path])
+                program, self._session_handler = compile_session_module(
+                    self.files[session_path], compilation_profile=self.compilation_profile)
                 self._session_owner = session
                 session.execute_program(program)
                 handlers = ('sessionparameterssetting', 'установкапараметровсеанса')

@@ -34,7 +34,8 @@ def source_form_definition(application, name):
     if definition_path not in application.files:
         raise ValueError('selected form definition missing: ' + definition_path)
     return _definition(name, metadata._entry.identity, application.files[definition_path],
-                       application.files.get(prefix + '/Ext/Form/Module.bsl', b''))
+                       application.files.get(prefix + '/Ext/Form/Module.bsl', b''),
+                       compilation_profile=application.compilation_profile)
 
 
 class SourceFormController:
