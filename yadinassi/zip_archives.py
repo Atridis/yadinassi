@@ -20,6 +20,7 @@ import zipfile
 import zlib
 import unicodedata
 
+from .safe_mode import require_external_access
 from .binary_streams import (BSLStream, BSLMemoryStream, BSLFileStream, _Enum,
                              _Namespace, _number, _stream_path)
 from .file_io import _FileMethods, _methods, _text, MAX_BYTES, BSLBinaryData
@@ -116,6 +117,7 @@ def _darwin_system_path(path):
 
 
 def _host_path(value):
+    require_external_access('access ZIP filesystem path')
     value = _stream_path(value)
     if len(value) > MAX_NAME: raise ValueError('ZIP: слишком длинный путь')
     path = _darwin_system_path(Path(os.path.abspath(value)))
@@ -133,6 +135,7 @@ def _host_path(value):
 
 @contextmanager
 def _directory(path, create=False):
+    require_external_access('access ZIP directory')
     path = _host_path(str(path))
     anchored = os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
     if not anchored:
@@ -156,6 +159,7 @@ def _directory(path, create=False):
 
 
 def _read_file(path):
+    require_external_access('read ZIP file')
     path = _host_path(str(path))
     with _directory(path.parent) as parent:
         flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0)
@@ -170,6 +174,7 @@ def _read_file(path):
 
 
 def _write_file(path, data):
+    require_external_access('write ZIP file')
     path = _host_path(str(path))
     if path.exists() and not path.is_file(): raise ValueError('ZIP: требуется обычный файл')
     # Stage the bounded result, then replace only the selected file. On POSIX
@@ -225,6 +230,7 @@ def _preflight_zip(raw):
 
 
 def _scan_files(base, pattern, recursive):
+    require_external_access('enumerate ZIP source files')
     pending = [base]; visited = 0; matches = []
     while pending:
         folder = pending.pop(); _host_path(str(folder))

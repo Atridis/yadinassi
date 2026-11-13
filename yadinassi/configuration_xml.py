@@ -151,7 +151,7 @@ def _qname(node,ns):
     return ns[id(node)][parts[0]],parts[1]
 
 
-def _type(props,ns,targets):
+def _type(props,ns,targets, *, source_unbounded_string=False):
     with location(field=next((v.text for k, v in props.items() if k == '{'+MD+'}Name'), None), property='Type'):
         t=props.get('{'+MD+'}Type')
         if t is None:_fail('missing field type')
@@ -174,6 +174,8 @@ def _type(props,ns,targets):
         if namespace==XS and name=='string':
             q=qualifiers('String')
             if set(q)!={'Length','AllowedLength'} or q['AllowedLength']!='Variable':_fail('string qualifiers')
+            if source_unbounded_string and q['Length']=='0':
+                return 'string',(0,),None
             if len(q['Length'])>4 or not re.fullmatch(r'[1-9][0-9]*',q['Length']) or not 1<=int(q['Length'])<=4096:_fail('string length')
             return 'string',(int(q['Length']),),None
         if namespace==XS and name=='decimal':

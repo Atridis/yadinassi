@@ -108,6 +108,7 @@ class Lexer:
 
     def tokens(self) -> list[Token]:
         result = []
+        after_dot = False
         dual = self.execution_context in {"dual_client", "dual_server"}
         nocontext = self.execution_context == "server_nocontext" or dual
         declarations_only = self.server_declarations_only or nocontext
@@ -186,7 +187,8 @@ class Lexer:
                     start = self.pos
                     while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
                         self.advance()
-                    skipped_kind = KEYWORDS.get(self.text[start:self.pos].casefold())
+                    skipped_kind = None if after_dot else KEYWORDS.get(self.text[start:self.pos].casefold())
+                    after_dot = False
                     if skipped_kind in {"ASYNC", "FUNCTION", "PROCEDURE"}:
                         skipping_client = True
                         skipped_depth = 0 if skipped_kind == "ASYNC" else 1
@@ -201,6 +203,7 @@ class Lexer:
                         elif excluded_root_blocks and skipped_kind == excluded_root_blocks[-1]:
                             excluded_root_blocks.pop()
                 else:
+                    after_dot = char == '.'
                     self.advance()
                 continue
             if (server_root and not capturing_server and not skipping_client
@@ -340,7 +343,7 @@ class Lexer:
                 while self.peek() and (self.peek().isalnum() or self.peek() == "_"):
                     self.advance()
                 value = self.text[start:self.pos]
-                kind = KEYWORDS.get(value.casefold(), "IDENT")
+                kind = "IDENT" if after_dot else KEYWORDS.get(value.casefold(), "IDENT")
             elif char.isascii() and char.isdigit():
                 start = self.pos
                 while self.peek() and self.peek() in "0123456789":
@@ -381,6 +384,10 @@ class Lexer:
                         self.advance()
                         continue
                     raise BSLError(f"Неожиданный символ {char!r}", self.source, line, column)
+            # Member names cannot open/close routines while scanning an
+            # omitted side either. Preserve spelling; keyword status applies
+            # only outside member access.
+            after_dot = kind == '.'
             if skipping_client:
                 if skipped_depth == 0 and skipped_dual and kind == "ASYNC":
                     # Explicit project boundary, including declarations present

@@ -1,5 +1,6 @@
 """Bounded XML 1.0 writer; no DTD, entities or external resources."""
 from xml.parsers import expat
+from .safe_mode import require_external_access
 from .values import BSLObject, HostFunction
 from . import file_io
 
@@ -335,6 +336,9 @@ class BSLXMLWriter(BSLObject):
     def close(self):
         self._require()
         is_file=self._stream is not None
+        from .text_streams import BinaryStreamSink
+        if is_file and not isinstance(self._stream, BinaryStreamSink):
+            require_external_access("write XML file")
         try:
             if self._stack or self._attribute is not None:
                 raise ValueError('XML: незавершенная запись элемента или атрибута')
@@ -343,7 +347,10 @@ class BSLXMLWriter(BSLObject):
                 self._active=False;return result
             data=file_io._encode(result,self._encoding)
             if len(data)+len(self._bom)>file_io.MAX_BYTES: raise ValueError('XML: превышен предел файла')
-            self._stream.write(self._bom+data)
+            if isinstance(self._stream, BinaryStreamSink):
+                self._stream.write(self._bom+data)
+            else:
+                file_io._write_all(self._stream, self._bom+data)
             return ''
         finally:
             # File Close is terminal even when rendering, encoding or writing

@@ -80,11 +80,14 @@ class BSLEnumManager(BSLObject):
 
 
 class BSLEnumerations(BSLObject):
-    def __init__(self,definitions):
+    def __init__(self,definitions, *, unsupported=None):
+        self._unsupported = dict(unsupported or {})
         self.metadata=_DeclaredMetadataCollection(tuple(EnumMetadata(d) for d in definitions))
         self._managers={m._name.casefold():BSLEnumManager(m,self.metadata) for m in self.metadata}
 
     def get_member(self,name):
+        if name.casefold() in self._unsupported:
+            raise ValueError('unsupported source enumeration ' + name + ': ' + self._unsupported[name.casefold()])
         value=self._managers.get(name.casefold())
         return super().get_member(name) if value is None else value
 

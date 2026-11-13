@@ -72,7 +72,7 @@ class InternalSerializationTests(unittest.TestCase):
         self.assertFalse(serialization._CODECS & serialization._UNSUPPORTED_CODEC_TYPES)
         self.assertEqual(set(serialization._TYPE_IDS), set(serialization._CODECS))
         self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES,
-                         {kind for _, kind, _ in type_values._VALUE_TYPES})
+                         {kind for _, kind, _ in type_values._VALUE_TYPES} | type_values._CONDITIONAL_VALUE_TYPES)
 
     def test_every_implemented_type_has_native_readback_behavior(self):
         vm = Interpreter()

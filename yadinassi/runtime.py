@@ -138,6 +138,7 @@ class _Module:
         self.interpreter = interpreter
         self.path = path
         self.ready = False
+        self._platform_type = None
 
     def __str__(self) -> str:
         raise TypeError("Строковое представление объекта модуля пока не поддерживается")
@@ -642,7 +643,9 @@ class Interpreter:
                 expression = parse_expression(text)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
-            return (yield from self._visit(expression))
+            from .safe_mode import routine_frame
+            with routine_frame(self, self):
+                return (yield from self._visit(expression))
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
@@ -677,7 +680,10 @@ class Interpreter:
                     lambda value, name=name: scope.__setitem__(name, value))
                 for name, item in scope.items()
             }
-            (yield from self.block(program))
+            # Dynamic code may inherit restrictions, never own its caller's counter.
+            from .safe_mode import routine_frame
+            with routine_frame(self, self):
+                (yield from self.block(program))
         except RecursionError:
             raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
         finally:
@@ -1043,6 +1049,12 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            return value.member(self, node.name)
+        from .source_constants_runtime import SourceConstants
+        if type(value) is SourceConstants:
+            return value.member(self, node.name)
         if type(value) is BSLSessionParameters:
             return (yield from value.read(self,node.name))
         if type(value) is _Module:
@@ -1054,6 +1066,9 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_metadata_properties import SourcePropertyDomain
+        if type(value) is SourcePropertyDomain:
+            return value.get_index((yield from self._visit(node.index)))
         if type(value) is BSLSessionParameters:
             value._authorize(self)
             index=(yield from self._visit(node.index))
@@ -1257,6 +1272,11 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
+        from .source_constants_runtime import ConstantCall
+        from .source_extensions import ExtensionCall
+        from .source_host_session import SourceSessionCall
+        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall):
+            return function.function.invoke(self, values)
         return function(*values)
 
     def _convert_json(self, node, *, writing):
@@ -1473,6 +1493,9 @@ class Interpreter:
     @staticmethod
     def table_optional_arguments(receiver: object, name: str) -> frozenset[int] | None:
         key = name.casefold()
+        from .source_extensions import SourceExtensions
+        if type(receiver) is SourceExtensions and key in ('get', 'получить'):
+            return frozenset({0, 1})
         if type(receiver) is BSLTextDocument and key in {"read", "прочитать", "write", "записать"}:
             return frozenset({1, 2})
         if type(receiver) is BSLInternetProxy and key in {"set", "установить"}: return frozenset({2, 3, 4, 5})
@@ -1574,6 +1597,9 @@ class Interpreter:
                          and self._configuration_runtime.is_common_routine(function))):
             raise ValueError("Подпрограмма без контекста не может вызывать контекстную подпрограмму")
         crossing = caller_side == "client" and function.execution_context == "server"
+        if crossing or function.is_async:
+            from .safe_mode import require_transfer
+            require_transfer('cross-context or asynchronous calls')
         invocation = owner._invocation_bindings.get(function.name.casefold())
         invocation = invocation[1] if invocation and invocation[0] is function else None
         if invocation is not None and not crossing:
@@ -1626,14 +1652,15 @@ class Interpreter:
         if crossing or function.is_async:
             from .database_transactions import forbid_transfer
             forbid_transfer(self._transaction_backend())
-        scalar_server_reuse = (self._configuration_runtime is not None
-            and self._configuration_runtime.is_scalar_server_reuse(function))
+        reusable_runtime = self._configuration_runtime or getattr(self, '_source_reusable_runtime', None)
+        scalar_server_reuse = (reusable_runtime is not None
+            and reusable_runtime.is_scalar_server_reuse(function))
         if scalar_server_reuse:
             from .invocation import _encode_scalar
             for value in bindings.values(): _encode_scalar(value.get() if isinstance(value, _Reference) else value)
         reuse = None
-        if self._configuration_runtime is not None:
-            selected = self._configuration_runtime.reusable_call(self, owner, function, qualified)
+        if reusable_runtime is not None:
+            selected = reusable_runtime.reusable_call(self, owner, function, qualified)
             if selected is not None:
                 from .reusable_values import argument_key
                 cache, identity = selected
@@ -1646,7 +1673,7 @@ class Interpreter:
                 if found:
                     try:
                         if scalar_server_reuse: _encode_scalar(cached)
-                        cache.revalidate(key, self._configuration_runtime.reusable_values.measure(cached))
+                        cache.revalidate(key, reusable_runtime.reusable_values.measure(cached))
                     except (TypeError, ValueError):
                         cache.discard(key)
                         raise
@@ -1681,7 +1708,8 @@ class Interpreter:
         from .database_transactions import admission
         with admission(not crossing and getattr(self, '_transaction_activation_allowed', True)):
             try:
-                with input_call:
+                from .safe_mode import routine_frame
+                with input_call, routine_frame(self, owner):
                     if crossing:
                         for initializer in owner.server_initializers:
                             yield from owner.block(initializer.body)
@@ -1703,9 +1731,9 @@ class Interpreter:
                         for (_, reference), value in zip(copyback, packet[1:]):
                             reference.set(value)
                     if reuse is not None:
-                        self._configuration_runtime.reusable_values.authorize(self)
+                        reusable_runtime.reusable_values.authorize(self)
                         cache, reservation = reuse
-                        cache.publish(reservation, result, self._configuration_runtime.reusable_values.measure(result))
+                        cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
                     return result
             finally:
                 owner._module_context_stack.pop()
@@ -1731,6 +1759,8 @@ class Interpreter:
             self.locals = previous
 
     def visit_Await(self, node: ast.Await):
+        from .safe_mode import require_transfer
+        require_transfer('Await')
         from .database_transactions import forbid_transfer
         forbid_transfer(self._transaction_backend())
         value = yield from self._visit(node.operand)
