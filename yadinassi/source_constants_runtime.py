@@ -51,6 +51,9 @@ class SourceConstant(BSLObject):
         self._owner, self._name = owner, name
 
     def get_member(self, name):
+        if name.casefold() in ('createvaluemanager', 'создатьменеджерзначения'):
+            from .source_constant_managers import ValueManagerCall
+            return HostFunction(name, ValueManagerCall(self, 'create'))
         if name.casefold() in ('get', 'получить'):
             return HostFunction(name, ConstantCall(self._owner, self._name, False))
         if name.casefold() in ('set', 'установить'):

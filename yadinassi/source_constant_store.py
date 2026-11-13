@@ -392,13 +392,20 @@ class SourceConstantStore:
                 self._connection.execute('ROLLBACK')
 
     def set(self, name, value):
+        return self._set(name, value, handled=False)
+
+    def _set_after_handlers(self, name, value):
+        return self._set(name, value, handled=True)
+
+    def _set(self, name, value, *, handled):
         if self._closed:
             raise ValueError('source constants store is closed')
         owned = not self.transaction_active
         try:
             definition = self._definition(name)
-            if definition.write_blockers:
-                raise ValueError('unsupported constant write: ' + definition.name + ': ' + '; '.join(definition.write_blockers))
+            blockers = tuple(item for item in definition.write_blockers if not (handled and item == 'constant module execution is not supported'))
+            if blockers:
+                raise ValueError('unsupported constant write: ' + definition.name + ': ' + '; '.join(blockers))
             encoded = _encode(value, definition)
             if owned:
                 self._connection.execute('BEGIN IMMEDIATE')

@@ -77,13 +77,13 @@ class SourceConstantSetTests(unittest.TestCase):
 
     def test_late_write_blocker_rolls_back_earlier_value(self):
         app = self.app('S=Constants.CreateSet("Flag,Text"); S.Flag=True; S.Text="value"; S.Write();',
-                       {'Constants/Text/Ext/ValueManagerModule.bsl': b'Procedure BeforeWrite(Cancel) EndProcedure'})
-        with self.assertRaisesRegex(BSLError, 'module execution'): app.start()
+                       {'Constants/Text/Ext/ValueManagerModule.bsl': b'Procedure FillCheckProcessing(Cancel, Fields) EndProcedure'})
+        with self.assertRaisesRegex(BSLError, 'FillCheckProcessing'): app.start()
         self.assertEqual(self.count(), 0)
 
     def test_failed_set_inside_transaction_aborts_whole_transaction(self):
         app = self.app('BeginTransaction(); Constants.Flag.Set(False); S=Constants.CreateSet("Flag,Text"); S.Flag=True; S.Text="value"; Try S.Write(); Except EndTry;',
-                       {'Constants/Text/Ext/ValueManagerModule.bsl': b'Procedure BeforeWrite(Cancel) EndProcedure'})
+                       {'Constants/Text/Ext/ValueManagerModule.bsl': b'Procedure FillCheckProcessing(Cancel, Fields) EndProcedure'})
         app.start(); self.assertEqual(self.count(), 0)
 
     def test_index_and_iteration_manager_calls(self):

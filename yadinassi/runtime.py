@@ -1052,6 +1052,11 @@ class Interpreter:
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
+        from .source_constant_managers import SourceConstantValueManager
+        if type(value) is SourceConstantValueManager:
+            if node.name.casefold() in ('value', 'значение'):
+                return value.value_read(self)
+            return value.get_member(node.name)
         from .source_constants_runtime import SourceConstants, SourceConstantSet
         if type(value) is SourceConstantSet:
             if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
@@ -1283,6 +1288,23 @@ class Interpreter:
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
         from .source_transactions import SourceTransactionCall
+        from .source_constant_managers import ValueManagerCall, write_values
+        marker = function.function
+        if type(marker) is ValueManagerCall:
+            return (yield from marker.invoke(self, values))
+        if type(marker) is ConstantCall and marker.writing:
+            marker.owner._store(self)
+            if len(values) != 1:
+                raise TypeError('invalid constant method argument count')
+            return (yield from write_values(self, marker.owner, {marker.name: values[0]}))
+        if type(marker) is ConstantSetCall and marker.operation == 'write':
+            receiver = marker.receiver
+            receiver.owner._store(self)
+            if values:
+                raise TypeError('constant set Read/Write take no arguments')
+            if len(receiver.values) != len(receiver.keys):
+                raise ValueError('all selected constant fields must be assigned or read before Write')
+            return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
         if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
             return function.function.invoke(self, values)
         return function(*values)
@@ -2030,6 +2052,12 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_constant_managers import SourceConstantValueManager
+            if type(value) is SourceConstantValueManager:
+                if not isinstance(node.target, ast.Attribute) or node.target.name.casefold() not in ('value', 'значение'):
+                    raise ValueError('unsupported value manager assignment')
+                value.value_write(self, (yield from self._visit(node.value)))
+                return
             from .source_constants_runtime import SourceConstantSet
             if type(value) is SourceConstantSet:
                 if not isinstance(node.target, ast.Attribute):
