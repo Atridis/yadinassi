@@ -89,7 +89,10 @@ class UUIDCandidateTests(unittest.TestCase):
 
     def test_unmeasured_surfaces_fail_closed(self):
         self.vm.execute(f'u = New UUID("{A}"); ts = New Array; ts.Add(Type("UUID"));')
-        for expr in ['New TypeDescription(ts)',
+        # Singleton UUID descriptors are measured by the typed-pipeline native16.
+        # Keep the surrounding unmeasured mixed/qualified and transport surfaces closed.
+        self.assertEqual(self.vm.execute('New TypeDescription(ts)').types, (BSLType.UUID,))
+        for expr in ['New TypeDescription(ts, Undefined)',
                      'New TypeDescription("String,UUID")', 'Type("Уникальный идентификатор")']:
             with self.subTest(expr=expr), self.assertRaises(BSLError):
                 self.vm.execute(expr)

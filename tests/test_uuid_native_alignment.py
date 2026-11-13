@@ -1,4 +1,7 @@
-"""PR112 run40240060498 observations, plus separately labeled local bounds."""
+"""PR112 scalar observations and candidate typed UUID extension bounds.
+
+Typed extension is covered separately by the source-bound native16 replay.
+"""
 import unittest
 from yadinassi import Interpreter, BSLError
 from yadinassi.unique_identifiers import BSLUUID
@@ -37,16 +40,16 @@ class UUIDNativeAlignmentTests(unittest.TestCase):
                 d.adjust_value(value)
         for source in ('UUID,String', 'Number,UUID', 'UUID,Null'):
             with self.assertRaises(ValueError): BSLTypeDescription(source)
-        with self.assertRaises(ValueError): BSLTypeDescription(d)
+        self.assertEqual(BSLTypeDescription(d).types, (BSLType.UUID,))
         with self.assertRaises(ValueError): BSLTypeDescription('UUID', None)
         a = BSLArray(); a.items = [BSLType.UUID]
-        with self.assertRaises(ValueError): BSLTypeDescription(a)
+        self.assertEqual(BSLTypeDescription(a).types, (BSLType.UUID,))
         with self.assertRaises(ValueError): value_to_string_internal(d)
         vm = Interpreter(lambda _: None)
         for collection in ('ValueTable', 'ValueTree'):
             vm.execute(f't = New {collection}; d = New TypeDescription("UUID");')
-            with self.assertRaises(BSLError): vm.execute('t.Columns.Add("ID", d)')
-            self.assertEqual(vm.execute('t.Columns.Count()'), 0)
+            vm.execute('t.Columns.Add("ID", d)')
+            self.assertEqual(vm.execute('t.Columns.Count()'), 1)
 
     def test_observed_fixed_zero_scalar_streams_and_roundtrips(self):
         for text in (FIXED, ZERO):
@@ -77,11 +80,11 @@ class UUIDNativeAlignmentTests(unittest.TestCase):
                     with self.assertRaises((TypeError, ValueError)):
                         value_from_string_internal('{"#",'+GUID+','+text+'}')
         for text in ['{"#",'+GUID+'}', '{"#",'+GUID+',"'+FIXED+'"}',
-                     '{"#",'+GUID+','+FIXED+',0}', '{"T",'+GUID+'}',
+                     '{"#",'+GUID+','+FIXED+',0}',
                      '{"#",00000000-0000-0000-0000-000000000000,'+FIXED+'}']:
             with self.assertRaises((TypeError, ValueError)): value_from_string_internal(text)
-        # Nested UUID streams and the Type-record inverse remain unmeasured.
-        for value in (BSLUUID(FIXED), BSLType.UUID):
+        # Nested Type records remain outside the bounded UUID scalar extension.
+        for value in (BSLType.UUID,):
             a = BSLArray(); a.items = [value]
             with self.assertRaises(ValueError): value_to_string_internal(a)
         nested = '{"#",51e7a0d2-530b-11d4-b98a-008048da3034,1,{"#",'+GUID+','+FIXED+'}}'
