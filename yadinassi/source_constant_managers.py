@@ -6,6 +6,8 @@ from .configuration_source_runtime import _SourceInterpreter
 from .source_constants_runtime import SourceConstants
 
 _active_write = ContextVar('source_constant_write', default=False)
+_constructing = ContextVar('source_constant_construction', default=())
+_STANDARD_METHODS = {'read', 'прочитать', 'write', 'записать', 'metadata', 'метаданные'}
 _UNSET = object()
 _MODULE_BLOCKER = 'constant module execution is not supported'
 
@@ -26,6 +28,10 @@ class _ValueInterpreter(_SourceInterpreter):
 
     def argument(self, node):
         node = self.ungroup(node)
+        if type(node) is ast.Name and node.name.casefold() == '__constant_cancel':
+            from .runtime import _Reference
+            return _Reference(lambda: self.variables['__constant_cancel'],
+                              lambda value: self.variables.__setitem__('__constant_cancel', value))
         if type(node) is ast.Name and node.name.casefold() in ('value', 'значение'):
             from .runtime import _Reference
             self.manager.value_read(self)
@@ -47,6 +53,8 @@ class SourceConstantValueManager(BSLObject):
         self.owner, self.name = owner, name
         self.value = _UNSET
         self.interpreter = None
+        self._ready = True
+        self._closed = False
 
     def get_member(self, name):
         aliases = {'read': 'read', 'прочитать': 'read', 'write': 'write', 'записать': 'write',
@@ -56,14 +64,48 @@ class SourceConstantValueManager(BSLObject):
             raise ValueError('unsupported value-manager property or exported routine: ' + name)
         return HostFunction(name, ValueManagerCall(self, operation), returns_value=operation == 'metadata')
 
+    def authorize(self, caller):
+        store = self.owner._store(caller)
+        if self._closed or (not self._ready and caller is not self.interpreter):
+            raise ValueError('constant manager initialization is incomplete or failed')
+        if self.interpreter is not None:
+            self.interpreter._require_family()
+        return store
+
+    def property_read(self, caller, name):
+        self.authorize(caller)
+        if name.casefold() in ('value', 'значение'):
+            return self.value_read(caller)
+        if name.casefold() in _STANDARD_METHODS:
+            return self.get_member(name)
+        if self.interpreter is None:
+            raise ValueError('constant manager exported field unavailable: ' + name)
+        return self.interpreter._self_module.get_member(name)
+
+    def property_write(self, caller, name, value):
+        self.authorize(caller)
+        if name.casefold() in ('value', 'значение'):
+            return self.value_write(caller, value)
+        if self.interpreter is None or name.casefold() in _STANDARD_METHODS:
+            raise ValueError('constant manager exported field unavailable: ' + name)
+        self.interpreter._self_module.set_member(name, value)
+
+    def exported_routine(self, caller, name):
+        self.authorize(caller)
+        if caller._scheduler.pending:
+            raise ValueError('constant manager exports require synchronous execution')
+        if self.interpreter is None:
+            raise ValueError('constant manager exported routine unavailable: ' + name)
+        return self.interpreter._self_module.routine(name)
+
     def value_read(self, caller):
-        self.owner._store(caller)
+        self.authorize(caller)
         if self.value is _UNSET:
             raise ValueError('uninitialized constant manager Value; explicit Read or assignment required')
         return self.value
 
     def value_write(self, caller, value):
-        store = self.owner._store(caller)
+        store = self.authorize(caller)
         from .source_constant_store import _encode
         _encode(value, store._definition(self.name))
         self.value = value
@@ -81,9 +123,8 @@ class SourceConstantValueManager(BSLObject):
         if (routine.is_function or routine.is_async or len(routine.parameters) != 1
                 or routine.parameters[0].by_value or routine.parameters[0].default is not None):
             raise ValueError('unsupported constant event signature')
-        # Dedicated caller storage avoids leaking a Cancel variable into the user module.
-        # call_routine accepts AST arguments; a private variable belongs to a fresh
-        # synchronous source interpreter, never an alias into user variable storage.
+        # Reserved internal storage remains reachable when Write is called from
+        # an exported routine with an active local frame. It never aliases user locals.
         vm.variables['__constant_cancel'] = False
         argument = ast.Name(routine.token, '__constant_cancel')
         yield from vm.call_routine(routine, [argument], vm, require_value=False)
@@ -96,6 +137,8 @@ class SourceConstantValueManager(BSLObject):
 
 def create_manager(caller, owner, name):
     store = owner._store(caller)
+    if _constructing.get() and not store.transaction_active:
+        raise ValueError('constant initialization transaction aborted')
     if caller._scheduler.pending:
         raise ValueError('constant value managers require no pending asynchronous tasks')
     definition = store._definition(name)
@@ -111,27 +154,52 @@ def create_manager(caller, owner, name):
     if module_files:
         from .configuration_modules import compile_module
         program = compile_module(app.files[path], path, 'server', common=False)
-        if any(type(node) not in (ast.Routine, ast.Var) for node in program):
-            raise ValueError('constant module initialization statements unsupported')
-        reserved = {'value', 'значение', 'thisobject', 'этотобъект', '__constant_cancel'}
+        reserved = {'value', 'значение', 'thisobject', 'этотобъект', '__constant_cancel'} | _STANDARD_METHODS
         if any((type(node) is ast.Var and any(n.casefold() in reserved for n in node.names))
                or (type(node) is ast.Routine and (node.name.casefold() in reserved
                     or any(p.name.casefold() in reserved for p in node.parameters))) for node in program):
             raise ValueError('constant module reserved name conflict')
         if any(type(node) is ast.Routine and node.name.casefold() in ('fillcheckprocessing', 'обработкапроверкизаполнения') for node in program):
             raise ValueError('constant FillCheckProcessing unsupported')
+        stack = _constructing.get()
+        key = (id(app), definition.identity)
+        if key in stack or len(stack) >= 32:
+            raise ValueError('recursive or excessive constant manager construction')
         vm = _ValueInterpreter(manager, app)
-        manager.interpreter = vm
+        manager.interpreter, manager._ready = vm, False
+        token = _constructing.set((*stack, key))
+        owned = not store.transaction_active
+        from .database_transactions import admission
+        from .safe_mode import routine_frame
         try:
-            yield from vm._execute_program(program)
+            if owned:
+                store.begin_transaction()
+            # Declarations register before statements. Self-access is allowed;
+            # other callers cannot use a manager whose initialization is pending.
+            vm._self_module.ready = True
+            with admission(False), routine_frame(caller, vm):
+                yield from vm._execute_program(program)
+            if not store.transaction_active:
+                raise ValueError('constant initialization transaction aborted')
+            owner._store(caller)
+            if owned:
+                store.commit_transaction()
+            manager._ready = True
         except BaseException:
+            manager._closed = True
+            if store.transaction_active:
+                store.rollback_transaction()
             vm.close()
             raise
+        finally:
+            _constructing.reset(token)
     return manager
 
 
 def write_managers(caller, owner, managers):
     store = owner._store(caller)
+    if _constructing.get() and not store.transaction_active:
+        raise ValueError('constant initialization transaction aborted')
     if caller._scheduler.pending:
         raise ValueError('constant writes require no pending asynchronous tasks')
     if _active_write.get():
@@ -171,13 +239,23 @@ def write_managers(caller, owner, managers):
 
 
 def write_values(caller, owner, values):
+    store = owner._store(caller)
+    if _constructing.get() and not store.transaction_active:
+        raise ValueError('constant initialization transaction aborted')
+    if caller._scheduler.pending or _active_write.get():
+        raise ValueError('recursive or asynchronous constant writes unsupported')
+    owned = not store.transaction_active
     managers = []
     try:
+        if owned:
+            store.begin_transaction()
         for name, value in values.items():
             manager = yield from create_manager(caller, owner, name)
             managers.append(manager)
             manager.value_write(caller, value)
         yield from write_managers(caller, owner, managers)
+        if owned:
+            store.commit_transaction()
     except BaseException:
         store = owner._application().constant_store
         if store is not None and store.transaction_active:
@@ -204,6 +282,7 @@ class ValueManagerCall:
             raise TypeError('constant value manager method takes no arguments')
         if self.operation == 'create':
             return (yield from create_manager(caller, owner, receiver._name))
+        receiver.authorize(caller)
         if self.operation == 'read':
             receiver.value = store.get(receiver.name)
             return

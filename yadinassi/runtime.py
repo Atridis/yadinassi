@@ -1054,9 +1054,7 @@ class Interpreter:
             return value.member(self, node.name)
         from .source_constant_managers import SourceConstantValueManager
         if type(value) is SourceConstantValueManager:
-            if node.name.casefold() in ('value', 'значение'):
-                return value.value_read(self)
-            return value.get_member(node.name)
+            return value.property_read(self, node.name)
         from .source_constants_runtime import SourceConstants, SourceConstantSet
         if type(value) is SourceConstantSet:
             if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
@@ -1175,6 +1173,10 @@ class Interpreter:
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
             receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
+            from .source_constant_managers import SourceConstantValueManager, _STANDARD_METHODS
+            if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
+                routine = receiver.exported_routine(self, callee.name)
+                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True))
@@ -1896,6 +1898,11 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_constant_managers import SourceConstantValueManager
+            if type(owner) is SourceConstantValueManager:
+                owner.property_read(self, node.name)
+                return _Reference(lambda: owner.property_read(self, node.name),
+                                  lambda value: owner.property_write(self, node.name, value))
             if type(owner) is _Module:
                 self._require_module_storage_context()
                 owner.get_member(node.name)
@@ -2054,9 +2061,9 @@ class Interpreter:
             value = (yield from self.receiver(node.target.object))
             from .source_constant_managers import SourceConstantValueManager
             if type(value) is SourceConstantValueManager:
-                if not isinstance(node.target, ast.Attribute) or node.target.name.casefold() not in ('value', 'значение'):
-                    raise ValueError('unsupported value manager assignment')
-                value.value_write(self, (yield from self._visit(node.value)))
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError('unsupported value manager indexing')
+                value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
             from .source_constants_runtime import SourceConstantSet
             if type(value) is SourceConstantSet:
