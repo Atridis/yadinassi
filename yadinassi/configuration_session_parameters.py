@@ -11,7 +11,7 @@ class SessionParameterDefinition:
     qualifiers: tuple = ()
 
 
-def read_session_parameters(files, names, used, issues):
+def read_session_parameters(files, names, used, issues, *, source_unbounded_string=False):
     from .configuration_xml import MD, _object, _props, _text, _name, _uuid, _type, _fail, _envelope_issues
     if len(names)>128 or len({n.casefold() for n in names})!=len(names):
         _fail('session parameter inventory')
@@ -35,7 +35,7 @@ def read_session_parameters(files, names, used, issues):
         identity=_uuid(obj.get('uuid'))
         if identity in used: _fail('duplicate metadata UUID')
         used.add(identity)
-        kind,qualifiers,target=_type(props,namespaces,{})
+        kind,qualifiers,target=_type(props,namespaces,{}, source_unbounded_string=source_unbounded_string)
         if kind not in ('boolean','string','number','datetime') or target is not None:
             _fail('unsupported session parameter type')
         # Descriptive synonym XML is still fully validated, never executable.

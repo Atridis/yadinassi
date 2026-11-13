@@ -6,6 +6,7 @@ import json
 import os
 import stat
 
+from .safe_mode import require_external_access
 from .values import BSLObject, HostFunction, BSLArray, BSLFixedArray
 from .structures import BSLStructure, BSLFixedStructure
 from .maps import BSLMap, BSLFixedMap
@@ -26,6 +27,7 @@ def _text(value):
 
 
 def _open_regular(filename, encoding, *, writing=False):
+    require_external_access('open JSON file')
     # Open nonblocking before inspecting the descriptor: reject devices/FIFOs
     # without hanging, and inspect the actual open file rather than a racy path.
     flags = (os.O_WRONLY | os.O_CREAT) if writing else os.O_RDONLY
@@ -654,6 +656,8 @@ class BSLJSONWriter(BSLObject):
             raise ValueError("JSON: незавершенный контейнер")
         text = _layout("".join(self._parts), self._settings)
         if self._file is not None:
+            if self._stream_encoding is None:
+                require_external_access("write JSON file")
             try:
                 if self._stream_encoding is None:
                     self._file.write(text)

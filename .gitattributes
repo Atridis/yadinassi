@@ -429,3 +429,6 @@ scripts/uuid_typed_pipeline_behavior/observe.bsl text eol=lf
 tests/fixtures/native_uuid_typed_pipeline_43270339666.json -text
 # Immutable historical demo root; remaining original bytes live in examples/demo.
 tests/fixtures/legacy_demo_root.xml -text
+
+# Source diagnostic UI bytes are part of the exact interpreter inventory.
+yadinassi/ui/assets/source/* text eol=lf
