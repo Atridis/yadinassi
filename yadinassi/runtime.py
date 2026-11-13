@@ -1049,6 +1049,9 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+        if type(value) in (SourceDocumentSection, SourceDocumentRow):
+            return value.property_read(self,node.name)
         from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, SourceDocumentObject, SourceDocumentSelection
         if is_document_reference(value):
             return document_member(self,value,node.name)
@@ -1087,6 +1090,9 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_document_sections import SourceDocumentSection
+        if type(value) is SourceDocumentSection:
+            return value.get_index(self,(yield from self._visit(node.index)))
         from .source_constants_runtime import SourceConstants
         if type(value) is SourceConstants:
             return value.member(self, (yield from self._visit(node.index)))
@@ -1310,6 +1316,7 @@ class Interpreter:
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         from .source_catalog_runtime import SourceCatalogCall
+        from .source_document_sections import SourceDocumentSectionCall
         from .source_document_runtime import SourceDocumentCall
         from .source_references import SourceReferenceCall
         from .source_constants_runtime import ConstantCall, ConstantSetCall
@@ -1336,7 +1343,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceDocumentCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceDocumentCall, SourceDocumentSectionCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1927,6 +1934,10 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            if type(owner) in (SourceDocumentSection, SourceDocumentRow):
+                owner.property_read(self,node.name)
+                return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
             from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, readonly_reference as readonly_document, SourceDocumentObject, SourceDocumentSelection
             if is_document_reference(owner):
                 captured=document_member(self,owner,node.name)
@@ -2104,6 +2115,12 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            if type(value) in (SourceDocumentSection, SourceDocumentRow):
+                if not isinstance(node.target,ast.Attribute):
+                    raise ValueError("source document section replacement unsupported")
+                value.property_write(self,node.target.name,(yield from self._visit(node.value)))
+                return
             from .source_document_runtime import is_source_reference as is_document_reference, SourceDocumentObject
             if is_document_reference(value):
                 raise ValueError('source document reference fields are readonly; use GetObject().Write()')
@@ -2392,6 +2409,13 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = (yield from self._visit(node.collection))
+        from .source_document_sections import SourceDocumentSection
+        if type(collection) is SourceDocumentSection:
+            for value in collection.iterate(self):
+                self.set_variable(node.name,value)
+                if not (yield from self.iteration(node.body)):
+                    break
+            return
         from .source_constants_runtime import SourceConstants
         if type(collection) is SourceConstants:
             members = collection.members(self)

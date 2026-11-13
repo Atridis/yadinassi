@@ -6,6 +6,7 @@ from .query_packages import _Table, _check_tables
 from .source_constant_queries import _local_nodes, _private_name
 from .source_catalog_store import SourceCatalogStore
 from .source_document_store import SourceDocumentStore
+from .source_document_section_store import SourceDocumentSectionStore
 
 _CONSTANTS = ('constants','константы')
 _STANDARD = {'catalog': {'Code':'Код','Description':'Наименование','DeletionMark':'ПометкаУдаления'},
@@ -21,7 +22,7 @@ def has_catalog(statements):
 def read(query, caller, statements, *, batch=False):
     store=query._source_owner._store(caller)
     app=query._source_owner._application()
-    if type(store) not in (SourceCatalogStore, SourceDocumentStore):
+    if type(store) not in (SourceCatalogStore, SourceDocumentStore, SourceDocumentSectionStore):
         raise ValueError('source Catalog queries require explicit v4 scratch capability')
     if caller._scheduler.pending:
         raise ValueError('source Catalog query requires synchronous execution')
@@ -55,7 +56,7 @@ def read(query, caller, statements, *, batch=False):
                 constant_parameter=_private_name(used,'__source_constants');used.add(constant_parameter)
             mappings[key]=constant_parameter
         elif node.family in ('catalog','document'):
-            if node.family=='document' and type(store) is not SourceDocumentStore:
+            if node.family=='document' and type(store) not in (SourceDocumentStore, SourceDocumentSectionStore):
                 raise ValueError('source Document query requires v5 scratch capability')
             definition=(store.catalog if node.family=='catalog' else store.document)(node.catalog)
             key=(node.family,definition.name.casefold())

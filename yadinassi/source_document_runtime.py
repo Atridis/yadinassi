@@ -12,12 +12,13 @@ _MANAGER_METHODS={'createdocument':'create','создатьдокумент':'cr
 def store_for(manager,caller):
     from .safe_mode import require_external_access
     from .source_document_store import SourceDocumentStore
+    from .source_document_section_store import SourceDocumentSectionStore
     from .source_catalog_runtime import _constructing, _active_write
     from .source_constant_managers import _active_write as constant_write, _constructing as constant_construction
     app=manager.authorize(caller)
     if caller._scheduler.pending:raise ValueError('source document operations require no pending asynchronous tasks')
     require_external_access('source document database')
-    if manager.family!='Document' or type(app.constant_store) is not SourceDocumentStore:
+    if manager.family!='Document' or type(app.constant_store) not in (SourceDocumentStore,SourceDocumentSectionStore):
         raise ValueError('source Document records require explicit v5 scratch capability')
     app.constant_store.document(manager.name)
     if (_constructing.get() or _active_write.get() or constant_write.get() or constant_construction.get()) and not app.constant_store.transaction_active:
@@ -31,6 +32,15 @@ class SourceDocumentObject(BSLObject):
         self.identity=identity or uuid4();self.revision=revision
         self.values=dict(values) if values is not None else {'number':'','deletionmark':False,'posted':False}
         self.fields={f.name.casefold():f for f in definition.fields}
+        self.sections={}
+        self.replace_sections({s.name.casefold():() for s in definition.sections})
+
+    def replace_sections(self,values):
+        from .source_document_sections import SourceDocumentSection
+        new={s.name.casefold():SourceDocumentSection(self,s,values[s.name.casefold()]) for s in self.definition.sections}
+        for section in self.sections.values():section.invalidate()
+        self.sections=new
+
 
     def authorize(self,caller):return store_for(self.manager,caller)
 
@@ -38,6 +48,7 @@ class SourceDocumentObject(BSLObject):
         app,_=self.authorize(caller);key=_ALIASES.get(name.casefold(),name.casefold())
         if key in _OBJECT_METHODS:return self.get_member(name)
         if key=='ref':return app.references.ref('Document',self.manager.name,self.identity if self.revision else UUID(int=0))
+        if key in self.sections:return self.sections[key]
         if key not in self.fields:raise ValueError('unknown source document field: '+name)
         if key not in self.values:raise ValueError('source document field requires explicit assignment: '+name)
         return self.values[key]
@@ -88,24 +99,38 @@ class SourceDocumentCall:
         if self.operation=='create':return SourceDocumentObject(manager,definition)
         if self.operation=='select':return SourceDocumentSelection(manager,store.read_documents(manager.name))
         if self.operation=='getobject':
-            identity,revision,fields=store.read_documents(manager.name,self.identity)[0]
-            return SourceDocumentObject(manager,definition,identity,revision,fields)
+            return load_object(manager,definition,store,self.identity)
         if self.operation=='next':
             receiver.index+=1;return receiver.index<len(receiver.rows)
         if self.operation=='object':
             if not 0<=receiver.index<len(receiver.rows):raise ValueError('source selection is not positioned')
             identity,revision,fields=receiver.rows[receiver.index]
+            if definition.sections:return load_object(manager,definition,store,identity)
             return SourceDocumentObject(manager,definition,identity,revision,fields)
         receiver.authorize(caller)
         if self.operation=='new':return receiver.revision==0
         if self.operation=='metadata':return app.references.definition('Document',manager.name)[2]
         if self.operation=='read':
-            _,revision,fields=store.read_documents(manager.name,receiver.identity)[0]
+            if definition.sections:
+                _,revision,fields,sections=store.read_document_bundle(manager.name,receiver.identity)
+                receiver.replace_sections(sections)
+            else:_,revision,fields=store.read_documents(manager.name,receiver.identity)[0]
             receiver.values,receiver.revision=fields,revision;return None
         if self.operation=='write':
-            receiver.revision=store.write_document(manager.name,receiver.identity,receiver.revision,receiver.values)
+            if definition.sections:
+                sections={name:tuple(dict(row.values) for row in section.rows) for name,section in receiver.sections.items()}
+                receiver.revision=store.write_document_bundle(manager.name,receiver.identity,receiver.revision,receiver.values,sections)
+            else:receiver.revision=store.write_document(manager.name,receiver.identity,receiver.revision,receiver.values)
             return None
         raise ValueError('unsupported source document operation')
+
+
+def load_object(manager,definition,store,identity):
+    if definition.sections:
+        rid,revision,fields,sections=store.read_document_bundle(manager.name,identity)
+        obj=SourceDocumentObject(manager,definition,rid,revision,fields);obj.replace_sections(sections);return obj
+    rid,revision,fields=store.read_documents(manager.name,identity)[0]
+    return SourceDocumentObject(manager,definition,rid,revision,fields)
 
 
 _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','уникальныйидентификатор','metadata','метаданные'}

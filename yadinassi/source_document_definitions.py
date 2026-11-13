@@ -13,12 +13,24 @@ class SourceDocumentDefinition:
     identity: object
     name: str
     fields: tuple
+    sections: tuple = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SourceDocumentSectionDefinition:
+    identity: object
+    name: str
+    fields: tuple
 
 
 def document_definition_record(definition):
     record = [str(definition.identity), definition.name,
             [[str(f.identity), f.name, f.kind, f.qualifiers, f.type_dependencies]
              for f in definition.fields]]
+    if definition.sections:
+        record.append(['sections', [[str(section.identity), section.name,
+            [[str(f.identity),f.name,f.kind,f.qualifiers,f.type_dependencies] for f in section.fields]]
+            for section in definition.sections]])
     return record
 
 
@@ -46,7 +58,7 @@ def _policies(props, *, attribute=False):
             raise ValueError('unsupported document behavior: '+name)
 
 
-def source_document_definitions(source, enum_namespace=None, reference_scope=None):
+def source_document_definitions(source, enum_namespace=None, reference_scope=None, *, allow_sections=False):
     if type(source) is not ConfigurationSource:
         raise TypeError('admitted ConfigurationSource required')
     from .source_references import SourceReferences
@@ -95,25 +107,46 @@ def source_document_definitions(source, enum_namespace=None, reference_scope=Non
                                     ('DeletionMark','boolean',()), ('Posted','boolean',()))]
             used_names = set(_RESERVED)
             used_ids = {e.identity for e in source.metadata} | {f.identity for f in fields}
+            sections = []
+            def parse_field(child, field_names):
+                    if set(child.attrib) != {'uuid'} or any(n.tag!='{'+MD+'}Properties' for n in child):
+                        raise ValueError('unsupported document attribute envelope')
+                    p = _props(child); _policies(p,attribute=True)
+                    fn = _name(_text(p,'Name')); identity = _uuid(child.get('uuid'))
+                    if fn.casefold() in field_names or identity in used_ids:
+                        raise ValueError('document attribute identity/name collision')
+                    field_names.add(fn.casefold()); used_ids.add(identity)
+                    resolved, scopes, dependencies = aliases.resolve(p,ns)
+                    kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
+                    if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] == 'Catalog'):
+                        raise ValueError('document attribute requires scalar or CatalogRef type')
+                    return ScalarConstantDefinition(identity,fn,kind,qualifiers,
+                        enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope)
             for child in children[0] if children else ():
-                if child.tag != '{'+MD+'}Attribute':
-                    raise ValueError('document tabular sections/child kind unsupported')
-                if set(child.attrib) != {'uuid'} or any(n.tag!='{'+MD+'}Properties' for n in child):
-                    raise ValueError('unsupported document attribute envelope')
-                p = _props(child); _policies(p,attribute=True)
-                fn = _name(_text(p,'Name')); identity = _uuid(child.get('uuid'))
-                if fn.casefold() in used_names or identity in used_ids:
-                    raise ValueError('document attribute identity/name collision')
-                used_names.add(fn.casefold()); used_ids.add(identity)
-                resolved, scopes, dependencies = aliases.resolve(p,ns)
-                kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
-                if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] == 'Catalog'):
-                    raise ValueError('document attribute requires scalar or CatalogRef type')
-                fields.append(ScalarConstantDefinition(identity,fn,kind,qualifiers,
-                    enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope))
-                if len(fields)>68:
-                    raise ValueError('document attribute count bound')
-            definitions[name.casefold()] = SourceDocumentDefinition(entry.identity,name,tuple(fields))
+                if child.tag == '{'+MD+'}Attribute':
+                    fields.append(parse_field(child, used_names))
+                    if len(fields)>68:raise ValueError('document attribute count bound')
+                elif child.tag == '{'+MD+'}TabularSection' and allow_sections:
+                    if set(child.attrib)!={'uuid'} or any(n.tag not in ('{'+MD+'}Properties','{'+MD+'}ChildObjects') for n in child):
+                        raise ValueError('unsupported section envelope')
+                    sp=_props(child)
+                    if any(tag not in {'{'+MD+'}'+n for n in _INERT} for tag in sp):
+                        raise ValueError('unsupported section policy')
+                    sn=_name(_text(sp,'Name'));sid=_uuid(child.get('uuid'))
+                    if sn.casefold() in used_names or sid in used_ids:raise ValueError('section identity/name collision')
+                    used_names.add(sn.casefold());used_ids.add(sid)
+                    containers=child.findall('{'+MD+'}ChildObjects')
+                    if len(containers)>1:raise ValueError('duplicate section children')
+                    field_names=set(_RESERVED)|{'linenumber','номерстроки'}
+                    section_fields=[]
+                    for field in containers[0] if containers else ():
+                        if field.tag!='{'+MD+'}Attribute':raise ValueError('unsupported section child')
+                        section_fields.append(parse_field(field,field_names))
+                    if not 1<=len(section_fields)<=64:raise ValueError('section field count bound')
+                    sections.append(SourceDocumentSectionDefinition(sid,sn,tuple(section_fields)))
+                    if len(sections)>16:raise ValueError('section count bound')
+                else:raise ValueError('document tabular sections/child kind unsupported')
+            definitions[name.casefold()] = SourceDocumentDefinition(entry.identity,name,tuple(fields),tuple(sections))
         except (ValueError,KeyError,AttributeError,BSLError) as error:
             unsupported[entry.name.casefold()] = str(error)
     return definitions, unsupported
