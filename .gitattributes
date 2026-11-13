@@ -418,5 +418,14 @@ tests/test_server_module_reuse_native_replay.py text eol=lf
 tests/test_configuration_server_reuse.py text eol=lf
 tests/fixtures/native_server_module_reuse_43165393593.json -text
 
+scripts/native_1c_uuid_typed_pipeline_profile.py text eol=lf
+scripts/native_1c_uuid_typed_pipeline_probe.sh text eol=lf
+scripts/native_1c_bootstrap/uuid_typed_pipeline_suite.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/route.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/fixture.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/__init__.py text eol=lf
+scripts/uuid_typed_pipeline_behavior/observe.bsl text eol=lf
+
+tests/fixtures/native_uuid_typed_pipeline_43270339666.json -text
 # Immutable historical demo root; remaining original bytes live in examples/demo.
 tests/fixtures/legacy_demo_root.xml -text
