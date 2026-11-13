@@ -19,4 +19,9 @@ class SourceManagers(BSLObject):
         app = self._application()
         if app is None:
             raise ValueError('source manager belongs to a closed application')
+        if self._family in ('Catalog', 'Document'):
+            from .source_references import SourceReferenceManager
+            manager = SourceReferenceManager(app, self._family, name)
+            manager.authorize(caller)
+            return manager
         return app.manager_module(self._family, name, caller)

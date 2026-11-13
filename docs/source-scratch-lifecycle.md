@@ -417,3 +417,19 @@ qualifiers и лишние XML-атрибуты по-прежнему откло
 [Официальное описание типов и хранения дат](https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/)
 различает script precision и хранение с точностью до секунды. Наш отказ от
 неявных преобразований явно строже платформы; новая native parity не заявлена.
+
+### Source Catalog/Document references
+
+Source managers expose neutral `EmptyRef()`, explicit `GetRef(UUID)` and
+`Metadata()` alongside existing exported ManagerModule routines. The references
+reuse the existing Catalog/Document reference classes and one source-owned type
+snapshot. Obtaining an identity does not read or create a record. Unsupported
+CreateItem/CreateDocument, object reads and nonempty presentations remain errors;
+manager modules are not executed merely to construct a neutral reference.
+
+CatalogRef/DocumentRef constants (also unions and DefinedType aliases) persist
+family, metadata UUID and record UUID in the same bounded, transactional scratch
+store. Reopen binds values to the new application's exact type snapshot; foreign
+application values are rejected. Unknown target types and incompatible source
+updates are refused. No empty-reference defaults, implicit GetRef UUID generation,
+reference-existence checks or native runtime parity are claimed by this block.

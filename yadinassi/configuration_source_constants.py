@@ -20,9 +20,10 @@ class ScalarConstantDefinition:
     write_blockers: tuple[str, ...] = ()
     enum_namespace: object = field(default=None, compare=False, repr=False)
     type_dependencies: tuple = ()
+    reference_scope: object = field(default=None, compare=False, repr=False)
 
 
-def source_constant_definitions(source, *, enum_namespace=None):
+def source_constant_definitions(source, *, enum_namespace=None, reference_scope=None):
     if type(source) is not ConfigurationSource:
         raise TypeError('admitted ConfigurationSource required')
     from .configuration_source_enums import source_enum_definitions
@@ -34,6 +35,11 @@ def source_constant_definitions(source, *, enum_namespace=None):
           or tuple(m._definition for m in enum_namespace.metadata) != enums
           or enum_namespace._unsupported != enum_errors):
         raise ValueError('constant enumeration namespace/source mismatch')
+    from .source_references import SourceReferences
+    if reference_scope is None:
+        reference_scope = SourceReferences(source, SourceMetadataRoot(source))
+    elif type(reference_scope) is not SourceReferences or reference_scope.source != source:
+        raise ValueError("constant reference scope/source mismatch")
     from .source_defined_types import SourceDefinedTypes
     defined_types = SourceDefinedTypes(source)
     declared = SourceMetadataRoot(source).get_member('Constants')
@@ -49,7 +55,7 @@ def source_constant_definitions(source, *, enum_namespace=None):
             obj, namespaces = _object(files[path], 'Constant')
             props = _props(obj)
             resolved, resolved_namespaces, dependencies = defined_types.resolve(props, namespaces)
-            kind, qualifiers = _constant_type(resolved, resolved_namespaces, enum_namespace)
+            kind, qualifiers = _constant_type(resolved, resolved_namespaces, enum_namespace, reference_scope)
             blockers = []
             prefix = 'Constants/' + name + '/'
             if any(p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()
@@ -69,13 +75,13 @@ def source_constant_definitions(source, *, enum_namespace=None):
                         and not len(node) and not (node.text or '').strip()):
                     blockers.append('constant value limit is not supported')
             result.append(ScalarConstantDefinition(inventory[path].identity, name, kind,
-                                                   qualifiers, tuple(blockers), enum_namespace, dependencies))
+                                                   qualifiers, tuple(blockers), enum_namespace, dependencies, reference_scope))
         except (ValueError, KeyError) as error:
             unsupported[name.casefold()] = str(error)
     return tuple(result), unsupported, names
 
 
-def _constant_type(props, namespaces, enum_namespace):
+def _constant_type(props, namespaces, enum_namespace, reference_scope):
     """Closed scalar union; reuse original nodes so namespace scopes stay exact."""
     from xml.etree.ElementTree import Element
     declaration = props.get('{' + MD + '}Type')
@@ -102,6 +108,11 @@ def _constant_type(props, namespaces, enum_namespace):
             kind = 'enum_ref'
             qualifiers = (str(definition.identity), definition.name,
                           tuple(str(v.identity) for v in definition.values))
+        elif namespace == CFG and name.startswith(('CatalogRef.', 'DocumentRef.')):
+            family, target_name = name.split('.', 1)
+            family = family[:-3]
+            entry, _, _ = reference_scope.definition(family, target_name)
+            kind, qualifiers = 'object_ref', (family, str(entry.identity), entry.name)
         elif special:
             kind, qualifiers = special, ()
         else:
@@ -110,7 +121,7 @@ def _constant_type(props, namespaces, enum_namespace):
             kind, qualifiers, target = _source_scalar_type(props, namespaces, wrapper)
             if target is not None or kind not in ('string', 'number', 'boolean', 'datetime'):
                 raise ValueError('unsupported source constant type')
-        if any(k == kind and (kind != 'enum_ref' or q[0] == qualifiers[0]) for k, q in variants):
+        if any(k == kind and (kind not in ('enum_ref', 'object_ref') or (q[0] == qualifiers[0] if kind == 'enum_ref' else q[:2] == qualifiers[:2])) for k, q in variants):
             raise ValueError('duplicate constant union type')
         variants.append((kind, qualifiers))
     if any(n not in nodes and id(n) not in used for n in declaration):

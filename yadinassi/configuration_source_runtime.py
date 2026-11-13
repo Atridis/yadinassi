@@ -151,6 +151,8 @@ class SourceApplication:
         self.files = {item.path: item.content for item in source.files}
         from .configuration_source_metadata import SourceMetadataRoot
         self.metadata = SourceMetadataRoot(source)
+        from .source_references import SourceReferences
+        self.references = SourceReferences(source, self.metadata)
         self.modules = {item.name.casefold(): item for item in source.metadata
                         if item.family == 'CommonModule'}
         from .configuration_source_enums import source_enum_definitions
@@ -180,9 +182,9 @@ class SourceApplication:
         if scratch_database is not None or existing_scratch_database is not None:
             from .source_constant_store import SourceConstantStore
             try:
-                self.constant_store = (SourceConstantStore.create(scratch_database, source, enum_namespace=self.enumerations)
+                self.constant_store = (SourceConstantStore.create(scratch_database, source, enum_namespace=self.enumerations, reference_scope=self.references)
                                        if scratch_database is not None else
-                                       SourceConstantStore.reopen(existing_scratch_database, source, enum_namespace=self.enumerations))
+                                       SourceConstantStore.reopen(existing_scratch_database, source, enum_namespace=self.enumerations, reference_scope=self.references))
             except BaseException:
                 self.close()
                 raise

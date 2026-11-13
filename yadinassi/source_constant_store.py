@@ -53,6 +53,15 @@ def _encode(value, definition):
             if len(candidates) != 1:
                 raise TypeError('constant value does not fit its composite type')
             encoded = ['composite', candidates[0]]
+    elif kind == 'object_ref':
+        from .catalog_types import BSLCatalogReference
+        from .document_types import BSLDocumentReference
+        family, metadata_id, name = definition.qualifiers
+        _, expected_type, _ = definition.reference_scope.definition(family, name)
+        expected_class = BSLCatalogReference if family == 'Catalog' else BSLDocumentReference
+        if type(value) is not expected_class or value.value_type != expected_type:
+            raise TypeError('constant reference belongs to another type or application')
+        encoded = ['object_ref', [family, metadata_id, str(value.reference_uuid)]]
     elif kind == 'enum_ref':
         from .enum_types import BSLEnumReference
         manager = definition.enum_namespace.get_member(definition.qualifiers[1])
@@ -122,11 +131,18 @@ def _decode(raw, definition):
                 value = None
             else:
                 members = [(k, q) for k, q in definition.qualifiers if k == value[0]
-                           and (k != 'enum_ref' or (type(value[1]) is list and len(value[1]) == 2 and q[0] == value[1][0]))]
+                           and (k != 'enum_ref' or (type(value[1]) is list and len(value[1]) == 2 and q[0] == value[1][0]))
+                           and (k != 'object_ref' or (type(value[1]) is list and len(value[1]) == 3 and list(q[:2]) == value[1][:2]))]
                 if len(members) != 1:
                     raise ValueError('constant storage integrity')
                 k, q = members[0]
                 value = _decode(_json(value), replace(definition, kind=k, qualifiers=q))
+        elif definition.kind == 'object_ref':
+            from uuid import UUID
+            family, metadata_id, name = definition.qualifiers
+            if type(value) is not list or len(value) != 3 or value[:2] != [family, metadata_id] or type(value[2]) is not str:
+                raise ValueError('constant storage reference integrity')
+            value = definition.reference_scope.ref(family, name, UUID(value[2]))
         elif definition.kind == 'enum_ref':
             from uuid import UUID
             if (type(value) is not list or len(value) != 2
@@ -204,8 +220,8 @@ class SourceConstantStore:
             self._explicit_transaction = False
 
     @classmethod
-    def create(cls, path, source, *, enum_namespace=None):
-        definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace)
+    def create(cls, path, source, *, enum_namespace=None, reference_scope=None):
+        definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace, reference_scope=reference_scope)
         raw = os.fspath(path)
         if type(raw) is not str or not raw or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise ValueError('invalid source constants destination')
@@ -394,7 +410,7 @@ class SourceConstantStore:
             store.close()
 
     @classmethod
-    def reopen(cls, path, source, *, enum_namespace=None):
+    def reopen(cls, path, source, *, enum_namespace=None, reference_scope=None):
         """Open only an unchanged source package's explicitly created scratch DB.
 
         A regular private file is required; mode=rw cannot create a missing file.
@@ -431,7 +447,7 @@ class SourceConstantStore:
             expected = _expected_schema()
             if _schema(connection) != expected:
                 raise ValueError('source constants schema integrity')
-            definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace)
+            definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace, reference_scope=reference_scope)
             rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
             digest = source_digest(source)
             schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()

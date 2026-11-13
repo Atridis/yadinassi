@@ -1052,6 +1052,9 @@ class Interpreter:
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
+        from .source_references import SourceReferenceManager
+        if type(value) is SourceReferenceManager:
+            return value.member(self, node.name)
         from .source_constant_managers import SourceConstantValueManager
         if type(value) is SourceConstantValueManager:
             return value.property_read(self, node.name)
@@ -1177,6 +1180,9 @@ class Interpreter:
             if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
                 routine = receiver.exported_routine(self, callee.name)
                 return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
+            from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
+            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in _REF_METHODS:
+                receiver = receiver.module(self)
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True))
@@ -1286,6 +1292,7 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
+        from .source_references import SourceReferenceCall
         from .source_constants_runtime import ConstantCall, ConstantSetCall
         from .source_constant_queries import SourceQueryCall
         from .source_extensions import ExtensionCall
@@ -1308,7 +1315,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall):
             return function.function.invoke(self, values)
         return function(*values)
 
