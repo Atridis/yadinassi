@@ -25,12 +25,24 @@ class SourceWorkspace:
         self.selected = None
         self.error = None
         self.query = ''
+        self.object_query = ''
+        self.object_family = ''
+        self.object_selected = None
         inventory = application.metadata._inventory
         def full_name(entry):
             parent_path = entry.path.rsplit('/', 2)[0] + '.xml'
             parent = inventory.get(parent_path)
             own = entry.family + '.' + entry.name
             return full_name(parent) + '.' + own if parent is not None else own
+        self.objects = {}
+        object_names = set()
+        for entry in inventory.values():
+            name = full_name(entry)
+            if name.casefold() in object_names:
+                raise ValueError('ambiguous metadata full name: '+name[:256])
+            object_names.add(name.casefold())
+            self.objects[name] = entry
+        self.object_families, self.omitted_families = self._bounded_names(sorted({entry.family for entry in inventory.values()}), 8192)
         self.forms = tuple(sorted(full_name(entry) for entry in inventory.values()
                                   if entry.family in ('Form', 'CommonForm')))
 
@@ -58,8 +70,38 @@ class SourceWorkspace:
             visible.append(name); size += cost
         return visible, len(matches)-len(visible)
 
+    @staticmethod
+    def _bounded_names(names, budget=16384):
+        visible, size = [], 0
+        for name in names:
+            cost = len(json.dumps(name, ensure_ascii=False).encode('utf-8')) + 1
+            if len(visible) >= 256 or size + cost > budget:
+                break
+            visible.append(name); size += cost
+        return visible, len(names)-len(visible)
+
+    def object_inventory(self):
+        names = sorted(name for name, entry in self.objects.items()
+                       if (not self.object_family or entry.family == self.object_family)
+                       and self.object_query.casefold() in name.casefold())
+        visible, omitted = self._bounded_names(names)
+        return visible, omitted
+
+    def object_detail(self):
+        if self.object_selected is None:
+            return None
+        name = self.object_selected
+        entry = self.objects[name]
+        related = sorted(form for form in self.forms if form == name or form.startswith(name+'.Form.'))
+        forms, omitted = self._bounded_names(related, 8192)
+        return {'name': name, 'family': entry.family, 'source_path': entry.path,
+                'forms': forms, 'omitted_forms': omitted,
+                'execution': 'explicit_form_selection' if related else 'metadata_only',
+                'storage_granted': False}
+
     def snapshot(self):
         visible, omitted = self.visible_forms()
+        objects, object_omitted = self.object_inventory()
         return {'protocol': PROTOCOL, 'state': {'kind': 'closed' if self.closed else 'workspace',
                 'name': self.application.source.name, 'forms': visible,
                 'omitted_forms': omitted, 'query': self.query, 'selected': self.selected,
@@ -68,6 +110,9 @@ class SourceWorkspace:
                 'open_forms': [{'generation': generation, 'name': name, 'active': self._live(form)}
                                for generation, (name, form) in self.open_forms.items()],
                 'form_limit': MAX_OPEN_FORMS, 'any_active': self._any_active(),
+                'objects': objects, 'omitted_objects': object_omitted,
+                'object_query': self.object_query, 'object_family': self.object_family,
+                'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -88,7 +133,7 @@ class SourceWorkspace:
             raise ValueError('source workspace closed')
         self.error = None
         if method == 'workspace.open':
-            if set(params) != {'name'} or type(params['name']) is not str or params['name'] not in self.visible_forms()[0]:
+            if set(params) != {'name'} or type(params['name']) is not str or params['name'] not in self.visible_forms()[0] and params['name'] not in (self.object_detail() or {}).get('forms', []):
                 raise ValueError('declared workspace form required')
             existing = next((generation for generation, (name, form) in self.open_forms.items()
                              if name == params['name'] and self._live(form)), None)
@@ -111,6 +156,17 @@ class SourceWorkspace:
                     or params['generation'] not in self.open_forms):
                 raise ValueError('unknown workspace form')
             self._select(params['generation'])
+        elif method == 'workspace.objects':
+            if (set(params) != {'query', 'family'} or type(params['query']) is not str
+                    or len(params['query']) > 128 or type(params['family']) is not str
+                    or params['family'] not in ('', *self.object_families)):
+                raise ValueError('invalid object search')
+            self.object_query, self.object_family = params['query'], params['family']
+        elif method == 'workspace.inspect':
+            if (set(params) != {'name'} or type(params['name']) is not str
+                    or params['name'] not in self.object_inventory()[0]):
+                raise ValueError('declared visible object required')
+            self.object_selected = params['name']
         elif method == 'workspace.search':
             if set(params) != {'query'} or type(params['query']) is not str or len(params['query']) > 128:
                 raise ValueError('invalid form search')
@@ -143,4 +199,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.open','workspace.search','workspace.select','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')

@@ -376,8 +376,25 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_source_workspace_assets_provenance(source):
+    """Exact inventory inverse; historical native outputs are not rewritten."""
+    candidate = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
+    base = 'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe'
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
+        return source
+    old = '"configuration", "main-demo") for name in'
+    new = '"configuration", "main-demo", "source-workspace") for name in'
+    if source.count(new) != 1:
+        raise AssertionError('source workspace inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('source workspace inventory inner source identity')
+    return source
+
+
 def without_source_ui_assets_provenance(source):
     """Exact source-UI inventory inverse for historical checks, not new evidence."""
+    source = without_source_workspace_assets_provenance(source)
     if hashlib.sha256(source.encode('utf-8')).hexdigest() != 'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe':
         return source
     hunk = '    assets |= {"yadinassi/ui/assets/source/" + name\n               for name in ("app.js", "index.html", "style.css")}\n'

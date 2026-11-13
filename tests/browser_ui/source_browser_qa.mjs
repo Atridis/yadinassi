@@ -57,9 +57,24 @@ try {
   }
   else if(form==='workspace'){
    await page.getByRole('heading',{name:'Demo · Source workspace'}).waitFor();
+   phase='workspace:metadata_navigation';
+   await page.getByRole('textbox',{name:'Поиск объектов',exact:true}).fill('Helpers');
+   await page.getByRole('combobox',{name:'Тип объекта',exact:true}).selectOption('CommonModule');
+   await page.getByRole('button',{name:'Найти объекты',exact:true}).click();
+   await page.getByRole('combobox',{name:'Объект конфигурации',exact:true}).selectOption('CommonModule.Helpers');
+   await page.getByRole('button',{name:'Описание объекта',exact:true}).click();
+   await page.getByText('Только метаданные: объявленной исполняемой формы нет. CRUD и хранилище не предоставляются.',{exact:true}).waitFor();
+   assert.equal(await page.getByRole('region',{name:'Метаданные выбранного объекта'}).getByRole('button').count(),0);
+   await page.getByRole('textbox',{name:'Поиск объектов',exact:true}).fill('Main');
+   await page.getByRole('combobox',{name:'Тип объекта',exact:true}).selectOption('CommonForm');
+   await page.getByRole('button',{name:'Найти объекты',exact:true}).click();
+   await page.getByRole('combobox',{name:'Объект конфигурации',exact:true}).selectOption('CommonForm.Main');
+   await page.getByRole('button',{name:'Описание объекта',exact:true}).click();
+   await page.getByRole('button',{name:'Открыть CommonForm.Main',exact:true}).waitFor();
+   await page.screenshot({path:path.join(output,'metadata.png')});
    await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Main');
    for(let cycle=0;cycle<2;cycle++){
-    await page.getByRole('button',{name:'Открыть форму',exact:true}).click();
+    await page.getByRole('button',{name:cycle===0?'Открыть CommonForm.Main':'Открыть форму',exact:true}).click();
     await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'));
     assert.equal(await page.getByRole('button',{name:'Открыть форму',exact:true}).isEnabled(),true);
     assert.equal(await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).isDisabled(),true);
@@ -118,4 +133,4 @@ try {
  }
  report.status='PASS';
 }catch(error){report.failure={phase,reason:'smoke_failed',errorCode: /No (?:resource|data).*?(?:identifier|resource)/i.test(error?.message||'')?'response_body_unavailable':/getResponseBody/.test(error?.message||'')?'response_body_protocol':/closed/i.test(error?.message||'')?'target_closed':'unclassified',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
-finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
+finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}

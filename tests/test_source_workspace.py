@@ -148,3 +148,70 @@ class SourceWorkspaceTests(unittest.TestCase):
         w=self.workspace(mapping);w.exchange(request('open',name='CommonForm.Main'));first=w.form
         state=w.exchange(request('open',name='CommonForm.Other1'))['result']['state']
         self.assertIsNotNone(state['error']);self.assertIs(w.form,first);self.assertEqual(len(w.open_forms),1)
+
+    def test_object_inventory_filters_declared_metadata_without_compiling(self):
+        w=self.workspace()
+        state=w.exchange(request('objects',query='helpers',family='CommonModule'))['result']['state']
+        self.assertEqual(state['objects'],['CommonModule.Helpers']);self.assertIsNone(w.form)
+        detail=w.exchange(request('inspect',name='CommonModule.Helpers'))['result']['state']['object_detail']
+        self.assertEqual(detail['execution'],'metadata_only');self.assertFalse(detail['storage_granted'])
+        self.assertEqual(detail['forms'],[]);self.assertEqual(detail['source_path'],'CommonModules/Helpers.xml')
+
+    def test_object_common_form_can_open_despite_unrelated_form_search(self):
+        w=self.workspace();w.exchange(request('search',query='missing'))
+        detail=w.exchange(request('inspect',name='CommonForm.Main'))['result']['state']['object_detail']
+        self.assertEqual(detail['forms'],['CommonForm.Main'])
+        self.assertTrue(w.exchange(request('open',name='CommonForm.Main'))['result']['state']['active'])
+
+    def test_object_inspection_requires_visible_identity_and_known_family(self):
+        w=self.workspace();w.exchange(request('objects',query='Helpers',family=''))
+        for name in ('CommonForm.Main','missing'):
+            with self.assertRaisesRegex(ValueError,'visible'):w.exchange(request('inspect',name=name))
+        for query,family in [('x'*129,''),('', 'Arbitrary'),(None,'')]:
+            with self.assertRaisesRegex(ValueError,'search'):w.exchange(request('objects',query=query,family=family))
+
+    def test_object_navigation_keeps_open_form_state(self):
+        w=self.workspace();w.exchange(request('open',name='CommonForm.Main'));first=w.form
+        w.exchange(request('objects',query='Helpers',family='CommonModule'));w.exchange(request('inspect',name='CommonModule.Helpers'))
+        self.assertIs(w.form,first);self.assertEqual(w.generation,1)
+
+    def test_catalog_owned_form_association_uses_exact_owner(self):
+        mapping=files();mapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<Catalog>Items</Catalog><Catalog>ItemsOther</Catalog></ChildObjects>')
+        for name in ('Items','ItemsOther'):
+            mapping['Catalogs/'+name+'.xml']=xml('Catalog',name,children='<Form>Main</Form>')
+            from uuid import uuid5, NAMESPACE_URL
+            raw=xml('Form','Main',properties='<FormType>Managed</FormType>')
+            mapping['Catalogs/'+name+'/Forms/Main.xml']=raw.replace(str(uuid5(NAMESPACE_URL,'Form/Main')).encode(),str(uuid5(NAMESPACE_URL,name+'/Form/Main')).encode())
+            mapping['Catalogs/'+name+'/Forms/Main/Ext/Form.xml']=FORM
+            mapping['Catalogs/'+name+'/Forms/Main/Ext/Form/Module.bsl']=mapping['CommonForms/Main/Ext/Form/Module.bsl']
+        w=self.workspace(mapping)
+        detail=w.exchange(request('inspect',name='Catalog.Items'))['result']['state']['object_detail']
+        self.assertEqual(detail['forms'],['Catalog.Items.Form.Main'])
+        w.exchange(request('search',query='none'));self.assertTrue(w.exchange(request('open',name=detail['forms'][0]))['result']['state']['active'])
+
+    def test_object_inventory_utf8_budget_and_search_all_names(self):
+        from types import SimpleNamespace
+        from yadinassi.ui.protocol import encode_line,MAX_LINE_BYTES
+        w=self.workspace();w.objects={'Catalog.'+'Я'*120+str(i):SimpleNamespace(family='Catalog',path='Catalogs/Item.xml') for i in range(500)};w.object_families=['Catalog']
+        state=w.snapshot()['state'];self.assertGreater(state['omitted_objects'],0)
+        self.assertLess(len(encode_line(w.exchange(request()))),MAX_LINE_BYTES)
+        state=w.exchange(request('objects',query='499',family='Catalog'))['result']['state']
+        self.assertEqual(len(state['objects']),1);self.assertEqual(state['omitted_objects'],0)
+
+    def test_family_inventory_is_byte_bounded(self):
+        from types import SimpleNamespace
+        from yadinassi.ui.protocol import encode_line,MAX_LINE_BYTES
+        app=SimpleNamespace(require_open=lambda:None,constant_store=None,source=SimpleNamespace(name='Demo'))
+        app.metadata=SimpleNamespace(_inventory={str(i)+'.xml':SimpleNamespace(path=str(i)+'.xml',family='Future'+'Я'*100+str(i),name='Entry') for i in range(2000)})
+        w=SourceWorkspace(app);self.assertGreater(w.snapshot()['state']['omitted_families'],0)
+        self.assertLess(len(encode_line(w.exchange(request()))),MAX_LINE_BYTES)
+
+    def test_ambiguous_logical_metadata_identity_fails_explicitly(self):
+        from types import SimpleNamespace
+        app=SimpleNamespace(require_open=lambda:None,constant_store=None)
+        app.metadata=SimpleNamespace(_inventory={p:SimpleNamespace(path=p,family='CommonForm',name='Same') for p in ('CommonForms/Same.xml','Other/Same.xml')})
+        with self.assertRaisesRegex(ValueError,'ambiguous metadata full name'):
+            SourceWorkspace(app)
+        app.metadata._inventory['Other/Same.xml'].name='same'
+        with self.assertRaisesRegex(ValueError,'ambiguous metadata full name'):
+            SourceWorkspace(app)
