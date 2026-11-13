@@ -89,7 +89,9 @@ try {
    await page.getByRole('button',{name:'Найти формы',exact:true}).click();
    await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Main');
    await page.getByRole('button',{name:'Открыть форму',exact:true}).click();
-   await page.getByRole('textbox',{name:'GreetingLabel',exact:true}).waitFor();
+   phase='workspace:second_form_open';
+   await page.getByRole('navigation',{name:'Открытые формы'}).getByRole('button',{name:'CommonForm.Main',exact:true}).waitFor();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'&&x.getClientRects().length));
    assert.equal(await page.getByRole('textbox',{name:'GreetingLabel',exact:true}).inputValue(),'Demo');
    await page.getByRole('navigation',{name:'Открытые формы'}).getByRole('button',{name:'CommonForm.Progressive',exact:true}).click();
    await page.waitForFunction(()=>Array.from(document.querySelectorAll('section:not([hidden]) input')).some(x=>x.value==='updated'&&x.getClientRects().length));
@@ -100,7 +102,9 @@ try {
    await page.getByRole('button',{name:'Close form',exact:true}).click();
    await page.getByText('Closed',{exact:true}).waitFor();
    assert.equal(await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).isDisabled(),true);
+   phase='workspace:return_to_main';
    await page.getByRole('navigation',{name:'Открытые формы'}).getByRole('button',{name:'CommonForm.Main',exact:true}).click();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'&&x.getClientRects().length));
    assert.equal(await page.getByRole('textbox',{name:'GreetingLabel',exact:true}).inputValue(),'Demo');
 
    await page.getByRole('button',{name:'Close form',exact:true}).click();
