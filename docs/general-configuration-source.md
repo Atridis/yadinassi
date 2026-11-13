@@ -193,8 +193,11 @@ manufacture a successful Get.
 ### Source manager modules
 
 The source-only synchronous server can lazily call exported BSL routines from
-catalog, document, report and data-processor `Ext/ManagerModule.bsl` files.
-Both English and Russian namespace names are accepted. An unused module is not
+catalog, document, report, data-processor, information/accumulation/accounting/
+calculation register, chart of accounts/characteristic types/calculation types,
+business-process, task and exchange-plan `Ext/ManagerModule.bsl` files.
+Both English and Russian namespace names and dynamic string indexing are accepted.
+See [source manager families](source-manager-families.md) for scope and boundaries. An unused module is not
 compiled; a reached unsupported statement reports its original module location.
 This does not activate database managers, CRUD, object modules or client/server
 transport. Missing manager source and unavailable platform operations fail

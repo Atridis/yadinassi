@@ -86,16 +86,17 @@ def read_common_modules(files, names, used, issues):
     return tuple(result)
 
 
-def compile_module(content, path, side, *, common):
+def compile_module(content, path, side, *, common, compilation_profile="standalone"):
     """Reuse the normal lexer/parser; the metadata chooses an unannotated side.
 
-    Conditional Client/Server branches use the existing standalone symbol
-    profile. Native thin/web/file-mode flags are not inferred from host OS.
+    The explicit profile selects source branches, never execution authority.
+    No profile is inferred from metadata or the host operating system.
     """
     if type(content) is not bytes or type(path) is not str or side not in ('client', 'server'):
         raise TypeError('invalid configuration module input')
     text = content.decode('utf-8-sig')
-    tokens = Lexer(text, '<configuration:' + path + '>', execution_context=side).tokens()
+    tokens = Lexer(text, '<configuration:' + path + '>', execution_context=side,
+                   compilation_profile=compilation_profile).tokens()
     if any(t.kind in _ANNOTATIONS or t.kind == 'IMPORT' for t in tokens):
         raise ValueError('configured module annotations/imports are outside this profile')
     program = Parser(tokens).parse()
@@ -114,15 +115,18 @@ def compile_module(content, path, side, *, common):
 
 
 
-def compile_session_module(content):
-    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True)
+def compile_session_module(content, *, compilation_profile="standalone", allow_omitted_parameters=False):
+    program=compile_module(content,'Ext/SessionModule.bsl','server',common=True,
+                           compilation_profile=compilation_profile)
     handlers=[]
     for routine in program:
         if routine.exported:
             raise ValueError('session module exports are unsupported')
         if routine.name.casefold() in ('sessionparameterssetting','установкапараметровсеанса'):
-            if (routine.is_function or len(routine.parameters)!=1
-                    or routine.parameters[0].default is not None or routine.parameters[0].by_value):
+            if (routine.is_function or len(routine.parameters)>1
+                    or (not routine.parameters and not allow_omitted_parameters)
+                    or (routine.parameters and (routine.parameters[0].default is not None
+                                                or routine.parameters[0].by_value))):
                 raise ValueError('unsupported session parameter handler signature')
             handlers.append(routine)
     if len(handlers)>1: raise ValueError('ambiguous session parameter handler')

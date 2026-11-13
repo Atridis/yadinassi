@@ -18,6 +18,9 @@ from .syntax.parser import parse
 
 class _SourceInterpreter(Interpreter):
     def __init__(self, application, *args, **kwargs):
+        selected = kwargs.setdefault('compilation_profile', application.compilation_profile)
+        if selected != application.compilation_profile:
+            raise ValueError('source interpreter compilation profile mismatch')
         super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
         self._metadata._enumerations = application.enumerations
@@ -45,6 +48,16 @@ class _SourceInterpreter(Interpreter):
             self.register_function(english, SourceTransactionCall(application, operation),
                                    russian, returns_value=operation == 'active')
 
+
+    def _activation_interpreter(self):
+        # A logical ServerCall must retain the admitted source environment,
+        # not silently fall back to a standalone Interpreter. The base call
+        # engine still owns packet copying and side/transaction/safe-mode gates.
+        self.application.require_open()
+        return _SourceInterpreter(self.application, output=self.output,
+            encoding=self.encoding, native_target=self.native_target,
+            compilation_profile=self.compilation_profile,
+            family_owner=self._family_owner)
 
     def execute_program(self, program):
         from .source_transactions import execution
@@ -88,6 +101,9 @@ class _SourceInterpreter(Interpreter):
                 or (self._has_module_context and key in self.variables
                     and (self.locals is None or key in self.module_names))):
             return super().visit_Name(node)
+        if key in ('xdtofactory', 'фабрикаxdto'):
+            self.application.require_open()
+            return self.application.xdto.factory
         if key in ('metadata', 'метаданные'):
             self.application.require_open()
             return self.application.metadata
@@ -95,10 +111,6 @@ class _SourceInterpreter(Interpreter):
         if key in MANAGER_NAMES:
             self.application.require_open()
             return SourceManagers(self.application, MANAGER_NAMES[key])
-        # Source metadata does not grant operational storage managers.
-        if key in {'informationregisters',
-                   'регистрысведений', 'accumulationregisters', 'регистрынакопления'}:
-            raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
         if key in ('configurationextensions', 'расширенияконфигурации'):
             self.application.require_open()
             return self.application.extensions
@@ -116,7 +128,28 @@ class _SourceInterpreter(Interpreter):
             return self.application.session_parameters
         if key in self.application.modules:
             return self.application.module(key, self)
+        from .source_application_exports import variable
+        reference = variable(self, key)
+        if reference is not None:
+            return reference.get()
         return super().visit_Name(node)
+
+    def set_variable(self, name, value):
+        from .source_application_exports import variable
+        reference = variable(self, name)
+        if reference is not None:
+            reference.set(value)
+            return
+        return super().set_variable(name, value)
+
+    def argument(self, node):
+        ungrouped = self.ungroup(node)
+        if isinstance(ungrouped, ast.Name):
+            from .source_application_exports import variable
+            reference = variable(self, ungrouped.name)
+            if reference is not None:
+                return reference
+        return (yield from super().argument(node))
 
 
 def _walk(value):
@@ -135,15 +168,15 @@ class SourceApplication:
     def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
-        if compilation_profile != 'standalone':
-            raise ValueError('Запуск общего источника пока поддерживает только standalone профиль компиляции')
+        from .syntax.preprocessor import validate_compilation_profile
+        compilation_profile = validate_compilation_profile(compilation_profile)
         from .source_system_info import validate_target
         self.compatibility_target = validate_target(compatibility_target)
         from .source_host_session import SourceHostSession
         self.host_session = SourceHostSession(self)
         self.source = source
         self.output = output
-        self.compilation_profile = compilation_profile
+        self._compilation_profile = compilation_profile
         self.files = {item.path: item.content for item in source.files}
         from .configuration_source_metadata import SourceMetadataRoot
         self.metadata = SourceMetadataRoot(source)
@@ -155,6 +188,8 @@ class SourceApplication:
         self.enumerations = BSLEnumerations(enum_definitions, unsupported=unsupported_enums)
         from .source_extensions import SourceExtensions
         self.extensions = SourceExtensions(self)
+        from .source_xdto_packages import SourceXDTOPackages
+        self.xdto = SourceXDTOPackages(self)
         self._instances = {}
         self._reuse_routines = {}
         self._global_exports = {}
@@ -185,6 +220,10 @@ class SourceApplication:
         self._session_owner = None
         self._session_handler = None
 
+    @property
+    def compilation_profile(self):
+        return self._compilation_profile
+
     def _program(self, path):
         program = parse(self.files.get(path, b'').decode('utf-8-sig'),
                         '<configuration:' + path + '>',
@@ -196,16 +235,28 @@ class SourceApplication:
         return program
 
     def module(self, key, caller, *, global_call=False):
-        side = caller.execution_context
-        instance_key = (key, side, global_call)
-        if instance_key in self._instances:
-            return self._instances[instance_key]._self_module
+        self.require_open()
+        caller._require_family()
+        if (caller._family_owner is not self.interpreter
+                or caller._scheduler is not self.interpreter._scheduler):
+            raise ValueError('foreign source common-module caller')
+        caller_side = caller.execution_context
         definition = self.modules[key]
         root = ET.fromstring(self.files[definition.path])
         properties_node = root[0].find('{' + MD + '}Properties')
         properties = {element.tag.rsplit('}', 1)[-1]: element.text
                       for element in properties_node}
         path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
+        client = properties.get('ClientManagedApplication') == 'true'
+        server = properties.get('Server') == 'true'
+        crossing = (caller_side == 'client' and not client and server
+                    and properties.get('ServerCall') == 'true' and not global_call)
+        side = 'server' if crossing else caller_side
+        # Cached receivers never bypass admission. Reusable cross-side results
+        # need their own measured transport/cache contract; reject rather than
+        # sharing mutable cached values across the packet boundary.
+        if crossing and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse':
+            raise ValueError('source ServerCall return-value reuse is not supported yet')
         if ((properties.get('Global') == 'true') != global_call
                 or (global_call and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse')
                 or properties.get('Privileged') == 'true'
@@ -214,12 +265,17 @@ class SourceApplication:
             raise ValueError('Режим общего модуля пока не поддержан при запуске источника: ' + definition.name)
         if path not in self.files:
             raise ValueError('Отсутствует исходный текст общего модуля: ' + path)
+        instance_key = (key, side, global_call)
+        if instance_key in self._instances:
+            return self._instances[instance_key]._self_module
         child = _SourceInterpreter(self, family_owner=self.interpreter,
                                    compilation_profile=self.compilation_profile)
         try:
             from .configuration_modules import compile_module
-            program = compile_module(self.files[path], path, side, common=True)
+            program = compile_module(self.files[path], path, side, common=True,
+                                     compilation_profile=self.compilation_profile)
             child._logical_side = side
+            child._application_exports_enabled = not global_call
             if any(not isinstance(node, ast.Routine) for node in program):
                 raise ValueError('Общий модуль содержит неподдерживаемую инициализацию: ' + path)
             child.execute_program(program)
@@ -255,21 +311,23 @@ class SourceApplication:
                 path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
                 if path not in self.files:
                     raise ValueError('Missing global module source: ' + path)
-                program = compile_module(self.files[path], path, side, common=True)
+                program = compile_module(self.files[path], path, side, common=True,
+                                     compilation_profile=self.compilation_profile)
                 for routine in program:
                     if routine.exported:
                         exports.setdefault(routine.name.casefold(), []).append(key)
             self._global_exports[side] = exports
         candidates = self._global_exports[side].get(name.casefold(), [])
         if not candidates:
-            return None
+            from .source_application_exports import routine
+            return routine(caller, name)
         if len(candidates) != 1:
             raise ValueError('Ambiguous global source routine: ' + name)
         receiver = self.module(candidates[0], caller, global_call=True)
         return receiver.routine(name), receiver.interpreter
 
-    def manager_module(self, family, name, caller):
-        """Execute declared manager code, never synthesize storage operations."""
+    def require_manager_context(self, caller):
+        """Source exports do not grant storage or client-side manager access."""
         self.require_open()
         caller._require_family()
         if (caller._family_owner is not self.interpreter
@@ -277,6 +335,10 @@ class SourceApplication:
                 or caller.execution_context != 'server'
                 or caller._scheduler._active_task is not None):
             raise ValueError('source manager modules require owning synchronous server context')
+
+    def manager_module(self, family, name, caller):
+        """Execute declared manager code, never synthesize storage operations."""
+        self.require_manager_context(caller)
         definition = next((item for item in self.source.metadata
                            if item.family == family and item.name.casefold() == name.casefold()), None)
         if definition is None:
@@ -288,7 +350,8 @@ class SourceApplication:
         if path not in self.files:
             raise ValueError('Source manager module unavailable; storage operations are not activated: ' + path)
         from .configuration_modules import compile_module
-        program = compile_module(self.files[path], path, 'server', common=False)
+        program = compile_module(self.files[path], path, 'server', common=False,
+                                 compilation_profile=self.compilation_profile)
         if any(type(node) is not ast.Routine for node in program):
             raise ValueError('Source manager module initialization is not supported: ' + path)
         child = _SourceInterpreter(self, family_owner=self.interpreter,
@@ -312,8 +375,9 @@ class SourceApplication:
         if len(routines) != 1:
             raise ValueError('Неоднозначный обработчик запуска: ' + '/'.join(aliases))
         routine = routines[0]
-        if routine.is_function or routine.is_async or len(routine.parameters) != len(arguments):
+        if routine.is_function or routine.is_async or len(routine.parameters) > len(arguments):
             raise ValueError('Неподдерживаемая сигнатура обработчика: ' + routine.name)
+        arguments = arguments[:len(routine.parameters)]
         if arguments and routine.parameters[0].by_value:
             raise ValueError('Параметр обработчика должен передаваться по ссылке: ' + routine.name)
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), list(arguments))
@@ -333,7 +397,9 @@ class SourceApplication:
                 self._instances['<session>'] = session
                 session._logical_side = 'server'
                 from .configuration_modules import compile_session_module
-                program, self._session_handler = compile_session_module(self.files[session_path])
+                program, self._session_handler = compile_session_module(
+                    self.files[session_path], compilation_profile=self.compilation_profile,
+                    allow_omitted_parameters=True)
                 self._session_owner = session
                 session.execute_program(program)
                 handlers = ('sessionparameterssetting', 'установкапараметровсеанса')
@@ -400,7 +466,7 @@ class SourceApplication:
         self.session_parameters._authorize(caller)
         if self._session_handler is not None:
             routine = self._session_handler
-            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)],
+            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)][:len(routine.parameters)],
                                            self._session_owner, require_value=False)
 
     def close(self):
