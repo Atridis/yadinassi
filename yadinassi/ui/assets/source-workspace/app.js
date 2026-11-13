@@ -1446,6 +1446,8 @@ explorer.append(explorerTitle,objectSearch,families,objectFind,objects,inspect,i
 root.append(title,status,explorer,search,find,select,open,close,tabs,limitations,formRoot);
 let id=0,busy=false,view=null,state=null,failed=false,inFlight=0;
 const mounts=new Map();
+let syncNeeded=false;
+function syncForms(){if(syncNeeded&&!busy&&!inFlight&&!failed){syncNeeded=false;action('workspace.snapshot',{});}}
 async function call(method,params={}) {
   const response=await fetch('/rpc',{method:'POST',headers:{'Content-Type':'application/x-ndjson','X-Yadinassi-Session':token||''},body:JSON.stringify({jsonrpc:'2.0',id:++id,method,params})+'\n'});
   if(!response.ok)throw Error('Связь потеряна. Команда не повторяется автоматически.');
@@ -1508,14 +1510,14 @@ async function apply(reply){
     const mount=__app.mountForm(window,panel,{transport:request=>formCall(generation,request),
       isActive:()=>state?.generation===generation,
       businessBlocked:()=>busy||failed||state?.generation!==generation,
-      onChange:()=>paint()});
+      onChange:()=>{paint();syncNeeded=true;queueMicrotask(syncForms);}});
     mounts.set(generation,{panel,view:mount});await mount.ready;
   }
   view=mounts.get(state.generation)?.view||null;
   for(const [generation,entry] of mounts)entry.panel.hidden=generation!==state.generation;
   paint();
 }
-async function action(method,params){if(busy||failed||inFlight)return;busy=true;paint();try{await apply(await call(method,params));}catch(error){failed=true;status.textContent=error.message;}finally{busy=false;paint();}}
+async function action(method,params){if(busy||failed||inFlight)return;busy=true;paint();try{await apply(await call(method,params));}catch(error){failed=true;status.textContent=error.message;}finally{busy=false;paint();queueMicrotask(syncForms);}}
 objectFind.addEventListener('click',()=>action('workspace.objects',{query:objectSearch.value,family:families.value}));
 inspect.addEventListener('click',()=>action('workspace.inspect',{name:objects.value}));
 objectSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();action('workspace.objects',{query:objectSearch.value,family:families.value});}});

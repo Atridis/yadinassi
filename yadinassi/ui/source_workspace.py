@@ -22,6 +22,9 @@ class SourceWorkspace:
         self.generation = 0
         self.next_generation = 0
         self.open_forms = {}
+        self.pending_navigation = []
+        self.navigation_total = 0
+        self.navigation_event = None
         self.selected = None
         self.error = None
         self.query = ''
@@ -59,6 +62,40 @@ class SourceWorkspace:
     def _select(self, generation):
         self.generation = generation
         self.selected, self.form = self.open_forms[generation]
+
+    def _request_navigation(self, generation, name, parameters=None):
+        if (self.closed or generation != self.navigation_event or generation != self.generation or generation not in self.open_forms
+                or not self._live(self.open_forms[generation][1])):
+            raise ValueError('inactive source form navigation')
+        if type(name) is not str or name not in self.forms:
+            raise ValueError('declared source form required for OpenForm')
+        if (sum(self._live(form) for _, form in self.open_forms.values()) + len(self.pending_navigation) >= MAX_OPEN_FORMS
+                or self.navigation_total + len(self.pending_navigation) >= 256):
+            raise ValueError('source form navigation capacity exhausted')
+        from .configuration_app import _parameters
+        values = _parameters(parameters)
+        self.pending_navigation.append((name, values))
+
+    def _new_form(self, name, parameters=None):
+        generation = self.next_generation + 1
+        form = SourceFormController(self.application, name, progressive=True, parameters=parameters,
+                                    navigation=lambda target, values=None: self._request_navigation(generation, target, values))
+        self.open_forms = {key: value for key, value in self.open_forms.items() if self._live(value[1])}
+        self.next_generation = generation
+        self.open_forms[generation] = (name, form)
+        self._select(generation)
+
+    def _complete_navigation(self, result):
+        requests, self.pending_navigation = self.pending_navigation, []
+        if result.get('result', {}).get('error') is not None:
+            return  # No deferred opens survive a failed handler; never replay them later.
+        for name, parameters in requests:
+            self.navigation_total += 1
+            try:
+                self._new_form(name, parameters)
+            except (BSLError, ValueError, TypeError, RecursionError) as error:
+                self.error = 'OpenForm '+name+': '+str(error)[:2048]
+                break
 
     def visible_forms(self):
         matches = [name for name in self.forms if self.query.casefold() in name.casefold()]
@@ -131,7 +168,8 @@ class SourceWorkspace:
         method, params = request['method'], request['params']
         if self.closed and method != 'workspace.snapshot':
             raise ValueError('source workspace closed')
-        self.error = None
+        if method != 'workspace.snapshot':
+            self.error = None
         if method == 'workspace.open':
             if set(params) != {'name'} or type(params['name']) is not str or params['name'] not in self.visible_forms()[0] and params['name'] not in (self.object_detail() or {}).get('forms', []):
                 raise ValueError('declared workspace form required')
@@ -143,14 +181,9 @@ class SourceWorkspace:
                 self.error = 'Достигнут предел открытых форм: 8. Закройте одну из форм.'
             else:
                 try:
-                    form = SourceFormController(self.application, params['name'], progressive=True)
+                    self._new_form(params['name'])
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
-                else:
-                    self.open_forms = {key: value for key, value in self.open_forms.items() if self._live(value[1])}
-                    self.next_generation += 1
-                    self.open_forms[self.next_generation] = (params['name'], form)
-                    self._select(self.next_generation)
         elif method == 'workspace.select':
             if (set(params) != {'generation'} or type(params['generation']) is not int
                     or params['generation'] not in self.open_forms):
@@ -175,7 +208,18 @@ class SourceWorkspace:
             if (set(params) != {'generation','request'} or type(params['generation']) is not int
                     or params['generation'] != self.generation or self.form is None):
                 raise ValueError('stale workspace form')
-            result = self.form.exchange(params['request'])
+            self.pending_navigation = []
+            nested = params['request']
+            self.navigation_event = (self.generation if type(nested) is dict and nested.get('method') == 'form.event'
+                                     and type(nested.get('params')) is dict and nested['params'].get('event') == 'command' else None)
+            try:
+                result = self.form.exchange(params['request'])
+            except BaseException:
+                self.pending_navigation = []
+                raise
+            finally:
+                self.navigation_event = None
+            self._complete_navigation(result)
             return {'jsonrpc':'2.0','id':request['id'],'result':result}
         elif method in ('workspace.close','workspace.snapshot'):
             if params: raise ValueError('invalid workspace parameters')

@@ -6,15 +6,24 @@ from .ui.form_app import FormController
 
 
 class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
-    def __init__(self, application, session, output, **kwargs):
+    def __init__(self, application, session, output, navigation=None, **kwargs):
         super().__init__(application, session, output=output,
                          family_owner=application.interpreter, **kwargs)
         self._transaction_activation_allowed = False
+        self._source_navigation = navigation
+        if navigation is not None:
+            self.register_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
+
+    def _open_source_form(self, name, parameters=None):
+        if (not self._form_session._busy or not self._context_stack
+                or self._context_stack[-1] != 'client'):
+            raise ValueError('source OpenForm requires an active client form event')
+        self._source_navigation(name, parameters)
 
     def _activation_interpreter(self):
         child = type(self)(self.application, self._form_session, self.output,
                            encoding=self.encoding, native_target=self.native_target,
-                           compilation_profile=self.compilation_profile)
+                           compilation_profile=self.compilation_profile, navigation=self._source_navigation)
         child._logical_side = self._logical_side
         return child
 
@@ -49,7 +58,7 @@ def source_form_definition(application, name, *, progressive=False, diagnostics=
 
 class SourceFormController:
     """One actual form after successful source startup; no browser code endpoint."""
-    def __init__(self, application, name, *, progressive=False):
+    def __init__(self, application, name, *, progressive=False, parameters=None, navigation=None):
         self.application = application
         diagnostics = []
         self.definition = source_form_definition(application, name, progressive=progressive, diagnostics=diagnostics)
@@ -60,14 +69,14 @@ class SourceFormController:
             def make(session, output, **kwargs):
                 if kwargs.get('database_context') is not None:
                     raise ValueError('selected source form cannot acquire database authority')
-                child = _SourceFormInterpreter(application, session, output, **kwargs)
+                child = _SourceFormInterpreter(application, session, output, navigation=navigation, **kwargs)
                 child._logical_side = side
                 return child
             return make
         with application.safe_mode.execution():
-            self.server = self.definition.create_server(interpreter_factory=factory('server'))
+            self.server = self.definition.create_server(interpreter_factory=factory('server'), parameters=parameters)
             self.client = FormController(self.definition.client_package(), self.server.exchange,
-                                         interpreter_factory=factory('client'))
+                                         interpreter_factory=factory('client'), parameters=parameters)
 
     def exchange(self, request):
         self.application.require_open()

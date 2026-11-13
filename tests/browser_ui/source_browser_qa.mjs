@@ -15,7 +15,7 @@ const work=await mkdtemp(path.join(root,'s-'));const home=path.join(work,'h');aw
 const output=path.join(root,'yadinassi-source-browser-artifacts');await mkdir(output);
 const env=childEnvironment(process.env,home);env.PYTHONPATH=repo+path.delimiter+path.join(repo,'tests');
 const fixture=path.join(work,'fixture');
-execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib import Path\nroot=Path(${JSON.stringify(fixture)})\nmapping=files()\nfrom test_source_metadata import xml\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Broken</CommonForm><CommonForm>Progressive</CommonForm></ChildObjects>')\nmapping['CommonForms/Broken.xml']=xml('CommonForm','Broken',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Broken/Ext/Form.xml']=b'<Unsupported/>'\nmapping['CommonForms/Progressive.xml']=xml('CommonForm','Progressive',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Progressive/Ext/Form.xml']=mapping['CommonForms/Main/Ext/Form.xml'].replace(b'<ChildItems>',b'<ChildItems><PictureField name="Logo" id="90"/>')\nmapping['CommonForms/Progressive/Ext/Form/Module.bsl']=mapping['CommonForms/Main/Ext/Form/Module.bsl']\nfor name,data in mapping.items():\n p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)`],{cwd:repo,env,timeout:15000});
+execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib import Path\nroot=Path(${JSON.stringify(fixture)})\nmapping=files()\nfrom test_source_metadata import xml\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Broken</CommonForm><CommonForm>Progressive</CommonForm></ChildObjects>')\nmapping['CommonForms/Broken.xml']=xml('CommonForm','Broken',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Broken/Ext/Form.xml']=b'<Unsupported/>'\nmapping['CommonForms/Progressive.xml']=xml('CommonForm','Progressive',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Progressive/Ext/Form.xml']=mapping['CommonForms/Main/Ext/Form.xml'].replace(b'<ChildItems>',b'<ChildItems><PictureField name="Logo" id="90"/>')\nmapping['CommonForms/Progressive/Ext/Form/Module.bsl']=mapping['CommonForms/Main/Ext/Form/Module.bsl']\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Launcher</CommonForm><CommonForm>Payload</CommonForm></ChildObjects>')\nfor child in ('Launcher','Payload'):\n mapping['CommonForms/'+child+'.xml']=xml('CommonForm',child,properties='<FormType>Managed</FormType>')\n mapping['CommonForms/'+child+'/Ext/Form.xml']=mapping['CommonForms/Main/Ext/Form.xml']\nmapping['CommonForms/Launcher/Ext/Form/Module.bsl']=b'&AtServer\\nProcedure Created(Cancel, StandardProcessing)\\n Greeting="launcher";\\nEndProcedure\\n&AtClient\\nProcedure Go(Command)\\n OpenForm("CommonForm.Payload",New Structure("Greeting","via OpenForm"));\\nEndProcedure'\nmapping['CommonForms/Payload/Ext/Form/Module.bsl']=b'&AtServer\\nProcedure Created(Cancel, StandardProcessing)\\n Greeting=Parameters.Greeting;\\nEndProcedure\\n&AtClient\\nProcedure Go(Command)\\nEndProcedure'\n\nfor name,data in mapping.items():\n p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)`],{cwd:repo,env,timeout:15000});
 const report={status:'FAIL',sourceCommit:source,scenarios:[],nativeParity:false};
 let browser,host,context,page,phase='launch';
 const deadline=setTimeout(()=>{host?.kill('SIGKILL');process.exitCode=1;browser?.close();},150000);
@@ -139,6 +139,21 @@ try {
 
    await page.getByRole('button',{name:'Close form',exact:true}).click();
    await page.getByText('Closed',{exact:true}).waitFor();
+   phase='workspace:bsl_openform';
+   await page.getByRole('textbox',{name:'Поиск объявленных форм'}).fill('Launcher');
+   await page.getByRole('button',{name:'Найти формы',exact:true}).click();
+   await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Launcher');
+   await page.getByRole('button',{name:'Открыть форму',exact:true}).click();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='launcher'&&x.getClientRects().length));
+   const [navigationResponse]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);
+   assert.equal(navigationResponse.status(),200);assert.equal((await observedJSON(page,navigationResponse)).result.result.error,null);
+   await page.getByRole('navigation',{name:'Открытые формы'}).getByRole('button',{name:'CommonForm.Payload',exact:true}).waitFor();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='via OpenForm'&&x.getClientRects().length));
+   await page.screenshot({path:path.join(output,'bsl-openform.png')});
+   await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();
+   await page.getByRole('navigation',{name:'Открытые формы'}).getByRole('button',{name:'CommonForm.Launcher',exact:true}).click();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='launcher'&&x.getClientRects().length));
+   await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();
    await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).click();
    await page.getByText('Сеанс закрыт',{exact:true}).waitFor();
   }
@@ -148,4 +163,4 @@ try {
  }
  report.status='PASS';
 }catch(error){report.failure={phase,reason:'smoke_failed',errorCode: /No (?:resource|data).*?(?:identifier|resource)/i.test(error?.message||'')?'response_body_unavailable':/getResponseBody/.test(error?.message||'')?'response_body_protocol':/closed/i.test(error?.message||'')?'target_closed':'unclassified',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
-finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
+finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png','bsl-openform.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}

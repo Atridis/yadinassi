@@ -215,3 +215,72 @@ class SourceWorkspaceTests(unittest.TestCase):
         app.metadata._inventory['Other/Same.xml'].name='same'
         with self.assertRaisesRegex(ValueError,'ambiguous metadata full name'):
             SourceWorkspace(app)
+
+    def navigation_workspace(self, command='OpenForm("CommonForm.Other1", New Structure("Greeting", "from-parent"));', side='AtClient'):
+        mapping=self.many_forms()
+        mapping['CommonForms/Main/Ext/Form/Module.bsl']=('&AtServer\nProcedure Created(Cancel, StandardProcessing)\n Greeting="parent";\nEndProcedure\n&'+side+'\nProcedure Go(Command)\n'+command+'\nEndProcedure').encode()
+        if side == 'AtServer':
+            mapping['CommonForms/Main/Ext/Form/Module.bsl']=('&AtServer\nProcedure Created(Cancel, StandardProcessing)\nEndProcedure\n&AtServer\nProcedure ServerGo()\n'+command+'\nEndProcedure\n&AtClient\nProcedure Go(Command)\nServerGo();\nEndProcedure').encode()
+        mapping['CommonForms/Other1/Ext/Form/Module.bsl']=b'&AtServer\nProcedure Created(Cancel, StandardProcessing)\n Greeting=Parameters.Greeting;\nEndProcedure\n&AtClient\nProcedure Go(Command)\n Greeting="child";\nEndProcedure'
+        return self.workspace(mapping)
+
+    def invoke_navigation(self,w):
+        w.exchange(request('open',name='CommonForm.Main'))
+        w.exchange(request('form',generation=w.generation,request=form_request()))
+        return w.exchange(request('form',generation=w.generation,request=form_request('event',event='command',revision=w.form.client.session.revision,control='GoButton')))
+
+    def test_bsl_openform_creates_child_with_typed_parameters(self):
+        w=self.navigation_workspace();reply=self.invoke_navigation(w)
+        self.assertIsNone(reply['result']['result']['error']);self.assertEqual(w.selected,'CommonForm.Other1');self.assertEqual(len(w.open_forms),2)
+        w.exchange(request('form',generation=w.generation,request=form_request()))
+        self.assertEqual(dict(w.form.client.session.snapshot().attributes)['Greeting'],'from-parent')
+        w.exchange(request('select',generation=1));self.assertEqual(dict(w.form.client.session.snapshot().attributes)['Greeting'],'parent')
+
+    def test_russian_openform_alias(self):
+        w=self.navigation_workspace('ОткрытьФорму("CommonForm.Other1", Новый Структура("Greeting", "ru"));');self.invoke_navigation(w)
+        w.exchange(request('form',generation=w.generation,request=form_request()))
+        self.assertEqual(dict(w.form.client.session.snapshot().attributes)['Greeting'],'ru')
+
+    def test_navigation_parameters_are_snapshotted_before_later_mutation(self):
+        w=self.navigation_workspace('p=New Structure("Greeting","before"); OpenForm("CommonForm.Other1",p); p.Greeting="after";');self.invoke_navigation(w)
+        w.exchange(request('form',generation=w.generation,request=form_request()))
+        self.assertEqual(dict(w.form.client.session.snapshot().attributes)['Greeting'],'before')
+
+    def test_failed_handler_discards_deferred_navigation(self):
+        w=self.navigation_workspace('OpenForm("CommonForm.Other1"); Raise "stop";');reply=self.invoke_navigation(w)
+        self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(len(w.open_forms),1);self.assertEqual(w.pending_navigation,[])
+        w.exchange(request());self.assertEqual(len(w.open_forms),1)
+
+    def test_undeclared_target_and_unsupported_owner_arguments_fail(self):
+        for command in ('OpenForm("CommonForm.Missing");','OpenForm("CommonForm.Other1",Undefined,ThisObject);','OpenForm("CommonForm.Other1",New Array);'):
+            with self.subTest(command=command):
+                w=self.navigation_workspace(command);reply=self.invoke_navigation(w)
+                self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(len(w.open_forms),1)
+
+    def test_server_handler_cannot_enqueue_client_navigation(self):
+        w=self.navigation_workspace('OpenForm("CommonForm.Other1");',side='AtServer');reply=self.invoke_navigation(w)
+        self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(len(w.open_forms),1)
+
+    def test_navigation_capacity_does_not_discard_open_forms(self):
+        w=self.navigation_workspace();w.navigation_total=256;reply=self.invoke_navigation(w)
+        self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(len(w.open_forms),1)
+
+    def test_idle_or_hidden_navigation_callback_refused(self):
+        w=self.navigation_workspace();w.exchange(request('open',name='CommonForm.Main'));interpreter=w.form.client.session.interpreter
+        with self.assertRaisesRegex(ValueError,'active client'):interpreter._open_source_form('CommonForm.Other1')
+        w.exchange(request('open',name='CommonForm.Other1'))
+        with self.assertRaisesRegex(ValueError,'inactive'):w._request_navigation(1,'CommonForm.Main')
+
+    def test_broken_target_keeps_original_form_and_visible_diagnostic(self):
+        mapping=self.many_forms();mapping['CommonForms/Other1/Ext/Form.xml']=b'<Broken/>'
+        mapping['CommonForms/Main/Ext/Form/Module.bsl']=b'&AtServer\nProcedure Created(Cancel,StandardProcessing)\nEndProcedure\n&AtClient\nProcedure Go(Command)\nOpenForm("CommonForm.Other1");\nEndProcedure'
+        w=self.workspace(mapping);self.invoke_navigation(w)
+        self.assertEqual(w.selected,'CommonForm.Main');self.assertIn('OpenForm CommonForm.Other1',w.exchange(request())['result']['state']['error']);self.assertEqual(len(w.open_forms),1)
+
+    def test_onchange_navigation_is_explicit_error_not_stale_generation(self):
+        mapping=self.many_forms()
+        mapping['CommonForms/Main/Ext/Form.xml']=FORM.replace(b'LabelField',b'InputField').replace(b'<DataPath>Greeting</DataPath>',b'<DataPath>Greeting</DataPath><Events><Event name="OnChange">Changed</Event></Events>')
+        mapping['CommonForms/Main/Ext/Form/Module.bsl']+=b'\n&AtClient\nProcedure Changed(Item)\nOpenForm("CommonForm.Other1");\nEndProcedure'
+        w=self.workspace(mapping);w.exchange(request('open',name='CommonForm.Main'));w.exchange(request('form',generation=1,request=form_request()))
+        reply=w.exchange(request('form',generation=1,request=form_request('event',event='change',revision=w.form.client.session.revision,control='GreetingLabel',value={'type':'String','value':'edit'})))
+        self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(w.generation,1);self.assertEqual(len(w.open_forms),1)
