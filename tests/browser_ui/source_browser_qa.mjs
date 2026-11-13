@@ -19,6 +19,12 @@ execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib i
 const report={status:'FAIL',sourceCommit:source,scenarios:[],nativeParity:false};
 let browser,host,context,page,phase='launch';
 const deadline=setTimeout(()=>{host?.kill('SIGKILL');process.exitCode=1;browser?.close();},150000);
+async function observedJSON(page,response){
+ const id=JSON.parse(response.request().postData()).id;
+ await page.waitForFunction(id=>window.__qaResponses?.some(item=>item.id===id),id,{timeout:10000});
+ const observed=await page.evaluate(id=>window.__qaResponses.find(item=>item.id===id),id);
+ assert.equal(observed.status,200);assert.equal(observed.error,undefined);return observed.body;
+}
 async function stopHost(){if(!host)return;if(host.exitCode===null&&host.signalCode===null){const p=new Promise(r=>host.once('exit',r));host.kill('SIGINT');await Promise.race([p,new Promise(r=>setTimeout(r,3000))]);if(host.exitCode===null&&host.signalCode===null)host.kill('SIGKILL');await Promise.race([p,new Promise((_,reject)=>setTimeout(()=>reject(Error('host_cleanup_timeout')),3000))]);}host=null;}
 try {
  const old=process.env.TMPDIR;process.env.TMPDIR=home;
@@ -31,7 +37,16 @@ try {
   const url=await new Promise((resolve,reject)=>{const parse=launchOutputReader();const timer=setTimeout(()=>reject(Error('host_timeout')),10000);host.once('exit',()=>{clearTimeout(timer);reject(Error('host_exit'));});host.stdout.on('data',b=>{try{const u=parse(b);if(u){clearTimeout(timer);resolve(u);}}catch(e){clearTimeout(timer);reject(e);}});});
   const origin=new URL(url).origin;
   await context.route('**/*',route=>{const u=new URL(route.request().url());return u.origin===origin&&['/','/app.js','/style.css','/rpc','/client.js'].includes(u.pathname)?route.continue():route.abort();});
-  page=await context.newPage();const errors=[];page.on('pageerror',()=>errors.push('page_error'));
+  page=await context.newPage();
+  await page.addInitScript(()=>{
+   window.__qaResponses=[];const original=window.fetch.bind(window);
+   window.fetch=async (...args)=>{const response=await original(...args);let id;
+    try{id=JSON.parse(args[1]?.body||'{}').id;}catch{}
+    if(id!==undefined)response.clone().json().then(body=>window.__qaResponses.push({id,status:response.status,body}),()=>window.__qaResponses.push({id,status:response.status,error:'invalid_json'}));
+    return response;
+   };
+  });
+  const errors=[];page.on('pageerror',()=>errors.push('page_error'));
   await page.goto(url.href);
   if(!form){await page.getByText('Источник: Demo; попытка запуска: completed',{exact:true}).waitFor();assert.ok((await page.locator('#result').innerText()).includes('"runtime_active": false'));await page.getByRole('button',{name:'Закрыть диагностику'}).click();await page.getByText('Диагностика закрыта',{exact:true}).waitFor();}
   else if(form==='workspace_loss'){
@@ -112,7 +127,7 @@ try {
    await page.waitForFunction(()=>Array.from(document.querySelectorAll('section:not([hidden]) input')).some(x=>x.value==='updated'&&x.getClientRects().length));
    assert.equal(await page.getByRole('textbox',{name:'GreetingLabel',exact:true}).inputValue(),'updated');
    const [response]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);
-   assert.equal(response.status(),200);await response.finished();assert.equal((await response.json()).result.result.error,null);
+   assert.equal(response.status(),200);assert.equal((await observedJSON(page,response)).result.result.error,null);
    await page.screenshot({path:path.join(output,'multiform.png')});
    await page.getByRole('button',{name:'Close form',exact:true}).click();
    await page.getByText('Closed',{exact:true}).waitFor();
@@ -127,7 +142,7 @@ try {
    await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).click();
    await page.getByText('Сеанс закрыт',{exact:true}).waitFor();
   }
-  else{phase='selected_form:initial';await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'));for(let i=0;i<2;i++){phase='selected_form:command'+i;const [response]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);assert.equal(response.status(),200);phase='selected_form:response_body'+i;await response.finished();assert.equal((await response.json()).result.error,null);phase='selected_form:render'+i;await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='updated'));}phase='selected_form:close';await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();}
+  else{phase='selected_form:initial';await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'));for(let i=0;i<2;i++){phase='selected_form:command'+i;const [response]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);assert.equal(response.status(),200);phase='selected_form:response_body'+i;assert.equal((await observedJSON(page,response)).result.error,null);phase='selected_form:render'+i;await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='updated'));}phase='selected_form:close';await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();}
   phase=typeof form==='string'?form:form?'selected_form':'diagnostics';assert.deepEqual(errors,[]);await page.screenshot({path:path.join(output,phase+'.png')});
   report.scenarios.push({name:phase,status:'PASS'});await page.close();await context.unroute('**/*');await stopHost();
  }
