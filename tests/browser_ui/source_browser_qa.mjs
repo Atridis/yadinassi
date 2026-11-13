@@ -27,7 +27,7 @@ try {
  const probe=await context.newPage();await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
  for(const form of [false,true]) {
   phase=form?'selected_form':'diagnostics';
-  host=spawn('python',['-m','yadinassi.ui.source_shell','--configuration-source',fixture,'--run-startup',...(form?['--source-form','CommonForm.Main']:[])],{cwd:repo,env,stdio:['ignore','pipe','ignore']});
+  host=spawn('python',['-m','yadinassi','--ui','--configuration-source',fixture,'--run-startup',...(form?['--source-form','CommonForm.Main']:[])],{cwd:repo,env,stdio:['ignore','pipe','ignore']});
   const url=await new Promise((resolve,reject)=>{const parse=launchOutputReader();const timer=setTimeout(()=>reject(Error('host_timeout')),10000);host.once('exit',()=>{clearTimeout(timer);reject(Error('host_exit'));});host.stdout.on('data',b=>{try{const u=parse(b);if(u){clearTimeout(timer);resolve(u);}}catch(e){clearTimeout(timer);reject(e);}});});
   const origin=new URL(url).origin;
   await context.route('**/*',route=>{const u=new URL(route.request().url());return u.origin===origin&&['/','/app.js','/style.css','/rpc','/client.js'].includes(u.pathname)?route.continue():route.abort();});
