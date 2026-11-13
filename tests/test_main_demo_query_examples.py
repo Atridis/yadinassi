@@ -13,7 +13,7 @@ class MainDemoQueryExampleTests(unittest.TestCase):
 
     def report(self, name, vm=None):
         self.output.clear()
-        (vm or self.vm).execute((ROOT / 'examples' / (name + '.bsl')).read_text())
+        (vm or self.vm).execute((ROOT / 'examples' / (name + '.bsl')).read_text(encoding='utf-8'))
         return list(self.output)
 
     def seed(self):

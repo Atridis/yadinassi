@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 import json
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,7 +68,8 @@ class InventoryScenarioTests(unittest.TestCase):
             self.assertEqual(lines,['P1, W1, 8','Turnovers: P1, W1, receipt 10, expense 2, net 8'])
     def test_cli_preflight_create_execute_and_reopen(self):
         def cli(*args):
-            result=subprocess.run([sys.executable,*(['-O'] if sys.flags.optimize else []),'-m','yadinassi',*map(str,args)],cwd=ROOT,capture_output=True,text=True)
+            result=subprocess.run([sys.executable,*(['-O'] if sys.flags.optimize else []),'-m','yadinassi',*map(str,args)],cwd=ROOT,capture_output=True,text=True,
+                               encoding='utf-8',env={**os.environ,'PYTHONIOENCODING':'utf-8'})
             self.assertEqual(result.returncode,0,result.stdout+'\n'+result.stderr)
             return result.stdout
         cli('--create-demo-db',self.path,'--import-xml',ROOT/'examples/demo')

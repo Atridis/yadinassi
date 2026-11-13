@@ -1,6 +1,7 @@
 """Fresh-only period example, read-only reopen and explicit reconciliation."""
 from contextlib import closing
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -68,7 +69,8 @@ class StockPeriodExampleTests(unittest.TestCase):
     def test_cli_create_seed_report_and_reconcile(self):
         def cli(*args):
             run=subprocess.run([sys.executable,*(['-O'] if sys.flags.optimize else []),'-m','yadinassi',*map(str,args)],
-                               cwd=ROOT,capture_output=True,text=True)
+                               cwd=ROOT,capture_output=True,text=True,
+                               encoding='utf-8',env={**os.environ,'PYTHONIOENCODING':'utf-8'})
             self.assertEqual(run.returncode,0,run.stdout+'\n'+run.stderr)
             return run.stdout.splitlines()
         cli('--create-demo-db',self.path,'--import-xml',ROOT/'examples/demo')
