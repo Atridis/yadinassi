@@ -176,9 +176,9 @@ class SourceApplication:
         if scratch_database is not None or existing_scratch_database is not None:
             from .source_constant_store import SourceConstantStore
             try:
-                self.constant_store = (SourceConstantStore.create(scratch_database, source)
+                self.constant_store = (SourceConstantStore.create(scratch_database, source, enum_namespace=self.enumerations)
                                        if scratch_database is not None else
-                                       SourceConstantStore.reopen(existing_scratch_database, source))
+                                       SourceConstantStore.reopen(existing_scratch_database, source, enum_namespace=self.enumerations))
             except BaseException:
                 self.close()
                 raise

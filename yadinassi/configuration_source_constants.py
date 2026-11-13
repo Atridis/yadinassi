@@ -4,11 +4,11 @@ This parser grants neither catalog storage nor metadata activation. Unsupported
 constants remain named errors. Value-manager code and write-time policies are
 not silently bypassed by the direct Get/Set subset.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 from .configuration_source import ConfigurationSource
 from .configuration_source_metadata import SourceMetadataRoot
-from .configuration_xml import MD, XSI, XS, V8, _object, _props, _type, _text, _qname
+from .configuration_xml import MD, XSI, XS, CFG, V8, _object, _props, _type, _text, _qname
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,11 +18,21 @@ class ScalarConstantDefinition:
     kind: str
     qualifiers: tuple
     write_blockers: tuple[str, ...] = ()
+    enum_namespace: object = field(default=None, compare=False, repr=False)
 
 
-def source_constant_definitions(source):
+def source_constant_definitions(source, *, enum_namespace=None):
     if type(source) is not ConfigurationSource:
         raise TypeError('admitted ConfigurationSource required')
+    from .configuration_source_enums import source_enum_definitions
+    from .enumerations import BSLEnumerations
+    enums, enum_errors, _ = source_enum_definitions(source)
+    if enum_namespace is None:
+        enum_namespace = BSLEnumerations(enums, unsupported=enum_errors)
+    elif (type(enum_namespace) is not BSLEnumerations
+          or tuple(m._definition for m in enum_namespace.metadata) != enums
+          or enum_namespace._unsupported != enum_errors):
+        raise ValueError('constant enumeration namespace/source mismatch')
     declared = SourceMetadataRoot(source).get_member('Constants')
     names = tuple(item.get_member('Name') for item in declared)
     if len(names) > 1024:
@@ -35,7 +45,7 @@ def source_constant_definitions(source):
         try:
             obj, namespaces = _object(files[path], 'Constant')
             props = _props(obj)
-            kind, qualifiers = _constant_type(props, namespaces)
+            kind, qualifiers = _constant_type(props, namespaces, enum_namespace)
             blockers = []
             prefix = 'Constants/' + name + '/'
             if any(p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()
@@ -55,13 +65,13 @@ def source_constant_definitions(source):
                         and not len(node) and not (node.text or '').strip()):
                     blockers.append('constant value limit is not supported')
             result.append(ScalarConstantDefinition(inventory[path].identity, name, kind,
-                                                   qualifiers, tuple(blockers)))
+                                                   qualifiers, tuple(blockers), enum_namespace))
         except (ValueError, KeyError) as error:
             unsupported[name.casefold()] = str(error)
     return tuple(result), unsupported, names
 
 
-def _constant_type(props, namespaces):
+def _constant_type(props, namespaces, enum_namespace):
     """Closed scalar union; reuse original nodes so namespace scopes stay exact."""
     from xml.etree.ElementTree import Element
     declaration = props.get('{' + MD + '}Type')
@@ -70,7 +80,7 @@ def _constant_type(props, namespaces):
     if declaration.attrib or (declaration.text or '').strip() or any((n.tail or '').strip() for n in declaration):
         raise ValueError('unsupported constant type envelope')
     nodes = [n for n in declaration if n.tag == '{' + V8 + '}Type']
-    if not 1 <= len(nodes) <= 6:
+    if not 1 <= len(nodes) <= 32:
         raise ValueError('constant union type count bound')
     variants = []
     used = set()
@@ -82,7 +92,13 @@ def _constant_type(props, namespaces):
         chosen = [n for n in declaration if qualifier and n.tag == '{' + V8 + '}' + qualifier]
         used.update(id(n) for n in chosen)
         special = {'ValueStorage':'value_storage', 'UUID':'uuid'}.get(name) if namespace == V8 else None
-        if special:
+        if namespace == CFG and name.startswith('EnumRef.'):
+            manager = enum_namespace.get_member(name[len('EnumRef.'):])
+            definition = manager._metadata._definition
+            kind = 'enum_ref'
+            qualifiers = (str(definition.identity), definition.name,
+                          tuple(str(v.identity) for v in definition.values))
+        elif special:
             kind, qualifiers = special, ()
         else:
             wrapper = Element('{' + MD + '}Type')
@@ -90,7 +106,7 @@ def _constant_type(props, namespaces):
             kind, qualifiers, target = _type({**props, '{' + MD + '}Type':wrapper}, namespaces, {})
             if target is not None or kind not in ('string', 'number', 'boolean', 'datetime'):
                 raise ValueError('unsupported source constant type')
-        if any(k == kind for k, q in variants):
+        if any(k == kind and (kind != 'enum_ref' or q[0] == qualifiers[0]) for k, q in variants):
             raise ValueError('duplicate constant union type')
         variants.append((kind, qualifiers))
     if any(n not in nodes and id(n) not in used for n in declaration):

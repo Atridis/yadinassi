@@ -46,6 +46,14 @@ def _encode(value, definition):
             if len(candidates) != 1:
                 raise TypeError('constant value does not fit its composite type')
             encoded = ['composite', candidates[0]]
+    elif kind == 'enum_ref':
+        from .enum_types import BSLEnumReference
+        manager = definition.enum_namespace.get_member(definition.qualifiers[1])
+        if (type(value) is not BSLEnumReference or value.value_type != manager._value_type
+                or str(value.value_type.metadata_uuid) != definition.qualifiers[0]
+                or (value.reference_uuid.int != 0 and str(value.reference_uuid) not in definition.qualifiers[2])):
+            raise TypeError('constant enumeration reference belongs to another type or application')
+        encoded = ['enum_ref', [definition.qualifiers[0], str(value.reference_uuid)]]
     elif kind == 'uuid':
         from .unique_identifiers import BSLUUID
         if type(value) is not BSLUUID or BSLUUID(value.text).text != value.text:
@@ -98,11 +106,26 @@ def _decode(raw, definition):
             if value == ['undefined', None]:
                 value = None
             else:
-                members = [(k, q) for k, q in definition.qualifiers if k == value[0]]
+                members = [(k, q) for k, q in definition.qualifiers if k == value[0]
+                           and (k != 'enum_ref' or (type(value[1]) is list and len(value[1]) == 2 and q[0] == value[1][0]))]
                 if len(members) != 1:
                     raise ValueError('constant storage integrity')
                 k, q = members[0]
                 value = _decode(_json(value), replace(definition, kind=k, qualifiers=q))
+        elif definition.kind == 'enum_ref':
+            from uuid import UUID
+            if (type(value) is not list or len(value) != 2
+                    or value[0] != definition.qualifiers[0] or type(value[1]) is not str):
+                raise ValueError('constant storage integrity')
+            identity = UUID(value[1])
+            manager = definition.enum_namespace.get_member(definition.qualifiers[1])
+            if identity.int == 0:
+                value = manager._empty
+            else:
+                values = [v for v in manager._values if v.reference_uuid == identity]
+                if len(values) != 1:
+                    raise ValueError('constant storage integrity')
+                value = values[0]
         elif definition.kind == 'uuid':
             from .unique_identifiers import BSLUUID
             value = BSLUUID(value)
@@ -166,8 +189,8 @@ class SourceConstantStore:
             self._explicit_transaction = False
 
     @classmethod
-    def create(cls, path, source):
-        definitions, unsupported, names = source_constant_definitions(source)
+    def create(cls, path, source, *, enum_namespace=None):
+        definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace)
         raw = os.fspath(path)
         if type(raw) is not str or not raw or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise ValueError('invalid source constants destination')
@@ -358,7 +381,7 @@ class SourceConstantStore:
             store.close()
 
     @classmethod
-    def reopen(cls, path, source):
+    def reopen(cls, path, source, *, enum_namespace=None):
         """Open only an unchanged source package's explicitly created scratch DB.
 
         A regular private file is required; mode=rw cannot create a missing file.
@@ -395,7 +418,7 @@ class SourceConstantStore:
             expected = _expected_schema()
             if _schema(connection) != expected:
                 raise ValueError('source constants schema integrity')
-            definitions, unsupported, names = source_constant_definitions(source)
+            definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace)
             rows = tuple(sorted((str(item.identity), item.name, _json([
                 item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
             digest = source_digest(source)
