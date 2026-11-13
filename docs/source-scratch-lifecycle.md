@@ -24,7 +24,9 @@ execute those bytes. Startup remains a separate explicit operation. Copying
 source files into the DB does not imply support for their metadata or services.
 No source extraction CLI or automatic configuration update is supplied yet.
 
-Reopen checks exact schema (including absence of extra triggers/views/indexes),
+Reopen requires a cleanly closed file with no journal/WAL/SHM sidecars; it does
+not perform recovery. A read-only schema preflight precedes opening a writable
+handle. Reopen checks exact schema (including absence of extra triggers/views/indexes),
 source identity and bytes, constant definitions and encoded values, and empty
 extension state. Unsupported scalar defaults remain uninitialized except for
 already measured cases. Files must be regular, non-symlinked, singly linked,

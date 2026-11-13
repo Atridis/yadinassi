@@ -134,3 +134,27 @@ class ScratchReopenTests(unittest.TestCase):
                 self.assertEqual(store.get('Text'), 'new')
             self.change("UPDATE source_file SET content=x'00' WHERE path='Configuration.xml'")
             with self.assertRaisesRegex(ValueError, 'source integrity'): store.get('Text')
+
+    def test_sidecars_refused_without_touching_database(self):
+        self.create()
+        before = self.path.read_bytes()
+        for suffix in ('-journal', '-wal', '-shm'):
+            sidecar = Path(str(self.path) + suffix)
+            sidecar.write_bytes(b'preserve me')
+            with self.assertRaisesRegex(ValueError, 'clean-close'): SourceConstantStore.reopen(self.path, self.source)
+            self.assertEqual(sidecar.read_bytes(), b'preserve me')
+            self.assertEqual(self.path.read_bytes(), before)
+            sidecar.unlink()
+
+    def test_foreign_database_only_opened_readonly(self):
+        from unittest.mock import patch
+        self.change('CREATE TABLE owner_data(value TEXT)')
+        original = sqlite3.connect
+        calls = []
+        def connect(path, *args, **kwargs):
+            calls.append(str(path))
+            return original(path, *args, **kwargs)
+        with patch('yadinassi.source_constant_store.sqlite3.connect', side_effect=connect):
+            with self.assertRaisesRegex(ValueError, 'schema'): SourceConstantStore.reopen(self.path, self.source)
+        self.assertTrue(any('mode=ro' in path for path in calls))
+        self.assertFalse(any('mode=rw' in path for path in calls))

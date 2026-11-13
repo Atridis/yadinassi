@@ -107,6 +107,7 @@ class SourceConstantStore:
             connection.execute('PRAGMA journal_mode=DELETE')
             connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
+            initial_epoch = connection.execute('PRAGMA data_version').fetchone()[0]
             for statement in _DDL:
                 connection.execute(statement)
             connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
@@ -131,7 +132,7 @@ class SourceConstantStore:
             result._identity = _file_identity(absolute)
             result._schema = _schema(connection)
             result._source = source
-            result._verified_epoch = connection.execute('PRAGMA data_version').fetchone()[0]
+            result._verified_epoch = (initial_epoch if connection.execute('PRAGMA data_version').fetchone()[0] == initial_epoch else None)
             return result
         except BaseException as error:
             if connection is not None:
@@ -155,6 +156,17 @@ class SourceConstantStore:
         identity = _file_identity(absolute)
         connection = None
         try:
+            if any(os.path.lexists(absolute + suffix) for suffix in ('-journal', '-wal', '-shm')):
+                raise ValueError('source constants require clean-close database without sidecars')
+            expected = _expected_schema()
+            # Refuse foreign/hot databases before any writable SQLite handle.
+            probe = sqlite3.connect(Path(absolute).as_uri() + '?mode=ro', uri=True, isolation_level=None, timeout=0.2)
+            try:
+                probe.execute('PRAGMA trusted_schema=OFF')
+                if _schema(probe) != expected:
+                    raise ValueError('source constants schema integrity')
+            finally:
+                probe.close()
             connection = sqlite3.connect(Path(absolute).as_uri() + '?mode=rw', uri=True,
                                          isolation_level=None, detect_types=0, timeout=0.2)
             connection.execute('PRAGMA trusted_schema=OFF')
