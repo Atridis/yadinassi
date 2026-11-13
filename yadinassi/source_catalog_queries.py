@@ -71,7 +71,12 @@ def read(query, caller, statements, *, batch=False):
         columns=[_Column(n,None,'catalog_ref',(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding) for n in ('Ref','Ссылка')]
         for field in definition.fields:
             for name in (field.name, *([_STANDARD[field.name]] if field.name in _STANDARD else [])):
-                columns.append(_Column(name,None,field.kind,field.qualifiers,explicit_alias=True))
+                if field.kind == 'object_ref' and field.qualifiers[0] == 'Catalog':
+                    target = make_binding(app, query._catalogs, field.qualifiers[2])
+                    columns.append(_Column(name,None,'catalog_ref',(),explicit_alias=True,
+                                           reference_identity=target.identity,reference_binding=target))
+                else:
+                    columns.append(_Column(name,None,field.kind,field.qualifiers,explicit_alias=True))
         tables[parameter]=_Table(tuple(columns),())
     constant_definitions=tuple(constant_names.values())
     if constant_parameter is not None:

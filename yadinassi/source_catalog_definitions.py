@@ -52,6 +52,12 @@ def _policies(props, *, attribute=False):
 def source_catalog_definitions(source, enum_namespace=None, reference_scope=None):
     if type(source) is not ConfigurationSource:
         raise TypeError('admitted ConfigurationSource required')
+    from .source_references import SourceReferences
+    if reference_scope is None:
+        from .configuration_source_metadata import SourceMetadataRoot
+        reference_scope = SourceReferences(source, SourceMetadataRoot(source))
+    elif type(reference_scope) is not SourceReferences or reference_scope.source != source:
+        raise ValueError('source catalog reference scope mismatch')
     files = {f.path:f.content for f in source.files}
     aliases = SourceDefinedTypes(source)
     definitions, unsupported = {}, {}
@@ -107,8 +113,8 @@ def source_catalog_definitions(source, enum_namespace=None, reference_scope=None
                 used_names.add(fn.casefold()); used_ids.add(identity)
                 resolved, scopes, dependencies = aliases.resolve(p,ns)
                 kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
-                if kind not in ('string','number','boolean','datetime'):
-                    raise ValueError('catalog attribute requires scalar type')
+                if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] == 'Catalog'):
+                    raise ValueError('catalog attribute requires scalar or CatalogRef type')
                 fields.append(ScalarConstantDefinition(identity,fn,kind,qualifiers,
                     enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope))
                 if len(fields)>67:

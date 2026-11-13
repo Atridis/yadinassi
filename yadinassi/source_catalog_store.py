@@ -53,6 +53,24 @@ def decode_record(definition, raw):
 class SourceCatalogStore(SourceConstantStore):
     PROFILE = 'source-catalog-records-v4'
 
+    @staticmethod
+    def scopes(source, enum_namespace=None, reference_scope=None):
+        from .source_references import SourceReferences
+        from .configuration_source_metadata import SourceMetadataRoot
+        from .configuration_source_enums import source_enum_definitions
+        from .enumerations import BSLEnumerations
+        if reference_scope is None:
+            reference_scope = SourceReferences(source, SourceMetadataRoot(source))
+        if enum_namespace is None:
+            definitions, errors, _ = source_enum_definitions(source)
+            enum_namespace = BSLEnumerations(definitions, unsupported=errors)
+        return enum_namespace, reference_scope
+
+    @classmethod
+    def create(cls, path, source, *, enum_namespace=None, reference_scope=None):
+        enum_namespace, reference_scope = cls.scopes(source, enum_namespace, reference_scope)
+        return super().create(path, source, enum_namespace=enum_namespace, reference_scope=reference_scope)
+
     @classmethod
     def ddl(cls):
         return _DDL + _RECORD_DDL
@@ -81,8 +99,9 @@ class SourceCatalogStore(SourceConstantStore):
             raise ValueError('source catalog record bounds')
 
     @classmethod
-    def reopen(cls, path, source, **kwargs):
-        result = super().reopen(path, source, **kwargs)
+    def reopen(cls, path, source, *, enum_namespace=None, reference_scope=None):
+        enum_namespace, reference_scope = cls.scopes(source, enum_namespace, reference_scope)
+        result = super().reopen(path, source, enum_namespace=enum_namespace, reference_scope=reference_scope)
         try:
             result._connection.execute('BEGIN')
             result._open()
