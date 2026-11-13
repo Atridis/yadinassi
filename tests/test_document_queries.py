@@ -185,14 +185,16 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
         with self.assertRaises(TypeError): _key(hostile)
         self.assertEqual(calls, [])
 
-    def test_dynamic_reference_unload_and_codec_remain_rejected(self):
+    def test_dynamic_reference_unload_preserves_closed_codec(self):
         for seeded in (False, True):
             if seeded:
                 self.seed()
             for text in ('SELECT Ref FROM Document.Orders','SELECT Ref FROM Document.Orders.Lines',
                          'SELECT Category FROM Document.Orders'):
-                with self.subTest(seeded=seeded,text=text), self.assertRaises((TypeError,ValueError)):
-                    self.query(text).execute().unload()
+                with self.subTest(seeded=seeded,text=text):
+                    result = self.query(text).execute()
+                    table = result.unload()
+                    self.assertEqual(len(table.rows), len(result._rows))
         for code in ('ValueToStringInternal(D.Ref)', 'New TypeDescription("DocumentRef.Orders")'):
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(code)

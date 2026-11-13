@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from .catalog_backend import BackendError
 from .configuration_inventory_enums import InventoryEnumConfiguration, PROFILE
+from .configuration_main_demo import MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE
+from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration, PROFILE as FORMS_PROFILE
 from .database_context import SQLiteDBContext
 from .enum_storage_binding import EnumStorageBinding
 from .enumerations import BSLEnumerations
@@ -36,10 +38,14 @@ class _EnumScope:
 
     def _require_snapshot(self, view):
         # Exact read-only view supplied by the getter, not selected from _active.
-        if (type(view) is not _View or view._backend is not self.backend
-                or view._operation_id is not None or self.backend._active is not view):
-            raise BackendError('unsupported')
-        view._require()
+        if type(view) is _View:
+            if (view._backend is not self.backend or view._operation_id is not None
+                    or self.backend._active is not view):
+                raise BackendError('unsupported')
+            view._require()
+        else:
+            from .database_transactions import require_registered_query_lease
+            require_registered_query_lease(self.backend, view)
         self._require_identity(view)
 
     def _require_identity(self, view):
@@ -80,11 +86,6 @@ def read_snapshot(metadata, document_view):
     if type(document_view) is DocumentView:view=document_view._view
     elif type(document_view) is _View:view=document_view
     else:raise BackendError('unsupported')
-    if type(view) is not _View:
-        # No arbitrary subclass admission. require_live will obtain a fresh
-        # non-owning lease only through the existing execution owner check.
-        yield
-        return
     scope._require_owner()
     scope._require_snapshot(view)
     token=_POINT_READ.set((scope,view))
@@ -98,7 +99,10 @@ def bind(interpreter,metadata):
     backend=context.backend
     if type(backend) is not SQLiteCatalogBackend or backend.format_version!=16:return
     configuration=backend.accumulation_configuration
-    if type(configuration) is not InventoryEnumConfiguration or configuration.profile!=PROFILE:
+    if (type(configuration) not in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+            or (type(configuration), configuration.profile) not in ((InventoryEnumConfiguration, PROFILE),
+                (InventoryEnumApplicationConfiguration, FORMS_PROFILE),
+                (MainDemoConfiguration, MAIN_DEMO_PROFILE))):
         raise BackendError('unsupported')
     namespace=BSLEnumerations(configuration.enumerations)
     metadata._enumerations=namespace
@@ -128,3 +132,28 @@ def query_binding(catalogs):
     metadata=catalogs._metadata._root
     if type(metadata) is not BSLMetadata or metadata._enum_storage_scope is None:return None
     return binding(metadata)
+
+
+def query_owner(catalogs):
+    """No-I/O dispatch only; this never replaces a live binding check."""
+    from .catalogs import BSLCatalogs
+    from .metadata import BSLMetadata
+    if type(catalogs) is not BSLCatalogs:
+        return None
+    metadata = catalogs._metadata._root
+    if type(metadata) is not BSLMetadata or metadata._enum_storage_scope is None:
+        return None
+    scope = metadata._enum_storage_scope
+    if (type(scope) is not _EnumScope or type(scope.context) is not SQLiteDBContext
+            or type(scope.backend) is not SQLiteCatalogBackend
+            or type(scope.configuration) not in (InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+            or (type(scope.configuration), scope.configuration.profile) not in (
+                (InventoryEnumConfiguration, PROFILE),
+                (InventoryEnumApplicationConfiguration, FORMS_PROFILE),
+                (MainDemoConfiguration, MAIN_DEMO_PROFILE))
+            or scope.backend.format_version != 16):
+        raise BackendError('unsupported')
+    scope._require_owner()
+    if scope.metadata is not metadata:
+        raise BackendError('closed')
+    return scope

@@ -9,7 +9,8 @@ from decimal import Decimal
 from uuid import UUID
 
 from ..catalog_backend import (BackendError, Capabilities, CatalogCard, CatalogKey,
-                               CatalogSchema, CatalogSelection, FieldSchema, Revision)
+                               CatalogSchema, CatalogSelection, FieldSchema, Revision,
+                               CatalogScanRequest, CatalogOrder, CatalogValuePage, CatalogValueRow)
 from ..dates import BSLDate, TICKS_PER_SECOND
 from .protocol import CatalogRef, MAX_PAGE, UIError, bounded_text, encode_value, uuid_text
 
@@ -80,6 +81,30 @@ class CatalogView:
                           'description': encode_value(card.values[1]),
                           'deletionMark': encode_value(card.values[2])}
                          for card in self.cards[offset:offset + limit]]}
+
+
+MAX_SUMMARY_ROWS = 8192
+MAX_SUMMARY_BYTES = 4 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogSummaryView(CatalogView):
+    """Полный проверенный снимок; поиск не является backend-колляцией."""
+    def select(self, *, query='', order='code'):
+        if type(query) is not str or len(query) > 128 or '\x00' in query:
+            raise UIError('invalid_value')
+        try:
+            query.encode('utf-8')
+        except UnicodeError:
+            raise UIError('invalid_value') from None
+        if type(order) is not str or order not in ('code', 'description'):
+            raise UIError('invalid_value')
+        needle = query.casefold()
+        rows = (row for row in self.cards if needle in row.values[0].casefold()
+                or needle in row.values[1].casefold())
+        column = 0 if order == 'code' else 1
+        return CatalogView(self.catalog, tuple(sorted(rows, key=lambda row: (
+            row.values[column].casefold(), row.values[0].casefold(), row.reference.record))))
 
 
 class CatalogRepository:
@@ -156,14 +181,18 @@ class CatalogRepository:
         self._schemas = schemas
         return tuple(inventory)
 
-    def _fields(self, schema):
+    @staticmethod
+    def _summary_fields(schema):
         if (type(schema.fields) is not tuple or len(schema.fields) > 64 or
                 any(type(n) is not int or not 0 <= n <= 1024
                     for n in (schema.code_length, schema.description_length))):
             raise UIError('metadata_unavailable')
-        fields = [CatalogField('Code', 'string', (schema.code_length,)),
-                  CatalogField('Description', 'string', (schema.description_length,)),
-                  CatalogField('DeletionMark', 'boolean', ())]
+        return (CatalogField('Code', 'string', (schema.code_length,)),
+                CatalogField('Description', 'string', (schema.description_length,)),
+                CatalogField('DeletionMark', 'boolean', ()))
+
+    def _fields(self, schema):
+        fields = list(self._summary_fields(schema))
         names, identities = {'code', 'description', 'deletionmark', 'ref'}, set()
         catalog_ids = {item.identity for item in self._schemas}
         for field in schema.fields:
@@ -208,7 +237,9 @@ class CatalogRepository:
         encode_value(value)
         return value
 
-    def load(self, identity):
+    def load(self, identity, *, summary_only=False, record=None):
+        if record is not None and (type(record) is not UUID or not record.int): raise UIError("catalog_identity")
+        if type(summary_only) is not bool: raise TypeError("explicit summary projection required")
         uuid_text(identity, nonzero=True)
         info = next((item for item in self.inventory() if item.identity == identity), None)
         if info is None:
@@ -218,9 +249,10 @@ class CatalogRepository:
             if (type(schema) is not CatalogSchema or schema.identity != UUID(identity)
                     or schema not in self._schemas):
                 raise UIError('metadata_unavailable')
-            fields = self._fields(schema)
+            fields = self._summary_fields(schema) if summary_only else self._fields(schema)
             # The port refuses overflow rather than returning a misleading total.
-            rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000))
+            rows = self._view.select_catalog(schema.identity, CatalogSelection(limit=1000)) if record is None else tuple(
+                row for row in (self._view.read_catalog(CatalogKey(self._identity[0],schema.identity,record)),) if row is not None)
             if type(rows) is not tuple or len(rows) > 1000:
                 raise UIError('message_limit')
             cards, seen = [], set()
@@ -240,8 +272,8 @@ class CatalogRepository:
                     raise UIError('catalog_identity')
                 if type(row.code) is not str or type(row.description) is not str or type(row.deletion_mark) is not bool:
                     raise UIError('unsupported_value')
-                values = (row.code, row.description, row.deletion_mark) + tuple(
-                    self._value(value, field) for field, value in zip(schema.fields, row.values))
+                values = (row.code, row.description, row.deletion_mark) + (() if summary_only else tuple(
+                    self._value(value, field) for field, value in zip(schema.fields, row.values)))
                 for value in values:
                     encode_value(value)
                 cards.append(CatalogCardSnapshot(CatalogRef(identity, record), info.name, fields, values))
@@ -249,6 +281,74 @@ class CatalogRepository:
             return CatalogView(info, tuple(cards))
         except BackendError as error:
             raise UIError('catalog_not_found' if error.code == 'not_found' else 'catalog_unavailable') from None
+
+    def load_summary(self, identity):
+        """Отдельная короткая lease; ни partial snapshot, ни fallback на full cards."""
+        if self._closed:
+            raise UIError('catalog_unavailable')
+        uuid_text(identity, nonzero=True)
+        temporary = CatalogRepository(self._backend, own_backend=False)
+        try:
+            info = next((item for item in temporary.inventory() if item.identity == identity), None)
+            if info is None:
+                raise UIError('catalog_not_found')
+            view = temporary._view
+            scan = getattr(view, 'scan_catalog_values', None)
+            if not callable(scan):
+                raise UIError('catalog_unavailable')
+            schema = view.catalog_schema(UUID(identity))
+            if type(schema) is not CatalogSchema or schema.identity != UUID(identity) or schema not in temporary._schemas:
+                raise UIError('metadata_unavailable')
+            fields = temporary._summary_fields(schema)
+            cards, seen, cursors = [], set(), set()
+            size, cursor = 0, None
+            while True:
+                page = scan(schema.identity, CatalogScanRequest(
+                    order=(CatalogOrder('code'),), page_size=256, continuation=cursor),
+                    ('code', 'description', 'deletion_mark'))
+                if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 256:
+                    raise UIError('catalog_unavailable')
+                for row in page.rows:
+                    if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                            or type(row.key.database_id) is not UUID or type(row.key.catalog_id) is not UUID
+                            or row.key.database_id != temporary._identity[0] or row.key.catalog_id != schema.identity):
+                        raise UIError('catalog_identity')
+                    record = temporary._uuid(row.key.record_id)
+                    if record in seen or type(row.values) is not tuple or len(row.values) != 3:
+                        raise UIError('catalog_unavailable')
+                    code, description, deleted = row.values
+                    if type(code) is not str or type(description) is not str or type(deleted) is not bool:
+                        raise UIError('unsupported_value')
+                    for value, bound in ((code, schema.code_length), (description, schema.description_length)):
+                        if '\x00' in value or len(value.encode('utf-16-le')) // 2 > bound:
+                            raise UIError('unsupported_value')
+                        size += len(value.encode('utf-8'))
+                    size += 64
+                    if len(cards) >= MAX_SUMMARY_ROWS or size > MAX_SUMMARY_BYTES:
+                        raise UIError('message_limit')
+                    seen.add(record)
+                    cards.append(CatalogCardSnapshot(CatalogRef(identity, record), info.name, fields, row.values))
+                cursor = page.continuation
+                if cursor is None:
+                    break
+                if (type(cursor) is not str or len(cursor) != 32 or any(c not in '0123456789abcdef' for c in cursor)
+                        or cursor in cursors or not page.rows):
+                    raise UIError('catalog_unavailable')
+                cursors.add(cursor)
+            temporary.check_source()
+            if view.catalog_schema(schema.identity) != schema:
+                raise UIError('metadata_unavailable')
+            temporary._read()  # Recheck identity after the final metadata calls.
+            return CatalogSummaryView(info, tuple(cards))
+        except BackendError:
+            raise UIError('catalog_unavailable') from None
+        except UnicodeError:
+            raise UIError('unsupported_value') from None
+        finally:
+            try:
+                temporary.close()
+            except Exception:
+                raise UIError('catalog_unavailable') from None
 
     def capabilities(self):
         return {'mode': 'read-only', 'canWrite': False, 'canEdit': False,

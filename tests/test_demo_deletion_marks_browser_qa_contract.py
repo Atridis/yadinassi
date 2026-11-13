@@ -20,7 +20,7 @@ class DeletionMarksBrowserContractTests(unittest.TestCase):
             "'refusal_lost_unmark_draft'", "'discard_changed_marked_identity_or_revision'",
             "'deletion_mark_changed_identity'", "'reference_save_changed_other_revision'",
             "'viewport_overflow'", "'narrow_checkbox_missing'",
-            "'tests/fixtures/demo_cf/source'", "'source_bytes_changed'",
+            "'examples/demo'", "'source_bytes_changed'",
             "chromiumSandbox:true", "if(rpc>=200)", 'expectedScenarios:1',
             "assert.equal(results.length,1)", "allowedRequest(target,origin)",
         ):
@@ -29,7 +29,9 @@ class DeletionMarksBrowserContractTests(unittest.TestCase):
         self.assertEqual(source.count('await scenario('), 1)
         for forbidden in ('route.fulfill', 'addInitScript', 'ignoreDefaultArgs', 'args:', 'tracing.start', 'recordHar'):
             self.assertNotIn(forbidden, source)
-        self.assertIn('create_demo_products', fixture)
+        self.assertIn('create_main_demo', fixture)
+        self.assertIn('import_main_demo_configuration(files, profile=PROFILE)', fixture)
+        self.assertNotIn('create_demo_products', fixture)
         self.assertIn("'audit-deletion-marks': lambda root: audit_products(root, allow_marks=True)", fixture)
         self.assertIn("SQLiteCatalogBackend(root / 'owned.sqlite', read_only=True)", fixture)
         self.assertIn("'rowIdentity': str(row.identity)", fixture)

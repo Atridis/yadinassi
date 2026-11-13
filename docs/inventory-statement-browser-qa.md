@@ -1,6 +1,6 @@
 # Source-bound stock statement browser acceptance
 
-This separate reviewed-only acquisition covers four flows on the stored full-source
+This separate reviewed-only acquisition covers five flows on the stored full-source
 inventory application. It does not modify or replace the earlier stock browser
 acquisition. It is a bounded host/UI subset, not native 1C window parity and not
 restart recovery for an unknown commit.
@@ -21,10 +21,10 @@ editable form and does not raise that limit. Raw-draft lifecycle checks use the
 small existing Warehouse `W1` sibling instead.
 Raw core15 without the forms grant is separately confirmed unable to launch UI.
 
-The real host starts twice using only `python -m yadinassi --ui --f <owned database>`.
-No external configuration directory or grant flag is passed to either launch.
+The real host starts three times using only `python -m yadinassi --ui --f <owned database>`.
+No external configuration directory or grant flag is passed to any launch.
 
-## Four flows and fixed business RPC plan
+## Five flows and fixed business RPC plan
 
 1. **8 requests:** prepare all filters; Day first page, double-click Next (one RPC),
    Previous; Month first/next; None first/next. Each full result has 52 real rows,
@@ -32,8 +32,9 @@ No external configuration directory or grant flag is passed to either launch.
    Every scalar/resource and typed date is asserted, with total closing quantity
    1378 and amount 13780. Opening and expense are zero for this receipt-only period;
    receipt and closing equal each product's seeded quantity/amount.
-2. **21 requests:** Product chooser over 32 matches returns no partial rows;
-   exact `P001` selects its original saved card. Warehouse `W2` excludes all rows;
+2. **26 requests:** Product chooser pages all 52 matches as 32+20; previous,
+   search and refresh retain the selected query with fresh tickets;
+   exact `P001`, then free search, selects its original saved card. Warehouse `W2` excludes all rows;
    opening/canceling its chooser keeps that committed selection. Explicit empty
    differs from All for both dimensions. Exact absent code returns zero choices,
    not an arbitrary fallback. Browser projections expose only labels and local
@@ -55,7 +56,13 @@ No external configuration directory or grant flag is passed to either launch.
    Opening now equals closing; receipt and expense are zero. No unknown-commit or
    host-lost receipt recovery is inferred from this restart.
 
-Exactly **46 business RPCs** are required. Only ordinary application/form
+5. **10 requests:** new host/setup selects P001; an explicitly external typed
+   writer marks only P001 for deletion. Its historical selected filter still returns
+   the exact saved totals with an unavailable label, while a new chooser excludes
+   P001. Cancel preserves the committed filter. An independent typed audit verifies
+   the only change is P001 deletion mark/revision, not movements or documents.
+
+Exactly **61 business RPCs** are required. Only ordinary application/form
 hello/snapshot reads are excluded from that plan, not setup/page requests. The
 hard cap remains 180 total RPCs. No retry, skipped assertion or cap extension is
 used to accommodate a slow or failing stage.
@@ -82,13 +89,16 @@ creates a private-state fingerprint. Persistent keys are hashed in process, not
 published. Audits before browser work, after each flow and around restart must
 match exactly, including card/document revisions and all source/schema identities.
 Each audit also proves the database file bytes did not change during that audit;
-its file SHA256 is compared with the initial audit across all flows and restart.
+its file SHA256 is compared with the initial audit across the first four flows and restart. The fifth permits only the explicitly
+external typed P001 deletion mark/revision. A normalized fingerprint removes only
+those two fields; every other saved value and identity must match the original.
+Full post-mark audits must then remain identical.
 It does not execute `InventoryReports`, Query, BSL or a posting handler.
 
 Reports, choices and pages never write. The tests distinguish UI drafts from
 saved rows, display-only labels from capabilities, empty references from no
-filter, and detached pagination from a new read. They do not prove behavior under
-concurrent external writers, outcome uncertainty injection or native modal UI.
+filter, and detached pagination from a new read. They cover one explicit concurrent external deletion mark, not arbitrary external
+writes, outcome uncertainty injection or native modal UI.
 
 ## Execution and safety limits
 
@@ -105,14 +115,14 @@ pinned Playwright 1.64.1 lock/install route without modifying system security.
 - The sole attachment exception is an exact heartbeat HTTP 409 `busy` response.
 - Real audited response bytes are held in a bounded exact-request map, then delivered
   unchanged. There is no second CDP response-body lookup and no fake response/state.
-- Four PNGs, maximum 4 MiB each, and bounded redacted JSON result/manifest only.
+- Five PNGs, maximum 4 MiB each, and bounded redacted JSON result/manifest only.
 - Process UID/direct-parent/group/start identity verified before cleanup signals;
   cleanup failure makes the verdict fail. Temporary profile, database and host
   files remain owned by this run and are removed, never uploaded.
 
 `result.json` pins commit/tree and hashes the relevant runtime, frontend/assets,
 source fixture, helper, contracts and standalone route. `manifest.json` binds that
-result and the four PNG hashes. Files use exclusive creation, so stale evidence
+result and the five PNG hashes. Files use exclusive creation, so stale evidence
 cannot be silently overwritten. Diagnostics use closed phase/reason/class labels,
 not raw exceptions, paths, responses, credentials or identifiers. On wire failure,
 the first cause is retained before cleanup: closed request/fetch/status/body/json/
@@ -121,6 +131,6 @@ capped byte counts only. Concurrent attachment failure cannot overwrite it. No
 packet, body, headers, assertion actual/expected or exception string is exported.
 
 Screenshots: `statement-pages.png`, `statement-filters.png`,
-`statement-fences.png`, `statement-reopened.png`.
+`statement-fences.png`, `statement-reopened.png`, `statement-historical.png`.
 
-Fixture SHA256: `48092d41dc960d2b711443ad588b5e8b43fa94a8b8af93300fc708973dd6d8fa`
+Fixture SHA256: `8a0b1808ea656d769d85aa4e4b07ac20fe83dbc465e337f8cbb7cff50e84db87`

@@ -144,7 +144,7 @@ export function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
-    case 'FormCatalogRef':
+    case 'FormCatalogRef': case 'FormEnumRef':
       if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
           typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
           Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
@@ -204,7 +204,7 @@ export function validateSnapshot(state) {
         const shape = ['name', 'title', 'type', 'readOnly'];
         if (record(column) && Object.hasOwn(column, 'editor')) shape.push('editor');
         if (!keys(column, shape) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef', 'FormEnumRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         if (Object.hasOwn(column, 'editor')) validateEditor(column.editor, column.type);
         columns.add(column.name);
@@ -257,7 +257,7 @@ export function validateSnapshot(state) {
 }
 export function scalarText(value, editor) {
   validateScalar(value);
-  if (value.type === 'FormCatalogRef') return value.text;
+  if (['FormCatalogRef', 'FormEnumRef'].includes(value.type)) return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return editor?.kind === 'date' && dateFits(value, editor) ? dateText(value, editor) : value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -270,6 +270,7 @@ export function editable(item) {
 }
 export function inputHint(item) {
   const type = item.value.type, editor = item.editor;
+  if (type === 'FormEnumRef') return 'Enumeration · choose a declared value; no text editing';
   if (type === 'FormCatalogRef') return 'Catalog reference · choose an existing record; no text editing';
   if (type === 'Date') {
     if (!editor || !dateFits(item.value, editor)) return 'Exact date ticks · read-only · no timezone conversion';
@@ -310,7 +311,7 @@ export function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 export function scalarEqual(left, right) {
-  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+  if (['FormCatalogRef', 'FormEnumRef'].includes(left?.type) || ['FormCatalogRef', 'FormEnumRef'].includes(right?.type))
     return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
       left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);

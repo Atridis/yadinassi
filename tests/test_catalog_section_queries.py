@@ -62,8 +62,8 @@ S=Q.Execute().Select();While S.Next() Do Message(S.Text);Message(S.Amount);EndDo
         self.vm.execute('''Q=New Query("ВЫБРАТЬ L.Ссылка КАК Owner, L.Category ИЗ Справочник.Products.Lines КАК L ГДЕ L.Amount>10 И L.Amount<30");
 S=Q.Выполнить().Выбрать();S.Следующий();Message(S.Owner=O.Ref);
 Message(TypeOf(S.Owner)=Type("CatalogRef.Products"));Message(S.Category=C.Ref);
-Try Q.Execute().Unload();Except Message("reference-unload-refused");EndTry;''')
-        self.assertEqual(self.lines, ['Да', 'Да', 'Да', 'reference-unload-refused'])
+T=Q.Execute().Unload();Message(T[0].Owner=O.Ref);''')
+        self.assertEqual(self.lines, ['Да', 'Да', 'Да', 'Да'])
 
     def test_scalar_unload_detaches_rows_and_uses_section_qualifiers(self):
         self.seed()

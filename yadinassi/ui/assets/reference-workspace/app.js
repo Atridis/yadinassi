@@ -146,7 +146,7 @@ function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
-    case 'FormCatalogRef':
+    case 'FormCatalogRef': case 'FormEnumRef':
       if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
           typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
           Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
@@ -206,7 +206,7 @@ function validateSnapshot(state) {
         const shape = ['name', 'title', 'type', 'readOnly'];
         if (record(column) && Object.hasOwn(column, 'editor')) shape.push('editor');
         if (!keys(column, shape) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef', 'FormEnumRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         if (Object.hasOwn(column, 'editor')) validateEditor(column.editor, column.type);
         columns.add(column.name);
@@ -259,7 +259,7 @@ function validateSnapshot(state) {
 }
 function scalarText(value, editor) {
   validateScalar(value);
-  if (value.type === 'FormCatalogRef') return value.text;
+  if (['FormCatalogRef', 'FormEnumRef'].includes(value.type)) return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return editor?.kind === 'date' && dateFits(value, editor) ? dateText(value, editor) : value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -272,6 +272,7 @@ function editable(item) {
 }
 function inputHint(item) {
   const type = item.value.type, editor = item.editor;
+  if (type === 'FormEnumRef') return 'Enumeration · choose a declared value; no text editing';
   if (type === 'FormCatalogRef') return 'Catalog reference · choose an existing record; no text editing';
   if (type === 'Date') {
     if (!editor || !dateFits(item.value, editor)) return 'Exact date ticks · read-only · no timezone conversion';
@@ -312,7 +313,7 @@ function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 function scalarEqual(left, right) {
-  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+  if (['FormCatalogRef', 'FormEnumRef'].includes(left?.type) || ['FormCatalogRef', 'FormEnumRef'].includes(right?.type))
     return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
       left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
@@ -501,6 +502,15 @@ function validateStatus(value, issued, previous) {
   return value;
 }
 function readOnlyRPC(request) {
+  if (['demo.hello','demo.snapshot'].includes(request.method))
+    return objectKeys(request.params,['protocol']) && request.params.protocol === 'yadinassi-main-demo/1';
+  if (request.method === 'demo.dispatch') {
+    const params=request.params,nested=params?.request;
+    if (!objectKeys(params,['epoch','request']) || typeof params.epoch !== 'string' || !/^[0-9a-f]{32}$/.test(params.epoch) ||
+        !objectKeys(nested,['jsonrpc','id','method','params']) || nested.jsonrpc !== '2.0' || !Number.isSafeInteger(nested.id) || nested.id < 1) return false;
+    if (['editor.hello','editor.snapshot','application.hello','application.snapshot'].includes(nested.method)) return true;
+    return nested.method === 'application.form' && ['form.hello','form.snapshot'].includes(nested.params?.request?.method);
+  }
   if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
   return ['workspace.form', 'application.form'].includes(request.method) &&
     ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
@@ -623,11 +633,36 @@ class BrowserAttachment {
     return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
   }
   dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async inspectDemo(callback) {
+    if (typeof callback !== 'function' || this.demoInspection || this.busy || this.rpcActive || this.suspended || this.info?.closed || this.info?.role !== 'writer') throw new AttachmentRefusal('not_writer');
+    const pin={attachment:this.info.attachment,generation:this.info.generation};
+    const current=()=>this.info?.role==='writer'&&!this.info.closed&&!this.suspended&&this.info.attachment===pin.attachment&&this.info.generation===pin.generation;
+    this.demoInspection={current,snapshot:null,epoch:null};
+    try {
+      const result=await callback();
+      const observed=this.demoInspection.snapshot;
+      if (!current()) throw new AttachmentRefusal('not_writer');
+      if (objectKeys(result,['protocol','epoch','ready']) && result.protocol==='yadinassi-main-demo/1' && result.ready===true &&
+          observed?.kind==='main-demo' && observed.uncertain===false && observed.epoch===result.epoch &&
+          this.demoInspection.epoch===result.epoch && !this.rpcActive) {
+        this.businessUnknown=false;this.paused=false;this.message='';
+      }
+      return result;
+    } finally { this.demoInspection=null;this.changed(); }
+  }
   async exchange(request) {
-    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (this.demoInspection && (!this.demoInspection.current() || !['demo.hello','demo.snapshot','demo.dispatch'].includes(request.method) || !readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (!this.demoInspection && !this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
     this.rpcActive++;
     try {
       const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (this.demoInspection) {
+        if (!this.demoInspection.current()) throw new AttachmentRefusal('not_writer');
+        const state=result?.result?.state;
+        if (request.method==='demo.snapshot' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null) this.demoInspection.snapshot=state;
+        if (request.method==='demo.dispatch' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null && state?.epoch===request.params.epoch &&
+            objectKeys(result.result.payload,['jsonrpc','id','result']) && result.result.payload.jsonrpc==='2.0' && result.result.payload.id===request.params.request.id) this.demoInspection.epoch=state.epoch;
+      }
       if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
       return result;
     } catch (error) {
@@ -679,7 +714,7 @@ function createBrowserHost(environment, root) {
   }
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
-  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+  return {enabled: true, inspect:callback=>attachment.inspectDemo(callback), content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
     setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
     setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
@@ -864,13 +899,13 @@ function createFormView(document, root, handlers) {
   }
   function paintReference(actions, field, label, disabled) {
     if (!actions) return;
-    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(field?.value?.type); actions.group.hidden = !reference;
     const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
     actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
     actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
   }
   function makeControl(item) {
-    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -910,7 +945,7 @@ function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
     return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
@@ -967,7 +1002,7 @@ function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(column.type) ? referenceActions(cell, locator) : null;
     return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {
@@ -1259,7 +1294,7 @@ function mountForm(environment, root, options = {}) {
     const item = client.snapshot.items.find(item => item.name === action.control);
     const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
     if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
-        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+        !['FormCatalogRef', 'FormEnumRef'].includes(field.value.type)) throw new FormError('unavailable');
     return {value: field.value, controlId: item.controlId, tableId: item.tableId};
   }
   async function run(event, name, row) {
@@ -1338,6 +1373,12 @@ function mountForm(environment, root, options = {}) {
     try { return await (client.snapshot ? client.resync() : client.hello()); }
     finally { finish(); view.endOwnershipReconcile(); }
   }
+  async function recoverReadOnly() {
+    if(busy||!client||client.outcomeUnknown||client.snapshot?.uncertain)throw new FormError('transport');
+    busy=true;view.beginOwnershipReconcile();paint();
+    try { return await (client.snapshot?client.resync():client.hello()); }
+    finally { finish();view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -1378,7 +1419,7 @@ function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, recoverReadOnly, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

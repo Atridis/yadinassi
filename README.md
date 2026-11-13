@@ -56,8 +56,8 @@ BSL. Браузер автоматически не открывается бе�
 демо-базу и запустите редактор двумя командами:
 
 ```console
-python -m yadinassi --create-demo-db demo.sqlite --import-xml tests/fixtures/demo_cf/source
-python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
 Доступны **ВидыНоменклатуры**, **Склады** и **Номенклатура** с исходными
