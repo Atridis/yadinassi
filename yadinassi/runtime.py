@@ -1052,7 +1052,11 @@ class Interpreter:
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
-        from .source_constants_runtime import SourceConstants
+        from .source_constants_runtime import SourceConstants, SourceConstantSet
+        if type(value) is SourceConstantSet:
+            if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
+                return value.get_member(node.name)
+            return value.read_property(self, node.name)
         if type(value) is SourceConstants:
             return value.member(self, node.name)
         if type(value) is BSLSessionParameters:
@@ -1066,6 +1070,9 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_constants_runtime import SourceConstants
+        if type(value) is SourceConstants:
+            return value.member(self, (yield from self._visit(node.index)))
         from .source_metadata_properties import SourcePropertyDomain
         if type(value) is SourcePropertyDomain:
             return value.get_index((yield from self._visit(node.index)))
@@ -1272,11 +1279,11 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        from .source_constants_runtime import ConstantCall
+        from .source_constants_runtime import ConstantCall, ConstantSetCall
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
         from .source_transactions import SourceTransactionCall
-        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -2023,6 +2030,12 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_constants_runtime import SourceConstantSet
+            if type(value) is SourceConstantSet:
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError('constant set indexing unsupported')
+                value.write_property(self, node.target.name, (yield from self._visit(node.value)))
+                return
             if type(value) is BSLSessionParameters:
                 value._authorize(self)
                 name=node.target.name if isinstance(node.target,ast.Attribute) else (yield from self._visit(node.target.index))
@@ -2282,6 +2295,11 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = (yield from self._visit(node.collection))
+        from .source_constants_runtime import SourceConstants
+        if type(collection) is SourceConstants:
+            members = collection.members(self)
+            collection = BSLArray()
+            collection.items = list(members)
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections

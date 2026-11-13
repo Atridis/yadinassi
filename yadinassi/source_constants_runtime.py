@@ -24,8 +24,23 @@ class SourceConstants(BSLObject):
         require_external_access('source constants database')
         return app.constant_store
 
+    def get_member(self, name):
+        if name.casefold() in ('createset', 'создатьнабор'):
+            return HostFunction(name, ConstantSetCall(self, 'create'))
+        raise ValueError('constant manager property requires interpreter access')
+
+    def members(self, caller):
+        store = self._store(caller)
+        return tuple(SourceConstant(self, name) for name in store.names)
+
     def member(self, caller, name):
         store = self._store(caller)
+        if type(name) is not str:
+            raise TypeError('constant name requires String')
+        if name.casefold() in ('createset', 'создатьнабор'):
+            if store.has(name):
+                raise ValueError('constant name conflicts with CreateSet; unsupported')
+            return self.get_member(name)
         if not store.has(name):
             raise ValueError('unknown constant: ' + name)
         return SourceConstant(self, name)
@@ -59,3 +74,76 @@ class ConstantCall:
         if self.writing:
             return store.set(self.name, values[0])
         return store.get(self.name)
+
+
+class SourceConstantSet(BSLObject):
+    """Explicitly assigned scalar buffer, no guessed defaults or handler bypass."""
+    def __init__(self, owner, names):
+        self.owner, self.names, self.values = owner, tuple(names), {}
+        self.keys = {name.casefold(): name for name in self.names}
+
+    def get_member(self, name):
+        aliases = {'read': 'read', 'прочитать': 'read', 'write': 'write', 'записать': 'write'}
+        operation = aliases.get(name.casefold())
+        if operation is None:
+            raise ValueError('constant set property requires interpreter access')
+        return HostFunction(name, ConstantSetCall(self, operation), returns_value=False)
+
+    def read_property(self, caller, name):
+        self.owner._store(caller)
+        key = name.casefold()
+        if key not in self.keys:
+            raise ValueError('constant is not selected: ' + name)
+        if key not in self.values:
+            raise ValueError('uninitialized constant set field: ' + name)
+        return self.values[key]
+
+    def write_property(self, caller, name, value):
+        store = self.owner._store(caller)
+        key = name.casefold()
+        if key not in self.keys:
+            raise ValueError('constant is not selected: ' + name)
+        from .source_constant_store import _encode
+        _encode(value, store._definition(self.keys[key]))
+        self.values[key] = value
+
+
+class ConstantSetCall:
+    def __init__(self, receiver, operation):
+        self.receiver, self.operation = receiver, operation
+
+    def __call__(self, *args):
+        raise ValueError('constant set methods require an interpreter invocation')
+
+    def invoke(self, caller, values):
+        receiver = self.receiver
+        owner = receiver if type(receiver) is SourceConstants else receiver.owner
+        store = owner._store(caller)
+        if self.operation == 'create':
+            if any(name.casefold() in ('createset', 'создатьнабор') for name in store.names):
+                raise ValueError('constant name conflicts with CreateSet; unsupported')
+            if len(values) > 1 or (values and type(values[0]) is not str):
+                raise TypeError('CreateSet expects an optional explicit String list')
+            if values:
+                if len(values[0]) > 132096:
+                    raise ValueError('constant set name list bound')
+                names = tuple(item.strip() for item in values[0].split(','))
+            else:
+                names = store.names
+            if not names or len(names) > 1024 or len({name.casefold() for name in names}) != len(names):
+                raise ValueError('empty or duplicate constant selection unsupported')
+            reserved = {'read', 'прочитать', 'write', 'записать'}
+            for name in names:
+                store._definition(name)
+                if name.casefold() in reserved:
+                    raise ValueError('constant set method/name conflict unsupported')
+            return SourceConstantSet(owner, names)
+        if values:
+            raise TypeError('constant set Read/Write take no arguments')
+        if self.operation == 'read':
+            replacement = store.get_many(receiver.names)
+            receiver.values = replacement
+            return
+        if len(receiver.values) != len(receiver.keys):
+            raise ValueError('all selected constant fields must be assigned or read before Write')
+        store.set_many({name: receiver.values[name.casefold()] for name in receiver.names})

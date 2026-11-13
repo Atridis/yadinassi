@@ -414,6 +414,45 @@ class SourceConstantStore:
                 raise ValueError('source constants storage failure') from None
             raise
 
+    def get_many(self, names):
+        """One read snapshot; callers publish the result only on complete success."""
+        owned = not self.transaction_active
+        try:
+            if owned:
+                self._connection.execute('BEGIN')
+            result = {}
+            for name in names:
+                definition = self._definition(name)
+                row = self._connection.execute('SELECT value_json FROM constant_value WHERE identity=?', (str(definition.identity),)).fetchone()
+                if row is None:
+                    raise ValueError('uninitialized constant: ' + definition.name)
+                result[name.casefold()] = _decode(row[0], definition)
+            return result
+        except BaseException as error:
+            if self.transaction_active:
+                self.rollback_transaction()
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source constants storage failure') from None
+            raise
+        finally:
+            if owned and self._connection.in_transaction:
+                self._connection.execute('ROLLBACK')
+
+    def set_many(self, values):
+        """Atomic batch; never commit an enclosing explicit transaction."""
+        owned = not self.transaction_active
+        try:
+            if owned:
+                self.begin_transaction()
+            for name, value in values.items():
+                self.set(name, value)
+            if owned:
+                self.commit_transaction()
+        except BaseException:
+            if self.transaction_active:
+                self.rollback_transaction()
+            raise
+
     def close(self):
         if not self._closed:
             self._closed = True
