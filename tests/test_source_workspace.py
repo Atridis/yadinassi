@@ -27,7 +27,7 @@ class SourceWorkspaceTests(unittest.TestCase):
     def test_repeated_open_keeps_current_form(self):
         w=self.workspace();w.exchange(request('open',name='CommonForm.Main'));first=w.form
         state=w.exchange(request('open',name='CommonForm.Main'))['result']['state']
-        self.assertIs(w.form,first);self.assertEqual(state['generation'],1);self.assertIsNotNone(state['error'])
+        self.assertIs(w.form,first);self.assertEqual(state['generation'],1);self.assertIsNone(state['error'])
 
     def test_stale_generation_refused(self):
         w=self.workspace();w.exchange(request('open',name='CommonForm.Main'))
@@ -90,3 +90,61 @@ class SourceWorkspaceTests(unittest.TestCase):
         self.assertEqual(w.exchange(request('search',query='none'))['result']['state']['forms'],[])
         self.assertEqual(w.exchange(request('search',query='MAIN'))['result']['state']['forms'],['CommonForm.Main'])
         self.assertIsNone(w.form)
+
+    def many_forms(self, count=2):
+        mapping=files()
+        for i in range(1,count):
+            name='Other'+str(i)
+            mapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',('<CommonForm>'+name+'</CommonForm></ChildObjects>').encode())
+            mapping['CommonForms/'+name+'.xml']=xml('CommonForm',name,properties='<FormType>Managed</FormType>')
+            mapping['CommonForms/'+name+'/Ext/Form.xml']=FORM
+            mapping['CommonForms/'+name+'/Ext/Form/Module.bsl']=mapping['CommonForms/Main/Ext/Form/Module.bsl']
+        return mapping
+
+    def test_two_forms_preserve_independent_state_when_switching(self):
+        w=self.workspace(self.many_forms());w.exchange(request('open',name='CommonForm.Main'));first=w.form
+        first.exchange(form_request());first.exchange(form_request('event',event='command',revision=first.client.session.revision,control='GoButton'))
+        w.exchange(request('open',name='CommonForm.Other1'));second=w.form;second.exchange(form_request())
+        self.assertEqual(dict(second.client.session.snapshot().attributes)['Greeting'],'Demo')
+        w.exchange(request('select',generation=1));self.assertIs(w.form,first)
+        self.assertEqual(dict(first.client.session.snapshot().attributes)['Greeting'],'updated')
+        self.assertEqual(len(w.snapshot()['state']['open_forms']),2)
+
+    def test_hidden_form_events_are_not_retargeted(self):
+        w=self.workspace(self.many_forms());w.exchange(request('open',name='CommonForm.Main'));w.exchange(request('open',name='CommonForm.Other1'))
+        with self.assertRaisesRegex(ValueError,'stale'):w.exchange(request('form',generation=1,request=form_request()))
+        w.exchange(request('select',generation=1));self.assertIsNotNone(w.exchange(request('form',generation=1,request=form_request())))
+
+    def test_search_while_form_open_preserves_form(self):
+        w=self.workspace();w.exchange(request('open',name='CommonForm.Main'));first=w.form
+        state=w.exchange(request('search',query='missing'))['result']['state']
+        self.assertEqual(state['forms'],[]);self.assertIs(w.form,first);self.assertTrue(state['active'])
+
+    def test_close_selected_does_not_allow_closing_other_live_form(self):
+        w=self.workspace(self.many_forms());w.exchange(request('open',name='CommonForm.Main'));w.exchange(request('open',name='CommonForm.Other1'))
+        w.form.exchange(form_request());w.form.exchange(form_request('event',event='close',revision=w.form.client.session.revision))
+        state=w.exchange(request('close'))['result']['state'];self.assertEqual(state['kind'],'workspace');self.assertTrue(state['any_active'])
+
+    def test_open_limit_does_not_discard_any_live_form(self):
+        w=self.workspace(self.many_forms(9))
+        for name in w.forms[:8]:w.exchange(request('open',name=name))
+        before=dict(w.open_forms);state=w.exchange(request('open',name=w.forms[8]))['result']['state']
+        self.assertIn('предел',state['error']);self.assertEqual(w.open_forms,before)
+
+    def test_closed_slot_pruned_and_never_reuses_identity(self):
+        w=self.workspace(self.many_forms());w.exchange(request('open',name='CommonForm.Main'))
+        w.form.exchange(form_request());w.form.exchange(form_request('event',event='close',revision=w.form.client.session.revision))
+        w.exchange(request('open',name='CommonForm.Other1'))
+        self.assertEqual(list(w.open_forms),[2])
+        with self.assertRaisesRegex(ValueError,'unknown'):w.exchange(request('select',generation=1))
+
+    def test_unknown_selection_and_boolean_identity_refused(self):
+        w=self.workspace();w.exchange(request('open',name='CommonForm.Main'))
+        for key in (True,0,2,'1'):
+            with self.assertRaisesRegex(ValueError,'unknown'):w.exchange(request('select',generation=key))
+
+    def test_failed_second_open_preserves_first_form(self):
+        mapping=self.many_forms();mapping['CommonForms/Other1/Ext/Form.xml']=b'<Broken/>'
+        w=self.workspace(mapping);w.exchange(request('open',name='CommonForm.Main'));first=w.form
+        state=w.exchange(request('open',name='CommonForm.Other1'))['result']['state']
+        self.assertIsNotNone(state['error']);self.assertIs(w.form,first);self.assertEqual(len(w.open_forms),1)

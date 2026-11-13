@@ -2,13 +2,13 @@
   "schema": "yadinassi-source-workspace-assets/0",
   "sources": {
     "build.mjs": "45baf447995a11c658b3f473df4bb0a6be728ad3bf37522cdf79b8a62d513667",
-    "src/app.js": "42e707ad0008209de223bca0baefd9852b842739f0a598f73ab8393cbe19af9d",
+    "src/app.js": "2bc4105ceed308968260a643f214d8b1c95a80d710e21272ff3c4b8a78ba77f6",
     "src/index.html": "d14a25bfb9ccb7f8cbd09f9c7d2510f10aa855311b009f723ba1a9f4227371d8",
     "../../yadinassi/ui/assets/form/app.js": "fb2bc6a120a863a131109e369836889f0d6f6a90b3094bd394f5e1ca304569ce",
     "../../yadinassi/ui/assets/form/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5"
   },
   "outputs": {
-    "app.js": "3ccb2108aca416474bd5de98b4ee0f02065c6c6aae73f0d80fdb6e5f5a86bb07",
+    "app.js": "783bf5aa6e91fa84e622b45b9eb319cf392750864077f6de53f975b91cb8f7e6",
     "style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "index.html": "d14a25bfb9ccb7f8cbd09f9c7d2510f10aa855311b009f723ba1a9f4227371d8",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

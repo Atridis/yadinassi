@@ -7,6 +7,7 @@ from ..source_forms import SourceFormController
 from .local_app import _Handler
 
 PROTOCOL = 'yadinassi-source-workspace/1'
+MAX_OPEN_FORMS = 8
 
 
 class SourceWorkspace:
@@ -19,6 +20,8 @@ class SourceWorkspace:
         self.closed = False
         self.form = None
         self.generation = 0
+        self.next_generation = 0
+        self.open_forms = {}
         self.selected = None
         self.error = None
         self.query = ''
@@ -31,8 +34,19 @@ class SourceWorkspace:
         self.forms = tuple(sorted(full_name(entry) for entry in inventory.values()
                                   if entry.family in ('Form', 'CommonForm')))
 
+    @staticmethod
+    def _live(form):
+        return not form.client.session.closed or form.client.session.uncertain
+
     def _active(self):
-        return self.form is not None and (not self.form.client.session.closed or self.form.client.session.uncertain)
+        return self.form is not None and self._live(self.form)
+
+    def _any_active(self):
+        return any(self._live(form) for _, form in self.open_forms.values())
+
+    def _select(self, generation):
+        self.generation = generation
+        self.selected, self.form = self.open_forms[generation]
 
     def visible_forms(self):
         matches = [name for name in self.forms if self.query.casefold() in name.casefold()]
@@ -51,6 +65,9 @@ class SourceWorkspace:
                 'omitted_forms': omitted, 'query': self.query, 'selected': self.selected,
                 'generation': self.generation, 'active': self._active(), 'error': self.error,
                 'form_diagnostics': list(self.form.diagnostics) if self.form else [],
+                'open_forms': [{'generation': generation, 'name': name, 'active': self._live(form)}
+                               for generation, (name, form) in self.open_forms.items()],
+                'form_limit': MAX_OPEN_FORMS, 'any_active': self._any_active(),
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -73,23 +90,31 @@ class SourceWorkspace:
         if method == 'workspace.open':
             if set(params) != {'name'} or type(params['name']) is not str or params['name'] not in self.visible_forms()[0]:
                 raise ValueError('declared workspace form required')
-            if self._active():
-                self.error = 'Сначала закройте открытую форму. Несохранённые изменения не будут отброшены.'
+            existing = next((generation for generation, (name, form) in self.open_forms.items()
+                             if name == params['name'] and self._live(form)), None)
+            if existing is not None:
+                self._select(existing)
+            elif sum(self._live(form) for _, form in self.open_forms.values()) >= MAX_OPEN_FORMS:
+                self.error = 'Достигнут предел открытых форм: 8. Закройте одну из форм.'
             else:
                 try:
                     form = SourceFormController(self.application, params['name'], progressive=True)
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
                 else:
-                    self.form, self.selected = form, params['name']
-                    self.generation += 1
+                    self.open_forms = {key: value for key, value in self.open_forms.items() if self._live(value[1])}
+                    self.next_generation += 1
+                    self.open_forms[self.next_generation] = (params['name'], form)
+                    self._select(self.next_generation)
+        elif method == 'workspace.select':
+            if (set(params) != {'generation'} or type(params['generation']) is not int
+                    or params['generation'] not in self.open_forms):
+                raise ValueError('unknown workspace form')
+            self._select(params['generation'])
         elif method == 'workspace.search':
             if set(params) != {'query'} or type(params['query']) is not str or len(params['query']) > 128:
                 raise ValueError('invalid form search')
-            if self._active():
-                self.error = 'Сначала закройте открытую форму.'
-            else:
-                self.query = params['query']
+            self.query = params['query']
         elif method == 'workspace.form':
             if (set(params) != {'generation','request'} or type(params['generation']) is not int
                     or params['generation'] != self.generation or self.form is None):
@@ -99,8 +124,8 @@ class SourceWorkspace:
         elif method in ('workspace.close','workspace.snapshot'):
             if params: raise ValueError('invalid workspace parameters')
             if method == 'workspace.close':
-                if self._active():
-                    self.error = 'Сначала закройте открытую форму.'
+                if self._any_active():
+                    self.error = 'Сначала закройте все открытые формы.'
                 else:
                     self._close()
         else:
@@ -118,4 +143,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.open','workspace.search','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.open','workspace.search','workspace.select','workspace.form','workspace.close')
