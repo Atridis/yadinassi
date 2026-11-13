@@ -14,6 +14,8 @@ class SourceDocumentDefinition:
     name: str
     fields: tuple
     sections: tuple = ()
+    object_module: str | None = None
+    write_blockers: tuple = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +33,8 @@ def document_definition_record(definition):
         record.append(['sections', [[str(section.identity), section.name,
             [[str(f.identity),f.name,f.kind,f.qualifiers,f.type_dependencies] for f in section.fields]]
             for section in definition.sections]])
+    if definition.object_module is not None:
+        record.append(['object_module',definition.object_module,list(definition.write_blockers)])
     return record
 
 
@@ -95,8 +99,10 @@ def source_document_definitions(source, enum_namespace=None, reference_scope=Non
                 raise ValueError('document requires explicit String Number')
             number_length = _int(props,'NumberLength',1,9)
             prefix = entry.path[:-4]+'/'
-            if any(path.startswith(prefix) and path.lower().endswith('/objectmodule.bsl') and raw.strip() for path,raw in files.items()):
-                raise ValueError('document ObjectModule unsupported')
+            module_path=prefix+'Ext/ObjectModule.bsl'
+            module_files=[path for path,raw in files.items() if path.startswith(prefix) and path.lower().endswith('/objectmodule.bsl') and raw.strip()]
+            if any(path!=module_path for path in module_files):raise ValueError('document module path unsupported')
+            module_path=module_path if module_files else None
             if any(n.tag not in ('{'+MD+'}Properties','{'+MD+'}ChildObjects') for n in obj):
                 raise ValueError('unsupported document object component')
             children = obj.findall('{'+MD+'}ChildObjects')
@@ -146,7 +152,58 @@ def source_document_definitions(source, enum_namespace=None, reference_scope=Non
                     sections.append(SourceDocumentSectionDefinition(sid,sn,tuple(section_fields)))
                     if len(sections)>16:raise ValueError('section count bound')
                 else:raise ValueError('document tabular sections/child kind unsupported')
-            definitions[name.casefold()] = SourceDocumentDefinition(entry.identity,name,tuple(fields),tuple(sections))
+            blockers=()
+            if module_path is not None:
+                _,blockers=document_module_program(files[module_path],module_path,fields,sections)
+            definitions[name.casefold()] = SourceDocumentDefinition(entry.identity,name,tuple(fields),tuple(sections),module_path,blockers)
         except (ValueError,KeyError,AttributeError,BSLError) as error:
             unsupported[entry.name.casefold()] = str(error)
     return definitions, unsupported
+
+
+# Event declarations are checked before any initializer runs. Only OnWrite is
+# executable in this source profile; all other known events block Write.
+_EVENT_SPECS=(
+    (('onwrite','призаписи'),1,True),
+    (('beforewrite','передзаписью'),3,True),
+    (('posting','обработкапроведения'),2,True),
+    (('undoposting','обработкаудаленияпроведения'),1,True),
+    (('fillcheckprocessing','обработкапроверкизаполнения'),2,True),
+    (('onread','причтении'),0,False),
+    (('beforedelete','передудалением'),1,True),
+    (('oncopy','прикопировании'),1,False),
+    (('fillingprocessing','обработказаполнения'),2,False),
+)
+_OTHER_EVENTS={'choiceprocessing','обработкавыбора','presentationgetprocessing','обработкаполученияпредставления'}
+
+def document_module_program(raw,path,fields,sections=()):
+    from .configuration_modules import compile_module
+    from .syntax import ast
+    program=compile_module(raw,path,'server',common=False)
+    reserved=_RESERVED|{f.name.casefold() for f in fields}|{s.name.casefold() for s in sections}|{'__document_cancel'}
+    routines=[n for n in program if type(n) is ast.Routine]
+    for node in program:
+        if type(node) is ast.Var and any(n.casefold() in reserved for n in node.names):raise ValueError('document module reserved field conflict')
+        if type(node) is ast.Routine and (node.is_async or node.name.casefold() in reserved or any(p.name.casefold() in reserved for p in node.parameters)):
+            raise ValueError('document module reserved/async routine unsupported')
+    # Field-first object lookup must not silently discard a local declaration.
+    pending=list(program)
+    while pending:
+        node=pending.pop()
+        if isinstance(node,ast.Node):
+            if type(node) is ast.Var and any(name.casefold() in reserved for name in node.names):
+                raise ValueError('document module reserved local field conflict')
+            pending.extend(value for key,value in vars(node).items() if key!='token')
+        elif isinstance(node,(list,tuple)):
+            pending.extend(node)
+    blockers=[]
+    for aliases,arity,cancel in _EVENT_SPECS:
+        matches=[r for r in routines if r.name.casefold() in aliases]
+        if len(matches)>1:raise ValueError('ambiguous document event')
+        if matches:
+            routine=matches[0]
+            if routine.is_function or len(routine.parameters)!=arity or any(p.default is not None for p in routine.parameters) or (cancel and routine.parameters[0].by_value):
+                raise ValueError('unsupported document event signature')
+            if aliases[0]!='onwrite':blockers.append(aliases[0])
+    blockers.extend(sorted({r.name.casefold() for r in routines}&_OTHER_EVENTS))
+    return program,tuple(sorted(blockers))

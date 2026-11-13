@@ -56,7 +56,8 @@ class SourceCatalogStore(SourceConstantStore):
 
     def begin_transaction(self):
         from .source_catalog_runtime import _active_write, _constructing
-        if (_active_write.get() or _constructing.get()) and not self.transaction_active:
+        from .source_document_runtime import _active_write as document_write, _constructing as document_construction
+        if (_active_write.get() or _constructing.get() or document_write.get() or document_construction.get()) and not self.transaction_active:
             raise ValueError('catalog lifecycle transaction aborted; cannot restart')
         return super().begin_transaction()
 

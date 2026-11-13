@@ -36,7 +36,7 @@ class SourceDocumentRecordTests(unittest.TestCase):
     def test_auto_refused(self):
         defs,errors=source_document_definitions(package(props=BASE.replace('<Autonumbering>false','<Autonumbering>true')));self.assertFalse(defs)
     def test_module_refused(self):
-        defs,errors=source_document_definitions(package(extra={'Documents/Invoice/Ext/ObjectModule.bsl':b'Message("bad");'}));self.assertFalse(defs)
+        defs,errors=source_document_definitions(package(extra={'Documents/Invoice/Ext/ObjectModule.bsl':b'broken ???'}));self.assertFalse(defs)
     def test_tabular_refused(self):
         defs,errors=source_document_definitions(package(children='<TabularSection/>'));self.assertFalse(defs)
     def test_write_reopen(self):

@@ -30,7 +30,8 @@ def store_for(manager, caller):
         raise ValueError('source Catalog records require explicit v4 scratch capability')
     app.constant_store.catalog(manager.name)
     from .source_constant_managers import _active_write as constant_write, _constructing as constant_construction
-    if (_constructing.get() or constant_write.get() or constant_construction.get()) and not app.constant_store.transaction_active:
+    from .source_document_runtime import _active_write as document_write, _constructing as document_construction
+    if (_constructing.get() or _active_write.get() or constant_write.get() or constant_construction.get() or document_write.get() or document_construction.get()) and not app.constant_store.transaction_active:
         raise ValueError("source lifecycle transaction aborted; catalog access refused")
     return app,app.constant_store
 

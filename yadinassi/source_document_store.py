@@ -5,6 +5,8 @@ from uuid import UUID
 from .source_catalog_store import SourceCatalogStore, _MAX_RECORDS, _MAX_RECORD_BYTES
 from .source_constant_store import _json, _encode, _decode, _MAX_DATABASE_BYTES
 
+_HANDLED_DOCUMENT_WRITE = object()
+
 _DOCUMENT_DDL = (
  'CREATE TABLE source_document_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)',
  'CREATE TABLE source_document_record(document_identity TEXT NOT NULL REFERENCES source_document_schema(identity), record_identity TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(length(payload)<=65536), number TEXT NOT NULL, PRIMARY KEY(document_identity,record_identity), UNIQUE(document_identity,number))',
@@ -132,10 +134,13 @@ class SourceDocumentStore(SourceCatalogStore):
         except BaseException:
             self._abort();raise
 
-    def write_document(self, name, identity, revision, values):
+    def write_document(self, name, identity, revision, values, *, _handled=None):
         definition=self.document(name)
         owned=not self.transaction_active
         try:
+            if definition.write_blockers:raise ValueError('source document Write unsupported events: '+','.join(definition.write_blockers))
+            if definition.object_module is not None and _handled is not _HANDLED_DOCUMENT_WRITE:
+                raise ValueError('direct document ObjectModule write requires handler execution')
             raw=encode_record(definition,values)
             if type(identity) is not UUID or identity.int==0 or type(revision) is not int or not 0<=revision<2**53:
                 raise ValueError('source document write identity/revision')
