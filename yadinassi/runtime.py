@@ -1066,6 +1066,10 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            value.authorize(self)
+            return value.member(self, (yield from self._visit(node.index)))
         from .source_metadata_properties import SourcePropertyDomain
         if type(value) is SourcePropertyDomain:
             return value.get_index((yield from self._visit(node.index)))

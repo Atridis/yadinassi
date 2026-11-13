@@ -98,10 +98,6 @@ class _SourceInterpreter(Interpreter):
         if key in MANAGER_NAMES:
             self.application.require_open()
             return SourceManagers(self.application, MANAGER_NAMES[key])
-        # Source metadata does not grant operational storage managers.
-        if key in {'informationregisters',
-                   'регистрысведений', 'accumulationregisters', 'регистрынакопления'}:
-            raise ValueError('Источник загружен, но сервис конфигурации пока не активирован: ' + node.name)
         if key in ('configurationextensions', 'расширенияконфигурации'):
             self.application.require_open()
             return self.application.extensions
@@ -288,8 +284,8 @@ class SourceApplication:
         receiver = self.module(candidates[0], caller, global_call=True)
         return receiver.routine(name), receiver.interpreter
 
-    def manager_module(self, family, name, caller):
-        """Execute declared manager code, never synthesize storage operations."""
+    def require_manager_context(self, caller):
+        """Source exports do not grant storage or client-side manager access."""
         self.require_open()
         caller._require_family()
         if (caller._family_owner is not self.interpreter
@@ -297,6 +293,10 @@ class SourceApplication:
                 or caller.execution_context != 'server'
                 or caller._scheduler._active_task is not None):
             raise ValueError('source manager modules require owning synchronous server context')
+
+    def manager_module(self, family, name, caller):
+        """Execute declared manager code, never synthesize storage operations."""
+        self.require_manager_context(caller)
         definition = next((item for item in self.source.metadata
                            if item.family == family and item.name.casefold() == name.casefold()), None)
         if definition is None:
