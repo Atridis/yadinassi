@@ -1049,6 +1049,9 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_catalog_runtime import is_source_reference, reference_member
+        if is_source_reference(value):
+            return reference_member(self,value,node.name)
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
@@ -1917,6 +1920,10 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_catalog_runtime import is_source_reference, reference_member, readonly_reference
+            if is_source_reference(owner):
+                captured=reference_member(self,owner,node.name)
+                return _Reference(lambda:captured, lambda value:readonly_reference(self,owner,node.name,value))
             from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
             if type(owner) in (SourceCatalogObject, SourceCatalogSelection):
                 owner.property_read(self, node.name)
@@ -2083,6 +2090,9 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_catalog_runtime import is_source_reference, readonly_reference
+            if is_source_reference(value):
+                raise ValueError('source reference fields are readonly; use GetObject().Write()')
             from .source_catalog_runtime import SourceCatalogObject
             if type(value) is SourceCatalogObject:
                 if not isinstance(node.target, ast.Attribute):

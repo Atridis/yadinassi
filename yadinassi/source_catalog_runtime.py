@@ -12,7 +12,9 @@ from .source_constant_store import _encode
 
 _ALIASES={'код':'code','наименование':'description','пометкаудаления':'deletionmark','ссылка':'ref'}
 _OBJECT_METHODS={'read':'read','прочитать':'read','write':'write','записать':'write','isnew':'new','этоновый':'new','metadata':'metadata','метаданные':'metadata'}
-_MANAGER_METHODS={'createitem':'create','создатьэлемент':'create','select':'select','выбрать':'select'}
+_MANAGER_METHODS={'createitem':'create','создатьэлемент':'create','select':'select','выбрать':'select',
+    'findbycode':'findcode','найтипокоду':'findcode','findbydescription':'finddescription',
+    'найтипонаименованию':'finddescription','findbyattribute':'findattribute','найтипореквизиту':'findattribute'}
 
 
 def store_for(manager, caller):
@@ -127,8 +129,10 @@ class SourceCatalogCall:
         receiver=self.receiver
         manager=receiver if type(receiver) is SourceReferenceManager else receiver.manager
         app,store=store_for(manager,caller)
-        if values:raise TypeError('source catalog method supports no arguments in this profile')
         definition=store.catalog(manager.name)
+        if self.operation in ('findcode','finddescription','findattribute'):
+            return find_reference(caller,manager,definition,self.operation,values)
+        if values:raise TypeError('source catalog method supports no arguments in this profile')
         if self.operation=='create':return (yield from create_object(caller,manager,definition))
         if self.operation=='select':return SourceCatalogSelection(manager,store.read_records(manager.name))
         if self.operation=='getobject':
@@ -154,15 +158,84 @@ class SourceCatalogCall:
         raise ValueError('unsupported source catalog operation')
 
 
-def reference_call(caller, receiver, name):
+_NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','уникальныйидентификатор','metadata','метаданные'}
+
+
+def is_source_reference(value):
     from .catalog_types import BSLCatalogReference
+    from .configuration_source_metadata import SourceMetadataObject
+    from .source_references import _SourceReferenceSnapshot
+    return (type(value) is BSLCatalogReference and
+            (type(value.value_type.snapshot) is _SourceReferenceSnapshot or type(value.metadata) is SourceMetadataObject))
+
+
+def _reference_manager(caller,receiver):
     app=getattr(caller,'application',None)
-    if type(receiver) is not BSLCatalogReference or app is None or receiver.value_type.snapshot is not app.references.snapshot:
-        return None
+    if app is None:
+        raise ValueError('source reference requires owning application context')
+    app.require_open()
+    entry,canonical,metadata=app.references.definition('Catalog',receiver.value_type.name)
+    if (receiver.value_type is not canonical or receiver.metadata is not metadata
+            or receiver.value_type.snapshot is not app.references.snapshot
+            or type(receiver.reference_uuid) is not UUID
+            or receiver.read_member is not None or receiver.get_object is not None):
+        raise TypeError('source reference requires canonical owned identity without callbacks')
+    manager=SourceReferenceManager(app,'Catalog',entry.name)
+    manager.authorize(caller)
+    return manager
+
+
+def reference_member(caller,receiver,name):
+    if name.casefold() in _NEUTRAL_REF_MEMBERS:
+        return receiver.get_member(name)
+    if name.casefold() in ('getobject','получитьобъект'):
+        return reference_call(caller,receiver,name)
+    manager=_reference_manager(caller,receiver)
+    _,store=store_for(manager,caller)
+    definition=store.catalog(manager.name)
+    key=_ALIASES.get(name.casefold(),name.casefold())
+    if key not in {f.name.casefold() for f in definition.fields}:
+        raise ValueError('unknown source reference field: '+name)
+    return store.read_records(manager.name,receiver.reference_uuid)[0][2][key]
+
+
+def readonly_reference(caller,receiver,name,value):
+    _reference_manager(caller,receiver)
+    raise ValueError('source reference fields are readonly; use GetObject().Write()')
+
+
+def reference_call(caller,receiver,name):
+    if not is_source_reference(receiver):return None
+    if name.casefold() in _NEUTRAL_REF_MEMBERS:
+        return receiver.get_method(name)
+    manager=_reference_manager(caller,receiver)
     if name.casefold() not in ('getobject','получитьобъект'):
-        return None
-    manager=SourceReferenceManager(app,'Catalog',receiver.value_type.name)
+        raise ValueError('unsupported source reference method: '+name)
     return HostFunction(name,SourceCatalogCall(manager,'getobject',receiver.reference_uuid))
+
+
+def find_reference(caller,manager,definition,operation,arguments):
+    app,store=store_for(manager,caller)
+    if operation=='findcode':
+        if len(arguments)!=1:raise TypeError('FindByCode requires one explicit String code')
+        key,value='code',arguments[0]
+    elif operation=='finddescription':
+        if len(arguments)!=2 or arguments[1] is not True:
+            raise ValueError('FindByDescription requires explicit exact-match True; partial matching unsupported')
+        key,value='description',arguments[0]
+    else:
+        if len(arguments)!=2 or type(arguments[0]) is not str or not 1<=len(arguments[0])<=128:
+            raise TypeError('FindByAttribute requires a bounded field name and explicit typed value')
+        key=_ALIASES.get(arguments[0].casefold(),arguments[0].casefold());value=arguments[1]
+    fields={f.name.casefold():f for f in definition.fields}
+    if key not in fields:raise ValueError('unknown source catalog lookup field')
+    field=fields[key]
+    _encode(value,field)
+    if field.kind=='object_ref':_reference_manager(caller,value)
+    matches=[identity for identity,_,values in store.read_records(manager.name) if values[key]==value]
+    if len(matches)>1:
+        raise ValueError('ambiguous source catalog lookup; multiple exact matches')
+    return app.references.ref('Catalog',manager.name,matches[0] if matches else UUID(int=0))
 
 
 class _ObjectInterpreter(_SourceInterpreter):

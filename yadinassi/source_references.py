@@ -12,12 +12,17 @@ _FAMILIES = {'Catalog': ('Catalogs', BSLCatalogType, BSLCatalogReference),
              'Document': ('Documents', BSLDocumentType, BSLDocumentReference)}
 
 
+class _SourceReferenceSnapshot:
+    """Private source identity token, distinct from legacy neutral reference scopes."""
+    __slots__ = ()
+
+
 class SourceReferences:
     def __init__(self, source, metadata):
         from .configuration_source_metadata import SourceMetadataObject
         self.source = source
         self.metadata = metadata
-        self.snapshot = object()
+        self.snapshot = _SourceReferenceSnapshot()
         self.managers = {}
         for entry in source.metadata:
             if entry.family not in _FAMILIES:
