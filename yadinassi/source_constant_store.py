@@ -31,6 +31,13 @@ def _json(value):
     return json.dumps(value, ensure_ascii=True, separators=(',', ':'))
 
 
+def _definition_record(definition):
+    record = [definition.kind, list(definition.qualifiers), list(definition.write_blockers)]
+    if definition.type_dependencies:
+        record.append(['defined_types', list(definition.type_dependencies)])
+    return record
+
+
 def _encode(value, definition):
     kind = definition.kind
     if kind == 'composite':
@@ -196,8 +203,7 @@ class SourceConstantStore:
             raise ValueError('invalid source constants destination')
         absolute = _private_parent(os.path.abspath(raw))
         source_sha = source_digest(source)
-        rows = tuple(sorted((str(item.identity), item.name, _json([
-            item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+        rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
         schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
         binding = (_PROFILE, source_sha, str(source.config_uuid), schema_sha)
         fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -217,7 +223,7 @@ class SourceConstantStore:
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
             connection.executemany('INSERT INTO constant_schema VALUES(?,?,?)', rows)
             initial = [(str(item.identity), _encode('', item)) for item in definitions
-                       if item.kind == 'string' and not item.write_blockers
+                       if item.kind == 'string' and not item.write_blockers and not item.type_dependencies
                        and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
             connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
             connection.execute('COMMIT')
@@ -320,7 +326,7 @@ class SourceConstantStore:
         new_supported = {item.name: item for item in definitions}
         for name, old in old_supported.items():
             new = new_supported.get(name)
-            if new is None or (new.identity, new.kind, new.qualifiers) != (old.identity, old.kind, old.qualifiers):
+            if new is None or (new.identity, new.kind, new.qualifiers, new.type_dependencies) != (old.identity, old.kind, old.qualifiers, old.type_dependencies):
                 raise ValueError('source update constant type/qualifier migration unsupported: ' + name)
         old_files = {item.path: item.content for item in previous.files}
         new_files = {item.path: item.content for item in source.files}
@@ -329,15 +335,14 @@ class SourceConstantStore:
                 key = 'Constants/' + name + '.xml'
                 if old_files[key] != new_files.get(key):
                     raise ValueError('source update unsupported constant declaration changed: ' + name)
-        rows = tuple(sorted((str(item.identity), item.name, _json([
-            item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+        rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
         schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
         binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
         known = {str(item.identity): item for item in definitions}
         old_ids = {str(item.identity) for item in old_definitions}
         initial = [(str(item.identity), _encode('', item)) for item in definitions
                    if str(item.identity) not in old_ids and item.kind == 'string'
-                   and not item.write_blockers and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
+                   and not item.write_blockers and not item.type_dependencies and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
         store = cls.reopen(path, previous)
         connection = store._connection
         try:
@@ -419,8 +424,7 @@ class SourceConstantStore:
             if _schema(connection) != expected:
                 raise ValueError('source constants schema integrity')
             definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace)
-            rows = tuple(sorted((str(item.identity), item.name, _json([
-                item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+            rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
             digest = source_digest(source)
             schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
             result = object.__new__(cls)

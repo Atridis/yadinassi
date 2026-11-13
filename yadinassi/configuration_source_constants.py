@@ -19,6 +19,7 @@ class ScalarConstantDefinition:
     qualifiers: tuple
     write_blockers: tuple[str, ...] = ()
     enum_namespace: object = field(default=None, compare=False, repr=False)
+    type_dependencies: tuple = ()
 
 
 def source_constant_definitions(source, *, enum_namespace=None):
@@ -33,6 +34,8 @@ def source_constant_definitions(source, *, enum_namespace=None):
           or tuple(m._definition for m in enum_namespace.metadata) != enums
           or enum_namespace._unsupported != enum_errors):
         raise ValueError('constant enumeration namespace/source mismatch')
+    from .source_defined_types import SourceDefinedTypes
+    defined_types = SourceDefinedTypes(source)
     declared = SourceMetadataRoot(source).get_member('Constants')
     names = tuple(item.get_member('Name') for item in declared)
     if len(names) > 1024:
@@ -45,7 +48,8 @@ def source_constant_definitions(source, *, enum_namespace=None):
         try:
             obj, namespaces = _object(files[path], 'Constant')
             props = _props(obj)
-            kind, qualifiers = _constant_type(props, namespaces, enum_namespace)
+            resolved, resolved_namespaces, dependencies = defined_types.resolve(props, namespaces)
+            kind, qualifiers = _constant_type(resolved, resolved_namespaces, enum_namespace)
             blockers = []
             prefix = 'Constants/' + name + '/'
             if any(p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()
@@ -65,7 +69,7 @@ def source_constant_definitions(source, *, enum_namespace=None):
                         and not len(node) and not (node.text or '').strip()):
                     blockers.append('constant value limit is not supported')
             result.append(ScalarConstantDefinition(inventory[path].identity, name, kind,
-                                                   qualifiers, tuple(blockers), enum_namespace))
+                                                   qualifiers, tuple(blockers), enum_namespace, dependencies))
         except (ValueError, KeyError) as error:
             unsupported[name.casefold()] = str(error)
     return tuple(result), unsupported, names
