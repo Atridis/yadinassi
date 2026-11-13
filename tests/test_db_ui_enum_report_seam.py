@@ -1,18 +1,31 @@
 """Integration probe: full forms grant plus durable enum query pipeline."""
 import unittest
 from unittest.mock import patch
-from test_configuration_inventory_enum_app import EnumApplicationTests
+import test_configuration_inventory_enum_app as enum_fixture
 from yadinassi.catalog_backend import BackendError
 from yadinassi.query_packages import BSLTempTablesManager
 from yadinassi.inventory_enum_runtime import query_owner
 
 
 class EnumFormsReportSeamTests(unittest.TestCase):
-    setUp = EnumApplicationTests.setUp
-    rpc = EnumApplicationTests.rpc
-    open = EnumApplicationTests.open
-    event = EnumApplicationTests.event
-    choose = EnumApplicationTests.choose
+    setUp = enum_fixture.EnumApplicationTests.setUp
+    rpc = enum_fixture.EnumApplicationTests.rpc
+    open = enum_fixture.EnumApplicationTests.open
+    event = enum_fixture.EnumApplicationTests.event
+    choose = enum_fixture.EnumApplicationTests.choose
+
+    def test_discovery_does_not_reexport_fixture_test_cases(self):
+        import sys
+        suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
+        def leaves(node):
+            if isinstance(node, unittest.TestSuite):
+                for child in node:
+                    yield from leaves(child)
+            else:
+                yield node
+        ids = [test.id() for test in leaves(suite)]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(name.startswith(__name__ + ".") for name in ids))
 
     def interpreter(self, saved=False):
         sid = self.open('Catalog.Products.Form.Card')
