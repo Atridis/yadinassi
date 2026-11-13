@@ -137,6 +137,10 @@ class _FormInterpreter(Interpreter):
         # Evaluate the receiver once. Keep the ordinary collection rules intact.
         from . import runtime
         value = yield from self._visit(node.object)
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            value.authorize(self)
+            return value.member(self, (yield from self._visit(node.index)))
         if type(value) is BSLFormDataCollection:
             return value.get_index((yield from self._visit(node.index)))
         if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,
@@ -240,7 +244,10 @@ class FormSession:
         if reference_scope is not None: reference_scope.attach(self)
         self.form = BSLClientApplicationForm(self)
         factory = _FormInterpreter if interpreter_factory is None else interpreter_factory
-        self.interpreter = factory(self, self._record_message, database_context=database_context)
+        from .form_program import FormSideProgram
+        profile_options = ({'compilation_profile': source.compilation_profile}
+                           if type(source) is FormSideProgram and source.compilation_profile != 'standalone' else {})
+        self.interpreter = factory(self, self._record_message, database_context=database_context, **profile_options)
         if not isinstance(self.interpreter, _FormInterpreter) or self.interpreter._form_session is not self:
             raise TypeError("form interpreter factory returned an invalid interpreter")
         from .form_program import admitted_program
