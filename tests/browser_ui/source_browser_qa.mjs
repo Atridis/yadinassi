@@ -15,7 +15,7 @@ const work=await mkdtemp(path.join(root,'s-'));const home=path.join(work,'h');aw
 const output=path.join(root,'yadinassi-source-browser-artifacts');await mkdir(output);
 const env=childEnvironment(process.env,home);env.PYTHONPATH=repo+path.delimiter+path.join(repo,'tests');
 const fixture=path.join(work,'fixture');
-execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib import Path\nroot=Path(${JSON.stringify(fixture)})\nmapping=files()\nfrom test_source_metadata import xml\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Broken</CommonForm></ChildObjects>')\nmapping['CommonForms/Broken.xml']=xml('CommonForm','Broken',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Broken/Ext/Form.xml']=b'<Unsupported/>'\nfor name,data in mapping.items():\n p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)`],{cwd:repo,env,timeout:15000});
+execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib import Path\nroot=Path(${JSON.stringify(fixture)})\nmapping=files()\nfrom test_source_metadata import xml\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Broken</CommonForm><CommonForm>Progressive</CommonForm></ChildObjects>')\nmapping['CommonForms/Broken.xml']=xml('CommonForm','Broken',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Broken/Ext/Form.xml']=b'<Unsupported/>'\nmapping['CommonForms/Progressive.xml']=xml('CommonForm','Progressive',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Progressive/Ext/Form.xml']=mapping['CommonForms/Main/Ext/Form.xml'].replace(b'<ChildItems>',b'<ChildItems><PictureField name="Logo" id="90"/>')\nmapping['CommonForms/Progressive/Ext/Form/Module.bsl']=mapping['CommonForms/Main/Ext/Form/Module.bsl']\nfor name,data in mapping.items():\n p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)`],{cwd:repo,env,timeout:15000});
 const report={status:'FAIL',sourceCommit:source,scenarios:[],nativeParity:false};
 let browser,host,context,page,phase='launch';
 const deadline=setTimeout(()=>{host?.kill('SIGKILL');process.exitCode=1;browser?.close();},150000);
@@ -55,6 +55,16 @@ try {
    assert.equal(await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).isEnabled(),true);
    assert.ok((await page.getByRole('status').first().innerText()).length>0);
    await page.screenshot({path:path.join(output,'workspace-open-close.png')});
+   await page.getByRole('textbox',{name:'Поиск объявленных форм'}).fill('Progressive');
+   await page.getByRole('button',{name:'Найти формы',exact:true}).click();
+   await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Progressive');
+   await page.getByRole('button',{name:'Открыть форму',exact:true}).click();
+   await page.getByRole('list',{name:'Неподдерживаемые возможности формы'}).getByText('Items.Logo: Control unavailable: PictureField',{exact:true}).waitFor();
+   await page.getByRole('button',{name:'Run',exact:true}).click();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='updated'));
+   await page.screenshot({path:path.join(output,'progressive.png')});
+   await page.getByRole('button',{name:'Close form',exact:true}).click();
+   await page.getByText('Closed',{exact:true}).waitFor();
    await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).click();
    await page.getByText('Сеанс закрыт',{exact:true}).waitFor();
   }
@@ -64,4 +74,4 @@ try {
  }
  report.status='PASS';
 }catch(error){report.failure={phase,reason:'smoke_failed',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
-finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
+finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}

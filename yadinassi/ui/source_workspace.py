@@ -50,6 +50,7 @@ class SourceWorkspace:
                 'name': self.application.source.name, 'forms': visible,
                 'omitted_forms': omitted, 'query': self.query, 'selected': self.selected,
                 'generation': self.generation, 'active': self._active(), 'error': self.error,
+                'form_diagnostics': list(self.form.diagnostics) if self.form else [],
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -76,7 +77,7 @@ class SourceWorkspace:
                 self.error = 'Сначала закройте открытую форму. Несохранённые изменения не будут отброшены.'
             else:
                 try:
-                    form = SourceFormController(self.application, params['name'])
+                    form = SourceFormController(self.application, params['name'], progressive=True)
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
                 else:

@@ -19,7 +19,7 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         return child
 
 
-def source_form_definition(application, name):
+def source_form_definition(application, name, *, progressive=False, diagnostics=None):
     application.require_open()
     if application.constant_store is not None:
         raise ValueError('selected source forms currently require memory-only source startup')
@@ -33,15 +33,27 @@ def source_form_definition(application, name):
     definition_path = prefix + '/Ext/Form.xml'
     if definition_path not in application.files:
         raise ValueError('selected form definition missing: ' + definition_path)
-    return _definition(name, metadata._entry.identity, application.files[definition_path],
-                       application.files.get(prefix + '/Ext/Form/Module.bsl', b''))
+    raw = application.files[definition_path]
+    module = application.files.get(prefix + '/Ext/Form/Module.bsl', b'')
+    if progressive:
+        from .source_form_projection import project_source_form
+        from dataclasses import replace
+        from hashlib import sha256
+        projection = project_source_form(raw)
+        definition = _definition(name, metadata._entry.identity, projection.xml, module)
+        if diagnostics is not None:
+            diagnostics.extend(projection.diagnostics)
+        return replace(definition, source_sha256=sha256(raw+b'\0'+module).hexdigest())
+    return _definition(name, metadata._entry.identity, raw, module)
 
 
 class SourceFormController:
     """One actual form after successful source startup; no browser code endpoint."""
-    def __init__(self, application, name):
+    def __init__(self, application, name, *, progressive=False):
         self.application = application
-        self.definition = source_form_definition(application, name)
+        diagnostics = []
+        self.definition = source_form_definition(application, name, progressive=progressive, diagnostics=diagnostics)
+        self.diagnostics = tuple(diagnostics)
         if self.definition.program.nocontext_bindings:
             raise ValueError('selected source form AtServerNoContext is not supported yet')
         def factory(side):

@@ -2,7 +2,7 @@ name: Source diagnostics and selected-form browser QA (reviewed opt-in)
 
 on:
   push:
-    branches: [codex/universal-source-runtime-checkpoint-20261112, codex/source-workspace-ui-20261113]
+    branches: [codex/universal-source-runtime-checkpoint-20261112, codex/source-workspace-ui-20261113, codex/source-form-progressive-ui-20261113]
 
 permissions:
   contents: read
@@ -55,5 +55,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace-open-close.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/failure.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/progressive.png
           if-no-files-found: error
           retention-days: 14

@@ -60,10 +60,10 @@ class SourceWorkspaceTests(unittest.TestCase):
     def test_concurrent_open_and_close_are_rejected_during_form_creation(self):
         w=self.workspace();entered=Event();release=Event();errors=[]
         from yadinassi.source_forms import SourceFormController
-        def create(*args):
+        def create(*args, **kwargs):
             entered.set()
             if not release.wait(5):raise RuntimeError('test timeout')
-            return SourceFormController(*args)
+            return SourceFormController(*args, **kwargs)
         def opening():
             try:w.exchange(request('open',name='CommonForm.Main'))
             except Exception as error:errors.append(error)

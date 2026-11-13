@@ -5,7 +5,8 @@ history.replaceState(null, '', location.pathname);
 const root=document.getElementById('workspace'), title=document.createElement('h1'), status=document.createElement('p'), select=document.createElement('select'), open=document.createElement('button'), close=document.createElement('button'), formRoot=document.createElement('section');
 const search=document.createElement('input'), find=document.createElement('button');search.maxLength=128;search.setAttribute('aria-label','Поиск объявленных форм');find.textContent='Найти формы';
 select.setAttribute('aria-label','Объявленная форма'); open.textContent='Открыть форму'; close.textContent='Закрыть сеанс'; status.setAttribute('role','status');
-root.append(title,status,search,find,select,open,close,formRoot);
+const limitations=document.createElement('ul');limitations.setAttribute('aria-label','Неподдерживаемые возможности формы');
+root.append(title,status,search,find,select,open,close,limitations,formRoot);
 let id=0,busy=false,view=null,state=null,failed=false;
 async function call(method,params={}) {
   const response=await fetch('/rpc',{method:'POST',headers:{'Content-Type':'application/x-ndjson','X-Yadinassi-Session':token||''},body:JSON.stringify({jsonrpc:'2.0',id:++id,method,params})+'\n'});
@@ -25,6 +26,7 @@ async function apply(reply){
   for(const name of state.forms){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option);}
   if(state.forms.includes(previous))select.value=previous;
   if(state.omitted_forms)status.textContent+=' Ещё '+state.omitted_forms+' форм: уточните поиск.';
+  limitations.replaceChildren();for(const diagnostic of state.form_diagnostics||[]){const item=document.createElement('li');item.textContent=diagnostic.path+': '+diagnostic.reason;limitations.append(item);}
   if(state.active && (!view || view.generation!==state.generation)){
     formRoot.replaceChildren();const generation=state.generation;
     view=__app.mountForm(window,formRoot,{transport:request=>call('workspace.form',{generation,request}),onChange:()=>paint()});view.generation=generation;
