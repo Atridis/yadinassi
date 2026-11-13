@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 import tempfile
@@ -27,7 +28,7 @@ class SourceConstantDefaultTests(unittest.TestCase):
     def test_measured_string_default_is_real_sqlite_row(self):
         store = self.store(64)
         self.assertEqual(store.get('Text'), '')
-        with sqlite3.connect(store.path) as db:
+        with closing(sqlite3.connect(store.path)) as db, db:
             self.assertEqual(db.execute('SELECT value_json FROM constant_value').fetchall(), [('["string",""]',)])
         store.set('Text','assigned')
         self.assertEqual(store.get('Text'), 'assigned')

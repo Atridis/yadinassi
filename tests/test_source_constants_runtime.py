@@ -1,3 +1,4 @@
+from contextlib import closing
 import contextlib
 import io
 from pathlib import Path
@@ -46,7 +47,7 @@ class SourceConstantsRuntimeTests(unittest.TestCase):
                                     scratch_database=Path(directory)/'scratch.sqlite')
             try:
                 with self.assertRaisesRegex(BSLError, 'safe mode'): app.start()
-                with sqlite3.connect(Path(directory)/'scratch.sqlite') as db:
+                with closing(sqlite3.connect(Path(directory)/'scratch.sqlite')) as db, db:
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM constant_value').fetchone(), (0,))
             finally: app.close()
 

@@ -1,3 +1,4 @@
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -29,18 +30,18 @@ class SourceExtensionTests(unittest.TestCase):
 
     def test_populated_registry_is_not_hidden(self):
         a=self.app()
-        with sqlite3.connect(a.constant_store.path) as db:
+        with closing(sqlite3.connect(a.constant_store.path)) as db, db:
             db.execute('INSERT INTO source_extension_registry VALUES(?,?)',('x',b'data'))
         with self.assertRaisesRegex(BSLError,'populated extension registry'):a.start()
 
     def test_missing_registry_is_not_empty(self):
         a=self.app()
-        with sqlite3.connect(a.constant_store.path) as db:db.execute('DROP TABLE source_extension_registry')
+        with closing(sqlite3.connect(a.constant_store.path)) as db, db:db.execute('DROP TABLE source_extension_registry')
         with self.assertRaisesRegex(BSLError,'registry storage failure'):a.start()
 
     def test_issues_are_not_hidden(self):
         a=self.app()
-        with sqlite3.connect(a.constant_store.path) as db:db.execute('INSERT INTO source_extension_issues VALUES(?,?)',('x','broken'))
+        with closing(sqlite3.connect(a.constant_store.path)) as db, db:db.execute('INSERT INTO source_extension_issues VALUES(?,?)',('x','broken'))
         with self.assertRaisesRegex(BSLError,'populated extension registry'):a.start()
 
     def test_client_access_not_granted(self):

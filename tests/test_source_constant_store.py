@@ -1,4 +1,5 @@
 """Explicit source constants storage: no guessed initial values or foreign DBs."""
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 import sqlite3
@@ -44,7 +45,7 @@ class SourceConstantStoreTests(unittest.TestCase):
 
     def test_profile_and_source_binding_are_persisted(self):
         store = self.store()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding').fetchone()
         self.assertEqual(row, ('source-scalar-constants-extensions-v2', store.source_sha256, str(store.config_uuid)))
 
@@ -65,7 +66,7 @@ class SourceConstantStoreTests(unittest.TestCase):
         for name in ('Text', 'Amount', 'Flag', 'Date'):
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'uninitialized constant'):
                 store.get(name)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM constant_value').fetchone(), (0,))
 
     def test_scalar_roundtrips(self):
@@ -77,12 +78,12 @@ class SourceConstantStoreTests(unittest.TestCase):
 
     def test_committed_bytes_persist_after_close(self):
         store = self.store(); store.set('Flag', True); store.close()
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             self.assertEqual(db.execute('SELECT value_json FROM constant_value').fetchone(), ('["boolean",true]',))
 
     def test_each_get_reads_database(self):
         store = self.store(); store.set('Flag', True)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('UPDATE constant_value SET value_json=?', ('["boolean",false]',))
         self.assertIs(store.get('Flag'), False)
 
@@ -142,13 +143,13 @@ class SourceConstantStoreTests(unittest.TestCase):
 
     def test_binding_tamper_rejected(self):
         store = self.store()
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute('UPDATE source_binding SET source_sha256=?', ('0' * 64,))
         with self.assertRaisesRegex(ValueError, 'binding integrity'): store.get('Text')
 
     def test_value_tamper_rejected(self):
         store = self.store(); store.set('Flag', True)
-        with sqlite3.connect(self.path) as connection:
+        with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute('UPDATE constant_value SET value_json=?', ('["boolean",1]',))
         with self.assertRaisesRegex(ValueError, 'storage integrity'): store.get('Flag')
 
