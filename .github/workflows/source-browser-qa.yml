@@ -54,5 +54,6 @@ jobs:
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/selected_form.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace-open-close.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/failure.png
           if-no-files-found: error
           retention-days: 14

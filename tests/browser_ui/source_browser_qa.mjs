@@ -17,7 +17,7 @@ const env=childEnvironment(process.env,home);env.PYTHONPATH=repo+path.delimiter+
 const fixture=path.join(work,'fixture');
 execFileSync('python',['-c',`from test_source_forms import files\nfrom pathlib import Path\nroot=Path(${JSON.stringify(fixture)})\nmapping=files()\nfrom test_source_metadata import xml\nmapping['Configuration.xml']=mapping['Configuration.xml'].replace(b'</ChildObjects>',b'<CommonForm>Broken</CommonForm></ChildObjects>')\nmapping['CommonForms/Broken.xml']=xml('CommonForm','Broken',properties='<FormType>Managed</FormType>')\nmapping['CommonForms/Broken/Ext/Form.xml']=b'<Unsupported/>'\nfor name,data in mapping.items():\n p=root/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(data)`],{cwd:repo,env,timeout:15000});
 const report={status:'FAIL',sourceCommit:source,scenarios:[],nativeParity:false};
-let browser,host,context,phase='launch';
+let browser,host,context,page,phase='launch';
 const deadline=setTimeout(()=>{host?.kill('SIGKILL');process.exitCode=1;browser?.close();},150000);
 async function stopHost(){if(!host)return;if(host.exitCode===null&&host.signalCode===null){const p=new Promise(r=>host.once('exit',r));host.kill('SIGINT');await Promise.race([p,new Promise(r=>setTimeout(r,3000))]);if(host.exitCode===null&&host.signalCode===null)host.kill('SIGKILL');await Promise.race([p,new Promise((_,reject)=>setTimeout(()=>reject(Error('host_cleanup_timeout')),3000))]);}host=null;}
 try {
@@ -31,7 +31,7 @@ try {
   const url=await new Promise((resolve,reject)=>{const parse=launchOutputReader();const timer=setTimeout(()=>reject(Error('host_timeout')),10000);host.once('exit',()=>{clearTimeout(timer);reject(Error('host_exit'));});host.stdout.on('data',b=>{try{const u=parse(b);if(u){clearTimeout(timer);resolve(u);}}catch(e){clearTimeout(timer);reject(e);}});});
   const origin=new URL(url).origin;
   await context.route('**/*',route=>{const u=new URL(route.request().url());return u.origin===origin&&['/','/app.js','/style.css','/rpc','/client.js'].includes(u.pathname)?route.continue():route.abort();});
-  const page=await context.newPage();const errors=[];page.on('pageerror',()=>errors.push('page_error'));
+  page=await context.newPage();const errors=[];page.on('pageerror',()=>errors.push('page_error'));
   await page.goto(url.href);
   if(!form){await page.getByText('Источник: Demo; попытка запуска: completed',{exact:true}).waitFor();assert.ok((await page.locator('#result').innerText()).includes('"runtime_active": false'));await page.getByRole('button',{name:'Закрыть диагностику'}).click();await page.getByText('Диагностика закрыта',{exact:true}).waitFor();}
   else if(form==='workspace'){
@@ -58,10 +58,10 @@ try {
    await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).click();
    await page.getByText('Сеанс закрыт',{exact:true}).waitFor();
   }
-  else{await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'));for(let i=0;i<2;i++){const [response]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);assert.equal(response.status(),200);assert.equal((await response.json()).result.error,null);await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='updated'));}await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();}
-  assert.deepEqual(errors,[]);await page.screenshot({path:path.join(output,phase+'.png')});
+  else{phase='selected_form:initial';await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='Demo'));for(let i=0;i<2;i++){phase='selected_form:command'+i;const [response]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('form.event')),page.getByRole('button',{name:'Run',exact:true}).click()]);assert.equal(response.status(),200);assert.equal((await response.json()).result.error,null);await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='updated'));}phase='selected_form:close';await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();}
+  phase=form==='workspace'?'workspace':form?'selected_form':'diagnostics';assert.deepEqual(errors,[]);await page.screenshot({path:path.join(output,phase+'.png')});
   report.scenarios.push({name:phase,status:'PASS'});await page.close();await context.unroute('**/*');await stopHost();
  }
  report.status='PASS';
-}catch{report.failure={phase,reason:'smoke_failed'};process.exitCode=1;}
+}catch(error){report.failure={phase,reason:'smoke_failed',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
 finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
