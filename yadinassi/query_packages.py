@@ -130,6 +130,9 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
             tables = prepare_tables(tables, _enum_scope)
         from .query_reference_tables import input_bindings, validate_view
         bindings = input_bindings((*external.values(), *tables.values()), catalogs, documents)
+        from .source_query_references import SourceBinding
+        if any(type(binding) is SourceBinding for binding in bindings):
+            raise ValueError("Source reference report re-query requires a source-owned snapshot; unsupported")
         if bindings:
             composite = composite or any(b.kind == 'document_ref' for b in bindings)
             if view is None:

@@ -12,7 +12,7 @@ from .source_constants_runtime import SourceConstants
 
 class SourceConstantQuery(BSLQuery):
     def __init__(self, caller, application, text=''):
-        super().__init__(caller._catalogs, text)
+        super().__init__(application.interpreter._catalogs, text)
         self._source_owner = SourceConstants(application)
 
     def get_method(self, name):
@@ -31,6 +31,9 @@ class SourceConstantQuery(BSLQuery):
 
     def read(self, caller, *, batch=False):
         statements = syntax.parse_package(self._text)
+        from .source_catalog_queries import has_catalog, read
+        if has_catalog(statements):
+            return read(self, caller, statements, batch=batch)
         uses_constants = any(
             (node.temporary and node.catalog.casefold() in ('constants', 'константы'))
             for node in syntax.walk_nodes(statements) if type(node) in (syntax.Select, syntax.Source))
