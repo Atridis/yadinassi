@@ -65,6 +65,15 @@ def _policies(props, *, attribute=False):
 def source_document_definitions(source, enum_namespace=None, reference_scope=None, *, allow_sections=False):
     if type(source) is not ConfigurationSource:
         raise TypeError('admitted ConfigurationSource required')
+    from .configuration_source_enums import source_enum_definitions
+    from .enumerations import BSLEnumerations
+    enums,enum_errors,_=source_enum_definitions(source)
+    if enum_namespace is None:
+        enum_namespace=BSLEnumerations(enums,unsupported=enum_errors)
+    elif (type(enum_namespace) is not BSLEnumerations
+          or tuple(m._definition for m in enum_namespace.metadata)!=enums
+          or enum_namespace._unsupported!=enum_errors):
+        raise ValueError('record enumeration namespace/source mismatch')
     from .source_references import SourceReferences
     if reference_scope is None:
         from .configuration_source_metadata import SourceMetadataRoot
@@ -124,8 +133,8 @@ def source_document_definitions(source, enum_namespace=None, reference_scope=Non
                     field_names.add(fn.casefold()); used_ids.add(identity)
                     resolved, scopes, dependencies = aliases.resolve(p,ns)
                     kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
-                    if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] in ('Catalog','Document')):
-                        raise ValueError('document attribute requires scalar or CatalogRef/DocumentRef type')
+                    if kind not in ('string','number','boolean','datetime','enum_ref') and not (kind == 'object_ref' and qualifiers[0] in ('Catalog','Document')):
+                        raise ValueError('document attribute requires scalar, EnumRef or CatalogRef/DocumentRef type')
                     return ScalarConstantDefinition(identity,fn,kind,qualifiers,
                         enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope)
             for child in children[0] if children else ():

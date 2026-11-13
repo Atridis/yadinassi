@@ -92,6 +92,8 @@ def read(query, caller, statements, *, batch=False):
         selected_fields=section.fields if section is not None else definition.fields
         aliases={} if section is not None else _STANDARD[family]
         for field in selected_fields:
+            if field.kind == 'enum_ref':
+                raise ValueError('source query enumeration field unsupported: '+definition.name+'.'+field.name)
             for name in (field.name, *([aliases[field.name]] if field.name in aliases else [])):
                 if field.kind == 'object_ref' and field.qualifiers[0] in ('Catalog','Document'):
                     target = make_binding(app, query._catalogs, field.qualifiers[2],field.qualifiers[0])

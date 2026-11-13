@@ -66,9 +66,11 @@ def _encode(value, definition):
             raise TypeError('constant reference requires exact owned type/metadata without callbacks')
         encoded = ['object_ref', [family, metadata_id, str(value.reference_uuid)]]
     elif kind == 'enum_ref':
+        from uuid import UUID
         from .enum_types import BSLEnumReference
         manager = definition.enum_namespace.get_member(definition.qualifiers[1])
-        if (type(value) is not BSLEnumReference or value.value_type != manager._value_type
+        if (type(value) is not BSLEnumReference or value.value_type is not manager._value_type
+                or value.metadata is not manager._metadata or type(value.reference_uuid) is not UUID
                 or str(value.value_type.metadata_uuid) != definition.qualifiers[0]
                 or (value.reference_uuid.int != 0 and str(value.reference_uuid) not in definition.qualifiers[2])):
             raise TypeError('constant enumeration reference belongs to another type or application')
