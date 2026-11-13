@@ -165,34 +165,42 @@ def main(argv: list[str] | None = None) -> int:
                         help='сохранить загруженный источник в проверяемый архив')
     parser.add_argument('--run-startup', action='store_true',
                         help='явно исполнить запуск источника без базы и UI')
-    parser.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE',
+    scratch = parser.add_mutually_exclusive_group()
+    scratch.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE',
                         help='создать отдельную новую базу констант для запуска источника')
+    scratch.add_argument('--open-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
+                         help='открыть сохранённую базу источника; XML/архив необязателен, без миграции')
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
-    if args.configuration_source is not None:
+    if args.configuration_source is not None or args.open_source_scratch_db is not None:
         if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
                 args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
                 args.numbering_policy, args.inactive, args.report_json)):
             parser.error('--configuration-source не совмещается с режимами базы/профилей/BSL')
         if args.source_compatibility_target is not None and not args.run_startup:
             parser.error('--source-compatibility-target требует --run-startup')
-        if args.source_scratch_db and not args.run_startup:
-            parser.error('--source-scratch-db требует --run-startup')
+        if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
+            parser.error('--source-scratch-db/--open-source-scratch-db требует --run-startup')
         from .configuration_source import load_source_directory, load_source_archive, save_source_archive
         from .configuration_source_runtime import SourceApplication
         application = None
         try:
-            path = Path(args.configuration_source)
-            source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
+            if args.configuration_source is None:
+                from .source_constant_store import SourceConstantStore
+                source = SourceConstantStore.load_source(args.open_source_scratch_db)
+            else:
+                path = Path(args.configuration_source)
+                source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
             if args.save_source:
                 save_source_archive(args.save_source, source)
             print('Источник загружен: ' + source.name + '; файлов: ' + str(len(source.files))
-                  + ('. UI и обычная база конфигурации не активированы.' if args.source_scratch_db
+                  + ('. UI и обычная база конфигурации не активированы.' if args.source_scratch_db or args.open_source_scratch_db
                      else '. База данных и UI не активированы.'))
             if args.run_startup:
                 application = SourceApplication(source, compilation_profile=args.preprocessor_profile,
                                                 scratch_database=args.source_scratch_db,
+                                                existing_scratch_database=args.open_source_scratch_db,
                                                 compatibility_target=args.source_compatibility_target)
                 if args.source_compatibility_target is not None:
                     print('Экспериментальный compatibility target: ' + args.source_compatibility_target
@@ -208,7 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             if application is not None:
                 application.close()
-    if args.save_source or args.run_startup or args.source_scratch_db or args.source_compatibility_target is not None:
+    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_compatibility_target is not None:
         parser.error('--save-source/--run-startup требует --configuration-source')
 
     demo = args.create_demo_db is not None
