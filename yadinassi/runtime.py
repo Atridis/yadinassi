@@ -1052,7 +1052,16 @@ class Interpreter:
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
-        from .source_constants_runtime import SourceConstants
+        from .source_constant_managers import SourceConstantValueManager
+        if type(value) is SourceConstantValueManager:
+            if node.name.casefold() in ('value', 'значение'):
+                return value.value_read(self)
+            return value.get_member(node.name)
+        from .source_constants_runtime import SourceConstants, SourceConstantSet
+        if type(value) is SourceConstantSet:
+            if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
+                return value.get_member(node.name)
+            return value.read_property(self, node.name)
         if type(value) is SourceConstants:
             return value.member(self, node.name)
         if type(value) is BSLSessionParameters:
@@ -1066,6 +1075,9 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_constants_runtime import SourceConstants
+        if type(value) is SourceConstants:
+            return value.member(self, (yield from self._visit(node.index)))
         from .source_metadata_properties import SourcePropertyDomain
         if type(value) is SourcePropertyDomain:
             return value.get_index((yield from self._visit(node.index)))
@@ -1272,10 +1284,28 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        from .source_constants_runtime import ConstantCall
+        from .source_constants_runtime import ConstantCall, ConstantSetCall
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
-        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall):
+        from .source_transactions import SourceTransactionCall
+        from .source_constant_managers import ValueManagerCall, write_values
+        marker = function.function
+        if type(marker) is ValueManagerCall:
+            return (yield from marker.invoke(self, values))
+        if type(marker) is ConstantCall and marker.writing:
+            marker.owner._store(self)
+            if len(values) != 1:
+                raise TypeError('invalid constant method argument count')
+            return (yield from write_values(self, marker.owner, {marker.name: values[0]}))
+        if type(marker) is ConstantSetCall and marker.operation == 'write':
+            receiver = marker.receiver
+            receiver.owner._store(self)
+            if values:
+                raise TypeError('constant set Read/Write take no arguments')
+            if len(receiver.values) != len(receiver.keys):
+                raise ValueError('all selected constant fields must be assigned or read before Write')
+            return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -2022,6 +2052,18 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_constant_managers import SourceConstantValueManager
+            if type(value) is SourceConstantValueManager:
+                if not isinstance(node.target, ast.Attribute) or node.target.name.casefold() not in ('value', 'значение'):
+                    raise ValueError('unsupported value manager assignment')
+                value.value_write(self, (yield from self._visit(node.value)))
+                return
+            from .source_constants_runtime import SourceConstantSet
+            if type(value) is SourceConstantSet:
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError('constant set indexing unsupported')
+                value.write_property(self, node.target.name, (yield from self._visit(node.value)))
+                return
             if type(value) is BSLSessionParameters:
                 value._authorize(self)
                 name=node.target.name if isinstance(node.target,ast.Attribute) else (yield from self._visit(node.target.index))
@@ -2281,6 +2323,11 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = (yield from self._visit(node.collection))
+        from .source_constants_runtime import SourceConstants
+        if type(collection) is SourceConstants:
+            members = collection.members(self)
+            collection = BSLArray()
+            collection.items = list(members)
         if (not isinstance(collection, _COLLECTIONS)
                 and type(collection) is not BSLRoundModes
                 and type(collection) is not BSLSearchDirections

@@ -50,6 +50,8 @@ def current(backend):
 
 
 def forbid_transfer(backend):
+    from .source_transactions import forbid_source_transfer
+    forbid_source_transfer()
     if backend is not None and current(backend) is not None:
         raise BackendError('unsupported')
 
