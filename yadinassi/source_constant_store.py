@@ -1,7 +1,8 @@
 """Fresh, source-bound scalar constants persisted in an isolated SQLite file.
 
 Only this exact source-bound format can be explicitly reopened; no migration. Only explicitly measured fresh
-String defaults are persisted; other Get-before-Set operations fail. This is a constants-only host capability, not
+String defaults are persisted; other Get-before-Set operations fail. UUID and bounded local ValueStorage are explicitly typed; neither receives an inferred default.
+This is a constants-only host capability, not
 SQLiteDBContext and not activation of the configuration's other data objects.
 """
 from decimal import Decimal
@@ -31,7 +32,15 @@ def _json(value):
 
 def _encode(value, definition):
     kind = definition.kind
-    if kind == 'string':
+    if kind == 'uuid':
+        from .unique_identifiers import BSLUUID
+        if type(value) is not BSLUUID or BSLUUID(value.text).text != value.text:
+            raise TypeError('constant canonical UUID required')
+        encoded = ['uuid', value.text]
+    elif kind == 'value_storage':
+        from .source_storage_codec import encode_storage
+        encoded = ['value_storage', encode_storage(value)]
+    elif kind == 'string':
         validate_string(value, definition.qualifiers[0])
         encoded = ['string', value]
     elif kind == 'boolean':
@@ -69,7 +78,13 @@ def _decode(raw, definition):
         if type(data) is not list or len(data) != 2 or data[0] != definition.kind:
             raise ValueError('constant storage integrity')
         value = data[1]
-        if definition.kind == 'number':
+        if definition.kind == 'uuid':
+            from .unique_identifiers import BSLUUID
+            value = BSLUUID(value)
+        elif definition.kind == 'value_storage':
+            from .source_storage_codec import decode_storage
+            value = decode_storage(value)
+        elif definition.kind == 'number':
             if type(value) is not str or len(value) > _MAX_NUMBER_TEXT:
                 raise ValueError('constant storage integrity')
             value = Decimal(value)
@@ -80,7 +95,7 @@ def _decode(raw, definition):
         if _encode(value, definition) != raw:
             raise ValueError('constant storage integrity')
         return value
-    except (ValueError, TypeError, ArithmeticError):
+    except (ValueError, TypeError, ArithmeticError, RecursionError, IndexError, KeyError, AttributeError):
         raise ValueError('constant storage integrity') from None
 
 
