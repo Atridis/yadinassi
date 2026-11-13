@@ -91,6 +91,9 @@ class _SourceInterpreter(Interpreter):
                 or (self._has_module_context and key in self.variables
                     and (self.locals is None or key in self.module_names))):
             return super().visit_Name(node)
+        if key in ('xdtofactory', 'фабрикаxdto'):
+            self.application.require_open()
+            return self.application.xdto.factory
         if key in ('metadata', 'метаданные'):
             self.application.require_open()
             return self.application.metadata
@@ -175,6 +178,8 @@ class SourceApplication:
         self.enumerations = BSLEnumerations(enum_definitions, unsupported=unsupported_enums)
         from .source_extensions import SourceExtensions
         self.extensions = SourceExtensions(self)
+        from .source_xdto_packages import SourceXDTOPackages
+        self.xdto = SourceXDTOPackages(self)
         self._instances = {}
         self._reuse_routines = {}
         self._global_exports = {}
