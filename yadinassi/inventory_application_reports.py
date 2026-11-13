@@ -1,4 +1,4 @@
-"""Bounded committed-snapshot reports for the exact physical15 forms grant.
+"""Bounded committed-snapshot reports for the exact physical15/16 forms grants.
 
 This trusted host service accepts only manifest names and typed period bounds.
 It never constructs/evaluates BSL or user SQL, obtains a transaction root, or
@@ -13,9 +13,15 @@ from uuid import UUID
 from . import database_transactions as transactions
 from .accumulation_movements import AccumulationDirection, _sum_resource_vectors
 from .catalog_backend import (BackendError, CatalogKey, CatalogComparison,
-    CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision)
+    CatalogPredicate, CatalogOrder, CatalogScanRequest, CatalogPage, CatalogCard, Revision,
+    CatalogValuePage, CatalogValueRow, CatalogSchema)
 from .configuration_inventory_application import (
-    InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS, canonical)
+    InventoryApplicationConfiguration, PROFILE, MAX_REPORT_FILTERS)
+from .configuration_inventory_enum_application import (
+    InventoryEnumApplicationConfiguration, PROFILE as ENUM_PROFILE)
+from .configuration_main_demo import MainDemoConfiguration, PROFILE as MAIN_DEMO_PROFILE
+from .inventory_host_operations import canonical
+from .enum_storage_values import EnumKey
 from .document_backend import DocumentKey
 
 MAX_INPUT_ROWS = 10000
@@ -27,6 +33,8 @@ MAX_LABELS = 2000
 MAX_LABEL_LENGTH = 1152
 UNAVAILABLE = '[Unavailable record]'
 MAX_CHOICES = 32
+MAX_CHOICE_SNAPSHOT_ROWS = 8192
+MAX_CHOICE_SNAPSHOT_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +56,11 @@ class InventoryReportChoices:
     code: str
     rows: tuple[InventoryReportChoice, ...]
     error: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryReportChoiceSnapshot(InventoryReportChoices):
+    """Полный bounded snapshot; error snapshot_limit никогда не содержит partial rows."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +121,8 @@ def _dimension(value):
     # hooks, ambient Decimal arithmetic or runtime metadata objects are used.
     if type(value) is CatalogKey:
         return value.database_id.int, value.catalog_id.int, value.record_id.int
+    if type(value) is EnumKey:
+        return value.database_id.int, value.enum_id.int, value.value_id.int
     if type(value) is str:
         from .collation import caseless_string_key
         return caseless_string_key(value)
@@ -118,6 +133,9 @@ def _dimension(value):
 
 def _columns(schema, view, periodicity=None):
     def field(f, role):
+        # Reports publish plain declared names, never enum identities/capabilities.
+        if f.kind == 'enum_ref':
+            return InventoryReportColumn(f.name, 'string', (), f.identity, role)
         return InventoryReportColumn(f.name, f.kind, f.qualifiers, f.identity, role, f.target_catalog_id)
     dimensions = tuple(field(f, 'dimension') for f in schema.dimensions)
     if view == 'Movements':
@@ -184,14 +202,14 @@ def _rows(port, schema, view, boundaries):
         for key in sorted(groups):
             dims, vectors, weights = groups[key]
             vectors, weights = tuple(vectors), tuple(weights)
-            net = _sum_resource_vectors(schema, vectors, weights)
+            net = _sum_resource_vectors(schema, vectors, weights, enum_domain=port._enum_domain)
             if view == 'Balance' and all(value == 0 for value in net):
                 continue
             totals = [net]
             if view == 'Turnovers':
                 for sign in (1, -1):
                     chosen = tuple(v for v, w in zip(vectors, weights) if w == sign)
-                    totals.append(_sum_resource_vectors(schema, chosen, (1,) * len(chosen)))
+                    totals.append(_sum_resource_vectors(schema, chosen, (1,) * len(chosen), enum_domain=port._enum_domain))
                 # Same closed aggregate subset as accumulation_queries.load.
                 if all(value == 0 for vector in totals for value in vector):
                     raise BackendError('unsupported')
@@ -255,7 +273,7 @@ def _statement_rows(port, schema, boundaries, periodicity, filters):
     from .accumulation_periods import StatementReducer
     from .query_sources import _check_number
     reducer = StatementReducer(schema, *boundaries,
-        None if periodicity == 'None' else periodicity.lower(), combined=True)
+        None if periodicity == 'None' else periodicity.lower(), combined=True, enum_domain=port._enum_domain)
     indices = {field.identity: i for i, field in enumerate(schema.dimensions)}
     selected = tuple((indices[value.dimension_id], value.key) for value in filters)
     for _, row in _source_rows(port, schema):
@@ -320,6 +338,30 @@ def _labels(owner, configuration, rows, known=()):
     return tuple(labels)
 
 
+def _enum_text(rows, configuration, domain):
+    """Erase storage identity only after exact committed-snapshot validation.
+
+    Names are deterministic authored metadata labels, not native presentation
+    semantics. Empty values stay empty. Wrong database/target/value is refused
+    by the same closed domain used by storage before any string is published.
+    """
+    if type(configuration) not in (InventoryEnumApplicationConfiguration, MainDemoConfiguration):
+        raise BackendError('unsupported')
+    names = {(enum.identity, value.identity): value.name
+             for enum in configuration.enumerations for value in enum.values}
+    def cell(value):
+        if type(value) is not EnumKey:
+            return value
+        domain.encode(value, value.enum_id)
+        if not value.value_id.int:
+            return ''
+        label = names[(value.enum_id, value.value_id)]
+        if type(label) is not str or len(label) > MAX_LABEL_LENGTH:
+            raise BackendError('unsupported')
+        return label
+    return tuple(tuple(cell(value) for value in row) for row in rows)
+
+
 class InventoryReports:
     """Pinned full grant; each read returns one detached committed snapshot.
 
@@ -346,9 +388,12 @@ class InventoryReports:
         from .sqlite_catalog import SQLiteCatalogBackend
         b = self._backend
         if (type(b) is not SQLiteCatalogBackend or self._context.backend is not b
-                or b.format_version != 15
-                or type(b.accumulation_configuration) is not InventoryApplicationConfiguration
-                or b.accumulation_configuration.profile != PROFILE):
+                or type(b.accumulation_configuration) not in (InventoryApplicationConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+                or (b.format_version, type(b.accumulation_configuration),
+                    b.accumulation_configuration.profile) not in (
+                        (15, InventoryApplicationConfiguration, PROFILE),
+                        (16, InventoryEnumApplicationConfiguration, ENUM_PROFILE),
+                        (16, MainDemoConfiguration, MAIN_DEMO_PROFILE))):
             raise BackendError('unsupported')
         if b._closed:
             raise BackendError('closed')
@@ -385,7 +430,13 @@ class InventoryReports:
             terms += (CatalogComparison('code', 'eq', code),)
         request = CatalogScanRequest(predicate=terms[0] if len(terms) == 1 else CatalogPredicate('and', terms),
                                      order=(CatalogOrder('code'),), page_size=MAX_CHOICES)
-        from .sqlite_inventory_profile import admit
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
+            from .sqlite_inventory_enum_profile import admit
+        else:
+            from .sqlite_inventory_profile import admit
         owner = self._backend.begin_read()
         try:
             if (owner.database_id, owner.configuration_generation) != self._binding:
@@ -428,6 +479,101 @@ class InventoryReports:
             owner.close()
         return result
 
+    def choice_snapshot(self, report_name, dimension_name, code=''):
+        """Полный detached выбор report filter, не разрешение изменять объекты."""
+        self._admit()
+        if type(report_name) is not str or type(dimension_name) is not str or type(code) is not str:
+            raise BackendError('invalid_input')
+        grant = next((r for r in self._configuration.reports if r.name == report_name), None)
+        field = None if grant is None else next((f for f in grant.filters if f.dimension == dimension_name), None)
+        if grant is None or grant.view != 'BalanceAndTurnovers' or field is None:
+            raise BackendError('unsupported')
+        schema = next(s for s in self._configuration.catalogs if s.identity == field.catalog_id)
+        if type(schema) is not CatalogSchema:
+            raise BackendError('integrity')
+        try:
+            if '\x00' in code or len(code.encode('utf-16-le')) // 2 > schema.code_length:
+                raise BackendError('invalid_input')
+            code.encode('utf-8')
+        except UnicodeError:
+            raise BackendError('invalid_input') from None
+        terms = (CatalogComparison('deletion_mark', 'eq', False),)
+        if code:
+            terms += (CatalogComparison('code', 'eq', code),)
+        predicate = terms[0] if len(terms) == 1 else CatalogPredicate('and', terms)
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
+            from .sqlite_inventory_enum_profile import admit
+        else:
+            from .sqlite_inventory_profile import admit
+        owner = self._backend.begin_read()
+        try:
+            def verify():
+                if (type(owner.database_id) is not UUID or type(owner.configuration_generation) is not int
+                        or (owner.database_id, owner.configuration_generation) != self._binding):
+                    raise BackendError('schema_changed')
+                if owner.catalog_schema(field.catalog_id) != schema:
+                    raise BackendError('schema_changed')
+                current = admit(owner._connection, owner.database_id,
+                                self._configuration.catalogs, self._configuration.documents)
+                if current != self._configuration:
+                    raise BackendError('schema_changed')
+            verify()
+            rows, seen, cursors = [], set(), set()
+            size, cursor, error = 0, None, None
+            while True:
+                request = CatalogScanRequest(predicate=predicate, order=(CatalogOrder('code'),),
+                                             page_size=256, continuation=cursor)
+                page = owner.scan_catalog_values(field.catalog_id, request, ('code','description','deletion_mark'))
+                if type(page) is not CatalogValuePage or type(page.rows) is not tuple or len(page.rows) > 256:
+                    raise BackendError('integrity')
+                for row in page.rows:
+                    if (type(row) is not CatalogValueRow or type(row.key) is not CatalogKey
+                            or any(type(v) is not UUID for v in (row.key.database_id,row.key.catalog_id,row.key.record_id))
+                            or (row.key.database_id,row.key.catalog_id) != (owner.database_id,field.catalog_id)
+                            or not row.key.record_id.int or row.key in seen
+                            or type(row.values) is not tuple or len(row.values) != 3):
+                        raise BackendError('integrity')
+                    item_code, description, deleted = row.values
+                    if type(item_code) is not str or type(description) is not str or deleted is not False:
+                        raise BackendError('integrity')
+                    for value, bound in ((item_code,schema.code_length),(description,schema.description_length)):
+                        if '\x00' in value or len(value.encode('utf-16-le'))//2 > bound:
+                            raise BackendError('integrity')
+                        size += len(value.encode('utf-8'))
+                    if code and item_code != code:
+                        raise BackendError('integrity')
+                    size += 64
+                    if len(rows) >= MAX_CHOICE_SNAPSHOT_ROWS or size > MAX_CHOICE_SNAPSHOT_BYTES:
+                        rows, error = [], 'snapshot_limit'
+                        break
+                    seen.add(row.key)
+                    rows.append(InventoryReportChoice(row.key,item_code,description))
+                if error is not None:
+                    break
+                cursor = page.continuation
+                if cursor is None:
+                    break
+                if (type(cursor) is not str or len(cursor) != 32 or any(c not in '0123456789abcdef' for c in cursor)
+                        or cursor in cursors or not page.rows):
+                    raise BackendError('integrity')
+                cursors.add(cursor)
+            verify()
+            self._admit()
+            result = InventoryReportChoiceSnapshot(*self._binding,self._configuration.source_digest,grant.name,
+                field.dimension,field.dimension_id,field.catalog_id,code,tuple(rows),error)
+        except BackendError:
+            raise
+        except sqlite3.Error:
+            raise BackendError('storage_error') from None
+        except (ValueError,TypeError,KeyError,IndexError,OverflowError):
+            raise BackendError('integrity') from None
+        finally:
+            owner.close()
+        return result
+
     def read(self, report_name, *, at=None, start=None, end=None, periodicity=None, filters=()):
         self._admit()
         if type(report_name) is not str:
@@ -439,7 +585,13 @@ class InventoryReports:
         filters = _statement_options(grant, periodicity, filters, self._binding)
         schema = next(s for s in self._configuration.registers if s.identity == grant.register_id)
         columns = _columns(schema, grant.view, periodicity)
-        from .sqlite_inventory_profile import admit
+        if type(self._configuration) is MainDemoConfiguration:
+            def admit(connection, database_id, catalogs, documents):
+                return self._backend._main_demo_source_snapshot(connection)
+        elif type(self._configuration) is InventoryEnumApplicationConfiguration:
+            from .sqlite_inventory_enum_profile import admit
+        else:
+            from .sqlite_inventory_profile import admit
         from .sqlite_transactions import _accumulation_port
         owner = self._backend.begin_read()
         try:
@@ -456,6 +608,8 @@ class InventoryReports:
             rows = (_statement_rows(port, schema, boundaries, periodicity, filters)
                     if grant.view == 'BalanceAndTurnovers'
                     else _rows(port, schema, grant.view, boundaries))
+            if type(current) in (InventoryEnumApplicationConfiguration, MainDemoConfiguration):
+                rows = _enum_text(rows, current, self._backend._enum_domain)
             if len(rows) * len(columns) > MAX_CELLS:
                 raise BackendError('unsupported')
             labels = _labels(owner, self._configuration, rows, known)

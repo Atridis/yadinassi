@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" version="2.20" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:xs="http://www.w3.org/2001/XMLSchema"><Catalog uuid="afdf0d36-94e5-5b46-a396-1e0283921f02"><Properties><Name>Products</Name>
+<CodeType>String</CodeType>
+<CodeLength>8</CodeLength>
+<DescriptionLength>64</DescriptionLength>
+<CodeAllowedLength>Variable</CodeAllowedLength>
+<CheckUnique>true</CheckUnique>
+<Autonumbering>false</Autonumbering>
+<Hierarchical>false</Hierarchical>
+<DefaultObjectForm>Catalog.Products.Form.Card</DefaultObjectForm></Properties><ChildObjects><Attribute uuid="f0e73b99-bd49-5bed-8a5e-67587a61a2ae">
+						<Properties>
+							<Name>Unit</Name>
+							<Synonym />
+							<Comment />
+							<Type><v8:Type>cfg:EnumRef.Units</v8:Type></Type>
+							</Properties>
+					</Attribute><Form>Card</Form></ChildObjects></Catalog></MetaDataObject>

@@ -59,7 +59,7 @@ export function mountForm(environment, root, options = {}) {
     const item = client.snapshot.items.find(item => item.name === action.control);
     const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
     if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
-        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+        !['FormCatalogRef', 'FormEnumRef'].includes(field.value.type)) throw new FormError('unavailable');
     return {value: field.value, controlId: item.controlId, tableId: item.tableId};
   }
   async function run(event, name, row) {
@@ -138,6 +138,12 @@ export function mountForm(environment, root, options = {}) {
     try { return await (client.snapshot ? client.resync() : client.hello()); }
     finally { finish(); view.endOwnershipReconcile(); }
   }
+  async function recoverReadOnly() {
+    if(busy||!client||client.outcomeUnknown||client.snapshot?.uncertain)throw new FormError('transport');
+    busy=true;view.beginOwnershipReconcile();paint();
+    try { return await (client.snapshot?client.resync():client.hello()); }
+    finally { finish();view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -178,7 +184,7 @@ export function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, recoverReadOnly, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {

@@ -13,22 +13,20 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertEqual(len(files), 19)
         self.assertEqual(sum(name.endswith('.xml') for name in files), 15)
         self.assertEqual(sum(name.endswith('.bsl') for name in files), 4)
-        self.assertEqual(len(demo.INPUTS), 21)
+        self.assertEqual(len(demo.INPUTS), 22)
         self.assertNotIn('original.zip', '\n'.join(demo.INPUTS))
         self.assertNotIn('manifest.json', '\n'.join(demo.INPUTS))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source = root / demo.SOURCE_ROOT
-            source.parent.mkdir(parents=True, exist_ok=True)
-            demo.stage_source(source, files)
-            self.assertEqual(demo.source_files(root), files)
-            (source / 'unexpected.xml').write_bytes(b'<x/>')
+            demo.stage_inputs(demo.ROOT, root / 'stage')
+            self.assertEqual(demo.source_files(root / 'stage'), files)
+            original_root = root / 'stage' / demo.HISTORICAL_ROOT
+            original_root.write_bytes(original_root.read_bytes() + b'\n')
             with self.assertRaises(demo.DemoError):
-                demo.source_files(root)
-            (source / 'unexpected.xml').unlink()
-            (source / 'Configuration.xml').unlink()
+                demo.source_files(root / 'stage')
+            original_root.unlink()
             with self.assertRaises(demo.DemoError):
-                demo.source_files(root)
+                demo.source_files(root / 'stage')
         self.assertNotIn('validate_dump.py', '\n'.join(demo.INPUTS))
 
     def test_stage_fixed_inputs(self):
@@ -140,6 +138,7 @@ class DemoDesignerTests(unittest.TestCase):
         self.assertIn(block, normalized)
         self.assertNotIn('pull_request:', workflow)
         self.assertNotIn('write', workflow)
+        self.assertIn('if: ${{ false }} # Retired: historical redump is offline-only.', workflow)
 
     def test_admission_owner_exact_sha(self):
         sha, ref = 'a'*40, 'refs/heads/demo-reviewed'

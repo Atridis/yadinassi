@@ -97,10 +97,11 @@ def seed_products(root):
     from yadinassi import Interpreter
     from yadinassi.database_context import SQLiteDBContext
 
-    source = Path(__file__).resolve().parents[1] / 'fixtures/demo_cf/source'
+    source = Path(__file__).resolve().parents[2] / 'examples/demo'
     files = {p.relative_to(source).as_posix(): p.read_bytes()
              for p in source.rglob('*') if p.is_file()}
-    SQLiteCatalogBackend.create_demo_products(root / 'owned.sqlite', files).close()
+    from yadinassi.configuration_main_demo import PROFILE, import_main_demo_configuration
+    SQLiteCatalogBackend.create_main_demo(root / 'owned.sqlite', import_main_demo_configuration(files, profile=PROFILE)).close()
     context = SQLiteDBContext(root / 'owned.sqlite')
     vm = None
     try:
@@ -117,7 +118,7 @@ def seed_products(root):
                 vm.close()
         finally:
             context.close()
-    return {'seeded': True, 'schema': 'demo_products_v1'}
+    return {'seeded': True, 'schema': 'main-demo-v1'}
 
 
 def audit_products(root, *, allow_marks=False):

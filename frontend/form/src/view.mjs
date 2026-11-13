@@ -174,13 +174,13 @@ export function createFormView(document, root, handlers) {
   }
   function paintReference(actions, field, label, disabled) {
     if (!actions) return;
-    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(field?.value?.type); actions.group.hidden = !reference;
     const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
     actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
     actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
   }
   function makeControl(item) {
-    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -220,7 +220,7 @@ export function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
     return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
@@ -277,7 +277,7 @@ export function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(column.type) ? referenceActions(cell, locator) : null;
     return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {

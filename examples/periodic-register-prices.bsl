@@ -13,3 +13,10 @@ Message(InformationRegisters.Prices.GetLast(Date(2024, 1, 2), Key).Price);
 Q = New Query("SELECT Item, Period, Price FROM InformationRegister.Prices.SliceLast(&At) WHERE Enabled=TRUE");
 Q.SetParameter("At", Date(2024, 1, 2));
 Message(Q.Execute().Unload().Count()); // 0: WHERE filters the selected latest row.
+
+// Explicit condition is applied before selecting the last row.
+Q.Text = "SELECT Item, Price FROM InformationRegister.Prices.SliceLast(&At, Enabled=&Enabled)";
+Q.SetParameter("Enabled", True);
+Selected = Q.Execute().Unload();
+Message(Selected.Count()); // 1
+Message(Selected[0].Price); // 10: Jan 1 is the last enabled row at Jan 2.

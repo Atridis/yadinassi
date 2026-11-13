@@ -82,7 +82,7 @@ class PostingDocumentSession:
         try:
             card = view.read_document(self.object._key)
             if card is None: raise BackendError('not_found')
-            listing = view.select_documents(self.schema.identity, DocumentSelection())
+            listing = (card,) if getattr(self,"_paged_listing",False) is True else view.select_documents(self.schema.identity, DocumentSelection())
             if not any(row.key == card.key for row in listing): raise BackendError('not_found')
         finally: view.close()
         fresh = BSLDocumentObject(self.manager, card)

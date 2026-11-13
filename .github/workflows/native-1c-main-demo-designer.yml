@@ -1,0 +1,134 @@
+name: Native main demo DESIGNER acceptance
+on:
+  push:
+    branches: [codex/main-demo-designer-reviewed]
+  workflow_dispatch:
+    inputs:
+      reviewed_sha:
+        description: Exact source-reviewed 40-character SHA on selected owner branch
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: native-main-demo-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  eligibility:
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify owner and exact reviewed source without checkout
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}
+        shell: bash
+        run: |
+          python3 -I -B - <<'PYTHON'
+          # BEGIN MAIN DEMO ADMISSION
+          import json
+          import os
+          import re
+          import sys
+
+
+          def admission(event, context):
+              def need(ok):
+                  if not ok:
+                      raise ValueError('demo_admission_denied')
+              def owner(value):
+                  return (type(value) is dict and value.get('login') == 'Atridis'
+                          and type(value.get('id')) is int and value['id'] == 30860798
+                          and value.get('type') == 'User')
+              need(type(event) is dict and type(context) is dict)
+              expected = dict(GITHUB_REPOSITORY='Atridis/yadinassi', GITHUB_REPOSITORY_ID='359770628',
+                              GITHUB_REPOSITORY_OWNER='Atridis', GITHUB_REPOSITORY_OWNER_ID='30860798',
+                              GITHUB_ACTOR='Atridis', GITHUB_ACTOR_ID='30860798',
+                              NATIVE_TRIGGERING_ACTOR='Atridis',
+                              GITHUB_REF_TYPE='branch', GITHUB_BASE_REF='', GITHUB_HEAD_REF='')
+              need(all(context.get(key) == value for key, value in expected.items()))
+              repo = event.get('repository')
+              need(type(repo) is dict and repo.get('full_name') == 'Atridis/yadinassi'
+                   and type(repo.get('id')) is int and repo['id'] == 359770628
+                   and repo.get('fork') is False and owner(repo.get('owner')) and owner(event.get('sender')))
+              sha, ref = context.get('GITHUB_SHA'), context.get('GITHUB_REF')
+              need(type(sha) is str and re.fullmatch('[0-9a-f]{40}', sha) is not None and sha != '0' * 40)
+              need(type(ref) is str and re.fullmatch(r'refs/heads/[A-Za-z0-9][A-Za-z0-9._/-]{0,239}', ref) is not None
+                   and '..' not in ref and '//' not in ref and not ref.endswith(('/', '.'))
+                   and all(not part.startswith('.') and not part.endswith('.lock') for part in ref.split('/')))
+              need(context.get('GITHUB_WORKFLOW_SHA') == sha and context.get('GITHUB_WORKFLOW_REF') ==
+                   'Atridis/yadinassi/.github/workflows/native-1c-main-demo-designer.yml@' + ref)
+              inputs = json.loads(context.get('NATIVE_DISPATCH_INPUTS', 'null'), object_pairs_hook=unique)
+              if context.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':
+                  need(event.get('ref') in (ref, ref.removeprefix('refs/heads/')))
+                  need(event.get('inputs') == {'reviewed_sha': sha})
+                  need(inputs == {'reviewed_sha': sha})
+              else:
+                  need(context.get('GITHUB_EVENT_NAME') == 'push')
+                  need(ref == 'refs/heads/codex/main-demo-designer-reviewed' and event.get('ref') == ref)
+                  need(event.get('deleted') is False and event.get('forced') is False)
+                  need(event.get('after') == sha and type(event.get('head_commit')) is dict
+                       and event['head_commit'].get('id') == sha)
+                  need(event.get('inputs', {}) == {} and inputs == {})
+              return sha
+
+
+          def unique(pairs):
+              value = {}
+              for key, item in pairs:
+                  if key in value:
+                      raise ValueError('demo_admission_denied')
+                  value[key] = item
+              return value
+
+
+          def check_environment():
+              with open(os.environ['GITHUB_EVENT_PATH'], 'rb') as source:
+                  raw = source.read(8 * 1048576 + 1)
+              if len(raw) > 8 * 1048576:
+                  raise ValueError('demo_admission_denied')
+              return admission(json.loads(raw, object_pairs_hook=unique), dict(os.environ))
+          # END MAIN DEMO ADMISSION
+          try:
+              check_environment()
+          except Exception:
+              raise SystemExit('Demo admission denied.')
+          PYTHON
+  designer:
+    needs: eligibility
+    if: needs.eligibility.result == 'success'
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Bind clean checkout to exact reviewed source
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}
+        run: python3 -I -B scripts/native_1c_main_demo_ci_policy.py
+      - name: Load, check and update exact main demo without application execution
+        env:
+          NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          report="${RUNNER_TEMP}/main-demo-designer-report.json"
+          python3 -B scripts/native_1c_main_demo_designer.py --execute-approved-image > "$report"
+      - name: Upload finite report only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: main-demo-designer-summary
+          path: ${{ runner.temp }}/main-demo-designer-report.json
+          if-no-files-found: error
+          retention-days: 7

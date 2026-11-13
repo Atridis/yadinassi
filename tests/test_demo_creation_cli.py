@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from legacy_demo_fixture import legacy_demo_files
 from yadinassi import cli
 from yadinassi.catalog_backend import BackendError
 from yadinassi.configuration_import import read_configuration_directory
@@ -19,7 +20,7 @@ from yadinassi.ui.catalog_editor import CatalogEditorApplication
 from yadinassi.ui.protocol import CatalogRef
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'tests/fixtures/demo_cf/source'
+SOURCE = ROOT / 'examples/demo'
 
 
 class DemoCreationCLITests(unittest.TestCase):
@@ -42,12 +43,12 @@ class DemoCreationCLITests(unittest.TestCase):
     def test_create_retains_all_original_bytes_and_three_empty_catalogs(self):
         result = self.run_cli()
         self.assertEqual(result[0], 0, result)
-        self.assertIn('Created demo SQLite database:', result[1])
+        self.assertIn('Created main demo SQLite database:', result[1])
         self.assertIn('not native 1C', result[1])
         self.assertEqual(result[2], '')
         with closing(SQLiteCatalogBackend(self.database)) as backend:
             self.assertEqual(backend.export_configuration(), read_configuration_directory(SOURCE))
-            self.assertEqual(backend.storage_version, 6)
+            self.assertEqual(backend.format_version, 16)
         with closing(CatalogEditorApplication(SQLiteDBContext(self.database))) as app:
             inventory = app.snapshot()['state']['catalogs']
             self.assertEqual({entry['name'] for entry in inventory},
@@ -118,7 +119,7 @@ class DemoCreationCLITests(unittest.TestCase):
         self.assertEqual(self.database.read_bytes(), before)
 
     def test_older_profile_is_not_upgraded(self):
-        SQLiteCatalogBackend.create_demo_kinds(self.database, read_configuration_directory(SOURCE)).close()
+        SQLiteCatalogBackend.create_demo_kinds(self.database, legacy_demo_files()).close()
         before = self.database.read_bytes()
         self.assertEqual(self.run_cli()[0], 1)
         self.assertEqual(self.database.read_bytes(), before)
@@ -153,7 +154,7 @@ class DemoCreationCLITests(unittest.TestCase):
     def test_source_reader_refusal_never_reaches_creation(self):
         with patch('yadinassi.configuration_import.read_configuration_directory',
                    side_effect=ValueError('/PRIVATE/source')), \
-             patch.object(SQLiteCatalogBackend, 'create_demo_products') as create:
+             patch.object(SQLiteCatalogBackend, 'create_main_demo') as create:
             result = self.run_cli()
         create.assert_not_called()
         self.assertEqual(result, (1, '', 'yadinassi: configuration import refused\n'))
@@ -190,7 +191,7 @@ class DemoCreationCLITests(unittest.TestCase):
         for error in (BackendError('storage_error'), ValueError('/PRIVATE/value'),
                       OSError('/PRIVATE/path')):
             with self.subTest(error=type(error).__name__), \
-                 patch.object(SQLiteCatalogBackend, 'create_demo_products', side_effect=error) as create:
+                 patch.object(SQLiteCatalogBackend, 'create_main_demo', side_effect=error) as create:
                 result = self.run_cli()
             create.assert_called_once()
             self.assertEqual(result[0], 1)
@@ -199,18 +200,18 @@ class DemoCreationCLITests(unittest.TestCase):
             self.assertIn('preserve and inspect', result[2])
 
     def test_uncertain_creation_keeps_destination_and_never_retries(self):
-        create = SQLiteCatalogBackend.create_demo_products
+        create = SQLiteCatalogBackend.create_main_demo
         def uncertain(*args, **kwargs):
             create(*args, **kwargs).close()
             raise BackendError('uncertain_commit')
-        with patch.object(SQLiteCatalogBackend, 'create_demo_products', side_effect=uncertain) as attempted:
+        with patch.object(SQLiteCatalogBackend, 'create_main_demo', side_effect=uncertain) as attempted:
             result = self.run_cli()
         attempted.assert_called_once()
         self.assertEqual(result[0], 1)
         self.assertIn('outcome uncertain', result[2])
         self.assertIn('SQLite journal', result[2])
         with closing(SQLiteCatalogBackend(self.database)) as backend:
-            self.assertEqual(backend.storage_version, 6)
+            self.assertEqual(backend.format_version, 16)
 
     def test_close_failure_keeps_created_database_and_reports_failure(self):
         close = SQLiteCatalogBackend.close
@@ -223,7 +224,7 @@ class DemoCreationCLITests(unittest.TestCase):
         self.assertNotIn('PRIVATE', result[2])
         self.assertIn('preserve and inspect', result[2])
         with closing(SQLiteCatalogBackend(self.database)) as backend:
-            self.assertEqual(backend.storage_version, 6)
+            self.assertEqual(backend.format_version, 16)
 
     def test_module_and_packaged_entrypoint_create_from_unrelated_working_directory(self):
         environment = dict(os.environ, PYTHONIOENCODING='utf-8')

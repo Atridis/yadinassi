@@ -76,7 +76,9 @@ activation. The archive itself is preserved byte-for-byte for that later work.
 
 `import_demo_kinds_configuration(files)` is a separate, deliberately fixed
 `demo_kinds_v1` profile. Its allowlist commits to every path and SHA-256 in the
-complete original 19-file `tests/fixtures/demo_cf/source` archive. Missing, extra
+complete original 19-file historical archive. Tests reconstruct it with
+`tests/legacy_demo_fixture.py`: eighteen pinned files from `examples/demo` and
+the old `tests/fixtures/legacy_demo_root.xml`. No duplicate demo source tree is kept. Missing, extra
 or changed files are rejected, including otherwise harmless whitespace, BOM,
 line endings, presentation settings and sources of inactive catalogs. The
 allowlist is reviewed profile code, not a manifest regenerated from input.

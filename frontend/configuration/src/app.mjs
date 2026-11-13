@@ -6,6 +6,8 @@ import {createBrowserHost, documentInstance} from '../../form/src/attachment.mjs
 import {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} from './client.mjs';
 
 export function mountApplication(environment, root, exchange = null) {
+  let destroyed = false, recovering = false;
+  const demoRecovery = typeof exchange?.recover === 'function';
   const browserHost = exchange ? null : createBrowserHost(environment, root);
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
@@ -43,17 +45,22 @@ export function mountApplication(environment, root, exchange = null) {
   inputStatus.setAttribute('role','status'); inputActions.className = 'dialog-commands'; inputBody.className = 'typed-input-body';
   inputDialog.append(inputTitle,inputText,inputBody,inputStatus,inputActions);
 
-  let pickerBusy = false, pickerTicket = null, pickerReturn = null;
+  let pickerBusy = false, pickerTicket = null, pickerReturn = null, pickerQueryBaseline = null, pickerCodeBaseline = null;
   const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
   const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
   picker.className = 'panel reference-picker'; picker.setAttribute('role','dialog'); picker.setAttribute('aria-modal','true'); picker.hidden = true;
   pickerTitle.id = `reference-title-${instance}`; picker.setAttribute('aria-labelledby',pickerTitle.id);
   pickerCode.type = 'text'; pickerCode.maxLength = 64; pickerCode.autocomplete = 'off'; pickerCode.spellcheck = false;
   pickerCode.setAttribute('aria-label','Exact code'); codeLabel.append(pickerCode);
+  const queryLabel=el('label','Code or description'),pickerQuery=el('input');
+  pickerQuery.type='search';pickerQuery.maxLength=128;pickerQuery.setAttribute('aria-label','Reference search');queryLabel.append(pickerQuery);
   pickerHelp.textContent = 'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
-  picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
+  picker.append(pickerTitle,pickerHelp,codeLabel,queryLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
+  let queryEntry=null,queryDraft='',orderDraft='',filterDraft=null;
+  const defaultRecordFilters=()=>({deletion:'all',posting:'all',dateFrom:'',dateTo:'',descending:false});
+  const acceptedRecordDraft=catalog=>{queryEntry=catalog.entry;queryDraft=catalog.navigation.query;orderDraft=catalog.navigation.order;filterDraft={...(catalog.navigation.filters||defaultRecordFilters())};};
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -82,12 +89,20 @@ export function mountApplication(environment, root, exchange = null) {
         /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.code))) {
       status = 'Enter an exact code of at most 64 characters.'; paint(); return;
     }
+    if(action.action==='search'&&(typeof action.query!=='string'||[...action.query].length>128||
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.query))){
+      status='Enter a search of at most 128 characters.';paint();return;
+    }
     // Do not route cancellation through native form validation or raw code parsing.
     pickerBusy = true; paint();
     try { await entry.mount.reference({...action,ticket}); }
     finally { pickerBusy = false; paint(); }
   }
   const filter = button('Find exact code',pickerActions,() => choose({action:'filter',code:pickerCode.value}));
+  const searchChoice=button('Search references',pickerActions,()=>choose({action:'search',query:pickerQuery.value}));
+  const previousChoice=button('Previous choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.previous}));
+  const nextChoice=button('Next choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.next}));
+  pickerQuery.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();choose({action:'search',query:pickerQuery.value});}});
   const cancel = button('Cancel selection',pickerActions,() => choose({action:'cancel'}));
   pickerCode.addEventListener('keydown',event => {
     if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); choose({action:'filter',code:pickerCode.value}); }
@@ -116,13 +131,21 @@ export function mountApplication(environment, root, exchange = null) {
       return;
     }
     const newTicket = pickerTicket !== choice.ticket;
-    if (newTicket) { pickerTicket = choice.ticket; pickerCode.value = choice.code; pickerReturn = choice; }
+    if (newTicket) { pickerTicket = choice.ticket; pickerReturn = choice; }
+    if(newTicket||pickerCodeBaseline!==choice.code){pickerCode.value=choice.code;pickerCodeBaseline=choice.code;}
     pickerTitle.textContent = 'Choose ' + choice.title;
     const disabled = pickerBusy || client.pending > 0 || client.terminal || client.state.uncertain;
     filter.disabled = cancel.disabled = pickerCode.disabled = disabled;
+    const paged=Object.hasOwn(choice,'navigation'),nav=choice.navigation;
+    for(const node of [queryLabel,searchChoice,previousChoice,nextChoice])node.hidden=!paged;
+    pickerQuery.disabled=searchChoice.disabled=disabled;
+    previousChoice.disabled=disabled||!nav?.previous;nextChoice.disabled=disabled||!nav?.next;
+    if(newTicket||pickerQueryBaseline!==(nav?.query??'')){pickerQuery.value=nav?.query??'';pickerQueryBaseline=nav?.query??'';}
+    pickerHelp.textContent=paged?'Search code or description in a bounded snapshot, or read fresh exact-code matches. Selection rechecks the saved record. Cancel keeps the current value.':'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
     pickerError.textContent = client.terminal ? 'The outcome may be unknown. Selection is locked; no request will be repeated.'
+      : choice.error === 'snapshot_limit' ? 'The complete result exceeds the supported snapshot budget. No partial rows are shown. Enter an exact code to narrow the read.'
       : choice.error === 'too_many_matches' ? 'Too many matches. Enter an exact code to continue.'
-      : status || (choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
+      : status || (nav ? `Page ${nav.page} of ${nav.pages}; ${nav.total} matching records` : choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
     pickerRows.replaceChildren();
     for (const row of choice.rows) {
       const entry = el('div'), description = el('span',row.code + ' · ' + row.description);
@@ -302,6 +325,47 @@ export function mountApplication(environment, root, exchange = null) {
     };
     const open = button('Open selected',actions,openSelected);
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    if (catalog.navigation) {
+      const nav=catalog.navigation;
+      if(queryEntry!==catalog.entry)acceptedRecordDraft(catalog);
+      const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
+      search.addEventListener('input',()=>{queryDraft=search.value;});
+      const order=el('select');order.setAttribute('aria-label','Record order');
+      for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
+      order.value=orderDraft;order.addEventListener('change',()=>{orderDraft=order.value;});
+      const apply=(reset=false)=>{
+        if(unavailable())return;
+        const filters=reset?defaultRecordFilters():{...filterDraft};
+        const nondefault=filters.deletion!=='all'||filters.posting!=='all'||filters.dateFrom!==''||filters.dateTo!==''||filters.descending;
+        perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:reset?'':queryDraft,order:reset?(document?'date':'code'):orderDraft,...(nondefault?{filters}:{})});
+      };
+      const controls=[];
+      const choice=(label,key,values)=>{
+        const wrapper=el('label',label),input=el('select');input.setAttribute('aria-label',label);
+        for(const value of values){const option=el('option',value);option.value=value;input.append(option);}
+        input.value=filterDraft[key];input.addEventListener('change',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+      };
+      choice('Deletion filter','deletion',['all','unmarked','marked']);
+      if(document){
+        choice('Posting filter','posting',['all','posted','unposted']);
+        for(const [key,label] of [['dateFrom','Date from (inclusive)'],['dateTo','Date through (inclusive)']]){
+          const wrapper=el('label',label),input=el('input');input.type='date';input.value=filterDraft[key];input.setAttribute('aria-label',label);input.min='0001-01-01';input.max='9999-12-31';
+          input.addEventListener('input',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+        }
+      }
+      const descending=el('input'),descendingLabel=el('label','Descending order');descending.type='checkbox';descending.checked=filterDraft.descending;descending.setAttribute('aria-label','Descending order');
+      descending.addEventListener('change',()=>{filterDraft.descending=descending.checked;});descendingLabel.append(descending);actions.append(descendingLabel);controls.push(descending);
+      search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
+      actions.append(search,order);const filter=button('Search records',actions,()=>apply());
+      const applyFilters=button('Apply filters',actions,()=>apply());
+      const resetFilters=button('Reset filters',actions,()=>apply(true));
+      for(const control of [...controls,applyFilters,resetFilters])control.disabled=unavailable();
+      const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
+      const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
+      previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
+      search.disabled=order.disabled=filter.disabled=unavailable();
+      const page=el('span',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching records`);page.setAttribute('aria-live','polite');actions.append(page);
+    }
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
     for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
@@ -336,13 +400,14 @@ export function mountApplication(environment, root, exchange = null) {
       if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
-    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    catalogPanel.append(heading,actions,el('p','Records snapshot. Refresh shows external changes; Save refreshes this list without replacing other open drafts.'),table);
     if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
     paintSelection();
     workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';
   }
   function paint() {
     browserHost?.notify();
+    shell.inert = recovering;
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
@@ -351,6 +416,7 @@ export function mountApplication(environment, root, exchange = null) {
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
+      if (entry.kind === 'owned-form') continue;
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
@@ -361,7 +427,7 @@ export function mountApplication(environment, root, exchange = null) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
       entry.ownerNotice.textContent = client.inputs.some(value => value.owner === id) ? 'This form is paused for an input answer. Pending text is retained.' : client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
-      if (client.terminal) entry.mount?.lock();
+      if (client.terminal && !recovering) entry.mount?.lock();
       else entry.mount?.repaint();
     }
     postingPanel.replaceChildren();
@@ -383,6 +449,7 @@ export function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
+    if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
     status = result.error === 'form_capacity'
       ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
       : result.error ? `Application: ${result.error}` : '';
@@ -396,8 +463,8 @@ export function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status');
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
-      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
-        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
+      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request,recovering),isActive: () => active === id,
+        businessBlocked: () => recovering || Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice || dialogModal()),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
@@ -430,7 +497,7 @@ export function mountApplication(environment, root, exchange = null) {
     try { return await client.request(method,params); }
     catch(error) {
       if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
-      status = 'Application connection failed.'; paint();
+      status = error?.preDispatch&&method==='application.catalogFilter'?'Record filters are invalid. Check the dates and selected values.':'Application connection failed.'; paint();
     }
     finally { paint(); }
   }
@@ -449,8 +516,11 @@ export function mountApplication(environment, root, exchange = null) {
   });
   workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
+  const surfaceExchange = exchange;
+  exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
-  environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
+  const warnBeforeUnload = event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } };
+  environment.addEventListener('beforeunload',warnBeforeUnload);
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
   browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
     !pickerBusy && !client.state?.choice && mounts.size &&
@@ -458,22 +528,36 @@ export function mountApplication(environment, root, exchange = null) {
     ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
       client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
+    if (destroyed) throw Error('Application mount destroyed');
     try {
-      if (client.terminal) throw Error('Unknown previous outcome');
+      if (client.semanticUnknown || client.terminal&&!demoRecovery) throw Error('Unknown semantic outcome');
+      recovering=demoRecovery;
+      paint();
       const retained = new Set(mounts.keys());
-      const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
+      const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
       for (const [id,entry] of mounts) {
-        if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+        if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }
+      if(demoRecovery)client.finishReadRecovery();
       return result;
     } finally {
+      recovering=false;
       // Reconciliation paints while the hello request is still pending.
       // Recompute controls after it settles; ownership and error gates remain.
       paint();
     }
   };
   paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
-  return {ready,client,mounts,show,pending,openForm,browserHost};
+  const canLeave = () => !destroyed && Boolean(client.state) && !pending() && !mounts.size && !openings.size;
+  const destroy = () => {
+    if (destroyed) return;
+    if (!canLeave()) throw Error('Finish current application surface');
+    destroyed = true;
+    environment.removeEventListener('beforeunload',warnBeforeUnload);
+    browserHost?.attachment?.dispose();
+    root.replaceChildren();
+  };
+  return {ready,client,mounts,show,pending,openForm,browserHost,canLeave,destroy,resume,recoveryReady:()=>!client.pending&&!client.terminal&&!client.state?.uncertain&&!client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))&&[...mounts.values()].every(e=>!e.mount.client?.busy&&!e.mount.client?.transportFailed&&!e.mount.client?.outcomeUnknown)};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));

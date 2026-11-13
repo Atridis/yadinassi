@@ -212,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error('--save-source/--run-startup требует --configuration-source')
 
     demo = args.create_demo_db is not None
+    main_demo = False
     from .configuration_diagnostics import from_exception
     if args.report_json and args.check_xml is None:
         parser.error('--report-json requires --check-xml')
@@ -250,6 +251,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if demo:
                 configuration = read_configuration_directory(args.import_xml)
+                # The historical exact 19-file demo remains supported. A full
+                # application manifest selects the new closed main-demo grant;
+                # failure never falls back to weaker legacy admission.
+                main_demo = 'InventoryApplication.xml' in configuration
+                if main_demo:
+                    from .configuration_profile_import import prepare_files
+                    from .configuration_main_demo import PROFILE as MAIN_DEMO
+                    prepared = prepare_files(configuration, profile=MAIN_DEMO)
             else:
                 prepared = prepare_directory(args.import_xml, profile=args.source_profile or 'legacy',
                     numbering_policy=args.numbering_policy or 'explicit', module_runtime=args.module_runtime,
@@ -266,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if demo:
                 from .sqlite_catalog import SQLiteCatalogBackend
-                context = SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration)
+                context = (create_prepared(args.create_demo_db, prepared) if main_demo else
+                           SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration))
             else:
                 context = create_prepared(args.create_db, prepared)
             context.close()
@@ -280,7 +290,8 @@ def main(argv: list[str] | None = None) -> int:
             print("yadinassi: database creation failed; if a destination exists, preserve and inspect it before retrying or deleting", file=sys.stderr)
             return 1
         if demo:
-            print("Created demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура.")
+            print("Created main demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура, Receipt, Issue, Stock, Units, States."
+                  if main_demo else "Created demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура.")
             print("Original demo handlers; bounded local editor, not native 1C managed-form parity.")
         else:
             print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")

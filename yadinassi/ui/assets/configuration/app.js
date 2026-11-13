@@ -146,7 +146,7 @@ function validateScalar(value) {
         try { if (decimalText(value.value) === value.value) return value; } catch { /* Reject noncanonical scalars. */ }
       }
       break;
-    case 'FormCatalogRef':
+    case 'FormCatalogRef': case 'FormEnumRef':
       if (keys(value, ['type', 'scope', 'target', 'key', 'text']) &&
           typeof value.scope === 'string' && /^[0-9a-f]{32}$/.test(value.scope) &&
           Number.isInteger(value.target) && value.target >= 1 && value.target <= 128 &&
@@ -206,7 +206,7 @@ function validateSnapshot(state) {
         const shape = ['name', 'title', 'type', 'readOnly'];
         if (record(column) && Object.hasOwn(column, 'editor')) shape.push('editor');
         if (!keys(column, shape) || !validText(column.name) || !column.name.length ||
-            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef'].includes(column.type) ||
+            columns.has(column.name) || !validText(column.title) || !['String', 'Number', 'Boolean', 'Date', 'FormCatalogRef', 'FormEnumRef'].includes(column.type) ||
             typeof column.readOnly !== 'boolean') throw new FormError('transport');
         if (Object.hasOwn(column, 'editor')) validateEditor(column.editor, column.type);
         columns.add(column.name);
@@ -259,7 +259,7 @@ function validateSnapshot(state) {
 }
 function scalarText(value, editor) {
   validateScalar(value);
-  if (value.type === 'FormCatalogRef') return value.text;
+  if (['FormCatalogRef', 'FormEnumRef'].includes(value.type)) return value.text;
   if (value.type === 'Boolean') return value.value ? 'Yes' : 'No';
   if (value.type === 'Date') return editor?.kind === 'date' && dateFits(value, editor) ? dateText(value, editor) : value.ticks;
   if (value.type === 'Undefined') return 'Undefined';
@@ -272,6 +272,7 @@ function editable(item) {
 }
 function inputHint(item) {
   const type = item.value.type, editor = item.editor;
+  if (type === 'FormEnumRef') return 'Enumeration · choose a declared value; no text editing';
   if (type === 'FormCatalogRef') return 'Catalog reference · choose an existing record; no text editing';
   if (type === 'Date') {
     if (!editor || !dateFits(item.value, editor)) return 'Exact date ticks · read-only · no timezone conversion';
@@ -312,7 +313,7 @@ function typedInput(item, input) {
   return {type: 'String', value: input};
 }
 function scalarEqual(left, right) {
-  if (left?.type === 'FormCatalogRef' || right?.type === 'FormCatalogRef')
+  if (['FormCatalogRef', 'FormEnumRef'].includes(left?.type) || ['FormCatalogRef', 'FormEnumRef'].includes(right?.type))
     return Boolean(left && right && left.type === right.type && left.scope === right.scope &&
       left.target === right.target && left.key === right.key);
   return Boolean(left && right && left.type === right.type && left.value === right.value && left.ticks === right.ticks);
@@ -501,6 +502,15 @@ function validateStatus(value, issued, previous) {
   return value;
 }
 function readOnlyRPC(request) {
+  if (['demo.hello','demo.snapshot'].includes(request.method))
+    return objectKeys(request.params,['protocol']) && request.params.protocol === 'yadinassi-main-demo/1';
+  if (request.method === 'demo.dispatch') {
+    const params=request.params,nested=params?.request;
+    if (!objectKeys(params,['epoch','request']) || typeof params.epoch !== 'string' || !/^[0-9a-f]{32}$/.test(params.epoch) ||
+        !objectKeys(nested,['jsonrpc','id','method','params']) || nested.jsonrpc !== '2.0' || !Number.isSafeInteger(nested.id) || nested.id < 1) return false;
+    if (['editor.hello','editor.snapshot','application.hello','application.snapshot'].includes(nested.method)) return true;
+    return nested.method === 'application.form' && ['form.hello','form.snapshot'].includes(nested.params?.request?.method);
+  }
   if (['form.hello', 'form.snapshot', 'editor.hello', 'editor.snapshot', 'workspace.hello', 'application.hello'].includes(request.method)) return true;
   return ['workspace.form', 'application.form'].includes(request.method) &&
     ['form.hello', 'form.snapshot'].includes(request.params?.request?.method);
@@ -623,11 +633,36 @@ class BrowserAttachment {
     return this.command('detach', true).catch(() => {}); // Advisory only; never Save, Discard or Close.
   }
   dispose() { this.stopHeartbeat(); this.environment.removeEventListener?.('pagehide', this.hide); this.environment.removeEventListener?.('pageshow', this.show); }
+  async inspectDemo(callback) {
+    if (typeof callback !== 'function' || this.demoInspection || this.busy || this.rpcActive || this.suspended || this.info?.closed || this.info?.role !== 'writer') throw new AttachmentRefusal('not_writer');
+    const pin={attachment:this.info.attachment,generation:this.info.generation};
+    const current=()=>this.info?.role==='writer'&&!this.info.closed&&!this.suspended&&this.info.attachment===pin.attachment&&this.info.generation===pin.generation;
+    this.demoInspection={current,snapshot:null,epoch:null};
+    try {
+      const result=await callback();
+      const observed=this.demoInspection.snapshot;
+      if (!current()) throw new AttachmentRefusal('not_writer');
+      if (objectKeys(result,['protocol','epoch','ready']) && result.protocol==='yadinassi-main-demo/1' && result.ready===true &&
+          observed?.kind==='main-demo' && observed.uncertain===false && observed.epoch===result.epoch &&
+          this.demoInspection.epoch===result.epoch && !this.rpcActive) {
+        this.businessUnknown=false;this.paused=false;this.message='';
+      }
+      return result;
+    } finally { this.demoInspection=null;this.changed(); }
+  }
   async exchange(request) {
-    if (!this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (this.demoInspection && (!this.demoInspection.current() || !['demo.hello','demo.snapshot','demo.dispatch'].includes(request.method) || !readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
+    if (!this.demoInspection && !this.writable && !(this.reconciling && this.info?.role === 'writer' && !this.suspended && readOnlyRPC(request))) throw new AttachmentRefusal('not_writer');
     this.rpcActive++;
     try {
       const result = await this.post('/rpc', request, this.credential, {'X-Yadinassi-Attachment': this.info.attachment, 'X-Yadinassi-Generation': String(this.info.generation)});
+      if (this.demoInspection) {
+        if (!this.demoInspection.current()) throw new AttachmentRefusal('not_writer');
+        const state=result?.result?.state;
+        if (request.method==='demo.snapshot' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null) this.demoInspection.snapshot=state;
+        if (request.method==='demo.dispatch' && result?.result?.protocol==='yadinassi-main-demo/1' && result.result.error===null && state?.epoch===request.params.epoch &&
+            objectKeys(result.result.payload,['jsonrpc','id','result']) && result.result.payload.jsonrpc==='2.0' && result.result.payload.id===request.params.request.id) this.demoInspection.epoch=state.epoch;
+      }
       if (result?.result?.state?.kind === 'closed') { this.info = {...this.info, closed: true}; this.paused = true; this.stopHeartbeat(); this.changed(); }
       return result;
     } catch (error) {
@@ -679,7 +714,7 @@ function createBrowserHost(environment, root) {
   }
   takeover.addEventListener('click', () => attachment.takeover()); check.addEventListener('click', () => attachment.check());
   paint();
-  return {enabled: true, content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
+  return {enabled: true, inspect:callback=>attachment.inspectDemo(callback), content, instance: attachment.instance, attachment, transport: request => attachment.exchange(request),
     setPending(pending, uncertain = () => false) { attachment.pending = pending; attachment.uncertain = uncertain; paint(); },
     setInspectionAllowed(predicate) { inspectionAllowed = typeof predicate === 'function' ? predicate : () => false; paint(); }, notify: paint,
     start(callback) { attachment.reconcile = callback; return attachment.attach(); }};
@@ -864,13 +899,13 @@ function createFormView(document, root, handlers) {
   }
   function paintReference(actions, field, label, disabled) {
     if (!actions) return;
-    const reference = field?.value?.type === 'FormCatalogRef'; actions.group.hidden = !reference;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(field?.value?.type); actions.group.hidden = !reference;
     const unavailable = disabled || !reference || !field.visible || !field.enabled || field.readOnly || field.view === 'label';
     actions.choose.disabled = unavailable; actions.clear.disabled = unavailable || field.value.key === null;
     actions.choose.setAttribute('aria-label', 'Choose ' + label); actions.clear.setAttribute('aria-label', 'Clear ' + label);
   }
   function makeControl(item) {
-    const row = element(item.kind === 'button' || item.value?.type === 'FormCatalogRef' ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
+    const row = element(item.kind === 'button' || ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? 'div' : 'label', item.kind === 'button' ? 'command' : 'field');
     const caption = element('span', 'field-title');
     const input = element(item.kind === 'button' ? 'button' : 'input');
     const hint = element('small', 'field-hint');
@@ -910,7 +945,7 @@ function createFormView(document, root, handlers) {
       });
       row.append(caption, input, hint);
     }
-    const reference = item.value?.type === 'FormCatalogRef' ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(item.value?.type) ? referenceActions(row, {control: item.name, row: null, column: null}) : null;
     return {row, caption, input, hint, item, reference};
   }
   const cellKey = (control, controlId, tableId, row, column) => JSON.stringify([control, controlId, tableId, row, column]);
@@ -967,7 +1002,7 @@ function createFormView(document, root, handlers) {
         event.preventDefault(); handlers.change(locator);
       }
     });
-    const reference = column.type === 'FormCatalogRef' ? referenceActions(cell, locator) : null;
+    const reference = ['FormCatalogRef', 'FormEnumRef'].includes(column.type) ? referenceActions(cell, locator) : null;
     return {cell, input, type: column.type, key, reference};
   }
   function renderTable(control, model, active) {
@@ -1259,7 +1294,7 @@ function mountForm(environment, root, options = {}) {
     const item = client.snapshot.items.find(item => item.name === action.control);
     const field = action.row === null && action.column === null ? item : tableCell(item, action.row, action.column);
     if (!field || field.kind !== 'field' || !field.visible || !field.enabled || field.readOnly || field.view === 'label' ||
-        field.value.type !== 'FormCatalogRef') throw new FormError('unavailable');
+        !['FormCatalogRef', 'FormEnumRef'].includes(field.value.type)) throw new FormError('unavailable');
     return {value: field.value, controlId: item.controlId, tableId: item.tableId};
   }
   async function run(event, name, row) {
@@ -1338,6 +1373,12 @@ function mountForm(environment, root, options = {}) {
     try { return await (client.snapshot ? client.resync() : client.hello()); }
     finally { finish(); view.endOwnershipReconcile(); }
   }
+  async function recoverReadOnly() {
+    if(busy||!client||client.outcomeUnknown||client.snapshot?.uncertain)throw new FormError('transport');
+    busy=true;view.beginOwnershipReconcile();paint();
+    try { return await (client.snapshot?client.resync():client.hello()); }
+    finally { finish();view.endOwnershipReconcile(); }
+  }
   async function refresh() {
     if (busy || !client || options.businessBlocked?.() || options.referenceActive?.() || options.transport && client.transportFailed) return;
     busy = true; error = ''; paint();
@@ -1378,7 +1419,7 @@ function mountForm(environment, root, options = {}) {
       client.snapshot?.items.some(item => item.kind === 'group')));
   }
   const ready = options.transport ? connect('embedded') : browserHost.enabled ? browserHost.start(reconcileOwnership) : token ? connect(token) : reattach();
-  return {ready, refresh, reconcileOwnership, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
+  return {ready, refresh, reconcileOwnership, recoverReadOnly, adoptExternal, run, repaint: paint, reference: action => run('reference', action), reattach, hasPending, lock, browserHost, get client() { return client; }, view};
 }
 
 if (typeof window !== 'undefined' && window.document?.getElementById('app')) {
@@ -1410,12 +1451,25 @@ function filterValues(values,declared) {
     keys(v,['id','mode','text']) && v.id===declared.filters[i].id && ['all','empty','selected'].includes(v.mode) && text(v.text) &&
     (v.mode!=='all' || v.text==='') && (v.mode!=='empty' || v.text==='(empty reference)'));
 }
+function choiceNavigation(choice) {
+  if(!Object.hasOwn(choice,'navigation'))return true;
+  const nav=choice.navigation;
+  if(choice.error!==null)return choice.error==='snapshot_limit'&&nav===null&&choice.rows.length===0;
+  if(!keys(nav,['page','pages','total','query','previous','next']) ||
+      !['page','pages','total'].every(k=>Number.isSafeInteger(nav[k])) || nav.total<0 || nav.total>8192 ||
+      nav.pages!==Math.max(1,Math.ceil(nav.total/32)) || nav.page<1 || nav.page>nav.pages || !text(nav.query,128) ||
+      choice.rows.length!==Math.min(32,Math.max(0,nav.total-(nav.page-1)*32)) ||
+      (nav.previous===null)!==(nav.page===1) || (nav.next===null)!==(nav.page===nav.pages))return false;
+  const cursors=[nav.previous,nav.next].filter(v=>v!==null);
+  return new Set(cursors).size===cursors.length&&cursors.every(v=>typeof v==='string'&&/^report-choice-page-[0-9a-f]{32}$/.test(v));
+}
 function setupValid(setup,reports) {
   const declared=reports.find(r=>r.id===setup?.report);
   if(!keys(setup,['report','ticket','filters','choice']) || !statement(declared) || !ticket(setup.ticket,'setup') || !filterValues(setup.filters,declared))return false;
   const choice=setup.choice;if(choice===null)return true;
-  if(!keys(choice,['filter','ticket','code','rows','error']) || !declared.filters.some(f=>f.id===choice.filter) || !ticket(choice.ticket,'choice') || !text(choice.code,64) ||
-     ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length>32 || choice.error!==null && choice.rows.length)return false;
+  const paged=Object.hasOwn(choice,'navigation');
+  if(!keys(choice,['filter','ticket','code','rows','error',...(paged?['navigation']:[])]) || !declared.filters.some(f=>f.id===choice.filter) || !ticket(choice.ticket,'choice') || !text(choice.code,64) ||
+     !(paged?[null,'snapshot_limit']:[null,'too_many_matches']).includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length>32 || choice.error!==null && choice.rows.length || !choiceNavigation(choice))return false;
   const seen=new Set();return choice.rows.every(row=>{
     if(!keys(row,['choice','code','description']) || !rowToken(row.choice) || seen.has(row.choice) || !text(row.code,64) || !text(row.description,1024))return false;
     seen.add(row.choice);return true;
@@ -1446,6 +1500,9 @@ function validReportAction(method,params,state) {
   if(['begin','clear','empty'].includes(params.action))return keys(params,[...base,'filter']) && setup.choice===null && declared.filters.some(f=>f.id===params.filter);
   if(!setup.choice || setup.choice.ticket!==params.choice)return false;
   if(params.action==='filter')return keys(params,[...base,'choice','code']) && text(params.code,64);
+  if(params.action==='search')return Object.hasOwn(setup.choice,'navigation')&&keys(params,[...base,'choice','query'])&&text(params.query,128);
+  if(params.action==='page')return keys(params,[...base,'choice','cursor'])&&[setup.choice.navigation?.previous,setup.choice.navigation?.next].filter(Boolean).includes(params.cursor);
+  if(params.action==='refresh')return Object.hasOwn(setup.choice,'navigation')&&keys(params,[...base,'choice']);
   if(params.action==='cancel')return keys(params,[...base,'choice']);
   return params.action==='apply' && keys(params,[...base,'choice','value']) && setup.choice.error===null && setup.choice.rows.some(r=>r.choice===params.value);
 }
@@ -1516,8 +1573,12 @@ function validateReportReply(result,request,previous) {
       if(!old || old.ticket!==request.params.ticket)throw new FormError('transport');
       const changed=['apply','empty','clear'].includes(action);
       if(changed===(next.ticket===old.ticket) || !changed && JSON.stringify(next.filters)!==JSON.stringify(old.filters))throw new FormError('transport');
-      if(['begin','filter'].includes(action)){
+      if(['begin','filter','search','page','refresh'].includes(action)){
         if(!next.choice || next.choice.filter!==(action==='begin'?request.params.filter:old.choice?.filter) || next.choice.ticket===old.choice?.ticket)throw new FormError('transport');
+        if(action==='page' && (next.choice.code!==old.choice.code || next.choice.navigation?.total!==old.choice.navigation?.total || next.choice.navigation?.query!==old.choice.navigation?.query ||
+          next.choice.navigation?.page!==old.choice.navigation.page+(request.params.cursor===old.choice.navigation.next?1:-1)))throw new FormError('transport');
+        if(action==='search' && next.choice.navigation && (next.choice.code!=='' || next.choice.navigation.query!==request.params.query || next.choice.navigation.page!==1))throw new FormError('transport');
+
       }else if(next.choice!==null)throw new FormError('transport');
     }
   }
@@ -1573,10 +1634,24 @@ function createReportPanel(document, host, request, blocked, command=null) {
     const captured={...base,choice:choice.ticket};
     const search=()=>{if(!text(code.value,64)){localError='Enter an exact code of at most 64 characters.';paint();return;}run('application.reportSetup',{...captured,action:'filter',code:code.value});};
     button(picker,'Find statement code',disabled,search);
+    if(Object.hasOwn(choice,'navigation')){
+      const queryLabel=el('label','Search saved references'),query=el('input');query.type='search';query.maxLength=128;
+      query.value=choice.navigation?.query||'';query.setAttribute('aria-label','Statement reference search');query.disabled=disabled;queryLabel.append(query);picker.append(queryLabel);
+      const searchReferences=()=>{if(!text(query.value,128)){localError='Search is limited to 128 characters.';paint();return;}run('application.reportSetup',{...captured,action:'search',query:query.value});};
+      button(picker,'Search statement references',disabled,searchReferences);
+      query.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();searchReferences();}});
+      button(picker,'Refresh statement choices',disabled,()=>run('application.reportSetup',{...captured,action:'refresh'}));
+      const nav=choice.navigation;
+      if(nav){
+        picker.append(el('p',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching references`));
+        button(picker,'Previous statement choices',disabled||!nav.previous,()=>run('application.reportSetup',{...captured,action:'page',cursor:nav.previous}));
+        button(picker,'Next statement choices',disabled||!nav.next,()=>run('application.reportSetup',{...captured,action:'page',cursor:nav.next}));
+      }
+    }
     button(picker,'Cancel statement choice',disabled,()=>run('application.reportSetup',{...captured,action:'cancel'}));
     code.addEventListener('keydown',event=>{if(event.key==='Enter' && !event.isComposing){event.preventDefault();search();}});
     picker.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();run('application.reportSetup',{...captured,action:'cancel'});}});
-    if(choice.error)picker.append(el('p','Too many matches. Enter an exact code; no partial choices are shown.'));
+    if(choice.error)picker.append(el('p',choice.error==='snapshot_limit'?'Reference snapshot limit exceeded. Enter an exact code; no partial choices are shown.':'Too many matches. Enter an exact code; no partial choices are shown.'));
     for(const row of choice.rows)button(picker,row.description || row.code,disabled,()=>run('application.reportSetup',{...captured,action:'apply',value:row.choice}));
     if(!choice.error && !choice.rows.length)picker.append(el('p','No matching saved record.'));
     filters.append(picker);
@@ -1710,6 +1785,20 @@ const keys = (value, expected) => value && typeof value === 'object' && !Array.i
 const integer = value => Number.isSafeInteger(value) && value > 0;
 const text = (value, max) => typeof value === 'string' && value.length <= max * 2 && [...value].length <= max &&
   !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
+const recordFilters = (value,document) => {
+  if(!keys(value,['deletion','posting','dateFrom','dateTo','descending'])||
+      !['all','marked','unmarked'].includes(value.deletion)||!['all','posted','unposted'].includes(value.posting)||typeof value.descending!=='boolean')return false;
+  const date=value=>{
+    if(value==='')return true;
+    if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+    const [y,m,d]=value.split('-').map(Number);
+    const leap=y%4===0&&(y%100!==0||y%400===0);
+    return y>=1&&m>=1&&m<=12&&d>=1&&d<=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31][m-1];
+  };
+  return date(value.dateFrom)&&date(value.dateTo)&&(!value.dateFrom||!value.dateTo||value.dateFrom<=value.dateTo)&&
+    (document||value.posting==='all'&&value.dateFrom===''&&value.dateTo==='')&&
+    (value.deletion!=='all'||value.posting!=='all'||value.dateFrom!==''||value.dateTo!==''||value.descending);
+};
 const sessionId = value => typeof value === 'string' && /^form-[1-9][0-9]{0,5}$/.test(value);
 const recordKey = value => typeof value === 'string' && /^record-[1-9][0-9]{0,8}$/.test(value);
 const errors = ['closed','outcome_unknown','capacity','form_capacity','open_failed','retired_session','forms_open',
@@ -1718,6 +1807,19 @@ const errors = ['closed','outcome_unknown','capacity','form_capacity','open_fail
 const opaque = value => typeof value === 'string' && /^[0-9a-f]{32}$/.test(value);
 const locator = value => text(value.control,128) && value.control.length > 0 &&
   (value.row === null && value.column === null || Number.isInteger(value.row) && value.row >= 1 && value.row <= 4096 && text(value.column,128) && value.column.length > 0);
+function referenceNavigation(choice) {
+  if (!Object.hasOwn(choice,'navigation')) return choice.error !== 'snapshot_limit';
+  const n=choice.navigation;
+  if(n===null)return choice.error==='snapshot_limit'&&choice.rows.length===0;
+  if(!keys(n,['page','pages','total','previous','next','query'])||choice.error!==null||
+      !Number.isSafeInteger(n.total)||n.total<0||n.total>8192||!integer(n.page)||!integer(n.pages)||
+      n.pages!==Math.max(1,Math.ceil(n.total/32))||n.page>n.pages||!text(n.query,128)||
+      choice.rows.length!==Math.min(32,Math.max(0,n.total-(n.page-1)*32)))return false;
+  for(const [key,absent] of [['previous',n.page===1],['next',n.page===n.pages]]){
+    if(absent?n[key]!==null:typeof n[key]!=='string'||!/^reference-page-[0-9a-f]{32}$/.test(n[key]))return false;
+  }
+  return n.previous===null||n.previous!==n.next;
+}
 function referenceAction(action, state, session) {
   if (!Object.hasOwn(state || {}, 'choice') || !state.sessions.some(value => value.id === session)) return false;
   if (['begin','clear'].includes(action?.action))
@@ -1725,6 +1827,9 @@ function referenceAction(action, state, session) {
   if (state.choice?.session !== session || action?.ticket !== state.choice.ticket) return false;
   if (action.action === 'cancel') return keys(action,['action','ticket']);
   if (action.action === 'filter') return keys(action,['action','ticket','code']) && text(action.code,64);
+  if (action.action === 'search') return Object.hasOwn(state.choice,'navigation')&&keys(action,['action','ticket','query'])&&text(action.query,128);
+  if (action.action === 'page') return keys(action,['action','ticket','cursor'])&&state.choice.navigation&&
+    action.cursor!==null&&[state.choice.navigation.previous,state.choice.navigation.next].includes(action.cursor);
   return action.action === 'apply' && keys(action,['action','ticket','choice']) && opaque(action.choice) &&
     state.choice.error === null && state.choice.rows.some(row => row.choice === action.choice);
 }
@@ -1752,7 +1857,7 @@ function validateApplicationReply(reply, request, previous) {
   const entries = new Set(), sessions = new Set();
   for (const entry of state.entries) {
     if (!keys(entry,['id','title','kind']) || !integer(entry.id) || entries.has(entry.id) || !text(entry.title,1024) ||
-        !['form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
+        !['form','owned-form','catalog-object','document-object','posting-document'].includes(entry.kind)) throw new FormError('transport');
     entries.add(entry.id);
   }
   if (previous && Object.hasOwn(previous,'posting') !== Object.hasOwn(state,'posting')) throw new FormError('transport');
@@ -1760,10 +1865,24 @@ function validateApplicationReply(reply, request, previous) {
   if (previous && JSON.stringify(state.entries) !== JSON.stringify(previous.entries)) throw new FormError('transport');
   if (state.catalog !== null) {
     const catalog = state.catalog;
-    if (!keys(catalog,['entry','version','rows']) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
+    if (!keys(catalog,['entry','version','rows',...(Object.hasOwn(catalog,'navigation')?['navigation']:[])]) || !state.entries.some(e => e.id === catalog.entry && ['catalog-object','document-object','posting-document'].includes(e.kind)) ||
         !Number.isSafeInteger(catalog.version) || catalog.version < 0 || catalog.version > 2147483647 ||
         !Array.isArray(catalog.rows) || catalog.rows.length > 256) throw new FormError('transport');
     const kind = state.entries.find(entry => entry.id === catalog.entry).kind;
+    if (Object.hasOwn(catalog,'navigation')) {
+      const n=catalog.navigation, doc=['document-object','posting-document'].includes(kind);
+      const cursor=v=>typeof v==='string'&&/^records-page-[0-9a-f]{32}$/.test(v);
+      if (!keys(n,['snapshot','page','pages','total','query','order','previous','next',...(Object.hasOwn(n,'filters')?['filters']:[])]) ||
+          (Object.hasOwn(n,'filters')&&!recordFilters(n.filters,doc)) ||
+          typeof n.snapshot!=='string'||!/^records-[0-9a-f]{32}-[1-9][0-9]{0,9}$/.test(n.snapshot)||Number(n.snapshot.split('-').at(-1))>2147483647||
+          !integer(n.page)||!integer(n.pages)||!Number.isSafeInteger(n.total)||n.total<0||n.total>8192||
+          n.pages!==Math.max(1,Math.ceil(n.total/50))||n.page>n.pages||!text(n.query,128)||
+          !(doc?['date','number']:['code','description']).includes(n.order)||
+          !(n.page===1?n.previous===null:cursor(n.previous))||
+          !(n.page===n.pages?n.next===null:cursor(n.next))||(n.previous!==null&&n.previous===n.next)||
+          catalog.rows.length!==Math.min(50,Math.max(0,n.total-(n.page-1)*50))) throw new FormError('transport');
+    }
+
     const seen = new Set(), document = ['document-object','posting-document'].includes(kind), posting = kind === 'posting-document';
     for (const row of catalog.rows) {
       const fields = posting ? ['key','number','date','deletionMark','posted'] : document ? ['key','number','date','deletionMark'] : ['key','code','description','deletionMark'];
@@ -1778,6 +1897,7 @@ function validateApplicationReply(reply, request, previous) {
   for (const session of state.sessions) {
     if (!keys(session,['id','entry','title',...(ownedResults ? ['owner','blocked'] : [])]) || !sessionId(session.id) || sessions.has(session.id) ||
         !entries.has(session.entry) || !text(session.title,1024)) throw new FormError('transport');
+    if (state.entries.find(value => value.id === session.entry).kind === 'owned-form' && (!ownedResults || session.owner === null)) throw new FormError('transport');
     const old = previous?.sessions.find(value => value.id === session.id);
     if (old && (old.entry !== session.entry || Object.hasOwn(old,'owner') !== ownedResults || ownedResults && old.owner !== session.owner)) throw new FormError('transport');
     if (ownedResults && (!(session.owner === null || sessionId(session.owner)) || typeof session.blocked !== 'boolean')) throw new FormError('transport');
@@ -1805,7 +1925,7 @@ function validateApplicationReply(reply, request, previous) {
       const children = state.sessions.filter(value => value.owner === session.id);
       if (children.length > 1 || children.length && (dialogOwners.has(session.id) || inputOwners.has(session.id)) || session.blocked !== (children.length === 1 || dialogOwners.has(session.id) || inputOwners.has(session.id))) throw new FormError('transport');
       const visited = new Set([session.id]); let owner = session.owner;
-      if (owner !== null && state.entries.find(value => value.id === session.entry).kind !== 'form') throw new FormError('transport');
+      if (owner !== null && !['form','owned-form'].includes(state.entries.find(value => value.id === session.entry).kind)) throw new FormError('transport');
       while (owner !== null) {
         const parent = nodes.get(owner);
         if (!parent || visited.has(owner) || state.entries.find(value => value.id === parent.entry).kind === 'posting-document') throw new FormError('transport');
@@ -1830,10 +1950,10 @@ function validateApplicationReply(reply, request, previous) {
   if (!(state.active === null || sessions.has(state.active)) || state.kind === 'closed' && sessions.size) throw new FormError('transport');
   if (Object.hasOwn(state,'choice') && state.choice !== null) {
     const choice = state.choice;
-    if (!keys(choice,['session','ticket','control','row','column','title','code','rows','error']) ||
+    if (!keys(choice,['session','ticket','control','row','column','title','code','rows','error',...(Object.hasOwn(choice,'navigation')?['navigation']:[])]) ||
         !sessions.has(choice.session) || !opaque(choice.ticket) || !locator(choice) || !text(choice.title,1024) || !text(choice.code,64) ||
-        ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length > 32 ||
-        choice.error === 'too_many_matches' && choice.rows.length) throw new FormError('transport');
+        ![null,'too_many_matches','snapshot_limit'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length > 32 ||
+        choice.error !== null && choice.rows.length || !referenceNavigation(choice)) throw new FormError('transport');
     const tokens = new Set();
     for (const row of choice.rows) {
       if (!keys(row,['choice','code','description']) || !opaque(row.choice) || tokens.has(row.choice) ||
@@ -1871,16 +1991,33 @@ class ApplicationClient {
     this.exchange = exchange; this.changed = changed; this.failed = failed; this.state = null;
     this.formRevisions = new Map(); this.catalogVersions = new Map(); this.retired = new Set(); this.id = 0; this.pending = 0; this.terminal = false; this.tail = Promise.resolve();
     this.ownedResults = null; this.dialogCapability = null; this.dialogs = []; this.retiredDialogs = new Set();
+    this.semanticUnknown = false; this.recoveryReadAccepted = false;
     this.inputCapability = null; this.inputs = []; this.retiredInputs = new Set();
   }
   lock() { if (!this.terminal) { this.terminal = true; this.failed(); } }
-  request(method, params) {
+  recoveryRead(method,params) {
+    const safe=method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method);
+    if(!safe||this.semanticUnknown)throw new FormError('transport');
+    return this.request(method,params,true);
+  }
+  finishReadRecovery() {
+    if(!this.recoveryReadAccepted||this.pending||this.semanticUnknown||this.state?.uncertain||this.state?.posting?.some(p=>['uncertain','committed'].includes(p.state)))throw new FormError('transport');
+    this.terminal=false;this.recoveryReadAccepted=false;
+  }
+  request(method, params, readRecovery=false) {
+    if(readRecovery){
+      this.recoveryReadAccepted=false;
+      if(!(method==='application.hello'||method==='application.form'&&['form.hello','form.snapshot'].includes(params?.request?.method)))throw new FormError('transport');
+    }
     this.pending++;
     const operation = this.tail.then(async () => {
-      if (this.terminal || this.state?.kind === 'closed') throw new FormError('transport');
+      if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
+      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+        const error = new FormError('open_failed'); error.preDispatch = true; throw error;
+      }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -1892,6 +2029,16 @@ class ApplicationClient {
       if (method === 'application.report' && !validReportRequest(params,this.state) ||
           ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
+      }
+      if (['application.catalogPage','application.catalogFilter'].includes(method)) {
+        const c=this.state?.catalog,n=c?.navigation,isPage=method==='application.catalogPage';
+        if (!n||!keys(params,isPage?['entry','snapshot','cursor']:['entry','snapshot','query','order',...(Object.hasOwn(params,'filters')?['filters']:[])])||
+            (!isPage&&Object.hasOwn(params,'filters')&&!recordFilters(params.filters,this.state.entries.find(e=>e.id===c.entry).kind!=='catalog-object'))||
+            params.entry!==c.entry||params.snapshot!==n.snapshot||
+            (isPage?![n.previous,n.next].includes(params.cursor)||params.cursor===null:
+              !text(params.query,128)||!(this.state.entries.find(e=>e.id===c.entry).kind==='catalog-object'?['code','description']:['date','number']).includes(params.order))) {
+          const error=new FormError('catalog_unavailable');error.preDispatch=true;throw error;
+        }
       }
       if (method === 'application.reference' && (!keys(params,['session','revision','action']) ||
           !Number.isInteger(params.revision) || params.revision < 0 || params.revision > 2147483647 ||
@@ -1955,7 +2102,8 @@ class ApplicationClient {
         this.ownedResults = owned; this.dialogCapability = negotiated; this.dialogs = nextDialogs; this.inputCapability = inputNegotiated; this.inputs = nextInputs;
       } catch (error) { if (error?.preDispatch === true) throw error; this.lock(); throw new FormError('transport'); }
       this.state = result.state;
-      if (this.state.uncertain) { this.lock(); throw new FormError('transport'); }
+      if (this.state.uncertain) { this.semanticUnknown=true; this.lock(); throw new FormError('transport'); }
+      if(readRecovery)this.recoveryReadAccepted=true;
       this.changed(result,request); return result;
     });
     this.tail = operation.catch(() => {});
@@ -1966,8 +2114,8 @@ class ApplicationClient {
     if (!result.form) { this.lock(); throw new FormError('transport'); }
     return result.form;
   }
-  async form(session, request) {
-    const result = await this.request('application.form',{session,request});
+  async form(session, request, readRecovery=false) {
+    const result = await (readRecovery?this.recoveryRead('application.form',{session,request}):this.request('application.form',{session,request}));
     // A queued child opening can fail while the originating form event has a
     // valid authoritative reply. Keep that parent snapshot; never replay it.
     if (!result.form) { this.lock(); throw new FormError('transport'); }
@@ -1986,6 +2134,8 @@ const {createBrowserHost, documentInstance} = __browserAttachment;
 const {APPLICATION_PROTOCOL, DIALOG_CAPABILITY, ApplicationClient} = __configurationClient;
 
 function mountApplication(environment, root, exchange = null) {
+  let destroyed = false, recovering = false;
+  const demoRecovery = typeof exchange?.recover === 'function';
   const browserHost = exchange ? null : createBrowserHost(environment, root);
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
@@ -2023,17 +2173,22 @@ function mountApplication(environment, root, exchange = null) {
   inputStatus.setAttribute('role','status'); inputActions.className = 'dialog-commands'; inputBody.className = 'typed-input-body';
   inputDialog.append(inputTitle,inputText,inputBody,inputStatus,inputActions);
 
-  let pickerBusy = false, pickerTicket = null, pickerReturn = null;
+  let pickerBusy = false, pickerTicket = null, pickerReturn = null, pickerQueryBaseline = null, pickerCodeBaseline = null;
   const picker = el('section'), pickerTitle = el('h2'), pickerHelp = el('p'), pickerError = el('p');
   const pickerActions = el('div'), pickerRows = el('div'), codeLabel = el('label','Exact code'), pickerCode = el('input');
   picker.className = 'panel reference-picker'; picker.setAttribute('role','dialog'); picker.setAttribute('aria-modal','true'); picker.hidden = true;
   pickerTitle.id = `reference-title-${instance}`; picker.setAttribute('aria-labelledby',pickerTitle.id);
   pickerCode.type = 'text'; pickerCode.maxLength = 64; pickerCode.autocomplete = 'off'; pickerCode.spellcheck = false;
   pickerCode.setAttribute('aria-label','Exact code'); codeLabel.append(pickerCode);
+  const queryLabel=el('label','Code or description'),pickerQuery=el('input');
+  pickerQuery.type='search';pickerQuery.maxLength=128;pickerQuery.setAttribute('aria-label','Reference search');queryLabel.append(pickerQuery);
   pickerHelp.textContent = 'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
   pickerError.setAttribute('role','status'); pickerRows.setAttribute('aria-label','Reference matches');
-  picker.append(pickerTitle,pickerHelp,codeLabel,pickerActions,pickerError,pickerRows);
+  picker.append(pickerTitle,pickerHelp,codeLabel,queryLabel,pickerActions,pickerError,pickerRows);
   let selectedEntry = null; const selectedRecords = new Set();
+  let queryEntry=null,queryDraft='',orderDraft='',filterDraft=null;
+  const defaultRecordFilters=()=>({deletion:'all',posting:'all',dateFrom:'',dateTo:'',descending:false});
+  const acceptedRecordDraft=catalog=>{queryEntry=catalog.entry;queryDraft=catalog.navigation.query;orderDraft=catalog.navigation.order;filterDraft={...(catalog.navigation.filters||defaultRecordFilters())};};
   const button = (text, parent, action) => {
     const node = el('button',text); node.type = 'button'; node.dataset.formAction = 'application-navigation';
     node.addEventListener('pointerdown',event => event.preventDefault()); node.addEventListener('click',action); parent.append(node); return node;
@@ -2062,12 +2217,20 @@ function mountApplication(environment, root, exchange = null) {
         /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.code))) {
       status = 'Enter an exact code of at most 64 characters.'; paint(); return;
     }
+    if(action.action==='search'&&(typeof action.query!=='string'||[...action.query].length>128||
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(action.query))){
+      status='Enter a search of at most 128 characters.';paint();return;
+    }
     // Do not route cancellation through native form validation or raw code parsing.
     pickerBusy = true; paint();
     try { await entry.mount.reference({...action,ticket}); }
     finally { pickerBusy = false; paint(); }
   }
   const filter = button('Find exact code',pickerActions,() => choose({action:'filter',code:pickerCode.value}));
+  const searchChoice=button('Search references',pickerActions,()=>choose({action:'search',query:pickerQuery.value}));
+  const previousChoice=button('Previous choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.previous}));
+  const nextChoice=button('Next choices',pickerActions,()=>choose({action:'page',cursor:client.state?.choice?.navigation?.next}));
+  pickerQuery.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();choose({action:'search',query:pickerQuery.value});}});
   const cancel = button('Cancel selection',pickerActions,() => choose({action:'cancel'}));
   pickerCode.addEventListener('keydown',event => {
     if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); choose({action:'filter',code:pickerCode.value}); }
@@ -2096,13 +2259,21 @@ function mountApplication(environment, root, exchange = null) {
       return;
     }
     const newTicket = pickerTicket !== choice.ticket;
-    if (newTicket) { pickerTicket = choice.ticket; pickerCode.value = choice.code; pickerReturn = choice; }
+    if (newTicket) { pickerTicket = choice.ticket; pickerReturn = choice; }
+    if(newTicket||pickerCodeBaseline!==choice.code){pickerCode.value=choice.code;pickerCodeBaseline=choice.code;}
     pickerTitle.textContent = 'Choose ' + choice.title;
     const disabled = pickerBusy || client.pending > 0 || client.terminal || client.state.uncertain;
     filter.disabled = cancel.disabled = pickerCode.disabled = disabled;
+    const paged=Object.hasOwn(choice,'navigation'),nav=choice.navigation;
+    for(const node of [queryLabel,searchChoice,previousChoice,nextChoice])node.hidden=!paged;
+    pickerQuery.disabled=searchChoice.disabled=disabled;
+    previousChoice.disabled=disabled||!nav?.previous;nextChoice.disabled=disabled||!nav?.next;
+    if(newTicket||pickerQueryBaseline!==(nav?.query??'')){pickerQuery.value=nav?.query??'';pickerQueryBaseline=nav?.query??'';}
+    pickerHelp.textContent=paged?'Search code or description in a bounded snapshot, or read fresh exact-code matches. Selection rechecks the saved record. Cancel keeps the current value.':'Choose an existing record. Enter its exact code to filter. Cancel keeps the current value.';
     pickerError.textContent = client.terminal ? 'The outcome may be unknown. Selection is locked; no request will be repeated.'
+      : choice.error === 'snapshot_limit' ? 'The complete result exceeds the supported snapshot budget. No partial rows are shown. Enter an exact code to narrow the read.'
       : choice.error === 'too_many_matches' ? 'Too many matches. Enter an exact code to continue.'
-      : status || (choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
+      : status || (nav ? `Page ${nav.page} of ${nav.pages}; ${nav.total} matching records` : choice.rows.length ? `${choice.rows.length} matching records` : 'No matching records.');
     pickerRows.replaceChildren();
     for (const row of choice.rows) {
       const entry = el('div'), description = el('span',row.code + ' · ' + row.description);
@@ -2282,6 +2453,47 @@ function mountApplication(environment, root, exchange = null) {
     };
     const open = button('Open selected',actions,openSelected);
     const refresh = button('Refresh records',actions,() => { if (!unavailable()) perform('application.catalog',{entry:catalog.entry}); });
+    if (catalog.navigation) {
+      const nav=catalog.navigation;
+      if(queryEntry!==catalog.entry)acceptedRecordDraft(catalog);
+      const search=el('input');search.type='search';search.value=queryDraft;search.maxLength=128;search.setAttribute('aria-label','Search records');
+      search.addEventListener('input',()=>{queryDraft=search.value;});
+      const order=el('select');order.setAttribute('aria-label','Record order');
+      for(const key of (document?['date','number']:['code','description'])){const option=el('option',key);option.value=key;order.append(option);}
+      order.value=orderDraft;order.addEventListener('change',()=>{orderDraft=order.value;});
+      const apply=(reset=false)=>{
+        if(unavailable())return;
+        const filters=reset?defaultRecordFilters():{...filterDraft};
+        const nondefault=filters.deletion!=='all'||filters.posting!=='all'||filters.dateFrom!==''||filters.dateTo!==''||filters.descending;
+        perform('application.catalogFilter',{entry:catalog.entry,snapshot:nav.snapshot,query:reset?'':queryDraft,order:reset?(document?'date':'code'):orderDraft,...(nondefault?{filters}:{})});
+      };
+      const controls=[];
+      const choice=(label,key,values)=>{
+        const wrapper=el('label',label),input=el('select');input.setAttribute('aria-label',label);
+        for(const value of values){const option=el('option',value);option.value=value;input.append(option);}
+        input.value=filterDraft[key];input.addEventListener('change',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+      };
+      choice('Deletion filter','deletion',['all','unmarked','marked']);
+      if(document){
+        choice('Posting filter','posting',['all','posted','unposted']);
+        for(const [key,label] of [['dateFrom','Date from (inclusive)'],['dateTo','Date through (inclusive)']]){
+          const wrapper=el('label',label),input=el('input');input.type='date';input.value=filterDraft[key];input.setAttribute('aria-label',label);input.min='0001-01-01';input.max='9999-12-31';
+          input.addEventListener('input',()=>{filterDraft[key]=input.value;});wrapper.append(input);actions.append(wrapper);controls.push(input);
+        }
+      }
+      const descending=el('input'),descendingLabel=el('label','Descending order');descending.type='checkbox';descending.checked=filterDraft.descending;descending.setAttribute('aria-label','Descending order');
+      descending.addEventListener('change',()=>{filterDraft.descending=descending.checked;});descendingLabel.append(descending);actions.append(descendingLabel);controls.push(descending);
+      search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();apply();}});
+      actions.append(search,order);const filter=button('Search records',actions,()=>apply());
+      const applyFilters=button('Apply filters',actions,()=>apply());
+      const resetFilters=button('Reset filters',actions,()=>apply(true));
+      for(const control of [...controls,applyFilters,resetFilters])control.disabled=unavailable();
+      const previous=button('Previous records',actions,()=>{if(!unavailable()&&nav.previous)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.previous});});
+      const next=button('Next records',actions,()=>{if(!unavailable()&&nav.next)perform('application.catalogPage',{entry:catalog.entry,snapshot:nav.snapshot,cursor:nav.next});});
+      previous.disabled=unavailable()||nav.previous===null;next.disabled=unavailable()||nav.next===null;
+      search.disabled=order.disabled=filter.disabled=unavailable();
+      const page=el('span',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching records`);page.setAttribute('aria-live','polite');actions.append(page);
+    }
     const count = el('span'); count.setAttribute('aria-label','Selected record count'); count.setAttribute('aria-live','polite'); actions.append(count);
     const table = el('table'), head = el('thead'), headings = el('tr');
     for (const title of (document ? ['Select','Number','Date','Deletion mark',...(posting ? ['Posted'] : [])] : ['Select','Code','Description','Deletion mark'])) headings.append(el('th',title));
@@ -2316,13 +2528,14 @@ function mountApplication(environment, root, exchange = null) {
       if (posting) row.append(el('td',record.posted ? 'Posted' : 'Not posted'));
       rows.push({row,check,key:record.key});body.append(row);
     }
-    catalogPanel.append(heading,actions,el('p','Confirmed records. Save refreshes this list without replacing other open drafts.'),table);
+    catalogPanel.append(heading,actions,el('p','Records snapshot. Refresh shows external changes; Save refreshes this list without replacing other open drafts.'),table);
     if (!catalog.rows.length) catalogPanel.append(el('p','No records yet.'));
     paintSelection();
     workarea.className = active ? 'configuration-workarea with-form' : 'configuration-workarea';
   }
   function paint() {
     browserHost?.notify();
+    shell.inert = recovering;
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
@@ -2331,6 +2544,7 @@ function mountApplication(environment, root, exchange = null) {
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
     close.disabled = disabled; entries.replaceChildren();
     for (const entry of client.state?.entries || []) {
+      if (entry.kind === 'owned-form') continue;
       const node = button(entry.title || `Form ${entry.id}`,entries,() => {
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
@@ -2341,7 +2555,7 @@ function mountApplication(environment, root, exchange = null) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
       entry.ownerNotice.hidden = !blocked;
       entry.ownerNotice.textContent = client.inputs.some(value => value.owner === id) ? 'This form is paused for an input answer. Pending text is retained.' : client.dialogs.some(value => value.owner === id) ? 'This form is paused for a dialog answer. Pending text is retained.' : blocked ? 'This form is paused while its owned form is open. Pending text is retained; finish or close the owned form to continue.' : '';
-      if (client.terminal) entry.mount?.lock();
+      if (client.terminal && !recovering) entry.mount?.lock();
       else entry.mount?.repaint();
     }
     postingPanel.replaceChildren();
@@ -2363,6 +2577,7 @@ function mountApplication(environment, root, exchange = null) {
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
   }
   function reconcile(result, request) {
+    if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
     status = result.error === 'form_capacity'
       ? 'This saved document exceeds the editor row or cell limit. Nothing was opened or changed. Other forms and reports remain available.'
       : result.error ? `Application: ${result.error}` : '';
@@ -2376,8 +2591,8 @@ function mountApplication(environment, root, exchange = null) {
       const tab = button(session.title || 'Form',tabs,() => show(id));
       const ownerNotice = el('p'); ownerNotice.hidden = true; ownerNotice.setAttribute('role','status');
       const entry = {panel,tab,ownerNotice,mount:null,focus:null}; mounts.set(id,entry); fresh.push(id);
-      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request),isActive: () => active === id,
-        businessBlocked: () => Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
+      entry.mount = mountForm(environment,panel,{transport: request => client.form(id,request,recovering),isActive: () => active === id,
+        businessBlocked: () => recovering || Boolean(client.state?.sessions.find(value => value.id === id)?.blocked),
         referenceActive: () => Boolean(client.state?.choice || dialogModal()),
         onReference: Object.hasOwn(client.state,'choice') ? ({revision,action}) => client.reference(id,revision,action) : null,
         onChange: () => { if (entry.mount?.client?.transportFailed) client.lock(); paint(); }});
@@ -2410,7 +2625,7 @@ function mountApplication(environment, root, exchange = null) {
     try { return await client.request(method,params); }
     catch(error) {
       if(error?.preDispatch && method.startsWith('application.report'))return {error:'report_unavailable'};
-      status = 'Application connection failed.'; paint();
+      status = error?.preDispatch&&method==='application.catalogFilter'?'Record filters are invalid. Check the dates and selected values.':'Application connection failed.'; paint();
     }
     finally { paint(); }
   }
@@ -2429,8 +2644,11 @@ function mountApplication(environment, root, exchange = null) {
   });
   workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
+  const surfaceExchange = exchange;
+  exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
   client = new ApplicationClient(exchange,reconcile,() => { for (const entry of mounts.values()) entry.mount?.lock(); paint(); });
-  environment.addEventListener('beforeunload',event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } });
+  const warnBeforeUnload = event => { if (pending()) { event.preventDefault(); event.returnValue = ''; } };
+  environment.addEventListener('beforeunload',warnBeforeUnload);
   browserHost?.setPending(pending, () => Boolean(client.terminal || client.state?.uncertain));
   browserHost?.setInspectionAllowed(() => Boolean((client.terminal || client.state?.uncertain) && !client.pending &&
     !pickerBusy && !client.state?.choice && mounts.size &&
@@ -2438,23 +2656,37 @@ function mountApplication(environment, root, exchange = null) {
     ([...mounts.values()].some(entry => entry.mount?.client?.snapshot?.items.some(item => item.kind === 'group')) ||
       client.state.sessions.some(session => Object.hasOwn(session,'owner')))));
   const resume = async () => {
+    if (destroyed) throw Error('Application mount destroyed');
     try {
-      if (client.terminal) throw Error('Unknown previous outcome');
+      if (client.semanticUnknown || client.terminal&&!demoRecovery) throw Error('Unknown semantic outcome');
+      recovering=demoRecovery;
+      paint();
       const retained = new Set(mounts.keys());
-      const result = await client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
+      const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
       for (const [id,entry] of mounts) {
-        if (retained.has(id)) await entry.mount.reconcileOwnership(); else await entry.mount.ready;
+        if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }
+      if(demoRecovery)client.finishReadRecovery();
       return result;
     } finally {
+      recovering=false;
       // Reconciliation paints while the hello request is still pending.
       // Recompute controls after it settles; ownership and error gates remain.
       paint();
     }
   };
   paint(); const ready = browserHost ? browserHost.start(resume) : perform('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY});
-  return {ready,client,mounts,show,pending,openForm,browserHost};
+  const canLeave = () => !destroyed && Boolean(client.state) && !pending() && !mounts.size && !openings.size;
+  const destroy = () => {
+    if (destroyed) return;
+    if (!canLeave()) throw Error('Finish current application surface');
+    destroyed = true;
+    environment.removeEventListener('beforeunload',warnBeforeUnload);
+    browserHost?.attachment?.dispose();
+    root.replaceChildren();
+  };
+  return {ready,client,mounts,show,pending,openForm,browserHost,canLeave,destroy,resume,recoveryReady:()=>!client.pending&&!client.terminal&&!client.state?.uncertain&&!client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))&&[...mounts.values()].every(e=>!e.mount.client?.busy&&!e.mount.client?.transportFailed&&!e.mount.client?.outcomeUnknown)};
 }
 if (typeof window !== 'undefined' && window.document?.getElementById('configuration-app')) mountApplication(window,window.document.getElementById('configuration-app'));
 

@@ -8,6 +8,9 @@ from secrets import token_hex
 import re
 
 from .catalog_types import BSLCatalogReference, BSLCatalogType
+from .enum_types import BSLEnumReference
+from .enum_storage_binding import EnumStorageBinding
+from uuid import UUID
 from .values import BSLObject, HostFunction
 
 _MAX_TEXT = 1024
@@ -35,6 +38,48 @@ class FormReferenceBinding:
             raise TypeError('host-owned catalog binding required')
 
 
+@dataclass(frozen=True)
+class FormEnumBinding:
+    """Exact canonical storage issuer; no callback or BSL constructor grant."""
+    storage: object
+    enum_id: UUID
+    sources: tuple = ()
+
+    def __post_init__(self):
+        if type(self.storage) is not EnumStorageBinding or type(self.enum_id) is not UUID:
+            raise TypeError('canonical enum storage binding required')
+        self.storage.value_type(self.enum_id)
+        if type(self.sources) is not tuple or len(self.sources)>64:
+            raise ValueError('bounded enrolled enum issuers required')
+        for source in self.sources:
+            if type(source) is not EnumStorageBinding or source._domain.database_id!=self.storage._domain.database_id:
+                raise ValueError('foreign enum issuer')
+            if source.value_type(self.enum_id).metadata_uuid!=self.value_type.metadata_uuid:
+                raise ValueError('foreign enum target')
+
+    @property
+    def value_type(self): return self.storage.value_type(self.enum_id)
+    @property
+    def empty(self): return self.storage.assigned(None,self.enum_id)
+    def validate(self,value):
+        from .catalog_backend import BackendError
+        for source in (self.storage,*self.sources):
+            try:key=source.key(value,self.enum_id)
+            except BackendError as error:
+                if error.code!='invalid_input':raise
+                continue
+            return self.storage.value(key,self.enum_id)
+        raise ValueError('unregistered enum activation')
+    def presentation(self,value): return str(self.validate(value))
+
+
+@dataclass(frozen=True)
+class FormEnumTarget:
+    title: str
+
+    def __post_init__(self): _text(self.title)
+
+
 @dataclass(frozen=True, eq=False)
 class FormCatalogReference(BSLObject):
     _scope: object = field(repr=False)
@@ -43,7 +88,7 @@ class FormCatalogReference(BSLObject):
     presentation: str
 
     def __eq__(self, other):
-        return (type(other) is FormCatalogReference and self._scope is other._scope
+        return (type(other) is type(self) and self._scope is other._scope
                 and self.target == other.target and self.key == other.key)
 
     def __hash__(self):
@@ -60,6 +105,11 @@ class FormCatalogReference(BSLObject):
             return HostFunction(name, self.is_empty)
         # No inherited reader, UUID, metadata snapshot or GetObject capability.
         raise ValueError('client form reference has no object or UUID access')
+
+
+@dataclass(frozen=True, eq=False)
+class FormEnumReference(FormCatalogReference):
+    """Opaque form-local enum value, not a general enum codec."""
 
 
 @dataclass(frozen=True)
@@ -83,10 +133,11 @@ class FormReferenceScope:
             raise ValueError('bounded explicit reference inventory required')
         if any(type(k) is not int or not 1 <= k <= 128 for k in source):
             raise ValueError('numeric reference target required')
-        if self.server and any(type(v) is not FormReferenceBinding for v in source.values()):
+        if self.server and any(type(v) not in (FormReferenceBinding,FormEnumBinding) for v in source.values()):
             raise TypeError('host reference bindings required')
         if not self.server:
-            for value in source.values(): _text(value)
+            for value in source.values():
+                if type(value) is not FormEnumTarget: _text(value)
         self.targets = dict(source)
         self.identity = token_hex(16) if self.server else None
         self._issued = {}; self._keys = {}; self._client = {}; self._client_values = {}
@@ -97,6 +148,10 @@ class FormReferenceScope:
             raise ValueError('reference scope already belongs to another form')
         self._owner = owner
 
+    def wire_type(self,target):
+        value=self.targets[target]
+        return 'FormEnumRef' if type(value) in (FormEnumBinding,FormEnumTarget) else 'FormCatalogRef'
+
     def descriptor(self, target):
         return FormReferenceDescriptor(self, target)
 
@@ -105,16 +160,18 @@ class FormReferenceScope:
         if self.server:
             binding = self.targets[target]
             if value is _MISSING: value = binding.empty
-            if type(value) is not BSLCatalogReference:
+            expected=BSLEnumReference if type(binding) is FormEnumBinding else BSLCatalogReference
+            if type(value) is not expected:
                 raise ValueError('foreign reference type/snapshot')
             canonical = binding.validate(value)
-            if (type(canonical) is not BSLCatalogReference or canonical.value_type != binding.value_type
+            if (type(canonical) is not expected or canonical.value_type != binding.value_type
                     or canonical.reference_uuid != value.reference_uuid):
                 raise ValueError('reference ownership validation failed')
             return canonical
         if value is _MISSING:
             value = self._client.get((target, None))
-        if (type(value) is not FormCatalogReference or value._scope is not self
+        expected=FormEnumReference if self.wire_type(target)=='FormEnumRef' else FormCatalogReference
+        if (type(value) is not expected or value._scope is not self
                 or value.target != target or self._client_values.get(id(value)) is not value):
             raise ValueError('unissued client reference')
         return value
@@ -133,11 +190,11 @@ class FormReferenceScope:
                 raise ValueError('empty reference presentation must be empty')
             self._issued[(target, key)] = value
         else: key, presentation = value.key, value.presentation
-        return {'type':'FormCatalogRef','scope':self.identity,'target':target,'key':key,'text':presentation}
+        return {'type':self.wire_type(target),'scope':self.identity,'target':target,'key':key,'text':presentation}
 
     def decode(self, target, packet):
         if (type(packet) is not dict or set(packet) != {'type','scope','target','key','text'}
-                or packet['type'] != 'FormCatalogRef' or type(packet['target']) is not int
+                or target not in self.targets or packet['type'] != self.wire_type(target) or type(packet['target']) is not int
                 or packet['target'] != target or target not in self.targets
                 or type(packet['scope']) is not str or not re.fullmatch('[0-9a-f]{32}', packet['scope'])
                 or packet['key'] is not None and (type(packet['key']) is not str or not re.fullmatch('[0-9a-f]{32}', packet['key']))):
@@ -158,7 +215,8 @@ class FormReferenceScope:
         if old is not None and old.presentation == presentation: return old
         if old is None and len(self._client) >= _MAX_IDENTITIES + len(self.targets):
             raise ValueError('reference identity limit')
-        value = FormCatalogReference(self,target,packet['key'],presentation)
+        proxy=FormEnumReference if self.wire_type(target)=='FormEnumRef' else FormCatalogReference
+        value = proxy(self,target,packet['key'],presentation)
         if len(self._client_values) >= _MAX_IDENTITIES * 2:
             raise ValueError("reference presentation allocation limit")
         self._client[key] = value

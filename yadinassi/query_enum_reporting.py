@@ -103,16 +103,22 @@ class _EnumReportScope:
         return first
 
     def snapshot_parameters(self, parameters):
-        from .relational_queries import _ParameterList, snapshot_parameters
+        from .relational_queries import snapshot_parameters
+        return self.validate_frozen_parameters(snapshot_parameters(parameters))
+
+    def validate_frozen_parameters(self, frozen):
+        from .relational_queries import _ParameterList
+        from .values import BSLArray, BSLFixedArray
         from .catalog_types import BSLCatalogReference, BSLCatalogType
         from .catalogs import BSLCatalogManager
         from .document_types import BSLDocumentReference
         self.require_current()
-        frozen = snapshot_parameters(parameters)
+        if type(frozen) is not dict or any(type(v) in (BSLArray, BSLFixedArray) for v in frozen.values()):
+            raise TypeError('Enum validation requires already frozen parameters')
         for value in frozen.values():
             if type(value) is _ParameterList and len(value.values) > 256:
                 raise ValueError('Direct enum reporting parameter member limit exceeded')
-        # Check every member before any data lease or membership key creation,
+        # Check every member before source scans or membership key creation,
         # including unused/mixed members and queries whose physical scan is empty.
         for value in frozen.values():
             members = value.values if type(value) is _ParameterList else (value,)

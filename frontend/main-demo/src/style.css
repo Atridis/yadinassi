@@ -1,0 +1,33 @@
+/* Host styles do not depend on either renderer or BrowserHost wrapper depth. */
+:root{font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#182a37;background:#f4f7f8;color-scheme:light}
+body{margin:0}#main-demo-app{min-width:0}#main-demo-app [hidden]{display:none!important}
+.main-demo-shell{box-sizing:border-box;width:100%;max-width:1600px;margin:auto;padding:24px;min-width:0}
+.main-demo-title{font-size:clamp(24px,4vw,32px);line-height:1.2;margin:0 0 16px;overflow-wrap:break-word}
+.main-demo-navigation{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.main-demo-navigation>button,.main-demo-recover{font:inherit;font-weight:600;min-height:44px;max-width:100%;padding:10px 16px;border:1px solid #bccbd6;border-radius:8px;background:#fff;color:#183047;white-space:normal;overflow-wrap:break-word;cursor:pointer}
+.main-demo-navigation>button:disabled,.main-demo-recover:disabled{opacity:.55;cursor:default}
+.main-demo-navigation>button:focus-visible,.main-demo-recover:focus-visible{outline:3px solid #217c70;outline-offset:2px}
+.main-demo-notice{overflow-wrap:anywhere}.main-demo-recover{margin-bottom:16px}
+.main-demo-surface{display:block;min-width:0;border-radius:12px}
+/* Ownership UI is outside renderer scopes, and remains visible during recovery. */
+#main-demo-app .browser-ownership{box-sizing:border-box;max-width:1552px;margin:16px auto;padding:14px 20px;border:1px solid #aac8c0;border-radius:10px;background:#eef7f4;color:#173c35;font:14px/1.5 system-ui,sans-serif}
+#main-demo-app .browser-ownership p{margin:0 0 8px;overflow-wrap:anywhere}
+#main-demo-app .browser-ownership>div{display:flex;flex-wrap:wrap;gap:8px}
+#main-demo-app .browser-ownership button{font:inherit;white-space:normal;min-height:44px;padding:8px 12px;background:white;color:#173c35;border:1px solid #79998e;border-radius:6px}
+#main-demo-app .browser-ownership button:disabled{opacity:.5}
+@media(max-width:680px){.main-demo-shell{padding:12px}.main-demo-navigation>button{flex:1 1 155px}#main-demo-app .browser-ownership{margin:10px;padding:12px}}
+/* Embedded forms respond to their available column, not the outer viewport. */
+@scope (.main-demo-documents){
+  .configuration-app{max-width:none;padding:20px;min-width:0}
+  .configuration-workarea.with-form{grid-template-columns:minmax(240px,300px) minmax(0,1fr)}
+  .configuration-form-panels{container:demo-form / inline-size;min-width:0}
+  .configuration-workarea.with-form .workspace{padding:20px;min-width:0}
+  .configuration-catalog table{min-width:420px}.configuration-reports table{min-width:850px}
+  .configuration-catalog th,.configuration-catalog td{overflow-wrap:normal}
+  .configuration-catalog input,.configuration-catalog select{box-sizing:border-box;max-width:100%;min-height:40px;font:inherit;background:#fff;color:#182a37;border:1px solid #bccbd6;border-radius:6px;padding:8px}
+  @container demo-form (max-width:760px){
+    .page-header{flex-direction:column;align-items:stretch;gap:12px}.header-actions{flex-wrap:wrap}.heading{width:100%}h1{overflow-wrap:break-word}
+    .fields{grid-template-columns:1fr;padding:18px;gap:20px}.panel-header,.form-actions{padding:16px}.workspace{padding:16px}
+  }
+  @media(max-width:1000px){.configuration-workarea.with-form{grid-template-columns:1fr}.configuration-app{padding:12px}}
+}

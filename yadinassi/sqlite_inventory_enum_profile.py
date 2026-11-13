@@ -30,6 +30,11 @@ def _stored_uuid(value):
 
 
 def _preflight_config(config):
+    from .configuration_main_demo import MainDemoConfiguration
+    is_main = type(config) is MainDemoConfiguration
+    if is_main:
+        from .sqlite_main_demo_profile import _require_config
+        _require_config(config)
     domain=EnumValueDomain(config.identity,config.enumerations)
     # Refuse deterministic storage-shape/budget failures before file allocation.
     from .sqlite_documents import schema_data as document_data,parse_schema,_MAX_TOTAL
@@ -46,6 +51,9 @@ def _preflight_config(config):
     if catalog_bytes>s._MAX_CONFIG_BYTES:raise BackendError('unsupported')
     layout=s.build_layout(config.catalogs,reserved_names=tuple(d.split('(')[0].split()[-1] for d in (*s.DOCUMENT_DDL,*DDL)))
     s.build_section_layout(config.catalogs,layout)
+    if is_main:
+        from .sqlite_main_demo_profile import preflight_catalog_sections
+        preflight_catalog_sections(config, domain)
     size=0
     for document in config.documents:
         raw=_storage()._json(document_data(document,enum_domain=domain));size+=len(raw.encode('utf-8'))
@@ -101,7 +109,15 @@ def read_source(connection, *, _prepared=None):
         if kind!=('module' if path.endswith('.bsl') else 'xml') or hashlib.sha256(raw).hexdigest()!=digest:raise BackendError('integrity')
         files[path]=raw;entries.append((path,kind,len(raw),digest))
     marker=connection.execute('SELECT singleton,profile,source_digest FROM inventory_profile LIMIT 2').fetchall()
-    if len(marker)!=1 or marker[0][:2]!=(1,PROFILE):raise BackendError('integrity')
+    from .configuration_inventory_enum_application import (
+        PROFILE as UI_PROFILE, InventoryEnumApplicationConfiguration, import_inventory_application)
+    from .configuration_main_demo import (PROFILE as MAIN_PROFILE, MainDemoConfiguration,
+        import_main_demo_configuration)
+    if len(marker)!=1 or marker[0][0]!=1 or marker[0][1] not in (PROFILE, UI_PROFILE, MAIN_PROFILE):
+        raise BackendError('integrity')
+    profile=marker[0][1]
+    expected_type={PROFILE:InventoryEnumConfiguration, UI_PROFILE:InventoryEnumApplicationConfiguration,
+                   MAIN_PROFILE:MainDemoConfiguration}[profile]
     info=connection.execute('SELECT database_uuid,configuration_uuid,name,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
     if info is None:raise BackendError('integrity')
     database_id=_stored_uuid(info[0])
@@ -110,13 +126,19 @@ def read_source(connection, *, _prepared=None):
         info,tuple(marker),tuple(sorted(entries)))
     config=_prepared.lookup(key) if _prepared is not None else None
     if config is None:
-        try:config=import_inventory_enum_configuration(files,inventory_runtime=PROFILE)
+        try:config=(import_inventory_enum_configuration(files,inventory_runtime=profile) if profile==PROFILE
+                    else import_inventory_application(files,inventory_runtime=profile) if profile==UI_PROFILE
+                    else import_main_demo_configuration(files,profile=profile))
         except (ValueError,TypeError):raise BackendError('integrity') from None
-    if type(config) is not InventoryEnumConfiguration or config.profile!=PROFILE:raise BackendError('integrity')
-    if marker!=[(1,PROFILE,config.source_digest)]:raise BackendError('integrity')
+    if type(config) is not expected_type or config.profile!=profile:raise BackendError('integrity')
+    if marker!=[(1,profile,config.source_digest)]:raise BackendError('integrity')
     if info!=(str(database_id),str(config.identity),config.name,1,1,'[]'):raise BackendError('integrity')
     domain=EnumValueDomain(database_id,config.enumerations)
-    _validate_ddl(connection,config,domain)
+    if profile == MAIN_PROFILE:
+        from .sqlite_main_demo_profile import validate_main_demo_ddl
+        validate_main_demo_ddl(connection,config,domain)
+    else:
+        _validate_ddl(connection,config,domain)
     return config,domain,key
 
 
@@ -154,7 +176,25 @@ def create(cls,path,configuration):
     return _create(cls,path,config)
 
 
+def create_application(cls,path,configuration):
+    from .configuration_inventory_enum_application import canonical as application_canonical
+    try:config=application_canonical(configuration)
+    except (ValueError,TypeError):raise BackendError('unsupported') from None
+    return _create(cls,path,config)
+
+
+def create_main_demo(cls,path,configuration):
+    from .configuration_main_demo import canonical as main_canonical
+    try:config=main_canonical(configuration)
+    except (ValueError,TypeError):raise BackendError('unsupported') from None
+    return _create(cls,path,config)
+
+
 def _create(cls,path,config):
+    from .configuration_main_demo import MainDemoConfiguration, PROFILE as MAIN_PROFILE
+    is_main = type(config) is MainDemoConfiguration
+    if is_main and (type(config.profile) is not str or config.profile != MAIN_PROFILE):
+        raise BackendError('unsupported')
     s=_storage()
     _preflight_config(config)
     raw=os.fspath(path)
@@ -176,10 +216,15 @@ def _create(cls,path,config):
         for catalog in config.catalogs:
             connection.execute('INSERT INTO catalog_schema VALUES(?,?,?)',
                 (str(catalog.identity),catalog.name,s._json(s._schema_data(catalog,enum_domain=domain))))
-        s.save_layout(connection,layout)
-        s.save_section_layout(connection,s.build_section_layout(config.catalogs,layout))
+        if is_main:
+            from .sqlite_main_demo_profile import create_catalog_tables
+            layout, _ = create_catalog_tables(connection,config,domain)
+        else:
+            s.save_layout(connection,layout)
+            s.save_section_layout(connection,s.build_section_layout(config.catalogs,layout))
+            for catalog in config.catalogs:
+                connection.execute(s.catalog_ddl(catalog,layout,enum_domain=domain))
         for catalog in config.catalogs:
-            connection.execute(s.catalog_ddl(catalog,layout,enum_domain=domain))
             if catalog.numbering=='decimal_v1':connection.execute('INSERT INTO catalog_sequence VALUES(?,1)',(str(catalog.identity),))
         for document in config.documents:
             connection.execute('INSERT INTO document_schema VALUES(?,?,?)',(str(document.identity),document.name,s._json(s.document_schema_data(document,enum_domain=domain))))

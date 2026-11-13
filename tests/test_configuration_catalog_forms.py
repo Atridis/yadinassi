@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 from uuid import uuid4
 
 from yadinassi.configuration_forms import load_configuration_forms
@@ -147,7 +148,10 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         result=self.save(app,sid)
         self.assertIn(sid,app.sessions)
         row=result['state']['catalog']['rows'][0]
-        self.assertEqual((row['key'],row['description'],row['deletionMark']),(oldkey,'Renamed',True))
+        self.assertEqual((row['description'],row['deletionMark']),('Renamed',True))
+        self.assertNotEqual(row['key'],oldkey)
+        with self.assertRaisesRegex(ValueError, 'record is not in the selected catalog projection'):
+            self.rpc(app,'openRecord',entry=self.entry(app),request='stale-rename',record=oldkey)
 
     def test_dirty_close_refusal_and_saved_close(self):
         broker, app=self.setup_app(); sid=self.create(app)
@@ -238,13 +242,16 @@ class ConfigurationCatalogFormIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(result['state']['catalog'])
         owned.pending_refresh = False
         self.fill(app, sid)
-        broker.record_keys = {(999, index): 'reserved-'+str(index) for index in range(4096)}
-        self.save(app, sid)
+        # Отказ проверки уже записанной строки сохраняет обязательство refresh,
+        # а не имитирует отменённый лимит накопленных page capabilities.
+        with patch.object(broker, '_projection_preflight', side_effect=ValueError('projection unavailable')):
+            self.save(app, sid)
         self.assertTrue(owned.pending_refresh)
         self.assertEqual(owned.save_state, 'committed')
         self.assertEqual(self.data(app, sid)['status'], 'committed')
-        broker.record_keys.clear()
-        self.save(app, sid)
+        # Повторное Save должно только обновить проекцию, не повторять Write.
+        with patch.object(owned.object, 'write', side_effect=AssertionError('must not replay Write')):
+            self.save(app, sid)
         self.assertFalse(owned.pending_refresh)
         self.assertEqual(owned.save_state, 'saved')
 
