@@ -122,7 +122,7 @@ def _walk(value):
 
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
-    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, compatibility_target=None):
+    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
         if compilation_profile != 'standalone':
@@ -161,10 +161,14 @@ class SourceApplication:
         from .safe_mode import SourceSafeMode
         self.safe_mode = SourceSafeMode(self)
         self.constant_store = None
-        if scratch_database is not None:
+        if scratch_database is not None and existing_scratch_database is not None:
+            raise ValueError('create and reopen scratch database are mutually exclusive')
+        if scratch_database is not None or existing_scratch_database is not None:
             from .source_constant_store import SourceConstantStore
             try:
-                self.constant_store = SourceConstantStore.create(scratch_database, source)
+                self.constant_store = (SourceConstantStore.create(scratch_database, source)
+                                       if scratch_database is not None else
+                                       SourceConstantStore.reopen(existing_scratch_database, source))
             except BaseException:
                 self.close()
                 raise

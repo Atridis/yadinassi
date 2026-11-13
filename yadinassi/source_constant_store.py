@@ -1,6 +1,6 @@
 """Fresh, source-bound scalar constants persisted in an isolated SQLite file.
 
-No existing database is opened or migrated. Only explicitly measured fresh
+Only this exact source-bound format can be explicitly reopened; no migration. Only explicitly measured fresh
 String defaults are persisted; other Get-before-Set operations fail. This is a constants-only host capability, not
 SQLiteDBContext and not activation of the configuration's other data objects.
 """
@@ -9,13 +9,16 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
+from pathlib import Path
 from .catalog_qualifiers import validate_string, normalize_number, bound_number
 from .configuration_source import source_digest
 from .configuration_source_constants import source_constant_definitions
 from .dates import BSLDate, TICKS_PER_SECOND
 from .sqlite_catalog import _private_parent
 
-_PROFILE = 'source-scalar-constants-extensions-v2'
+_PROFILE = 'source-scalar-constants-extensions-v3'
+_MAX_DATABASE_BYTES = 1024 * 1024 * 1024
 _MAX_ENCODED_BYTES = 65536
 _MAX_NUMBER_TEXT = 256
 # Native fresh-DB observations, not inferred defaults of unrelated scalar types.
@@ -100,14 +103,13 @@ class SourceConstantStore:
         try:
             connection = sqlite3.connect(absolute, isolation_level=None, detect_types=0)
             connection.execute('PRAGMA foreign_keys=ON')
+            connection.execute('PRAGMA trusted_schema=OFF')
             connection.execute('PRAGMA journal_mode=DELETE')
             connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
-            connection.execute('CREATE TABLE source_binding(singleton INTEGER PRIMARY KEY CHECK(singleton=1), profile TEXT NOT NULL, source_sha256 TEXT NOT NULL, configuration_uuid TEXT NOT NULL, schema_sha256 TEXT NOT NULL)')
-            connection.execute('CREATE TABLE constant_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)')
-            connection.execute('CREATE TABLE constant_value(identity TEXT PRIMARY KEY REFERENCES constant_schema(identity), value_json TEXT NOT NULL CHECK(length(value_json)<=65536))')
-            connection.execute('CREATE TABLE source_extension_registry(identity TEXT PRIMARY KEY, source_archive BLOB NOT NULL)')
-            connection.execute('CREATE TABLE source_extension_issues(identity TEXT PRIMARY KEY, description TEXT NOT NULL)')
+            for statement in _DDL:
+                connection.execute(statement)
+            connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
             connection.executemany('INSERT INTO constant_schema VALUES(?,?,?)', rows)
             initial = [(str(item.identity), _encode('', item)) for item in definitions
@@ -126,6 +128,10 @@ class SourceConstantStore:
             result._binding, result._rows = binding, rows
             result._connection = connection
             result._closed = False
+            result._identity = _file_identity(absolute)
+            result._schema = _schema(connection)
+            result._source = source
+            result._verified_epoch = connection.execute('PRAGMA data_version').fetchone()[0]
             return result
         except BaseException as error:
             if connection is not None:
@@ -135,14 +141,91 @@ class SourceConstantStore:
             # Preserve partial artifacts; never unlink a potentially replaced path.
             raise
 
+    @classmethod
+    def reopen(cls, path, source):
+        """Open only an unchanged source package's explicitly created scratch DB.
+
+        A regular private file is required; mode=rw cannot create a missing file.
+        Existing ordinary databases and previous scratch formats are refused.
+        """
+        raw = os.fspath(path)
+        if type(raw) is not str or not raw or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
+            raise ValueError('invalid source constants destination')
+        absolute = _private_parent(os.path.abspath(raw))
+        identity = _file_identity(absolute)
+        connection = None
+        try:
+            connection = sqlite3.connect(Path(absolute).as_uri() + '?mode=rw', uri=True,
+                                         isolation_level=None, detect_types=0, timeout=0.2)
+            connection.execute('PRAGMA trusted_schema=OFF')
+            connection.execute('PRAGMA foreign_keys=ON')
+            if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
+                raise ValueError('unsupported source constants journal')
+            if _file_identity(absolute) != identity:
+                raise ValueError('source constants file identity changed')
+            # Compare exact DDL before querying application tables, including
+            # rejecting injected triggers, views and indexes.
+            expected = _expected_schema()
+            if _schema(connection) != expected:
+                raise ValueError('source constants schema integrity')
+            definitions, unsupported, names = source_constant_definitions(source)
+            rows = tuple(sorted((str(item.identity), item.name, _json([
+                item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+            digest = source_digest(source)
+            schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
+            result = object.__new__(cls)
+            result.path, result.source_sha256, result.config_uuid = absolute, digest, source.config_uuid
+            result.names, result.definitions = names, definitions
+            result._definitions = {item.name.casefold(): item for item in definitions}
+            result._unsupported = unsupported
+            result._binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
+            result._rows, result._connection, result._closed = rows, connection, False
+            result._identity, result._schema, result._source = identity, expected, source
+            result._verified_epoch = None
+            epoch = connection.execute('PRAGMA data_version').fetchone()[0]
+            connection.execute('BEGIN')
+            try:
+                result._open()
+                known = {str(item.identity): item for item in definitions}
+                values = connection.execute('SELECT identity,value_json FROM constant_value LIMIT ?',(len(definitions)+1,)).fetchall()
+                if len(values) > len(definitions):
+                    raise ValueError('source constants value inventory integrity')
+                for key, value in values:
+                    if key not in known:
+                        raise ValueError('source constants value identity integrity')
+                    _decode(value, known[key])
+                if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
+                    raise ValueError('source constants foreign key integrity')
+            finally:
+                connection.execute('ROLLBACK')
+            if connection.execute('PRAGMA data_version').fetchone()[0] == epoch:
+                result._verified_epoch = epoch
+            result.require_empty_extension_registry()
+            return result
+        except BaseException as error:
+            if connection is not None:
+                connection.close()
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source constants reopen refused') from None
+            raise
+
     def _open(self):
         if self._closed:
             raise ValueError('source constants store is closed')
         try:
+            if _file_identity(self.path) != self._identity or _schema(self._connection) != self._schema:
+                raise ValueError('source constants file/schema integrity')
             actual = self._connection.execute('SELECT profile,source_sha256,configuration_uuid,schema_sha256 FROM source_binding WHERE singleton=1').fetchall()
             rows = tuple(self._connection.execute('SELECT identity,name,definition FROM constant_schema ORDER BY identity'))
             if actual != [self._binding] or rows != self._rows:
                 raise ValueError('source constants binding integrity')
+            # Exact source bytes were verified at create/reopen. Own commits do
+            # not change data_version; any external commit permanently retires
+            # this cache for this handle. Never recache from a stale snapshot.
+            epoch = self._connection.execute('PRAGMA data_version').fetchone()[0]
+            if self._verified_epoch != epoch:
+                self._verified_epoch = None
+                _verify_source(self._connection, self._source)
         except sqlite3.Error:
             raise ValueError('source constants storage failure') from None
 
@@ -177,14 +260,20 @@ class SourceConstantStore:
         return self._definitions[key]
 
     def get(self, name):
-        definition = self._definition(name)
+        if self._closed:
+            raise ValueError('source constants store is closed')
         try:
+            self._connection.execute('BEGIN')
+            definition = self._definition(name)
             row = self._connection.execute('SELECT value_json FROM constant_value WHERE identity=?', (str(definition.identity),)).fetchone()
+            if row is None:
+                raise ValueError('uninitialized constant: ' + definition.name)
+            return _decode(row[0], definition)
         except sqlite3.Error:
             raise ValueError('source constants storage failure') from None
-        if row is None:
-            raise ValueError('uninitialized constant: ' + definition.name)
-        return _decode(row[0], definition)
+        finally:
+            if self._connection.in_transaction:
+                self._connection.execute('ROLLBACK')
 
     def set(self, name, value):
         definition = self._definition(name)
@@ -193,14 +282,61 @@ class SourceConstantStore:
         encoded = _encode(value, definition)
         try:
             self._connection.execute('BEGIN IMMEDIATE')
+            self._open()
             self._connection.execute('INSERT INTO constant_value VALUES(?,?) ON CONFLICT(identity) DO UPDATE SET value_json=excluded.value_json', (str(definition.identity), encoded))
             self._connection.execute('COMMIT')
-        except sqlite3.Error:
+        except BaseException as error:
             if self._connection.in_transaction:
                 self._connection.execute('ROLLBACK')
-            raise ValueError('source constants storage failure') from None
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source constants storage failure') from None
+            raise
 
     def close(self):
         if not self._closed:
             self._closed = True
             self._connection.close()
+
+
+_DDL = ('CREATE TABLE source_binding(singleton INTEGER PRIMARY KEY CHECK(singleton=1), profile TEXT NOT NULL, source_sha256 TEXT NOT NULL, configuration_uuid TEXT NOT NULL, schema_sha256 TEXT NOT NULL)', 'CREATE TABLE constant_schema(identity TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, definition TEXT NOT NULL)', 'CREATE TABLE constant_value(identity TEXT PRIMARY KEY REFERENCES constant_schema(identity), value_json TEXT NOT NULL CHECK(length(value_json)<=65536))', 'CREATE TABLE source_file(path TEXT PRIMARY KEY, content BLOB NOT NULL)', 'CREATE TABLE source_extension_registry(identity TEXT PRIMARY KEY, source_archive BLOB NOT NULL)', 'CREATE TABLE source_extension_issues(identity TEXT PRIMARY KEY, description TEXT NOT NULL)')
+
+
+def _schema(connection):
+    rows = connection.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name LIMIT 33").fetchall()
+    if len(rows) > 32:
+        raise ValueError('source constants schema bound')
+    return tuple(rows)
+
+
+def _expected_schema():
+    connection = sqlite3.connect(':memory:')
+    try:
+        for sql in _DDL:
+            connection.execute(sql)
+        return _schema(connection)
+    finally:
+        connection.close()
+
+
+def _file_identity(path):
+    info = os.lstat(path)
+    if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            or getattr(info, 'st_file_attributes', 0) & 0x400
+            or info.st_size > _MAX_DATABASE_BYTES):
+        raise ValueError('source constants file integrity')
+    if hasattr(os, 'getuid') and (info.st_uid != os.getuid() or info.st_mode & 0o022):
+        raise ValueError('source constants private file required')
+    return info.st_dev, info.st_ino
+
+
+def _verify_source(connection, source):
+    expected = sorted((item.path, item.content) for item in source.files)
+    summary = connection.execute('SELECT count(*),coalesce(sum(length(content)),0),coalesce(max(length(content)),0) FROM source_file').fetchone()
+    if summary != (len(expected), sum(len(v) for _, v in expected), max((len(v) for _, v in expected), default=0)):
+        raise ValueError('source constants source integrity')
+    cursor = connection.execute('SELECT path,content FROM source_file ORDER BY path')
+    for row in expected:
+        if cursor.fetchone() != row:
+            raise ValueError('source constants source integrity')
+    if cursor.fetchone() is not None:
+        raise ValueError('source constants source integrity')
