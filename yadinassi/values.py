@@ -34,6 +34,7 @@ class BSLType(Enum):
     FORM_ITEMS = "ВсеЭлементыФормы"
     FORM_COMMANDS = "КомандыФормы"
     FORM_FIELD_VIEW = "ВидПоляФормы"
+    XML_DATA_TYPE = "ТипДанныхXML"
     XDTO_FACTORY = "ФабрикаXDTO"
     XDTO_OBJECT = "ОбъектXDTO"
     XDTO_VALUE = "ЗначениеXDTO"

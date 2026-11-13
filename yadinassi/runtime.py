@@ -1,3 +1,4 @@
+from . import xml_type_bridge
 from weakref import WeakValueDictionary
 from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
@@ -278,7 +279,7 @@ class Interpreter:
         self.register_function("ЗначениеИзСтрокиВнутр", serialization.value_from_string_internal,
                                "ValueFromStringInternal")
         for name, function, alias in (*regex_functions.BUILTINS, *strings.BUILTINS, *formatting.BUILTINS, *number_in_words.BUILTINS, *period_presentation.BUILTINS, *numbers.BUILTINS,
-                                      *xml_values.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
+                                      *xml_values.BUILTINS, *xml_type_bridge.BUILTINS, *bits.BUILTINS, *elementary.BUILTINS,
                                       *dates.BUILTINS, *clocks.BUILTINS,
                                       *date_time_conversions.BUILTINS):
             self.register_function(name, function, alias)
@@ -292,6 +293,8 @@ class Interpreter:
         self.register_type("ЗаписьXML", BSLXMLWriter, "XMLWriter")
         self.register_type("ПараметрыЧтенияXML", BSLXMLReaderSettings, "XMLReaderSettings")
         self.register_type("ПараметрыЗаписиXML", BSLXMLWriterSettings, "XMLWriterSettings")
+        self.register_function("ИзXMLТипа", self._from_xml_type, "FromXMLType")
+        self.register_type("ТипДанныхXML", xml_type_bridge.BSLXMLDataType, "XMLDataType")
         self.register_type("ФабрикаXDTO", BSLXDTOFactory, "XDTOFactory")
         self.register_function("СоздатьФабрикуXDTO", create_xdto_factory, "CreateXDTOFactory")
         self.register_type("Разыменователь пространств имен DOM XPath", BSLDOMNamespaceResolver, "DOMNamespaceResolver")
@@ -555,6 +558,30 @@ class Interpreter:
             if value is not None: return value
         return self._information_registers.type_by_name(name)
 
+    def _from_xml_type(self, *args):
+        self._require_family()
+        return xml_type_bridge.from_xml_type(*args, resolver=self._xml_metadata_type)
+
+    def _xml_metadata_type(self, name):
+        prefix, separator, tail = name.partition('.')
+        if not separator or not tail:
+            return None
+        if prefix == 'EnumRef':
+            enums = self._metadata._enumerations
+            if enums is None:
+                return None
+            if tail.casefold() in enums._unsupported:
+                return enums.resolve_type(name)  # Preserve explicit unsupported diagnostics.
+            if tail.casefold() not in enums._managers:
+                return None
+        elif prefix in ('CatalogRef', 'CatalogObject', 'DocumentRef', 'DocumentObject'):
+            manager = self._catalogs if prefix.startswith('Catalog') else self._documents
+            if tail.casefold() not in manager._metadata._snapshot():
+                return None
+        else:
+            return None
+        return self._type_by_name(name)
+
     def _new_query(self, text=""):
         return BSLQuery(self._catalogs, text, self._documents, self._information_registers)
 
@@ -569,7 +596,7 @@ class Interpreter:
         Explicit host overrides remain untouched; names alone grant no rebinding.
         """
         core_helpers = (Interpreter._message, Interpreter._error_description,
-                        Interpreter._error_info, Interpreter._type_by_name,
+                        Interpreter._error_info, Interpreter._type_by_name, Interpreter._from_xml_type,
                         Interpreter._new_query, Interpreter._new_temp_tables_manager,
                         Interpreter._new_user_message, Interpreter._begin_transaction,
                         Interpreter._commit_transaction, Interpreter._rollback_transaction,

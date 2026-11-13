@@ -1,3 +1,4 @@
+from .xml_type_bridge import BSLXMLDataType
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .query_packages import BSLTempTablesManager
@@ -98,6 +99,7 @@ _VALUE_TYPES = (
     (BSLFormItems, BSLType.FORM_ITEMS, "FormAllItems"),
     (BSLFormCommands, BSLType.FORM_COMMANDS, "FormCommands"),
     (BSLFormFieldView, BSLType.FORM_FIELD_VIEW, "FormFieldType"),
+    (BSLXMLDataType, BSLType.XML_DATA_TYPE, "XMLDataType"),
     (BSLXDTOFactory, BSLType.XDTO_FACTORY, "XDTOFactory"),
     (BSLXDTODataObject, BSLType.XDTO_OBJECT, "XDTODataObject"),
     (BSLXDTODataValue, BSLType.XDTO_VALUE, "XDTODataValue"),
