@@ -356,8 +356,9 @@ class SourceApplication:
         if len(routines) != 1:
             raise ValueError('Неоднозначный обработчик запуска: ' + '/'.join(aliases))
         routine = routines[0]
-        if routine.is_function or routine.is_async or len(routine.parameters) != len(arguments):
+        if routine.is_function or routine.is_async or len(routine.parameters) > len(arguments):
             raise ValueError('Неподдерживаемая сигнатура обработчика: ' + routine.name)
+        arguments = arguments[:len(routine.parameters)]
         if arguments and routine.parameters[0].by_value:
             raise ValueError('Параметр обработчика должен передаваться по ссылке: ' + routine.name)
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), list(arguments))
@@ -378,7 +379,8 @@ class SourceApplication:
                 session._logical_side = 'server'
                 from .configuration_modules import compile_session_module
                 program, self._session_handler = compile_session_module(
-                    self.files[session_path], compilation_profile=self.compilation_profile)
+                    self.files[session_path], compilation_profile=self.compilation_profile,
+                    allow_omitted_parameters=True)
                 self._session_owner = session
                 session.execute_program(program)
                 handlers = ('sessionparameterssetting', 'установкапараметровсеанса')
@@ -445,7 +447,7 @@ class SourceApplication:
         self.session_parameters._authorize(caller)
         if self._session_handler is not None:
             routine = self._session_handler
-            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)],
+            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)][:len(routine.parameters)],
                                            self._session_owner, require_value=False)
 
     def close(self):

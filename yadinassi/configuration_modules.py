@@ -115,7 +115,7 @@ def compile_module(content, path, side, *, common, compilation_profile="standalo
 
 
 
-def compile_session_module(content, *, compilation_profile="standalone"):
+def compile_session_module(content, *, compilation_profile="standalone", allow_omitted_parameters=False):
     program=compile_module(content,'Ext/SessionModule.bsl','server',common=True,
                            compilation_profile=compilation_profile)
     handlers=[]
@@ -123,8 +123,10 @@ def compile_session_module(content, *, compilation_profile="standalone"):
         if routine.exported:
             raise ValueError('session module exports are unsupported')
         if routine.name.casefold() in ('sessionparameterssetting','установкапараметровсеанса'):
-            if (routine.is_function or len(routine.parameters)!=1
-                    or routine.parameters[0].default is not None or routine.parameters[0].by_value):
+            if (routine.is_function or len(routine.parameters)>1
+                    or (not routine.parameters and not allow_omitted_parameters)
+                    or (routine.parameters and (routine.parameters[0].default is not None
+                                                or routine.parameters[0].by_value))):
                 raise ValueError('unsupported session parameter handler signature')
             handlers.append(routine)
     if len(handlers)>1: raise ValueError('ambiguous session parameter handler')
