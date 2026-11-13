@@ -286,3 +286,40 @@ scratch, а не неявной миграции. Это локальное хр
 не native database serialization и не поддержка CatalogRef/DocumentRef.
 
 Основание enum-констант: [официальное руководство, раздел 5.9](https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_8.3.23_Developer_Guide/Chapter_5._Configuration_objects/5.9._Enumerations/) прямо описывает использование перечислений в значениях констант.
+
+### Запрос к таблице Constants
+
+Source scratch предоставляет read-only `SELECT ... FROM Constants AS C` (также
+`Константы`) для явно выбранных скалярных констант String/Number/Boolean/Date.
+Например, после записи `Constants.OrganizationName.Set("Demo")`:
+
+```bsl
+Q = New Query("SELECT C.OrganizationName AS Name FROM Constants AS C");
+Selection = Q.Execute().Select();
+Selection.Next();
+Message(Selection.Name);
+```
+
+Проекции, параметры, WHERE, поддержанные выражения/агрегаты, GROUP BY/HAVING,
+ORDER BY и выгрузка результата используют существующий закрытый relational
+engine. Сначала выполняется binding, затем выбранные поля читаются одним
+SQLite snapshot. Внутри явной транзакции видны её записи, но Execute её не
+коммитит. Уже полученный результат не изменяется после следующей записи.
+Неиспользуемые unsupported или неинициализированные константы не читаются;
+если они явно выбраны, возвращается ошибка, а не выдуманное значение.
+
+Это одна строка в ограниченном source-host профиле. Нет произвольного SQL,
+чужих SQLite-баз, JOIN, пакетов, временных таблиц, подзапросов, разделителей
+данных или фиктивных таблиц Catalog/Document/Register. UUID, ValueStorage,
+составные и enum-поля в запросах пока отклоняются даже при поддержке их Get/Set.
+Actual caller проверяется при каждом Execute: owning synchronous server,
+живая source application и safe-mode policy. Объект Query не переносит
+полномочия его создателя вызывающему.
+
+[Официальное руководство](https://1c-dn.com/download-trial/files/guides/developer_guide.pdf)
+описывает таблицу Constants в языке запросов. Наш ограниченный source-host
+контракт без разделения данных не является новой проверкой native parity.
+
+Ограничения выше относятся к новому источнику Constants. Ранее доступные
+запросы к переданным ValueTable и их пакеты без scratch сохраняют прежний
+закрытый движок и его ограничения; новый источник не выдаёт DB-полномочий.

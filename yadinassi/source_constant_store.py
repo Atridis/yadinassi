@@ -573,6 +573,7 @@ class SourceConstantStore:
         try:
             if owned:
                 self._connection.execute('BEGIN')
+            self._open()
             result = {}
             for name in names:
                 definition = self._definition(name)

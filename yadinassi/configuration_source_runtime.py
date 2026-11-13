@@ -52,6 +52,10 @@ class _SourceInterpreter(Interpreter):
             return super().execute_program(program)
 
 
+    def _new_query(self, text=""):
+        from .source_constant_queries import SourceConstantQuery
+        return SourceConstantQuery(self, self.application, text)
+
     def call(self, node, *, require_value):
         callee = self.ungroup(node.callee)
         if (isinstance(callee, ast.Name)

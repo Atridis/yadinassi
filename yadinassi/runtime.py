@@ -1287,6 +1287,7 @@ class Interpreter:
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         from .source_constants_runtime import ConstantCall, ConstantSetCall
+        from .source_constant_queries import SourceQueryCall
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
         from .source_transactions import SourceTransactionCall
@@ -1307,7 +1308,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall):
             return function.function.invoke(self, values)
         return function(*values)
 
