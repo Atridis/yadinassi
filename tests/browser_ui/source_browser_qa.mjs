@@ -31,8 +31,9 @@ try {
  try{browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,env,timeout:20000});}finally{if(old===undefined)delete process.env.TMPDIR;else process.env.TMPDIR=old;}
  context=await browser.newContext({acceptDownloads:false,serviceWorkers:'block'});context.setDefaultTimeout(10000);
  const probe=await context.newPage();await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
- for(const form of [false,true,'workspace','workspace_loss']) {
+ for(const form of [false,true,'workspace','workspace_loss','workspace_startup']) {
   phase=typeof form==='string'?form:form?'selected_form':'diagnostics';
+  if(form==='workspace_startup')await writeFile(path.join(fixture,'Ext/ManagedApplicationModule.bsl'),'Procedure OnStart()\n OpenForm("CommonForm.Payload",New Structure("Greeting","via startup"));\nEndProcedure');
   host=spawn('python',['-m','yadinassi','--ui','--configuration-source',fixture,'--run-startup',...(typeof form==='string'?['--source-workspace']:form?['--source-form','CommonForm.Main']:[])],{cwd:repo,env,stdio:['ignore','pipe','ignore']});
   const url=await new Promise((resolve,reject)=>{const parse=launchOutputReader();const timer=setTimeout(()=>reject(Error('host_timeout')),10000);host.once('exit',()=>{clearTimeout(timer);reject(Error('host_exit'));});host.stdout.on('data',b=>{try{const u=parse(b);if(u){clearTimeout(timer);resolve(u);}}catch(e){clearTimeout(timer);reject(e);}});});
   const origin=new URL(url).origin;
@@ -49,6 +50,16 @@ try {
   const errors=[];page.on('pageerror',()=>errors.push('page_error'));
   await page.goto(url.href);
   if(!form){await page.getByText('Источник: Demo; попытка запуска: completed',{exact:true}).waitFor();assert.ok((await page.locator('#result').innerText()).includes('"runtime_active": false'));await page.getByRole('button',{name:'Закрыть диагностику'}).click();await page.getByText('Диагностика закрыта',{exact:true}).waitFor();}
+  else if(form==='workspace_startup'){
+   phase='workspace_startup:initial';
+   await page.getByRole('heading',{name:'Demo · Source workspace'}).waitFor();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='via startup'&&x.getClientRects().length));
+   await page.getByRole('button',{name:'Run',exact:true}).click();
+   await page.waitForFunction(()=>Array.from(document.querySelectorAll('input')).some(x=>x.value==='via startup / NoContext Demo'&&x.getClientRects().length));
+   await page.screenshot({path:path.join(output,'startup-openform.png')});
+   await page.getByRole('button',{name:'Close form',exact:true}).click();await page.getByText('Closed',{exact:true}).waitFor();
+   await page.getByRole('button',{name:'Закрыть сеанс',exact:true}).click();await page.getByText('Сеанс закрыт',{exact:true}).waitFor();
+  }
   else if(form==='workspace_loss'){
    phase='workspace_loss:open';
    await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Main');
@@ -168,4 +179,4 @@ try {
  }
  report.status='PASS';
 }catch(error){report.failure={phase,reason:'smoke_failed',errorCode: /No (?:resource|data).*?(?:identifier|resource)/i.test(error?.message||'')?'response_body_unavailable':/getResponseBody/.test(error?.message||'')?'response_body_protocol':/closed/i.test(error?.message||'')?'target_closed':'unclassified',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
-finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png','bsl-openform.png','nocontext.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
+finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png','bsl-openform.png','nocontext.png']:[]),...(report.scenarios.some(x=>x.name==='workspace_startup')?['startup-openform.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}

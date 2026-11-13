@@ -284,3 +284,78 @@ class SourceWorkspaceTests(unittest.TestCase):
         w=self.workspace(mapping);w.exchange(request('open',name='CommonForm.Main'));w.exchange(request('form',generation=1,request=form_request()))
         reply=w.exchange(request('form',generation=1,request=form_request('event',event='change',revision=w.form.client.session.revision,control='GreetingLabel',value={'type':'String','value':'edit'})))
         self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(w.generation,1);self.assertEqual(len(w.open_forms),1)
+
+class SourceStartupNavigationTests(unittest.TestCase):
+    def app(self, code, form_code=None):
+        mapping=files() if form_code is None else files(form_code)
+        mapping['Ext/ManagedApplicationModule.bsl']=code.encode()
+        app=SourceApplication(import_source(mapping));self.addCleanup(app.close)
+        return app
+
+    def test_onstart_opens_actual_form_with_copied_parameters(self):
+        app=self.app('''Procedure OnStart()
+ P = New Structure("Text", "startup");
+ OpenForm("CommonForm.Main", P);
+ P.Text = "changed";
+EndProcedure''', b'''&AtServer
+Procedure Created(Cancel, StandardProcessing)
+ Greeting = Parameters.Text;
+EndProcedure
+&AtClient
+Procedure Go(Command)
+EndProcedure''')
+        w=SourceWorkspace.start(app)
+        self.assertEqual(w.selected,'CommonForm.Main')
+        self.assertIsNone(w.form.exchange(form_request())['result']['error'])
+        self.assertEqual(dict(w.form.client.session.snapshot().attributes)['Greeting'],'startup')
+        for _ in range(2):w.exchange(request())
+        self.assertEqual(len(w.open_forms),1)
+        with self.assertRaisesRegex(ValueError,'fresh'):SourceWorkspace.start(app)
+
+    def test_cancel_discards_pending_and_never_constructs_form(self):
+        app=self.app('''Procedure BeforeStart(Cancel)
+ OpenForm("CommonForm.Main"); Cancel = True;
+EndProcedure''')
+        with patch('yadinassi.ui.source_workspace.SourceFormController') as create:
+            self.assertIsNone(SourceWorkspace.start(app));create.assert_not_called()
+        self.assertEqual(app.state,'cancelled')
+
+    def test_exception_discards_pending_and_never_constructs_form(self):
+        app=self.app('''Procedure OnStart()
+ OpenForm("CommonForm.Main"); Raise "startup failed";
+EndProcedure''')
+        with patch('yadinassi.ui.source_workspace.SourceFormController') as create:
+            with self.assertRaises(Exception):SourceWorkspace.start(app)
+            create.assert_not_called()
+        self.assertEqual(app.state,'failed')
+
+    def test_unknown_form_is_visible_error_without_destroying_session(self):
+        w=SourceWorkspace.start(self.app('OpenForm("CommonForm.Absent");'))
+        self.assertIn('declared source form',w.error)
+        self.assertEqual(w.open_forms,{})
+        w.application.require_open()
+        w.exchange(request('open',name='CommonForm.Main'))
+        self.assertEqual(w.selected,'CommonForm.Main')
+
+    def test_startup_queue_is_bounded(self):
+        app=self.app('For I = 1 To 9 Do OpenForm("CommonForm.Main"); EndDo;')
+        with patch('yadinassi.ui.source_workspace.SourceFormController') as create:
+            with self.assertRaises(Exception):SourceWorkspace.start(app)
+            create.assert_not_called()
+        self.assertEqual(app.state,'failed')
+
+    def test_startup_capability_does_not_survive_start(self):
+        app=self.app('');SourceWorkspace.start(app)
+        with self.assertRaises(Exception):app.interpreter.execute('OpenForm("CommonForm.Main");')
+
+    def test_invalid_parameters_do_not_open_any_forms(self):
+        app=self.app('OpenForm("CommonForm.Main", New Array);')
+        with patch('yadinassi.ui.source_workspace.SourceFormController') as create:
+            with self.assertRaises(Exception):SourceWorkspace.start(app)
+            create.assert_not_called()
+        self.assertEqual(app.state,'failed')
+
+    def test_headless_startup_does_not_gain_openform(self):
+        app=self.app('OpenForm("CommonForm.Main");')
+        with self.assertRaises(Exception):app.start()
+        self.assertEqual(app.state,'failed')

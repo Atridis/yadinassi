@@ -49,6 +49,47 @@ class SourceWorkspace:
         self.forms = tuple(sorted(full_name(entry) for entry in inventory.values()
                                   if entry.family in ('Form', 'CommonForm')))
 
+    @classmethod
+    def start(cls, application):
+        """Queue startup UI intent; create forms only after successful startup.
+
+        This opt-in host belongs only to the memory-only workspace. Headless and
+        explicitly selected single-form startup remain unchanged.
+        """
+        if application.state != 'prepared' or application.constant_store is not None:
+            raise ValueError('fresh memory-only source application required')
+        pending = []
+        accepting = True
+        def open_form(name, parameters=None):
+            if (not accepting or application.state != 'starting'
+                    or application.interpreter.execution_context != 'client'):
+                raise ValueError('OpenForm requires active client workspace startup')
+            if type(name) is not str or not name or len(name) > 1024:
+                raise ValueError('declared source form name required')
+            if len(pending) >= MAX_OPEN_FORMS:
+                raise ValueError('source startup form capacity exhausted')
+            from .configuration_app import _parameters
+            pending.append((name, _parameters(parameters)))
+        application.interpreter.register_function('OpenForm', open_form, 'ОткрытьФорму', returns_value=False)
+        try:
+            if not application.start():
+                return None
+            accepting = False
+            workspace = cls(application)
+            for name, parameters in pending:
+                try:
+                    if name not in workspace.forms:
+                        raise ValueError('declared source form required')
+                    workspace._new_form(name, parameters)
+                    workspace.navigation_total += 1
+                except (BSLError, ValueError, TypeError, RecursionError) as error:
+                    workspace.error = 'Startup OpenForm '+name+': '+str(error)[:2048]
+                    break
+            return workspace
+        finally:
+            accepting = False
+            pending.clear()
+
     @staticmethod
     def _live(form):
         return not form.client.session.closed or form.client.session.uncertain
