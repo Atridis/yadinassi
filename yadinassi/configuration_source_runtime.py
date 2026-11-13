@@ -40,6 +40,16 @@ class _SourceInterpreter(Interpreter):
                                'УстановитьБезопасныйРежим', returns_value=False)
         self.register_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')
 
+    def _activation_interpreter(self):
+        # A logical ServerCall must retain the admitted source environment,
+        # not silently fall back to a standalone Interpreter. The base call
+        # engine still owns packet copying and side/transaction/safe-mode gates.
+        self.application.require_open()
+        return _SourceInterpreter(self.application, output=self.output,
+            encoding=self.encoding, native_target=self.native_target,
+            compilation_profile=self.compilation_profile,
+            family_owner=self._family_owner)
+
     def execute_program(self, program):
         with self.application.safe_mode.execution():
             return super().execute_program(program)
@@ -189,16 +199,28 @@ class SourceApplication:
         return program
 
     def module(self, key, caller, *, global_call=False):
-        side = caller.execution_context
-        instance_key = (key, side, global_call)
-        if instance_key in self._instances:
-            return self._instances[instance_key]._self_module
+        self.require_open()
+        caller._require_family()
+        if (caller._family_owner is not self.interpreter
+                or caller._scheduler is not self.interpreter._scheduler):
+            raise ValueError('foreign source common-module caller')
+        caller_side = caller.execution_context
         definition = self.modules[key]
         root = ET.fromstring(self.files[definition.path])
         properties_node = root[0].find('{' + MD + '}Properties')
         properties = {element.tag.rsplit('}', 1)[-1]: element.text
                       for element in properties_node}
         path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
+        client = properties.get('ClientManagedApplication') == 'true'
+        server = properties.get('Server') == 'true'
+        crossing = (caller_side == 'client' and not client and server
+                    and properties.get('ServerCall') == 'true' and not global_call)
+        side = 'server' if crossing else caller_side
+        # Cached receivers never bypass admission. Reusable cross-side results
+        # need their own measured transport/cache contract; reject rather than
+        # sharing mutable cached values across the packet boundary.
+        if crossing and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse':
+            raise ValueError('source ServerCall return-value reuse is not supported yet')
         if ((properties.get('Global') == 'true') != global_call
                 or (global_call and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse')
                 or properties.get('Privileged') == 'true'
@@ -207,6 +229,9 @@ class SourceApplication:
             raise ValueError('Режим общего модуля пока не поддержан при запуске источника: ' + definition.name)
         if path not in self.files:
             raise ValueError('Отсутствует исходный текст общего модуля: ' + path)
+        instance_key = (key, side, global_call)
+        if instance_key in self._instances:
+            return self._instances[instance_key]._self_module
         child = _SourceInterpreter(self, family_owner=self.interpreter,
                                    compilation_profile=self.compilation_profile)
         try:
