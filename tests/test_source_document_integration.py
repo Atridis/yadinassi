@@ -39,8 +39,8 @@ class SourceDocumentIntegrationTests(unittest.TestCase):
         _,out=self.run_app('O=Catalogs.Items.CreateItem(); O.Code="A"; O.Description="real"; O.Write(); Q=New Query("SELECT Ref AS R INTO Saved FROM Catalog.Items; SELECT R FROM Saved"); S=Q.Execute().Select(); S.Next(); Message(S.R.Description);')
         self.assertEqual(out,['real'])
 
-    def test_document_query_not_faked(self):
-        with self.assertRaises(BSLError):self.run_app(CREATE+'D.Write(); Q=New Query("SELECT Ref FROM Document.Invoice"); Q.Execute();')
+    def test_document_virtual_query_not_faked(self):
+        with self.assertRaises(BSLError):self.run_app(CREATE+'D.Write(); Q=New Query("SELECT Ref FROM Document.Invoice.Lines"); Q.Execute();')
 
     def test_document_ref_readonly_assignment(self):
         body=CREATE+'D.Write(); R=D.Ref; Try R.Number="changed"; Except Message("readonly"); EndTry; Message(R.Number);'

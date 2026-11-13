@@ -1,4 +1,4 @@
-"""Read-only source catalog queries over one bounded v4 snapshot, never user SQL."""
+"""Read-only source record queries over one bounded v4/v5 snapshot, never user SQL."""
 from dataclasses import fields, is_dataclass, replace
 from . import query_parser as syntax
 from .queries import _Column
@@ -8,12 +8,13 @@ from .source_catalog_store import SourceCatalogStore
 from .source_document_store import SourceDocumentStore
 
 _CONSTANTS = ('constants','константы')
-_STANDARD = {'Code':'Код','Description':'Наименование','DeletionMark':'ПометкаУдаления'}
+_STANDARD = {'catalog': {'Code':'Код','Description':'Наименование','DeletionMark':'ПометкаУдаления'},
+             'document': {'Number':'Номер','Date':'Дата','DeletionMark':'ПометкаУдаления','Posted':'Проведен'}}
 
 
 def has_catalog(statements):
     return any(type(n) in (syntax.Select,syntax.Source) and n.derived is None
-               and not n.temporary and not n.external and n.family=='catalog'
+               and not n.temporary and not n.external and n.family in ('catalog','document')
                for n in syntax.walk_nodes(statements))
 
 
@@ -53,12 +54,14 @@ def read(query, caller, statements, *, batch=False):
             if constant_parameter is None:
                 constant_parameter=_private_name(used,'__source_constants');used.add(constant_parameter)
             mappings[key]=constant_parameter
-        elif node.family=='catalog':
-            definition=store.catalog(node.catalog)
-            key=('catalog',definition.name.casefold())
+        elif node.family in ('catalog','document'):
+            if node.family=='document' and type(store) is not SourceDocumentStore:
+                raise ValueError('source Document query requires v5 scratch capability')
+            definition=(store.catalog if node.family=='catalog' else store.document)(node.catalog)
+            key=(node.family,definition.name.casefold())
             if key not in mappings:
                 parameter=_private_name(used,'__source_catalog');used.add(parameter)
-                mappings[key]=parameter;catalogs[parameter]=definition
+                mappings[key]=parameter;catalogs[parameter]=(node.family,definition)
         else:
             raise ValueError('source query persistent family unsupported: '+node.family)
     if len(catalogs)+(constant_parameter is not None)>16:
@@ -74,11 +77,11 @@ def read(query, caller, statements, *, batch=False):
             if len(node.parts)==1 and not store.has(name):continue
             definition=store._definition(name);constant_names[name.casefold()]=definition
     from .source_query_references import make_binding
-    for parameter,definition in catalogs.items():
-        binding=make_binding(app,query._catalogs,definition.name)
-        columns=[_Column(n,None,'catalog_ref',(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding) for n in ('Ref','Ссылка')]
+    for parameter,(family,definition) in catalogs.items():
+        binding=make_binding(app,query._catalogs,definition.name,family.title())
+        columns=[_Column(n,None,binding.kind,(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding) for n in ('Ref','Ссылка')]
         for field in definition.fields:
-            for name in (field.name, *([_STANDARD[field.name]] if field.name in _STANDARD else [])):
+            for name in (field.name, *([_STANDARD[family][field.name]] if field.name in _STANDARD[family] else [])):
                 if field.kind == 'object_ref' and field.qualifiers[0] == 'Catalog':
                     target = make_binding(app, query._catalogs, field.qualifiers[2])
                     columns.append(_Column(name,None,'catalog_ref',(),explicit_alias=True,
@@ -92,9 +95,9 @@ def read(query, caller, statements, *, batch=False):
         for d in constant_definitions:
             if d.kind in ('string','number','boolean','datetime'):
                 columns.append(_Column(d.name,None,d.kind,d.qualifiers,explicit_alias=True))
-            elif d.kind=='object_ref' and d.qualifiers[0]=='Catalog':
-                binding=make_binding(app,query._catalogs,d.qualifiers[2])
-                columns.append(_Column(d.name,None,'catalog_ref',(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding))
+            elif d.kind=='object_ref' and d.qualifiers[0] in ('Catalog','Document'):
+                binding=make_binding(app,query._catalogs,d.qualifiers[2],d.qualifiers[0])
+                columns.append(_Column(d.name,None,binding.kind,(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding))
             else:raise ValueError('source query constant type unsupported: '+d.name)
         tables[constant_parameter]=_Table(tuple(columns),())
     translated=_translate(statements if package_mode else statements[0],mappings)
@@ -106,14 +109,14 @@ def read(query, caller, statements, *, batch=False):
     try:
         if owned:store.begin_transaction()
         store._open()
-        for parameter,definition in catalogs.items():
+        for parameter,(family,definition) in catalogs.items():
             rows=[]
-            for identity,_,values in store.read_records(definition.name):
-                reference=app.references.ref('Catalog',definition.name,identity)
+            for identity,_,values in (store.read_records if family=='catalog' else store.read_documents)(definition.name):
+                reference=app.references.ref(family.title(),definition.name,identity)
                 row=[reference,reference]
                 for field in definition.fields:
                     row.append(values[field.name.casefold()])
-                    if field.name in _STANDARD:row.append(values[field.name.casefold()])
+                    if field.name in _STANDARD[family]:row.append(values[field.name.casefold()])
                 rows.append(tuple(row))
             tables[parameter]=_Table(tables[parameter].columns,tuple(rows))
         if constant_parameter is not None:
@@ -140,10 +143,14 @@ def _translate(node,mappings):
     if not is_dataclass(node):return node
     changes={field.name:_translate(getattr(node,field.name),mappings) for field in fields(node)}
     if type(node) in (syntax.Select,syntax.Source) and node.derived is None:
-        kind='constant' if node.temporary else 'catalog'
+        kind='constant' if node.temporary else node.family
         key=(kind,node.catalog.casefold())
         if not node.external and key in mappings:
-            changes.update(catalog=mappings[key],temporary=False,external=True)
+            # The rewritten node is a private external carrier, not a persistent
+            # Document source. Reference kind/identity live in its typed columns.
+            # Normalize the lexical family so legacy package metadata discovery
+            # cannot open a separate document backend for this frozen snapshot.
+            changes.update(catalog=mappings[key],temporary=False,external=True,family='catalog')
     return replace(node,**changes)
 
 

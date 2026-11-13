@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from uuid import UUID
 import weakref
 from .catalog_types import BSLCatalogType, BSLCatalogReference
+from .document_types import BSLDocumentType, BSLDocumentReference
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -26,13 +27,16 @@ class SourceBinding:
         if app is None:
             raise ValueError('Source reference application is closed')
         app.require_open()
-        if (type(self.kind) is not str or self.kind != 'catalog_ref' or type(self.value_type) is not BSLCatalogType
+        if (type(self.kind) is not str or self.kind not in ('catalog_ref','document_ref') or type(self.value_type) is not (BSLCatalogType if self.kind=='catalog_ref' else BSLDocumentType)
                 or type(self.identity) is not tuple or len(self.identity) != 2
                 or type(self.identity[1]) is not UUID
                 or self.collection is not app.interpreter._catalogs
                 or type(app.constant_store) not in (SourceCatalogStore, SourceDocumentStore)):
             raise TypeError('Invalid source reference binding ownership')
-        entry, canonical, metadata = app.references.definition('Catalog', self.value_type.name)
+        family='Catalog' if self.kind=='catalog_ref' else 'Document'
+        if family=='Document' and type(app.constant_store) is not SourceDocumentStore:
+            raise ValueError('source Document query requires v5 scratch capability')
+        entry, canonical, metadata = app.references.definition(family, self.value_type.name)
         if (canonical is not self.value_type or canonical.family != 'ref'
                 or self.identity[0] is not app.references.snapshot
                 or canonical.snapshot is not self.identity[0]
@@ -40,7 +44,7 @@ class SourceBinding:
                 or canonical.metadata_uuid != self.identity[1]
                 or metadata._root is not app.metadata or metadata._entry != entry):
             raise TypeError('Source reference binding requires canonical source metadata')
-        definition = app.constant_store.catalog(entry.name)
+        definition = (app.constant_store.catalog if family=='Catalog' else app.constant_store.document)(entry.name)
         if definition.identity != entry.identity:
             raise TypeError('Source reference storage schema identity mismatch')
         if app.constant_store._closed:
@@ -54,18 +58,21 @@ class SourceBinding:
 
     def value(self, value):
         app = self.require_owner()
-        metadata = app.references.definition('Catalog', self.value_type.name)[2]
-        if (type(value) is not BSLCatalogReference or value.value_type is not self.value_type
+        family='Catalog' if self.kind=='catalog_ref' else 'Document'
+        metadata = app.references.definition(family, self.value_type.name)[2]
+        if (type(value) is not (BSLCatalogReference if self.kind=='catalog_ref' else BSLDocumentReference) or value.value_type is not self.value_type
                 or type(value.reference_uuid) is not UUID or value.metadata is not metadata
                 or value.read_member is not None or value.get_object is not None):
             raise TypeError('Source query cell requires exact neutral owned reference')
         return value
 
 
-def make_binding(app, catalogs, name):
-    entry, value_type, _ = app.references.definition('Catalog', name)
+def make_binding(app, catalogs, name, family='Catalog'):
+    if type(family) is not str or family not in ('Catalog','Document'):
+        raise ValueError('unsupported source query reference family')
+    entry, value_type, _ = app.references.definition(family, name)
     binding = SourceBinding(value_type, (app.references.snapshot, entry.identity),
-                            'catalog_ref', catalogs, weakref.ref(app))
+                            'catalog_ref' if family=='Catalog' else 'document_ref', catalogs, weakref.ref(app))
     binding.require_owner()
     return binding
 
