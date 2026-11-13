@@ -376,8 +376,22 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_source_ui_assets_provenance(source):
+    """Exact source-UI inventory inverse for historical checks, not new evidence."""
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != 'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe':
+        return source
+    hunk = '    assets |= {"yadinassi/ui/assets/source/" + name\n               for name in ("app.js", "index.html", "style.css")}\n'
+    if source.count(hunk) != 1:
+        raise AssertionError('source UI inventory inverse unique hunk')
+    source = source.replace(hunk, '', 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != 'ae7c7d309d2faec1d3318df32d050ceb7b50fa7d2b4b1d6e7905990472babdc3':
+        raise AssertionError('source UI inventory inner source identity')
+    return source
+
+
 def without_main_demo_assets_provenance(source):
     """Restore the exact prior renderer inventory; never rewrite native evidence."""
+    source = without_source_ui_assets_provenance(source)
     base = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
     candidate = 'ae7c7d309d2faec1d3318df32d050ceb7b50fa7d2b4b1d6e7905990472babdc3'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()

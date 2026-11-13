@@ -155,7 +155,7 @@ class QualifierTypePolicyTests(unittest.TestCase):
         self.assertEqual(serialization._CODECS | serialization._UNSUPPORTED_CODEC_TYPES, set(BSLType))
         self.assertFalse(serialization._CODECS & serialization._UNSUPPORTED_CODEC_TYPES)
         self.assertEqual(set(serialization._TYPE_IDS), set(serialization._CODECS))
-        self.assertEqual(set(BSLType), {kind for _, kind, _ in type_values._VALUE_TYPES})
+        self.assertEqual(set(BSLType), {kind for _, kind, _ in type_values._VALUE_TYPES} | type_values._CONDITIONAL_VALUE_TYPES)
         for kind, identifier in TYPE_IDS.items():
             self.assertEqual(serialization._TYPE_IDS[kind], identifier)
         for value, kind in opaque_items():

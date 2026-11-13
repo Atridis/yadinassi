@@ -1808,6 +1808,8 @@ def interpreter_provenance(root: Path) -> dict:
     assets = {"yadinassi/ui/assets/" + renderer + "/" + name
               for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo") for name in
               ("app.js", "index.html", "style.css", "LICENSE.txt", "build-manifest.json")}
+    assets |= {"yadinassi/ui/assets/source/" + name
+               for name in ("app.js", "index.html", "style.css")}
     names = {path.relative_to(root).as_posix() for path in files}
     if (not assets <= names or any(
             (path.relative_to(root).as_posix().startswith("yadinassi/ui/assets/")
