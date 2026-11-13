@@ -27,7 +27,7 @@ class SourceConstantQuery(BSLQuery):
         raise ValueError('source constant queries require actual interpreter caller')
 
     def execute_batch(self):
-        raise ValueError('source constant query packages unsupported')
+        raise ValueError('source constant query packages require actual interpreter caller')
 
     def read(self, caller, *, batch=False):
         statements = syntax.parse_package(self._text)
@@ -38,24 +38,24 @@ class SourceConstantQuery(BSLQuery):
             # Preserve previously available in-memory/external-table Query behavior.
             # Its existing binder continues to reject unactivated DB sources.
             return BSLQuery.execute_batch(self) if batch else BSLQuery.execute(self)
-        if batch:
-            raise ValueError('source constant query packages unsupported')
         store = self._source_owner._store(caller)
         app = self._source_owner._application()
         if caller._scheduler.pending:
             raise ValueError('source constant queries require synchronous execution')
         if any(m.family == 'CommonAttribute' for m in app.source.metadata):
             raise ValueError('source constant query data separation unsupported')
-        if self._temp_tables_manager is not None:
-            raise ValueError('source constant query temporary tables unsupported')
-        if len(statements) != 1 or type(statements[0]) not in (syntax.Select, syntax.Union):
-            raise ValueError('source constant query requires one SELECT or UNION')
+        package_mode = (batch or len(statements) != 1 or self._temp_tables_manager is not None
+                        or any(getattr(node, 'into', None) is not None or
+                               (type(node) in (syntax.Select, syntax.Source) and node.external)
+                               for node in syntax.walk_nodes(statements)))
+        for node in syntax.walk_nodes(statements):
+            target = node.name if type(node) is syntax.Destroy else getattr(node, 'into', None)
+            if target is not None and target.casefold() in ('constants', 'константы'):
+                raise ValueError('source Constants table name is reserved')
         query = statements[0]
         source_names = set()
         names = {}
-        for arm in syntax.selects((query,)):
-            if arm.into is not None:
-                raise ValueError('source constant query temporary tables unsupported')
+        for arm in syntax.selects(statements):
             sources = (syntax.Source(arm.catalog, arm.source_alias, arm.section, arm.temporary,
                                       arm.external, arm.family, arm.period_boundary, arm.derived),
                        *(join.source for join in arm.joins))
@@ -63,9 +63,11 @@ class SourceConstantQuery(BSLQuery):
             for source in sources:
                 if source.derived is not None:
                     continue
-                if (not source.temporary or source.external or source.section is not None
-                        or source.catalog.casefold() not in ('constants', 'константы')):
-                    raise ValueError('only the source Constants table is supported')
+                if source.section is not None or not (source.temporary or source.external):
+                    raise ValueError('only source Constants and in-memory query sources are supported')
+                if source.external or source.catalog.casefold() not in ('constants', 'константы'):
+                    package_mode = True
+                    continue
                 source_names.add(source.catalog.casefold())
                 direct_aliases.add(source.alias.casefold())
             aliases = {p.alias.casefold() for p in arm.projections if p.explicit_alias}
@@ -90,6 +92,8 @@ class SourceConstantQuery(BSLQuery):
             raise ValueError('source constant query field bound')
         definitions = tuple(names.values())
         columns = tuple(_Column(d.name, None, d.kind, d.qualifiers, explicit_alias=True) for d in definitions)
+        if package_mode:
+            return self._package(caller, statements, store, definitions, columns, batch)
         from .query_packages import _Table
         from .relational_queries import _Plan, snapshot_parameters
         from .query_sources import _UnionPlan
@@ -106,6 +110,44 @@ class SourceConstantQuery(BSLQuery):
             tables[name] = frozen
         self._source_owner._store(caller)
         return plan.execute()
+
+
+    def _package(self, caller, statements, store, definitions, columns, batch):
+        from .query_packages import execute_package
+        from .queries import _description
+        from .value_tables import BSLValueTable
+        # Never let a missing user parameter accidentally address the injected
+        # snapshot. Both declared and referenced names participate in selection.
+        used = set(self._parameters)
+        field_names = set()
+        for node in syntax.walk_nodes(statements):
+            if type(node) is syntax.Parameter:
+                used.add(node.name.casefold())
+            elif type(node) in (syntax.Select, syntax.Source) and node.external:
+                used.add(node.catalog.casefold())
+            elif type(node) is syntax.Field:
+                field_names.add(node.parts[-1].casefold())
+        parameter = _private_name(used, '__source_constants')
+        table = BSLValueTable()
+        for column in columns:
+            table.columns.add(column.name, _description(column))
+        if not columns:
+            # External tables require at least one typed column; this inaccessible
+            # carrier enables COUNT(*) without reading any undeclared constant.
+            from .type_descriptions import BSLTypeDescription
+            table.columns.add(_private_name(field_names, '__source_row'), BSLTypeDescription('Boolean'))
+        snapshot = store.get_many(tuple(d.name for d in definitions))
+        row = table.add()
+        for definition in definitions:
+            row.set_member(definition.name, snapshot[definition.name.casefold()])
+        if not columns:
+            row.set_member(table.columns.items[0].name, True)
+        parameters = dict(self._parameters)
+        parameters[parameter] = table
+        translated = _translate_package(statements, parameter)
+        self._source_owner._store(caller)
+        result = execute_package(translated, self._catalogs, parameters, self._temp_tables_manager)
+        return result if batch else result.items[-1]
 
 
 class SourceQueryCall:
@@ -145,4 +187,25 @@ def _translate(node):
     changes = {item.name:_translate(getattr(node,item.name)) for item in fields(node)}
     if type(node) in (syntax.Select, syntax.Source) and node.derived is None:
         changes.update(temporary=False, external=True)
+    return replace(node, **changes)
+
+
+def _private_name(used, prefix):
+    name = prefix
+    index = 0
+    while name in used:
+        index += 1
+        name = prefix + str(index)
+    return name
+
+
+def _translate_package(node, parameter):
+    if type(node) is tuple:
+        return tuple(_translate_package(item, parameter) for item in node)
+    if not is_dataclass(node):
+        return node
+    changes = {item.name:_translate_package(getattr(node,item.name), parameter) for item in fields(node)}
+    if (type(node) in (syntax.Select, syntax.Source) and node.derived is None
+            and node.temporary and node.catalog.casefold() in ('constants', 'константы')):
+        changes.update(catalog=parameter, temporary=False, external=True)
     return replace(node, **changes)

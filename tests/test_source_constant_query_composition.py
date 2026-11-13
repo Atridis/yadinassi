@@ -78,7 +78,7 @@ class ConstantQueryCompositionTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.run_query('SELECT C.Text AS Result FROM Constants AS C INNER JOIN &External AS E ON C.Text = E.Name')
 
     def test_select_into_refused(self):
-        with self.assertRaises(BSLError):self.run_query('SELECT Text AS Result INTO Temporary FROM Constants')
+        with self.assertRaises(BSLError):self.run_query('SELECT Text AS Result INTO Constants FROM Constants')
 
     def test_uninitialized_nested_field_refused(self):
         with self.assertRaisesRegex(BSLError,'uninitialized'):self.run_query('SELECT Text AS Result FROM Constants WHERE Date IN (SELECT Date FROM Constants)')
