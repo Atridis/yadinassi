@@ -67,3 +67,61 @@ def make_binding(app, catalogs, name):
                             'catalog_ref', catalogs, weakref.ref(app))
     binding.require_owner()
     return binding
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePackageScope:
+    """Private capability for one translated package and its frozen source tables."""
+    ownerapp: object
+    collection: object
+    statements: tuple
+    tables: tuple
+
+    def require_context(self, statements, catalogs):
+        from .source_catalog_store import SourceCatalogStore
+        from .query_packages import _Table, _check_tables
+        from . import query_parser as syntax
+        if type(self.ownerapp) is not weakref.ReferenceType:
+            raise TypeError('Invalid source package owner')
+        app = self.ownerapp()
+        if app is None:
+            raise ValueError('Source package application is closed')
+        app.require_open()
+        if (statements is not self.statements or catalogs is not self.collection
+                or catalogs is not app.interpreter._catalogs
+                or type(app.constant_store) is not SourceCatalogStore or app.constant_store._closed):
+            raise TypeError('Source package requires its exact application context')
+        if type(self.tables) is not tuple or len(self.tables)>16:
+            raise ValueError('Source package table bound')
+        tables = dict(self.tables)
+        if len(tables)!=len(self.tables) or any(type(k) is not str or type(v) is not _Table for k,v in self.tables):
+            raise TypeError('Invalid frozen source tables')
+        _check_tables(tables)
+        for node in syntax.walk_nodes(statements):
+            if type(node) in (syntax.Select, syntax.Source) and node.derived is None:
+                if node.section is not None or node.period_boundary is not None or not (node.external or node.temporary):
+                    raise ValueError('Source package cannot acquire legacy database views')
+        return tables
+
+    def external_tables(self, statements, parameters, catalogs, documents):
+        from . import query_parser as syntax
+        from .query_sources import _snapshot
+        frozen = self.require_context(statements, catalogs)
+        result, budget = {}, [0,0]
+        for node in syntax.walk_nodes(statements):
+            if type(node) not in (syntax.Select, syntax.Source) or not node.external or node.derived is not None:
+                continue
+            key = node.catalog.casefold()
+            if key in result:
+                continue
+            if key in frozen:
+                if key in parameters:
+                    raise ValueError('Private source table collides with user parameter')
+                result[key] = frozen[key]
+            else:
+                if key not in parameters:
+                    raise ValueError('External query parameter is not set')
+                result[key] = _snapshot(parameters[key], budget, catalogs, documents)
+        from .query_packages import _check_tables
+        _check_tables(result)
+        return result

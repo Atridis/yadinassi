@@ -23,12 +23,17 @@ def read(query, caller, statements, *, batch=False):
         raise ValueError('source Catalog queries require explicit v4 scratch capability')
     if caller._scheduler.pending:
         raise ValueError('source Catalog query requires synchronous execution')
-    if batch or len(statements)!=1 or query._temp_tables_manager is not None:
-        raise ValueError('source Catalog query packages/temporary tables unsupported')
+    package_mode = batch or len(statements)!=1 or query._temp_tables_manager is not None
     nodes=tuple(syntax.walk_nodes(statements))
     if any(type(n) is syntax.Destroy or getattr(n,'into',None) is not None for n in nodes):
-        raise ValueError('source Catalog query mutation/temporary tables unsupported')
-    used={n.catalog.casefold() for n in nodes if type(n) in (syntax.Select,syntax.Source)}|set(query._parameters)
+        package_mode = True
+    for n in nodes:
+        target=n.name if type(n) is syntax.Destroy else getattr(n,'into',None)
+        if target is not None and target.casefold() in _CONSTANTS:
+            raise ValueError('source Constants table name is reserved')
+    if any(m.family == 'CommonAttribute' for m in app.source.metadata):
+        raise ValueError('source query data separation unsupported')
+    used={n.catalog.casefold() for n in nodes if type(n) in (syntax.Select,syntax.Source)}|set(query._parameters)|{n.name.casefold() for n in nodes if type(n) is syntax.Parameter}
     mappings={};catalogs={};tables={};constant_names={}
     constant_parameter=None
     for node in nodes:
@@ -37,10 +42,12 @@ def read(query, caller, statements, *, batch=False):
         if node.section is not None or node.period_boundary is not None:
             raise ValueError('source Catalog virtual/tabular sources unsupported')
         if node.external:
-            raise ValueError('source Catalog external-table mixing unsupported')
+            package_mode=True
+            continue
         if node.temporary:
             if node.catalog.casefold() not in _CONSTANTS:
-                raise ValueError('unknown source query temporary table')
+                package_mode=True
+                continue
             key=('constant',node.catalog.casefold())
             if constant_parameter is None:
                 constant_parameter=_private_name(used,'__source_constants');used.add(constant_parameter)
@@ -89,11 +96,11 @@ def read(query, caller, statements, *, batch=False):
                 columns.append(_Column(d.name,None,'catalog_ref',(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding))
             else:raise ValueError('source query constant type unsupported: '+d.name)
         tables[constant_parameter]=_Table(tuple(columns),())
-    translated=_translate(statements[0],mappings)
+    translated=_translate(statements if package_mode else statements[0],mappings)
     from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan
     parameters=snapshot_parameters(dict(query._parameters))
-    plan=(_UnionPlan if type(translated) is syntax.Union else _Plan)(translated,query._catalogs,parameters,external_tables=tables)
+    plan = None if package_mode else (_UnionPlan if type(translated) is syntax.Union else _Plan)(translated,query._catalogs,parameters,external_tables=tables)
     owned=not store.transaction_active
     try:
         if owned:store.begin_transaction()
@@ -117,6 +124,13 @@ def read(query, caller, statements, *, batch=False):
     except BaseException:
         if store.transaction_active:store.rollback_transaction()
         raise
+    if package_mode:
+        import weakref
+        from .source_query_references import SourcePackageScope
+        from .query_packages import execute_package
+        scope=SourcePackageScope(weakref.ref(app),query._catalogs,translated,tuple(tables.items()))
+        result=execute_package(translated,query._catalogs,parameters,query._temp_tables_manager,_source_scope=scope)
+        return result if batch else result.items[-1]
     return plan.execute()
 
 
@@ -126,5 +140,26 @@ def _translate(node,mappings):
     changes={field.name:_translate(getattr(node,field.name),mappings) for field in fields(node)}
     if type(node) in (syntax.Select,syntax.Source) and node.derived is None:
         kind='constant' if node.temporary else 'catalog'
-        changes.update(catalog=mappings[(kind,node.catalog.casefold())],temporary=False,external=True)
+        key=(kind,node.catalog.casefold())
+        if not node.external and key in mappings:
+            changes.update(catalog=mappings[key],temporary=False,external=True)
     return replace(node,**changes)
+
+
+def has_source_inputs(query):
+    """Route detached source reports back to their authorized source adapter."""
+    from .source_query_references import SourceBinding
+    from .value_tables import BSLValueTable
+    from .query_packages import BSLTempTablesManager
+    for value in query._parameters.values():
+        if type(value) is BSLValueTable:
+            for column in value.columns.items:
+                if type(getattr(column.value_type, '_query_reference', None)) is SourceBinding:
+                    return True
+    manager=query._temp_tables_manager
+    if type(manager) is BSLTempTablesManager:
+        if getattr(manager, '_source_owner', None) is not None:
+            return True
+        if any(type(c.reference_binding) is SourceBinding for t in manager._tables.values() for c in t.columns):
+            return True
+    return False

@@ -58,17 +58,17 @@ class SourceCatalogQueryTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.query('SELECT A.Code AS X FROM Catalog.Items AS A INNER JOIN Document.Missing AS B ON A.Ref=B.Ref')
     def test_no_sections(self):
         with self.assertRaises(BSLError):self.query('SELECT Code AS X FROM Catalog.Items.Rows')
-    def test_no_into(self):
-        with self.assertRaises(BSLError):self.query('SELECT Code AS X INTO Temporary FROM Catalog.Items')
-    def test_no_batch(self):
-        with self.assertRaises(BSLError):self.run_body('Q=New Query("SELECT Code FROM Catalog.Items"); Q.ExecuteBatch();')
+    def test_into(self):
+        _,out=self.query('SELECT Code AS X INTO Temporary FROM Catalog.Items; SELECT X FROM Temporary ORDER BY X');self.assertEqual(out,['1','2'])
+    def test_batch(self):
+        _,out=self.run_body('Q=New Query("SELECT Code FROM Catalog.Items"); Message(Q.ExecuteBatch().Count());');self.assertEqual(out,['1'])
     def test_safe_mode(self):
         with self.assertRaises(BSLError):self.run_body('SetSafeMode(True); Q=New Query("SELECT Code FROM Catalog.Items"); Q.Execute();')
     def test_result_frozen_after_write(self):
         _,out=self.run_body('Q=New Query("SELECT Description AS D, Ref AS R FROM Catalog.Items ORDER BY Code"); S=Q.Execute().Select(); S.Next(); O=S.R.GetObject(); O.Description="Changed"; O.Write(); Message(S.D);');self.assertEqual(out,['Alpha'])
-    def test_ref_report_requery_explicitly_refused(self):
-        with self.assertRaisesRegex(BSLError,'source-owned snapshot'):
-            self.run_body('Q=New Query("SELECT Ref AS R FROM Catalog.Items"); T=Q.Execute().Unload(); Q=New Query("SELECT R FROM &Input"); Q.SetParameter("Input",T); Q.Execute();')
+    def test_ref_report_requery(self):
+        _,out=self.run_body('Q=New Query("SELECT Ref AS R FROM Catalog.Items"); T=Q.Execute().Unload(); Q=New Query("SELECT R FROM &Input"); Q.SetParameter("Input",T); Message(Q.Execute().Unload().Count());')
+        self.assertEqual(out,['2'])
     def test_constants_catalog_join(self):
         _,out=self.query('SELECT A.Description AS X FROM Catalog.Items AS A INNER JOIN Constants AS C ON C.Flag=TRUE ORDER BY A.Code',constants=True);self.assertEqual(out,['Alpha','Beta'])
     def test_combined_transaction_snapshot(self):

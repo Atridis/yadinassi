@@ -68,10 +68,15 @@ class BSLTempTablesManager(BSLObject):
             self._lock.release()
 
 
-def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None, *, _enum_scope=None, _owned_view=None):
+def execute_package(statements, catalogs, parameters, manager=None, documents=None, information_registers=None, *, _enum_scope=None, _owned_view=None, _source_scope=None):
     from .queries import BSLQueryResult, _Column
     from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan, snapshot_sources
+    if _source_scope is not None:
+        from .source_query_references import SourcePackageScope
+        if type(_source_scope) is not SourcePackageScope or _enum_scope is not None or _owned_view is not None:
+            raise TypeError('Invalid source package capability')
+        _source_scope.require_context(statements, catalogs)
     if _enum_scope is not None:
         from .query_enum_reporting import _EnumReportScope
         from .sqlite_documents import DocumentView
@@ -119,10 +124,20 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         if composite: catalogs._metadata._snapshot()
         if manager._closed:
             raise ValueError('Temporary table manager is closed')
+        source_owner = getattr(manager, '_source_owner', None)
+        if source_owner is not None:
+            from weakref import ReferenceType
+            if type(source_owner) is not ReferenceType:
+                raise TypeError('Invalid source temporary manager owner')
+            if _source_scope is None:
+                raise ValueError('Source temporary manager requires a source-owned snapshot')
+            if source_owner() is not _source_scope.ownerapp():
+                raise TypeError('Source temporary manager belongs to another application')
         owner = catalogs._metadata
         if manager._owner is not None and manager._owner is not owner:
             raise ValueError('Temporary table manager belongs to another metadata snapshot')
-        external = snapshot_sources(statements, parameters, catalogs, documents)
+        external = (snapshot_sources(statements, parameters, catalogs, documents) if _source_scope is None
+                    else _source_scope.external_tables(statements, parameters, catalogs, documents))
         tables = dict(manager._tables)
         if _enum_scope is not None:
             from .query_enum_tables import prepare_tables
@@ -131,9 +146,13 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         from .query_reference_tables import input_bindings, validate_view
         bindings = input_bindings((*external.values(), *tables.values()), catalogs, documents)
         from .source_query_references import SourceBinding
-        if any(type(binding) is SourceBinding for binding in bindings):
+        if _source_scope is None and any(type(binding) is SourceBinding for binding in bindings):
             raise ValueError("Source reference report re-query requires a source-owned snapshot; unsupported")
-        if bindings:
+        if _source_scope is not None:
+            if any(type(binding) is not SourceBinding for binding in bindings):
+                raise TypeError('Source packages reject legacy reference bindings')
+            validate_view(bindings, None)
+        elif bindings:
             composite = composite or any(b.kind == 'document_ref' for b in bindings)
             if view is None:
                 view = (catalogs._context.backend.begin_query_read() if composite
@@ -156,6 +175,8 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
                 plan = plan_type(statement, catalogs, parameters, tables, external, documents=documents,
                                  information_registers=information_registers, enum_scope=_enum_scope, condition_budget=condition_budget)
                 source_manager = next((m for m in plan.all_managers if m is not None), None)
+                if _source_scope is not None and source_manager is not None:
+                    raise ValueError('Source package cannot acquire legacy manager view')
                 if view is None and source_manager is not None:
                     view = (catalogs._context.backend.begin_query_read() if composite else _transaction_query_view(source_manager))
                 output = plan.execute(view=view, budget=budget)
@@ -181,6 +202,10 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         if view is not None:
             closing, view = view, None
             closing.close()
+        if _source_scope is not None:
+            _source_scope.require_context(statements, catalogs)
+        if _source_scope is not None:
+            manager._source_owner = _source_scope.ownerapp
         manager._tables = tables
         manager._owner = owner
         return result

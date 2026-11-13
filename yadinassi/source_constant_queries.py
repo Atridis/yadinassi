@@ -31,8 +31,8 @@ class SourceConstantQuery(BSLQuery):
 
     def read(self, caller, *, batch=False):
         statements = syntax.parse_package(self._text)
-        from .source_catalog_queries import has_catalog, read
-        if has_catalog(statements):
+        from .source_catalog_queries import has_catalog, has_source_inputs, read
+        if has_catalog(statements) or has_source_inputs(self):
             return read(self, caller, statements, batch=batch)
         uses_constants = any(
             (node.temporary and node.catalog.casefold() in ('constants', 'константы'))
