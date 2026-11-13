@@ -37,7 +37,7 @@ class SourceExtensionTests(unittest.TestCase):
     def test_missing_registry_is_not_empty(self):
         a=self.app()
         with closing(sqlite3.connect(a.constant_store.path)) as db, db:db.execute('DROP TABLE source_extension_registry')
-        with self.assertRaisesRegex(BSLError,'registry storage failure'):a.start()
+        with self.assertRaisesRegex(BSLError,'file/schema integrity'):a.start()
 
     def test_issues_are_not_hidden(self):
         a=self.app()

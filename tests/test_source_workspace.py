@@ -17,6 +17,18 @@ class SourceWorkspaceTests(unittest.TestCase):
         app=SourceApplication(import_source(files() if mapping is None else mapping))
         self.addCleanup(app.close);app.start();return SourceWorkspace(app)
 
+    def test_ui_cli_passes_profile_to_workspace_startup(self):
+        from yadinassi.ui.source_shell import main
+        for profile in ('standalone', 'managed-thick-file'):
+            with self.subTest(profile=profile), \
+                 patch('yadinassi.ui.source_shell.load_source_archive', return_value=import_source(files())), \
+                 patch('yadinassi.ui.source_shell.SourceApplication') as app, \
+                 patch('yadinassi.ui.source_workspace.SourceWorkspace'), \
+                 patch('yadinassi.ui.source_shell.LocalUIServer'):
+                self.assertEqual(main(['--configuration-source', 'unused.zip', '--run-startup',
+                                       '--source-workspace', '--preprocessor-profile', profile]), 0)
+                self.assertEqual(app.call_args.kwargs['compilation_profile'], profile)
+
     def test_inventory_and_open_roundtrip(self):
         w=self.workspace(); self.assertEqual(w.snapshot()['state']['forms'],['CommonForm.Main'])
         state=w.exchange(request('open',name='CommonForm.Main'))['result']['state']
