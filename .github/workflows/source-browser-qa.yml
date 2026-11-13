@@ -61,5 +61,7 @@ jobs:
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/bsl-openform.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/nocontext.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace_loss.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/startup-openform.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace_startup.png
           if-no-files-found: error
           retention-days: 14
