@@ -55,7 +55,7 @@ test('consumer id binding and unrelated method do not silently consume or fetch'
 });
 
 for(const method of ['application.form','application.answerDialog'])test('exact-byte draft capture: '+method,async()=>{
- const requestPacket={...packet,params:{request:{...packet.params.request,method}}};
+ const requestPacket={...packet,params:{request:{...packet.params.request,method,...(method==='application.form'?{params:{request:{method:'form.event',params:{event:'command'}}}}:{})}}};
  const c=new MainDemoFilterCapture(),t=c.begin(method),f=fixture({requestPacket});
  await c.route(f.route,origin,limits);await t.ready;
  assert.equal(c.consume(t,7).bytes,raw);assert.equal(f.seen.fulfill[0].body,raw);
@@ -72,4 +72,21 @@ test('surface capture requires catalogs and binds outer id without inventing inn
  const bad=c.begin('demo.select'),wrong=fixture({requestPacket,bytes:Buffer.from('{"id":8}')});
  const rejected=assert.rejects(bad.ready,/filter_capture_outer_id/);await c.route(wrong.route,origin,limits);await rejected;
  assert.equal(wrong.seen.fulfill.length,0);c.clear(bad);
+});
+test('owned child handshake is unrelated to a pending or consumed command capture',async()=>{
+ const eventPacket={...packet,params:{request:{...packet.params.request,method:'application.form',params:{request:{method:'form.event',params:{event:'command'}}}}}};
+ const helloPacket={...eventPacket,id:8,params:{request:{...eventPacket.params.request,id:10,params:{request:{method:'form.hello'}}}}};
+ const c=new MainDemoFilterCapture(),t=c.begin('application.form');
+ const before=fixture({requestPacket:helloPacket});
+ assert.equal(await c.route(before.route,origin,limits),false);
+ assert.equal(before.seen.fetch.length,0);assert.equal(before.seen.abort,0);
+ const command=fixture({requestPacket:eventPacket});
+ await c.route(command.route,origin,limits);await t.ready;c.consume(t,7);
+ const after=fixture({requestPacket:helloPacket});
+ assert.equal(await c.route(after.route,origin,limits),false);
+ assert.equal(after.seen.fetch.length,0);assert.equal(after.seen.abort,0);
+ assert.equal(t.error,null);
+ await c.route(command.route,origin,limits);
+ assert.equal(command.seen.fetch.length,1);assert.equal(command.seen.abort,1);
+ assert.throws(()=>c.consume(t,7),/filter_capture_duplicate/);c.clear(t);
 });

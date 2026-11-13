@@ -16,6 +16,9 @@ export class MainDemoFilterCapture {
     if(!ticket)return false;
     const surface=ticket.method==='demo.select';
     if(surface ? packet?.method!=='demo.select'||packet.params?.surface!=='catalogs' : packet?.method!=='demo.dispatch'||packet.params?.request?.method!==ticket.method)return false;
+    // A command can create a child form whose hello arrives before this ticket
+    // is cleared. It is not a duplicate command and must follow the normal route.
+    if(ticket.method==='application.form'&&packet.params.request.params?.request?.method!=='form.event')return false;
     let response;
     try{
       assert.ok(!ticket.claimed,'filter_capture_duplicate');ticket.claimed=true;
