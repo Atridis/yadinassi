@@ -172,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
                          help='открыть сохранённую базу источника; XML/архив необязателен, без миграции')
     scratch.add_argument('--update-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
                          help='явно обновить источник scratch-базы без запуска кода; только совместимое добавление')
+    parser.add_argument('--source-catalog-records', action='store_true',
+                        help='явно использовать v4 scratch с записями справочников; v3 не мигрируется')
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
@@ -184,20 +186,24 @@ def main(argv: list[str] | None = None) -> int:
             parser.error('--update-source-scratch-db требует --configuration-source и отдельный запуск; --run-startup/--save-source несовместимы')
         if args.source_compatibility_target is not None and not args.run_startup:
             parser.error('--source-compatibility-target требует --run-startup')
+        if args.source_catalog_records and not (args.source_scratch_db or args.open_source_scratch_db or args.update_source_scratch_db):
+            parser.error('--source-catalog-records требует scratch-базу')
         if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
             parser.error('--source-scratch-db/--open-source-scratch-db требует --run-startup')
         from .configuration_source import load_source_directory, load_source_archive, save_source_archive
         from .configuration_source_runtime import SourceApplication
         application = None
         try:
+            from .source_constant_store import SourceConstantStore
+            if args.source_catalog_records:
+                from .source_catalog_store import SourceCatalogStore
+                SourceConstantStore = SourceCatalogStore
             if args.configuration_source is None:
-                from .source_constant_store import SourceConstantStore
                 source = SourceConstantStore.load_source(args.open_source_scratch_db)
             else:
                 path = Path(args.configuration_source)
                 source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
             if args.update_source_scratch_db is not None:
-                from .source_constant_store import SourceConstantStore
                 result = SourceConstantStore.update_source(args.update_source_scratch_db, source)
                 print('Источник scratch-базы обновлён; сохранено значений: ' + str(result['preserved_values']) + '; добавлено констант: ' + str(result['added_constants']) + '; SHA256: ' + result['source_sha256'] + '. Код не запускался.')
                 return 0
@@ -208,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
                      else '. База данных и UI не активированы.'))
             if args.run_startup:
                 application = SourceApplication(source, compilation_profile=args.preprocessor_profile,
+                                                source_catalog_records=args.source_catalog_records,
                                                 scratch_database=args.source_scratch_db,
                                                 existing_scratch_database=args.open_source_scratch_db,
                                                 compatibility_target=args.source_compatibility_target)
@@ -225,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             if application is not None:
                 application.close()
-    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_compatibility_target is not None:
+    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_catalog_records or args.source_compatibility_target is not None:
         parser.error('--save-source/--run-startup требует --configuration-source')
 
     demo = args.create_demo_db is not None

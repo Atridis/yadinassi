@@ -1052,6 +1052,9 @@ class Interpreter:
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
+        from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+        if type(value) in (SourceCatalogObject, SourceCatalogSelection):
+            return value.property_read(self, node.name)
         from .source_references import SourceReferenceManager
         if type(value) is SourceReferenceManager:
             return value.member(self, node.name)
@@ -1181,14 +1184,15 @@ class Interpreter:
                 routine = receiver.exported_routine(self, callee.name)
                 return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
             from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
-            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in _REF_METHODS:
+            from .source_catalog_runtime import _MANAGER_METHODS, reference_call
+            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else set())):
                 receiver = receiver.module(self)
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
-            function = receiver.get_method(callee.name)
+            function = reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
         else:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
@@ -1292,6 +1296,7 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
+        from .source_catalog_runtime import SourceCatalogCall
         from .source_references import SourceReferenceCall
         from .source_constants_runtime import ConstantCall, ConstantSetCall
         from .source_constant_queries import SourceQueryCall
@@ -1315,7 +1320,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceCatalogCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1906,6 +1911,11 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+            if type(owner) in (SourceCatalogObject, SourceCatalogSelection):
+                owner.property_read(self, node.name)
+                return _Reference(lambda: owner.property_read(self, node.name),
+                                  lambda value: owner.property_write(self, node.name, value))
             from .source_constant_managers import SourceConstantValueManager
             if type(owner) is SourceConstantValueManager:
                 owner.property_read(self, node.name)
@@ -2067,6 +2077,12 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_catalog_runtime import SourceCatalogObject
+            if type(value) is SourceCatalogObject:
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError("source catalog object indexing unsupported")
+                value.property_write(self, node.target.name, (yield from self._visit(node.value)))
+                return
             from .source_constant_managers import SourceConstantValueManager
             if type(value) is SourceConstantValueManager:
                 if not isinstance(node.target, ast.Attribute):

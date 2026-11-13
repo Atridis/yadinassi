@@ -42,7 +42,7 @@ class SourceManagerModuleTests(unittest.TestCase):
             self.run_app(configuration(session=False))
 
     def test_missing_module_not_fake_storage(self):
-        with self.assertRaisesRegex(BSLError, 'storage operations are not activated'):
+        with self.assertRaisesRegex(BSLError, 'v4 scratch capability'):
             self.run_app(configuration('Catalogs.Items.CreateItem();', body=None))
 
     def test_missing_manager(self):

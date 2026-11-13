@@ -433,3 +433,34 @@ store. Reopen binds values to the new application's exact type snapshot; foreign
 application values are rejected. Unknown target types and incompatible source
 updates are refused. No empty-reference defaults, implicit GetRef UUID generation,
 reference-existence checks or native runtime parity are claimed by this block.
+
+### Явный v4: реальные записи справочников
+
+`--source-catalog-records` вместе с `--source-scratch-db NEW --run-startup`
+создаёт отдельную v4 scratch. При открытии `--open-source-scratch-db EXISTING`
+тот же флаг обязателен. Обычный v3 путь не меняется и не мигрирует файл.
+
+V4 поддерживает закрытый профиль справочника: явный строковый Code, Description,
+DeletionMark и до 64 скалярных реквизитов. CreateItem/Write, Ref.GetObject/Read,
+IsNew и ограниченный Select работают с настоящими сохранёнными записями.
+Code задаётся явно и уникален при точном сравнении строк в этом локальном профиле;
+платформенная collation и автоматическая нумерация не заявляются. Общий предел
+10000 записей и 16 MiB encoded payload, не более 64 KiB на запись. Пользовательские
+реквизиты перед первой записью нужно присвоить явно. Selection читает ограниченный
+снимок; изменение его полей запрещено. Иерархия, владельцы, табличные части,
+ObjectModule, подписки, разделение данных и неподдержанные политики блокируют
+операции соответствующего справочника, а не загрузку всего source.
+
+Запись использует ту же SQLite connection и транзакцию, что константы.
+Revision проверяется оптимистически: устаревший объект не перезаписывает более
+новую запись. Ошибка записи откатывает текущую транзакцию. После внешнего rollback
+ранее записанный buffer не означает существующую запись: повторный Write получает
+stale revision, требуется заново прочитать объект или создать новый. Полная
+семантика состояний объекта после rollback/native parity не заявляется.
+
+`SourceCatalogStore.upgrade_copy(original, destination)` является явной host API
+миграции v3 в новую проверенную v4-копию без запуска BSL. Исходный файл не меняется,
+существующий destination не перезаписывается. При сбое частичная копия сохраняется
+для диагностики и не считается готовой. Никакой migration при обычном reopen нет.
+Обновление XML сохраняет записи только при неизменной схеме справочников; изменение
+полей/идентичностей/политик пока отклоняется, без придуманных значений и потери данных.

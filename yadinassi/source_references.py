@@ -68,9 +68,15 @@ class SourceReferenceManager(BSLObject):
         self.authorize(caller)
         if name.casefold() in _METHODS:
             return self.get_member(name)
+        from .source_catalog_runtime import _MANAGER_METHODS
+        if self.family == 'Catalog' and name.casefold() in _MANAGER_METHODS:
+            return self.get_member(name)
         return self.module(caller).get_member(name)
 
     def get_member(self, name):
+        from .source_catalog_runtime import _MANAGER_METHODS, SourceCatalogCall
+        if self.family == 'Catalog' and name.casefold() in _MANAGER_METHODS:
+            return HostFunction(name, SourceCatalogCall(self, _MANAGER_METHODS[name.casefold()]))
         operation = _METHODS.get(name.casefold())
         if operation is None:
             raise ValueError('source manager export requires interpreter access')

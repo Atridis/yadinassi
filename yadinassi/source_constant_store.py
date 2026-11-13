@@ -179,7 +179,37 @@ def _decode(raw, definition):
 
 
 class SourceConstantStore:
+    PROFILE = _PROFILE
     _explicit_transaction = False
+
+    @classmethod
+    def ddl(cls):
+        return _DDL
+
+    @classmethod
+    def expected_schema(cls):
+        connection = sqlite3.connect(':memory:')
+        try:
+            for statement in cls.ddl():
+                connection.execute(statement)
+            return _schema(connection)
+        finally:
+            connection.close()
+
+    @classmethod
+    def initialize_extra(cls, connection, source, enum_namespace, reference_scope):
+        pass
+
+    @classmethod
+    def attach_extra(cls, result, source, enum_namespace, reference_scope):
+        pass
+
+    def verify_extra(self):
+        pass
+
+    def validate_records(self):
+        pass
+
 
     @property
     def transaction_active(self):
@@ -229,7 +259,7 @@ class SourceConstantStore:
         source_sha = source_digest(source)
         rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
         schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
-        binding = (_PROFILE, source_sha, str(source.config_uuid), schema_sha)
+        binding = (cls.PROFILE, source_sha, str(source.config_uuid), schema_sha)
         fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(fd)
         connection = None
@@ -241,7 +271,7 @@ class SourceConstantStore:
             connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
             initial_epoch = connection.execute('PRAGMA data_version').fetchone()[0]
-            for statement in _DDL:
+            for statement in cls.ddl():
                 connection.execute(statement)
             connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
@@ -250,6 +280,7 @@ class SourceConstantStore:
                        if item.kind == 'string' and not item.write_blockers and not item.type_dependencies
                        and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
             connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
+            cls.initialize_extra(connection, source, enum_namespace, reference_scope)
             connection.execute('COMMIT')
             result = object.__new__(cls)
             result.path = absolute
@@ -266,6 +297,7 @@ class SourceConstantStore:
             result._schema = _schema(connection)
             result._source = source
             result._verified_epoch = (initial_epoch if connection.execute('PRAGMA data_version').fetchone()[0] == initial_epoch else None)
+            cls.attach_extra(result, source, enum_namespace, reference_scope)
             return result
         except BaseException as error:
             if connection is not None:
@@ -298,14 +330,14 @@ class SourceConstantStore:
                                          isolation_level=None, detect_types=0, timeout=0.2)
             connection.execute('PRAGMA trusted_schema=OFF')
             connection.execute('BEGIN')
-            if _schema(connection) != _expected_schema():
+            if _schema(connection) != cls.expected_schema():
                 raise ValueError('source constants schema integrity')
             if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
                 raise ValueError('unsupported source constants journal')
             if connection.execute("SELECT count(*) FROM source_binding WHERE typeof(profile)!='text' OR length(CAST(profile AS BLOB))>128 OR typeof(source_sha256)!='text' OR length(CAST(source_sha256 AS BLOB))!=64 OR typeof(configuration_uuid)!='text' OR length(CAST(configuration_uuid AS BLOB))!=36").fetchone()[0]:
                 raise ValueError('source constants embedded binding bound')
             binding = connection.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding LIMIT 2').fetchall()
-            if len(binding) != 1 or binding[0][0] != _PROFILE:
+            if len(binding) != 1 or binding[0][0] != cls.PROFILE:
                 raise ValueError('source constants binding integrity')
             # Check SQL storage types and lengths before materializing BLOBs.
             sizes = connection.execute("SELECT length(content),typeof(content),typeof(path),length(path),length(CAST(path AS BLOB)) FROM source_file LIMIT ?", (MAX_FILES + 1,)).fetchall()
@@ -361,7 +393,7 @@ class SourceConstantStore:
                     raise ValueError('source update unsupported constant declaration changed: ' + name)
         rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
         schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
-        binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
+        binding = (cls.PROFILE, digest, str(source.config_uuid), schema_sha)
         known = {str(item.identity): item for item in definitions}
         old_ids = {str(item.identity) for item in old_definitions}
         initial = [(str(item.identity), _encode('', item)) for item in definitions
@@ -373,6 +405,7 @@ class SourceConstantStore:
             connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
             store._open()
+            store.validate_records()
             for table in ('source_extension_registry', 'source_extension_issues'):
                 if connection.execute('SELECT 1 FROM ' + table + ' LIMIT 1').fetchone() is not None:
                     raise ValueError('source update populated extensions unsupported')
@@ -425,7 +458,7 @@ class SourceConstantStore:
         try:
             if any(os.path.lexists(absolute + suffix) for suffix in ('-journal', '-wal', '-shm')):
                 raise ValueError('source constants require clean-close database without sidecars')
-            expected = _expected_schema()
+            expected = cls.expected_schema()
             # Refuse foreign/hot databases before any writable SQLite handle.
             probe = sqlite3.connect(Path(absolute).as_uri() + '?mode=ro', uri=True, isolation_level=None, timeout=0.2)
             try:
@@ -444,7 +477,7 @@ class SourceConstantStore:
                 raise ValueError('source constants file identity changed')
             # Compare exact DDL before querying application tables, including
             # rejecting injected triggers, views and indexes.
-            expected = _expected_schema()
+            expected = cls.expected_schema()
             if _schema(connection) != expected:
                 raise ValueError('source constants schema integrity')
             definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace, reference_scope=reference_scope)
@@ -456,10 +489,11 @@ class SourceConstantStore:
             result.names, result.definitions = names, definitions
             result._definitions = {item.name.casefold(): item for item in definitions}
             result._unsupported = unsupported
-            result._binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
+            result._binding = (cls.PROFILE, digest, str(source.config_uuid), schema_sha)
             result._rows, result._connection, result._closed = rows, connection, False
             result._identity, result._schema, result._source = identity, expected, source
             result._verified_epoch = None
+            cls.attach_extra(result, source, enum_namespace, reference_scope)
             epoch = connection.execute('PRAGMA data_version').fetchone()[0]
             connection.execute('BEGIN')
             try:
@@ -497,6 +531,7 @@ class SourceConstantStore:
             rows = tuple(self._connection.execute('SELECT identity,name,definition FROM constant_schema ORDER BY identity'))
             if actual != [self._binding] or rows != self._rows:
                 raise ValueError('source constants binding integrity')
+            self.verify_extra()
             # Exact source bytes were verified at create/reopen. Own commits do
             # not change data_version; any external commit permanently retires
             # this cache for this handle. Never recache from a stale snapshot.

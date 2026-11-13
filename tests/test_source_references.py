@@ -59,11 +59,11 @@ class SourceReferenceTests(unittest.TestCase):
 
     def test_no_fake_get_object(self):
         app,_=self.app(package('Catalogs.Items.EmptyRef().GetObject();'))
-        with self.assertRaisesRegex(BSLError,'unavailable'):app.start()
+        with self.assertRaisesRegex(BSLError,'v4 scratch capability'):app.start()
 
     def test_no_fake_create(self):
         app,_=self.app(package('Catalogs.Items.CreateItem();'))
-        with self.assertRaisesRegex(BSLError,'storage operations are not activated'):app.start()
+        with self.assertRaisesRegex(BSLError,'v4 scratch capability'):app.start()
 
     def test_no_fake_description(self):
         app,_=self.app(package('Message(Catalogs.Items.GetRef(New UUID("'+ID+'")));'))
