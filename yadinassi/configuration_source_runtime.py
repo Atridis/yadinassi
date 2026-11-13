@@ -36,9 +36,19 @@ class _SourceInterpreter(Interpreter):
         self.register_function('SetSafeMode', lambda enabled: application.safe_mode.set(enabled),
                                'УстановитьБезопасныйРежим', returns_value=False)
         self.register_function('SafeMode', lambda: application.safe_mode.get(), 'БезопасныйРежим')
+        from .source_transactions import SourceTransactionCall
+        for operation, english, russian in (
+                ('begin', 'BeginTransaction', 'НачатьТранзакцию'),
+                ('commit', 'CommitTransaction', 'ЗафиксироватьТранзакцию'),
+                ('rollback', 'RollbackTransaction', 'ОтменитьТранзакцию'),
+                ('active', 'TransactionActive', 'ТранзакцияАктивна')):
+            self.register_function(english, SourceTransactionCall(application, operation),
+                                   russian, returns_value=operation == 'active')
+
 
     def execute_program(self, program):
-        with self.application.safe_mode.execution():
+        from .source_transactions import execution
+        with execution(self.application), self.application.safe_mode.execution():
             return super().execute_program(program)
 
 

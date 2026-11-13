@@ -53,3 +53,21 @@ process with the same OS account and arbitrary filesystem access.
 An old v2 scratch file is deliberately refused; preserve it for inspection.
 Do not rename an ordinary database to use this command. Use a new scratch file
 for changed source until a separately designed migration capability exists.
+
+## Explicit scalar transactions
+
+Source server code can group supported constant writes using `BeginTransaction`,
+`CommitTransaction`, `RollbackTransaction`, and `TransactionActive` (Russian aliases
+are also available). Reads inside the transaction see pending values; other
+connections see only committed data. An unhandled execution failure, unfinished
+execution, or application close rolls pending writes back. A failed constant
+read/write also aborts the active transaction. Caught unrelated BSL errors do not
+implicitly commit; handle them with an explicit rollback.
+
+This is a bounded local SQLite transaction contract, not native 1C parity.
+Nested transactions, lock-mode arguments, async execution and client/server
+transfers while active are refused. Only source-owned scalar constants participate;
+catalogs, documents, registers, extension installation and external effects are
+not added to the transaction. No schema migration or foreign database access is
+introduced. A successful commit is durable; later execution failure cannot undo
+an already completed commit.

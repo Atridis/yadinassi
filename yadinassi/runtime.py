@@ -1275,7 +1275,8 @@ class Interpreter:
         from .source_constants_runtime import ConstantCall
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
-        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall):
+        from .source_transactions import SourceTransactionCall
+        if type(function.function) in (ConstantCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
             return function.function.invoke(self, values)
         return function(*values)
 

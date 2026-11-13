@@ -85,6 +85,46 @@ def _decode(raw, definition):
 
 
 class SourceConstantStore:
+    _explicit_transaction = False
+
+    @property
+    def transaction_active(self):
+        return not self._closed and self._explicit_transaction
+
+    def begin_transaction(self):
+        self._open()
+        if self._explicit_transaction:
+            raise ValueError("nested source transactions are unsupported")
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._open()
+            self._explicit_transaction = True
+        except BaseException:
+            if self._connection.in_transaction:
+                self._connection.execute("ROLLBACK")
+            raise
+
+    def commit_transaction(self):
+        if not self.transaction_active:
+            raise ValueError("no active source transaction")
+        try:
+            self._open()
+            self._connection.execute("COMMIT")
+        except BaseException:
+            if self._connection.in_transaction:
+                self._connection.execute("ROLLBACK")
+            raise
+        finally:
+            self._explicit_transaction = False
+
+    def rollback_transaction(self):
+        if not self.transaction_active:
+            raise ValueError("no active source transaction")
+        try:
+            self._connection.execute("ROLLBACK")
+        finally:
+            self._explicit_transaction = False
+
     @classmethod
     def create(cls, path, source):
         definitions, unsupported, names = source_constant_definitions(source)
@@ -295,17 +335,23 @@ class SourceConstantStore:
 
     def require_empty_extension_registry(self):
         self._open()
+        owned = not self.transaction_active
         try:
-            self._connection.execute('BEGIN')
+            if owned:
+                self._connection.execute('BEGIN')
             self._open()
             extensions = self._connection.execute('SELECT identity,source_archive FROM source_extension_registry LIMIT 1').fetchone()
             issues = self._connection.execute('SELECT identity,description FROM source_extension_issues LIMIT 1').fetchone()
             if extensions is not None or issues is not None:
                 raise ValueError('populated extension registry is not supported by source host')
-        except sqlite3.Error:
-            raise ValueError('source extension registry storage failure') from None
+        except BaseException as error:
+            if self.transaction_active:
+                self.rollback_transaction()
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source extension registry storage failure') from None
+            raise
         finally:
-            if self._connection.in_transaction:
+            if owned and self._connection.in_transaction:
                 self._connection.execute('ROLLBACK')
 
     def has(self, name):
@@ -326,32 +372,44 @@ class SourceConstantStore:
     def get(self, name):
         if self._closed:
             raise ValueError('source constants store is closed')
+        owned = not self.transaction_active
         try:
-            self._connection.execute('BEGIN')
+            if owned:
+                self._connection.execute('BEGIN')
             definition = self._definition(name)
             row = self._connection.execute('SELECT value_json FROM constant_value WHERE identity=?', (str(definition.identity),)).fetchone()
             if row is None:
                 raise ValueError('uninitialized constant: ' + definition.name)
             return _decode(row[0], definition)
-        except sqlite3.Error:
-            raise ValueError('source constants storage failure') from None
+        except BaseException as error:
+            if self.transaction_active:
+                self.rollback_transaction()
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source constants storage failure') from None
+            raise
         finally:
-            if self._connection.in_transaction:
+            if owned and self._connection.in_transaction:
                 self._connection.execute('ROLLBACK')
 
     def set(self, name, value):
-        definition = self._definition(name)
-        if definition.write_blockers:
-            raise ValueError('unsupported constant write: ' + definition.name + ': ' + '; '.join(definition.write_blockers))
-        encoded = _encode(value, definition)
+        if self._closed:
+            raise ValueError('source constants store is closed')
+        owned = not self.transaction_active
         try:
-            self._connection.execute('BEGIN IMMEDIATE')
+            definition = self._definition(name)
+            if definition.write_blockers:
+                raise ValueError('unsupported constant write: ' + definition.name + ': ' + '; '.join(definition.write_blockers))
+            encoded = _encode(value, definition)
+            if owned:
+                self._connection.execute('BEGIN IMMEDIATE')
             self._open()
             self._connection.execute('INSERT INTO constant_value VALUES(?,?) ON CONFLICT(identity) DO UPDATE SET value_json=excluded.value_json', (str(definition.identity), encoded))
-            self._connection.execute('COMMIT')
+            if owned:
+                self._connection.execute('COMMIT')
         except BaseException as error:
             if self._connection.in_transaction:
                 self._connection.execute('ROLLBACK')
+            self._explicit_transaction = False
             if isinstance(error, sqlite3.Error):
                 raise ValueError('source constants storage failure') from None
             raise
