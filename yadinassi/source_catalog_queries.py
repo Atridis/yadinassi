@@ -1,8 +1,9 @@
-"""Read-only source record queries over one bounded v4/v5 snapshot, never user SQL."""
+"""Read-only source record queries over one bounded v4/v5/v6 snapshot, never user SQL."""
 from dataclasses import fields, is_dataclass, replace
+from decimal import Decimal
 from . import query_parser as syntax
 from .queries import _Column
-from .query_packages import _Table, _check_tables
+from .query_packages import _Table, _check_tables, MAX_ROWS, MAX_CELLS, MAX_TEXT
 from .source_constant_queries import _local_nodes, _private_name
 from .source_catalog_store import SourceCatalogStore
 from .source_document_store import SourceDocumentStore
@@ -42,7 +43,8 @@ def read(query, caller, statements, *, batch=False):
     for node in nodes:
         if type(node) not in (syntax.Select,syntax.Source) or node.derived is not None:
             continue
-        if node.section is not None or node.period_boundary is not None:
+        if node.period_boundary is not None or (node.section is not None and
+                (node.family!='document' or node.external or node.temporary or type(store) is not SourceDocumentSectionStore)):
             raise ValueError('source Catalog virtual/tabular sources unsupported')
         if node.external:
             package_mode=True
@@ -51,7 +53,7 @@ def read(query, caller, statements, *, batch=False):
             if node.catalog.casefold() not in _CONSTANTS:
                 package_mode=True
                 continue
-            key=('constant',node.catalog.casefold())
+            key=('constant',node.catalog.casefold(),None)
             if constant_parameter is None:
                 constant_parameter=_private_name(used,'__source_constants');used.add(constant_parameter)
             mappings[key]=constant_parameter
@@ -59,10 +61,14 @@ def read(query, caller, statements, *, batch=False):
             if node.family=='document' and type(store) not in (SourceDocumentStore, SourceDocumentSectionStore):
                 raise ValueError('source Document query requires v5 scratch capability')
             definition=(store.catalog if node.family=='catalog' else store.document)(node.catalog)
-            key=(node.family,definition.name.casefold())
+            section=None
+            if node.section is not None:
+                section=next((item for item in definition.sections if item.name.casefold()==node.section.casefold()),None)
+                if section is None:raise ValueError('unknown source document section: '+node.section)
+            key=(node.family,definition.name.casefold(),section.name.casefold() if section else None)
             if key not in mappings:
                 parameter=_private_name(used,'__source_catalog');used.add(parameter)
-                mappings[key]=parameter;catalogs[parameter]=(node.family,definition)
+                mappings[key]=parameter;catalogs[parameter]=(node.family,definition,section)
         else:
             raise ValueError('source query persistent family unsupported: '+node.family)
     if len(catalogs)+(constant_parameter is not None)>16:
@@ -78,11 +84,15 @@ def read(query, caller, statements, *, batch=False):
             if len(node.parts)==1 and not store.has(name):continue
             definition=store._definition(name);constant_names[name.casefold()]=definition
     from .source_query_references import make_binding
-    for parameter,(family,definition) in catalogs.items():
+    for parameter,(family,definition,section) in catalogs.items():
         binding=make_binding(app,query._catalogs,definition.name,family.title())
         columns=[_Column(n,None,binding.kind,(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding) for n in ('Ref','Ссылка')]
-        for field in definition.fields:
-            for name in (field.name, *([_STANDARD[family][field.name]] if field.name in _STANDARD[family] else [])):
+        if section is not None:
+            columns.extend(_Column(n,None,'number',(10,0,'Nonnegative'),explicit_alias=True) for n in ('LineNumber','НомерСтроки'))
+        selected_fields=section.fields if section is not None else definition.fields
+        aliases={} if section is not None else _STANDARD[family]
+        for field in selected_fields:
+            for name in (field.name, *([aliases[field.name]] if field.name in aliases else [])):
                 if field.kind == 'object_ref' and field.qualifiers[0] == 'Catalog':
                     target = make_binding(app, query._catalogs, field.qualifiers[2])
                     columns.append(_Column(name,None,'catalog_ref',(),explicit_alias=True,
@@ -110,15 +120,31 @@ def read(query, caller, statements, *, batch=False):
     try:
         if owned:store.begin_transaction()
         store._open()
-        for parameter,(family,definition) in catalogs.items():
-            rows=[]
-            for identity,_,values in (store.read_records if family=='catalog' else store.read_documents)(definition.name):
+        record_cache={};section_cache={};cells=0;text=0
+        for parameter,(family,definition,section) in catalogs.items():
+            rows=[];cache_key=(family,definition.name.casefold())
+            if cache_key not in record_cache:
+                record_cache[cache_key]=(store.read_records if family=='catalog' else store.read_documents)(definition.name)
+            for identity,_,values in record_cache[cache_key]:
                 reference=app.references.ref(family.title(),definition.name,identity)
-                row=[reference,reference]
-                for field in definition.fields:
-                    row.append(values[field.name.casefold()])
-                    if field.name in _STANDARD[family]:row.append(values[field.name.casefold()])
-                rows.append(tuple(row))
+                if section is None:
+                    entries=((None,values),);selected_fields=definition.fields;aliases=_STANDARD[family]
+                else:
+                    section_key=(definition.identity,identity)
+                    if section_key not in section_cache:
+                        section_cache[section_key]=store._sections(definition,identity)
+                    entries=enumerate(section_cache[section_key][section.name.casefold()],1)
+                    selected_fields=section.fields;aliases={}
+                for line,entry in entries:
+                    row=[reference,reference]
+                    if section is not None:row.extend((Decimal(line),Decimal(line)))
+                    for field in selected_fields:
+                        row.append(entry[field.name.casefold()])
+                        if field.name in aliases:row.append(entry[field.name.casefold()])
+                    cells+=len(row);text+=sum(len(v) for v in row if type(v) is str)
+                    if len(rows)>=MAX_ROWS or cells>MAX_CELLS or text>MAX_TEXT:
+                        raise ValueError('source query snapshot resource limit')
+                    rows.append(tuple(row))
             tables[parameter]=_Table(tables[parameter].columns,tuple(rows))
         if constant_parameter is not None:
             values=store.get_many(tuple(d.name for d in constant_definitions))
@@ -145,13 +171,13 @@ def _translate(node,mappings):
     changes={field.name:_translate(getattr(node,field.name),mappings) for field in fields(node)}
     if type(node) in (syntax.Select,syntax.Source) and node.derived is None:
         kind='constant' if node.temporary else node.family
-        key=(kind,node.catalog.casefold())
+        key=(kind,node.catalog.casefold(),node.section.casefold() if node.section is not None else None)
         if not node.external and key in mappings:
             # The rewritten node is a private external carrier, not a persistent
             # Document source. Reference kind/identity live in its typed columns.
             # Normalize the lexical family so legacy package metadata discovery
             # cannot open a separate document backend for this frozen snapshot.
-            changes.update(catalog=mappings[key],temporary=False,external=True,family='catalog')
+            changes.update(catalog=mappings[key],temporary=False,external=True,family='catalog',section=None)
     return replace(node,**changes)
 
 
