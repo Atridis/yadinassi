@@ -1632,7 +1632,7 @@ class Interpreter:
                 value = (yield from self._visit(parameter.default)) if parameter.default is not None else None
             else:
                 if crossing and isinstance(self.ungroup(argument), ast.Name):
-                    value = (yield from self.argument(argument))
+                    value = (yield from self._invocation_argument(argument)) if invocation is not None else (yield from self.argument(argument))
                 else:
                     value = (yield from self._visit(argument)) if parameter.by_value or function.is_async else (yield from self.argument(argument))
             name = parameter.name.casefold()
@@ -1850,6 +1850,9 @@ class Interpreter:
         if any(isinstance(argument, ast.OmittedArgument) for argument in arguments):
             raise TypeError("Пропуск аргументов встроенных функций, методов и конструкторов "
                             "пока не поддерживается")
+
+    def _invocation_argument(self, node):
+        return (yield from self.argument(node))
 
     def argument(self, node: ast.Node) -> object:
         node = self.ungroup(node)

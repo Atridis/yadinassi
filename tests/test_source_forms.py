@@ -140,6 +140,13 @@ class SourceNoContextTests(unittest.TestCase):
         c=self.controller();self.assertIsNone(self.run_command(c)['error'])
         self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'ok/Demo')
 
+    def test_nocontext_scalar_form_attribute_argument(self):
+        c=self.controller(call='Greeting=Calculate(Greeting);')
+        self.assertIsNone(self.run_command(c)['error'])
+        self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'initial/Demo')
+        self.assertIsNone(self.run_command(c)['error'])
+        self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'initial/Demo/Demo')
+
     def test_nocontext_contextful_common_module_remains_explicitly_unavailable(self):
         c=self.controller('Return Helpers.Text();');self.assertIsNotNone(self.run_command(c)['error'])
         self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'initial')
