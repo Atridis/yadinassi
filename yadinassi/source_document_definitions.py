@@ -118,8 +118,8 @@ def source_document_definitions(source, enum_namespace=None, reference_scope=Non
                     field_names.add(fn.casefold()); used_ids.add(identity)
                     resolved, scopes, dependencies = aliases.resolve(p,ns)
                     kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
-                    if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] == 'Catalog'):
-                        raise ValueError('document attribute requires scalar or CatalogRef type')
+                    if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] in ('Catalog','Document')):
+                        raise ValueError('document attribute requires scalar or CatalogRef/DocumentRef type')
                     return ScalarConstantDefinition(identity,fn,kind,qualifiers,
                         enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope)
             for child in children[0] if children else ():

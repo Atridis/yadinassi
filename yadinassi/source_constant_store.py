@@ -57,10 +57,13 @@ def _encode(value, definition):
         from .catalog_types import BSLCatalogReference
         from .document_types import BSLDocumentReference
         family, metadata_id, name = definition.qualifiers
-        _, expected_type, _ = definition.reference_scope.definition(family, name)
+        _, expected_type, expected_metadata = definition.reference_scope.definition(family, name)
         expected_class = BSLCatalogReference if family == 'Catalog' else BSLDocumentReference
-        if type(value) is not expected_class or value.value_type != expected_type:
-            raise TypeError('constant reference belongs to another type or application')
+        from uuid import UUID
+        if (type(value) is not expected_class or value.value_type is not expected_type
+                or value.metadata is not expected_metadata or type(value.reference_uuid) is not UUID
+                or value.read_member is not None or value.get_object is not None):
+            raise TypeError('constant reference requires exact owned type/metadata without callbacks')
         encoded = ['object_ref', [family, metadata_id, str(value.reference_uuid)]]
     elif kind == 'enum_ref':
         from .enum_types import BSLEnumReference

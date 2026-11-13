@@ -121,8 +121,8 @@ def source_catalog_definitions(source, enum_namespace=None, reference_scope=None
                 used_names.add(fn.casefold()); used_ids.add(identity)
                 resolved, scopes, dependencies = aliases.resolve(p,ns)
                 kind, qualifiers = _constant_type(resolved,scopes,enum_namespace,reference_scope)
-                if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] == 'Catalog'):
-                    raise ValueError('catalog attribute requires scalar or CatalogRef type')
+                if kind not in ('string','number','boolean','datetime') and not (kind == 'object_ref' and qualifiers[0] in ('Catalog','Document')):
+                    raise ValueError('catalog attribute requires scalar or CatalogRef/DocumentRef type')
                 fields.append(ScalarConstantDefinition(identity,fn,kind,qualifiers,
                     enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope))
                 if len(fields)>67:

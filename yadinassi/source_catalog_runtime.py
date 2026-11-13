@@ -233,7 +233,11 @@ def find_reference(caller,manager,definition,operation,arguments):
     if key not in fields:raise ValueError('unknown source catalog lookup field')
     field=fields[key]
     _encode(value,field)
-    if field.kind=='object_ref':_reference_manager(caller,value)
+    if field.kind=='object_ref':
+        if field.qualifiers[0]=='Document':
+            from .source_document_runtime import _reference_manager as document_reference_manager
+            document_reference_manager(caller,value)
+        else:_reference_manager(caller,value)
     matches=[identity for identity,_,values in store.read_records(manager.name) if values[key]==value]
     if len(matches)>1:
         raise ValueError('ambiguous source catalog lookup; multiple exact matches')

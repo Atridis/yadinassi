@@ -93,9 +93,9 @@ def read(query, caller, statements, *, batch=False):
         aliases={} if section is not None else _STANDARD[family]
         for field in selected_fields:
             for name in (field.name, *([aliases[field.name]] if field.name in aliases else [])):
-                if field.kind == 'object_ref' and field.qualifiers[0] == 'Catalog':
-                    target = make_binding(app, query._catalogs, field.qualifiers[2])
-                    columns.append(_Column(name,None,'catalog_ref',(),explicit_alias=True,
+                if field.kind == 'object_ref' and field.qualifiers[0] in ('Catalog','Document'):
+                    target = make_binding(app, query._catalogs, field.qualifiers[2],field.qualifiers[0])
+                    columns.append(_Column(name,None,target.kind,(),explicit_alias=True,
                                            reference_identity=target.identity,reference_binding=target))
                 else:
                     columns.append(_Column(name,None,field.kind,field.qualifiers,explicit_alias=True))
