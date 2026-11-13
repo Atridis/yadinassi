@@ -1049,6 +1049,11 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, SourceDocumentObject, SourceDocumentSelection
+        if is_document_reference(value):
+            return document_member(self,value,node.name)
+        if type(value) in (SourceDocumentObject, SourceDocumentSelection):
+            return value.property_read(self,node.name)
         from .source_catalog_runtime import is_source_reference, reference_member
         if is_source_reference(value):
             return reference_member(self,value,node.name)
@@ -1192,14 +1197,15 @@ class Interpreter:
                 return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
             from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
             from .source_catalog_runtime import _MANAGER_METHODS, reference_call
-            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else set())):
+            from .source_document_runtime import _MANAGER_METHODS as _DOCUMENT_METHODS, reference_call as document_call
+            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
                 receiver = receiver.module(self)
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
-            function = reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
+            function = document_call(self, receiver, callee.name) or reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
         else:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
@@ -1304,6 +1310,7 @@ class Interpreter:
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
         from .source_catalog_runtime import SourceCatalogCall
+        from .source_document_runtime import SourceDocumentCall
         from .source_references import SourceReferenceCall
         from .source_constants_runtime import ConstantCall, ConstantSetCall
         from .source_constant_queries import SourceQueryCall
@@ -1329,7 +1336,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceDocumentCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1920,6 +1927,13 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, readonly_reference as readonly_document, SourceDocumentObject, SourceDocumentSelection
+            if is_document_reference(owner):
+                captured=document_member(self,owner,node.name)
+                return _Reference(lambda:captured, lambda value:readonly_document(self,owner,node.name,value))
+            if type(owner) in (SourceDocumentObject,SourceDocumentSelection):
+                owner.property_read(self,node.name)
+                return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
             from .source_catalog_runtime import is_source_reference, reference_member, readonly_reference
             if is_source_reference(owner):
                 captured=reference_member(self,owner,node.name)
@@ -2090,6 +2104,14 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_document_runtime import is_source_reference as is_document_reference, SourceDocumentObject
+            if is_document_reference(value):
+                raise ValueError('source document reference fields are readonly; use GetObject().Write()')
+            if type(value) is SourceDocumentObject:
+                if not isinstance(node.target,ast.Attribute):
+                    raise ValueError('source document object indexing unsupported')
+                value.property_write(self,node.target.name,(yield from self._visit(node.value)))
+                return
             from .source_catalog_runtime import is_source_reference, readonly_reference
             if is_source_reference(value):
                 raise ValueError('source reference fields are readonly; use GetObject().Write()')

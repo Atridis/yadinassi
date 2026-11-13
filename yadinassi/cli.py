@@ -174,6 +174,8 @@ def main(argv: list[str] | None = None) -> int:
                          help='явно обновить источник scratch-базы без запуска кода; только совместимое добавление')
     parser.add_argument('--source-catalog-records', action='store_true',
                         help='явно использовать v4 scratch с записями справочников; v3 не мигрируется')
+    parser.add_argument('--source-document-records', action='store_true',
+                        help='явно использовать v5 scratch с непроведёнными документами и справочниками; старые базы не мигрируются')
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
@@ -186,8 +188,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error('--update-source-scratch-db требует --configuration-source и отдельный запуск; --run-startup/--save-source несовместимы')
         if args.source_compatibility_target is not None and not args.run_startup:
             parser.error('--source-compatibility-target требует --run-startup')
-        if args.source_catalog_records and not (args.source_scratch_db or args.open_source_scratch_db or args.update_source_scratch_db):
-            parser.error('--source-catalog-records требует scratch-базу')
+        if (args.source_catalog_records or args.source_document_records) and not (args.source_scratch_db or args.open_source_scratch_db or args.update_source_scratch_db):
+            parser.error('--source-catalog-records/--source-document-records требует scratch-базу')
         if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
             parser.error('--source-scratch-db/--open-source-scratch-db требует --run-startup')
         from .configuration_source import load_source_directory, load_source_archive, save_source_archive
@@ -198,6 +200,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.source_catalog_records:
                 from .source_catalog_store import SourceCatalogStore
                 SourceConstantStore = SourceCatalogStore
+            if args.source_document_records:
+                from .source_document_store import SourceDocumentStore
+                SourceConstantStore = SourceDocumentStore
             if args.configuration_source is None:
                 source = SourceConstantStore.load_source(args.open_source_scratch_db)
             else:
@@ -215,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.run_startup:
                 application = SourceApplication(source, compilation_profile=args.preprocessor_profile,
                                                 source_catalog_records=args.source_catalog_records,
+                                                source_document_records=args.source_document_records,
                                                 scratch_database=args.source_scratch_db,
                                                 existing_scratch_database=args.open_source_scratch_db,
                                                 compatibility_target=args.source_compatibility_target)
@@ -232,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             if application is not None:
                 application.close()
-    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_catalog_records or args.source_compatibility_target is not None:
+    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_catalog_records or args.source_document_records or args.source_compatibility_target is not None:
         parser.error('--save-source/--run-startup требует --configuration-source')
 
     demo = args.create_demo_db is not None

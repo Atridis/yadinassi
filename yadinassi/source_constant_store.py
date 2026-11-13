@@ -210,6 +210,10 @@ class SourceConstantStore:
     def validate_records(self):
         pass
 
+    def validate_source_update(self, source):
+        """Subclass schema comparison repeated under the update write reservation."""
+        pass
+
 
     @property
     def transaction_active(self):
@@ -406,6 +410,7 @@ class SourceConstantStore:
             connection.execute('BEGIN IMMEDIATE')
             store._open()
             store.validate_records()
+            store.validate_source_update(source)
             for table in ('source_extension_registry', 'source_extension_issues'):
                 if connection.execute('SELECT 1 FROM ' + table + ' LIMIT 1').fetchone() is not None:
                     raise ValueError('source update populated extensions unsupported')

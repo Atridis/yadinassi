@@ -20,11 +20,12 @@ _MANAGER_METHODS={'createitem':'create','создатьэлемент':'create',
 def store_for(manager, caller):
     from .safe_mode import require_external_access
     from .source_catalog_store import SourceCatalogStore
+    from .source_document_store import SourceDocumentStore
     app=manager.authorize(caller)
     if caller._scheduler.pending:
         raise ValueError("source catalog operations require no pending asynchronous tasks")
     require_external_access('source catalog database')
-    if manager.family!='Catalog' or type(app.constant_store) is not SourceCatalogStore:
+    if manager.family!='Catalog' or type(app.constant_store) not in (SourceCatalogStore, SourceDocumentStore):
         raise ValueError('source Catalog records require explicit v4 scratch capability')
     app.constant_store.catalog(manager.name)
     from .source_constant_managers import _active_write as constant_write, _constructing as constant_construction

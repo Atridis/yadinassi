@@ -194,6 +194,12 @@ class SourceCatalogStore(SourceConstantStore):
             if isinstance(error,sqlite3.Error):raise ValueError('source catalog write refused') from None
             raise
 
+    def validate_source_update(self, source):
+        super().validate_source_update(source)
+        _, errors, rows = _definitions(source)
+        if rows != self._catalog_rows or errors != self.catalog_errors:
+            raise ValueError('source catalog schema changed under update reservation')
+
     @classmethod
     def update_source(cls, path, source):
         previous=cls.load_source(path)

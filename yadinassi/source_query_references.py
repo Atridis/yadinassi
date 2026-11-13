@@ -19,6 +19,7 @@ class SourceBinding:
 
     def require_owner(self):
         from .source_catalog_store import SourceCatalogStore
+        from .source_document_store import SourceDocumentStore
         if type(self.ownerapp) is not weakref.ReferenceType:
             raise TypeError('Source reference binding requires an application owner')
         app = self.ownerapp()
@@ -29,7 +30,7 @@ class SourceBinding:
                 or type(self.identity) is not tuple or len(self.identity) != 2
                 or type(self.identity[1]) is not UUID
                 or self.collection is not app.interpreter._catalogs
-                or type(app.constant_store) is not SourceCatalogStore):
+                or type(app.constant_store) not in (SourceCatalogStore, SourceDocumentStore)):
             raise TypeError('Invalid source reference binding ownership')
         entry, canonical, metadata = app.references.definition('Catalog', self.value_type.name)
         if (canonical is not self.value_type or canonical.family != 'ref'
@@ -79,6 +80,7 @@ class SourcePackageScope:
 
     def require_context(self, statements, catalogs):
         from .source_catalog_store import SourceCatalogStore
+        from .source_document_store import SourceDocumentStore
         from .query_packages import _Table, _check_tables
         from . import query_parser as syntax
         if type(self.ownerapp) is not weakref.ReferenceType:
@@ -89,7 +91,7 @@ class SourcePackageScope:
         app.require_open()
         if (statements is not self.statements or catalogs is not self.collection
                 or catalogs is not app.interpreter._catalogs
-                or type(app.constant_store) is not SourceCatalogStore or app.constant_store._closed):
+                or type(app.constant_store) not in (SourceCatalogStore, SourceDocumentStore) or app.constant_store._closed):
             raise TypeError('Source package requires its exact application context')
         if type(self.tables) is not tuple or len(self.tables)>16:
             raise ValueError('Source package table bound')

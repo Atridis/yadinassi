@@ -5,6 +5,7 @@ from .queries import _Column
 from .query_packages import _Table, _check_tables
 from .source_constant_queries import _local_nodes, _private_name
 from .source_catalog_store import SourceCatalogStore
+from .source_document_store import SourceDocumentStore
 
 _CONSTANTS = ('constants','константы')
 _STANDARD = {'Code':'Код','Description':'Наименование','DeletionMark':'ПометкаУдаления'}
@@ -19,7 +20,7 @@ def has_catalog(statements):
 def read(query, caller, statements, *, batch=False):
     store=query._source_owner._store(caller)
     app=query._source_owner._application()
-    if type(store) is not SourceCatalogStore:
+    if type(store) not in (SourceCatalogStore, SourceDocumentStore):
         raise ValueError('source Catalog queries require explicit v4 scratch capability')
     if caller._scheduler.pending:
         raise ValueError('source Catalog query requires synchronous execution')
