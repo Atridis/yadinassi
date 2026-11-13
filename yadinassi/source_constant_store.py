@@ -15,6 +15,7 @@ from pathlib import Path
 from .catalog_qualifiers import validate_string, normalize_number, bound_number
 from .configuration_source import source_digest
 from .configuration_source_constants import source_constant_definitions
+from dataclasses import replace
 from .dates import BSLDate, TICKS_PER_SECOND
 from .sqlite_catalog import _private_parent
 
@@ -32,7 +33,20 @@ def _json(value):
 
 def _encode(value, definition):
     kind = definition.kind
-    if kind == 'uuid':
+    if kind == 'composite':
+        if value is None:
+            encoded = ['composite', ['undefined', None]]
+        else:
+            candidates = []
+            for member_kind, member_qualifiers in definition.qualifiers:
+                try:
+                    candidates.append(json.loads(_encode(value, replace(definition, kind=member_kind, qualifiers=member_qualifiers))))
+                except (ValueError, TypeError):
+                    pass
+            if len(candidates) != 1:
+                raise TypeError('constant value does not fit its composite type')
+            encoded = ['composite', candidates[0]]
+    elif kind == 'uuid':
         from .unique_identifiers import BSLUUID
         if type(value) is not BSLUUID or BSLUUID(value.text).text != value.text:
             raise TypeError('constant canonical UUID required')
@@ -78,7 +92,18 @@ def _decode(raw, definition):
         if type(data) is not list or len(data) != 2 or data[0] != definition.kind:
             raise ValueError('constant storage integrity')
         value = data[1]
-        if definition.kind == 'uuid':
+        if definition.kind == 'composite':
+            if type(value) is not list or len(value) != 2:
+                raise ValueError('constant storage integrity')
+            if value == ['undefined', None]:
+                value = None
+            else:
+                members = [(k, q) for k, q in definition.qualifiers if k == value[0]]
+                if len(members) != 1:
+                    raise ValueError('constant storage integrity')
+                k, q = members[0]
+                value = _decode(_json(value), replace(definition, kind=k, qualifiers=q))
+        elif definition.kind == 'uuid':
             from .unique_identifiers import BSLUUID
             value = BSLUUID(value)
         elif definition.kind == 'value_storage':

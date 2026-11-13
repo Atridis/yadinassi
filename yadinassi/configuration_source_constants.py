@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from uuid import UUID
 from .configuration_source import ConfigurationSource
 from .configuration_source_metadata import SourceMetadataRoot
-from .configuration_xml import MD, XSI, V8, _object, _props, _type, _text, _qname
+from .configuration_xml import MD, XSI, XS, V8, _object, _props, _type, _text, _qname
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,17 +35,7 @@ def source_constant_definitions(source):
         try:
             obj, namespaces = _object(files[path], 'Constant')
             props = _props(obj)
-            declaration = props.get('{' + MD + '}Type')
-            special = None
-            if declaration is not None and not declaration.attrib and not (declaration.text or '').strip() and len(declaration) == 1:
-                node = declaration[0]
-                if node.tag == '{' + V8 + '}Type' and not node.attrib and not len(node) and not (node.tail or '').strip():
-                    namespace, name_type = _qname(node, namespaces)
-                    if namespace == V8:
-                        special = {'ValueStorage': 'value_storage', 'UUID': 'uuid'}.get(name_type)
-            kind, qualifiers, target = (special, (), None) if special else _type(props, namespaces, {})
-            if target is not None or kind not in ('string', 'number', 'boolean', 'datetime', 'uuid', 'value_storage'):
-                raise ValueError('unsupported source constant type')
+            kind, qualifiers = _constant_type(props, namespaces)
             blockers = []
             prefix = 'Constants/' + name + '/'
             if any(p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()
@@ -69,3 +59,42 @@ def source_constant_definitions(source):
         except (ValueError, KeyError) as error:
             unsupported[name.casefold()] = str(error)
     return tuple(result), unsupported, names
+
+
+def _constant_type(props, namespaces):
+    """Closed scalar union; reuse original nodes so namespace scopes stay exact."""
+    from xml.etree.ElementTree import Element
+    declaration = props.get('{' + MD + '}Type')
+    if declaration is None:
+        raise ValueError('missing constant type')
+    if declaration.attrib or (declaration.text or '').strip() or any((n.tail or '').strip() for n in declaration):
+        raise ValueError('unsupported constant type envelope')
+    nodes = [n for n in declaration if n.tag == '{' + V8 + '}Type']
+    if not 1 <= len(nodes) <= 6:
+        raise ValueError('constant union type count bound')
+    variants = []
+    used = set()
+    for node in nodes:
+        if node.attrib or len(node):
+            raise ValueError('unsupported constant type node')
+        namespace, name = _qname(node, namespaces)
+        qualifier = {'string':'StringQualifiers', 'decimal':'NumberQualifiers', 'dateTime':'DateQualifiers'}.get(name) if namespace == XS else None
+        chosen = [n for n in declaration if qualifier and n.tag == '{' + V8 + '}' + qualifier]
+        used.update(id(n) for n in chosen)
+        special = {'ValueStorage':'value_storage', 'UUID':'uuid'}.get(name) if namespace == V8 else None
+        if special:
+            kind, qualifiers = special, ()
+        else:
+            wrapper = Element('{' + MD + '}Type')
+            wrapper.extend([node, *chosen])
+            kind, qualifiers, target = _type({**props, '{' + MD + '}Type':wrapper}, namespaces, {})
+            if target is not None or kind not in ('string', 'number', 'boolean', 'datetime'):
+                raise ValueError('unsupported source constant type')
+        if any(k == kind for k, q in variants):
+            raise ValueError('duplicate constant union type')
+        variants.append((kind, qualifiers))
+    if any(n not in nodes and id(n) not in used for n in declaration):
+        raise ValueError('unsupported constant type component')
+    if len(variants) == 1:
+        return variants[0]
+    return 'composite', tuple(sorted(variants))
