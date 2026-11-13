@@ -137,6 +137,10 @@ class _FormInterpreter(Interpreter):
         # Evaluate the receiver once. Keep the ordinary collection rules intact.
         from . import runtime
         value = yield from self._visit(node.object)
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            value.authorize(self)
+            return value.member(self, (yield from self._visit(node.index)))
         if type(value) is BSLFormDataCollection:
             return value.get_index((yield from self._visit(node.index)))
         if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,

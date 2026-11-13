@@ -10,6 +10,7 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         super().__init__(application, session, output=output,
                          family_owner=application.interpreter, **kwargs)
         self._transaction_activation_allowed = False
+        self._application_exports_enabled = True
 
     def _activation_interpreter(self):
         child = type(self)(self.application, self._form_session, self.output,

@@ -115,7 +115,28 @@ class _SourceInterpreter(Interpreter):
             return self.application.session_parameters
         if key in self.application.modules:
             return self.application.module(key, self)
+        from .source_application_exports import variable
+        reference = variable(self, key)
+        if reference is not None:
+            return reference.get()
         return super().visit_Name(node)
+
+    def set_variable(self, name, value):
+        from .source_application_exports import variable
+        reference = variable(self, name)
+        if reference is not None:
+            reference.set(value)
+            return
+        return super().set_variable(name, value)
+
+    def argument(self, node):
+        ungrouped = self.ungroup(node)
+        if isinstance(ungrouped, ast.Name):
+            from .source_application_exports import variable
+            reference = variable(self, ungrouped.name)
+            if reference is not None:
+                return reference
+        return (yield from super().argument(node))
 
 
 def _walk(value):
@@ -235,6 +256,7 @@ class SourceApplication:
             program = compile_module(self.files[path], path, side, common=True,
                                      compilation_profile=self.compilation_profile)
             child._logical_side = side
+            child._application_exports_enabled = not global_call
             if any(not isinstance(node, ast.Routine) for node in program):
                 raise ValueError('Общий модуль содержит неподдерживаемую инициализацию: ' + path)
             child.execute_program(program)
@@ -278,7 +300,8 @@ class SourceApplication:
             self._global_exports[side] = exports
         candidates = self._global_exports[side].get(name.casefold(), [])
         if not candidates:
-            return None
+            from .source_application_exports import routine
+            return routine(caller, name)
         if len(candidates) != 1:
             raise ValueError('Ambiguous global source routine: ' + name)
         receiver = self.module(candidates[0], caller, global_call=True)

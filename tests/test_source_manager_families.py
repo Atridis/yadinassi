@@ -112,3 +112,15 @@ class SourceManagerFamiliesTests(unittest.TestCase):
         files['Ext/ManagedApplicationModule.bsl']=b'Procedure OnStart()\nMessage(API.Answer());\nEndProcedure'
         _,out=self.run_app(import_source(files))
         self.assertEqual(out,['Demo'])
+
+    def test_selected_source_form_server_dynamic_manager(self):
+        from test_source_forms import files, request
+        from test_source_metadata import xml
+        from yadinassi.source_forms import SourceFormController
+        mapping=files(b'&AtServer\nProcedure Created(Cancel, StandardProcessing) Greeting=InformationRegisters["Items"].Answer(); EndProcedure\n&AtClient\nProcedure Go(Command) EndProcedure')
+        mapping['InformationRegisters/Items.xml']=xml('InformationRegister','Items')
+        mapping['InformationRegisters/Items/Ext/ManagerModule.bsl']=b'Function Answer() Export Return "manager"; EndFunction'
+        app,_=self.run_app(import_source(mapping))
+        controller=SourceFormController(app,'CommonForm.Main')
+        self.assertIsNone(controller.exchange(request())['result']['error'])
+        self.assertEqual(dict(controller.client.session.snapshot().attributes)['Greeting'],'manager')
