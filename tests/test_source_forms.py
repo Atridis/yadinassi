@@ -121,3 +121,61 @@ class SourceFormTests(unittest.TestCase):
         from yadinassi.ui.source_shell import main
         with self.assertRaises(SystemExit):
             main(['--configuration-source', 'unused', '--run-startup', '--source-form', 'CommonForm.Main', '--source-scratch-db', 'unused.sqlite'])
+
+class SourceNoContextTests(unittest.TestCase):
+    app = SourceFormTests.app
+    def controller(self, body='Return Value+"/"+Metadata.Name;', call='Greeting=Calculate("ok");', *, server_call=False):
+        source=('&AtServer\nProcedure Created(Cancel,StandardProcessing)\n Greeting="initial";\nEndProcedure\n&AtServerNoContext\nFunction Calculate(Val Value)\n'+body+'\nEndFunction\n')
+        if server_call:
+            source+='&AtServer\nProcedure Compute()\n'+call+'\nEndProcedure\n&AtClient\nProcedure Go(Command)\nCompute();\nEndProcedure'
+        else:
+            source+='&AtClient\nProcedure Go(Command)\n'+call+'\nEndProcedure'
+        controller=SourceFormController(self.app(files(source.encode())),'CommonForm.Main')
+        self.assertIsNone(controller.exchange(request())['result']['error']);return controller
+
+    def run_command(self,controller):
+        return controller.exchange(request('event',event='command',revision=controller.client.session.revision,control='GoButton'))['result']
+
+    def test_nocontext_client_scalar_call_resolves_source_metadata(self):
+        c=self.controller();self.assertIsNone(self.run_command(c)['error'])
+        self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'ok/Demo')
+
+    def test_nocontext_contextful_common_module_remains_explicitly_unavailable(self):
+        c=self.controller('Return Helpers.Text();');self.assertIsNotNone(self.run_command(c)['error'])
+        self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'initial')
+
+    def test_same_server_call_uses_formless_activation(self):
+        c=self.controller(server_call=True);self.assertIsNone(self.run_command(c)['error'])
+        self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'ok/Demo')
+
+    def test_nocontext_cannot_read_form_state_or_parameters(self):
+        for expression in ('Greeting','Parameters','ThisObject','Items'):
+            for server in (False,True):
+                with self.subTest(expression=expression,server=server):
+                    c=self.controller('Return '+expression+';',server_call=server)
+                    self.assertIsNotNone(self.run_command(c)['error'])
+                    self.assertEqual(dict(c.client.session.snapshot().attributes)['Greeting'],'initial')
+
+    def test_same_server_does_not_inherit_bound_form_services(self):
+        for expression in ('GetAttributes()','New FormAttribute("Injected", New TypeDescription("String"))'):
+            with self.subTest(expression=expression):
+                c=self.controller('Return '+expression+';',server_call=True)
+                self.assertIsNotNone(self.run_command(c)['error'])
+                self.assertNotIn('Injected',dict(c.client.session.snapshot().attributes))
+
+    def test_nocontext_non_scalar_result_rejected_by_existing_wire(self):
+        c=self.controller('Return New Array;');self.assertIsNotNone(self.run_command(c)['error'])
+
+    def test_nocontext_failures_do_not_replay_on_next_command(self):
+        c=self.controller('Raise "failure";')
+        self.assertIsNotNone(self.run_command(c)['error']);count=c.nocontext.server._requests
+        self.assertIsNotNone(self.run_command(c)['error']);self.assertEqual(c.nocontext.server._requests,count+1)
+
+    def test_nocontext_invocation_has_bounded_execution(self):
+        c=self.controller('While True Do EndDo; Return "never";')
+        self.assertIsNotNone(self.run_command(c)['error'])
+
+    def test_nocontext_cannot_activate_database_transaction(self):
+        c=self.controller('BeginTransaction(); Return "bad";')
+        self.assertIsNotNone(self.run_command(c)['error'])
+        self.assertIsNone(c.nocontext.prototype.database_context)

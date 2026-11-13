@@ -338,7 +338,7 @@ cancelled. Only the selected form XML/BSL is compiled; unsupported controls and
 services fail explicitly. This is not a promise to render arbitrary native forms.
 
 This first interactive source path is memory-only: a scratch database, CRUD,
-object persistence and AtServerNoContext form endpoints are not admitted. Existing
+object persistence is not admitted; bounded AtServerNoContext scalar endpoints are described below. Existing
 supported form attributes, server-create lifecycle, client commands and server
 replication are real, including source metadata and same-side common modules.
 Privileged modules still fail; form selection never grants roles. Closing the
@@ -423,3 +423,20 @@ scalar codec (до 32 ключей). Серверные обработчики, 
 Ограничения: восемь одновременно живых форм и 256 открытий из BSL за сеанс.
 Переходы не предоставляют объектам базы права CRUD. Это локальный source-host
 сценарий, а не подтверждение полного native OpenForm parity.
+
+
+### Source-форма с AtServerNoContext
+
+Наличие объявленных `AtServerNoContext/НаСервереБезКонтекста` методов больше не
+отклоняет форму целиком. Клиентские вызовы используют существующий ограниченный
+scalar RPC: только явные Val-параметры и скалярный результат, без передачи формы,
+объектов базы или коллекций. Поддержаны обычные вычисления и read-only Metadata
+источника; состояние формы, Parameters, Items и bound UI helpers недоступны.
+Обычные same-server вызовы сохраняют строгий запрет доступа к форме без контекста.
+
+Прямой NoContext→contextful CommonModule пока явно отклоняется существующим
+языковым guard. Обхода через подмену контекста нет. Это ограничение будущего
+языкового блока, а не основание отклонять всю исходную форму при загрузке.
+Применяются существующие лимиты scalar wire/no-replay, а для RPC активации
+ограничено число шагов исполнения. База и транзакционная authority не выдаются;
+полная native parity этим локальным адаптером не заявляется.
