@@ -143,6 +143,58 @@ class SourceConstantStore:
             raise
 
     @classmethod
+    def load_source(cls, path):
+        """Read the embedded package without executing code or writing SQLite.
+
+        The package is re-admitted by the ordinary XML/source importer. This
+        method is not authentication: an owner able to rewrite the whole DB can
+        replace both content and its digest. Reopen separately validates all
+        constant values before any startup is allowed.
+        """
+        from .configuration_source import import_source, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES
+        raw = os.fspath(path)
+        if type(raw) is not str or not raw or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
+            raise ValueError('invalid source constants destination')
+        absolute = _private_parent(os.path.abspath(raw))
+        identity = _file_identity(absolute)
+        if any(os.path.lexists(absolute + suffix) for suffix in ('-journal', '-wal', '-shm')):
+            raise ValueError('source constants require clean-close database without sidecars')
+        connection = None
+        try:
+            connection = sqlite3.connect(Path(absolute).as_uri() + '?mode=ro', uri=True,
+                                         isolation_level=None, detect_types=0, timeout=0.2)
+            connection.execute('PRAGMA trusted_schema=OFF')
+            connection.execute('BEGIN')
+            if _schema(connection) != _expected_schema():
+                raise ValueError('source constants schema integrity')
+            if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
+                raise ValueError('unsupported source constants journal')
+            if connection.execute("SELECT count(*) FROM source_binding WHERE typeof(profile)!='text' OR length(CAST(profile AS BLOB))>128 OR typeof(source_sha256)!='text' OR length(CAST(source_sha256 AS BLOB))!=64 OR typeof(configuration_uuid)!='text' OR length(CAST(configuration_uuid AS BLOB))!=36").fetchone()[0]:
+                raise ValueError('source constants embedded binding bound')
+            binding = connection.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding LIMIT 2').fetchall()
+            if len(binding) != 1 or binding[0][0] != _PROFILE:
+                raise ValueError('source constants binding integrity')
+            # Check SQL storage types and lengths before materializing BLOBs.
+            sizes = connection.execute("SELECT length(content),typeof(content),typeof(path),length(path),length(CAST(path AS BLOB)) FROM source_file LIMIT ?", (MAX_FILES + 1,)).fetchall()
+            if (not 1 <= len(sizes) <= MAX_FILES
+                    or any(kind != 'blob' or path_kind != 'text' or not 1 <= path_size <= 1024 or path_bytes > 4096 or size > MAX_FILE_BYTES
+                           for size, kind, path_kind, path_size, path_bytes in sizes)
+                    or sum(size for size, _, _, _, _ in sizes) > MAX_TOTAL_BYTES):
+                raise ValueError('source constants embedded source bound')
+            files = dict(connection.execute('SELECT path,content FROM source_file ORDER BY path'))
+            source = import_source(files)
+            if binding[0][1:] != (source_digest(source), str(source.config_uuid)):
+                raise ValueError('source constants embedded source digest integrity')
+            if _file_identity(absolute) != identity:
+                raise ValueError('source constants file identity changed')
+            return source
+        except sqlite3.Error:
+            raise ValueError('source constants embedded source read refused') from None
+        finally:
+            if connection is not None:
+                connection.close()
+
+    @classmethod
     def reopen(cls, path, source):
         """Open only an unchanged source package's explicitly created scratch DB.
 

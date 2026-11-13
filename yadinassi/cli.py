@@ -169,11 +169,11 @@ def main(argv: list[str] | None = None) -> int:
     scratch.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE',
                         help='создать отдельную новую базу констант для запуска источника')
     scratch.add_argument('--open-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
-                         help='повторно открыть базу констант того же источника, без миграции')
+                         help='открыть сохранённую базу источника; XML/архив необязателен, без миграции')
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
-    if args.configuration_source is not None:
+    if args.configuration_source is not None or args.open_source_scratch_db is not None:
         if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
                 args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
                 args.numbering_policy, args.inactive, args.report_json)):
@@ -186,8 +186,12 @@ def main(argv: list[str] | None = None) -> int:
         from .configuration_source_runtime import SourceApplication
         application = None
         try:
-            path = Path(args.configuration_source)
-            source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
+            if args.configuration_source is None:
+                from .source_constant_store import SourceConstantStore
+                source = SourceConstantStore.load_source(args.open_source_scratch_db)
+            else:
+                path = Path(args.configuration_source)
+                source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
             if args.save_source:
                 save_source_archive(args.save_source, source)
             print('Источник загружен: ' + source.name + '; файлов: ' + str(len(source.files))

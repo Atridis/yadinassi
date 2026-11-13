@@ -11,7 +11,21 @@ Create once:
 yadinassi --configuration-source source.zip --run-startup --source-scratch-db scratch.sqlite
 ```
 
-Reopen explicitly with the exact same source package:
+Reopen from the saved database alone (no external XML/ZIP needed):
+
+```sh
+yadinassi --open-source-scratch-db scratch.sqlite --run-startup
+```
+
+Embedded XML/BSL/resources are read through a read-only SQLite handle and
+re-admitted by the ordinary source importer. Nothing is extracted to disk and
+reading source does not execute it. Startup still requires the explicit flag.
+The package hash detects accidental damage, not malicious replacement by the
+file owner. A source load alone does not verify stored values; normal reopen
+checks all values before startup. There is no native database compatibility.
+
+Optionally require the exact same external source package as an additional
+binding check:
 
 ```sh
 yadinassi --configuration-source source.zip --run-startup --open-source-scratch-db scratch.sqlite
@@ -22,7 +36,8 @@ not migrate a normal database, a previous scratch format, or changed source.
 The v3 format stores all source bytes for integrity checking; this does not
 execute those bytes. Startup remains a separate explicit operation. Copying
 source files into the DB does not imply support for their metadata or services.
-No source extraction CLI or automatic configuration update is supplied yet.
+No automatic configuration update is supplied. The existing `--save-source`
+option can export the admitted package to a new archive; it never overwrites.
 
 Reopen requires a cleanly closed file with no journal/WAL/SHM sidecars; it does
 not perform recovery. A read-only schema preflight precedes opening a writable
