@@ -1183,6 +1183,10 @@ class Interpreter:
             if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
                 routine = receiver.exported_routine(self, callee.name)
                 return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
+            from .source_catalog_runtime import SourceCatalogObject, _OBJECT_METHODS
+            if type(receiver) is SourceCatalogObject and callee.name.casefold() not in _OBJECT_METHODS:
+                routine=receiver.exported_routine(self,callee.name)
+                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
             from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
             from .source_catalog_runtime import _MANAGER_METHODS, reference_call
             if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else set())):
@@ -1305,6 +1309,8 @@ class Interpreter:
         from .source_transactions import SourceTransactionCall
         from .source_constant_managers import ValueManagerCall, write_values
         marker = function.function
+        if type(marker) is SourceCatalogCall:
+            return (yield from marker.invoke(self, values))
         if type(marker) is ValueManagerCall:
             return (yield from marker.invoke(self, values))
         if type(marker) is ConstantCall and marker.writing:
@@ -1320,7 +1326,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceCatalogCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall):
             return function.function.invoke(self, values)
         return function(*values)
 

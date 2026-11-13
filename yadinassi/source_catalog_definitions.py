@@ -1,5 +1,6 @@
 """Closed source-catalog storage declarations; no module or database activation."""
 from dataclasses import dataclass
+from .errors import BSLError
 from uuid import uuid5
 from .configuration_source import ConfigurationSource
 from .configuration_source_constants import ScalarConstantDefinition, _constant_type
@@ -12,12 +13,16 @@ class SourceCatalogDefinition:
     identity: object
     name: str
     fields: tuple
+    object_module: str | None = None
 
 
 def catalog_definition_record(definition):
-    return [str(definition.identity), definition.name,
+    record = [str(definition.identity), definition.name,
             [[str(f.identity), f.name, f.kind, f.qualifiers, f.type_dependencies]
              for f in definition.fields]]
+    if definition.object_module is not None:
+        record.append(["object_module", definition.object_module])
+    return record
 
 
 _INERT = {'Name', 'Synonym', 'Comment', 'ObjectPresentation', 'ExtendedObjectPresentation',
@@ -87,9 +92,12 @@ def source_catalog_definitions(source, enum_namespace=None, reference_scope=None
             code_length = _int(props,'CodeLength',1,64)
             description_length = _int(props,'DescriptionLength',1,1024)
             prefix = entry.path[:-4]+'/'
-            if any(path.startswith(prefix) and path.lower().endswith('/objectmodule.bsl') and raw.strip()
-                   for path,raw in files.items()):
-                raise ValueError('catalog object module unsupported')
+            module_path = prefix+'Ext/ObjectModule.bsl'
+            module_files = [path for path,raw in files.items() if path.startswith(prefix)
+                            and path.lower().endswith('/objectmodule.bsl') and raw.strip()]
+            if any(path != module_path for path in module_files):
+                raise ValueError('catalog object module location unsupported')
+            module_path = module_path if module_files else None
             if any(n.tag not in ('{'+MD+'}Properties','{'+MD+'}ChildObjects') for n in obj):
                 raise ValueError('unsupported catalog object component')
             children = obj.findall('{'+MD+'}ChildObjects')
@@ -119,7 +127,41 @@ def source_catalog_definitions(source, enum_namespace=None, reference_scope=None
                     enum_namespace=enum_namespace,type_dependencies=dependencies,reference_scope=reference_scope))
                 if len(fields)>67:
                     raise ValueError('catalog attribute count bound')
-            definitions[name.casefold()] = SourceCatalogDefinition(entry.identity,name,tuple(fields))
-        except (ValueError,KeyError,AttributeError) as error:
+            if module_path is not None:
+                catalog_module_program(files[module_path],module_path,fields)
+            definitions[name.casefold()] = SourceCatalogDefinition(entry.identity,name,tuple(fields),module_path)
+        except (ValueError,KeyError,AttributeError,BSLError) as error:
             unsupported[entry.name.casefold()] = str(error)
     return definitions, unsupported
+
+
+_EVENT_NAMES = (('beforewrite','передзаписью'), ('onwrite','призаписи'))
+_UNSUPPORTED_EVENTS = {'fillcheckprocessing','обработкапроверкизаполнения','onread','причтении',
+    'beforedelete','передудалением','oncopy','прикопировании','filling','fillingprocessing','обработказаполнения',
+    'choiceprocessing','обработкавыбора','presentationgetprocessing','обработкаполученияпредставления'}
+
+def catalog_module_program(raw,path,fields):
+    """Compile and validate declarations only, never execute during admission."""
+    from .configuration_modules import compile_module
+    from .syntax import ast
+    program=compile_module(raw,path,'server',common=False)
+    reserved=_RESERVED | {f.name.casefold() for f in fields} | {'__catalog_cancel'}
+    routines=[node for node in program if type(node) is ast.Routine]
+    for node in program:
+        if type(node) is ast.Var and any(n.casefold() in reserved for n in node.names):
+            raise ValueError('catalog module reserved field conflict')
+        if type(node) is ast.Routine:
+            if (node.name.casefold() in reserved or node.is_async
+                    or any(p.name.casefold() in reserved for p in node.parameters)):
+                raise ValueError('catalog module reserved/async routine unsupported')
+            if node.name.casefold() in _UNSUPPORTED_EVENTS:
+                raise ValueError('catalog object event unsupported: '+node.name)
+    for aliases in _EVENT_NAMES:
+        matches=[r for r in routines if r.name.casefold() in aliases]
+        if len(matches)>1:
+            raise ValueError('ambiguous catalog write event')
+        if matches:
+            r=matches[0]
+            if r.is_function or len(r.parameters)!=1 or r.parameters[0].by_value or r.parameters[0].default is not None:
+                raise ValueError('unsupported catalog event signature')
+    return program

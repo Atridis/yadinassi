@@ -9,6 +9,7 @@ _RECORD_DDL = (
  'CREATE TABLE source_catalog_record(catalog_identity TEXT NOT NULL REFERENCES source_catalog_schema(identity), record_identity TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), payload TEXT NOT NULL CHECK(length(payload)<=65536), code TEXT NOT NULL, PRIMARY KEY(catalog_identity,record_identity), UNIQUE(catalog_identity,code))',
 )
 _MAX_RECORDS = 10000
+_HANDLED_CATALOG_WRITE = object()
 _MAX_RECORD_BYTES = 16 * 1024 * 1024
 
 
@@ -52,6 +53,12 @@ def decode_record(definition, raw):
 
 class SourceCatalogStore(SourceConstantStore):
     PROFILE = 'source-catalog-records-v4'
+
+    def begin_transaction(self):
+        from .source_catalog_runtime import _active_write, _constructing
+        if (_active_write.get() or _constructing.get()) and not self.transaction_active:
+            raise ValueError('catalog lifecycle transaction aborted; cannot restart')
+        return super().begin_transaction()
 
     @staticmethod
     def scopes(source, enum_namespace=None, reference_scope=None):
@@ -161,10 +168,12 @@ class SourceCatalogStore(SourceConstantStore):
         except BaseException:
             self._abort();raise
 
-    def write_record(self, name, identity, revision, values):
+    def write_record(self, name, identity, revision, values, *, _handled=None):
         definition=self.catalog(name)
         owned=not self.transaction_active
         try:
+            if definition.object_module is not None and _handled is not _HANDLED_CATALOG_WRITE:
+                raise ValueError("unsupported direct catalog ObjectModule write; requires handler execution")
             raw=encode_record(definition,values)
             if type(identity) is not UUID or identity.int==0 or type(revision) is not int or not 0<=revision<2**53:
                 raise ValueError('source catalog write identity/revision')
