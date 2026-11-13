@@ -3,7 +3,7 @@
 No user text is SQL. Only explicitly referenced scalar constants are read; no
 invented catalog/register tables or guessed defaults are supplied.
 """
-from dataclasses import replace
+from dataclasses import replace, fields, is_dataclass
 from .queries import BSLQuery, _Column
 from .values import HostFunction
 from . import query_parser as syntax
@@ -48,44 +48,62 @@ class SourceConstantQuery(BSLQuery):
             raise ValueError('source constant query data separation unsupported')
         if self._temp_tables_manager is not None:
             raise ValueError('source constant query temporary tables unsupported')
-        if len(statements) != 1 or type(statements[0]) is not syntax.Select:
-            raise ValueError('source constant query requires one SELECT')
+        if len(statements) != 1 or type(statements[0]) not in (syntax.Select, syntax.Union):
+            raise ValueError('source constant query requires one SELECT or UNION')
         query = statements[0]
-        if (not query.temporary or query.external or query.catalog.casefold() not in ('constants', 'константы')
-                or query.joins or query.into is not None or query.derived is not None or query.section is not None
-                or sum(type(n) is syntax.Select for n in syntax.walk_nodes(query)) != 1):
-            raise ValueError('only the source Constants table is supported')
-        if syntax.extended_filters(query):
-            raise ValueError('source constant query extended filters unsupported')
-        aliases = {p.alias.casefold() for p in query.projections if p.explicit_alias}
-        order_fields = {id(order.field) for order in query.order}
+        source_names = set()
         names = {}
-        for node in syntax.walk_nodes(query):
-            if type(node) is not syntax.Field:
-                continue
-            if len(node.parts) not in (1, 2) or (len(node.parts) == 2 and node.parts[0].casefold() != query.source_alias.casefold()):
-                raise ValueError('unknown source Constants query field qualifier')
-            name = node.parts[-1]
-            if id(node) in order_fields and len(node.parts) == 1 and name.casefold() in aliases:
-                continue
-            definition = store._definition(name)
-            if definition.kind not in ('string', 'number', 'boolean', 'datetime'):
-                raise ValueError('source constant query supports only scalar fields: ' + name)
-            names[name.casefold()] = definition
+        for arm in syntax.selects((query,)):
+            if arm.into is not None:
+                raise ValueError('source constant query temporary tables unsupported')
+            sources = (syntax.Source(arm.catalog, arm.source_alias, arm.section, arm.temporary,
+                                      arm.external, arm.family, arm.period_boundary, arm.derived),
+                       *(join.source for join in arm.joins))
+            direct_aliases = set()
+            for source in sources:
+                if source.derived is not None:
+                    continue
+                if (not source.temporary or source.external or source.section is not None
+                        or source.catalog.casefold() not in ('constants', 'константы')):
+                    raise ValueError('only the source Constants table is supported')
+                source_names.add(source.catalog.casefold())
+                direct_aliases.add(source.alias.casefold())
+            aliases = {p.alias.casefold() for p in arm.projections if p.explicit_alias}
+            order_fields = {id(order.field) for order in arm.order}
+            for node in _local_nodes(arm):
+                if type(node) is not syntax.Field:
+                    continue
+                if len(node.parts) not in (1, 2):
+                    raise ValueError('unknown source Constants query field qualifier')
+                name = node.parts[-1]
+                if len(node.parts) == 2 and node.parts[0].casefold() not in direct_aliases:
+                    continue  # Derived names and invalid aliases are checked by the binder.
+                if len(node.parts) == 1:
+                    if (not direct_aliases or not store.has(name)
+                            or (id(node) in order_fields and name.casefold() in aliases)):
+                        continue
+                definition = store._definition(name)
+                if definition.kind not in ('string', 'number', 'boolean', 'datetime'):
+                    raise ValueError('source constant query supports only scalar fields: ' + name)
+                names[name.casefold()] = definition
         if len(names) > 128:
             raise ValueError('source constant query field bound')
         definitions = tuple(names.values())
         columns = tuple(_Column(d.name, None, d.kind, d.qualifiers, explicit_alias=True) for d in definitions)
         from .query_packages import _Table
-        from .relational_queries import _Plan
+        from .relational_queries import _Plan, snapshot_parameters
+        from .query_sources import _UnionPlan
         # Bind and type-check all expressions before reading values. The same
         # closed plan later consumes precisely one immutable constants snapshot.
-        translated = replace(query, temporary=False, external=True)
-        parameters = dict(self._parameters)
-        tables = {query.catalog.casefold(): _Table(columns, ())}
-        plan = _Plan(translated, self._catalogs, parameters, external_tables=tables)
+        translated = _translate(query)
+        parameters = snapshot_parameters(dict(self._parameters))
+        tables = {name: _Table(columns, ()) for name in source_names}
+        plan_type = _UnionPlan if type(query) is syntax.Union else _Plan
+        plan = plan_type(translated, self._catalogs, parameters, external_tables=tables)
         snapshot = store.get_many(tuple(d.name for d in definitions))
-        tables[query.catalog.casefold()] = _Table(columns, (tuple(snapshot[d.name.casefold()] for d in definitions),))
+        frozen = _Table(columns, (tuple(snapshot[d.name.casefold()] for d in definitions),))
+        for name in source_names:
+            tables[name] = frozen
         self._source_owner._store(caller)
         return plan.execute()
 
@@ -101,3 +119,30 @@ class SourceQueryCall:
         if values:
             raise TypeError('Query.Execute takes no arguments')
         return self.query.read(caller, batch=self.batch)
+
+
+def _local_nodes(arm):
+    """Walk one lexical SELECT, not fields belonging to its nested SELECTs."""
+    def walk(node):
+        if type(node) in (syntax.Select, syntax.Union):
+            return
+        if type(node) is tuple:
+            for child in node:
+                yield from walk(child)
+        elif is_dataclass(node):
+            yield node
+            for item in fields(node):
+                yield from walk(getattr(node, item.name))
+    for item in fields(arm):
+        yield from walk(getattr(arm, item.name))
+
+
+def _translate(node):
+    if type(node) is tuple:
+        return tuple(_translate(item) for item in node)
+    if not is_dataclass(node):
+        return node
+    changes = {item.name:_translate(getattr(node,item.name)) for item in fields(node)}
+    if type(node) in (syntax.Select, syntax.Source) and node.derived is None:
+        changes.update(temporary=False, external=True)
+    return replace(node, **changes)

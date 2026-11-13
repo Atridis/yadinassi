@@ -73,7 +73,7 @@ class SourceConstantQueryTests(unittest.TestCase):
         with self.assertRaises(BSLError):self.run_body('Q=New Query("SELECT Text FROM Constants; SELECT Text FROM Constants"); Q.Execute();')
 
     def test_join_refused(self):
-        with self.assertRaises(BSLError):self.run_body('Q=New Query("SELECT A.Text FROM Constants AS A INNER JOIN Constants AS B ON A.Text = B.Text"); Q.Execute();')
+        with self.assertRaises(BSLError):self.run_body('Q=New Query("SELECT A.Text FROM Constants AS A INNER JOIN Catalog.Items AS B ON A.Text = B.Description"); Q.Execute();')
 
     def test_query_text_never_sql(self):
         with self.assertRaises(BSLError):self.run_body('Q=New Query("DROP TABLE constant_value"); Q.Execute();')
