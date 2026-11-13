@@ -36,7 +36,8 @@ not migrate a normal database, a previous scratch format, or changed source.
 The v3 format stores all source bytes for integrity checking; this does not
 execute those bytes. Startup remains a separate explicit operation. Copying
 source files into the DB does not imply support for their metadata or services.
-No automatic configuration update is supplied. The existing `--save-source`
+No automatic configuration update is supplied. Explicit additive source updates
+are described below. The existing `--save-source`
 option can export the admitted package to a new archive; it never overwrites.
 
 Reopen requires a cleanly closed file with no journal/WAL/SHM sidecars; it does
@@ -174,3 +175,38 @@ source/schema binding не совпадёт: такую старую scratch-б�
 [Официальные рекомендации о ValueStorage](https://kb.1ci.com/1C_Enterprise_Platform/FAQ/Development/Standards/Values_and_types/)
 подтверждают назначение API, но не формат этого хранилища. Native parity и
 совместимость с proprietary сериализацией 1С здесь не заявляются.
+
+## Явное совместимое обновление исходников scratch-базы
+
+```sh
+yadinassi --configuration-source changed-source.zip --update-source-scratch-db scratch.sqlite
+```
+
+Это отдельная операция без запуска BSL, создания UI или применения обычной базы.
+Она сохраняет значения констант при правках модулей/ресурсов и совместимом
+добавлении объявлений. После успеха новую версию можно явно запустить отдельной
+командой `--open-source-scratch-db scratch.sqlite --run-startup`.
+
+Обязательны прежний UUID конфигурации и прежние UUID, имена, виды и квалификаторы
+всех уже поддержанных констант. Удаление, переименование, замена UUID, изменение
+типа и даже расширение квалификатора отклоняются: сложной миграции здесь нет.
+XML ранее неподдержанных констант должен оставаться неизменным. Новые объявления
+допускаются, но unsupported типы от этого не получают реализацию. Новые значения
+не угадываются: инициализируется только ранее измеренный String(64) default.
+
+Сначала проверяются прежний embedded source, схема и значения. Под
+`BEGIN IMMEDIATE` эти проверки повторяются и затем одним commit заменяются
+исходники, binding и определения констант. Прежние закодированные значения не
+переписываются. Ошибка до commit откатывает **всю** замену, включая новые default
+значения. После успеха старый external source и открытые дескрипторы прежней
+версии не проходят binding-проверку. Восстановление journal/WAL, работа с чужими
+базами и молчаливое изменение старых форматов не выполняются.
+
+`--run-startup`, `--save-source` и другие режимы базы несовместимы с обновлением.
+Принятие XML не означает, что новый BSL компилируется или поддержан runtime:
+проверка запуска остаётся явным отдельным действием. Новые write policies,
+например включённая история, сохраняются в схеме и могут запретить последующие
+записи; обновление не обходит эти ограничения.
+
+Операция не заменяет резервную копию: перед намеренной сменой кода сохраняйте
+чисто закрытый scratch-файл, если нужна возможность вернуться к старой версии.

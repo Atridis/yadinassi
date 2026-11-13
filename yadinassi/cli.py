@@ -170,14 +170,18 @@ def main(argv: list[str] | None = None) -> int:
                         help='создать отдельную новую базу констант для запуска источника')
     scratch.add_argument('--open-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
                          help='открыть сохранённую базу источника; XML/архив необязателен, без миграции')
+    scratch.add_argument('--update-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
+                         help='явно обновить источник scratch-базы без запуска кода; только совместимое добавление')
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
-    if args.configuration_source is not None or args.open_source_scratch_db is not None:
+    if args.configuration_source is not None or args.open_source_scratch_db is not None or args.update_source_scratch_db is not None:
         if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
                 args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
                 args.numbering_policy, args.inactive, args.report_json)):
             parser.error('--configuration-source не совмещается с режимами базы/профилей/BSL')
+        if args.update_source_scratch_db is not None and (args.configuration_source is None or args.run_startup or args.save_source):
+            parser.error('--update-source-scratch-db требует --configuration-source и отдельный запуск; --run-startup/--save-source несовместимы')
         if args.source_compatibility_target is not None and not args.run_startup:
             parser.error('--source-compatibility-target требует --run-startup')
         if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
@@ -192,6 +196,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 path = Path(args.configuration_source)
                 source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
+            if args.update_source_scratch_db is not None:
+                from .source_constant_store import SourceConstantStore
+                result = SourceConstantStore.update_source(args.update_source_scratch_db, source)
+                print('Источник scratch-базы обновлён; сохранено значений: ' + str(result['preserved_values']) + '; добавлено констант: ' + str(result['added_constants']) + '; SHA256: ' + result['source_sha256'] + '. Код не запускался.')
+                return 0
             if args.save_source:
                 save_source_archive(args.save_source, source)
             print('Источник загружен: ' + source.name + '; файлов: ' + str(len(source.files))

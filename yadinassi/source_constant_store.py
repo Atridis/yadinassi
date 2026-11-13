@@ -250,6 +250,89 @@ class SourceConstantStore:
                 connection.close()
 
     @classmethod
+    def update_source(cls, path, source):
+        """Explicit additive source replacement; no BSL execution or type migration.
+
+        Read/validate the previous embedded source and values, then repeat all
+        integrity checks under a write reservation before atomically replacing
+        source/binding/schema. Existing constant identity and value shape remain.
+        """
+        # Validate the new admitted source before opening a writable DB handle.
+        digest = source_digest(source)
+        definitions, unsupported, names = source_constant_definitions(source)
+        previous = cls.load_source(path)
+        if source.config_uuid != previous.config_uuid:
+            raise ValueError('source update configuration identity mismatch')
+        old_definitions, old_unsupported, old_names = source_constant_definitions(previous)
+        old_meta = {item.name: item.identity for item in previous.metadata if item.family == 'Constant'}
+        new_meta = {item.name: item.identity for item in source.metadata if item.family == 'Constant'}
+        if any(new_meta.get(name) != identity for name, identity in old_meta.items()):
+            raise ValueError('source update cannot remove, rename or replace constants')
+        old_supported = {item.name: item for item in old_definitions}
+        new_supported = {item.name: item for item in definitions}
+        for name, old in old_supported.items():
+            new = new_supported.get(name)
+            if new is None or (new.identity, new.kind, new.qualifiers) != (old.identity, old.kind, old.qualifiers):
+                raise ValueError('source update constant type/qualifier migration unsupported: ' + name)
+        old_files = {item.path: item.content for item in previous.files}
+        new_files = {item.path: item.content for item in source.files}
+        for name in old_names:
+            if name.casefold() in old_unsupported:
+                key = 'Constants/' + name + '.xml'
+                if old_files[key] != new_files.get(key):
+                    raise ValueError('source update unsupported constant declaration changed: ' + name)
+        rows = tuple(sorted((str(item.identity), item.name, _json([
+            item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+        schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
+        binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
+        known = {str(item.identity): item for item in definitions}
+        old_ids = {str(item.identity) for item in old_definitions}
+        initial = [(str(item.identity), _encode('', item)) for item in definitions
+                   if str(item.identity) not in old_ids and item.kind == 'string'
+                   and not item.write_blockers and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
+        store = cls.reopen(path, previous)
+        connection = store._connection
+        try:
+            connection.execute('PRAGMA synchronous=FULL')
+            connection.execute('BEGIN IMMEDIATE')
+            store._open()
+            for table in ('source_extension_registry', 'source_extension_issues'):
+                if connection.execute('SELECT 1 FROM ' + table + ' LIMIT 1').fetchone() is not None:
+                    raise ValueError('source update populated extensions unsupported')
+            values = connection.execute('SELECT identity,value_json FROM constant_value LIMIT ?', (len(old_definitions) + 1,)).fetchall()
+            if len(values) > len(old_definitions) or any(identity not in old_ids for identity, _ in values):
+                raise ValueError('source update existing value inventory integrity')
+            for identity, raw in values:
+                _decode(raw, known[identity])
+            connection.execute('DELETE FROM source_file')
+            connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
+            connection.executemany('INSERT INTO constant_schema VALUES(?,?,?) ON CONFLICT(identity) DO UPDATE SET name=excluded.name,definition=excluded.definition', rows)
+            connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
+            connection.execute('UPDATE source_binding SET profile=?,source_sha256=?,configuration_uuid=?,schema_sha256=? WHERE singleton=1', binding)
+            # No handler or arbitrary code participates in updating the source.
+            _verify_source(connection, source)
+            if (connection.execute('SELECT profile,source_sha256,configuration_uuid,schema_sha256 FROM source_binding').fetchall() != [binding]
+                    or tuple(connection.execute('SELECT identity,name,definition FROM constant_schema ORDER BY identity')) != rows
+                    or _schema(connection) != store._schema
+                    or _file_identity(store.path) != store._identity
+                    or connection.execute('PRAGMA foreign_key_check').fetchone() is not None):
+                raise ValueError('source update final integrity')
+            page_bytes = connection.execute('PRAGMA page_count').fetchone()[0] * connection.execute('PRAGMA page_size').fetchone()[0]
+            if page_bytes > _MAX_DATABASE_BYTES:
+                raise ValueError('source update database size bound')
+            connection.execute('COMMIT')
+            return {'source_sha256': digest, 'preserved_values': len(values),
+                    'added_constants': len(names) - len(old_names)}
+        except BaseException as error:
+            if connection.in_transaction:
+                connection.execute('ROLLBACK')
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source update storage failure') from None
+            raise
+        finally:
+            store.close()
+
+    @classmethod
     def reopen(cls, path, source):
         """Open only an unchanged source package's explicitly created scratch DB.
 
