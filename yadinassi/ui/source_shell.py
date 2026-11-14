@@ -104,10 +104,10 @@ def main(argv=None):
             from .source_workspace import SourceWorkspace, SourceWorkspaceHandler
             application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
                                             compilation_profile=args.preprocessor_profile)
-            if not application.start():
+            shell = SourceWorkspace.start(application)
+            if shell is None:
                 print('Запуск источника отменён; рабочее пространство не открыто.', file=sys.stderr)
                 return 1
-            shell = SourceWorkspace(application)
             server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
             print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
         elif args.source_form:
