@@ -83,7 +83,7 @@ from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
-    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, NULL, Reference as _Reference,
+    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, InterpreterCall, NULL, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
 
@@ -1230,6 +1230,9 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        interpreter_call = function.function if type(function.function) is InterpreterCall else None
+        if interpreter_call is not None:
+            interpreter_call.prepare(self, len(node.arguments))
         from .reusable_values import refresh_reusable_marker
         refresh_call = function.function is refresh_reusable_marker
         if refresh_call:
@@ -1335,28 +1338,12 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        from .source_constants_runtime import ConstantCall, ConstantSetCall
+        if interpreter_call is not None:
+            return (yield from interpreter_call.invoke(self, values))
         from .source_extensions import ExtensionCall
         from .source_host_session import SourceSessionCall
         from .source_transactions import SourceTransactionCall
-        from .source_constant_managers import ValueManagerCall, write_values
-        marker = function.function
-        if type(marker) is ValueManagerCall:
-            return (yield from marker.invoke(self, values))
-        if type(marker) is ConstantCall and marker.writing:
-            marker.owner._store(self)
-            if len(values) != 1:
-                raise TypeError('invalid constant method argument count')
-            return (yield from write_values(self, marker.owner, {marker.name: values[0]}))
-        if type(marker) is ConstantSetCall and marker.operation == 'write':
-            receiver = marker.receiver
-            receiver.owner._store(self)
-            if values:
-                raise TypeError('constant set Read/Write take no arguments')
-            if len(receiver.values) != len(receiver.keys):
-                raise ValueError('all selected constant fields must be assigned or read before Write')
-            return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceTemplateCall, temporary_storage.SourceTemporaryCall):
+        if type(function.function) in (ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceTemplateCall, temporary_storage.SourceTemporaryCall):
             return function.function.invoke(self, values)
         return function(*values)
 

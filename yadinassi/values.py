@@ -618,6 +618,44 @@ class Reference:
     set: Callable[[object], None]
 
 
+@dataclass(frozen=True, slots=True)
+class InterpreterCall:
+    """Explicit internal capability, never inferred from a callable's attributes.
+
+    Only exact descriptors receive an executing interpreter. The first bounded
+    producers are source constants; ordinary HostFunction callables are unchanged.
+    """
+    minimum_arguments: int
+    maximum_arguments: int
+    authorize: Callable
+    dispatch: Callable
+
+    def __post_init__(self):
+        if (type(self.minimum_arguments) is not int or type(self.maximum_arguments) is not int
+                or not 0 <= self.minimum_arguments <= self.maximum_arguments):
+            raise TypeError('invalid interpreter-call argument bounds')
+        if not callable(self.authorize) or not callable(self.dispatch):
+            raise TypeError('interpreter-call callbacks must be explicit callables')
+
+    def __call__(self, *arguments):
+        raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
+
+    def prepare(self, caller, count):
+        self.authorize(caller)
+        if not self.minimum_arguments <= count <= self.maximum_arguments:
+            raise TypeError('invalid interpreter-aware argument count')
+
+    def invoke(self, caller, values):
+        # Arguments can close or otherwise invalidate the owner. Admission is
+        # repeated against the actual caller immediately before dispatch.
+        self.prepare(caller, len(values))
+        from types import GeneratorType
+        operation = self.dispatch(caller, values)
+        if type(operation) is not GeneratorType:
+            raise TypeError('interpreter-aware dispatch requires a generator')
+        return (yield from operation)
+
+
 class HostFunction:
     """Only explicitly registered callables may be invoked from BSL."""
 

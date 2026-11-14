@@ -1,6 +1,6 @@
 """Source-owned scalar constant managers, without catalog/profile grants."""
 import weakref
-from .values import BSLObject, HostFunction
+from .values import BSLObject, HostFunction, InterpreterCall
 from .safe_mode import require_external_access
 
 
@@ -26,7 +26,7 @@ class SourceConstants(BSLObject):
 
     def get_member(self, name):
         if name.casefold() in ('createset', 'создатьнабор'):
-            return HostFunction(name, ConstantSetCall(self, 'create'))
+            return HostFunction(name, ConstantSetCall(self, 'create').descriptor())
         raise ValueError('constant manager property requires interpreter access')
 
     def members(self, caller):
@@ -53,11 +53,11 @@ class SourceConstant(BSLObject):
     def get_member(self, name):
         if name.casefold() in ('createvaluemanager', 'создатьменеджерзначения'):
             from .source_constant_managers import ValueManagerCall
-            return HostFunction(name, ValueManagerCall(self, 'create'))
+            return HostFunction(name, ValueManagerCall(self, 'create').descriptor())
         if name.casefold() in ('get', 'получить'):
-            return HostFunction(name, ConstantCall(self._owner, self._name, False))
+            return HostFunction(name, ConstantCall(self._owner, self._name, False).descriptor())
         if name.casefold() in ('set', 'установить'):
-            return HostFunction(name, ConstantCall(self._owner, self._name, True), returns_value=False)
+            return HostFunction(name, ConstantCall(self._owner, self._name, True).descriptor(), returns_value=False)
         raise ValueError('unsupported constant manager member: ' + name)
 
 
@@ -68,6 +68,24 @@ class ConstantCall:
 
     def __call__(self, *args):
         raise ValueError('constant methods require an interpreter invocation')
+
+    def authorize(self, caller):
+        if type(self.writing) is not bool:
+            raise ValueError('invalid constant operation')
+        return self.owner._store(caller)
+
+    def descriptor(self):
+        expected = 1 if self.writing else 0
+        return InterpreterCall(expected, expected, self.authorize, self.dispatch)
+
+    def dispatch(self, caller, values):
+        self.authorize(caller)
+        if self.writing:
+            from .source_constant_managers import write_values
+            if len(values) != 1:
+                raise TypeError('invalid constant method argument count')
+            return (yield from write_values(caller, self.owner, {self.name: values[0]}))
+        return self.invoke(caller, values)
 
     def invoke(self, caller, values):
         store = self.owner._store(caller)
@@ -90,7 +108,7 @@ class SourceConstantSet(BSLObject):
         operation = aliases.get(name.casefold())
         if operation is None:
             raise ValueError('constant set property requires interpreter access')
-        return HostFunction(name, ConstantSetCall(self, operation), returns_value=False)
+        return HostFunction(name, ConstantSetCall(self, operation).descriptor(), returns_value=False)
 
     def read_property(self, caller, name):
         self.owner._store(caller)
@@ -117,6 +135,37 @@ class ConstantSetCall:
 
     def __call__(self, *args):
         raise ValueError('constant set methods require an interpreter invocation')
+
+    def authorize(self, caller):
+        if self.operation not in ('create', 'read', 'write'):
+            raise ValueError('invalid constant set operation')
+        receiver = self.receiver
+        if self.operation == 'create':
+            if type(receiver) is not SourceConstants:
+                raise TypeError('CreateSet requires a constant collection')
+            owner = receiver
+        else:
+            if type(receiver) is not SourceConstantSet:
+                raise TypeError('constant set operation requires a set')
+            owner = receiver.owner
+        return owner._store(caller)
+
+    def descriptor(self):
+        return InterpreterCall(0, 1 if self.operation == 'create' else 0,
+                               self.authorize, self.dispatch)
+
+    def dispatch(self, caller, values):
+        self.authorize(caller)
+        if self.operation == 'write':
+            from .source_constant_managers import write_values
+            receiver = self.receiver
+            if values:
+                raise TypeError('constant set Read/Write take no arguments')
+            if len(receiver.values) != len(receiver.keys):
+                raise ValueError('all selected constant fields must be assigned or read before Write')
+            return (yield from write_values(caller, receiver.owner,
+                {name: receiver.values[name.casefold()] for name in receiver.names}))
+        return self.invoke(caller, values)
 
     def invoke(self, caller, values):
         receiver = self.receiver
