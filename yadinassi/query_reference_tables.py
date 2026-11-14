@@ -11,6 +11,7 @@ from uuid import UUID
 from .catalog_types import BSLCatalogReference
 from .document_types import BSLDocumentReference
 from .values import NULL, BSLType
+from .source_query_references import SourceBinding
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -76,7 +77,7 @@ class _Binding:
 def bind_column(column, catalogs, documents):
     """Resolve declared metadata, never a row UUID or existence lookup."""
     if column.reference_binding is not None:
-        if type(column.reference_binding) is not _Binding:
+        if type(column.reference_binding) not in (_Binding, SourceBinding):
             raise TypeError('Invalid reference report binding')
         column.reference_binding.require_context(catalogs, documents)
         return column
@@ -106,7 +107,7 @@ def description_binding(description):
         raise TypeError('Invalid reference query column description')
     binding = description._query_reference
     from .query_enum_tables import _EnumBinding
-    if (type(binding) not in (_Binding, _EnumBinding)
+    if (type(binding) not in (_Binding, _EnumBinding, SourceBinding)
             or type(description.types) is not tuple or len(description.types) != 2
             or description.types[0] is not binding.value_type or description.types[1] is not BSLType.NULL
             or description._query_scalar is not None):
@@ -170,7 +171,7 @@ def input_bindings(tables, catalogs, documents):
                     raise TypeError('Temporary reference column lacks an owned binding')
                 continue
             from .query_enum_tables import _EnumBinding
-            if type(binding) not in (_Binding, _EnumBinding):
+            if type(binding) not in (_Binding, _EnumBinding, SourceBinding):
                 raise TypeError('Invalid temporary reference binding')
             binding.require_context(catalogs, documents)
             if id(binding) not in seen:
@@ -183,7 +184,14 @@ def input_bindings(tables, catalogs, documents):
 def validate_view(bindings, view):
     from .catalog_backend import BackendError
     for binding in bindings:
+        from .query_enum_tables import _EnumBinding
+        if type(binding) not in (_Binding, _EnumBinding, SourceBinding):
+            raise TypeError('Invalid reference view binding')
         binding.require_owner()
+        if type(binding) is SourceBinding:
+            # The source adapter owns record snapshot acquisition; this is
+            # only the detached canonical ownership check, never a legacy lease.
+            continue
         from .query_enum_tables import _EnumBinding
         if type(binding) is _EnumBinding:
             binding.storage._live()

@@ -24,3 +24,13 @@ class StagedTicket:
 class TransactionOutcome:
     ticket: StagedTicket
     result: object
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionAcknowledgement:
+    """Duplicate root payload compacted; exact child recovery/identity retained."""
+    operation_id: UUID
+    version: int
+    children: int
+    original_bytes: int
+    compact_bytes: int

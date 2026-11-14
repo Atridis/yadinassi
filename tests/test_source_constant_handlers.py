@@ -105,9 +105,9 @@ class SourceConstantHandlerTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError,'ambiguous'):app.start()
         self.assertEqual(self.count(),0)
 
-    def test_module_initialization_statements_refused(self):
-        app=self.app('Constants.Text.Set("value");','Message("init");')
-        with self.assertRaisesRegex(BSLError,'initialization statements'):app.start()
+    def test_module_initialization_exception_rolls_back(self):
+        app=self.app('Constants.Text.Set("value");','Raise "init failed";')
+        with self.assertRaisesRegex(BSLError,'init failed'):app.start()
         self.assertEqual(self.count(),0)
 
     def test_fillcheck_handler_not_silently_skipped(self):
