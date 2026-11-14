@@ -22,6 +22,9 @@ class SourceConstants(BSLObject):
         if app.constant_store is None:
             raise ValueError('constants require an explicitly created source scratch database')
         require_external_access('source constants database')
+        from .source_document_runtime import _active_write as document_write, _constructing as document_construction
+        if (document_write.get() or document_construction.get()) and not app.constant_store.transaction_active:
+            raise ValueError('document lifecycle transaction aborted; constants access refused')
         return app.constant_store
 
     def get_member(self, name):
