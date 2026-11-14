@@ -5,16 +5,26 @@ server CommonModules, and the managed application module. It is a local trusted
 application runtime, not a browser BSL evaluator, a remote multi-user server, or a
 claim of native window/lifecycle parity.
 
+## Current main demo
+
+Use the single `examples/demo` database and the regular UI entry:
+
 ```console
-python -m yadinassi.ui.configuration_app examples/configuration-application-host --application-host --open-browser
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
-The example starts once after the client/server source handshake, calls
-`Service.Add(7)` in the owned server process, and opens Welcome through the
-client CommonModule `Tools`. Its Details command makes another real server call
-and opens an independent form. Form close releases only that form, not the
-application's other forms or shared scheduler. Close every form, then choose
-**Close application** to run ordinary application exit.
+The managed startup calls client `DemoTools`, which calls `DemoService` in the
+owned server runtime. It announces the application once; it does not open a
+record or create data. Open **Черновик операции** and **Подготовить изменения**
+to exercise owner/child forms in the same application. Cancel the child, close
+the owner and then close the application. See [main demo lifecycle](main-demo-lifecycle.md).
+
+The old `configuration-application-host` source currently remains only for
+browser ownership/grace regression acquisition while those scenarios are being
+transferred. It is not a second recommended user demo. The following section
+explains that historical explicit host profile, not a new limitation on the
+main demo's documents, original catalogs or reports.
 
 ## Execution and data boundaries
 

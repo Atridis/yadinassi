@@ -247,9 +247,11 @@ from yadinassi.sqlite_documents import DocumentView
 from yadinassi.sqlite_transactions import _accumulation_port
 from yadinassi.accumulation_movements import AccumulationDirection
 from yadinassi.enum_storage_values import EnumKey
-root=Path(sys.argv[2]); source=Path(sys.argv[3]); database=root/'stock.sqlite'
+root=Path(sys.argv[2]); database=root/'stock.sqlite'
+sys.path.insert(0,str(Path.cwd()/'tests'))
+from inventory_enum_application_fixture import source as historical_source
 try:
- files=read_configuration_directory(source)
+ files=historical_source()
  config=import_inventory_application(files,inventory_runtime=PROFILE)
  if sys.argv[1]=='create':
   assert not database.exists()
@@ -339,7 +341,7 @@ function inventoryFixture(operation){
   assert.ok(['create','audit','audit-picked'].includes(operation),'fixture_mode');
   checkpoint(operation==='create'?'fixture_create':'fixture_audit');
   let raw;
-  try{raw=execFileSync(python,['-c',fixtureCode,operation,owned,path.join(repo,'examples/configuration-inventory-enum-application')],
+  try{raw=execFileSync(python,['-c',fixtureCode,operation,owned],
     {cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','ignore']});}
   catch(error){throw Error(error?.code==='ETIMEDOUT'?'owned_fixture_timeout':'owned_fixture_failed');}
   return JSON.parse(raw);
@@ -544,12 +546,15 @@ async function screenshot(name){
   checkpoint('screenshot_capture');await page.screenshot({path:path.join(output,name),animations:'disabled',timeout:remaining(10000)});
 }
 async function sourceBinding(){
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-inventory-enum-application','tests/browser_ui',
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-inventory-application','scripts/inventory_enum_behavior/runtime_source',
+    'tests/inventory_application_fixture.py','tests/inventory_enum_application_fixture.py','tests/browser_ui',
     'tests/test_inventory_enum_application_profile.py','tests/test_inventory_enum_application_reports.py',
     'tests/test_inventory_enum_browser_qa_contract.py','docs/inventory-enum-browser-qa.md').split('\0').filter(Boolean);
   for(const required of ['yadinassi/inventory_application_reports.py','yadinassi/inventory_host_operations.py',
     'yadinassi/sqlite_launch.py','yadinassi/ui/database_launch.py','frontend/configuration/src/reports.mjs',
-    'examples/configuration-inventory-enum-application/InventoryApplication.xml',
+    'tests/inventory_enum_application_fixture.py',
+    'examples/configuration-inventory-application/InventoryApplication.xml',
+    'scripts/inventory_enum_behavior/runtime_source/Configuration.xml',
     'tests/browser_ui/inventory_enum_application_browser_qa.mjs'])
     assert.ok(names.includes(required),'source_manifest_missing');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
