@@ -2444,10 +2444,23 @@ class Interpreter:
         end = require_number((yield from self._visit(node.end)))
         name = node.name.casefold()
         self.set_variable(name, start)
-        while require_number(self.visit_Name(ast.Name(node.token, name))) <= end:
+        step = Decimal(1)
+        # This descriptor carries syntax only, never a counter value or frame.
+        # Hooks still receive fresh descriptors just as before. Check on each
+        # read: a host callback can install/remove an instance or class hook.
+        counter = ast.Name(node.token, name)
+        while True:
+            descriptor = (counter if type(self) is Interpreter
+                          and Interpreter.visit_Name is _FOR_DEFAULT_NAME_READER
+                          and 'visit_Name' not in self.__dict__ else ast.Name(node.token, name))
+            if not require_number(self.visit_Name(descriptor)) <= end:
+                break
             if not (yield from self.iteration(node.body)):
                 break
-            self.set_variable(name, require_number(self.visit_Name(ast.Name(node.token, name))) + Decimal(1))
+            descriptor = (counter if type(self) is Interpreter
+                          and Interpreter.visit_Name is _FOR_DEFAULT_NAME_READER
+                          and 'visit_Name' not in self.__dict__ else ast.Name(node.token, name))
+            self.set_variable(name, require_number(self.visit_Name(descriptor)) + step)
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = (yield from self._visit(node.collection))
@@ -2485,6 +2498,10 @@ class Interpreter:
 
     def visit_Continue(self, node: ast.Continue) -> None:
         raise _Continue
+
+
+# Identity guard only, not a cached bound method: custom visit_Name hooks remain dynamic.
+_FOR_DEFAULT_NAME_READER = Interpreter.visit_Name
 
 
 @lru_cache(maxsize=1)

@@ -61,3 +61,29 @@ Use dependency-complete Python (current shared venv /tmp/track320-venv/bin/pytho
 `python benchmark.py --repo CHECKOUT --iterations 100000 --repeats 3 > baseline.json`
 `python benchmark.py --repo CHECKOUT --iterations 10000 --repeats 1 --profile > profile.json`
 Raw JSON/pstats are alongside this plan. This is a research harness, not yet checked in or a full CI result. For archives without .git pass --git-repo SOURCE_REPO --revision EXACT_SHA; ensure archive matches that revision.
+
+## P0/P1 implementation checkpoint
+
+The checked-in harness is `benchmarks/for_loop.py`. Example:
+
+```sh
+python benchmarks/for_loop.py --repo CANDIDATE --baseline BASELINE --iterations 100000 --repeats 5 > paired.json
+```
+
+All eight module/routine cases use fresh subprocesses with alternating paired
+revision order, one warmup and one measured execution per sample. JSON preserves
+raw measurements, result checks, parse time, revision/tree/dirty state, Python,
+platform and installed dependency versions. It does not infer a native version
+or compare source execution with packaged binaries. Use `--iterations 10000000`
+for the user-sized workload; arithmetic must produce `149999945000000`.
+Do not edit either checkout during a measurement run. No wall-clock test gates.
+
+The first runtime slice hoists Decimal(1) and reuses only the internal For counter
+syntax descriptor on the exact base Interpreter with its original Name handler.
+Every read still dispatches through self.visit_Name, every write through
+self.set_variable, and the counter is reread after the body. Per-read guards
+notice class/instance hooks installed during callbacks; subclasses retain fresh
+Name descriptors. No body elision, local-variable/value caching, bound-method
+caching or altered budget accounting is introduced. Existing empty-loop _visit
+accounting remains For + bounds, not one charge per iteration. Fixing that gap
+would be a separately reviewed semantic change, not hidden in this speedup.
