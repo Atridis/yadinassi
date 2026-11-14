@@ -67,3 +67,28 @@ Before enabling deletion, an explicit retention protocol must provide:
 No runtime cleanup is enabled by this document. Introducing an unversioned marker
 into existing canonical receipt JSON would silently change existing resolver and
 schema contracts. Preserve the receipts instead of disguising that as a safe GC.
+
+### Disposable-database counterexamples
+
+`tests/test_receipt_retention_frontier.py` exercises four current-format cases
+using a newly created temporary posting database for each test. It never deletes
+receipts from an existing user database:
+
+* Even `accepted=True` retains independent root and document-child UUID guards.
+* Deleting only the document child makes root resolution fail `integrity`, while
+  opening a new unit of work under that child UUID becomes possible. Retaining
+  only a root tombstone therefore does not preserve the existing child-ID guard.
+* Deleting only the root changes resolution of a known committed operation to
+  `None` and admits that root UUID again. Child receipts do not repair this.
+* Replacing the existing payload with a compact unversioned acknowledgement
+  object fails the old resolver's contract, though its root-ID guard remains.
+
+These are counterexamples to proposed deletion shortcuts, not a GC feature or
+an endorsement of the deliberately corrupted states. A future explicit retention
+profile must replace these negative demonstrations with versioned acknowledged
+resolution assertions. It must retain enough identity tombstones to deny reuse
+of both roots and children. Exact historical outcome recovery cannot be promised
+once those outcomes are discarded; the new acknowledged result must be explicit,
+not silently mapped to absence. Fixed-size tombstones can bound retained payload
+per operation but do not bound the number of operation identities. A retention
+horizon would itself require a different, explicit operation-ID lifetime contract.
