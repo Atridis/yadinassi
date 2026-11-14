@@ -186,7 +186,12 @@ class Interpreter:
                  database_context: SQLiteDBContext | None = None,
                  compilation_profile: str = "standalone",
                  user_message_sink: Callable | None = None,
-                 family_owner: "Interpreter | None" = None):
+                 family_owner: "Interpreter | None" = None,
+                 execution_backend: str = "interpreter"):
+        if execution_backend not in ("interpreter", "hybrid"):
+            raise ValueError("execution_backend must be interpreter or hybrid")
+        self._execution_backend = execution_backend
+        self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
         self._compilation_profile = validate_compilation_profile(compilation_profile)
         self._native_target = validate_native_target(native_target)
         if database_context is not None:
@@ -718,6 +723,14 @@ class Interpreter:
             raise ValueError('Transaction control is unavailable in this activation')
         from .database_transactions import rollback
         rollback(self._transaction_backend())
+
+    @property
+    def execution_backend(self):
+        return self._execution_backend
+
+    @property
+    def execution_backend_stats(self):
+        return dict(self._hybrid_stats)
 
     def execute(self, text: str, source: str = "<строка>") -> object:
         return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
@@ -2320,6 +2333,10 @@ class Interpreter:
         return True
 
     def visit_For(self, node: ast.For) -> None:
+        if self._execution_backend == "hybrid":
+            from .hybrid_backend import execute_for
+            if execute_for(self, node):
+                return
         start = require_number((yield from self._visit(node.start)))
         end = require_number((yield from self._visit(node.end)))
         name = node.name.casefold()
@@ -2358,3 +2375,11 @@ class Interpreter:
 
     def visit_Continue(self, node: ast.Continue) -> None:
         raise _Continue
+
+
+# Fail closed when embedders instrument dispatch after class definition. These
+# identities are admission guards, never authority or caller state caches.
+_HYBRID_RUNTIME_HOOKS = {name: Interpreter.__dict__[name] for name in (
+    '_visit', 'visit_For', 'visit_Name', 'set_variable', 'block', 'iteration',
+    'visit_Assign', 'visit_Binary', 'visit_Unary', 'visit_Literal', 'visit_Group',
+    'locals', '_has_module_context', '_eval_depth')}
