@@ -16,6 +16,14 @@ from yadinassi.configuration_profile_import import prepare_files, create_prepare
 
 
 class InventoryEnumApplicationProfileTests(unittest.TestCase):
+    def test_generated_historical_source_retains_exact_deleted_example_bytes(self):
+        from hashlib import sha256
+        files = source()
+        self.assertEqual(len(files), 23)
+        digest = sha256(b''.join(path.encode() + b'\0' + sha256(raw).digest()
+                                 for path, raw in sorted(files.items()))).hexdigest()
+        self.assertEqual(digest, '48cb9fca7874cc8191017125cdd641ab1796ba43c2500be4a270d2418a165379')
+
     def config(self):
         return import_inventory_application(source(), inventory_runtime=PROFILE)
 

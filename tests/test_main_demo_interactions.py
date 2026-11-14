@@ -61,6 +61,17 @@ class OperationDraftTests(DialogFixture, unittest.TestCase):
         self.assertEqual(self.data(app, owner)['amount'], Decimal('123.45'))
         self.assertEqual(self.data(app, owner)['appliedcount'], 1)
 
+    def test_plain_child_close_returns_undefined_without_applying_or_pending_result(self):
+        app, owner, child = self.setup_draft()
+        self.event(app, child, 'AmountField', event='change', value=encode_value(Decimal('42.50')))
+        result = self.event(app, child, event='close')
+        self.assertIsNone(result['error'], result)
+        self.assertNotIn(child, app.sessions)
+        self.assertEqual(self.data(app, owner)['amount'], 0)
+        self.assertEqual(self.data(app, owner)['appliedcount'], 0)
+        self.assertEqual(self.data(app, owner)['lastoutcome'], 'Редактирование отменено')
+        self.assertEqual(self.event(app, owner, 'ConfirmButton')['dialogs'], [])
+
     def test_child_cancel_leaves_owner_unchanged(self):
         app, owner, child = self.setup_draft()
         self.event(app, child, 'AmountField', event='change', value=encode_value(Decimal(99)))

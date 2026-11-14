@@ -389,7 +389,7 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False, enum_definitions=()):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False, enum_definitions=(), compilation_profile="standalone"):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
@@ -538,7 +538,7 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
         if re.search(r'\b(?:YadinassiReferenceAction|HostReferenceAction)\b', source, re.IGNORECASE):
             raise ValueError('reserved internal reference dispatch name')
         source += '\n&AtServer\nFunction YadinassiReferenceAction()\nReturn HostReferenceAction();\nEndFunction\n'
-    program = compile_form_module(source, object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections))
+    program = compile_form_module(source, object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections), compilation_profile=compilation_profile)
     from .syntax import ast
     declared_names = set()
     for side in (program.client, program.server, program.nocontext):

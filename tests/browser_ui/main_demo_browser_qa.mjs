@@ -8,6 +8,7 @@ import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 import {childEnvironment,ownBrowserPid,commandLineArgs,sandboxCommand,sandboxStatus,sha256}
   from './support.mjs';
+import {MainDemoFilterCapture} from './main_demo_filter_capture.mjs';
 import {mainDemoLaunchOutputReader as launchOutputReader,mainDemoAllowedRequest as allowedRequest,verifyMainDemoAudit} from './main_demo_browser_support.mjs';
 const args=process.argv.slice(2);
 assert.equal(args.length,0,'invalid_arguments');
@@ -36,7 +37,7 @@ const remaining=max=>{check();return Math.max(1,Math.min(max,workDeadline-Date.n
 const killBrowser=()=>signalGroup(browserGroup,'SIGKILL');
 const abort=()=>{aborted=true;for(const identity of [hostGroup,browserGroup])try{signalGroup(identity,'SIGKILL');}catch{report.status='FAIL';report.cleanup='owned_signal_failed';}};
 const tokens=[],results=[];
-const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:3};
+const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null,scope:'main-demo-original-catalogs-documents-owned-drafts-recovery',expectedScenarios:5};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const fixture=mode=>{
   const raw=execFileSync(python,[path.join(repo,'tests/browser_ui/main_demo_fixture.py'),mode,owned],
@@ -128,7 +129,7 @@ async function main(){
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
   const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','frontend/catalog','frontend/configuration','frontend/main-demo','frontend/form','examples/demo','.github/workflows/main-demo-browser-qa.yml').split('\0').filter(Boolean);
   for(const required of ['.github/workflows/main-demo-browser-qa.yml','tests/browser_ui/main_demo_browser_qa.mjs','tests/browser_ui/main_demo_fixture.py',
-    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
+    'tests/browser_ui/support.mjs','tests/browser_ui/main_demo_filter_capture.mjs','tests/browser_ui/main_demo_browser_support.mjs','tests/browser_ui/package-lock.json',
     'frontend/catalog/src/app.jsx','frontend/main-demo/src/app.mjs','frontend/configuration/src/app.mjs'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
@@ -185,7 +186,9 @@ async function main(){
   const probe=await context.newPage();probe.setDefaultTimeout(remaining(10000));await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
   await startHost();
   let dropApply=false, dropDocument=false, dropped=0, droppedDocument=0;
-  const requests=[];
+  let resultGate=null,dropOwnedResult=false,droppedOwnedResult=0;
+  let dialogGate=null,dropDialog=false,droppedDialog=0;
+  const requests=[];const filterCapture=new MainDemoFilterCapture();
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
     'editor.hello','editor.snapshot','editor.select','editor.open','editor.event',
@@ -203,9 +206,58 @@ async function main(){
       const request=route.request().postDataJSON();
       const inner=request.method==='demo.dispatch'?request.params.request:null;
       requests.push({method:request.method,inner:inner?.method,event:inner?.params?.event,
-        action:inner?.params?.action?.action,nested:inner?.params?.request?.method});
+        action:inner?.params?.action?.action,nested:inner?.params?.request?.method,control:inner?.params?.request?.params?.control});
       report.rpcTail.push([safeMethod(request.method),safeMethod(inner?.method),safeMethod(inner?.params?.request?.method)]);
       if(report.rpcTail.length>12)report.rpcTail.shift();
+      if(await filterCapture.route(route,origin,{fetchTimeout:remaining(rpcFetchMs),bodyTimeout:remaining(rpcFetchMs),bounded}))return;
+      if(inner?.method==='application.answerDialog'&&(dialogGate||dropDialog)){
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
+        try{
+          assert.equal(response.status(),200,'dialog_answer_http');
+          const bytes=await bounded(response.body(),remaining(rpcFetchMs),'dialog_answer_body_timeout');
+          assert.ok(bytes.length<=131072,'dialog_answer_body_budget');
+          const body=JSON.parse(bytes.toString('utf8'));
+          assert.equal(body.id,request.id,'dialog_answer_outer_id');
+          assert.equal(body.result?.payload?.id,inner.id,'dialog_answer_inner_id');
+          assert.equal(body.result?.error,null,'dialog_answer_outer_error');
+          const result=body.result?.payload?.result;
+          assert.equal(result?.error,null,'dialog_answer_inner_error');
+          assert.equal(result.form?.result?.error,null,'dialog_answer_form_error');
+          const values=result.form.result.state.items;
+          const count=Number(values.find(item=>item.name==='AppliedCountField')?.value?.value);
+          const amount=Number(values.find(item=>item.name==='AmountField')?.value?.value);
+          assert.equal(count,dropDialog?2:1,'dialog_answer_count');
+          assert.equal(amount,dropDialog?33:11,'dialog_answer_amount');
+          if(dropDialog){dropDialog=false;droppedDialog++;return route.abort('failed');}
+          const gate=dialogGate;dialogGate=null;gate.arrived();
+          await bounded(gate.wait,remaining(10000),'dialog_answer_gate_timeout');
+          return await route.fulfill({response,body:bytes});
+        }finally{await response.dispose();}
+      }
+      const ownedAccept=inner?.method==='application.form'&&inner.params?.request?.method==='form.event'&&inner.params.request.params?.event==='command'&&inner.params.request.params.control==='AcceptButton';
+      if(ownedAccept&&(resultGate||dropOwnedResult)){
+        const response=await route.fetch({timeout:remaining(rpcFetchMs),maxRedirects:0,maxRetries:0});
+        assert.equal(response.status(),200,'owned_result_http');
+        const bytes=await bounded(response.body(),remaining(rpcFetchMs),'owned_result_body_timeout');
+        assert.ok(bytes.length<=131072,'owned_result_body_budget');
+        const body=JSON.parse(bytes.toString('utf8'));
+        assert.equal(body.id,request.id,'owned_result_outer_id');
+        assert.equal(body.result?.payload?.id,inner.id,'owned_result_inner_id');
+        assert.equal(body.result?.error,null,'owned_result_outer_error');
+        const result=body.result?.payload?.result;
+        assert.equal(result?.error,null,'owned_result_inner_error');
+        assert.equal(result.updates.length,1,'owned_result_update_count');
+        assert.ok(!result.state.sessions.some(session=>session.id===inner.params.session),'owned_child_not_retired');
+        const update=result.updates[0];
+        assert.equal(update.form.result.error,null,'owned_result_update_error');
+        const values=update.form.result.state.items;
+        assert.equal(values.find(item=>item.name==='LastOutcomeField')?.value?.value,'Черновик ожидает подтверждения','owned_result_not_prepared');
+        assert.equal(Number(values.find(item=>item.name==='AppliedCountField')?.value?.value),0,'owned_result_applied_early');
+        if(dropOwnedResult){dropOwnedResult=false;droppedOwnedResult++;await response.dispose();return route.abort('failed');}
+        const gate=resultGate;resultGate=null;gate.arrived();
+        await bounded(gate.wait,remaining(10000),'owned_result_delivery_gate_timeout');
+        return route.fulfill({response});
+      }
       const loseApply=dropApply&&inner?.params?.event==='referenceChoice'&&inner.params.action.action==='apply';
       const loseDocument=dropDocument&&inner?.method==='application.hello';
       if(loseApply||loseDocument){
@@ -278,12 +330,16 @@ async function main(){
   const settled=async(predicate,action)=>{const reply=replyFor(predicate);await Promise.all([reply,action()]);await idle();};
   // Observe only the existing browser response. Never dispatch a second request.
   const filterReply=async(method,action)=>{
+    const capture=filterCapture.begin(method);
+    try{
     report.filterStage='await-response';
     const waiting=replyFor(packet=>packet.method===method);
-    const [response]=await Promise.all([waiting,action()]);
+    const [response]=await Promise.all([waiting,action(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
     report.filterStage='read-response';
     const packet=response.request().postDataJSON();
-    const bytes=await bounded(response.body(),remaining(rpcFetchMs),'filter_reply_body_timeout');
+    const captured=filterCapture.consume(capture,packet.id);
+    assert.equal(captured.packet.params.request.id,packet.params.request.id,'filter_capture_consumer_inner_id');
+    const bytes=captured.bytes;
     assert.ok(bytes.length<=131072,'filter_reply_body_budget');
     report.filterStage='validate-envelope';
     const body=JSON.parse(bytes.toString('utf8'));
@@ -295,6 +351,7 @@ async function main(){
     report.filterStage='await-render-ready';
     await page.waitForFunction(()=>[...document.querySelectorAll('.configuration-catalog button')].some(b=>b.textContent==='Apply filters'&&!b.disabled),null,{timeout:remaining(rpcReplyMs)});
     return payload.result;
+    }finally{filterCapture.clear(capture);}
   };
   const formEvent=event=>packet=>packet.method==='application.form'&&packet.params.request.method==='form.event'&&packet.params.request.params.event===event;
   const commit=async(name,text)=>act('document-input:'+name,()=>settled(
@@ -407,16 +464,30 @@ async function main(){
     const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
     assert.equal(await nav.getByRole('button',{name:'Подготовка изменений',exact:true}).count(),0,'owned_child_not_navigation');
     const observed=async(method,action)=>{
-      const waiting=replyFor(packet=>packet.method===method);
-      const [response]=await Promise.all([waiting,action()]);
+      const capture=filterCapture.begin(method);
+      try{
+      report.draftStage='await-response';
+      const waiting=replyFor(packet=>packet.method===method).catch(()=>{throw Error('draft_response_wait_failed');});
+      const [response]=await Promise.all([waiting,action().catch(()=>{throw Error('draft_action_failed');}),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
+      report.draftStage='read-response';
       const packet=response.request().postDataJSON();
-      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_reply_timeout');
+      const captured=filterCapture.consume(capture,packet.id);
+      assert.equal(captured.packet.params.request.id,packet.params.request.id,'filter_capture_consumer_inner_id');
+      const bytes=captured.bytes;
       assert.ok(bytes.length<=131072,'draft_reply_budget');
-      const body=JSON.parse(bytes.toString('utf8'));
-      assert.equal(body.id,packet.id);assert.equal(body.result?.error,null);assert.equal(body.result?.state?.uncertain,false);
-      const payload=body.result.payload;assert.equal(payload?.id,packet.params.request.id);
-      assert.ok(!payload.error&&payload.result);assert.equal(payload.result.error,null);
-      await idle();return payload.result;
+      report.draftStage='validate-envelope';
+      let body;try{body=JSON.parse(bytes.toString('utf8'));}catch{throw Error('draft_reply_json');}
+      assert.equal(body.id,packet.id,'draft_outer_id');
+      assert.equal(body.result?.error,null,'draft_outer_error');
+      assert.equal(body.result?.state?.uncertain,false,'draft_uncertain');
+      const payload=body.result.payload;
+      assert.equal(payload?.id,packet.params.request.id,'draft_inner_id');
+      assert.ok(!payload.error&&payload.result,'draft_inner_error');
+      assert.equal(payload.result.error,null,'draft_form_error');
+      report.draftStage='await-idle';
+      try{await idle();}catch{throw Error('draft_idle_timeout');}
+      report.draftStage='complete';return payload.result;
+      }finally{filterCapture.clear(capture);}
     };
     const command=async(label)=>{let result;await act('draft:'+label,async()=>{result=await observed('application.form',()=>docButton(label).click());});return result;};
     const answer=async(label)=>{let result;await act('draft-answer:'+label,async()=>{result=await observed('application.answerDialog',()=>page.locator('.configuration-dialog').getByRole('button',{name:label,exact:true}).click());});return result;};
@@ -446,28 +517,162 @@ async function main(){
     await command('О черновике');ownerValues(await answer('Continue'),123.45,1);
     await command('Close form');await active().waitFor({state:'detached'});
     await act('Справочники',async()=>{
+      const capture=filterCapture.begin('demo.select');
+      try{
+      report.draftStage='switch-await-response';
       const switching=page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/rpc'&&response.status()===200&&response.request().postDataJSON().method==='demo.select'&&response.request().postDataJSON().params.surface==='catalogs',{timeout:remaining(rpcReplyMs)});
-      const [response]=await Promise.all([switching,button('Справочники').click()]);
-      const bytes=await bounded(response.body(),remaining(rpcFetchMs),'draft_switch_reply_timeout');
+      const [response]=await Promise.all([switching,button('Справочники').click(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
+      report.draftStage='switch-validate-envelope';
+      const bytes=filterCapture.consume(capture,response.request().postDataJSON().id).bytes;
       assert.ok(bytes.length<=131072,'draft_switch_reply_budget');
       const value=JSON.parse(bytes.toString('utf8'));
       assert.equal(value.jsonrpc,'2.0');assert.equal(value.id,response.request().postDataJSON().id);
       assert.equal(value.result?.error,null);assert.equal(value.result?.state?.surface,'catalogs');
       assert.equal(value.result?.state?.uncertain,false);assert.equal(value.result?.state?.canSwitch,true);
       await page.getByRole('navigation',{name:'Catalogs',exact:true}).waitFor({state:'visible'});
+      report.draftStage='switch-complete';
+      }finally{filterCapture.clear(capture);}
     });
     assert.equal(actionLog.length-start,22,'draft_action_count');
     assert.deepEqual(audit(),saved,'memory_draft_changed_database');
     report.operationDraft={keepOpenVeto:true,preparedReopened:true,childCancelPreserved:true,appliedAmount:'123.45',appliedCount:1,repeatDidNotApply:true,messageReadOnly:true,durableUnchanged:true};
   });
-  assert.equal(actionLog.length,81,'total_action_count');
+  await scenario('owned_result_delayed_delivery_independent_draft_and_loss_without_replay',async()=>{
+    const saved=audit(),start=actionLog.length;
+    await click('Документы, формы и отчёты');
+    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    const tabs=page.getByRole('navigation',{name:'Open forms',exact:true}).getByRole('button');
+    const panels=page.locator('.configuration-form-panels > section');
+    const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
+    const command=label=>settled(formEvent('command'),()=>docButton(label).click());
+    await act('recovery-open-owner-a',openOwner);
+    await act('recovery-open-child-a',()=>command('Подготовить изменения'));
+    await act('recovery-retain-raw-child-a',()=>docField('Comment').fill('  independent raw draft  '));
+    const childInput=await docField('Comment').getAttribute('id');
+    await act('recovery-inspect-paused-owner-a',()=>tabs.nth(0).click());
+    assert.equal(await docButton('Подготовить изменения').isDisabled(),true,'owned_paused_command_enabled');
+    assert.equal(await docButton('Close form').isDisabled(),true,'owned_paused_close_enabled');
+    const beforePaused=requests.length;
+    await act('recovery-paused-owner-cannot-dispatch',()=>docButton('Подготовить изменения').evaluate(node=>{node.click();node.click();}));
+    assert.equal(requests.length,beforePaused,'owned_paused_dispatched');
+    await act('recovery-return-child-a',()=>tabs.nth(1).click());
+    assert.equal(await docField('Comment').inputValue(),'  independent raw draft  ','owned_independent_draft_lost');
+    await act('recovery-open-owner-b',openOwner);
+    await act('recovery-open-child-b',()=>command('Подготовить изменения'));
+    await commit('Amount','42.50');
+    let arrived,release;const atGate=new Promise(resolve=>{arrived=resolve;}),wait=new Promise(resolve=>{release=resolve;});resultGate={arrived,wait};
+    const acceptBefore=requests.filter(request=>request.control==='AcceptButton').length;
+    await act('recovery-delayed-child-result',async()=>{
+      const reply=replyFor(formEvent('command'));
+      await docButton('Вернуть черновик').evaluate(node=>{node.click();node.click();});
+      try{
+        await bounded(atGate,remaining(10000),'owned_result_gate_not_reached');
+        assert.equal(await panels.count(),4,'owned_result_retired_before_delivery');
+        assert.equal(await docButton('Вернуть черновик').isDisabled(),true,'owned_result_busy_enabled');
+      }finally{release();}
+      await reply;await idle();
+    });
+    assert.equal(requests.filter(request=>request.control==='AcceptButton').length,acceptBefore+1,'owned_result_duplicate_accept');
+    assert.equal(await panels.count(),3,'owned_result_not_retired_after_delivery');
+    await act('recovery-reopen-prepared-child-b',()=>command('Подготовить изменения'));
+    assert.equal(await docField('Amount').inputValue(),'42.50','owned_result_reopen_value');
+    const independent=page.locator('[id="'+childInput+'"]');
+    assert.equal(await independent.inputValue(),'  independent raw draft  ','owned_independent_draft_lost');
+    dropOwnedResult=true;
+    await act('recovery-lose-confirmed-child-result',()=>docButton('Вернуть черновик').click());
+    await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
+    assert.equal(droppedOwnedResult,1,'owned_result_loss_not_observed');
+    const afterLoss=requests.length,acceptAfterLoss=requests.filter(request=>request.control==='AcceptButton').length;
+    await act('recovery-inspect-without-replay',()=>button('Восстановить состояние').click());
+    await idle();
+    assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'owned_result_recovery_mutated');
+    assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'owned_result_recovery_form_mutated');
+    assert.equal(requests.filter(request=>request.control==='AcceptButton').length,acceptAfterLoss,'owned_result_recovery_replayed');
+    const copy=page.locator('.draft-recovery-value');
+    assert.ok((await copy.allTextContents()).includes('CommentField:   independent raw draft  '),'owned_result_raw_copy_lost');
+    assert.equal(await independent.isDisabled(),true,'owned_result_unknown_draft_unlocked');
+    assert.deepEqual(audit(),saved,'owned_result_changed_database');
+    assert.equal(actionLog.length-start,14,'owned_result_action_count');
+    report.ownedResultRecovery={delayedCompletionOnce:true,pausedOwnerCannotDispatch:true,independentRawDraftRetained:true,confirmedCloseLost:true,noReplay:true,copyPreserved:true,durableUnchanged:true};
+  });
+  await scenario('dialog_confirmation_once_and_lost_answer_without_replay',async()=>{
+    const saved=audit(),start=actionLog.length;
+    await act('dialog-restart-owned-host',async()=>{await stopHost();await startHost();await page.goto(url);});
+    await click('Документы, формы и отчёты');
+    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    const dialog=()=>page.locator('.configuration-dialog:not([hidden])');
+    const answerButton=name=>dialog().getByRole('button',{name,exact:true});
+    const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
+    const command=label=>settled(formEvent('command'),()=>docButton(label).click());
+    const answer=label=>settled(packet=>packet.method==='application.answerDialog',()=>answerButton(label).click());
+    await act('dialog-owner-a',openOwner);
+    await act('dialog-child-a',()=>command('Подготовить изменения'));
+    await act('dialog-retain-independent-draft',()=>docField('Comment').fill('  dialog independent raw draft  '));
+    const childInput=await docField('Comment').getAttribute('id');
+    await act('dialog-owner-b',openOwner);
+    await act('dialog-child-b',()=>command('Подготовить изменения'));
+    await commit('Amount','11');
+    await act('dialog-return-first',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-first',()=>command('Применить черновик'));
+    const answersBefore=requests.filter(request=>request.inner==='application.answerDialog').length;
+    await act('dialog-escape-is-not-answer',async()=>{
+      await page.keyboard.press('Escape');assert.equal(await dialog().count(),1,'dialog_escape_closed');
+      assert.equal(await docButton('Подготовить изменения').isDisabled(),true,'dialog_owner_not_paused');
+      assert.equal(requests.filter(request=>request.inner==='application.answerDialog').length,answersBefore,'dialog_escape_answered');
+    });
+    let arrived,release;const atGate=new Promise(resolve=>{arrived=resolve;}),wait=new Promise(resolve=>{release=resolve;});
+    dialogGate={arrived,wait};
+    await act('dialog-delayed-yes-once',async()=>{
+      const reply=replyFor(packet=>packet.method==='application.answerDialog');
+      await answerButton('Yes').evaluate(node=>{node.click();node.click();});
+      try{await bounded(atGate,remaining(10000),'dialog_answer_not_received');
+        assert.equal(await answerButton('Yes').isDisabled(),true,'dialog_answer_busy_enabled');
+        assert.equal(Number(await docField('Amount').inputValue()),0,'dialog_answer_applied_before_delivery');
+      }finally{release();}
+      await reply;await idle();
+    });
+    assert.equal(requests.filter(request=>request.inner==='application.answerDialog').length,answersBefore+1,'dialog_answer_repeated');
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_first_amount');
+    const independent=page.locator('[id="'+childInput+'"]');
+    assert.equal(await independent.inputValue(),'  dialog independent raw draft  ','dialog_independent_draft_lost');
+    await act('dialog-no-repeat-without-pending',()=>command('Применить черновик'));
+    assert.equal(await dialog().count(),0,'dialog_empty_reconfirmed');
+    await act('dialog-prepare-no',()=>command('Подготовить изменения'));
+    await commit('Amount','22');
+    await act('dialog-return-no',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-no',()=>command('Применить черновик'));
+    await act('dialog-answer-no',()=>answer('No'));
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_no_applied');
+    await act('dialog-prepare-cancel',()=>command('Подготовить изменения'));
+    await commit('Amount','33');
+    await act('dialog-return-cancel',()=>command('Вернуть черновик'));
+    await act('dialog-confirm-cancel',()=>command('Применить черновик'));
+    await act('dialog-answer-cancel',()=>answer('Cancel'));
+    assert.equal(Number(await docField('Amount').inputValue()),11,'dialog_cancel_applied');
+    await act('dialog-confirm-loss',()=>command('Применить черновик'));
+    dropDialog=true;
+    await act('dialog-lose-confirmed-answer',()=>answerButton('Yes').click());
+    await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
+    assert.equal(droppedDialog,1,'dialog_loss_not_observed');
+    const afterLoss=requests.length;
+    await act('dialog-readonly-inspection',()=>button('Восстановить состояние').click());await idle();
+    assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'dialog_recovery_mutated');
+    assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'dialog_recovery_form_mutated');
+    assert.ok((await page.locator('.draft-recovery-value').allTextContents()).includes('CommentField:   dialog independent raw draft  '),'dialog_raw_copy_lost');
+    assert.equal(await independent.isDisabled(),true,'dialog_unknown_draft_unlocked');
+    assert.deepEqual(audit(),saved,'dialog_changed_database');
+    assert.equal(actionLog.length-start,26,'dialog_action_count');
+    report.dialogRecovery={delayedAnswerOnce:true,escapeNotAnswer:true,noDiscarded:true,cancelDeferred:true,
+      confirmedAnswerLost:true,independentDraftRetained:true,copyPreserved:true,noReplay:true,durableUnchanged:true};
+  });
+  assert.equal(actionLog.length,121,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','source_changed');
   assert.equal(git('rev-parse','HEAD'),report.sourceCommit,'source_commit_changed');
   for(const [name,digest] of Object.entries(source)){check();assert.equal(sha256(await readFile(path.join(repo,name))),digest,'source_bytes_changed');}
-  assert.equal(results.length,3);report.status='PASS';report.rpcRequests=rpc;
+  assert.equal(results.length,5);report.status='PASS';report.rpcRequests=rpc;
 }
 // Reserve 20 seconds for verified bounded cleanup within the 180s total.
 const deadline=setTimeout(abort,Math.max(0,workDeadline-Date.now()));
@@ -475,6 +680,16 @@ const totalTimer=setTimeout(()=>{abort();process.exit(1);},Math.max(0,totalDeadl
 // Export only fixed codes. Assertion messages can append paths/actual values;
 // neither those details nor raw browser logs belong in the artifact.
 const safeFailureCodes=new Set([
+  'dialog_answer_http','dialog_answer_body_timeout','dialog_answer_body_budget','dialog_answer_outer_id','dialog_answer_inner_id','dialog_answer_outer_error','dialog_answer_inner_error','dialog_answer_form_error','dialog_answer_count','dialog_answer_amount','dialog_answer_gate_timeout','dialog_escape_closed','dialog_owner_not_paused','dialog_escape_answered','dialog_answer_not_received','dialog_answer_busy_enabled','dialog_answer_applied_before_delivery','dialog_answer_repeated','dialog_first_amount','dialog_independent_draft_lost','dialog_empty_reconfirmed','dialog_no_applied','dialog_cancel_applied','dialog_loss_not_observed','dialog_recovery_mutated','dialog_recovery_form_mutated','dialog_raw_copy_lost','dialog_unknown_draft_unlocked','dialog_changed_database','dialog_action_count',
+  'draft_response_wait_failed','draft_action_failed','draft_reply_timeout','draft_reply_read_failed',
+  'draft_reply_budget','draft_reply_json','draft_outer_id','draft_outer_error','draft_uncertain',
+  'draft_inner_id','draft_inner_error','draft_form_error','draft_idle_timeout',
+  'filter_capture_pending','filter_capture_method','filter_capture_duplicate','filter_capture_request_origin',
+  'filter_capture_response_origin','filter_capture_request_id','filter_capture_http','filter_capture_json',
+  'filter_capture_outer_id','filter_capture_inner_id','filter_capture_retired','filter_capture_failed',
+  'filter_capture_cleanup','filter_capture_transport','filter_capture_timeout','filter_capture_consumed','filter_capture_consumer_id','filter_capture_consumer_inner_id',
+  'owned_result_outer_id','owned_result_inner_id','owned_result_recovery_form_mutated',
+  'owned_child_not_navigation','owned_child_not_retired','owned_independent_draft_lost','owned_paused_close_enabled','owned_paused_command_enabled','owned_paused_dispatched','owned_result_action_count','owned_result_applied_early','owned_result_body_budget','owned_result_body_timeout','owned_result_busy_enabled','owned_result_changed_database','owned_result_delayed_delivery_independent_draft_and_loss_without_replay','owned_result_delivery_gate_timeout','owned_result_duplicate_accept','owned_result_gate_not_reached','owned_result_http','owned_result_inner_error','owned_result_loss_not_observed','owned_result_not_prepared','owned_result_not_retired_after_delivery','owned_result_outer_error','owned_result_raw_copy_lost','owned_result_recovery_mutated','owned_result_recovery_replayed','owned_result_reopen_value','owned_result_retired_before_delivery','owned_result_unknown_draft_unlocked','owned_result_update_count','owned_result_update_error',
   'filter_exact_total','filter_exact_rows','filter_exact_navigation','filter_visible_rows',
   'filter_draft_lost_on_repaint','filter_reply_body_budget','filter_reply_body_timeout',
   'socket_path_too_long','unexpected_launch_children','browser_not_direct_child','browser_process_group_not_owned',
@@ -521,4 +736,4 @@ finally{
   assert.ok((await readdir(output)).every(name=>['result.json','manifest.json','list.png','editor.png','narrow.png','choice.png'].includes(name)));
 }
 clearTimeout(totalTimer);
-console.log(JSON.stringify({status:report.status,completed:results.length,total:3,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;
+console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure}));if(failure||report.status!=='PASS')process.exitCode=1;

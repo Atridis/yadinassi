@@ -66,8 +66,6 @@ class EnumApplicationTests(unittest.TestCase):
         self.assertEqual(report['rows'],[])
 
     def test_summary_projection_preserves_schema_bounds(self):
-        example=Path(__file__).resolve().parents[1]/"examples/configuration-inventory-enum-application"
-        self.assertEqual({p.relative_to(example).as_posix():p.read_bytes() for p in example.rglob("*") if p.is_file()},source())
         from dataclasses import replace
         from yadinassi.ui.catalog_view import CatalogRepository
         from yadinassi.ui.protocol import UIError

@@ -1,19 +1,15 @@
-// Read-only report over an already populated owned SQLite document database.
-// Required schema: Document.Orders with Amount, Category (Catalog.Categories),
-// and Lines.Amount. Categories has Description. This script creates no data.
-// The authored test fixture is tests/test_document_queries.py: report_files().
+// Read-only report over receipts in the single examples/demo configuration.
+// Saved, non-deleted receipts with lines, grouped by warehouse. No data is created.
 // Host contract only: not evidence of native 1C query compatibility.
-
 Query = New Query;
-Query.Text = "SELECT Ref, SUM(Amount) AS Total INTO LineTotals FROM Document.Orders.Lines GROUP BY Ref; "
-    + "SELECT C.Description AS Customer, COUNT(*) AS Orders, SUM(D.Amount) AS Amount, SUM(L.Total) AS LineAmount "
-    + "FROM Document.Orders AS D JOIN Catalog.Categories AS C ON D.Category=C.Ref "
+Query.Text = "SELECT Ref, SUM(Amount) AS Total INTO LineTotals FROM Document.Receipt.Lines GROUP BY Ref; "
+    + "SELECT C.Description AS Warehouse, COUNT(*) AS Receipts, SUM(L.Total) AS Amount "
+    + "FROM Document.Receipt AS D JOIN Catalog.Склады AS C ON D.Warehouse=C.Ref "
     + "JOIN LineTotals AS L ON D.Ref=L.Ref "
-    + "WHERE D.DeletionMark=FALSE GROUP BY C.Description ORDER BY Customer";
+    + "WHERE D.DeletionMark=FALSE GROUP BY C.Description ORDER BY Warehouse";
 Selection = Query.Execute().Select();
 While Selection.Next() Do
-    Message(Selection.Customer);
-    Message(Selection.Orders);
+    Message(Selection.Warehouse);
+    Message(Selection.Receipts);
     Message(Selection.Amount);
-    Message(Selection.LineAmount);
 EndDo;

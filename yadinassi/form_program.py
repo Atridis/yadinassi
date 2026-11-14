@@ -5,6 +5,7 @@ from hashlib import sha256
 
 from .syntax import ast
 from .syntax.parser import parse
+from .syntax.preprocessor import validate_compilation_profile
 from .form_model import text
 from .invocation import InvocationBinding, MAX_ENDPOINTS
 
@@ -13,11 +14,12 @@ _SEAL = object()
 
 class FormSideProgram:
     """Compiler-owned AST snapshot. Every interpreter receives its own copy."""
-    __slots__ = ('side', 'source_sha256', '__nodes')
+    __slots__ = ('side', 'source_sha256', 'compilation_profile', '__nodes')
 
-    def __init__(self, side, nodes, digest, *, _seal=None):
+    def __init__(self, side, nodes, digest, *, compilation_profile="standalone", _seal=None):
         if _seal is not _SEAL:
             raise TypeError('compile_form_module must create form programs')
+        self.compilation_profile = validate_compilation_profile(compilation_profile)
         self.side = side
         self.source_sha256 = digest
         self.__nodes = deepcopy(nodes)
@@ -30,6 +32,8 @@ def admitted_program(source, *, side=None, label='<form-module>', compilation_pr
     if type(source) is FormSideProgram:
         if side is not None and source.side != side:
             raise ValueError('wrong form program side')
+        if compilation_profile is not None and source.compilation_profile != compilation_profile:
+            raise ValueError('form program compilation profile mismatch')
         return source.program()
     text(source, 65536)
     if compilation_profile is None:
@@ -102,7 +106,7 @@ def _object_projection(node, mapping, *, context='server', sections=()):
     return node
 
 
-def compile_form_module(source, *, object_fields=(), object_sections=()):
+def compile_form_module(source, *, object_fields=(), object_sections=(), compilation_profile="standalone"):
     text(source, 65536)
     if type(object_fields) is not tuple or len(object_fields) > 128:
         raise ValueError('bounded object field inventory required')
@@ -114,7 +118,7 @@ def compile_form_module(source, *, object_fields=(), object_sections=()):
         projection[member.casefold()] = 'ObjectField' + str(index)
     if type(object_sections) is not tuple or any(s.casefold() not in projection for s in object_sections):
         raise ValueError('declared object sections required')
-    nodes = parse(source, '<configuration-form>')
+    nodes = parse(source, '<configuration-form>', compilation_profile=compilation_profile)
     if len(nodes) > 256:
         raise ValueError('form declaration limit')
     sides = {'client': [], 'server': [], 'nocontext': []}
@@ -157,6 +161,6 @@ def compile_form_module(source, *, object_fields=(), object_sections=()):
     if any(len(x) > MAX_ENDPOINTS for x in (handlers, endpoints, calls)):
         raise ValueError('form endpoint limit')
     digest = sha256(source.encode('utf-8')).hexdigest()
-    return FormProgram(*(FormSideProgram(side, sides[side], digest, _seal=_SEAL)
+    return FormProgram(*(FormSideProgram(side, sides[side], digest, compilation_profile=compilation_profile, _seal=_SEAL)
         for side in ('client', 'server', 'nocontext')),
         tuple(handlers), tuple(endpoints), tuple(calls), digest)

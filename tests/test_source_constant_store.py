@@ -20,7 +20,7 @@ def configuration(extra=None):
         'Amount': '<v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>6</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers>',
         'Flag': '<v8:Type>xs:boolean</v8:Type>',
         'Date': '<v8:Type>xs:dateTime</v8:Type><v8:DateQualifiers><v8:DateFractions>DateTime</v8:DateFractions></v8:DateQualifiers>',
-        'Unsupported': '<v8:Type>v8:ValueStorage</v8:Type>',
+        'Unsupported': '<v8:Type>v8:AnyRef</v8:Type>',
     }
     config = source().files[0].content
     children = ''.join('<Constant>'+name+'</Constant>' for name in types)
@@ -47,7 +47,7 @@ class SourceConstantStoreTests(unittest.TestCase):
         store = self.store()
         with closing(sqlite3.connect(self.path)) as db, db:
             row = db.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding').fetchone()
-        self.assertEqual(row, ('source-scalar-constants-extensions-v2', store.source_sha256, str(store.config_uuid)))
+        self.assertEqual(row, ('source-scalar-constants-extensions-v3', store.source_sha256, str(store.config_uuid)))
 
     def test_existing_file_never_overwritten(self):
         self.path.write_bytes(b'owner data')

@@ -504,36 +504,8 @@ class OwnedResultCodecTests(unittest.TestCase):
         with self.assertRaises(ValueError): freeze_result(value)
 
 
-class OwnedFormExampleTests(HostFixture, unittest.TestCase):
-    def files(self):
-        root=Path(__file__).resolve().parents[1]/'examples/configuration-form-results'
-        return {p.relative_to(root).as_posix():p.read_bytes() for p in root.rglob('*') if p.is_file()}
-
-    def test_authored_example_opens_and_completes_real_form_lifecycle(self):
-        _,app,_=self.host(self.files()); owner=app.active
-        self.assertIsNotNone(owner)
-        self.event(app,owner); child=app.active
-        r=self.event(app,child,'AcceptButton')
-        self.assertIsNone(r['error'],r); self.assertEqual(self.greeting(app,owner),'A chosen value')
-        self.assertEqual(self.extra(app,owner).get('Calls'),1)
-
-    def test_authored_example_beforeclose_refusal_then_plain_close(self):
-        from yadinassi.ui.protocol import encode_value
-        _,app,_=self.host(self.files()); owner=app.active
-        self.event(app,owner); child=app.active
-        self.event(app,child,'KeepOpenCheck',event='change',value=encode_value(True))
-        self.event(app,child,'AcceptButton')
-        self.assertIn(child,app.sessions); self.assertEqual(self.extra(app,owner).get('Calls'),0)
-        self.event(app,child,'KeepOpenCheck',event='change',value=encode_value(False))
-        self.event(app,child,event='close')
-        self.assertEqual(self.greeting(app,owner),'Closed without a selection')
-        self.assertEqual(self.extra(app,owner).get('Calls'),1)
-
-    def test_authored_example_plain_close_is_explicit_undefined(self):
-        _,app,_=self.host(self.files()); owner=app.active
-        self.event(app,owner); self.event(app,app.active,event='close')
-        self.assertEqual(self.greeting(app,owner),'Closed without a selection')
-
+# User-facing lifecycle scenarios live on examples/demo in
+# test_main_demo_interaction_host; minimal protocol fixtures below remain isolated.
 
 class OwnedBusinessFormTests(HostFixture, unittest.TestCase):
     def business_pair(self, kind, *, save=False, fail=False):

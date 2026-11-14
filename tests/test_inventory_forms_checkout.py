@@ -27,8 +27,11 @@ class InventoryFormsCheckoutTests(unittest.TestCase):
 
     def test_every_authored_source_has_explicit_checkout_policy(self):
         names = self.sources()
-        self.assertEqual(len(names), 279)
-        self.assertEqual(sum(name.startswith("examples/demo/") for name in names), 39)
+        # Consolidation removes 39 duplicate sources (8 form-results, 23 enum
+        # application, 8 reference source) and adds 8 files to the main demo.
+        # The checkout test below still hashes every retained XML/BSL byte.
+        self.assertEqual(len(names), 248)
+        self.assertEqual(sum(name.startswith("examples/demo/") for name in names), 47)
         with tempfile.TemporaryDirectory(prefix='owned-ui-attributes-') as temporary:
             root = Path(temporary)
             (root / '.gitattributes').write_bytes((ROOT / '.gitattributes').read_bytes())

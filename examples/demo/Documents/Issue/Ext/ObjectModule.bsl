@@ -15,6 +15,13 @@ Procedure Posting(Cancel, PostingMode)
         AdditionalProperties.Insert("Inside", S.N);
         If Mode = 1 Then Cancel = True; Else Raise "owned inventory cancellation"; EndIf;
     Else
-        Set.Write = True;
+        // Demo business rule: refuse an issue that would make stock negative.
+        Set.Write();
+        Query = New Query("SELECT B.QuantityBalance AS Quantity FROM AccumulationRegister.Stock.Balance(&At) AS B WHERE B.Warehouse=&Warehouse AND B.QuantityBalance<0");
+        Query.SetParameter("At", Date + 1);
+        Query.SetParameter("Warehouse", Warehouse);
+        If Not Query.Execute().IsEmpty() Then
+            Cancel = True;
+        EndIf;
     EndIf;
 EndProcedure

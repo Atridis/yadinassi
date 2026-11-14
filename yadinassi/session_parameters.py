@@ -13,15 +13,19 @@ _SOURCE_STRING_MAX_UNITS=1048576
 class BSLSessionParameterMetadata(_MetadataObject):
     def __init__(self,definition):
         self._name=definition.name
-        self._description=(None if definition.kind in ('fixed_map', 'fixed_structure') else
-                           _scalar_description(definition.kind,definition.qualifiers))
+        if definition.kind == 'uuid':
+            from .type_descriptions import BSLTypeDescription
+            self._description = BSLTypeDescription('UUID')
+        else:
+            self._description=(_scalar_description(definition.kind, definition.qualifiers)
+                               if definition.kind in ('boolean','string','number','datetime') else None)
 
     def get_member(self,name):
         key=name.casefold()
         if key in ('name','имя'): return self._name
         if key in ('type','тип'):
             if self._description is None:
-                raise ValueError('unsupported metadata field type: fixed collection description')
+                raise ValueError('unsupported metadata field type: source session description')
             return self._description
         if key in ('fullname','полноеимя'):
             return HostFunction(name,lambda:'ПараметрСеанса.'+self._name)
@@ -83,10 +87,26 @@ class BSLSessionParameters(BSLObject):
 
     def write(self, caller, name, value):
         self._authorize(caller);key=self._key(name);definition=self._definitions[key]
-        if definition.kind=='boolean':
+        value = self._validate_value(definition.kind, definition.qualifiers, value)
+        if self._source_family is not None:
+            from .source_session_values import validate_session_value
+            validate_session_value(value)
+        self._values[key]=value
+
+    def _validate_value(self, kind, qualifiers, value):
+        if kind=='source_union':
+            if self._source_family is None:
+                raise ValueError('composite session types require source host')
+            for alternative, limits in qualifiers:
+                try:
+                    return self._validate_value(alternative, limits, value)
+                except (TypeError, ValueError):
+                    pass
+            raise TypeError('value does not match any declared source session type')
+        if kind=='boolean':
             valid=type(value) is bool
-        elif definition.kind=='string':
-            if definition.qualifiers[0] == 0:
+        elif kind=='string':
+            if qualifiers[0] == 0:
                 if self._source_family is None:
                     raise ValueError('unbounded session strings require source host')
                 if type(value) is not str:
@@ -94,22 +114,33 @@ class BSLSessionParameters(BSLObject):
                 if len(value) > _SOURCE_STRING_MAX_UNITS or len(value.encode('utf-16-le')) > 2 * _SOURCE_STRING_MAX_UNITS:
                     raise ValueError('source session String resource limit')
             else:
-                validate_string(value,definition.qualifiers[0])
+                validate_string(value,qualifiers[0])
             valid=True
-        elif definition.kind=='number':
+        elif kind=='number':
             valid=type(value) is Decimal and value.is_finite()
-            if valid: valid=normalize_number(value,definition.qualifiers)==value
-        elif definition.kind=='fixed_map':
+            if valid: valid=normalize_number(value,qualifiers)==value
+        elif kind=='fixed_map':
             from .maps import BSLFixedMap
             valid=type(value) is BSLFixedMap
-        elif definition.kind=='fixed_structure':
+        elif kind=='fixed_structure':
             from .structures import BSLFixedStructure
             valid=type(value) is BSLFixedStructure
-        else:
+        elif kind=='datetime':
             valid=type(value) is BSLDate
             if valid:value.require_known()
+        elif kind in ('uuid', 'value_storage', 'type_description', 'fixed_array'):
+            if self._source_family is None:
+                raise ValueError('extended session types require source host')
+            from .unique_identifiers import BSLUUID
+            from .value_storage import BSLValueStorage
+            from .type_descriptions import BSLTypeDescription
+            from .values import BSLFixedArray
+            valid=type(value) is {'uuid':BSLUUID, 'value_storage':BSLValueStorage,
+                                  'type_description':BSLTypeDescription, 'fixed_array':BSLFixedArray}[kind]
+        else:
+            raise ValueError('unsupported session parameter type')
         if not valid: raise TypeError('unsupported session parameter assignment')
-        self._values[key]=value
+        return value
 
     def close(self):
         self._closed=True

@@ -10,6 +10,7 @@ class _SourceNoContextInterpreter(_SourceInterpreter):
     def __init__(self, application, *args, budget=None, **kwargs):
         super().__init__(application, *args, **kwargs)
         self._transaction_activation_allowed = False
+        self._application_exports_enabled = True
         self._source_call_budget = [0] if budget is None else budget
 
     def _inherit_host_bindings(self, parent):
@@ -94,6 +95,7 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         super().__init__(application, session, output=output,
                          family_owner=application.interpreter, **kwargs)
         self._transaction_activation_allowed = False
+        self._application_exports_enabled = True
         self._source_navigation = navigation
         if navigation is not None:
             self.register_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
@@ -155,11 +157,11 @@ def source_form_definition(application, name, *, progressive=False, diagnostics=
         from dataclasses import replace
         from hashlib import sha256
         projection = project_source_form(raw)
-        definition = _definition(name, metadata._entry.identity, projection.xml, module)
+        definition = _definition(name, metadata._entry.identity, projection.xml, module, compilation_profile=application.compilation_profile)
         if diagnostics is not None:
             diagnostics.extend(projection.diagnostics)
         return replace(definition, source_sha256=sha256(raw+b'\0'+module).hexdigest())
-    return _definition(name, metadata._entry.identity, raw, module)
+    return _definition(name, metadata._entry.identity, raw, module, compilation_profile=application.compilation_profile)
 
 
 class SourceFormController:

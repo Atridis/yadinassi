@@ -31,8 +31,11 @@ def array(*values):
 class EnumRelationalEvidenceTests(unittest.TestCase):
     def test_fresh_example_combines_posted_and_pending_receipts(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
-            with closing(create_prepared(Path(temp) / 'stock.sqlite',
-                    prepare_directory(SOURCE / 'runtime_source', profile=PROFILE))) as context:
+            from yadinassi.database_context import SQLiteDBContext
+            from yadinassi.configuration_main_demo import import_main_demo_configuration
+            from test_main_demo_configuration import source
+            with closing(SQLiteDBContext.create_main_demo(Path(temp) / 'stock.sqlite',
+                    import_main_demo_configuration(source(), profile='main-demo-v1'))) as context:
                 output=[]
                 with closing(Interpreter(database_context=context,output=output.append)) as vm:
                     vm.execute((ROOT/'examples/inventory_enum/seed.bsl').read_text(encoding='utf-8'))

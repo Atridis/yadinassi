@@ -9,10 +9,12 @@ from test_main_demo_configuration import source
 
 
 def old_source():
-    files = {path: raw for path, raw in source().items() if not path.startswith('CommonForms/')}
+    files = {path: raw for path, raw in source().items() if not path.startswith(('CommonForms/', 'CommonModules/')) and path != 'Ext/ManagedApplicationModule.bsl'}
     for name in (b'OperationDraft', b'DraftDetails'):
         files['Configuration.xml'] = files['Configuration.xml'].replace(
             b'\t\t\t<CommonForm>' + name + b'</CommonForm>\n', b'')
+    files['Configuration.xml'] = files['Configuration.xml'].replace(
+        b'<CommonModule>DemoTools</CommonModule><CommonModule>DemoService</CommonModule>', b'').replace(b'<CommonForm>DemoWelcome</CommonForm>', b'')
     return files
 
 
@@ -22,7 +24,7 @@ class MainDemoCommonFormImportTests(unittest.TestCase):
         with patch.object(main, '_manifest', wraps=manifest) as called:
             config = main.import_main_demo_configuration(source(), profile=main.PROFILE)
         self.assertEqual(config.profile, 'main-demo-v1')
-        self.assertEqual(len(config.files), 39)
+        self.assertEqual(len(config.files), 47)
         self.assertEqual(main.canonical(config), config)
         self.assertEqual(set(called.call_args_list[0].args[1]),
                          {'document.receipt.form.card', 'document.issue.form.card'})
@@ -45,7 +47,7 @@ class MainDemoCommonFormImportTests(unittest.TestCase):
     def test_each_common_form_source_is_bound_and_cannot_be_injected(self):
         original = source()
         names = [name for name in original if name.startswith('CommonForms/')]
-        self.assertEqual(len(names), 6)
+        self.assertEqual(len(names), 9)
         for name in names:
             with self.subTest(path=name):
                 changed = dict(original)

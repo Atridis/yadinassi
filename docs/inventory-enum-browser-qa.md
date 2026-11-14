@@ -35,7 +35,10 @@ Playwright 1.64.1 и его Chromium с рабочим sandbox. Наличие `
 Отключать sandbox, заменять браузер незаявленной версией или обходить проверку
 владения процессом нельзя. Невыполненные условия означают блокер, не PASS.
 
-База создаётся свежей и пустой из `examples/configuration-inventory-enum-application`.
+Историческая база создаётся свежей и пустой из `tests/inventory_enum_application_fixture.py`.
+Генератор воспроизводит удалённую дублирующую конфигурацию; binding включает оба генератора,
+исходник non-enum forms и `scripts/inventory_enum_behavior/runtime_source`. Этот regression
+не является пользовательским примером; для запуска используйте `examples/demo`.
 Все бизнес-записи создаёт только интерфейс. Python-помощник после создания
 выполняет независимые read-only проверки CatalogKey, DocumentKey, EnumKey,
 проведённости и движений, сверяя хеш базы до/после чтения. Прямой бизнес-seeding,

@@ -75,7 +75,7 @@ implicitly enabled.
 ## Authored example
 
 `examples/configuration-inventory-application` extends the verified authored
-`inventory_reference/source` with Products/Warehouses cards, Receipt/Issue
+historical reference profile with Products/Warehouses cards, Receipt/Issue
 reference-bearing document cards and three Stock reports. Its core schemas and
 posting handler bytes are unchanged. The Issue handler's negative-stock check
 is an authored business rule, not a built-in platform policy. Runtime admission

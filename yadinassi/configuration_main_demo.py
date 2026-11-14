@@ -18,7 +18,7 @@ from .main_demo_source import SOURCE_SHA256
 PROFILE = 'main-demo-v1'
 FORMAT_VERSION = 16
 M = '{' + xml.MD + '}'
-COMMON_FORMS = frozenset(('commonform.operationdraft', 'commonform.draftdetails'))
+COMMON_FORMS = frozenset(('commonform.operationdraft', 'commonform.draftdetails', 'commonform.demowelcome'))
 
 @dataclass(frozen=True, slots=True)
 class MainDemoConfiguration:
@@ -66,6 +66,7 @@ def _catalogs(source, inventory):
 
 
 _NATIVE_LAYOUTS = (
+    'CommonForms/DemoWelcome/Ext/Form.xml',
     'CommonForms/DraftDetails/Ext/Form.xml',
     'CommonForms/OperationDraft/Ext/Form.xml',
     'Documents/Receipt/Forms/Card/Ext/Form.xml',

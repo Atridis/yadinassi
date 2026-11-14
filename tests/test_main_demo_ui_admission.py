@@ -27,7 +27,7 @@ class MainDemoUIAdmissionTests(unittest.TestCase):
     def test_projection_grants_documents_and_declared_common_forms_not_catalogs(self):
         config = self.config()
         forms = document_forms(config)
-        self.assertEqual(set(forms.forms), {'document.receipt.form.card', 'document.issue.form.card', 'commonform.operationdraft', 'commonform.draftdetails'})
+        self.assertEqual(set(forms.forms), {'document.receipt.form.card', 'document.issue.form.card', 'commonform.operationdraft', 'commonform.draftdetails', 'commonform.demowelcome'})
         for definition in forms.forms.values():
             self.assertIsNone(definition.catalog_schema)
             if not definition.name.startswith("CommonForm."):
@@ -40,7 +40,7 @@ class MainDemoUIAdmissionTests(unittest.TestCase):
         config = self.config()
         forms = document_forms(config)
         self.assertEqual(dict(forms.source_files), source())
-        self.assertEqual(len(forms.source_files), 39)
+        self.assertEqual(len(forms.source_files), 47)
         self.assertEqual(forms.source_files['Configuration.xml'], source()['Configuration.xml'])
         digest = sha256()
         for path, raw in sorted(source().items()):

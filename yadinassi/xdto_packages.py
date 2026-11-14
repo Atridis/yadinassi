@@ -32,20 +32,27 @@ def _bound(value, upper=False):
 
 
 def _acyclic(edges):
-    done = set()
-    def visit(key, active, depth):
-        if key in active or depth > MAX_DEPTH: raise ValueError('XDTO package: cyclic or deep model')
-        if key in done: return
-        for target in edges.get(key, ()):
-            visit(target, active | {key}, depth + 1)
-        done.add(key)
-    for key in edges: visit(key, set(), 0)
+    depths = {}
+    def visit(key, active):
+        if key in active or len(active) > MAX_DEPTH:
+            raise ValueError('XDTO package: cyclic or deep model')
+        if key in depths:
+            return depths[key]
+        depth = max((1 + visit(target, active | {key})
+                     for target in edges.get(key, ())), default=0)
+        if depth > MAX_DEPTH:
+            raise ValueError('XDTO package: cyclic or deep model')
+        depths[key] = depth
+        return depth
+    for key in edges:
+        visit(key, set())
 
 
-def load_packages(factory, definitions):
+def load_packages(factory, definitions, *, allow_existing_dependencies=False):
     """Construct into a fresh unpublished factory; definitions carry owned bytes."""
     if not isinstance(definitions, tuple) or len(definitions) > MAX_PACKAGES:
         raise ValueError('XDTO package: package count')
+    existing = {p._uri for p in factory._packages._items} if allow_existing_dependencies else set()
     packages = {}; declarations = []; edges = {}; total = 0
     for definition in definitions:
         raw = definition.content
@@ -54,7 +61,7 @@ def load_packages(factory, definitions):
         node = _xml_tree(raw)
         attrs = _attrs(node, 'package', {'targetNamespace', 'elementFormDefault', 'attributeFormDefault'})
         uri = _uri(attrs.get('targetNamespace'))
-        if uri == XS or uri != definition.namespace or uri in packages:
+        if uri == XS or uri != definition.namespace or uri in packages or uri in existing:
             raise ValueError('XDTO package: namespace mismatch or duplicate')
         element = attrs.get('elementFormDefault', 'Qualified')
         attribute = attrs.get('attributeFormDefault', 'Unqualified')
@@ -80,7 +87,7 @@ def load_packages(factory, definitions):
         packages[uri] = (items, element == 'Qualified', attribute == 'Qualified', imports)
         edges[uri] = imports - {XS}
     for uri, (_, _, _, imports) in packages.items():
-        if any(dep != XS and dep not in packages for dep in imports):
+        if any(dep != XS and dep not in packages and dep not in existing for dep in imports):
             raise ValueError('XDTO package: imported namespace not supplied')
     _acyclic(edges)
     def resolve(uri, node, value):
@@ -122,6 +129,10 @@ def load_packages(factory, definitions):
             if type(target) is BSLXDTOObjectType: deps.add((target._uri,target._name))
         kind._properties = BSLXDTOPropertyCollection(props)
         object_edges[uri,kind._name] = deps
+    if allow_existing_dependencies:
+        object_edges = {key: {(prop._type._uri, prop._type._name)
+            for prop in kind._properties._items if type(prop._type) is BSLXDTOObjectType}
+            for key, kind in factory._types.items() if type(kind) is BSLXDTOObjectType}
     _acyclic(object_edges)
     result = list(factory._packages._items)
     for uri, (types, element, attribute, _) in packages.items():

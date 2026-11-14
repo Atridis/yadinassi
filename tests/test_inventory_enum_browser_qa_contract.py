@@ -55,7 +55,9 @@ class InventoryEnumBrowserQAContractTests(unittest.TestCase):
 
     def test_source_binding_and_non_native_artifacts(self):
         for token in ('QA_SOURCE_SHA','source_commit_mismatch','tracked_checkout_dirty','source_binding_changed',
-                      'configuration-inventory-enum-application/InventoryApplication.xml',
+                      'tests/inventory_enum_application_fixture.py',
+                      'examples/configuration-inventory-application/InventoryApplication.xml',
+                      'scripts/inventory_enum_behavior/runtime_source/Configuration.xml',
                       'inventory_enum_application_browser_qa.mjs','capability_leak','resultSha256',
                       'nativeParity:false','enumReportTextOnly:true'):
             self.assertIn(token,self.source)

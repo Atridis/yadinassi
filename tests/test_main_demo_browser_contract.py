@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,3)", "assert.equal(actionLog.length,81",
+            "assert.equal(results.length,5)", "assert.equal(actionLog.length,121",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)
@@ -98,3 +98,58 @@ class MainDemoBrowserContractTests(unittest.TestCase):
         support = (ROOT/'tests/browser_ui/main_demo_browser_support.mjs').read_text(encoding='utf-8')
         for marker in ('audit_line_quantity', 'audit_line_amount', 'audit_receipt_warehouse', 'audit_line_product', 'audit_product_section', 'audit_product_kind', 'audit_movement_product', 'audit_movement_warehouse'):
             self.assertIn(marker, support)
+
+    def test_owned_result_recovery_uses_real_completion_without_mutation_replay(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        for marker in ('owned_result_delayed_delivery_independent_draft_and_loss_without_replay',
+                       'owned_result_retired_before_delivery', 'owned_result_duplicate_accept',
+                       'owned_paused_dispatched', 'owned_independent_draft_lost',
+                       'owned_result_recovery_replayed', 'owned_result_raw_copy_lost',
+                       'owned_result_unknown_draft_unlocked', 'owned_result_changed_database',
+                       "assert.equal(actionLog.length-start,14", 'resultGate=null;gate.arrived()'):
+            self.assertIn(marker, text)
+
+    def test_filter_capture_is_single_request_exact_byte_observer(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        capture = (ROOT/'tests/browser_ui/main_demo_filter_capture.mjs').read_text(encoding='utf-8')
+        body = text.split('const filterReply=async(method,action)=>{', 1)[1].split('const formEvent=', 1)[0]
+        self.assertNotIn('response.body()', body)
+        for marker in ('filterCapture.begin(method)', 'filterCapture.consume(capture,packet.id)',
+                       'finally{filterCapture.clear(capture);}', 'captured.packet.params.request.id'):
+            self.assertIn(marker, body)
+        for marker in ('maxRedirects:0,maxRetries:0', 'bytes.length<=131072',
+                       'route.fulfill({response,body:bytes})', 'filter_capture_duplicate',
+                       'filter_capture_request_origin', 'filter_capture_response_origin',
+                       'filter_capture_outer_id', 'filter_capture_inner_id', 'response.dispose()'):
+            self.assertIn(marker, capture)
+
+    def test_owned_draft_failure_diagnostics_are_fixed_codes_without_raw_exceptions(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        body = text.split('const observed=async(method,action)=>{', 1)[1].split('const command=', 1)[0]
+        for stage in ('await-response', 'read-response', 'validate-envelope', 'await-idle', 'complete'):
+            self.assertIn("report.draftStage='" + stage + "'", body)
+        for code in ('draft_response_wait_failed', 'draft_action_failed', 'draft_reply_budget', 'draft_reply_json', 'draft_outer_id',
+                     'draft_outer_error', 'draft_uncertain', 'draft_inner_id', 'draft_inner_error',
+                     'draft_form_error', 'draft_idle_timeout'):
+            self.assertIn("'" + code + "'", body)
+            self.assertIn("'" + code + "'", text.split('const safeFailureCodes=new Set([', 1)[1])
+        self.assertNotIn('response.body()', body)
+        self.assertIn('finally{filterCapture.clear(capture);}', body)
+        switch = text.split("const capture=filterCapture.begin('demo.select');", 1)[1].split("assert.equal(actionLog.length-start,22", 1)[0]
+        self.assertNotIn('response.body()', switch)
+        self.assertIn('finally{filterCapture.clear(capture);}', switch)
+        self.assertNotIn('console.', body)
+        self.assertNotIn('report.error', body)
+
+    def test_dialog_recovery_is_same_demo_actual_answer_and_readonly_inspection(self):
+        text = HARNESS.read_text(encoding='utf-8')
+        for marker in ("const dialog=()=>page.locator('.configuration-dialog:not([hidden])')",
+                       'dialog_confirmation_once_and_lost_answer_without_replay',
+                       'dialog_answer_count', 'dialog_answer_amount', 'dialog_answer_applied_before_delivery',
+                       'dialog_answer_repeated', 'dialog_escape_answered', 'dialog_owner_not_paused',
+                       'dialog_independent_draft_lost', 'dialog_loss_not_observed',
+                       'dialog_recovery_mutated', 'dialog_recovery_form_mutated',
+                       'dialog_raw_copy_lost', 'dialog_unknown_draft_unlocked', 'dialog_changed_database',
+                       'await stopHost();await startHost();await page.goto(url)',
+                       'assert.equal(actionLog.length-start,26'):
+            self.assertIn(marker, text)

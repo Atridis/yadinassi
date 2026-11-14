@@ -58,9 +58,16 @@ class BSLXDTOFactory(_FileMethods):
         if not (type(kind) is BSLXDTOValueType or type(kind) is BSLXDTOObjectType) or kind._factory is not self:raise TypeError('XDTO: ожидается тип этой фабрики')
         return kind
     def get_member(self,name):
-        if name.casefold() in ('packages','пакеты'):return self._packages
+        if name.casefold() in ('packages','пакеты'):
+            loader = getattr(self, '_source_packages_loader', None)
+            if loader is not None: loader(None)
+            return self._packages
         return super().get_member(name)
-    def type(self,uri,name):return self._types.get((text(uri),text(name)))
+    def type(self,uri,name):
+        uri, name = text(uri), text(name)
+        loader = getattr(self, '_source_packages_loader', None)
+        if loader is not None: loader(uri)
+        return self._types.get((uri,name))
     def create(self,kind,*args):
         kind=self._kind(kind)
         if type(kind) is BSLXDTOObjectType:

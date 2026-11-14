@@ -64,7 +64,8 @@ def form_family(configuration, *, side, **kwargs):
     """Memory-only scheduler/enum family, never a projected database grant.
 
     Form programs still come from the full canonical envelope. The small ordinary
-    configuration below contains no executable modules, forms or storage schemas.
+    configuration below contains only exact-source lifecycle/modules and enums,
+    never forms or storage schemas.
     Common-form interpreters must also remain database-less; document interpreters
     retain their separately validated object-session admission.
     """
@@ -87,6 +88,12 @@ def form_family(configuration, *, side, **kwargs):
         ET.SubElement(children, metadata+'Enum').text = enum.name
         path = 'Enums/'+enum.name+'.xml'
         projected[path] = source[path]
+    # Every byte was admitted by canonical() above; this is not a generic module grant.
+    for name in ('DemoTools', 'DemoService'):
+        ET.SubElement(children, metadata+'CommonModule').text = name
+        for path in ('CommonModules/'+name+'.xml', 'CommonModules/'+name+'/Ext/Module.bsl'):
+            projected[path] = source[path]
+    projected['Ext/ManagedApplicationModule.bsl'] = source['Ext/ManagedApplicationModule.bsl']
     projected['Configuration.xml'] = ET.tostring(root, encoding='utf-8')
     imported = import_configuration(projected, module_runtime=MODULE_RUNTIME)
     return ConfigurationApplication(imported, side=side, **kwargs)

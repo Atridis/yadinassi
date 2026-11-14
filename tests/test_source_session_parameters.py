@@ -104,11 +104,12 @@ class SourceSessionTests(unittest.TestCase):
         self.assertEqual(definitions, ())
         self.assertIn('state', unsupported)
 
-    def test_compound_type_is_not_silently_reduced(self):
+    def test_compound_type_preserves_all_declared_alternatives(self):
         config = package('', extra={'SessionParameters/State.xml': declaration('State','<v8:Type>v8:FixedMap</v8:Type><v8:Type>xs:boolean</v8:Type>')})
         definitions, unsupported = source_session_definitions(config)
-        self.assertEqual(definitions, ())
-        self.assertIn('state', unsupported)
+        self.assertEqual(unsupported, {})
+        self.assertEqual(definitions[0].kind, 'source_union')
+        self.assertEqual(definitions[0].qualifiers, (('fixed_map', ()), ('boolean', ())))
 
     def test_metadata_type_no_fake_scalar_description(self):
         app, _ = self.run_source(package(''))
