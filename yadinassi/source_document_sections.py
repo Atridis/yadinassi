@@ -4,7 +4,7 @@ from .values import BSLObject,HostFunction
 from .source_constant_store import _encode
 from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 
-_METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load'}
+_METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load','unloadcolumn':'unloadcolumn','выгрузитьколонку':'unloadcolumn','loadcolumn':'loadcolumn','загрузитьколонку':'loadcolumn','fillvalues':'fillvalues','заполнитьзначения':'fillvalues'}
 
 def _index(value,length):
     if type(value) is not Decimal or not value.is_finite() or value!=value.to_integral_value() or not 0<=value<length:raise ValueError('section index requires bounded integer Number')
@@ -74,6 +74,9 @@ class SourceDocumentSectionCall:
     def __call__(self,*args):raise ValueError('section methods require interpreter invocation')
     def invoke(self,caller,values):
         section=self.section;section.authorize(caller);op=self.operation
+        if op in ('unloadcolumn','loadcolumn','fillvalues'):
+            from .source_section_tables import column_operation
+            return column_operation(caller,section,op,values)
         if op=='unload':
             if values:raise TypeError('source section Unload takes no arguments')
             from .source_section_tables import unload

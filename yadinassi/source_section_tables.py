@@ -79,3 +79,62 @@ def load(caller,section,table):
     replacement=[SourceDocumentRow(section,values) for values in candidate]
     for row in section.rows:row.live=False
     section.rows=replacement;section.version+=1
+
+
+def _field(section,name):
+    if type(name) is not str or not 1<=len(name)<=128:raise TypeError('source section column requires bounded field name')
+    key=name.casefold()
+    if key not in section.fields:raise ValueError('unknown source section column')
+    return key
+
+
+def _selection(section,names):
+    if names is None or (type(names) is str and names==''):return tuple(section.fields)
+    if type(names) is not str or len(names)>16384:raise TypeError('source section column list requires bounded String')
+    parts=names.split(',')
+    if len(parts)>len(section.fields):raise ValueError('source section column count bound')
+    if any(not p or p!=p.strip() for p in parts):raise ValueError('source section columns require explicit names without whitespace')
+    keys=tuple(_field(section,p) for p in parts)
+    if len(set(keys))!=len(keys):raise ValueError('duplicate source section column')
+    return keys
+
+
+def _replace_values(caller,section,candidate):
+    """Validate the whole owner buffer before changing any live row dictionary."""
+    total=0;count=0
+    for other in section.owner.sections.values():
+        rows=candidate if other is section else [r.values for r in other.rows]
+        count+=len(rows)
+        for values in rows:
+            total+=32+sum(len(_encode(v,other.fields[k]).encode())+len(k.encode()) for k,v in values.items())
+            if total>_MAX_DOCUMENT_BYTES:raise ValueError('document section buffer bound')
+    if count>_MAX_ROWS:raise ValueError('document section buffer bound')
+    section.authorize(caller)
+    for row,values in zip(section.rows,candidate):row.values=values
+
+
+def column_operation(caller,section,operation,arguments):
+    from .values import BSLArray
+    section.authorize(caller);section.buffer_bound()
+    if operation=='unloadcolumn':
+        if len(arguments)!=1:raise TypeError('source UnloadColumn requires one field name')
+        key=_field(section,arguments[0]);values=[]
+        for row in section.rows:
+            if key not in row.values:raise ValueError('source section column requires explicit values')
+            value=row.values[key];_encode(value,section.fields[key]);values.append(value)
+        result=BSLArray();result.items=values;return result
+    if operation=='loadcolumn':
+        if len(arguments)!=2:raise TypeError('source LoadColumn requires Array and field name')
+        array,name=arguments;key=_field(section,name)
+        if type(array) is not BSLArray or type(array.items) is not list:raise TypeError('source LoadColumn requires exact Array')
+        if len(array.items)!=len(section.rows) or len(array.items)>_MAX_ROWS:raise ValueError('source LoadColumn requires exact row count')
+        values=tuple(array.items)
+        for value in values:_encode(value,section.fields[key])
+        candidate=[dict(row.values,**{key:value}) for row,value in zip(section.rows,values)]
+    elif operation=='fillvalues':
+        if len(arguments) not in (1,2):raise TypeError('source FillValues requires value and optional column list')
+        value=arguments[0];keys=_selection(section,arguments[1] if len(arguments)==2 else None)
+        for key in keys:_encode(value,section.fields[key])
+        candidate=[dict(row.values,**{key:value for key in keys}) for row in section.rows]
+    else:raise ValueError('unsupported source column operation')
+    _replace_values(caller,section,candidate)
