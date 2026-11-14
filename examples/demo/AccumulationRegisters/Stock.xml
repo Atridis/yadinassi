@@ -24,7 +24,7 @@
 				<xr:TypeId>56167775-8936-5e39-aeba-7be9d0df2d44</xr:TypeId>
 				<xr:ValueId>2945aa9c-732d-5bd8-8356-d5e82e8c6239</xr:ValueId>
 			</xr:GeneratedType>
-		</InternalInfo><Properties><Name>Stock</Name>
+		</InternalInfo><Properties><Name>Stock</Name><Synonym><v8:item><v8:lang>ru</v8:lang><v8:content>Остатки товаров</v8:content></v8:item></Synonym>
 			<RegisterType>Balance</RegisterType>
 			<EnableTotalsSplitting>false</EnableTotalsSplitting>
 			</Properties><ChildObjects><Resource uuid="46e1434b-0ff9-5af2-a527-ba6dfb4a563a"><Properties><Name>Amount</Name>

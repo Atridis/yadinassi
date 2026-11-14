@@ -702,6 +702,7 @@ function createBrowserHost(environment, root) {
     content.inert = !(writable || inspection); content.setAttribute('aria-disabled', String(!(writable || inspection)));
     content.dataset.inspection = String(inspection);
     banner.dataset.role = attachment.info?.role || 'connecting';
+    banner.dataset.healthy = String(writable && !attachment.pendingState && !attachment.info?.recovery && !attachment.businessUnknown && !attachment.uncertain());
     description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
       : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
         ? 'Another tab may control this application. Take control here to edit.' : 'Checking tab ownership before editing…');

@@ -98,7 +98,8 @@ async function startHost(){
     host.stdout.on('data',data=>{if(settled)return;try{const found=parse(data);if(found){settled=true;origin=found.origin;tokens.push(found.hash.slice(9).split('&')[0]);resolve(found.href);}}catch{settled=true;reject(Error('invalid_launch_output'));}});
   }),15000,'host_start_timeout');
 }
-const button=name=>page.getByRole('button',{name,exact:true});
+const button=name=>page.getByRole('button',{name:name==='New document'?'Создать документ':name,exact:true});
+const recoverFromService=async()=>{const control=button('Восстановить состояние');if(!await control.isVisible())await page.locator('.main-demo-services > summary').click();await control.click();};
 const openSelectedRecord=async()=>{await page.locator('.records tbody tr').first().click();await button('Open selected').click();};
 const field=name=>page.getByLabel(name,{exact:true});
 const ready=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(
@@ -192,7 +193,7 @@ async function main(){
   // Export only fixed protocol method names, never params, URLs or tokens.
   const diagnosticMethods=new Set(['demo.hello','demo.snapshot','demo.select','demo.dispatch','demo.close',
     'editor.hello','editor.snapshot','editor.select','editor.open','editor.event',
-    'application.hello','application.catalog','application.catalogFilter','application.catalogPage','application.open','application.openRecord',
+    'application.hello','application.catalog','application.catalogFilter','application.catalogPage','application.open','application.openRecord','application.openRecorder',
     'application.form','application.reference','application.report','application.reportSetup',
     'form.hello','form.snapshot','form.event']);
   const safeMethod=value=>diagnosticMethods.has(value)?value:'other';
@@ -281,7 +282,7 @@ async function main(){
   await page.goto(url);
   const actionLog=[];report.actions=actionLog;report.actionCount=0;
   const act=async(name,fn)=>{check();actionLog.push(name);report.actionCount=actionLog.length;report.progress={action:actionLog.length,name,state:'started'};await fn();check();report.progress.state='completed';};
-  const click=async name=>act(name,()=>button(name).click());
+  const click=async name=>act(name,()=>name==='Восстановить состояние'?recoverFromService():button(name).click());
   const catalog=async name=>act('catalog:'+name,()=>page.getByRole('navigation',{name:'Catalogs',exact:true}).getByRole('button',{name:new RegExp('^'+name+'\\s*›?$')}).click());
   const legacyDialog=()=>page.getByRole('dialog',{name:'Choose reference',exact:true});
   const snapshotMethods=start=>requests.slice(start).map(r=>r.method==='demo.dispatch'?r.inner:r.method);
@@ -319,8 +320,10 @@ async function main(){
     assert.equal(actionLog.length,20,'catalog_action_count');
   });
   const active=()=>page.locator('.configuration-form-panels > section:not([hidden])');
-  const docField=name=>active().getByLabel(name,{exact:true});
-  const docButton=name=>active().getByRole('button',{name,exact:true});
+  const formTitles={"Document number": "Номер документа", "Date and time": "Дата и время", "Warehouse": "Склад", "Marked for deletion": "Пометка удаления", "Authoritative Posted state": "Проведён", "Product lines": "Товары", "Add line": "Добавить строку", "Delete selected line": "Удалить строку", "Write document": "Записать", "Post document": "Провести", "Undo posting": "Отменить проведение", "Status": "Статус", "State": "Состояние", "Product": "Номенклатура", "Quantity": "Количество", "Amount": "Сумма", "Unit": "Единица измерения", "DraftTitle": "Заголовок", "Comment": "Комментарий", "AppliedCount": "Число применений", "LastOutcome": "Результат", "KeepOpen": "Не закрывать форму"};
+  const formLabel=name=>Object.entries(formTitles).reduce((value,[old,label])=>value.replace(old,label),name);
+  const docField=name=>active().getByLabel(formLabel(name),{exact:true});
+  const docButton=name=>active().getByRole('button',{name:formLabel(name),exact:true});
   const idle=()=>page.waitForFunction(()=>[...document.querySelectorAll('[aria-busy]')].every(node=>node.getAttribute('aria-busy')==='false'),null,{timeout:remaining(10000)});
   const replyFor=predicate=>page.waitForResponse(response=>{
     if(new URL(response.url()).pathname!=='/rpc'||response.status()!==200)return false;
@@ -363,8 +366,8 @@ async function main(){
     await page.getByRole('dialog').waitFor({state:'hidden'});
   };
   await scenario('same_database_document_report_recovery_return_to_original_catalog',async()=>{
-    await click('Документы, формы и отчёты');
-    await act('receipt-list',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Receipt card',exact:true}).click()));
+    await click('Документы и регистры');
+    await act('receipt-list',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Поступление',exact:true}).click()));
     await act('New document',()=>settled(packet=>packet.method==='application.open',()=>button('New document').click()));await commit('Document number','RQA1');
     await choose('Warehouse','W000','Warehouse 000');
     await act('add-line',()=>settled(formEvent('command'),()=>docButton('Add line').click()));
@@ -377,7 +380,7 @@ async function main(){
     assert.equal(droppedDocument,1);const recoveryStart=requests.length;
     await click('Восстановить состояние');
     await docButton('Write document').waitFor();
-    await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Write document'&&!b.disabled));
+    await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Записать'&&!b.disabled));
     assert.deepEqual(snapshotMethods(recoveryStart),['demo.snapshot','application.hello','application.form']);
     assert.equal(requests.at(-1).nested,'form.snapshot');
     assert.equal(await docField('Amount, row 1').inputValue(),'123x','document_local_draft_lost');
@@ -385,21 +388,26 @@ async function main(){
     await commit('Amount, row 1','123');
     await act('write-document',()=>settled(formEvent('command'),()=>docButton('Write document').click()));
     await act('post-document',()=>settled(formEvent('command'),()=>docButton('Post document').click()));
-    await act('movement-report-tab',()=>page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock Movements',exact:true}).click());
+    await act('close-before-register',()=>settled(formEvent('close'),()=>docButton('Close form').click()));
+    await act('open-register',()=>button('Регистр накопления Остатки товаров').click());
+    await act('movement-report-tab',()=>page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Движения',exact:true}).click());
     const reports=page.getByRole('region',{name:'Saved stock reports',exact:true});
     // Movements has no period filter; only Turnovers/Statement expose bounds.
-    await act('show-report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
+    await act('show-report',()=>reports.getByRole('button',{name:'Показать записи',exact:true}).click());
     await reports.getByRole('cell',{name:'Кабель USB-C',exact:true}).waitFor();
-    const headingBounds=await page.getByRole('heading',{name:'Receipt card',level:1,exact:true}).boundingBox();
+    await act('open-recorder',()=>settled(packet=>packet.method==='application.openRecorder',()=>reports.getByRole('button',{name:/^Открыть регистратор:/}).first().click()));
+    assert.equal(await docField('Document number').inputValue(),'RQA1');
+    const headingBounds=await page.getByRole('heading',{name:'Поступление',level:1,exact:true}).boundingBox();
     assert.ok(headingBounds&&headingBounds.width>=200&&headingBounds.height<160,'embedded_title_collapsed');
     await screenshot('editor.png');
     const saved=audit();verifyMainDemoAudit(saved,assert);
     await act('close-document',()=>settled(formEvent('close'),()=>docButton('Close form').click()));await active().waitFor({state:'detached'});
+    await act('receipt-list-after-recorder',()=>settled(packet=>packet.method==='application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Поступление',exact:true}).click()));
     const recordList=page.locator('.configuration-catalog');
     const listField=label=>recordList.getByLabel(label,{exact:true});
-    const listButton=label=>recordList.getByRole('button',{name:label,exact:true});
+    const listButton=label=>recordList.getByRole('button',{name:({'Refresh records':'Обновить','Open selected':'Открыть','New document':'Создать документ'}[label]||label),exact:true});
     const expectedFilters={deletion:'all',posting:'posted',dateFrom:'2026-11-11',dateTo:'2026-11-11',descending:false};
-    const checkedList=async(result,total,filters)=>{
+    const checkedList=async(result,total,filters,visible=true)=>{
       report.filterStage='validate-catalog';
       const value=result.state.catalog;assert.equal(value.navigation.total,total,'filter_exact_total');
       assert.equal(value.navigation.page,1);assert.equal(value.navigation.pages,1);
@@ -410,20 +418,28 @@ async function main(){
       await page.waitForFunction(total=>document.querySelectorAll('.configuration-catalog tbody tr').length===total,total,{timeout:remaining(rpcReplyMs)});
       assert.equal(await recordList.locator('tbody tr').count(),total,'filter_visible_rows');
       if(total){assert.equal(value.rows[0].number,'RQA1');assert.equal(value.rows[0].posted,true);
-        await recordList.getByRole('cell',{name:'RQA1',exact:true}).waitFor();}
+        await recordList.getByRole('cell',{name:'RQA1',exact:true,includeHidden:!visible}).waitFor({state:visible?'visible':'attached'});}
     };
     await act('filter-posted',()=>listField('Posting filter').selectOption('posted'));
     await act('filter-date-from',()=>listField('Date from (inclusive)').fill('2026-11-11'));
     await act('filter-date-through',()=>listField('Date through (inclusive)').fill('2026-11-11'));
     await act('apply-posted-day',async()=>checkedList(await filterReply('application.catalogFilter',()=>listButton('Apply filters').click()),1,expectedFilters));
     await act('unapplied-date-draft',()=>listField('Date through (inclusive)').fill('2026-11-12'));
+    await act('register-before-filter-repaint',()=>button('Регистр накопления Остатки товаров').click());
     await act('report-repaint-retains-filter-draft',async()=>{
-      const value=await filterReply('application.report',()=>reports.getByRole('button',{name:'Show saved stock',exact:true}).click());
-      await checkedList(value,1,expectedFilters);
+      const value=await filterReply('application.report',()=>reports.getByRole('button',{name:'Показать записи',exact:true}).click());
+      await checkedList(value,1,expectedFilters,false);
       report.filterStage='validate-unapplied-draft';
       assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-12','filter_draft_lost_on_repaint');
       report.filterStage='draft-preserved';
     });
+    await act('return-documents-after-filter-repaint',async()=>{
+      const value=await filterReply('application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Поступление',exact:true}).click());
+      await checkedList(value,1,expectedFilters);
+      assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-11','navigation_restores_applied_filter');
+    });
+    // Navigation reloads the list. Prepare a new unsent draft to test Refresh independently.
+    await act('unapplied-date-draft-before-refresh',()=>listField('Date through (inclusive)').fill('2026-11-12'));
     await act('refresh-restores-applied-filter',async()=>{
       const value=await filterReply('application.catalog',()=>listButton('Refresh records').click());
       await checkedList(value,1,expectedFilters);
@@ -447,7 +463,7 @@ async function main(){
     });
     assert.deepEqual(audit(),saved,'readonly_record_filters_changed_database');
     report.recordFilters={postedOnDay:1,dateExcluded:0,unpostedOnDay:0,reset:1,unappliedDraftSurvivedPaint:true,refreshRestoredApplied:true,durableUnchanged:true};
-    await click('Справочники');await catalog('Номенклатура');
+    await click('Нормативная информация');await catalog('Номенклатура');
     await act('select-product-row',()=>page.locator('.records tbody tr').first().click());await click('Open selected');await ready();
     assert.equal(await field('Description').inputValue(),'Кабель USB-C');
     assert.equal(await field('ВидНоменклатуры').locator('option:checked').innerText(),'000000001 · Товары');
@@ -460,8 +476,9 @@ async function main(){
   await scenario('owned_operation_draft_confirmation_without_database_write',async()=>{
     const saved=audit();const start=actionLog.length;
     await page.setViewportSize({width:1320,height:980});
-    await click('Документы, формы и отчёты');
-    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    await click('Документы и регистры');
+    await page.getByText('Технические примеры',{exact:true}).click();
+    const nav=page.getByRole('navigation',{name:'Технические формы',exact:true});
     assert.equal(await nav.getByRole('button',{name:'Подготовка изменений',exact:true}).count(),0,'owned_child_not_navigation');
     const observed=async(method,action)=>{
       const capture=filterCapture.begin(method);
@@ -516,12 +533,12 @@ async function main(){
     const repeat=await command('Применить черновик');ownerValues(repeat,123.45,1);assert.deepEqual(repeat.dialogs,[],'no_repeated_confirmation');
     await command('О черновике');ownerValues(await answer('Continue'),123.45,1);
     await command('Close form');await active().waitFor({state:'detached'});
-    await act('Справочники',async()=>{
+    await act('Нормативная информация',async()=>{
       const capture=filterCapture.begin('demo.select');
       try{
       report.draftStage='switch-await-response';
       const switching=page.waitForResponse(response=>new URL(response.url()).origin===origin&&new URL(response.url()).pathname==='/rpc'&&response.status()===200&&response.request().postDataJSON().method==='demo.select'&&response.request().postDataJSON().params.surface==='catalogs',{timeout:remaining(rpcReplyMs)});
-      const [response]=await Promise.all([switching,button('Справочники').click(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
+      const [response]=await Promise.all([switching,button('Нормативная информация').click(),bounded(capture.ready,remaining(rpcReplyMs),'filter_capture_timeout')]);
       report.draftStage='switch-validate-envelope';
       const bytes=filterCapture.consume(capture,response.request().postDataJSON().id).bytes;
       assert.ok(bytes.length<=131072,'draft_switch_reply_budget');
@@ -539,8 +556,9 @@ async function main(){
   });
   await scenario('owned_result_delayed_delivery_independent_draft_and_loss_without_replay',async()=>{
     const saved=audit(),start=actionLog.length;
-    await click('Документы, формы и отчёты');
-    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    await click('Документы и регистры');
+    await page.getByText('Технические примеры',{exact:true}).click();
+    const nav=page.getByRole('navigation',{name:'Технические формы',exact:true});
     const tabs=page.getByRole('navigation',{name:'Open forms',exact:true}).getByRole('button');
     const panels=page.locator('.configuration-form-panels > section');
     const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
@@ -583,7 +601,7 @@ async function main(){
     await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
     assert.equal(droppedOwnedResult,1,'owned_result_loss_not_observed');
     const afterLoss=requests.length,acceptAfterLoss=requests.filter(request=>request.control==='AcceptButton').length;
-    await act('recovery-inspect-without-replay',()=>button('Восстановить состояние').click());
+    await act('recovery-inspect-without-replay',()=>recoverFromService());
     await idle();
     assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'owned_result_recovery_mutated');
     assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'owned_result_recovery_form_mutated');
@@ -598,8 +616,9 @@ async function main(){
   await scenario('dialog_confirmation_once_and_lost_answer_without_replay',async()=>{
     const saved=audit(),start=actionLog.length;
     await act('dialog-restart-owned-host',async()=>{await stopHost();await startHost();await page.goto(url);});
-    await click('Документы, формы и отчёты');
-    const nav=page.getByRole('navigation',{name:'Declared forms',exact:true});
+    await click('Документы и регистры');
+    await page.getByText('Технические примеры',{exact:true}).click();
+    const nav=page.getByRole('navigation',{name:'Технические формы',exact:true});
     const dialog=()=>page.locator('.configuration-dialog:not([hidden])');
     const answerButton=name=>dialog().getByRole('button',{name,exact:true});
     const openOwner=()=>settled(packet=>packet.method==='application.open',()=>nav.getByRole('button',{name:'Черновик операции',exact:true}).click());
@@ -655,7 +674,7 @@ async function main(){
     await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
     assert.equal(droppedDialog,1,'dialog_loss_not_observed');
     const afterLoss=requests.length;
-    await act('dialog-readonly-inspection',()=>button('Восстановить состояние').click());await idle();
+    await act('dialog-readonly-inspection',()=>recoverFromService());await idle();
     assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'dialog_recovery_mutated');
     assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'dialog_recovery_form_mutated');
     assert.ok((await page.locator('.draft-recovery-value').allTextContents()).includes('CommentField:   dialog independent raw draft  '),'dialog_raw_copy_lost');
@@ -665,7 +684,7 @@ async function main(){
     report.dialogRecovery={delayedAnswerOnce:true,escapeNotAnswer:true,noDiscarded:true,cancelDeferred:true,
       confirmedAnswerLost:true,independentDraftRetained:true,copyPreserved:true,noReplay:true,durableUnchanged:true};
   });
-  assert.equal(actionLog.length,121,'total_action_count');
+  assert.equal(actionLog.length,128,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};

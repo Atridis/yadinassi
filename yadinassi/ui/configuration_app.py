@@ -173,6 +173,7 @@ class ConfigurationBroker:
         from .report_pages import ReportPages
         self._report_pages = ReportPages()
         self._report_controls = None
+        self._recorder_grants = {}
         self.ready = False
         self.objects = {}
         self.records = {}
@@ -307,10 +308,12 @@ class ConfigurationBroker:
                     for s, _, _ in self.sessions.values()))
 
     def _clear_report(self):
+        self._recorder_grants.clear()
         self._report_pages.clear()
         if self._report_controls is not None: self._report_controls.clear()
 
     def _report_setup(self, payload):
+        self._recorder_grants.clear()
         self._report_pages.clear()
         if self._report_busy(): return {'error': 'report_busy'}
         try:
@@ -325,6 +328,7 @@ class ConfigurationBroker:
             return {'error': 'report_unavailable'}
 
     def _report_page(self, payload):
+        self._recorder_grants.clear()
         _keys(payload, 'snapshot cursor')
         if self._report_busy():
             self._report_pages.clear()
@@ -345,6 +349,7 @@ class ConfigurationBroker:
         grant = next((r for r in self.posting_configuration.reports if r.name == payload.get('report')), None) if self.inventory_application else None
         statement = grant is not None and grant.view == 'BalanceAndTurnovers'
         _keys(payload, 'report at start end' + (' periodicity setup' if statement else ''))
+        self._recorder_grants.clear()
         self._report_pages.clear()
         if not statement and self._report_controls is not None: self._report_controls.clear()
         if not self.inventory_application or self.database is None:
@@ -371,7 +376,16 @@ class ConfigurationBroker:
                 'catalog_ref':'Catalog', 'document_ref':'Document', 'accumulation_direction':'String'}
             def cell(value):
                 if type(value) in (CatalogKey, DocumentKey):
-                    return {'type':'Catalog' if type(value) is CatalogKey else 'Document', 'text':labels[value]}
+                    projected = {'type':'Catalog' if type(value) is CatalogKey else 'Document', 'text':labels[value]}
+                    if self.main_demo_application and result.view == 'Movements' and type(value) is DocumentKey:
+                        matches = [entry for entry, definition in self.definitions.items()
+                                   if definition.document_schema is not None
+                                   and definition.document_schema.identity == value.document_id]
+                        if len(matches) != 1: raise ValueError('exact recorder form required')
+                        token = 'recorder-' + token_hex(16)
+                        self._recorder_grants[token] = (matches[0], value)
+                        projected['recorder'] = token
+                    return projected
                 if type(value) is AccumulationDirection:
                     value = 'Receipt' if value is AccumulationDirection.RECEIPT else 'Expense'
                 if type(value) is datetime: value = _date_from_datetime(value)
@@ -387,11 +401,29 @@ class ConfigurationBroker:
             # Reserve the rest of the envelope for immutable entries/sessions.
             # A bounded refusal is not a partial/truncated successful report.
             if len(encode_line(projection)) > MAX_LINE_BYTES // 2:
+                self._recorder_grants.clear()
                 return {'error':'report_unavailable'}
             _validate_report_projection(projection, self.posting_configuration, payload)
             return projection
         except Exception:
+            self._recorder_grants.clear()
             return {'error':'report_unavailable'}
+
+    def _recorder(self, payload):
+        """Consume a current report capability; labels never identify writable objects."""
+        _keys(payload, 'recorder')
+        token = payload['recorder']
+        if (not self.main_demo_application or type(token) is not str
+                or token not in self._recorder_grants or self._report_busy()):
+            return {'error':'invalid_record'}
+        entry, reference = self._recorder_grants[token]
+        self._clear_report()
+        self._catalog(entry)  # Recheck exact source/schema before issuing a form grant.
+        if self.record_sequence >= 999999999: return {'error':'capacity'}
+        self.record_sequence += 1
+        record = 'record-' + str(self.record_sequence)
+        self.records, self.record_keys = {record:(entry,reference)}, {(entry,reference):record}
+        return {'entry':entry, 'record':record}
 
     def exchange(self, request):
         _keys(request, 'operation session payload')
@@ -408,8 +440,11 @@ class ConfigurationBroker:
             return {'source': self.configuration.source_sha256}
         if not self.ready:
             raise ValueError('configuration handshake required')
-        if operation not in ('report', 'reportSetup', 'reportPage'):
+        if operation not in ('report', 'reportSetup', 'reportPage', 'recorder'):
             self._clear_report()
+        if operation == 'recorder':
+            if sid: raise ValueError('recorder has no form session')
+            return self._recorder(payload)
         if operation == 'reportReset':
             if sid or payload != {}: raise ValueError('invalid report reset')
             return {}
@@ -685,6 +720,7 @@ class ConfigurationBroker:
         raise ValueError('unknown application operation')
 
     def close(self):
+        self._recorder_grants.clear()
         failure = None
         self.record_pages.clear()
         self.records.clear();self.record_keys.clear()
@@ -1348,6 +1384,16 @@ class ConfigurationController:
                         validate_next_page(result, self.report, payload, self.posting_configuration)
                     else:
                         _validate_report_projection(result, self.posting_configuration, payload)
+            elif operation == 'recorder':
+                if 'error' in result:
+                    _keys(result, 'error')
+                    if result['error'] not in ('invalid_record','capacity'): raise ValueError('invalid recorder refusal')
+                else:
+                    _keys(result, 'entry record')
+                    definition = self.definitions.get(result['entry']) if type(result['entry']) is int else None
+                    if (definition is None or definition.document_schema is None or type(result['record']) is not str
+                            or not result['record'].startswith('record-') or not result['record'][7:].isdigit()
+                            or len(result['record']) > 16): raise ValueError('invalid recorder grant')
             elif operation == 'reportReset':
                 if result != {}: raise ValueError('invalid report reset result')
             elif operation == 'posting':
@@ -1764,7 +1810,7 @@ class ConfigurationController:
                     or not 1 <= request['id'] <= MAX_COUNTER or type(request['params']) is not dict):
                 raise ValueError('invalid renderer request')
             method, params = request['method'], request['params']
-            if self.inventory_application and method not in ('application.hello','application.snapshot','application.report','application.reportSetup','application.reportPage'):
+            if self.inventory_application and method not in ('application.hello','application.snapshot','application.report','application.reportSetup','application.reportPage','application.openRecorder'):
                 if method != 'application.catalog' or self.report is not None and 'page' in self.report:
                     self.report = None
                 self.report_setup = None
@@ -1855,6 +1901,33 @@ class ConfigurationController:
                 projected = self._call('catalog', payload={'entry': entry})
                 error = projected.get('error')
                 self.catalog = None if error else projected
+            elif method == 'application.openRecorder':
+                _keys(params, 'recorder request')
+                link, token = params['recorder'], params['request']
+                if (not self.main_demo_application or type(link) is not str or type(token) is not str
+                        or not 1 <= len(token) <= 64 or not token.isascii()):
+                    raise ValueError('invalid recorder intent')
+                intent = ('recorder', link)
+                if token in self.operations:
+                    previous, sid, error = self.operations[token]
+                    if previous != intent: raise ValueError('open intent reused')
+                    if sid is not None and sid not in self.sessions: sid, error = None, 'retired_session'
+                elif (self.choice is not None or any(p['state'] in ('uncertain','committed') for p in self.posting_states.values())
+                      or any(r.state in ('open','uncertain') for r in (*self.owner_dialogs.values(), *self.owner_inputs.values()))):
+                    error = 'report_busy'
+                elif (self.report is None or self.report.get('view') != 'Movements'
+                      or not any(cell.get('recorder') == link for row in self.report['rows'] for cell in row)):
+                    error = 'invalid_record'
+                elif len(self.operations) >= MAX_SESSIONS:
+                    error = 'capacity'
+                else:
+                    grant = self._call('recorder', payload={'recorder':link})
+                    error = grant.get('error')
+                    if error is None:
+                        self.catalog = None  # Broker replaces the previous list's record grants.
+                        sid, form, error = self._open(grant['entry'], {}, grant['record'])
+                    self.operations[token] = (intent, sid, error)
+                    self.report = None; self.report_setup = None
             elif method in ('application.open', 'application.openRecord'):
                 _keys(params, 'entry request record' if method.endswith('openRecord') else 'entry request')
                 entry, token = params['entry'], params['request']
@@ -2052,7 +2125,7 @@ class ConfigurationController:
 class ConfigurationHandler(_Handler):
     asset_directory = 'configuration'
     methods = ('application.hello', 'application.snapshot', 'application.open',
-               'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.reference',
+               'application.form', 'application.close', 'application.catalog', 'application.openRecord', 'application.openRecorder', 'application.reference',
                'application.recoverPosting', 'application.answerDialog', 'application.answerInput', 'application.report',
                'application.reportSetup', 'application.reportPage', 'application.catalogPage', 'application.catalogFilter')
 

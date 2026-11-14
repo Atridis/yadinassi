@@ -12,16 +12,21 @@ export function mountApplication(environment, root, exchange = null) {
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document;
-  const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
+  const demoLabels={'Configuration forms':'Документы и регистры','New document':'Создать документ','New record':'Создать запись','Open selected':'Открыть','Refresh records':'Обновить','Select':'Выбрать','Number':'Номер','Date':'Дата','Deletion mark':'Пометка удаления','Posted':'Проведён','Code':'Код','Description':'Наименование','Close application':'Закрыть приложение','Stock reports':'Регистр накопления: Остатки товаров','Show saved stock':'Показать записи','Stock Movements':'Движения','Stock Balance':'Остатки','Stock Turnovers':'Обороты','Stock BalanceAndTurnovers':'Остатки и обороты','Period':'Период','Recorder':'Регистратор','LineNumber':'Номер строки','RecordType':'Вид движения','Active':'Активность','Product':'Номенклатура','Warehouse':'Склад','Quantity':'Количество','Amount':'Сумма','Unit':'Единица','State':'Состояние','Prepare statement':'Настроить отбор','Previous saved page':'Предыдущая страница','Next saved page':'Следующая страница','Read-only saved database state. Unsaved form edits are not included. No movement or total can be edited here.':'Движения только для чтения. Для изменения откройте документ-регистратор. Несохранённые изменения форм не включены.'};
+  const localize=text=>demoRecovery?(demoLabels[text]??text):text;
+  let businessView='documents';
+
+  const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = localize(text); return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
   const workarea = el('div'), catalogPanel = el('section'); workarea.className = 'configuration-workarea';
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
+  const technical=el('details'),technicalTitle=el('summary','Технические примеры'),technicalEntries=el('nav');technicalEntries.setAttribute('aria-label','Технические формы');technical.append(technicalTitle,technicalEntries);technical.hidden=!demoRecovery;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const reportPanel=el('section');
   const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
     ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))),
-    (method,params)=>perform(method,params));
+    (method,params)=>perform(method,params),{localize,openRecorder:recorder=>openRecorder(recorder),visible:()=>!demoRecovery||businessView==='register'});
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -69,7 +74,7 @@ export function mountApplication(environment, root, exchange = null) {
   function show(id, userNavigation = true) {
     if (userNavigation && (client.state?.choice || dialogModal())) return;
     if (userNavigation) navigation++;
-    active = id;
+    active = id;if(id!==null)businessView='documents';
     for (const [key, entry] of mounts) {
       if (!entry.panel.hidden && entry.panel.contains(document.activeElement)) {
         const node = document.activeElement; entry.focus = {node,start:node.selectionStart,end:node.selectionEnd};
@@ -120,7 +125,7 @@ export function mountApplication(environment, root, exchange = null) {
   function drawPicker() {
     const choice = client.state?.choice;
     picker.hidden = !choice;
-    for (const node of [toolbar,entries,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
+    for (const node of [toolbar,entries,technical,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
     for (const entry of mounts.values()) entry.mount?.repaint();
     if (!choice) {
       pickerTicket = null;
@@ -411,17 +416,23 @@ export function mountApplication(environment, root, exchange = null) {
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
-    title.textContent = client.state?.title || 'Configuration forms';
+    title.textContent = demoRecovery?'Документы и регистры':client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
-    close.disabled = disabled; entries.replaceChildren();
+    close.disabled = disabled; entries.replaceChildren();technicalEntries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       if (entry.kind === 'owned-form') continue;
-      const node = button(entry.title || `Form ${entry.id}`,entries,() => {
+      const business=['catalog-object','document-object','posting-document'].includes(entry.kind);
+      const node = button(entry.title || `Form ${entry.id}`,demoRecovery&&!business?technicalEntries:entries,() => {
+        businessView='documents';
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
       });
       node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
+    }
+    if(demoRecovery && client.state?.reports?.length){
+      const register=button('Остатки товаров',entries,()=>{if(disabled||pending())return;businessView='register';show(null);});
+      register.setAttribute('aria-label','Регистр накопления Остатки товаров');register.setAttribute('aria-pressed',String(businessView==='register'));register.disabled=disabled||pending();
     }
     for (const [id,entry] of mounts) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
@@ -447,6 +458,7 @@ export function mountApplication(environment, root, exchange = null) {
       }
     }
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
+    if(demoRecovery){reportPanel.hidden=businessView!=='register';workarea.hidden=businessView==='register';postingPanel.hidden=businessView==='register'||!posting;}
   }
   function reconcile(result, request) {
     if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
@@ -488,8 +500,9 @@ export function mountApplication(environment, root, exchange = null) {
       // already executed completion. Lock the family; never replay the result.
       client.lock(); status = 'Completion state could not be reconciled. All forms are locked.';
     }
-    const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
+    const generation = ['application.open','application.openRecord','application.openRecorder'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);
+    else if (result.session && generation === navigation && mounts.has(result.session)) show(result.session,false);
     else if (removedActive) show(client.state.active,false);
     paint();
   }
@@ -510,11 +523,18 @@ export function mountApplication(environment, root, exchange = null) {
     const opening = perform(record === null?'application.open':'application.openRecord',params).finally(() => { openings.delete(key); intents.delete(token);paint(); });
     openings.set(key,opening); return opening;
   }
+  function openRecorder(recorder) {
+    if(pending())return Promise.resolve();
+    const key='recorder:'+recorder;if(openings.has(key))return openings.get(key);
+    const token=`open-${instance}-${++openToken}`;intents.set(token,navigation);
+    const opening=perform('application.openRecorder',{recorder,request:token}).finally(()=>{openings.delete(key);intents.delete(token);paint();});
+    openings.set(key,opening);return opening;
+  }
   const close = button('Close application',toolbar,async () => {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,technical,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   const surfaceExchange = exchange;
   exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
@@ -535,7 +555,7 @@ export function mountApplication(environment, root, exchange = null) {
       paint();
       const retained = new Set(mounts.keys());
       const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
-      for (const [id,entry] of mounts) {
+    for (const [id,entry] of mounts) {
         if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }
