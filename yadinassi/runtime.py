@@ -1,3 +1,4 @@
+from functools import lru_cache
 from weakref import WeakValueDictionary
 from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
@@ -1323,16 +1324,10 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        from .source_catalog_runtime import SourceCatalogCall
-        from .source_document_sections import SourceDocumentSectionCall
-        from .source_document_runtime import SourceDocumentCall
-        from .source_references import SourceReferenceCall
-        from .source_constants_runtime import ConstantCall, ConstantSetCall
-        from .source_constant_queries import SourceQueryCall
-        from .source_extensions import ExtensionCall
-        from .source_host_session import SourceSessionCall
-        from .source_transactions import SourceTransactionCall
-        from .source_constant_managers import ValueManagerCall, write_values
+        (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
+         SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
+         ExtensionCall, SourceSessionCall, SourceTransactionCall,
+         ValueManagerCall, write_values) = _source_call_dispatch_types()
         marker = function.function
         if type(marker) in (SourceCatalogCall, SourceDocumentCall):
             return (yield from marker.invoke(self, values))
@@ -2451,3 +2446,27 @@ class Interpreter:
 
     def visit_Continue(self, node: ast.Continue) -> None:
         raise _Continue
+
+
+@lru_cache(maxsize=1)
+def _source_call_dispatch_types():
+    """Lazy immutable identities only; no caller, receiver or authority is cached.
+
+    Kept after argument evaluation at the call site to preserve import timing and
+    avoid runtime/configuration-source circular imports during module loading.
+    Failed imports do not populate functools.lru_cache.
+    """
+    from .source_catalog_runtime import SourceCatalogCall
+    from .source_document_sections import SourceDocumentSectionCall
+    from .source_document_runtime import SourceDocumentCall
+    from .source_references import SourceReferenceCall
+    from .source_constants_runtime import ConstantCall, ConstantSetCall
+    from .source_constant_queries import SourceQueryCall
+    from .source_extensions import ExtensionCall
+    from .source_host_session import SourceSessionCall
+    from .source_transactions import SourceTransactionCall
+    from .source_constant_managers import ValueManagerCall, write_values
+    return (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
+            SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
+            ExtensionCall, SourceSessionCall, SourceTransactionCall,
+            ValueManagerCall, write_values)
