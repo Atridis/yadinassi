@@ -1214,6 +1214,8 @@ class Interpreter:
             self._configuration_runtime.common_templates.authorize(self)
             if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
         from . import temporary_storage
+        if type(function.function) is temporary_storage.SourceTemporaryCall:
+            function.function.authorize_call(self, len(node.arguments))
         temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
         if temporary_call:
             if self._configuration_runtime is None:
@@ -1313,7 +1315,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceTemplateCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceTemplateCall, temporary_storage.SourceTemporaryCall):
             return function.function.invoke(self, values)
         return function(*values)
 

@@ -25,6 +25,14 @@ class _SourceInterpreter(Interpreter):
         self.application = application
         from .common_templates import SourceTemplateCall
         self.register_function("GetCommonTemplate", SourceTemplateCall(application.common_templates), "ПолучитьОбщийМакет")
+        from . import temporary_storage as temporary
+        for operation, english, russian in (
+                (temporary.put_marker, 'PutToTempStorage', 'ПоместитьВоВременноеХранилище'),
+                (temporary.get_marker, 'GetFromTempStorage', 'ПолучитьИзВременногоХранилища'),
+                (temporary.delete_marker, 'DeleteFromTempStorage', 'УдалитьИзВременногоХранилища'),
+                (temporary.recognize_marker, 'IsTempStorageURL', 'ЭтоАдресВременногоХранилища')):
+            self.register_function(english, temporary.SourceTemporaryCall(application.temporary_storage, operation),
+                                   russian, returns_value=operation is not temporary.delete_marker)
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
         from .source_system_info import SourceSystemInfo
@@ -176,6 +184,8 @@ class SourceApplication:
         self.compatibility_target = validate_target(compatibility_target)
         from .source_host_session import SourceHostSession
         self.host_session = SourceHostSession(self)
+        from .temporary_storage import SourceTemporaryStorage
+        self.temporary_storage = SourceTemporaryStorage(self)
         self.source = source
         self.output = output
         self._compilation_profile = compilation_profile
@@ -476,6 +486,7 @@ class SourceApplication:
     def close(self):
         if self.constant_store is not None:
             self.constant_store.close()
+        self.temporary_storage.close()
         self.session_parameters.close()
         self.reusable_values.close()
         self.interpreter.close()
