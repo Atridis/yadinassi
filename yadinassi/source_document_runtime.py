@@ -139,9 +139,24 @@ class SourceDocumentCall:
             matches=[identity for identity,_,fields in store.read_documents(manager.name) if fields['number']==number]
             if len(matches)>1:raise ValueError('ambiguous source document number')
             return app.references.ref('Document',manager.name,matches[0] if matches else UUID(int=0))
+        if self.operation=='select':
+            from .dates import BSLDate
+            if len(values)>2:raise TypeError('source document Select takes optional start/end Date')
+            bounds=list(values)+[None]*(2-len(values))
+            for value in bounds:
+                if value is not None:
+                    if type(value) is not BSLDate:raise TypeError('source document Select requires Date or Undefined')
+                    value.require_known()
+            start,end=bounds
+            if start is not None and end is not None and start.ticks>end.ticks:raise ValueError('source document selection reversed period')
+            # Validate the complete bounded snapshot before filtering; ranges
+            # must not hide corrupt records or grant an unbounded scan.
+            rows=store.read_documents(manager.name)
+            rows=[row for row in rows if (start is None or row[2]['date'].ticks>=start.ticks)
+                  and (end is None or row[2]['date'].ticks<=end.ticks)]
+            return SourceDocumentSelection(manager,rows)
         if values:raise TypeError('source document methods accept no arguments; posting unsupported')
         if self.operation=='create':return (yield from create_object(caller,manager,definition))
-        if self.operation=='select':return SourceDocumentSelection(manager,store.read_documents(manager.name))
         if self.operation=='getobject':
             return (yield from load_object(caller,manager,definition,store,self.identity))
         if self.operation=='next':
