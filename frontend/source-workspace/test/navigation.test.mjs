@@ -47,3 +47,14 @@ test('retained tabs use supplied labels even when current search excludes form',
  const h=await harness({...state,forms:[],open_forms:[{generation:3,name:'CommonForm.Main',active:false}]});
  assert.equal(h.get('Открытые формы').children[0].textContent,'Главная (CommonForm.Main) (закрыта)');
 });
+test('declared default action opens canonical target explicitly, with diagnostic text',async()=>{
+ const h=await harness({...state,object_detail:{name:'Catalog.A',source_path:'Catalogs/A.xml',execution:'explicit_form_selection',forms:[],form_labels:{'CommonForm.Main':'Главная'},default_forms:[{property:'DefaultListForm',name:'CommonForm.Main'}],default_form_diagnostics:['DefaultObjectForm: unavailable']}});
+ assert.equal(h.requests.length,1);
+ const button=h.get('Метаданные выбранного объекта').children.find(x=>x.tag==='button');assert.equal(button.textContent,'Форма списка: Главная (CommonForm.Main)');
+ button.listeners.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.requests.at(-1).method,'workspace.open');assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');
+ assert.ok(h.get('Метаданные выбранного объекта').children.some(x=>x.textContent==='DefaultObjectForm: unavailable'));
+});
+test('closed workspace cannot activate default form buttons',async()=>{
+ const h=await harness({...state,kind:'closed',object_detail:{name:'Catalog.A',forms:[],default_forms:[{property:'DefaultObjectForm',name:'Catalog.A.Form.Card'}]}});
+ assert.equal(h.get('Метаданные выбранного объекта').children.find(x=>x.tag==='button').disabled,true);
+});

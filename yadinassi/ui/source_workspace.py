@@ -35,6 +35,7 @@ class SourceWorkspace:
         self.object_family = ''
         self.object_subsystem = ''
         self.object_selected = None
+        self.default_form_cache = {}
         inventory = application.metadata._inventory
         def full_name(entry):
             parent_path = entry.path.rsplit('/', 2)[0] + '.xml'
@@ -264,6 +265,42 @@ class SourceWorkspace:
         visible, omitted = self._bounded_names(names)
         return visible, omitted
 
+    def _default_forms(self, name):
+        """Explicit source declarations only; never guess or instantiate an object."""
+        if name in self.default_form_cache:
+            return self.default_form_cache[name]
+        from ..configuration_source_metadata import SourceMetadataObject
+        from ..configuration_xml import MD
+        family = self.objects[name].family
+        properties_by_family = {
+            'Catalog': ('DefaultObjectForm', 'DefaultFolderForm', 'DefaultListForm',
+                        'DefaultChoiceForm', 'DefaultFolderChoiceForm'),
+            'Document': ('DefaultObjectForm', 'DefaultListForm', 'DefaultChoiceForm'),
+            'DataProcessor': ('DefaultForm',), 'Report': ('DefaultForm',),
+            'InformationRegister': ('DefaultRecordForm', 'DefaultListForm'),
+            'AccumulationRegister': ('DefaultListForm',),
+        }
+        defaults, diagnostics = [], []
+        properties = SourceMetadataObject(self.application.metadata, self.objects[name])._object().find('{'+MD+'}Properties')
+        for prop in properties_by_family.get(family, ()):
+            nodes = properties.findall('{'+MD+'}'+prop) if properties is not None else []
+            if not nodes:
+                continue
+            if len(nodes) != 1 or nodes[0].attrib or len(nodes[0]):
+                diagnostics.append(prop+': malformed default form declaration')
+                continue
+            target = nodes[0].text or ''
+            if not target:
+                continue
+            if (len(target) > 1024 or target not in self.forms
+                    or not (target.startswith(name+'.Form.') or self.objects[target].family == 'CommonForm')):
+                diagnostics.append(prop+': unavailable declared source form')
+                continue
+            defaults.append({'property': prop, 'name': target})
+        result = (defaults, diagnostics)
+        self.default_form_cache[name] = result
+        return result
+
     def object_detail(self):
         if self.object_selected is None:
             return None
@@ -271,10 +308,12 @@ class SourceWorkspace:
         entry = self.objects[name]
         related = sorted(form for form in self.forms if form == name or form.startswith(name+'.Form.'))
         forms, omitted = self._bounded_names(related, 8192)
+        defaults, diagnostics = self._default_forms(name)
         return {'name': name, 'title': self.navigation_labels.get(name, entry.name),
                 'family': entry.family, 'source_path': entry.path,
-                'forms': forms, 'form_labels': self._labels(forms, 8192), 'omitted_forms': omitted,
-                'execution': 'explicit_form_selection' if related else 'metadata_only',
+                'forms': forms, 'form_labels': self._labels(forms + [item['name'] for item in defaults], 8192), 'omitted_forms': omitted,
+                'default_forms': [dict(item) for item in defaults], 'default_form_diagnostics': list(diagnostics),
+                'execution': 'explicit_form_selection' if related or defaults else 'metadata_only',
                 'storage_granted': False}
 
     def snapshot(self):
@@ -317,7 +356,12 @@ class SourceWorkspace:
         if method != 'workspace.snapshot':
             self.error = None
         if method == 'workspace.open':
-            if set(params) != {'name'} or type(params['name']) is not str or params['name'] not in self.visible_forms()[0] and params['name'] not in (self.object_detail() or {}).get('forms', []):
+            if set(params) != {'name'} or type(params['name']) is not str:
+                raise ValueError('declared workspace form required')
+            detail = self.object_detail() or {}
+            admitted = set(self.visible_forms()[0]) | set(detail.get('forms', []))
+            admitted.update(item['name'] for item in detail.get('default_forms', []))
+            if params['name'] not in admitted:
                 raise ValueError('declared workspace form required')
             existing = next((generation for generation, (name, form) in self.open_forms.items()
                              if name == params['name'] and self._live(form)), None)

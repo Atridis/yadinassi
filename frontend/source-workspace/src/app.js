@@ -68,6 +68,10 @@ async function apply(reply){
     heading.textContent=caption(data.name,{[data.name]:data.title});path.textContent='XML: '+data.source_path;
     notice.textContent=data.execution==='metadata_only'?'Только метаданные: объявленной исполняемой формы нет. CRUD и хранилище не предоставляются.':'Объявленные формы открываются явно и могут выдавать ошибки неподдерживаемых возможностей. CRUD и хранилище не предоставляются.';
     detail.append(heading,path,notice);
+    const defaultTitles={DefaultObjectForm:'Форма объекта',DefaultFolderForm:'Форма группы',DefaultListForm:'Форма списка',DefaultChoiceForm:'Форма выбора',DefaultFolderChoiceForm:'Выбор группы',DefaultForm:'Основная форма',DefaultRecordForm:'Форма записи'};
+    for(const item of data.default_forms||[]){const button=document.createElement('button');button.textContent=(defaultTitles[item.property]||item.property)+': '+caption(item.name,data.form_labels);button.addEventListener('click',()=>action('workspace.open',{name:item.name}));detail.append(button);}
+    for(const message of data.default_form_diagnostics||[]){const note=document.createElement('p');note.textContent=message;detail.append(note);}
+
     for(const name of data.forms){const button=document.createElement('button');button.textContent='Открыть '+caption(name,data.form_labels);button.addEventListener('click',()=>action('workspace.open',{name}));detail.append(button);}
     if(data.omitted_forms){const note=document.createElement('p');note.textContent='Ещё форм: '+data.omitted_forms+'. Уточните общий поиск форм.';detail.append(note);}
   }
