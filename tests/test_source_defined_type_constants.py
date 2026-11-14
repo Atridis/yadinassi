@@ -58,16 +58,45 @@ class DefinedTypeConstantTests(unittest.TestCase):
         for value in (True,'text',None):store.set('Choice',value);self.assertEqual(store.get('Choice'),value)
 
     def test_chained_alias(self):
-        _,errors,_=source_constant_definitions(package({'Setting':alias('Leaf'),'Leaf':BOOL}))
-        self.assertIn('nested DefinedType unsupported',errors['choice'])
+        source=package({'Setting':alias('Leaf'),'Leaf':BOOL})
+        defs,errors,_=source_constant_definitions(source)
+        d=next(d for d in defs if d.name=='Choice')
+        self.assertNotIn('choice',errors)
+        self.assertEqual(d.type_dependencies,tuple((str(uuid5(NAMESPACE_URL,n)),n) for n in ('Setting','Leaf')))
+        store=self.store(source);store.set('Choice',True);self.assertIs(store.get('Choice'),True)
+
+    def test_chain_leaf_reidentity_rejected_without_touching_database(self):
+        source=package({'Setting':alias('Leaf'),'Leaf':BOOL})
+        store=self.store(source);store.set('Choice',True);store.close();before=self.path.read_bytes()
+        changed=xml('Leaf',BOOL,'DefinedType').replace(str(uuid5(NAMESPACE_URL,'Leaf')).encode(),str(uuid5(NAMESPACE_URL,'NewLeaf')).encode())
+        new=package({'Setting':alias('Leaf'),'Leaf':BOOL},extra={'DefinedTypes/Leaf.xml':changed})
+        with self.assertRaises(ValueError):SourceConstantStore.update_source(self.path,new)
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_chain_order_and_intermediate_identity_are_schema_bound(self):
+        source=package({'Setting':alias('Mid'),'Mid':alias('Leaf'),'Leaf':BOOL})
+        store=self.store(source);store.close();before=self.path.read_bytes()
+        with self.assertRaises(ValueError):
+            SourceConstantStore.update_source(self.path,package({'Setting':alias('Leaf'),'Mid':alias('Leaf'),'Leaf':BOOL}))
+        self.assertEqual(self.path.read_bytes(),before)
+
+    def test_chain_reopen_retains_value(self):
+        source=package({'Setting':alias('Leaf'),'Leaf':BOOL})
+        store=self.store(source);store.set('Choice',True);store.close()
+        reopened=SourceConstantStore.reopen(self.path,source);self.addCleanup(reopened.close)
+        self.assertIs(reopened.get('Choice'),True)
+
+    def test_self_cycle_case_insensitive(self):
+        _,errors,_=source_constant_definitions(package({'Setting':alias('sEtTiNg')}))
+        self.assertIn('DefinedType cycle',errors['choice'])
 
     def test_cycle_is_named_failure(self):
         defs,errors,_=source_constant_definitions(package({'Setting':alias('Leaf'),'Leaf':alias('Setting')}))
-        self.assertIn('nested DefinedType unsupported',errors['choice']);self.assertIn('Text',[d.name for d in defs])
+        self.assertIn('DefinedType cycle',errors['choice']);self.assertIn('Text',[d.name for d in defs])
 
     def test_excessive_chain(self):
         types={'Setting':alias('D0')};types.update({'D'+str(i):alias('D'+str(i+1)) for i in range(16)});types['D16']=BOOL
-        _,errors,_=source_constant_definitions(package(types));self.assertIn('nested DefinedType unsupported',errors['choice'])
+        _,errors,_=source_constant_definitions(package(types));self.assertIn('chain exceeds 16',errors['choice'])
 
     def test_unknown_defined_type(self):
         _,errors,_=source_constant_definitions(package(constant=alias('Absent')));self.assertIn('unknown DefinedType',errors['choice'])

@@ -10,6 +10,8 @@ from .configuration_xml import MD, V8, _object, _props, _qname
 
 def source_session_definitions(source):
     files = {entry.path: entry.content for entry in source.files}
+    from .source_defined_types import SourceDefinedTypes
+    defined_types = SourceDefinedTypes(source)
     definitions = []
     unsupported = {}
     for item in source.metadata:
@@ -31,7 +33,8 @@ def source_session_definitions(source):
                 raise ValueError('unsupported properties')
             if len(obj) != 1 or set(obj.attrib) != {'uuid'}:
                 raise ValueError('unsupported declaration envelope')
-            definitions.append(_source_definition(item, props, namespaces))
+            resolved, resolved_namespaces, _ = defined_types.resolve(props, namespaces)
+            definitions.append(_source_definition(item, resolved, resolved_namespaces))
         except ValueError as error:
             from .configuration_diagnostics import ImportRefusal
             unsupported[item.name.casefold()] = (error.diagnostic.text()

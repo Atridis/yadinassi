@@ -1,6 +1,6 @@
 """Bounded source TypeSet indirection, never dynamic host type loading.
 
-Only a whole singleton DefinedType TypeSet is expanded. Mixed TypeSet overrides,
+Only whole singleton DefinedType TypeSets are expanded, with bounded chains. Mixed TypeSet overrides,
 unknown type sets and malformed declarations remain explicit unsupported cases.
 """
 from .configuration_xml import MD, V8, CFG, _object, _props, _text, _qname
@@ -28,6 +28,7 @@ class SourceDefinedTypes:
 
     def resolve(self, props, namespaces):
         dependencies = []
+        visited = set()
         while True:
             node = props.get('{' + MD + '}Type')
             if node is None:
@@ -35,8 +36,6 @@ class SourceDefinedTypes:
             aliases = [n for n in node if n.tag == '{' + V8 + '}TypeSet']
             if not aliases:
                 return props, namespaces, tuple(dependencies)
-            if dependencies:
-                raise ValueError('nested DefinedType unsupported')
             if self.inventory_error:
                 raise ValueError(self.inventory_error)
             if (node.attrib or (node.text or '').strip() or len(node) != 1
@@ -47,6 +46,11 @@ class SourceDefinedTypes:
             if namespace != CFG or not target.startswith('DefinedType.'):
                 raise ValueError('unsupported source type set')
             key = target[len('DefinedType.'):].casefold()
+            if key in visited:
+                raise ValueError('DefinedType cycle: ' + target)
+            if len(dependencies) >= 16:
+                raise ValueError('DefinedType chain exceeds 16 declarations')
+            visited.add(key)
             name = self.names.get(key)
             if name is None:
                 raise ValueError('unknown DefinedType: ' + target)
