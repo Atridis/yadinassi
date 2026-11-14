@@ -176,8 +176,7 @@ class SourceWorkspace:
             workspace = cls(application)
             for name, parameters in pending:
                 try:
-                    if name not in workspace.forms:
-                        raise ValueError('declared source form required')
+                    name = workspace._resolve_form_name(name)
                     workspace._new_form(name, parameters)
                     workspace.navigation_total += 1
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
@@ -202,12 +201,56 @@ class SourceWorkspace:
         self.generation = generation
         self.selected, self.form = self.open_forms[generation]
 
+    def _resolve_form_name(self, name):
+        """Resolve spelling/default aliases to one admitted memory-only form.
+
+        This is not a GetForm handler or automatic database-form generator.
+        An absent declared default remains unavailable.
+        """
+        if type(name) is not str or not name or len(name) > 1024:
+            raise ValueError('declared source form required for OpenForm')
+        from ..configuration_source_metadata import _FAMILIES
+        families = {alias.casefold(): family for family, _, _, russian in _FAMILIES
+                    for alias in (family, russian)}
+        parts = name.split('.')
+        if len(parts) not in (2, 3, 4) or any(not part for part in parts):
+            raise ValueError('declared source form required for OpenForm')
+        family = families.get(parts[0].casefold())
+        if family is None:
+            raise ValueError('declared source form required for OpenForm')
+        parts[0] = family
+        if len(parts) == 4:
+            if parts[2].casefold() not in ('form', 'форма'):
+                raise ValueError('declared source form required for OpenForm')
+            parts[2] = 'Form'
+        canonical = '.'.join(parts)
+        matches = [form for form in self.forms if form.casefold() == canonical.casefold()]
+        if len(matches) == 1:
+            return matches[0]
+        if len(parts) != 3:
+            raise ValueError('declared source form required for OpenForm')
+        standard = {
+            'objectform':'DefaultObjectForm', 'формаобъекта':'DefaultObjectForm',
+            'listform':'DefaultListForm', 'формасписка':'DefaultListForm',
+            'choiceform':'DefaultChoiceForm', 'формавыбора':'DefaultChoiceForm',
+            'folderform':'DefaultFolderForm', 'формагруппы':'DefaultFolderForm',
+            'folderchoiceform':'DefaultFolderChoiceForm', 'формавыборагруппы':'DefaultFolderChoiceForm',
+            'recordform':'DefaultRecordForm', 'формазаписи':'DefaultRecordForm',
+            'form':'DefaultForm', 'форма':'DefaultForm',
+        }
+        prop = standard.get(parts[2].casefold())
+        owners = [owner for owner in self.objects if owner.casefold() == '.'.join(parts[:2]).casefold()]
+        if prop and len(owners) == 1:
+            matches = [item['name'] for item in self._default_forms(owners[0])[0] if item['property'] == prop]
+            if len(matches) == 1:
+                return matches[0]
+        raise ValueError('declared source default form is unavailable')
+
     def _request_navigation(self, generation, name, parameters=None):
         if (self.closed or generation != self.navigation_event or generation != self.generation or generation not in self.open_forms
                 or not self._live(self.open_forms[generation][1])):
             raise ValueError('inactive source form navigation')
-        if type(name) is not str or name not in self.forms:
-            raise ValueError('declared source form required for OpenForm')
+        name = self._resolve_form_name(name)
         if (sum(self._live(form) for _, form in self.open_forms.values()) + len(self.pending_navigation) >= MAX_OPEN_FORMS
                 or self.navigation_total + len(self.pending_navigation) >= 256):
             raise ValueError('source form navigation capacity exhausted')
