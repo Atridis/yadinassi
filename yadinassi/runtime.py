@@ -1203,7 +1203,11 @@ class Interpreter:
             if self._configuration_runtime is None:
                 raise ValueError('ShowChooseItem requires an application-owned client dispatch')
             self._configuration_runtime.require_value_selection(self)
-        from .common_templates import get_common_template_marker
+        from .common_templates import get_common_template_marker, SourceTemplateCall
+        if type(function.function) is SourceTemplateCall:
+            function.function.owner.authorize(self)
+            if len(node.arguments) != 1:
+                raise TypeError("GetCommonTemplate requires one argument")
         template_call=function.function is get_common_template_marker
         if template_call:
             if self._configuration_runtime is None:raise ValueError('common templates require an application')
@@ -1309,7 +1313,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceTemplateCall):
             return function.function.invoke(self, values)
         return function(*values)
 
