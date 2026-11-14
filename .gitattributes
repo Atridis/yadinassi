@@ -432,3 +432,6 @@ tests/fixtures/legacy_demo_root.xml -text
 
 # Source diagnostic UI bytes are part of the exact interpreter inventory.
 yadinassi/ui/assets/source/* text eol=lf
+
+frontend/source-workspace/** text eol=lf
+yadinassi/ui/assets/source-workspace/* text eol=lf
