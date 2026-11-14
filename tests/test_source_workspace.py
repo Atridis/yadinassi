@@ -213,8 +213,14 @@ class SourceWorkspaceTests(unittest.TestCase):
     def test_family_inventory_is_byte_bounded(self):
         from types import SimpleNamespace
         from yadinassi.ui.protocol import encode_line,MAX_LINE_BYTES
-        app=SimpleNamespace(require_open=lambda:None,constant_store=None,source=SimpleNamespace(name='Demo'))
-        app.metadata=SimpleNamespace(_inventory={str(i)+'.xml':SimpleNamespace(path=str(i)+'.xml',family='Future'+'Я'*100+str(i),name='Entry') for i in range(2000)})
+        from yadinassi.configuration_source_metadata import SourceMetadataRoot
+        mapping={'Configuration.xml':xml('Configuration','Demo')}
+        mapping.update({str(i)+'.xml':xml('Future'+'Я'*100+str(i),'Entry') for i in range(2000)})
+        source=import_source(mapping)
+        # Real admitted XML keeps the family-byte stress test meaningful for
+        # the navigation projection without executing unknown future families.
+        app=SimpleNamespace(require_open=lambda:None,constant_store=None,source=source,
+                            metadata=SourceMetadataRoot(source))
         w=SourceWorkspace(app);self.assertGreater(w.snapshot()['state']['omitted_families'],0)
         self.assertLess(len(encode_line(w.exchange(request()))),MAX_LINE_BYTES)
 

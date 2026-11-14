@@ -8,6 +8,9 @@ from .local_app import _Handler
 
 PROTOCOL = 'yadinassi-source-workspace/1'
 MAX_OPEN_FORMS = 8
+MAX_NAVIGATION_LABEL = 256
+MAX_SUBSYSTEM_MEMBERS = 2048
+MAX_NAVIGATION_MEMBERS = 32768
 
 
 class SourceWorkspace:
@@ -30,6 +33,7 @@ class SourceWorkspace:
         self.query = ''
         self.object_query = ''
         self.object_family = ''
+        self.object_subsystem = ''
         self.object_selected = None
         inventory = application.metadata._inventory
         def full_name(entry):
@@ -48,6 +52,99 @@ class SourceWorkspace:
         self.object_families, self.omitted_families = self._bounded_names(sorted({entry.family for entry in inventory.values()}), 8192)
         self.forms = tuple(sorted(full_name(entry) for entry in inventory.values()
                                   if entry.family in ('Form', 'CommonForm')))
+        self._prepare_navigation()
+
+    def _navigation_diagnostic(self, name, reason):
+        message = name[:160] + ': ' + reason
+        if len(self.navigation_diagnostics) < 16:
+            self.navigation_diagnostics.append(message[:256])
+        else:
+            self.omitted_navigation_diagnostics += 1
+
+    def _prepare_navigation(self):
+        """Presentation from admitted XML; direct membership is not authority.
+
+        Parent subsystem selection does not union child subsystem contents.
+        Unknown/ambiguous Content invalidates that subsystem's whole filter,
+        rather than inventing a group or silently accepting a partial one.
+        """
+        from ..configuration_source_metadata import SourceMetadataObject
+        from ..configuration_xml import MD, XR, XSI
+        v8 = '{http://v8.1c.ru/8.1/data/core}'
+        md = '{' + MD + '}'
+        self.navigation_labels = {name: entry.name for name, entry in self.objects.items()}
+        self.navigation_diagnostics = []
+        self.omitted_navigation_diagnostics = 0
+        self.subsystems, self.omitted_subsystems = self._bounded_names(
+            sorted(name for name, entry in self.objects.items() if entry.family == 'Subsystem'), 4096)
+        self.subsystem_members = {name: frozenset() for name in self.subsystems}
+        membership_total = 0
+        for name, entry in self.objects.items():
+            metadata = SourceMetadataObject(self.application.metadata, entry)
+            properties = metadata._object().find(md + 'Properties')
+            self.navigation_labels[name] = entry.name
+            synonyms = properties.findall(md + 'Synonym') if properties is not None else []
+            if synonyms:
+                try:
+                    if len(synonyms) != 1 or synonyms[0].attrib or (synonyms[0].text or '').strip():
+                        raise ValueError('malformed synonym')
+                    russian = []
+                    for item in synonyms[0]:
+                        langs, texts = item.findall(v8 + 'lang'), item.findall(v8 + 'content')
+                        if (item.tag != v8 + 'item' or item.attrib or (item.text or '').strip()
+                                or len(langs) != 1 or len(texts) != 1 or len(item) != 2
+                                or len(langs[0]) or len(texts[0]) or langs[0].attrib or texts[0].attrib):
+                            raise ValueError('malformed localized synonym')
+                        if (langs[0].text or '').strip().lower() == 'ru':
+                            russian.append(texts[0].text or '')
+                    if len(russian) > 1: raise ValueError('ambiguous Russian synonym')
+                    if russian:
+                        label = ' '.join(russian[0].split())
+                        if not label or len(label) > MAX_NAVIGATION_LABEL:
+                            raise ValueError('Russian synonym length bound')
+                        self.navigation_labels[name] = label
+                except ValueError as error:
+                    self._navigation_diagnostic(name, str(error))
+            if name not in self.subsystem_members:
+                continue
+            content = properties.findall(md + 'Content') if properties is not None else []
+            try:
+                if not content:
+                    continue  # No declared members means an empty direct group.
+                if len(content) != 1 or content[0].attrib or (content[0].text or '').strip():
+                    raise ValueError('malformed subsystem Content')
+                membership_total += len(content[0])
+                if len(content[0]) > MAX_SUBSYSTEM_MEMBERS or membership_total > MAX_NAVIGATION_MEMBERS:
+                    raise ValueError('subsystem membership bound')
+                members = set()
+                for item in content[0]:
+                    qname = item.get('{' + XSI + '}type', '').split(':')
+                    prefix, local = qname if len(qname) == 2 else ('', qname[0])
+                    reference = item.text or ''
+                    if (item.tag != '{' + XR + '}Item' or len(item)
+                            or set(item.attrib) != {'{' + XSI + '}type'}
+                            or len(qname) > 2 or local != 'MDObjectRef'
+                            or metadata._namespaces[item].get(prefix) != XR
+                            or (item.tail or '').strip()):
+                        raise ValueError('unsupported subsystem reference')
+                    if reference not in self.objects:
+                        raise ValueError('undeclared subsystem reference')
+                    if reference in members:
+                        raise ValueError('duplicate subsystem reference')
+                    members.add(reference)
+                self.subsystem_members[name] = frozenset(members)
+            except ValueError as error:
+                self._navigation_diagnostic(name, str(error))
+
+    def _labels(self, names, budget=8192):
+        labels, size = {}, 2
+        for name in names:
+            label = self.navigation_labels.get(name, name)
+            cost = len(json.dumps({name: label}, ensure_ascii=False).encode('utf-8'))
+            if size + cost > budget:
+                continue  # Missing labels explicitly fall back to canonical names.
+            labels[name] = label; size += cost
+        return labels
 
     @classmethod
     def start(cls, application):
@@ -139,7 +236,7 @@ class SourceWorkspace:
                 break
 
     def visible_forms(self):
-        matches = [name for name in self.forms if self.query.casefold() in name.casefold()]
+        matches = [name for name in self.forms if (self.query.casefold() in name.casefold() or self.query.casefold() in self.navigation_labels.get(name, '').casefold())]
         visible, size = [], 0
         for name in matches:
             cost = len(json.dumps(name, ensure_ascii=False).encode('utf-8')) + 1
@@ -161,7 +258,9 @@ class SourceWorkspace:
     def object_inventory(self):
         names = sorted(name for name, entry in self.objects.items()
                        if (not self.object_family or entry.family == self.object_family)
-                       and self.object_query.casefold() in name.casefold())
+                       and (not self.object_subsystem or name in self.subsystem_members[self.object_subsystem])
+                       and (self.object_query.casefold() in name.casefold()
+                            or self.object_query.casefold() in self.navigation_labels.get(name, '').casefold()))
         visible, omitted = self._bounded_names(names)
         return visible, omitted
 
@@ -172,23 +271,29 @@ class SourceWorkspace:
         entry = self.objects[name]
         related = sorted(form for form in self.forms if form == name or form.startswith(name+'.Form.'))
         forms, omitted = self._bounded_names(related, 8192)
-        return {'name': name, 'family': entry.family, 'source_path': entry.path,
-                'forms': forms, 'omitted_forms': omitted,
+        return {'name': name, 'title': self.navigation_labels.get(name, entry.name),
+                'family': entry.family, 'source_path': entry.path,
+                'forms': forms, 'form_labels': self._labels(forms, 8192), 'omitted_forms': omitted,
                 'execution': 'explicit_form_selection' if related else 'metadata_only',
                 'storage_granted': False}
 
     def snapshot(self):
         visible, omitted = self.visible_forms()
         objects, object_omitted = self.object_inventory()
+        label_forms = list(dict.fromkeys([name for name, _ in self.open_forms.values()] + visible))
         return {'protocol': PROTOCOL, 'state': {'kind': 'closed' if self.closed else 'workspace',
-                'name': self.application.source.name, 'forms': visible,
+                'name': self.application.source.name, 'forms': visible, 'form_labels': self._labels(label_forms),
                 'omitted_forms': omitted, 'query': self.query, 'selected': self.selected,
                 'generation': self.generation, 'active': self._active(), 'error': self.error,
                 'form_diagnostics': list(self.form.diagnostics) if self.form else [],
                 'open_forms': [{'generation': generation, 'name': name, 'active': self._live(form)}
                                for generation, (name, form) in self.open_forms.items()],
                 'form_limit': MAX_OPEN_FORMS, 'any_active': self._any_active(),
-                'objects': objects, 'omitted_objects': object_omitted,
+                'objects': objects, 'object_labels': self._labels(objects), 'omitted_objects': object_omitted,
+                'subsystems': self.subsystems, 'subsystem_labels': self._labels(self.subsystems, 4096),
+                'omitted_subsystems': self.omitted_subsystems, 'object_subsystem': self.object_subsystem,
+                'navigation_diagnostics': list(self.navigation_diagnostics),
+                'omitted_navigation_diagnostics': self.omitted_navigation_diagnostics,
                 'object_query': self.object_query, 'object_family': self.object_family,
                 'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
                 'memory_only': True, 'native_parity': False}}
@@ -231,11 +336,14 @@ class SourceWorkspace:
                 raise ValueError('unknown workspace form')
             self._select(params['generation'])
         elif method == 'workspace.objects':
-            if (set(params) != {'query', 'family'} or type(params['query']) is not str
+            if (set(params) not in ({'query', 'family'}, {'query', 'family', 'subsystem'}) or type(params['query']) is not str
                     or len(params['query']) > 128 or type(params['family']) is not str
-                    or params['family'] not in ('', *self.object_families)):
+                    or params['family'] not in ('', *self.object_families)
+                    or type(params.get('subsystem', '')) is not str
+                    or params.get('subsystem', '') not in ('', *self.subsystems)):
                 raise ValueError('invalid object search')
             self.object_query, self.object_family = params['query'], params['family']
+            self.object_subsystem = params.get('subsystem', '')
         elif method == 'workspace.inspect':
             if (set(params) != {'name'} or type(params['name']) is not str
                     or params['name'] not in self.object_inventory()[0]):
