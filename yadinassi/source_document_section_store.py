@@ -78,6 +78,35 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         result={known[sid].name.casefold():decode_section(known[sid],raw) for sid,raw in rows}
         if sum(map(len,result.values()))>_MAX_ROWS:raise ValueError('document section row bound')
         return result
+    def _validate_selection_sections(self,definition,identities,identity=None):
+        """One bounded ordered payload query, preserving every selected row check."""
+        from itertools import groupby
+        expected={str(value) for value in identities};seen=set()
+        known={str(section.identity):section for section in definition.sections}
+        sql='SELECT record_identity,section_identity,payload FROM source_document_section WHERE document_identity=?'
+        args=[str(definition.identity)]
+        if identity is not None:
+            sql+=' AND record_identity=?';args.append(str(identity))
+        sql+=' ORDER BY record_identity,section_identity LIMIT 160001'
+        payloads=self._connection.execute(sql,args)
+        total_count=0
+        for rid,rows in groupby(payloads,key=lambda row:row[0]):
+            if rid not in expected:raise ValueError('section foreign record integrity')
+            section_ids=set();size=0;row_count=0
+            for _,sid,raw in rows:
+                total_count+=1
+                if total_count>160000:raise ValueError('section aggregate storage bound')
+                if sid not in known or sid in section_ids:raise ValueError('section inventory integrity')
+                section_ids.add(sid)
+                if type(raw) is not str:raise ValueError('section payload integrity')
+                size+=len(raw.encode())
+                if size>_MAX_DOCUMENT_BYTES:raise ValueError('document section byte bound')
+                row_count+=len(decode_section(known[sid],raw))
+                if row_count>_MAX_ROWS:raise ValueError('document section row bound')
+            if section_ids!=set(known):raise ValueError('section inventory integrity')
+            seen.add(rid)
+        if known and seen!=expected:raise ValueError('document section inventory/byte bound')
+
     def validate_records(self):
         super().validate_records()
         known={str(d.identity):d for d in self.document_definitions.values()}
@@ -90,7 +119,7 @@ class SourceDocumentSectionStore(SourceDocumentStore):
             if owned:self.begin_transaction()
             result=super().read_documents(name,identity)
             definition=self.document(name)
-            for rid,_,_ in result:self._sections(definition,rid)
+            self._validate_selection_sections(definition,(rid for rid,_,_ in result),identity)
             if owned:self.rollback_transaction()
             return result
         except BaseException:
