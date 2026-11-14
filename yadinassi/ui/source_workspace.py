@@ -36,6 +36,7 @@ class SourceWorkspace:
         self.object_subsystem = ''
         self.object_selected = None
         self.default_form_cache = {}
+        self.form_preview = None
         inventory = application.metadata._inventory
         def full_name(entry):
             parent_path = entry.path.rsplit('/', 2)[0] + '.xml'
@@ -359,6 +360,53 @@ class SourceWorkspace:
                 'execution': 'explicit_form_selection' if related or defaults else 'metadata_only',
                 'storage_granted': False}
 
+    def _visible_form_targets(self):
+        detail = self.object_detail() or {}
+        admitted = set(self.visible_forms()[0]) | set(detail.get('forms', []))
+        admitted.update(item['name'] for item in detail.get('default_forms', []))
+        return admitted
+
+    def _preview_form(self, name):
+        """Inspect bounded XML projection only; no module compilation or execution."""
+        from hashlib import sha256
+        import xml.etree.ElementTree as ET
+        from ..configuration_forms import L
+        from ..source_form_projection import project_source_form
+        from ..configuration_source_metadata import SourceMetadataObject
+        entry = self.objects[name]
+        path = entry.path[:-4] + '/Ext/Form.xml'
+        raw = self.application.files.get(path)
+        preview = {'name': name, 'source_path': path,
+                   'source_sha256': sha256(raw).hexdigest() if raw is not None else None,
+                   'status': 'unavailable', 'diagnostics': [], 'omitted_diagnostics': 0, 'counts': None,
+                   'module_checked': False, 'runtime_checked': False,
+                   'storage_granted': False, 'native_parity': False}
+        try:
+            form_type = SourceMetadataObject(self.application.metadata, entry)._property('FormType')
+            if form_type.attrib or len(form_type) or form_type.text != 'Managed':
+                raise ValueError('source form must declare Managed FormType')
+            if raw is None:
+                raise ValueError('declared form XML is missing')
+            projection = project_source_form(raw)
+            root = ET.fromstring(projection.xml)
+            preview['status'] = 'projected'
+            preview['counts'] = {
+                'attributes': len(root.findall('./'+L+'Attributes/'+L+'Attribute')),
+                'commands': len(root.findall('./'+L+'Commands/'+L+'Command')),
+                'controls': sum(len(node) for node in root.iter(L+'ChildItems')),
+            }
+            diagnostic_bytes = 2
+            for item in projection.diagnostics:
+                cost = len(json.dumps(item, ensure_ascii=False).encode('utf-8')) + 1
+                if diagnostic_bytes + cost > 6144:
+                    preview['omitted_diagnostics'] += 1
+                    continue
+                preview['diagnostics'].append(dict(item))
+                diagnostic_bytes += cost
+        except (ValueError, TypeError, RecursionError, ET.ParseError) as error:
+            preview['diagnostics'] = [{'path': 'Form', 'reason': str(error)[:256]}]
+        self.form_preview = preview
+
     def snapshot(self):
         visible, omitted = self.visible_forms()
         objects, object_omitted = self.object_inventory()
@@ -378,6 +426,7 @@ class SourceWorkspace:
                 'omitted_navigation_diagnostics': self.omitted_navigation_diagnostics,
                 'object_query': self.object_query, 'object_family': self.object_family,
                 'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
+                'form_preview': json.loads(json.dumps(self.form_preview)),
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -401,10 +450,7 @@ class SourceWorkspace:
         if method == 'workspace.open':
             if set(params) != {'name'} or type(params['name']) is not str:
                 raise ValueError('declared workspace form required')
-            detail = self.object_detail() or {}
-            admitted = set(self.visible_forms()[0]) | set(detail.get('forms', []))
-            admitted.update(item['name'] for item in detail.get('default_forms', []))
-            if params['name'] not in admitted:
+            if params['name'] not in self._visible_form_targets():
                 raise ValueError('declared workspace form required')
             existing = next((generation for generation, (name, form) in self.open_forms.items()
                              if name == params['name'] and self._live(form)), None)
@@ -417,6 +463,11 @@ class SourceWorkspace:
                     self._new_form(params['name'])
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
+        elif method == 'workspace.preview':
+            if (set(params) != {'name'} or type(params['name']) is not str
+                    or params['name'] not in self._visible_form_targets()):
+                raise ValueError('declared visible source form required')
+            self._preview_form(params['name'])
         elif method == 'workspace.select':
             if (set(params) != {'generation'} or type(params['generation']) is not int
                     or params['generation'] not in self.open_forms):
@@ -479,4 +530,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.preview','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')

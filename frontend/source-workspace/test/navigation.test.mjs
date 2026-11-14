@@ -58,3 +58,9 @@ test('closed workspace cannot activate default form buttons',async()=>{
  const h=await harness({...state,kind:'closed',object_detail:{name:'Catalog.A',forms:[],default_forms:[{property:'DefaultObjectForm',name:'Catalog.A.Form.Card'}]}});
  assert.equal(h.get('Метаданные выбранного объекта').children.find(x=>x.tag==='button').disabled,true);
 });
+test('XML preview uses read-only RPC and visibly denies runtime validation',async()=>{
+ const h=await harness({...state,form_preview:{name:'CommonForm.Main',source_path:'CommonForms/Main/Ext/Form.xml',source_sha256:'abc',counts:{attributes:1,commands:2,controls:3},diagnostics:[{path:'Items.Logo',reason:'Control unavailable'}]}});
+ h.elements.find(x=>x.textContent==='Проверить XML формы').listeners.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.requests.at(-1).method,'workspace.preview');assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');
+ const text=h.get('Проверка XML формы').children.map(x=>x.textContent).join('\n');assert.match(text,/модуль и runtime не проверялись/);assert.match(text,/SHA256: abc/);assert.match(text,/Items.Logo: Control unavailable/);
+});
+test('XML preview button is disabled after workspace closes',async()=>{const h=await harness({...state,kind:'closed'});assert.equal(h.elements.find(x=>x.textContent==='Проверить XML формы').disabled,true);});
