@@ -602,3 +602,73 @@ def parse_fragment(text: str, source: str = "<Выполнить>") -> list[ast.
     # A fresh parser intentionally has no surrounding routine/loop/handler/labels.
     # Return and external Break/Continue/Goto/Raise therefore cannot escape it.
     return Parser(tokens).parse()
+
+
+# Prepared plans own strong references to their exact mutable AST generation.
+# They are never looked up by id(list): object-id reuse cannot alias a plan.
+from dataclasses import dataclass as _plan_dataclass
+from types import MappingProxyType as _ReadOnlyLabels
+
+
+def _control_flow_children(node):
+    if isinstance(node, (ast.Routine, ast.ServerInitializer, ast.For, ast.ForEach, ast.While)):
+        return (node.body,)
+    if isinstance(node, ast.If):
+        return (*[body for _, body in node.branches], node.otherwise)
+    if isinstance(node, ast.Try):
+        return (node.body, node.handler)
+    return ()
+
+
+@_plan_dataclass(frozen=True, slots=True, eq=False)
+class PreparedBlock:
+    source: object
+    statements: tuple
+    types: tuple
+    names: tuple
+    children: tuple
+    labels: object
+
+    def matches(self, source):
+        if source is not self.source or len(source) != len(self.statements):
+            return False
+        for node, old, kind, name, children in zip(source, self.statements, self.types, self.names, self.children):
+            if node is not old or type(node) is not kind:
+                return False
+            if isinstance(node, (ast.Label, ast.Goto)) and node.name != name:
+                return False
+            current = _control_flow_children(node)
+            if len(current) != len(children):
+                return False
+            if any(not child.matches(body) for child, body in zip(children, current)):
+                return False
+        return True
+
+    def find(self, source):
+        if source is self.source:
+            return self
+        for children in self.children:
+            for child in children:
+                found = child.find(source)
+                if found is not None:
+                    return found
+        return None
+
+
+def prepare_control_flow(statements):
+    """Validate and snapshot only control-flow structure, never Literal values.
+
+    The immutable indexes are reusable, but source AST remains mutable. A caller
+    must structurally recheck before reuse; this is not O(1) invalidation.
+    """
+    validate_labels(statements)
+
+    def prepare(body):
+        nodes = tuple(body)
+        return PreparedBlock(body, nodes, tuple(type(node) for node in nodes),
+            tuple(node.name if isinstance(node, (ast.Label, ast.Goto)) else None for node in nodes),
+            tuple(tuple(prepare(child) for child in _control_flow_children(node)) for node in nodes),
+            _ReadOnlyLabels({node.name.casefold(): index for index, node in enumerate(nodes)
+                             if isinstance(node, ast.Label)}))
+
+    return prepare(statements)

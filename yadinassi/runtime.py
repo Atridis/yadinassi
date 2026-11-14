@@ -75,7 +75,8 @@ from .errors import BSLError, BSLRuntimeError
 from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
 from .collation import string_key
-from .syntax.parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
+from .syntax.parser import (parse, parse_expression, parse_fragment, validate_labels, validate_async,
+                            prepare_control_flow, PreparedBlock)
 from .syntax.lexer import KEYWORDS
 from .syntax.preprocessor import validate_compilation_profile
 from .maps import BSLFixedMap, BSLMap
@@ -106,6 +107,9 @@ EXECUTE_MAX_DEPTH = 16
 def _eval_marker(value: object) -> object:
     # The interpreter supplies the current module/frame at the call site.
     raise TypeError("Вычислить требует контекст интерпретатора")
+
+
+_CONTROL_FLOW_PLANS = object()
 
 
 class _Goto(Exception):
@@ -834,10 +838,47 @@ class Interpreter:
             if not isinstance(node, (ast.Import, ast.ServerInitializer))
             and not (isinstance(node, ast.Var) and node.execution_context == "server")]))
 
+    @staticmethod
+    def _routine_plan(function):
+        plan = getattr(function, '_prepared_control_flow', None)
+        if type(plan) is not PreparedBlock or not plan.matches(function.body):
+            # Validation completes before publication: invalid mutations do not
+            # install a partially prepared plan or reach argument side effects.
+            plan = prepare_control_flow(function.body)
+            function._prepared_control_flow = plan
+        return plan
+
+    def _planned_routine_block(self, function):
+        plan = self._routine_plan(function)
+        state = self._scheduler.active_context.state
+        entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
+        stack = entry['stack']
+        frame = [self, function, plan]
+        stack.append(frame)
+        try:
+            return (yield from self.block(function.body))
+        finally:
+            stack.pop()
+            if not stack:
+                state.pop(_CONTROL_FLOW_PLANS, None)
+
     def block(self, statements: list[ast.Node]) -> object:
         result = None
-        labels = {node.name.casefold(): index for index, node in enumerate(statements)
-                  if isinstance(node, ast.Label)}
+        prepared = None
+        entry = self._scheduler.active_context.state.get(_CONTROL_FLOW_PLANS)
+        if entry and entry['stack']:
+            frame = entry['stack'][-1]
+            if frame[0] is self:
+                prepared = frame[2].find(statements)
+                if prepared is None or not prepared.matches(statements):
+                    # Nested loop entries normally inspect only their subtree,
+                    # not every statement in the owning routine. A changed or
+                    # newly attached block revalidates its complete scope.
+                    frame[2] = self._routine_plan(frame[1])
+                    prepared = frame[2].find(statements)
+        labels = (prepared.labels if prepared is not None else
+                  {node.name.casefold(): index for index, node in enumerate(statements)
+                   if isinstance(node, ast.Label)})
         position = 0
         while position < len(statements):
             try:
@@ -1651,7 +1692,7 @@ class Interpreter:
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
-        validate_labels(function.body)
+        self._routine_plan(function)
         if crossing:
             # The measured copy-in/copy-out slice covers named variable actuals.
             # Reject properties, indexes, expressions and omitted non-Val slots
@@ -1756,7 +1797,7 @@ class Interpreter:
                         owner.locals = bindings
                     result = None
                     try:
-                        (yield from owner.block(function.body))
+                        (yield from owner._planned_routine_block(function))
                     except _Return as returned:
                         result = returned.value
                     if scalar_server_reuse: _encode_scalar(result)
@@ -1789,7 +1830,7 @@ class Interpreter:
         self._module_context_stack.append(True)
         try:
             try:
-                yield from self.block(function.body)
+                yield from self._planned_routine_block(function)
             except _Return as returned:
                 return returned.value
             return None
