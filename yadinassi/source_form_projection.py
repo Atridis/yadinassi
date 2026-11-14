@@ -82,7 +82,7 @@ def project_source_form(raw):
             key=event.get('name','').casefold();key=BSLClientApplicationForm.EVENT_NAMES.get(key,key)
             if key not in allowed:
                 note(path,'Event not executed: '+event.get('name',''));child.remove(event)
-    trim(root,('Title','Attributes','ChildItems','Commands','Events'),'Form');title(root,'Form')
+    trim(root,('Title','Attributes','ChildItems','Commands','Events','AutoCommandBar'),'Form');title(root,'Form')
     events(root,set(BSLClientApplicationForm.EVENTS),'Form')
     attributes=root.find(L+'Attributes'); retained=set()
     for node in _inventory(attributes,{L+'Attribute'},128):
@@ -125,6 +125,28 @@ def project_source_form(raw):
             children=node.findall(L+'ChildItems')
             if len(children)>1:raise ValueError('duplicate source child inventory')
             if children:preflight(children[0],depth+1)
+    auto=root.find(L+'AutoCommandBar')
+    if auto is not None:
+        # Exported root toolbars use reserved id=-1. Only their explicit XML
+        # children are presented; automatic standard commands are never added.
+        # Validate all child identities before allocating a projection-only ID.
+        if (auto.text or '').strip():raise ValueError('invalid root command bar envelope')
+        preflight(root.find(L+'ChildItems'))
+        children=auto.findall(L+'ChildItems')
+        if len(children)>1:raise ValueError('duplicate source child inventory')
+        if children:preflight(children[0],1)
+        if auto.get('id') == '-1':
+            identity=next(i for i in range(1,130) if i not in seen_ids)
+            auto.set('id',str(identity))
+            note('AutoCommandBar','Reserved root toolbar ID mapped to presentation ID '+str(identity))
+        auto.tag=L+'CommandBar'
+        holder=ET.Element(L+'ChildItems');holder.append(auto)
+        _inventory(holder,{L+'CommandBar'},1)
+        root.remove(auto)
+        container=root.find(L+'ChildItems')
+        if container is None:container=ET.SubElement(root,L+'ChildItems')
+        container.insert(0,auto)
+        seen_names.clear();seen_ids.clear()
     preflight(root.find(L+'ChildItems'))
     def items(container,parent_kind='',depth=0):
         if container is None:return

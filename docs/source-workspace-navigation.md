@@ -138,3 +138,12 @@ normal field/value/event behavior. The exact false XML flag is removed only in
 the presentation copy. True, malformed, duplicate or unknown non-scalar/object
 declarations are not treated as ordinary scalar attributes and do not acquire
 storage access. Original source hash and the strict loader remain unchanged.
+
+Root `AutoCommandBar` explicit children are also projected through the same
+horizontal-group/declared-command path. Only the exported reserved root ID `-1`
+is mapped to an unused internal positive display ID, with a diagnostic; source
+bytes/hash and all control names remain unchanged. Other invalid IDs, duplicate
+names/IDs, depth/count overflows and malformed inventories are rejected. Root
+visibility, enabled and read-only flags still constrain child dispatch. No
+`Autofill` or standard commands are synthesized; nested automatic toolbar
+population remains unsupported. This is not native command-bar behavior parity.
