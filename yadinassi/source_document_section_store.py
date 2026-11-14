@@ -69,9 +69,9 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         count,total=self._connection.execute('SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section').fetchone()
         if count>160000 or total>16777216:raise ValueError('section aggregate storage bound')
     def _sections(self,definition,identity):
-        count,total=self._connection.execute('SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section WHERE document_identity=? AND record_identity=?',(str(definition.identity),str(identity))).fetchone()
-        if count!=len(definition.sections) or total>_MAX_DOCUMENT_BYTES:raise ValueError('document section inventory/byte bound')
-        rows=self._connection.execute('SELECT section_identity,payload FROM source_document_section WHERE document_identity=? AND record_identity=? ORDER BY section_identity',(str(definition.identity),str(identity))).fetchall()
+        # Fetch at most the declared inventory plus one: an extra row proves
+        # corruption without an aggregate pre-query or unbounded materialization.
+        rows=self._connection.execute('SELECT section_identity,payload FROM source_document_section WHERE document_identity=? AND record_identity=? ORDER BY section_identity LIMIT ?',(str(definition.identity),str(identity),len(definition.sections)+1)).fetchall()
         known={str(s.identity):s for s in definition.sections}
         if {r[0] for r in rows}!=set(known) or len(rows)!=len(known):raise ValueError('section inventory integrity')
         if sum(len(raw.encode()) for _,raw in rows)>_MAX_DOCUMENT_BYTES:raise ValueError('document section byte bound')
