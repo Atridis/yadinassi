@@ -174,3 +174,54 @@ def search(caller,section,operation,args):
     section.authorize(caller)
     if operation=='find':return None
     result=BSLArray();result.items=found;return result
+
+
+def order_or_total(caller,section,operation,args):
+    """Validated scalar sorting and exact numeric summation, memory-only."""
+    from decimal import Decimal,localcontext
+    section.authorize(caller);section.buffer_bound()
+    if len(args)!=1:raise TypeError('source section Sort/Total requires one String')
+    if operation=='total':
+        key=_field(section,args[0]);field=section.fields[key]
+        if field.kind!='number':raise ValueError('source section Total requires Number field')
+        values=[]
+        for row in section.rows:
+            if key not in row.values:raise ValueError('source section Total requires assignment')
+            value=row.values[key];_encode(value,field);values.append(value)
+        if not values:return Decimal(0)
+        precision=max(v.adjusted() for v in values)-min(v.as_tuple().exponent for v in values)+1+len(str(len(values)))
+        if precision>16384:raise ValueError('source section total precision bound')
+        with localcontext() as ctx:
+            ctx.prec=max(1,precision);ctx.Emax=999999;ctx.Emin=-999999
+            return sum(values[1:],values[0])
+    from .value_table_sort import sort_table
+    from types import SimpleNamespace
+    if type(args[0]) is not str or not 1<=len(args[0])<=16384:raise TypeError('source section Sort requires bounded String')
+    selected=[];seen=set()
+    for chunk in args[0].split(','):
+        parts=chunk.strip().split()
+        if not 1<=len(parts)<=2:raise ValueError('source section sort specification')
+        key=_field(section,parts[0])
+        if key in seen:raise ValueError('source section duplicate sort field')
+        if len(parts)==2 and parts[1].casefold() not in ('asc','desc','возр','убыв'):raise ValueError('source section sort direction')
+        if section.fields[key].kind not in ('boolean','number','string','datetime'):raise ValueError('source section sort supports scalar fields only')
+        seen.add(key);selected.append(key)
+    # The established scalar sorter owns collation/target order; this private
+    # adapter neither grants a ValueTable capability nor exposes live buffers.
+    class Column:
+        def __init__(self,name):self.name=name
+    class Row:
+        def __init__(self,original,cells):self.original,self.cells=original,cells
+    columns=[Column(section.fields[k].name) for k in selected];rows=[]
+    for row in section.rows:
+        cells={}
+        for key,column in zip(selected,columns):
+            if key not in row.values:raise ValueError('source section Sort requires assignment')
+            value=row.values[key];_encode(value,section.fields[key]);cells[column]=value
+        rows.append(Row(row,cells))
+    adapter=SimpleNamespace(columns=SimpleNamespace(items=columns),rows=rows)
+    sort_table(adapter,args[0]);ordered=[row.original for row in adapter.rows]
+    section.authorize(caller)
+    if any(a is not b for a,b in zip(ordered,section.rows)):
+        section.rows[:]=ordered;section.version+=1
+    return None
