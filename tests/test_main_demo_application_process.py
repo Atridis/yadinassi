@@ -9,7 +9,7 @@ from yadinassi.form_dialogs import DIALOG_CAPABILITY
 from yadinassi.ui.configuration_app import ConfigurationController, ConfigurationProcess, PROTOCOL, load_application
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples/demo'
-STARTED = 'Основная демо: справочники, документы и складские отчёты.'
+STARTED = 'Основная демо: справочники, документы и регистр накопления.'
 
 class ConfigurationApplicationExampleTests(unittest.TestCase):
     def test_example_has_explicit_composed_source_and_closed_forms(self):
@@ -46,7 +46,7 @@ class ConfigurationApplicationExampleTests(unittest.TestCase):
         self.assertEqual(repeated['state']['messages'], [STARTED])
         welcome = rpc('open', entry=app.names['commonform.demowelcome'], request='overview')['session']
         result = event(welcome, 'command', control='DetailsButton')
-        self.assertEqual(result['form']['result']['state']['messages'], ['Calculated in the owned server process', '5'])
+        self.assertEqual(result['form']['result']['state']['messages'], ['Вычислено в серверном процессе приложения', '5'])
         self.assertEqual(len(app.sessions), 2)
         owner = next(sid for sid in app.sessions if sid != welcome)
         self.assertEqual(app.definitions[app.sessions[owner][1]].name, 'CommonForm.OperationDraft')

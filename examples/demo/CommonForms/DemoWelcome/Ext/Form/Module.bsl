@@ -1,9 +1,9 @@
-&AtServer
-Procedure Created(Cancel, StandardProcessing)
- Greeting = "Справочники, документы и отчёты работают в одной базе";
-EndProcedure
-&AtClient
-Procedure ShowDetails(Command)
- Message(DemoService.Add(4));
+&НаСервере
+Процедура Created(Cancel, StandardProcessing)
+ Greeting = "Справочники, документы и регистр накопления работают в одной базе";
+КонецПроцедуры
+&НаКлиенте
+Процедура ShowDetails(Command)
+ Сообщить(DemoService.Add(4));
  DemoTools.OpenOperation();
-EndProcedure
+КонецПроцедуры

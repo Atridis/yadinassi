@@ -23,7 +23,7 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             'report.progress={action:actionLog.length,name,state:',
             'if(report.rpcTail.length>12)report.rpcTail.shift()',
             'diagnosticMethods.has(value)',
-            "assert.equal(results.length,5)", "assert.equal(actionLog.length,121",
+            "assert.equal(results.length,5)", "assert.equal(actionLog.length,128",
             "assert.equal(actionLog.length,20", "'--ui','--f'",
         ):
             self.assertIn(required, text)

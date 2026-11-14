@@ -147,6 +147,12 @@ def _runtime_metadata_projection(source):
                                   b'', raw, flags=re.S)
         if count != len(expected):
             raise ValueError('main demo projection shape mismatch')
+        # Only exact current source is admitted above. Localized synonyms are
+        # display metadata, not scalar schema properties of the historical parser.
+        synonym = re.compile(rb'<Synonym><v8:item><v8:lang>ru</v8:lang><v8:content>[^<]+</v8:content></v8:item></Synonym>')
+        projected, localized = synonym.subn(b'', projected, count=1)
+        if localized != 1:
+            raise ValueError('main demo localized synonym mismatch')
         result[path] = projected
     for path in _NATIVE_LAYOUTS:
         result[path] = _runtime_layout_projection(path, source[path])

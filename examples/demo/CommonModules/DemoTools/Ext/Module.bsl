@@ -1,6 +1,6 @@
-Function InfoText() Export
- Return DemoService.ApplicationTitle() + ": справочники, документы и складские отчёты.";
-EndFunction
-Procedure OpenOperation() Export
- OpenForm("CommonForm.OperationDraft");
-EndProcedure
+Функция InfoText() Экспорт
+ Возврат DemoService.ApplicationTitle() + ": справочники, документы и регистр накопления.";
+КонецФункции
+Процедура OpenOperation() Экспорт
+ ОткрытьФорму("CommonForm.OperationDraft");
+КонецПроцедуры

@@ -55,7 +55,7 @@ def _stop_owned_tree(process):
             return False
     deadline = time.monotonic() + 25
     def remaining():
-        return max(0.001, deadline - time.monotonic())
+        return min(25, max(0.001, deadline - time.monotonic()))
     verified = True
     try:
         if not WINDOWS:

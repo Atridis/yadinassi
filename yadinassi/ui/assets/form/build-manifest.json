@@ -6,14 +6,14 @@
     "build.mjs": "85206bacec259e85bc376ed62c3d0c7919a9b49ae600b4253adbc61ac1cd1797",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2",
     "src/client.mjs": "0c7ceb8574276b1b3249854087391ba4b8e341471948b58593fbaf6ffa5d27fd",
-    "src/attachment.mjs": "7042d95bdd24f7d18bfda090884faef44b81ba88b23e641e138ddb7dc098593d",
+    "src/attachment.mjs": "b702e5a14c093557aeb7e410242a07bc482ffcd396c0303f0bb6d9ec74b2d62f",
     "src/view.mjs": "1d7b69297d2342e1f971a8639350a4dbf6fc24dd3ae7599a1f8a91220888ffb2",
     "src/app.mjs": "e6f3366ccb0b6700acf18d35300e3bc1d73ce21764067ee360cf1e25a025ae96",
     "src/index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
     "src/style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5"
   },
   "outputs": {
-    "app.js": "fb2bc6a120a863a131109e369836889f0d6f6a90b3094bd394f5e1ca304569ce",
+    "app.js": "1757694d6d7f413a054c09432ef0ffd4e3e7d48e5786722419f7dadb9b36f134",
     "index.html": "3214d43fc99570a9c19501e6eca26656e6e425aa54f81c20496dfb9cef8ebd2e",
     "style.css": "c38fc9a4cd385bfc82188768432dbfeb31b760a0bbb8998d914011c6e39a56e5",
     "LICENSE.txt": "ce58bd0d0fa6049dfd30d2f19efb484f6ab769e40affc7e31291c534a2fafce2"

@@ -1,4 +1,4 @@
-import {validReportRequest, validReportAction, validateReports, validateReportReply} from './reports.mjs';
+import {validReportRequest, validReportAction, validRecorderRequest, validateReports, validateReportReply} from './reports.mjs';
 import {INPUT_CAPABILITY, validateInputs, validInputAnswer} from './inputs.mjs';
 import {FormError, validateSnapshot, PROTOCOL as FORM_PROTOCOL} from '../../form/src/client.mjs';
 
@@ -197,7 +197,7 @@ export function validateApplicationReply(reply, request, previous) {
   if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.openRecorder','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
         ['application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && nested.id !== 1 ||
@@ -206,7 +206,7 @@ export function validateApplicationReply(reply, request, previous) {
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
   } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.error === null) throw new FormError('transport');
-  if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
+  if (['application.open','application.openRecord','application.openRecorder'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
 export class ApplicationClient {
@@ -235,12 +235,12 @@ export class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
-      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+      if (['application.open','application.openRecord','application.openRecorder'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
         const error = new FormError('open_failed'); error.preDispatch = true; throw error;
       }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.openRecorder','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -249,7 +249,7 @@ export class ApplicationClient {
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
-      if (method === 'application.report' && !validReportRequest(params,this.state) ||
+      if (method === 'application.openRecorder' && !validRecorderRequest(params,this.state) || method === 'application.report' && !validReportRequest(params,this.state) ||
           ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
       }
