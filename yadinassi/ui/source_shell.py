@@ -87,17 +87,30 @@ def main(argv=None):
     parser.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE')
     parser.add_argument('--source-compatibility-target', metavar='VERSION')
     parser.add_argument('--source-form', metavar='FULL_NAME', help='Open one explicitly selected supported managed form after successful startup')
+    parser.add_argument('--source-workspace', action='store_true', help='Browse declared forms in one memory-only source session')
     parser.add_argument('--open-browser', action='store_true')
     args = parser.parse_args(argv)
     if not args.run_startup and (args.source_scratch_db or args.source_compatibility_target is not None):
         parser.error('scratch database and compatibility target require --run-startup')
+    if args.source_workspace and (not args.run_startup or args.source_scratch_db or args.source_form):
+        parser.error('--source-workspace requires --run-startup without scratch database or --source-form')
     if args.source_form and (not args.run_startup or args.source_scratch_db):
         parser.error('--source-form requires --run-startup without a scratch database')
     server = shell = application = None
     try:
         path = Path(args.configuration_source)
         source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
-        if args.source_form:
+        if args.source_workspace:
+            from .source_workspace import SourceWorkspace, SourceWorkspaceHandler
+            application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
+                                            compilation_profile=args.preprocessor_profile)
+            if not application.start():
+                print('Запуск источника отменён; рабочее пространство не открыто.', file=sys.stderr)
+                return 1
+            shell = SourceWorkspace(application)
+            server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
+            print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
+        elif args.source_form:
             from ..source_forms import SourceFormController
             from .form_app import FormHandler
             application = SourceApplication(source, compatibility_target=args.source_compatibility_target,

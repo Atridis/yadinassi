@@ -2,7 +2,7 @@ name: Source diagnostics and selected-form browser QA (reviewed opt-in)
 
 on:
   push:
-    branches: [codex/universal-source-runtime-checkpoint-20261112, codex/source-xdto-packages-20261113]
+    branches: [codex/universal-source-runtime-checkpoint-20261112, codex/source-workspace-ui-20261113, codex/source-xdto-packages-20261113]
 
 permissions:
   contents: read
@@ -36,7 +36,7 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
         run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
-      - name: Acquire two source UI smoke flows with Chromium sandbox enabled
+      - name: Acquire source UI smoke flows with Chromium sandbox enabled
         timeout-minutes: 5
         env:
           QA_SOURCE_SHA: ${{ github.sha }}
@@ -52,5 +52,8 @@ jobs:
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/manifest.json
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/diagnostics.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/selected_form.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace-open-close.png
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/failure.png
           if-no-files-found: error
           retention-days: 14
