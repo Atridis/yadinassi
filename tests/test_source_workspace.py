@@ -295,13 +295,14 @@ class SourceWorkspaceTests(unittest.TestCase):
         w=self.workspace(mapping);self.invoke_navigation(w)
         self.assertEqual(w.selected,'CommonForm.Main');self.assertIn('OpenForm CommonForm.Other1',w.exchange(request())['result']['state']['error']);self.assertEqual(len(w.open_forms),1)
 
-    def test_onchange_navigation_is_explicit_error_not_stale_generation(self):
+    def test_onchange_navigation_opens_child_after_successful_change(self):
         mapping=self.many_forms()
         mapping['CommonForms/Main/Ext/Form.xml']=FORM.replace(b'LabelField',b'InputField').replace(b'<DataPath>Greeting</DataPath>',b'<DataPath>Greeting</DataPath><Events><Event name="OnChange">Changed</Event></Events>')
         mapping['CommonForms/Main/Ext/Form/Module.bsl']+=b'\n&AtClient\nProcedure Changed(Item)\nOpenForm("CommonForm.Other1");\nEndProcedure'
         w=self.workspace(mapping);w.exchange(request('open',name='CommonForm.Main'));w.exchange(request('form',generation=1,request=form_request()))
         reply=w.exchange(request('form',generation=1,request=form_request('event',event='change',revision=w.form.client.session.revision,control='GreetingLabel',value={'type':'String','value':'edit'})))
-        self.assertIsNotNone(reply['result']['result']['error']);self.assertEqual(w.generation,1);self.assertEqual(len(w.open_forms),1)
+        self.assertIsNone(reply['result']['result']['error']);self.assertEqual(w.generation,2);self.assertEqual(len(w.open_forms),2)
+        self.assertEqual(dict(w.open_forms[1][1].client.session.snapshot().attributes)['Greeting'],'edit')
 
 class SourceStartupNavigationTests(unittest.TestCase):
     def app(self, code, form_code=None):

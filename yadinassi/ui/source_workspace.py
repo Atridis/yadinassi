@@ -527,8 +527,11 @@ class SourceWorkspace:
                 raise ValueError('stale workspace form')
             self.pending_navigation = []
             nested = params['request']
+            # Only an explicit user event may defer client navigation. The form
+            # exchange still validates revision/control/value before invoking BSL.
+            # Lifecycle/snapshot/close never gain this intent scope.
             self.navigation_event = (self.generation if type(nested) is dict and nested.get('method') == 'form.event'
-                                     and type(nested.get('params')) is dict and nested['params'].get('event') == 'command' else None)
+                                     and type(nested.get('params')) is dict and nested['params'].get('event') in ('command', 'change') else None)
             try:
                 result = self.form.exchange(params['request'])
             except BaseException:

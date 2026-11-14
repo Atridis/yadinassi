@@ -73,3 +73,23 @@ test('module compile diagnostic remains literal and does not claim execution',as
  const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'unavailable',error:'<script>bad()</script>'}});
  const panel=h.get('Компиляция модуля формы');assert.ok(panel.children[1].textContent.includes('runtime не проверялись'));assert.ok(panel.children[3].textContent.includes('<script>bad()</script>'));assert.ok(panel.children[3].textContent.startsWith('Компиляция не подтверждена'));
 });
+test('change-event reply reaches parent before workspace snapshot activates child',async()=>{
+ const mounts=[],requests=[],root=new Element('main');let active=1,release;
+ const source={...state,active:true,generation:1,open_forms:[{name:'CommonForm.Main',generation:1,active:true}]};
+ const document={getElementById:()=>root,createElement:tag=>new Element(tag)};
+ const context=vm.createContext({document,location:{hash:'#session=x',pathname:'/'},history:{replaceState(){}},URLSearchParams,queueMicrotask,window:{addEventListener(){}},
+  __app:{mountForm(_window,_panel,options){mounts.push(options);return{ready:Promise.resolve(),client:{snapshot:{kind:'form'}},repaint(){},hasPending(){return false;}};}},
+  fetch:async(_url,options)=>{const req=JSON.parse(options.body);requests.push(req);
+   if(req.method==='workspace.form'){await new Promise(resolve=>{release=resolve;});active=2;return{ok:true,json:async()=>({result:{result:{error:null,parentReceipt:true}}})};}
+   return{ok:true,json:async()=>({result:{protocol:'yadinassi-source-workspace/1',state:{...source,generation:active,open_forms:active===1?source.open_forms:[...source.open_forms,{name:'CommonForm.Child',generation:2,active:true}]}}})};}
+ });
+ vm.runInContext(code,context);await new Promise(resolve=>setImmediate(resolve));
+ const parent=mounts[0];const pending=parent.transport({method:'form.event',params:{event:'change'}});
+ parent.onChange();await new Promise(resolve=>setImmediate(resolve));assert.equal(requests.length,2);assert.equal(mounts.length,1);
+ release();const reply=await pending;assert.equal(reply.result.parentReceipt,true);
+ parent.onChange();await new Promise(resolve=>setImmediate(resolve));await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(mounts.length,2);assert.equal(requests.filter(r=>r.method==='workspace.form').length,1);
+ assert.equal(requests.at(-1).method,'workspace.snapshot');
+ await assert.rejects(parent.transport({method:'form.event',params:{event:'change'}}),/Неактивная форма/);
+ assert.equal(requests.filter(r=>r.method==='workspace.form').length,1);
+});
