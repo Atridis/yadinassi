@@ -120,3 +120,15 @@ revision/control/value; родительская форма и её чернов
 пути не превращаются в доступное действие. Нет автогенерации стандартной записи,
 проведения, удаления или CRUD. Строгий загрузчик owned/database форм не изменён.
 Подтверждение проекции кнопки не означает успешный запуск произвольного модуля БСП.
+
+### Explicit source command bars
+
+Progressive source projection preserves an explicitly declared `CommandBar` in
+`ChildItems` as a horizontal group, including its name, identity, visibility and
+enabled/read-only state. Its explicit children pass the existing scalar/control
+and declared-command checks; `Form.Command.Name` resolves only to a local
+command with an action. Unsupported or unbound buttons remain unavailable.
+`Autofill` is diagnosed and ignored: no standard commands, CRUD or persistence
+capabilities are manufactured. Root/nested `AutoCommandBar` automatic population
+remains unsupported. The strict form loader and original source hash are
+unchanged. This is a presentation adapter, not native Enterprise UI parity.
