@@ -1,13 +1,15 @@
-// Local typed Query example; Products and Categories must exist.
-Excluded = New Array;
-Excluded.Add("archived");
-Q = New Query("SELECT P.Code,P.Amount FROM Catalog.Products AS P
-|WHERE P.Amount BETWEEN 10 AND 100 AND P.Code NOT IN &Excluded
-|AND P.Category IN (SELECT C.Ref FROM Catalog.Categories AS C WHERE NOT C.DeletionMark=TRUE)
-|ORDER BY P.Code");
-Q.SetParameter("Excluded", Excluded);
+// Read-only Receipt lines in examples/demo: selected document states and bounded amount.
+// Change the enum list to select other states. This script does not change records.
+States = New Array;
+States.Add(Enums.States.Draft);
+Q = New Query("SELECT D.Number,L.Amount FROM Document.Receipt AS D
+|JOIN Document.Receipt.Lines AS L ON D.Ref=L.Ref
+|JOIN Catalog.Номенклатура AS P ON L.Product=P.Ref
+|WHERE L.Amount BETWEEN 10 AND 100 AND D.State IN (&States) AND P.DeletionMark=FALSE
+|ORDER BY D.Number");
+Q.SetParameter("States", States);
 Rows = Q.Execute().Select();
 While Rows.Next() Do
-    Message(Rows.Code);
+    Message(Rows.Number);
     Message(Rows.Amount);
 EndDo;

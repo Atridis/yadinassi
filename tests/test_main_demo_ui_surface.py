@@ -14,7 +14,7 @@ from yadinassi.ui.database_launch import binding, configuration_route
 class MainDemoUISurfaceTests(unittest.TestCase):
     def test_loader_has_declared_document_and_common_forms_and_rejects_mixed_grants(self):
         forms = load_application(ROOT/'examples/demo', main_demo_application=True)
-        self.assertEqual(len(forms.forms), 4)
+        self.assertEqual(len(forms.forms), 5)
         self.assertEqual(sum(f.document_schema is not None for f in forms.forms.values()), 2)
         with self.assertRaises(ValueError):
             load_application(ROOT/'examples/demo', main_demo_application=True, inventory_enum_application=True)
