@@ -110,7 +110,8 @@ def create_manager(caller, owner, name):
     manager = SourceConstantValueManager(owner, definition.name)
     if module_files:
         from .configuration_modules import compile_module
-        program = compile_module(app.files[path], path, 'server', common=False)
+        program = compile_module(app.files[path], path, 'server', common=False,
+                                 compilation_profile=app.compilation_profile)
         if any(type(node) not in (ast.Routine, ast.Var) for node in program):
             raise ValueError('constant module initialization statements unsupported')
         reserved = {'value', 'значение', 'thisobject', 'этотобъект', '__constant_cancel'}
