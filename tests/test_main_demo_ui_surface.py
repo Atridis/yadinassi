@@ -19,6 +19,16 @@ class MainDemoUISurfaceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_application(ROOT/'examples/demo', main_demo_application=True, inventory_enum_application=True)
 
+    def test_generated_document_columns_have_russian_captions_without_renaming_schema(self):
+        forms = load_application(ROOT/'examples/demo', main_demo_application=True)
+        for name in ('document.receipt.form.card', 'document.issue.form.card'):
+            columns = forms.forms[name].tables[0].columns
+            self.assertEqual([(c.name, c.title) for c in columns], [
+                ('Product', 'Номенклатура'), ('Quantity', 'Количество'),
+                ('Amount', 'Сумма'), ('Unit', 'Единица измерения')])
+        # The exact main-demo adapter changes display only, not global loader.
+        self.assertEqual(len(forms.forms), 5)
+
     def test_real_broker_controller_document_open_write_and_close(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder)/'demo.sqlite'
@@ -39,6 +49,8 @@ class MainDemoUISurfaceTests(unittest.TestCase):
                 self.assertIsNone(rpc('hello', protocol=PROTOCOL)['error'])
                 opened = rpc('open', entry=app.names['document.receipt.form.card'], request='new');self.assertIsNone(opened['error'])
                 sid = opened['session'];self.assertIsNotNone(sid)
+                table = next(item for item in opened['form']['result']['state']['items'] if item['kind'] == 'table')
+                self.assertEqual([column['title'] for column in table['columns']], ['Номенклатура', 'Количество', 'Сумма', 'Единица измерения'])
                 written = rpc('form', session=sid, request={'jsonrpc':'2.0','id':1,'method':'form.event',
                     'params':{'event':'command','control':'WriteButton','revision':app.sessions[sid][0].session.revision}})
                 self.assertIsNone(written['error']);self.assertIsNone(written['form']['result']['error'])
