@@ -455,7 +455,9 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False) -> dict[str, object]:
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, execution_backend: str = "interpreter") -> dict[str, object]:
+    if execution_backend not in ('interpreter', 'compiled-strict') or (execution_backend != 'interpreter' and (not full_suite or preprocessor_measurement)):
+        raise SmokeError('execution_backend_profile_unsupported')
     if type(preprocessor_measurement) is not bool or (preprocessor_measurement and (not client_probe or not full_suite)):
         raise SmokeError("preprocessor_measurement_requires_client_full_suite")
     if type(client_async) is not bool or (client_async and (not client_probe or not full_suite or watchdog_check or client_dates or client_values or client_collections or client_numbers)):
@@ -595,10 +597,10 @@ def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = Fa
                         report["native_evidence_accepted"] = True
                         payloads.clear()
                         report["comparison"] = FULL.compare_outputs(ROOT, capture, report["stage3"], input_hashes,
-                            native_target=native_target, comparison_mode=comparison_mode, runtime_evidence=report)
+                            native_target=native_target, comparison_mode=comparison_mode, runtime_evidence=report, execution_backend=execution_backend)
                         if client_async:
                             report["async_comparison"] = FULL.compare_async_runtime(
-                                ROOT, capture.parent, report, input_hashes)
+                                ROOT, capture.parent, report, input_hashes, execution_backend=execution_backend)
                     report["windows_goldens_unchanged"] = FULL.windows_fingerprints(ROOT) == baseline
                     if not report["windows_goldens_unchanged"]:
                         raise FULL.FullError("windows_goldens_changed")
@@ -690,6 +692,7 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.WINDOWS_TARGET, help="Explicit host interpreter native checkpoint, never auto-detected")
     parser.add_argument("--comparison-mode", choices=(FULL.BYTE_EXACT, FULL.MAP_MODE),
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
+    parser.add_argument('--execution-backend', choices=('interpreter', 'compiled-strict'), default='interpreter')
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
     if args.client_preprocessor_measurement and (not args.client_probe or not args.full_suite):
@@ -723,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     artifact_evidence_validated = False
     try:
-        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity, client_numbers=args.client_numbers_parity, **({"client_async": True} if args.client_async_measurement else {}), **({"preprocessor_measurement": True} if args.client_preprocessor_measurement else {}))
+        report["probe"] = run_smoke(Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())), bootstrap=args.bootstrap_simple_epf, full_suite=args.full_suite, execution_backend=args.execution_backend, export_native_outputs=args.export_native_outputs, native_target=args.native_target, comparison_mode=args.comparison_mode, client_probe=args.client_probe, watchdog_check=args.client_watchdog_check, client_dates=args.client_dates_parity, client_values=args.client_values_parity, client_collections=args.client_collections_parity, client_numbers=args.client_numbers_parity, **({"client_async": True} if args.client_async_measurement else {}), **({"preprocessor_measurement": True} if args.client_preprocessor_measurement else {}))
         if args.bootstrap_simple_epf or args.full_suite:
             report["purpose"] = "isolated-bootstrap-and-simple-epf"
             stage2 = report["probe"].get("stage2")

@@ -8,10 +8,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import UUID
 
+from .owned_syntax import syntax_kind
 from .catalog_backend import (BackendError, CatalogFormSource,
                               ConfigurationSourceIdentity, FieldSchema)
 from .form_data import ScalarFormData, ScalarFormField, ScalarFormSnapshot
 from .form_module_analysis import FormModuleBinding, analyze_form_module, _parse
+from .catalog_object_preparation import _ObjectInterpreter
 from .runtime import Interpreter
 from .syntax import ast
 from .user_messages import UserMessageRecord
@@ -61,13 +63,32 @@ class _EventInterpreter(Interpreter):
         self._remaining = 256
 
     def _visit(self, node):
+        if self.execution_backend == 'compiled-strict':
+            return (yield from super()._visit(node))
+        # Preserve the original reference-backend context wrapper. The base
+        # interpreter does not pay for or promise the new strict-only ABI.
+        self.compiled_before(node)
+        result = yield from super()._visit(node)
+        return self.compiled_after(node, result)
+
+    def compiled_before(self, node):
         self._remaining -= 1
-        if self._remaining < 0 or type(node) not in (
+        if self._remaining < 0 or syntax_kind(node) not in (
                 ast.Literal, ast.Name, ast.Attribute, ast.Call, ast.New,
                 ast.Assign, ast.If, ast.Return, ast.ExpressionStatement, ast.Binary):
             raise ValueError('form event: execution budget or node')
-        return (yield from super()._visit(node))
+        return super().compiled_before(node)
 
+    def semantic_name(self, node):
+        name = node.name.casefold()
+        if not ((self.locals is not None and name in self.locals)
+                or name in self.variables or name in self.functions):
+            raise ValueError('form event: unavailable name')
+        # Never fall through to Interpreter's built-in global namespaces.
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         name = node.name.casefold()
         if not ((self.locals is not None and name in self.locals)
@@ -337,6 +358,44 @@ class ProductFormEventResult:
     native_parity: bool = False
 
 
+class ProductInterpreter(_ObjectInterpreter):
+    def __init__(self, receiver, sink, object_source):
+        super().__init__(receiver, sink)
+        self._product_receiver = receiver
+        self._product_sink = sink
+        self._product_object_source = object_source
+        self.member_names |= {'текущиеданные'}
+
+    def _object_name(self, name):
+        # Form globals do not implicitly alias the object's unqualified fields.
+        return False
+
+    def call(self, node, *, require_value):
+        from .syntax.parser import parse
+        from .values import Reference
+        callee = self.ungroup(node.callee)
+        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'подготовитьданныекзаписи':
+            if (require_value or len(node.arguments) != 1
+                    or (yield from self.receiver(callee.object)) is not self._product_receiver):
+                raise ValueError('product form: invalid preparation call')
+            argument = yield from self.argument(node.arguments[0])
+            if not isinstance(argument, Reference) or type(argument.get()) is not bool:
+                raise ValueError('product form: cancellation reference required')
+            object_vm = _ObjectInterpreter(self._product_receiver, self._product_sink)
+            try:
+                object_vm.execute_program(parse(self._product_object_source.decode('utf-8-sig')))
+                object_vm.variables['отказ'] = argument.get()
+                object_vm.execute('ПодготовитьДанныеКЗаписи(Отказ);')
+                result = object_vm.variables['отказ']
+                if type(result) is not bool:
+                    raise ValueError('product form: invalid cancellation')
+                argument.set(result)
+            finally:
+                object_vm.close()
+            return None
+        return (yield from super().call(node, require_value=require_value))
+
+
 def simulate_product_form_event(form_source, object_source, receiver, *, event,
                                 current_row_id=None, cancel=False):
     """Execute one pinned original demo handler over a disposable host candidate.
@@ -348,10 +407,9 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
     Row UUIDs identify current buffer rows, never native line numbers.
     """
     from .catalogs import BSLCatalogObject
-    from .catalog_object_preparation import _ObjectInterpreter
     from .configuration_xml import _DEMO_KINDS_SOURCE_SHA256
     from .syntax.parser import parse
-    from .values import BSLObject, Reference
+    from .values import BSLObject
     import re
 
     handlers = {'DescriptionOnChange': 'НаименованиеПриИзменении',
@@ -421,41 +479,9 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
         # Deliberately drop object navigation/data identity from original records.
         records.append(FormEventMessage(record.text, record.field))
 
-    class ProductInterpreter(_ObjectInterpreter):
-        def __init__(self):
-            super().__init__(receiver, sink)
-            self.member_names |= {'текущиеданные'}
-
-        def _object_name(self, name):
-            # Form globals do not implicitly alias the object's unqualified fields.
-            return False
-
-        def call(self, node, *, require_value):
-            callee = self.ungroup(node.callee)
-            if type(callee) is ast.Attribute and callee.name.casefold() == 'подготовитьданныекзаписи':
-                if (require_value or len(node.arguments) != 1
-                        or (yield from self.receiver(callee.object)) is not receiver):
-                    raise ValueError('product form: invalid preparation call')
-                argument = yield from self.argument(node.arguments[0])
-                if not isinstance(argument, Reference) or type(argument.get()) is not bool:
-                    raise ValueError('product form: cancellation reference required')
-                object_vm = _ObjectInterpreter(receiver, sink)
-                try:
-                    object_vm.execute_program(parse(object_source.decode('utf-8-sig')))
-                    object_vm.variables['отказ'] = argument.get()
-                    object_vm.execute('ПодготовитьДанныеКЗаписи(Отказ);')
-                    result = object_vm.variables['отказ']
-                    if type(result) is not bool:
-                        raise ValueError('product form: invalid cancellation')
-                    argument.set(result)
-                finally:
-                    object_vm.close()
-                return None
-            return (yield from super().call(node, require_value=require_value))
-
     program = parse(form_source.decode('utf-8-sig'))
     routine = next(node for node in program if node.name == handlers[event])
-    vm = ProductInterpreter()
+    vm = ProductInterpreter(receiver, sink, object_source)
     try:
         # Register original routines only; invoke selected routine on its own side.
         vm.execute_program(program)

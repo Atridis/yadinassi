@@ -79,6 +79,10 @@ class SourceHandler(_Handler):
     methods = ('source.snapshot', 'source.close')
 
 
+from ..execution_policy import backend_entrypoint, UI_BACKENDS
+
+
+@backend_entrypoint
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Source diagnostics, not configuration UI or a database editor.')
     parser.add_argument('--configuration-source', required=True, metavar='PATH')
@@ -89,6 +93,7 @@ def main(argv=None):
     parser.add_argument('--source-form', metavar='FULL_NAME', help='Open one explicitly selected supported managed form after successful startup')
     parser.add_argument('--source-workspace', action='store_true', help='Browse declared forms in one memory-only source session')
     parser.add_argument('--open-browser', action='store_true')
+    parser.add_argument('--execution-backend', choices=UI_BACKENDS, help='Explicit runtime backend; strict mode never falls back')
     args = parser.parse_args(argv)
     if not args.run_startup and (args.source_scratch_db or args.source_compatibility_target is not None):
         parser.error('scratch database and compatibility target require --run-startup')

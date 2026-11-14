@@ -186,8 +186,13 @@ class ConfigurationApplicationTests(unittest.TestCase):
             self.assertEqual(entrypoint.main(['-c', '--configuration-ui']), 9)
 
     def test_frozen_child_reuses_executable_without_python_mode(self):
-        with mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
-            ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
-            command, env = start.call_args.args
-            self.assertEqual(command, [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())])
-            self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')
+        from yadinassi.execution_policy import execution_backend_policy
+        for mode in ('interpreter', 'compiled-strict'):
+            with self.subTest(backend=mode), execution_backend_policy(mode), mock.patch.object(ConfigurationProcess, '_start') as start, mock.patch.object(sys, 'frozen', True, create=True):
+                ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
+                command, env = start.call_args.args
+                expected = [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())]
+                if mode != 'interpreter':
+                    expected.extend(['--execution-backend', mode])
+                self.assertEqual(command, expected)
+                self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

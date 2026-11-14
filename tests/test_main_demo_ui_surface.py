@@ -1,6 +1,7 @@
 """Explicit document surface of the unified demo; navigation is tested separately."""
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 from unittest.mock import patch
 from test_main_demo_configuration import source, ROOT
@@ -62,7 +63,14 @@ class MainDemoUISurfaceTests(unittest.TestCase):
         with patch.object(ConfigurationProcess, '_start') as start:
             ConfigurationProcess(ROOT/'examples/demo', 'demo.sqlite', main_demo_application=True, launch_binding='binding')
         command = start.call_args.args[0]
-        self.assertIn('--main-demo-application', command)
-        self.assertNotIn('--inventory-enum-application', command)
-        self.assertEqual(command[-2:], ['--launch-binding','binding'])
+        from yadinassi.execution_policy import current_backend
+        expected = ([sys.executable, '--configuration-ui-runtime', str((ROOT/'examples/demo').resolve())]
+                    if getattr(sys, 'frozen', False) else
+                    [sys.executable, '-m', 'yadinassi.ui.configuration_app',
+                     str((ROOT/'examples/demo').resolve()), '--runtime'])
+        expected += ['--f', str(Path('demo.sqlite').resolve()),
+                     '--main-demo-application', '--launch-binding', 'binding']
+        if current_backend() != 'interpreter':
+            expected += ['--execution-backend', current_backend()]
+        self.assertEqual(command, expected)
         self.assertEqual(configuration_route(main_demo_application=True), 'main-demo')

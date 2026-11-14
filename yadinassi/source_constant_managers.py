@@ -1,5 +1,6 @@
 """Source-owned synchronous constant value managers, not native parity."""
 from contextvars import ContextVar
+from .owned_syntax import syntax_kind
 from .values import BSLObject, HostFunction
 from .syntax import ast
 from .configuration_source_runtime import _SourceInterpreter
@@ -17,6 +18,15 @@ class _ValueInterpreter(_SourceInterpreter):
         self.manager = manager
         self._logical_side = 'server'
 
+    def semantic_name(self, node):
+        if node.name.casefold() in ('value', 'значение'):
+            return self.manager.value_read(self)
+        if node.name.casefold() in ('thisobject', 'этотобъект'):
+            return self.manager
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         if node.name.casefold() in ('value', 'значение'):
             return self.manager.value_read(self)
@@ -26,7 +36,7 @@ class _ValueInterpreter(_SourceInterpreter):
 
     def argument(self, node):
         node = self.ungroup(node)
-        if type(node) is ast.Name and node.name.casefold() in ('value', 'значение'):
+        if syntax_kind(node) is ast.Name and node.name.casefold() in ('value', 'значение'):
             from .runtime import _Reference
             self.manager.value_read(self)
             return _Reference(lambda: self.manager.value_read(self),
