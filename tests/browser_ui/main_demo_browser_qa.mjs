@@ -407,7 +407,7 @@ async function main(){
     const listField=label=>recordList.getByLabel(label,{exact:true});
     const listButton=label=>recordList.getByRole('button',{name:({'Refresh records':'Обновить','Open selected':'Открыть','New document':'Создать документ'}[label]||label),exact:true});
     const expectedFilters={deletion:'all',posting:'posted',dateFrom:'2026-11-11',dateTo:'2026-11-11',descending:false};
-    const checkedList=async(result,total,filters)=>{
+    const checkedList=async(result,total,filters,visible=true)=>{
       report.filterStage='validate-catalog';
       const value=result.state.catalog;assert.equal(value.navigation.total,total,'filter_exact_total');
       assert.equal(value.navigation.page,1);assert.equal(value.navigation.pages,1);
@@ -418,20 +418,28 @@ async function main(){
       await page.waitForFunction(total=>document.querySelectorAll('.configuration-catalog tbody tr').length===total,total,{timeout:remaining(rpcReplyMs)});
       assert.equal(await recordList.locator('tbody tr').count(),total,'filter_visible_rows');
       if(total){assert.equal(value.rows[0].number,'RQA1');assert.equal(value.rows[0].posted,true);
-        await recordList.getByRole('cell',{name:'RQA1',exact:true}).waitFor();}
+        await recordList.getByRole('cell',{name:'RQA1',exact:true,includeHidden:!visible}).waitFor({state:visible?'visible':'attached'});}
     };
     await act('filter-posted',()=>listField('Posting filter').selectOption('posted'));
     await act('filter-date-from',()=>listField('Date from (inclusive)').fill('2026-11-11'));
     await act('filter-date-through',()=>listField('Date through (inclusive)').fill('2026-11-11'));
     await act('apply-posted-day',async()=>checkedList(await filterReply('application.catalogFilter',()=>listButton('Apply filters').click()),1,expectedFilters));
     await act('unapplied-date-draft',()=>listField('Date through (inclusive)').fill('2026-11-12'));
+    await act('register-before-filter-repaint',()=>button('Регистр накопления Остатки товаров').click());
     await act('report-repaint-retains-filter-draft',async()=>{
       const value=await filterReply('application.report',()=>reports.getByRole('button',{name:'Показать записи',exact:true}).click());
-      await checkedList(value,1,expectedFilters);
+      await checkedList(value,1,expectedFilters,false);
       report.filterStage='validate-unapplied-draft';
       assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-12','filter_draft_lost_on_repaint');
       report.filterStage='draft-preserved';
     });
+    await act('return-documents-after-filter-repaint',async()=>{
+      const value=await filterReply('application.catalog',()=>page.getByRole('navigation',{name:'Declared forms',exact:true}).getByRole('button',{name:'Поступление',exact:true}).click());
+      await checkedList(value,1,expectedFilters);
+      assert.equal(await listField('Date through (inclusive)').inputValue(),'2026-11-11','navigation_restores_applied_filter');
+    });
+    // Navigation reloads the list. Prepare a new unsent draft to test Refresh independently.
+    await act('unapplied-date-draft-before-refresh',()=>listField('Date through (inclusive)').fill('2026-11-12'));
     await act('refresh-restores-applied-filter',async()=>{
       const value=await filterReply('application.catalog',()=>listButton('Refresh records').click());
       await checkedList(value,1,expectedFilters);
@@ -676,7 +684,7 @@ async function main(){
     report.dialogRecovery={delayedAnswerOnce:true,escapeNotAnswer:true,noDiscarded:true,cancelDeferred:true,
       confirmedAnswerLost:true,independentDraftRetained:true,copyPreserved:true,noReplay:true,durableUnchanged:true};
   });
-  assert.equal(actionLog.length,125,'total_action_count');
+  assert.equal(actionLog.length,128,'total_action_count');
   report.actions=actionLog;report.actionCount=actionLog.length;
   report.durable={authoredWarehouses:70,uiCreatedKinds:1,uiCreatedProducts:1,uiCreatedReceipts:1,
     lostApplyResponses:dropped,lostDocumentResponses:droppedDocument,recoveryReadOnly:true};
