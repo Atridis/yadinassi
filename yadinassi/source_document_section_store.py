@@ -109,9 +109,16 @@ class SourceDocumentSectionStore(SourceDocumentStore):
 
     def validate_records(self):
         super().validate_records()
+        from .source_catalog_store import _MAX_RECORDS
         known={str(d.identity):d for d in self.document_definitions.values()}
-        for did,rid in self._connection.execute('SELECT document_identity,record_identity FROM source_document_record'):
-            self._sections(known[did],rid)
+        identities={};count=0
+        for did,rid in self._connection.execute('SELECT document_identity,record_identity FROM source_document_record LIMIT ?',(_MAX_RECORDS+1,)):
+            count+=1
+            if count>_MAX_RECORDS:raise ValueError('source document record bound')
+            if did not in known:raise ValueError('source document identity integrity')
+            identities.setdefault(did,[]).append(rid)
+        for did,ids in identities.items():
+            self._validate_selection_sections(known[did],ids)
         if self._connection.execute('PRAGMA foreign_key_check').fetchone() is not None:raise ValueError('section foreign key integrity')
     def read_documents(self,name,identity=None):
         owned=not self.transaction_active
