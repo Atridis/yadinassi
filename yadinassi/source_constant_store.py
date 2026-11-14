@@ -15,6 +15,7 @@ from pathlib import Path
 from .catalog_qualifiers import validate_string, normalize_number, bound_number
 from .configuration_source import source_digest
 from .configuration_source_constants import source_constant_definitions
+from dataclasses import replace
 from .dates import BSLDate, TICKS_PER_SECOND
 from .sqlite_catalog import _private_parent
 
@@ -30,9 +31,51 @@ def _json(value):
     return json.dumps(value, ensure_ascii=True, separators=(',', ':'))
 
 
+def _definition_record(definition):
+    record = [definition.kind, list(definition.qualifiers), list(definition.write_blockers)]
+    if definition.type_dependencies:
+        record.append(['defined_types', list(definition.type_dependencies)])
+    return record
+
+
 def _encode(value, definition):
     kind = definition.kind
-    if kind == 'uuid':
+    if kind == 'composite':
+        if value is None:
+            encoded = ['composite', ['undefined', None]]
+        else:
+            candidates = []
+            for member_kind, member_qualifiers in definition.qualifiers:
+                try:
+                    candidates.append(json.loads(_encode(value, replace(definition, kind=member_kind, qualifiers=member_qualifiers))))
+                except (ValueError, TypeError):
+                    pass
+            if len(candidates) != 1:
+                raise TypeError('constant value does not fit its composite type')
+            encoded = ['composite', candidates[0]]
+    elif kind == 'object_ref':
+        from .catalog_types import BSLCatalogReference
+        from .document_types import BSLDocumentReference
+        family, metadata_id, name = definition.qualifiers
+        _, expected_type, expected_metadata = definition.reference_scope.definition(family, name)
+        expected_class = BSLCatalogReference if family == 'Catalog' else BSLDocumentReference
+        from uuid import UUID
+        if (type(value) is not expected_class or value.value_type is not expected_type
+                or value.metadata is not expected_metadata or type(value.reference_uuid) is not UUID
+                or value.read_member is not None or value.get_object is not None):
+            raise TypeError('constant reference requires exact owned type/metadata without callbacks')
+        encoded = ['object_ref', [family, metadata_id, str(value.reference_uuid)]]
+    elif kind == 'enum_ref':
+        from uuid import UUID
+        from .enum_types import BSLEnumReference
+        manager = definition.enum_namespace.get_member(definition.qualifiers[1])
+        if (type(value) is not BSLEnumReference or value.value_type is not manager._value_type
+                or value.metadata is not manager._metadata or type(value.reference_uuid) is not UUID
+                or str(value.value_type.metadata_uuid) != definition.qualifiers[0]
+                or (value.reference_uuid.int != 0 and str(value.reference_uuid) not in definition.qualifiers[2])):
+            raise TypeError('constant enumeration reference belongs to another type or application')
+        encoded = ['enum_ref', [definition.qualifiers[0], str(value.reference_uuid)]]
+    elif kind == 'uuid':
         from .unique_identifiers import BSLUUID
         if type(value) is not BSLUUID or BSLUUID(value.text).text != value.text:
             raise TypeError('constant canonical UUID required')
@@ -41,7 +84,10 @@ def _encode(value, definition):
         from .source_storage_codec import encode_storage
         encoded = ['value_storage', encode_storage(value)]
     elif kind == 'string':
-        validate_string(value, definition.qualifiers[0])
+        length = definition.qualifiers[0]
+        validate_string(value, length or 65536)
+        if definition.qualifiers[1:] == ('Fixed',) and len(value.encode('utf-16-le')) != length * 2:
+            raise ValueError('constant Fixed String requires exact UTF-16 length')
         encoded = ['string', value]
     elif kind == 'boolean':
         if type(value) is not bool:
@@ -61,6 +107,11 @@ def _encode(value, definition):
         value.require_known()
         if value.ticks % TICKS_PER_SECOND:
             raise ValueError('constant Date requires whole seconds')
+        day = 86400 * TICKS_PER_SECOND
+        fraction = definition.qualifiers[0]
+        if ((fraction == 'Date' and value.ticks % day)
+                or (fraction == 'Time' and value.ticks >= day)):
+            raise ValueError('constant Date does not fit date fractions')
         encoded = ['datetime', str(value.ticks)]
     else:
         raise ValueError('unsupported constant type')
@@ -78,7 +129,40 @@ def _decode(raw, definition):
         if type(data) is not list or len(data) != 2 or data[0] != definition.kind:
             raise ValueError('constant storage integrity')
         value = data[1]
-        if definition.kind == 'uuid':
+        if definition.kind == 'composite':
+            if type(value) is not list or len(value) != 2:
+                raise ValueError('constant storage integrity')
+            if value == ['undefined', None]:
+                value = None
+            else:
+                members = [(k, q) for k, q in definition.qualifiers if k == value[0]
+                           and (k != 'enum_ref' or (type(value[1]) is list and len(value[1]) == 2 and q[0] == value[1][0]))
+                           and (k != 'object_ref' or (type(value[1]) is list and len(value[1]) == 3 and list(q[:2]) == value[1][:2]))]
+                if len(members) != 1:
+                    raise ValueError('constant storage integrity')
+                k, q = members[0]
+                value = _decode(_json(value), replace(definition, kind=k, qualifiers=q))
+        elif definition.kind == 'object_ref':
+            from uuid import UUID
+            family, metadata_id, name = definition.qualifiers
+            if type(value) is not list or len(value) != 3 or value[:2] != [family, metadata_id] or type(value[2]) is not str:
+                raise ValueError('constant storage reference integrity')
+            value = definition.reference_scope.ref(family, name, UUID(value[2]))
+        elif definition.kind == 'enum_ref':
+            from uuid import UUID
+            if (type(value) is not list or len(value) != 2
+                    or value[0] != definition.qualifiers[0] or type(value[1]) is not str):
+                raise ValueError('constant storage integrity')
+            identity = UUID(value[1])
+            manager = definition.enum_namespace.get_member(definition.qualifiers[1])
+            if identity.int == 0:
+                value = manager._empty
+            else:
+                values = [v for v in manager._values if v.reference_uuid == identity]
+                if len(values) != 1:
+                    raise ValueError('constant storage integrity')
+                value = values[0]
+        elif definition.kind == 'uuid':
             from .unique_identifiers import BSLUUID
             value = BSLUUID(value)
         elif definition.kind == 'value_storage':
@@ -100,7 +184,41 @@ def _decode(raw, definition):
 
 
 class SourceConstantStore:
+    PROFILE = _PROFILE
     _explicit_transaction = False
+
+    @classmethod
+    def ddl(cls):
+        return _DDL
+
+    @classmethod
+    def expected_schema(cls):
+        connection = sqlite3.connect(':memory:')
+        try:
+            for statement in cls.ddl():
+                connection.execute(statement)
+            return _schema(connection)
+        finally:
+            connection.close()
+
+    @classmethod
+    def initialize_extra(cls, connection, source, enum_namespace, reference_scope):
+        pass
+
+    @classmethod
+    def attach_extra(cls, result, source, enum_namespace, reference_scope):
+        pass
+
+    def verify_extra(self):
+        pass
+
+    def validate_records(self):
+        pass
+
+    def validate_source_update(self, source):
+        """Subclass schema comparison repeated under the update write reservation."""
+        pass
+
 
     @property
     def transaction_active(self):
@@ -141,17 +259,16 @@ class SourceConstantStore:
             self._explicit_transaction = False
 
     @classmethod
-    def create(cls, path, source):
-        definitions, unsupported, names = source_constant_definitions(source)
+    def create(cls, path, source, *, enum_namespace=None, reference_scope=None):
+        definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace, reference_scope=reference_scope)
         raw = os.fspath(path)
         if type(raw) is not str or not raw or raw.startswith(('file:', '//', '\\\\')) or '\x00' in raw:
             raise ValueError('invalid source constants destination')
         absolute = _private_parent(os.path.abspath(raw))
         source_sha = source_digest(source)
-        rows = tuple(sorted((str(item.identity), item.name, _json([
-            item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+        rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
         schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
-        binding = (_PROFILE, source_sha, str(source.config_uuid), schema_sha)
+        binding = (cls.PROFILE, source_sha, str(source.config_uuid), schema_sha)
         fd = os.open(absolute, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(fd)
         connection = None
@@ -163,15 +280,16 @@ class SourceConstantStore:
             connection.execute('PRAGMA synchronous=FULL')
             connection.execute('BEGIN IMMEDIATE')
             initial_epoch = connection.execute('PRAGMA data_version').fetchone()[0]
-            for statement in _DDL:
+            for statement in cls.ddl():
                 connection.execute(statement)
             connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
             connection.execute('INSERT INTO source_binding VALUES(1,?,?,?,?)', binding)
             connection.executemany('INSERT INTO constant_schema VALUES(?,?,?)', rows)
             initial = [(str(item.identity), _encode('', item)) for item in definitions
-                       if item.kind == 'string' and not item.write_blockers
+                       if item.kind == 'string' and not item.write_blockers and not item.type_dependencies
                        and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
             connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
+            cls.initialize_extra(connection, source, enum_namespace, reference_scope)
             connection.execute('COMMIT')
             result = object.__new__(cls)
             result.path = absolute
@@ -188,6 +306,7 @@ class SourceConstantStore:
             result._schema = _schema(connection)
             result._source = source
             result._verified_epoch = (initial_epoch if connection.execute('PRAGMA data_version').fetchone()[0] == initial_epoch else None)
+            cls.attach_extra(result, source, enum_namespace, reference_scope)
             return result
         except BaseException as error:
             if connection is not None:
@@ -220,14 +339,14 @@ class SourceConstantStore:
                                          isolation_level=None, detect_types=0, timeout=0.2)
             connection.execute('PRAGMA trusted_schema=OFF')
             connection.execute('BEGIN')
-            if _schema(connection) != _expected_schema():
+            if _schema(connection) != cls.expected_schema():
                 raise ValueError('source constants schema integrity')
             if connection.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'delete':
                 raise ValueError('unsupported source constants journal')
             if connection.execute("SELECT count(*) FROM source_binding WHERE typeof(profile)!='text' OR length(CAST(profile AS BLOB))>128 OR typeof(source_sha256)!='text' OR length(CAST(source_sha256 AS BLOB))!=64 OR typeof(configuration_uuid)!='text' OR length(CAST(configuration_uuid AS BLOB))!=36").fetchone()[0]:
                 raise ValueError('source constants embedded binding bound')
             binding = connection.execute('SELECT profile,source_sha256,configuration_uuid FROM source_binding LIMIT 2').fetchall()
-            if len(binding) != 1 or binding[0][0] != _PROFILE:
+            if len(binding) != 1 or binding[0][0] != cls.PROFILE:
                 raise ValueError('source constants binding integrity')
             # Check SQL storage types and lengths before materializing BLOBs.
             sizes = connection.execute("SELECT length(content),typeof(content),typeof(path),length(path),length(CAST(path AS BLOB)) FROM source_file LIMIT ?", (MAX_FILES + 1,)).fetchall()
@@ -250,7 +369,91 @@ class SourceConstantStore:
                 connection.close()
 
     @classmethod
-    def reopen(cls, path, source):
+    def update_source(cls, path, source):
+        """Explicit additive source replacement; no BSL execution or type migration.
+
+        Read/validate the previous embedded source and values, then repeat all
+        integrity checks under a write reservation before atomically replacing
+        source/binding/schema. Existing constant identity and value shape remain.
+        """
+        # Validate the new admitted source before opening a writable DB handle.
+        digest = source_digest(source)
+        definitions, unsupported, names = source_constant_definitions(source)
+        previous = cls.load_source(path)
+        if source.config_uuid != previous.config_uuid:
+            raise ValueError('source update configuration identity mismatch')
+        old_definitions, old_unsupported, old_names = source_constant_definitions(previous)
+        old_meta = {item.name: item.identity for item in previous.metadata if item.family == 'Constant'}
+        new_meta = {item.name: item.identity for item in source.metadata if item.family == 'Constant'}
+        if any(new_meta.get(name) != identity for name, identity in old_meta.items()):
+            raise ValueError('source update cannot remove, rename or replace constants')
+        old_supported = {item.name: item for item in old_definitions}
+        new_supported = {item.name: item for item in definitions}
+        for name, old in old_supported.items():
+            new = new_supported.get(name)
+            if new is None or (new.identity, new.kind, new.qualifiers, new.type_dependencies) != (old.identity, old.kind, old.qualifiers, old.type_dependencies):
+                raise ValueError('source update constant type/qualifier migration unsupported: ' + name)
+        old_files = {item.path: item.content for item in previous.files}
+        new_files = {item.path: item.content for item in source.files}
+        for name in old_names:
+            if name.casefold() in old_unsupported:
+                key = 'Constants/' + name + '.xml'
+                if old_files[key] != new_files.get(key):
+                    raise ValueError('source update unsupported constant declaration changed: ' + name)
+        rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
+        schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
+        binding = (cls.PROFILE, digest, str(source.config_uuid), schema_sha)
+        known = {str(item.identity): item for item in definitions}
+        old_ids = {str(item.identity) for item in old_definitions}
+        initial = [(str(item.identity), _encode('', item)) for item in definitions
+                   if str(item.identity) not in old_ids and item.kind == 'string'
+                   and not item.write_blockers and not item.type_dependencies and item.qualifiers in tuple((n,) for n in _MEASURED_EMPTY_STRING_LENGTHS)]
+        store = cls.reopen(path, previous)
+        connection = store._connection
+        try:
+            connection.execute('PRAGMA synchronous=FULL')
+            connection.execute('BEGIN IMMEDIATE')
+            store._open()
+            store.validate_records()
+            store.validate_source_update(source)
+            for table in ('source_extension_registry', 'source_extension_issues'):
+                if connection.execute('SELECT 1 FROM ' + table + ' LIMIT 1').fetchone() is not None:
+                    raise ValueError('source update populated extensions unsupported')
+            values = connection.execute('SELECT identity,value_json FROM constant_value LIMIT ?', (len(old_definitions) + 1,)).fetchall()
+            if len(values) > len(old_definitions) or any(identity not in old_ids for identity, _ in values):
+                raise ValueError('source update existing value inventory integrity')
+            for identity, raw in values:
+                _decode(raw, known[identity])
+            connection.execute('DELETE FROM source_file')
+            connection.executemany('INSERT INTO source_file VALUES(?,?)', ((item.path, item.content) for item in source.files))
+            connection.executemany('INSERT INTO constant_schema VALUES(?,?,?) ON CONFLICT(identity) DO UPDATE SET name=excluded.name,definition=excluded.definition', rows)
+            connection.executemany('INSERT INTO constant_value VALUES(?,?)', initial)
+            connection.execute('UPDATE source_binding SET profile=?,source_sha256=?,configuration_uuid=?,schema_sha256=? WHERE singleton=1', binding)
+            # No handler or arbitrary code participates in updating the source.
+            _verify_source(connection, source)
+            if (connection.execute('SELECT profile,source_sha256,configuration_uuid,schema_sha256 FROM source_binding').fetchall() != [binding]
+                    or tuple(connection.execute('SELECT identity,name,definition FROM constant_schema ORDER BY identity')) != rows
+                    or _schema(connection) != store._schema
+                    or _file_identity(store.path) != store._identity
+                    or connection.execute('PRAGMA foreign_key_check').fetchone() is not None):
+                raise ValueError('source update final integrity')
+            page_bytes = connection.execute('PRAGMA page_count').fetchone()[0] * connection.execute('PRAGMA page_size').fetchone()[0]
+            if page_bytes > _MAX_DATABASE_BYTES:
+                raise ValueError('source update database size bound')
+            connection.execute('COMMIT')
+            return {'source_sha256': digest, 'preserved_values': len(values),
+                    'added_constants': len(names) - len(old_names)}
+        except BaseException as error:
+            if connection.in_transaction:
+                connection.execute('ROLLBACK')
+            if isinstance(error, sqlite3.Error):
+                raise ValueError('source update storage failure') from None
+            raise
+        finally:
+            store.close()
+
+    @classmethod
+    def reopen(cls, path, source, *, enum_namespace=None, reference_scope=None):
         """Open only an unchanged source package's explicitly created scratch DB.
 
         A regular private file is required; mode=rw cannot create a missing file.
@@ -265,7 +468,7 @@ class SourceConstantStore:
         try:
             if any(os.path.lexists(absolute + suffix) for suffix in ('-journal', '-wal', '-shm')):
                 raise ValueError('source constants require clean-close database without sidecars')
-            expected = _expected_schema()
+            expected = cls.expected_schema()
             # Refuse foreign/hot databases before any writable SQLite handle.
             probe = sqlite3.connect(Path(absolute).as_uri() + '?mode=ro', uri=True, isolation_level=None, timeout=0.2)
             try:
@@ -284,12 +487,11 @@ class SourceConstantStore:
                 raise ValueError('source constants file identity changed')
             # Compare exact DDL before querying application tables, including
             # rejecting injected triggers, views and indexes.
-            expected = _expected_schema()
+            expected = cls.expected_schema()
             if _schema(connection) != expected:
                 raise ValueError('source constants schema integrity')
-            definitions, unsupported, names = source_constant_definitions(source)
-            rows = tuple(sorted((str(item.identity), item.name, _json([
-                item.kind, list(item.qualifiers), list(item.write_blockers)])) for item in definitions))
+            definitions, unsupported, names = source_constant_definitions(source, enum_namespace=enum_namespace, reference_scope=reference_scope)
+            rows = tuple(sorted((str(item.identity), item.name, _json(_definition_record(item))) for item in definitions))
             digest = source_digest(source)
             schema_sha = hashlib.sha256(_json([rows, sorted(unsupported.items()), list(names)]).encode()).hexdigest()
             result = object.__new__(cls)
@@ -297,10 +499,11 @@ class SourceConstantStore:
             result.names, result.definitions = names, definitions
             result._definitions = {item.name.casefold(): item for item in definitions}
             result._unsupported = unsupported
-            result._binding = (_PROFILE, digest, str(source.config_uuid), schema_sha)
+            result._binding = (cls.PROFILE, digest, str(source.config_uuid), schema_sha)
             result._rows, result._connection, result._closed = rows, connection, False
             result._identity, result._schema, result._source = identity, expected, source
             result._verified_epoch = None
+            cls.attach_extra(result, source, enum_namespace, reference_scope)
             epoch = connection.execute('PRAGMA data_version').fetchone()[0]
             connection.execute('BEGIN')
             try:
@@ -338,6 +541,7 @@ class SourceConstantStore:
             rows = tuple(self._connection.execute('SELECT identity,name,definition FROM constant_schema ORDER BY identity'))
             if actual != [self._binding] or rows != self._rows:
                 raise ValueError('source constants binding integrity')
+            self.verify_extra()
             # Exact source bytes were verified at create/reopen. Own commits do
             # not change data_version; any external commit permanently retires
             # this cache for this handle. Never recache from a stale snapshot.
@@ -442,6 +646,7 @@ class SourceConstantStore:
         try:
             if owned:
                 self._connection.execute('BEGIN')
+            self._open()
             result = {}
             for name in names:
                 definition = self._definition(name)

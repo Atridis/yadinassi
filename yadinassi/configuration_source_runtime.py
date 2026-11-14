@@ -65,6 +65,10 @@ class _SourceInterpreter(Interpreter):
             return super().execute_program(program)
 
 
+    def _new_query(self, text=""):
+        from .source_constant_queries import SourceConstantQuery
+        return SourceConstantQuery(self, self.application, text)
+
     def call(self, node, *, require_value):
         callee = self.ungroup(node.callee)
         if (isinstance(callee, ast.Name)
@@ -165,7 +169,7 @@ def _walk(value):
 
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
-    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None):
+    def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None, source_catalog_records=False, source_document_records=False, source_document_sections=False):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
         from .syntax.preprocessor import validate_compilation_profile
@@ -180,6 +184,8 @@ class SourceApplication:
         self.files = {item.path: item.content for item in source.files}
         from .configuration_source_metadata import SourceMetadataRoot
         self.metadata = SourceMetadataRoot(source)
+        from .source_references import SourceReferences
+        self.references = SourceReferences(source, self.metadata)
         self.modules = {item.name.casefold(): item for item in source.metadata
                         if item.family == 'CommonModule'}
         from .configuration_source_enums import source_enum_definitions
@@ -205,15 +211,26 @@ class SourceApplication:
         self.reusable_values = ApplicationReusableValues(self, source_family=self.interpreter)
         from .safe_mode import SourceSafeMode
         self.safe_mode = SourceSafeMode(self)
+        if type(source_catalog_records) is not bool or type(source_document_records) is not bool or type(source_document_sections) is not bool:
+            raise TypeError("source record profile flags require Boolean")
         self.constant_store = None
         if scratch_database is not None and existing_scratch_database is not None:
             raise ValueError('create and reopen scratch database are mutually exclusive')
         if scratch_database is not None or existing_scratch_database is not None:
             from .source_constant_store import SourceConstantStore
+            if source_catalog_records:
+                from .source_catalog_store import SourceCatalogStore
+                SourceConstantStore = SourceCatalogStore
+            if source_document_records:
+                from .source_document_store import SourceDocumentStore
+                SourceConstantStore = SourceDocumentStore
+            if source_document_sections:
+                from .source_document_section_store import SourceDocumentSectionStore
+                SourceConstantStore = SourceDocumentSectionStore
             try:
-                self.constant_store = (SourceConstantStore.create(scratch_database, source)
+                self.constant_store = (SourceConstantStore.create(scratch_database, source, enum_namespace=self.enumerations, reference_scope=self.references)
                                        if scratch_database is not None else
-                                       SourceConstantStore.reopen(existing_scratch_database, source))
+                                       SourceConstantStore.reopen(existing_scratch_database, source, enum_namespace=self.enumerations, reference_scope=self.references))
             except BaseException:
                 self.close()
                 raise

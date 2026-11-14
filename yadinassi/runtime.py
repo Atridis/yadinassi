@@ -1,3 +1,4 @@
+from functools import lru_cache
 from weakref import WeakValueDictionary
 from contextlib import nullcontext
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
@@ -1049,14 +1050,29 @@ class Interpreter:
 
     def visit_Attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
+        from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+        if type(value) in (SourceDocumentSection, SourceDocumentRow):
+            return value.property_read(self,node.name)
+        from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, SourceDocumentObject, SourceDocumentSelection
+        if is_document_reference(value):
+            return document_member(self,value,node.name)
+        if type(value) in (SourceDocumentObject, SourceDocumentSelection):
+            return value.property_read(self,node.name)
+        from .source_catalog_runtime import is_source_reference, reference_member
+        if is_source_reference(value):
+            return reference_member(self,value,node.name)
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
+        from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+        if type(value) in (SourceCatalogObject, SourceCatalogSelection):
+            return value.property_read(self, node.name)
+        from .source_references import SourceReferenceManager
+        if type(value) is SourceReferenceManager:
+            return value.member(self, node.name)
         from .source_constant_managers import SourceConstantValueManager
         if type(value) is SourceConstantValueManager:
-            if node.name.casefold() in ('value', 'значение'):
-                return value.value_read(self)
-            return value.get_member(node.name)
+            return value.property_read(self, node.name)
         from .source_constants_runtime import SourceConstants, SourceConstantSet
         if type(value) is SourceConstantSet:
             if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
@@ -1075,6 +1091,9 @@ class Interpreter:
 
     def visit_Index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
+        from .source_document_sections import SourceDocumentSection
+        if type(value) is SourceDocumentSection:
+            return value.get_index(self,(yield from self._visit(node.index)))
         from .source_manager_modules import SourceManagers
         if type(value) is SourceManagers:
             value.authorize(self)
@@ -1179,12 +1198,29 @@ class Interpreter:
             self.reject_host_omissions(node.arguments)
         if isinstance(callee, ast.Attribute):
             receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
+            from .source_constant_managers import SourceConstantValueManager, _STANDARD_METHODS
+            if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
+                routine = receiver.exported_routine(self, callee.name)
+                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
+            from .source_document_runtime import SourceDocumentObject, _OBJECT_METHODS as _DOCUMENT_OBJECT_METHODS
+            if type(receiver) is SourceDocumentObject and callee.name.casefold() not in _DOCUMENT_OBJECT_METHODS:
+                routine=receiver.exported_routine(self,callee.name)
+                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
+            from .source_catalog_runtime import SourceCatalogObject, _OBJECT_METHODS
+            if type(receiver) is SourceCatalogObject and callee.name.casefold() not in _OBJECT_METHODS:
+                routine=receiver.exported_routine(self,callee.name)
+                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
+            from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
+            from .source_catalog_runtime import _MANAGER_METHODS, reference_call
+            from .source_document_runtime import _MANAGER_METHODS as _DOCUMENT_METHODS, reference_call as document_call
+            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
+                receiver = receiver.module(self)
             if type(receiver) is _Module:
                 return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
-            function = receiver.get_method(callee.name)
+            function = document_call(self, receiver, callee.name) or reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
         else:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
@@ -1288,12 +1324,13 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
-        from .source_constants_runtime import ConstantCall, ConstantSetCall
-        from .source_extensions import ExtensionCall
-        from .source_host_session import SourceSessionCall
-        from .source_transactions import SourceTransactionCall
-        from .source_constant_managers import ValueManagerCall, write_values
+        (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
+         SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
+         ExtensionCall, SourceSessionCall, SourceTransactionCall,
+         ValueManagerCall, write_values) = _source_call_dispatch_types()
         marker = function.function
+        if type(marker) in (SourceCatalogCall, SourceDocumentCall):
+            return (yield from marker.invoke(self, values))
         if type(marker) is ValueManagerCall:
             return (yield from marker.invoke(self, values))
         if type(marker) is ConstantCall and marker.writing:
@@ -1309,7 +1346,7 @@ class Interpreter:
             if len(receiver.values) != len(receiver.keys):
                 raise ValueError('all selected constant fields must be assigned or read before Write')
             return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall):
+        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceDocumentSectionCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1900,6 +1937,31 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from self.receiver(node.object))
+            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            if type(owner) in (SourceDocumentSection, SourceDocumentRow):
+                owner.property_read(self,node.name)
+                return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
+            from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, readonly_reference as readonly_document, SourceDocumentObject, SourceDocumentSelection
+            if is_document_reference(owner):
+                captured=document_member(self,owner,node.name)
+                return _Reference(lambda:captured, lambda value:readonly_document(self,owner,node.name,value))
+            if type(owner) in (SourceDocumentObject,SourceDocumentSelection):
+                owner.property_read(self,node.name)
+                return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
+            from .source_catalog_runtime import is_source_reference, reference_member, readonly_reference
+            if is_source_reference(owner):
+                captured=reference_member(self,owner,node.name)
+                return _Reference(lambda:captured, lambda value:readonly_reference(self,owner,node.name,value))
+            from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+            if type(owner) in (SourceCatalogObject, SourceCatalogSelection):
+                owner.property_read(self, node.name)
+                return _Reference(lambda: owner.property_read(self, node.name),
+                                  lambda value: owner.property_write(self, node.name, value))
+            from .source_constant_managers import SourceConstantValueManager
+            if type(owner) is SourceConstantValueManager:
+                owner.property_read(self, node.name)
+                return _Reference(lambda: owner.property_read(self, node.name),
+                                  lambda value: owner.property_write(self, node.name, value))
             if type(owner) is _Module:
                 self._require_module_storage_context()
                 owner.get_member(node.name)
@@ -2056,11 +2118,34 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
+            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            if type(value) in (SourceDocumentSection, SourceDocumentRow):
+                if not isinstance(node.target,ast.Attribute):
+                    raise ValueError("source document section replacement unsupported")
+                value.property_write(self,node.target.name,(yield from self._visit(node.value)))
+                return
+            from .source_document_runtime import is_source_reference as is_document_reference, SourceDocumentObject
+            if is_document_reference(value):
+                raise ValueError('source document reference fields are readonly; use GetObject().Write()')
+            if type(value) is SourceDocumentObject:
+                if not isinstance(node.target,ast.Attribute):
+                    raise ValueError('source document object indexing unsupported')
+                value.property_write(self,node.target.name,(yield from self._visit(node.value)))
+                return
+            from .source_catalog_runtime import is_source_reference, readonly_reference
+            if is_source_reference(value):
+                raise ValueError('source reference fields are readonly; use GetObject().Write()')
+            from .source_catalog_runtime import SourceCatalogObject
+            if type(value) is SourceCatalogObject:
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError("source catalog object indexing unsupported")
+                value.property_write(self, node.target.name, (yield from self._visit(node.value)))
+                return
             from .source_constant_managers import SourceConstantValueManager
             if type(value) is SourceConstantValueManager:
-                if not isinstance(node.target, ast.Attribute) or node.target.name.casefold() not in ('value', 'значение'):
-                    raise ValueError('unsupported value manager assignment')
-                value.value_write(self, (yield from self._visit(node.value)))
+                if not isinstance(node.target, ast.Attribute):
+                    raise ValueError('unsupported value manager indexing')
+                value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
             from .source_constants_runtime import SourceConstantSet
             if type(value) is SourceConstantSet:
@@ -2327,6 +2412,13 @@ class Interpreter:
 
     def visit_ForEach(self, node: ast.ForEach) -> None:
         collection = (yield from self._visit(node.collection))
+        from .source_document_sections import SourceDocumentSection
+        if type(collection) is SourceDocumentSection:
+            for value in collection.iterate(self):
+                self.set_variable(node.name,value)
+                if not (yield from self.iteration(node.body)):
+                    break
+            return
         from .source_constants_runtime import SourceConstants
         if type(collection) is SourceConstants:
             members = collection.members(self)
@@ -2354,3 +2446,27 @@ class Interpreter:
 
     def visit_Continue(self, node: ast.Continue) -> None:
         raise _Continue
+
+
+@lru_cache(maxsize=1)
+def _source_call_dispatch_types():
+    """Lazy immutable identities only; no caller, receiver or authority is cached.
+
+    Kept after argument evaluation at the call site to preserve import timing and
+    avoid runtime/configuration-source circular imports during module loading.
+    Failed imports do not populate functools.lru_cache.
+    """
+    from .source_catalog_runtime import SourceCatalogCall
+    from .source_document_sections import SourceDocumentSectionCall
+    from .source_document_runtime import SourceDocumentCall
+    from .source_references import SourceReferenceCall
+    from .source_constants_runtime import ConstantCall, ConstantSetCall
+    from .source_constant_queries import SourceQueryCall
+    from .source_extensions import ExtensionCall
+    from .source_host_session import SourceSessionCall
+    from .source_transactions import SourceTransactionCall
+    from .source_constant_managers import ValueManagerCall, write_values
+    return (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
+            SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
+            ExtensionCall, SourceSessionCall, SourceTransactionCall,
+            ValueManagerCall, write_values)
