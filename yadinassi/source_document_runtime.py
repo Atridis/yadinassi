@@ -6,6 +6,7 @@ from .configuration_source_runtime import _SourceInterpreter
 
 _constructing=ContextVar("source_document_construction",default=())
 _active_write=ContextVar("source_document_write",default=False)
+_read_stack=ContextVar("source_document_read",default=())
 from .values import BSLObject, HostFunction
 from .source_references import SourceReferenceManager
 from .source_constant_store import _encode
@@ -27,7 +28,7 @@ def store_for(manager,caller):
     if manager.family!='Document' or type(app.constant_store) not in (SourceDocumentStore,SourceDocumentSectionStore):
         raise ValueError('source Document records require explicit v5 scratch capability')
     app.constant_store.document(manager.name)
-    if (_constructing.get() or _active_write.get() or catalog_construction.get() or catalog_write.get() or constant_write.get() or constant_construction.get()) and not app.constant_store.transaction_active:
+    if (_constructing.get() or _active_write.get() or _read_stack.get() or catalog_construction.get() or catalog_write.get() or constant_write.get() or constant_construction.get()) and not app.constant_store.transaction_active:
         raise ValueError('source lifecycle transaction aborted; document access refused')
     return app,app.constant_store
 
@@ -146,16 +147,17 @@ class SourceDocumentCall:
         if self.operation=='next':
             receiver.index+=1;return receiver.index<len(receiver.rows)
         if self.operation=='object':
-            if 'onread' in definition.write_blockers:raise ValueError('document OnRead lifecycle unsupported')
             if not 0<=receiver.index<len(receiver.rows):raise ValueError('source selection is not positioned')
             identity,revision,fields=receiver.rows[receiver.index]
-            if definition.sections:return (yield from load_object(caller,manager,definition,store,identity))
+            if definition.sections or 'onread' in definition.write_blockers:return (yield from load_object(caller,manager,definition,store,identity))
             return (yield from create_object(caller,manager,definition,identity,revision,fields))
         receiver.authorize(caller)
         if self.operation=='new':return receiver.revision==0
         if self.operation=='metadata':return app.references.definition('Document',manager.name)[2]
         if self.operation=='read':
-            if 'onread' in definition.write_blockers:raise ValueError('document OnRead lifecycle unsupported')
+            if 'onread' in definition.write_blockers:
+                yield from read_lifecycle(caller,manager,definition,store,receiver.identity,receiver)
+                return None
             if definition.sections:
                 _,revision,fields,sections=store.read_document_bundle(manager.name,receiver.identity)
                 receiver.replace_sections(sections)
@@ -168,12 +170,55 @@ class SourceDocumentCall:
 
 
 def load_object(caller,manager,definition,store,identity):
-    if 'onread' in definition.write_blockers:raise ValueError('document OnRead lifecycle unsupported')
+    if 'onread' in definition.write_blockers:
+        return (yield from read_lifecycle(caller,manager,definition,store,identity))
     if definition.sections:
         rid,revision,fields,sections=store.read_document_bundle(manager.name,identity)
         return (yield from create_object(caller,manager,definition,rid,revision,fields,sections))
     rid,revision,fields=store.read_documents(manager.name,identity)[0]
     return (yield from create_object(caller,manager,definition,rid,revision,fields))
+
+
+def read_lifecycle(caller,manager,definition,store,identity,receiver=None):
+    """Atomic bounded read event; never persists the loaded object's edits."""
+    app,_=store_for(manager,caller)
+    key=(id(app),definition.identity,identity)
+    stack=_read_stack.get()
+    if key in stack or len(stack)>=32:raise ValueError('recursive or excessive document OnRead')
+    owned=not store.transaction_active;token=None;obj=receiver
+    from .database_transactions import admission
+    from .safe_mode import routine_frame
+    try:
+        if owned:store.begin_transaction()
+        token=_read_stack.set((*stack,key))
+        if definition.sections:
+            rid,revision,fields,sections=store.read_document_bundle(manager.name,identity)
+        else:
+            rid,revision,fields=store.read_documents(manager.name,identity)[0];sections=None
+        if obj is None:
+            obj=yield from create_object(caller,manager,definition,rid,revision,fields,sections)
+        else:
+            obj.values=dict(fields);obj.revision=revision
+            if sections is not None:obj.replace_sections(sections)
+        vm=obj.interpreter
+        if vm is None:raise ValueError('document OnRead module missing')
+        matches=[vm.server_routines[n] for n in ('onread','причтении') if n in vm.server_routines]
+        if len(matches)!=1:raise ValueError('document OnRead binding mismatch')
+        with admission(False),routine_frame(caller,vm):
+            yield from vm.call_routine(matches[0],[],vm,require_value=False)
+        if not store.transaction_active:raise ValueError('document OnRead transaction aborted')
+        obj.authorize(caller)
+        if owned:store.commit_transaction()
+        return obj
+    except BaseException:
+        if store.transaction_active:store.rollback_transaction()
+        if obj is not None:
+            obj._closed=True
+            for section in obj.sections.values():section.invalidate()
+            if obj.interpreter is not None:obj.interpreter.close()
+        raise
+    finally:
+        if token is not None:_read_stack.reset(token)
 
 
 _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','уникальныйидентификатор','metadata','метаданные'}
@@ -314,8 +359,10 @@ def create_object(caller,manager,definition,identity=None,revision=0,values=None
 
 def write_object(caller,obj):
     _,store=obj.authorize(caller)
-    if obj.definition.write_blockers:
-        raise ValueError('source document Write unsupported events: '+','.join(obj.definition.write_blockers))
+    blockers=tuple(b for b in obj.definition.write_blockers if b!='onread')
+    if blockers:
+        raise ValueError('source document Write unsupported events: '+','.join(blockers))
+    if _read_stack.get():raise ValueError('document write during OnRead unsupported')
     from .source_catalog_runtime import _active_write as catalog_write
     if not obj._ready or _active_write.get() or catalog_write.get():raise ValueError('recursive or initializing document write unsupported')
     owned=not store.transaction_active;previous_revision=obj.revision;token=None

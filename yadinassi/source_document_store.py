@@ -138,7 +138,8 @@ class SourceDocumentStore(SourceCatalogStore):
         definition=self.document(name)
         owned=not self.transaction_active
         try:
-            if definition.write_blockers:raise ValueError('source document Write unsupported events: '+','.join(definition.write_blockers))
+            blockers=tuple(b for b in definition.write_blockers if b!='onread')
+            if blockers:raise ValueError('source document Write unsupported events: '+','.join(blockers))
             if definition.object_module is not None and _handled is not _HANDLED_DOCUMENT_WRITE:
                 raise ValueError('direct document ObjectModule write requires handler execution')
             raw=encode_record(definition,values)
