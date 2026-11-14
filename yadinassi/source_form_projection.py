@@ -41,12 +41,40 @@ def project_source_form(raw):
     def title(node, path):
         child=node.find(L+'Title')
         if child is not None and len(child):
-            contents=child.findall('.//{'+V8+'}content')
-            label=next((n.text for n in contents if n.text),'')
-            if not label:
-                note(path,'Unsupported structured title');node.remove(child)
-            else:
-                child.clear();child.text=label[:1024];note(path,'Localized title: first available translation')
+            # A title is a bounded v8 language map, not arbitrary descendant
+            # content. Canonical metadata identifiers and source bytes stay intact.
+            try:
+                if child.attrib or (child.text or '').strip() or len(child)>64:
+                    raise ValueError('invalid localized title envelope')
+                translations = {}; seen = set()
+                for item in child:
+                    if (item.tag != '{'+V8+'}item' or item.attrib
+                            or (item.text or '').strip() or (item.tail or '').strip()
+                            or len(item) != 2):
+                        raise ValueError('invalid localized title item')
+                    langs=item.findall('{'+V8+'}lang');texts=item.findall('{'+V8+'}content')
+                    if len(langs)!=1 or len(texts)!=1:
+                        raise ValueError('invalid localized title fields')
+                    lang, content = langs[0], texts[0]
+                    if any(n.attrib or len(n) or (n.tail or '').strip() for n in (lang,content)):
+                        raise ValueError('invalid localized title value')
+                    key=(lang.text or '').strip().casefold()
+                    if not key or len(key)>32 or key in seen:
+                        raise ValueError('ambiguous localized title language')
+                    seen.add(key)
+                    if content.text and content.text.strip():
+                        translations[key]=content.text
+                language='ru' if 'ru' in translations else next(iter(translations),'')
+                if not language:
+                    raise ValueError('no nonempty localized title')
+                label=translations[language]
+                child.clear();child.text=label[:1024]
+                note(path,'Localized title: Russian' if language=='ru' else
+                     'Localized title: Russian unavailable; fallback '+language)
+                if len(label)>1024:
+                    note(path,'Localized title truncated to 1024 characters')
+            except ValueError as error:
+                note(path,'Title unavailable: '+str(error));node.remove(child)
     def events(node, allowed, path):
         child=node.find(L+'Events')
         if child is None:return
