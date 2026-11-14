@@ -12,7 +12,7 @@ from .source_constant_store import _encode
 
 _ALIASES={'номер':'number','дата':'date','пометкаудаления':'deletionmark','проведен':'posted','ссылка':'ref'}
 _OBJECT_METHODS={'read':'read','прочитать':'read','write':'write','записать':'write','isnew':'new','этоновый':'new','metadata':'metadata','метаданные':'metadata'}
-_MANAGER_METHODS={'createdocument':'create','создатьдокумент':'create','select':'select','выбрать':'select'}
+_MANAGER_METHODS={'createdocument':'create','создатьдокумент':'create','select':'select','выбрать':'select','findbynumber':'findnumber','найтипономеру':'findnumber'}
 
 
 def store_for(manager,caller):
@@ -130,6 +130,14 @@ class SourceDocumentCall:
         receiver=self.receiver
         manager=receiver if type(receiver) is SourceReferenceManager else receiver.manager
         app,store=store_for(manager,caller);definition=store.document(manager.name)
+        if self.operation=='findnumber':
+            if len(values)!=1:raise TypeError('source FindByNumber requires one explicit String number; date periods unsupported')
+            number=values[0]
+            field=next(f for f in definition.fields if f.name=='Number')
+            _encode(number,field)
+            matches=[identity for identity,_,fields in store.read_documents(manager.name) if fields['number']==number]
+            if len(matches)>1:raise ValueError('ambiguous source document number')
+            return app.references.ref('Document',manager.name,matches[0] if matches else UUID(int=0))
         if values:raise TypeError('source document methods accept no arguments; posting unsupported')
         if self.operation=='create':return (yield from create_object(caller,manager,definition))
         if self.operation=='select':return SourceDocumentSelection(manager,store.read_documents(manager.name))
