@@ -81,7 +81,7 @@ jobs:
     name: JavaScript client and browser support tests
     needs: admission
     runs-on: ubuntu-22.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -99,8 +99,47 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      - name: Test existing client and browser support contracts
-        run: node --test frontend/catalog/test/client.test.mjs tests/browser_ui/support.test.mjs frontend/form/test/*.test.mjs frontend/workspace/test/*.test.mjs frontend/reference-workspace/test/*.test.mjs frontend/configuration/test/*.test.mjs
+      - name: Install locked asset builder dependencies
+        run: npm ci --prefix frontend/catalog --ignore-scripts --no-audit --no-fund
+      - name: Build all frontend assets in dependency order
+        run: |
+          for frontend in catalog form configuration workspace reference-workspace source-workspace main-demo; do
+            node frontend/$frontend/build.mjs
+          done
+      - name: Require committed assets to match their source
+        run: test -z "$(git status --porcelain --untracked-files=all -- yadinassi/ui/assets)"
+      - name: Test every client and browser support suite
+        run: node --test frontend/*/test/*.test.mjs tests/browser_ui/*.test.mjs
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install ordinary browser smoke dependencies
+        run: |
+          test "$(id -u)" != 0
+          python -m pip install -e . wcwidth==0.8.2
+          npm ci --prefix tests/browser_ui --ignore-scripts --no-audit --no-fund
+      - name: Install version-bound Chromium without system changes
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/node_modules/playwright/cli.js install chromium --no-shell
+      # Reuse the bounded five-scenario sandboxed suite, not a native parity gate.
+      - name: Ordinary main-demo browser smoke on exact admitted source
+        timeout-minutes: 6
+        env:
+          QA_SOURCE_SHA: ${{ needs.admission.outputs.source_sha }}
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/yadinassi-browser-binaries
+        run: node tests/browser_ui/main_demo_browser_qa.mjs
+      - name: Publish source-bound browser smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ordinary-browser-${{ needs.admission.outputs.source_sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/yadinassi-browser-artifacts/result.json
+            ${{ runner.temp }}/yadinassi-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-browser-artifacts/*.png
+          if-no-files-found: warn
+          retention-days: 7
 
   light:
     name: Light tests (${{ matrix.target }})

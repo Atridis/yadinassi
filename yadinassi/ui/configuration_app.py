@@ -1976,6 +1976,17 @@ class ConfigurationController:
                 else:
                     controller, entry = self.sessions[sid]
                     nested_request = params['request']
+                    # A validated snapshot only projects retained form memory. Do
+                    # not recapture a saved-list page (and rotate its grants) for
+                    # this read. Hello, close/completion and every event remain
+                    # conservative: handlers may Write before a later failure.
+                    snapshot_revision = controller.session.revision
+                    readonly_snapshot = (type(nested_request) is dict
+                        and nested_request.get('method') == 'form.snapshot'
+                        and type(nested_request.get('params')) is dict
+                        and nested_request['params'] == {} and controller._opened
+                        and not controller.session.closed and not controller.session.uncertain
+                        and not self.pending and sid not in self._close_requests)
                     owner_blocked = self._owner_blocked(sid) and (
                         type(nested_request) is not dict or nested_request.get('method') not in ('form.hello', 'form.snapshot'))
                     if (self.choice is not None and self.choice['session'] == sid
@@ -2005,9 +2016,13 @@ class ConfigurationController:
                                 self._posting_sync(sid, 'execute', command)
                                 form = self._form_exchange(controller, {'jsonrpc': '2.0', 'id': nested_request['id'],
                                     'method': 'form.snapshot', 'params': {}})
+                    readonly_snapshot = (readonly_snapshot and not blocked and error is None
+                        and form['result']['error'] is None and not controller.session.closed
+                        and controller.session.revision == snapshot_revision
+                        and not self.pending and sid not in self._close_requests)
                     if controller.session.uncertain:
                         self._lock()
-                    elif self.catalog is not None:
+                    elif self.catalog is not None and not readonly_snapshot:
                         projection = self._call('catalog', payload={'entry': self.catalog['entry']})
                         projection_error = projection.get('error')
                         self.catalog = None if projection_error else projection

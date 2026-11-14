@@ -134,19 +134,25 @@ class TieredWorkflowTests(unittest.TestCase):
         light = section(self.source, 'light').split('    steps:', 1)[0]
         self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$', light, re.M),
                          ["${{ matrix.target == 'mac-x86' && 60 || 30 }}"])
-        for job, minutes in (('heavy', 45), ('build', 40), ('javascript', 5)):
+        for job, minutes in (('heavy', 45), ('build', 40), ('javascript', 15)):
             block = section(self.source, job).split('    steps:', 1)[0]
             self.assertIn(f'    timeout-minutes: {minutes}\n', block)
 
-    def test_existing_javascript_suites_are_required_without_install_or_browser(self):
+    def test_all_javascript_suites_and_bounded_browser_are_required(self):
         block = section(self.source, 'javascript')
         self.assertIn('    needs: admission\n', block)
-        self.assertNotIn('    if:', block)
+        self.assertNotRegex(block, r'(?m)^    if:')
         self.assertIn('actions/setup-node@v7', block)
         self.assertIn("          node-version: '22'", block)
         self.assertIn('          package-manager-cache: false', block)
-        self.assertIn('run: node --test frontend/catalog/test/client.test.mjs tests/browser_ui/support.test.mjs', block)
-        for forbidden in ('npm ', 'playwright', 'contents: write', 'continue-on-error', 'secrets.'):
+        self.assertIn('run: node --test frontend/*/test/*.test.mjs tests/browser_ui/*.test.mjs', block)
+        self.assertIn('git status --porcelain --untracked-files=all -- yadinassi/ui/assets', block)
+        self.assertIn('npm ci --prefix frontend/catalog --ignore-scripts', block)
+        self.assertIn('npm ci --prefix tests/browser_ui --ignore-scripts', block)
+        self.assertIn('QA_SOURCE_SHA: ${{ needs.admission.outputs.source_sha }}', block)
+        self.assertIn('node tests/browser_ui/main_demo_browser_qa.mjs', block)
+        self.assertIn('timeout-minutes: 6', block)
+        for forbidden in ('install-deps', '--no-sandbox', 'contents: write', 'continue-on-error', 'secrets.'):
             self.assertNotIn(forbidden, block)
 
 
