@@ -579,6 +579,10 @@ class SourceConstantStore:
 
     def _definition(self, name):
         self._open()
+        return self._admitted_definition(name)
+
+    def _admitted_definition(self, name):
+        """Resolve within the caller's already admitted SQLite snapshot."""
         if type(name) is not str or not 1 <= len(name) <= 128:
             raise TypeError('constant name requires String')
         key = name.casefold()
@@ -642,18 +646,36 @@ class SourceConstantStore:
 
     def get_many(self, names):
         """One read snapshot; callers publish the result only on complete success."""
-        owned = not self.transaction_active
+        owned = False
         try:
+            # Exhaust any Python iterator before admission. No caller code or
+            # BSL handler runs between this admission and the bounded SQL reads.
+            names = tuple(names)
+            owned = not self.transaction_active
             if owned:
                 self._connection.execute('BEGIN')
             self._open()
+            identities = tuple(dict.fromkeys(str(self._definitions[name.casefold()].identity)
+                for name in names if type(name) is str and name.casefold() in self._definitions))
+            api = getattr(self._connection, 'getlimit', None)
+            variables = api(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) if api else 999
+            limit = min(256, variables)
+            if limit < 1: raise ValueError('source constants SQL variable bound')
+            values = {}
+            for offset in range(0, len(identities), limit):
+                chunk = identities[offset:offset + limit]
+                values.update(self._connection.execute(
+                    'SELECT identity,value_json FROM constant_value WHERE identity IN (' +
+                    ','.join('?' for _ in chunk) + ')', chunk))
             result = {}
             for name in names:
-                definition = self._definition(name)
-                row = self._connection.execute('SELECT value_json FROM constant_value WHERE identity=?', (str(definition.identity),)).fetchone()
-                if row is None:
+                # Preserve ordered name/uninitialized/codec errors; prefetch
+                # neither approves missing declarations nor decodes later data.
+                definition = self._admitted_definition(name)
+                identity = str(definition.identity)
+                if identity not in values:
                     raise ValueError('uninitialized constant: ' + definition.name)
-                result[name.casefold()] = _decode(row[0], definition)
+                result[name.casefold()] = _decode(values[identity], definition)
             return result
         except BaseException as error:
             if self.transaction_active:

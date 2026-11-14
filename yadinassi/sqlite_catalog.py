@@ -2535,6 +2535,39 @@ class _View:
         row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' % (columns,table,where), args+(str(key.record_id),)).fetchone()
         return None if row is None else self._card(key.catalog_id,row,schema=schema)
 
+    @_boundary
+    def read_catalog_values(self, key, fields):
+        """Point projection after full selected-record integrity admission.
+
+        No writer can borrow this proof. ReadHandle invalidates it on source,
+        schema or data changes. Legacy/hierarchy paths keep their full reader.
+        """
+        self._require(); self._key(key)
+        if self._operation_id is not None: raise BackendError('unsupported')
+        schema = self.catalog_schema(key.catalog_id)
+        if type(fields) is not tuple or not 1 <= len(fields) <= 128:
+            raise BackendError('invalid_input')
+        for field in fields: self._scan_field(schema,field)
+        if self._backend.storage_version == 1 or schema.hierarchy != 'none':
+            card = self.read_catalog(key)
+            return None if card is None else CatalogValueRow(key,tuple(
+                self._scan_value(schema,card,field) for field in fields))
+        table, columns, where, args = self._source(schema)
+        args += (str(key.record_id),)
+        proof = ('catalog-point',key.catalog_id,schema,key.record_id)
+        if proof not in self._validated_sources:
+            self._preflight_v2(schema,record_id=key.record_id)
+            row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' %
+                (columns,table,where),args).fetchone()
+            if row is not None:
+                scalar = self._scalar(key.catalog_id,row,schema=schema)
+                owner = str(scalar.key.record_id)
+                self._section_scan(schema,(owner,),selected=(owner,))
+            self._validated_sources[proof] = ()
+        row = self._connection.execute('SELECT %s FROM %s WHERE %s AND record_id=?' %
+            (self._projection_columns(schema,fields),table,where),args).fetchone()
+        return None if row is None else self._projection_row(key.catalog_id,schema,fields,row)
+
     def _key(self,key):
         if type(key) is not CatalogKey or key.database_id != self.database_id: raise BackendError('invalid_input')
         _uuid(key.catalog_id); _uuid(key.record_id, empty=True)

@@ -25,6 +25,37 @@ def quote_identifier(name):
     return '"' + name.replace('"', '""') + '"'
 
 
+def reference_presence(connection, keys, source):
+    """One operation's bounded existence reads, never a cross-operation cache.
+
+    ``source`` supplies an admitted quoted table/filter, not caller SQL. Results
+    include missing keys; the consumer raises at its original validation point.
+    Chunking stays below SQLite's variable limit, including legacy filters.
+    """
+    import sqlite3
+    groups = {}
+    for key in keys:
+        groups.setdefault(key.catalog_id, set()).add(str(key.record_id))
+    result = {}
+    for catalog_id, identities in groups.items():
+        table, where, args = source(catalog_id)
+        # Python 3.10 lacks Connection.getlimit; its supported SQLite builds
+        # allow at least 999 variables. Newer Python honors lowered limits.
+        limit_api = getattr(connection, 'getlimit', None)
+        variables = limit_api(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) if limit_api else 999
+        limit = min(256, variables - len(args))
+        if limit < 1:
+            raise BackendError('unsupported')
+        ids = sorted(identities)
+        for offset in range(0, len(ids), limit):
+            chunk = ids[offset:offset + limit]
+            found = {row[0] for row in connection.execute(
+                'SELECT record_id FROM %s WHERE (%s) AND record_id IN (%s)' %
+                (table, where, ','.join('?' for _ in chunk)), (*args, *chunk))}
+            result.update(((catalog_id, UUID(identity)), identity in found) for identity in chunk)
+    return result
+
+
 def _identity(value):
     if type(value) is not UUID or not value.int: raise BackendError('invalid_input')
     return value
