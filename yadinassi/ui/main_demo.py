@@ -31,6 +31,18 @@ def document_forms(configuration):
     forms = load_configuration_forms(projected, document_schemas=configuration.documents,
         reference_catalogs=configuration.catalogs, posting_application=True,
         enum_definitions=configuration.enumerations)
+    # Generated object-table columns otherwise expose stable schema identifiers.
+    # Main-demo presentation only: names/types/slots remain unchanged; this is
+    # not a global importer rule or a claim about native generated forms.
+    titles = {'Product':'Номенклатура', 'Quantity':'Количество', 'Amount':'Сумма',
+              'Unit':'Единица измерения', 'Warehouse':'Склад', 'State':'Состояние',
+              'Lines':'Товары'}
+    localized = {name: replace(definition, tables=tuple(
+        replace(table, title=titles.get(table.title, table.title), columns=tuple(
+            replace(column, title=titles.get(column.title or column.name, column.title))
+            for column in table.columns)) for table in definition.tables))
+        for name, definition in forms.forms.items()}
+    forms = replace(forms, forms=MappingProxyType(localized))
     # A structural view is not the source of authority: the complete canonical envelope,
     # including the untouched catalog handlers, stay in the source witness.
     digest = sha256()

@@ -152,7 +152,12 @@ def validate_projection(result, configuration, request, *, paged=True):
             if type(value) is not dict or value.get('type') != column['type']:
                 raise ValueError('invalid typed report cell')
             if column['type'] in ('Catalog', 'Document'):
-                _keys(value, 'type text')
+                linked = 'recorder' in value
+                _keys(value, 'type text' + (' recorder' if linked else ''))
+                if linked and (result['view'] != 'Movements' or column != {'name':'Recorder','type':'Document'}
+                               or type(value['recorder']) is not str
+                               or re.fullmatch(r'recorder-[0-9a-f]{32}', value['recorder']) is None):
+                    raise ValueError('invalid recorder link')
                 if not _text(value['text'], 1152):
                     raise ValueError('invalid report presentation')
             elif _encode_scalar(_decode_scalar(value)) != value:

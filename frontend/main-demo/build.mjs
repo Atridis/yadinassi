@@ -17,6 +17,6 @@ const styles=await Promise.all(cssSources.map(name=>readFile(path.join(root,name
 await writeFile(path.join(target,'style.css'),scopedStyles(styles[0],'.main-demo-catalog')+scopedStyles(styles[1]+'\n'+styles[2],'.main-demo-documents')+'\n'+await readFile(path.join(root,'src/style.css'),'utf8'));
 await copyFile(path.join(root,'../form/LICENSE.txt'),path.join(target,'LICENSE.txt'));
 const sources={},outputs={};
-for(const name of ['build.mjs','scoped-styles.mjs',...cssSources,'src/app.mjs','src/client.mjs','src/index.html','src/style.css','../form/LICENSE.txt','../catalog/package.json','../catalog/package-lock.json','../form/src/attachment.mjs','../form/src/client.mjs'])sources[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
+for(const name of ['build.mjs','scoped-styles.mjs',...cssSources,'src/app.mjs','src/client.mjs','src/index.html','src/style.css','../form/LICENSE.txt','../catalog/src/presentation.mjs','../catalog/package.json','../catalog/package-lock.json','../form/src/attachment.mjs','../form/src/client.mjs'])sources[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
 for(const name of ['app.js','index.html','style.css','LICENSE.txt'])outputs[name]=createHash('sha256').update(await readFile(path.join(target,name))).digest('hex');
 await writeFile(path.join(target,'build-manifest.json'),JSON.stringify({schema:'yadinassi-main-demo-assets/0',dependencies:{esbuild:'0.28.2'},sources,outputs},null,2)+'\n');
