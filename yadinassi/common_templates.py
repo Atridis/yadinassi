@@ -39,3 +39,82 @@ class ApplicationCommonTemplates:
             value=BSLTextDocument();value.set_text(definition.content.decode('utf-8-sig').replace('\r\n','\n').replace('\r','\n'));return value
         from .file_io import BSLBinaryData
         return BSLBinaryData.from_bytes(definition.content)
+
+
+class SourceCommonTemplates:
+    """Lazy, bounded source resources, separate from strict application grants."""
+    def __init__(self, application):
+        import weakref
+        self._app = weakref.ref(application)
+        self._entries = {entry.name.casefold(): entry for entry in application.source.metadata
+                         if entry.family == 'CommonTemplate'}
+        self._loaded = {}
+        self._bytes = 0
+
+    def authorize(self, caller):
+        app = self._app()
+        if app is None:
+            raise ValueError('source common template owner is closed')
+        app.require_open()
+        caller._require_family()
+        if (caller._family_owner is not app.interpreter
+                or caller._scheduler is not app.interpreter._scheduler
+                or getattr(caller, 'application', None) is not app
+                or app.state not in ('starting', 'running', 'before_exit', 'exiting')):
+            raise ValueError('foreign or inactive source common template owner')
+        return app
+
+    def get(self, caller, name):
+        from .configuration_source_metadata import SourceMetadataObject
+        app = self.authorize(caller)
+        if type(name) is str and 1 <= len(name) <= 128:
+            key = name.casefold()
+        elif type(name) is SourceMetadataObject:
+            entry = name._entry
+            if (name._root is not app.metadata or entry.family != 'CommonTemplate'
+                    or app.metadata.find_by_full_name('CommonTemplate.' + entry.name) is not name):
+                raise ValueError('foreign source common template metadata')
+            key = entry.name.casefold()
+        else:
+            raise TypeError('common template name requires String or owned metadata')
+        entry = self._entries.get(key)
+        if entry is None:
+            raise ValueError('unknown source common template')
+        if app.metadata.find_by_full_name('CommonTemplate.' + entry.name) is None:
+            raise ValueError('source common template is not declared')
+        definition = self._loaded.get(key)
+        if definition is None:
+            if len(self._loaded) >= 128:
+                raise ValueError('source common template resource count bound')
+            from .configuration_templates import read_common_templates
+            try:
+                issues = []
+                definition, = read_common_templates(app.files, [entry.name], set(), issues)
+                if issues or definition.identity != entry.identity:
+                    raise ValueError('source common template metadata mismatch')
+            except ValueError as error:
+                raise ValueError(entry.path + ': common template cannot be loaded: ' + str(error)) from None
+            if self._bytes + len(definition.content) > 8 * 1024 * 1024:
+                raise ValueError('source common template total resource bound')
+            self._loaded[key] = definition
+            self._bytes += len(definition.content)
+        if definition.kind == 'TextDocument':
+            from .text_documents import BSLTextDocument
+            value = BSLTextDocument()
+            value.set_text(definition.content.decode('utf-8-sig').replace('\r\n', '\n').replace('\r', '\n'))
+            return value
+        from .file_io import BSLBinaryData
+        return BSLBinaryData.from_bytes(definition.content)
+
+
+class SourceTemplateCall:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def __call__(self, *args):
+        raise ValueError('source templates require an interpreter invocation')
+
+    def invoke(self, caller, values):
+        if len(values) != 1:
+            raise TypeError('GetCommonTemplate requires one argument')
+        return self.owner.get(caller, values[0])
