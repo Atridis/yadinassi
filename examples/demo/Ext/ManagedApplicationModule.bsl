@@ -1,3 +1,3 @@
-Procedure ПриНачалеРаботыСистемы()
- Message(DemoTools.InfoText());
-EndProcedure
+Процедура ПриНачалеРаботыСистемы()
+ Сообщить(DemoTools.InfoText());
+КонецПроцедуры

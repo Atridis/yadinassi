@@ -54,6 +54,11 @@ export function validReportRequest(params,state) {
     params.start>='1900-01-01T00:00:00' && params.end<='2099-12-31T23:59:59' &&
     state.reportSetup?.report===params.report && state.reportSetup.ticket===params.setup && !state.reportSetup.choice);
 }
+export function validRecorderRequest(params,state) {
+  return keys(params,['recorder','request']) && typeof params.recorder==='string' && /^recorder-[0-9a-f]{32}$/.test(params.recorder)
+    && text(params.request,64) && /^[\x20-\x7e]{1,64}$/.test(params.request) && safe(state)
+    && state.report?.view==='Movements' && state.report.rows.some(row=>row.some(cell=>cell.type==='Document' && cell.recorder===params.recorder));
+}
 export function validReportAction(method,params,state) {
   if(!safe(state))return false;
   if(method==='application.reportPage'){
@@ -117,7 +122,7 @@ export function validateReports(state,previous) {
     row.forEach((cell,index)=>{
       if (cell?.type!==result.columns[index].type) throw new FormError('transport');
       if (['Catalog','Document'].includes(cell.type)) {
-        if (!keys(cell,['type','text']) || !text(cell.text)) throw new FormError('transport');
+        if (!keys(cell,['type','text',...(Object.hasOwn(cell,'recorder')?['recorder']:[])]) || !text(cell.text) || Object.hasOwn(cell,'recorder') && (cell.type!=='Document' || result.view!=='Movements' || result.columns[index].name!=='Recorder' || typeof cell.recorder!=='string' || !/^recorder-[0-9a-f]{32}$/.test(cell.recorder))) throw new FormError('transport');
       } else validateScalar(cell);
     });
   }
@@ -155,8 +160,8 @@ export function validateReportReply(result,request,previous) {
 export function reportCellText(cell) {
   return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
 }
-export function createReportPanel(document, host, request, blocked, command=null) {
-  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
+export function createReportPanel(document, host, request, blocked, command=null, options={}) {
+  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=options.localize?options.localize(content):content;return n;};
   const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), filters=el('section'), output=el('div'), notice=el('p');
   host.className='configuration-reports';host.dataset.formAction='application-navigation';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
   navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');filters.setAttribute('aria-label','Statement catalog filters');
@@ -226,7 +231,7 @@ export function createReportPanel(document, host, request, blocked, command=null
     filters.append(picker);
   }
   function paint() {
-    host.hidden=!state?.reports?.length;if(host.hidden)return;
+    host.hidden=!state?.reports?.length || options.visible?.()===false;if(host.hidden)return;
     if(!state.reports.some(r=>r.id===selected))selected=state.reports[0].id;
     const disabled=busy || blocked(), report=state.reports.find(r=>r.id===selected);
     navigation.replaceChildren();
@@ -241,11 +246,13 @@ export function createReportPanel(document, host, request, blocked, command=null
     drawFilters(report,disabled);
     const result=state.report?.report===selected?state.report:null;
     // Button state changes with the queue even when the immutable page does not.
-    if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
+    if(result!==lastResult || result?.page || result?.rows.some(row=>row.some(cell=>cell.recorder))){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
         for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
-        for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
+        for(const values of result.rows){const row=el('tr');for(const cell of values){const td=el('td');
+          if(cell.recorder && options.openRecorder){const open=button(td,cell.text,disabled,()=>{if(!busy&&!blocked())options.openRecorder(cell.recorder);});open.setAttribute('aria-label','Открыть регистратор: '+cell.text);}
+          else td.textContent=reportCellText(cell);row.append(td);}body.append(row);}
         const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
         if(statement(result)){

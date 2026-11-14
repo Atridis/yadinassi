@@ -1,64 +1,64 @@
-&AtClient
-Var PendingDraft;
-&AtServer
-Procedure Created(Cancel, StandardProcessing)
+&НаКлиенте
+Перем PendingDraft;
+&НаСервере
+Процедура Created(Cancel, StandardProcessing)
  DraftTitle = "Новая операция";
  Amount = 0;
  Comment = "";
  AppliedCount = 0;
  LastOutcome = "Изменения не подготовлены";
-EndProcedure
-&AtClient
-Procedure EditDraft(Command)
- If PendingDraft <> Undefined Then
-  DraftSnapshot = New Structure("DraftTitle,Amount,Comment", PendingDraft.DraftTitle, PendingDraft.Amount, PendingDraft.Comment);
- Else
-  DraftSnapshot = New Structure("DraftTitle,Amount,Comment", DraftTitle, Amount, Comment);
- EndIf;
- OpenForm("CommonForm.DraftDetails", DraftSnapshot, ThisObject,
-  Undefined, Undefined, Undefined, New CallbackDescription("DetailsCompleted", ThisObject));
-EndProcedure
-&AtClient
-Procedure DetailsCompleted(Result, AdditionalParameters) Export
- If Result <> Undefined Then
+КонецПроцедуры
+&НаКлиенте
+Процедура EditDraft(Command)
+ Если PendingDraft <> Неопределено Тогда
+  DraftSnapshot = Новый Структура("DraftTitle,Amount,Comment", PendingDraft.DraftTitle, PendingDraft.Amount, PendingDraft.Comment);
+ Иначе
+  DraftSnapshot = Новый Структура("DraftTitle,Amount,Comment", DraftTitle, Amount, Comment);
+ КонецЕсли;
+ ОткрытьФорму("CommonForm.DraftDetails", DraftSnapshot, ThisObject,
+  Неопределено, Неопределено, Неопределено, Новый ОписаниеОповещения("DetailsCompleted", ThisObject));
+КонецПроцедуры
+&НаКлиенте
+Процедура DetailsCompleted(Result, AdditionalParameters) Экспорт
+ Если Result <> Неопределено Тогда
   PendingDraft = Result;
   LastOutcome = "Черновик ожидает подтверждения";
- Else
+ Иначе
   LastOutcome = "Редактирование отменено";
- EndIf;
-EndProcedure
-&AtClient
-Procedure ConfirmDraft(Command)
- If PendingDraft = Undefined Then
+ КонецЕсли;
+КонецПроцедуры
+&НаКлиенте
+Процедура ConfirmDraft(Command)
+ Если PendingDraft = Неопределено Тогда
   LastOutcome = "Нет подготовленных изменений";
- Else
-  ShowQueryBox(New CallbackDescription("QuestionCompleted", ThisObject), "Применить подготовленные изменения?", QuestionDialogMode.YesNoCancel,
-   Undefined, Undefined, "Подтверждение черновика");
- EndIf;
-EndProcedure
-&AtClient
-Procedure QuestionCompleted(Result, AdditionalParameters) Export
- If Result = DialogReturnCode.Yes Then
-  If PendingDraft <> Undefined Then
+ Иначе
+  ПоказатьВопрос(Новый ОписаниеОповещения("QuestionCompleted", ThisObject), "Применить подготовленные изменения?", QuestionDialogMode.YesNoCancel,
+   Неопределено, Неопределено, "Подтверждение черновика");
+ КонецЕсли;
+КонецПроцедуры
+&НаКлиенте
+Процедура QuestionCompleted(Result, AdditionalParameters) Экспорт
+ Если Result = DialogReturnCode.Yes Тогда
+  Если PendingDraft <> Неопределено Тогда
    DraftTitle = PendingDraft.DraftTitle;
    Amount = PendingDraft.Amount;
    Comment = PendingDraft.Comment;
    AppliedCount = AppliedCount + 1;
-   PendingDraft = Undefined;
+   PendingDraft = Неопределено;
    LastOutcome = "Черновик применён";
-  EndIf;
- ElsIf Result = DialogReturnCode.No Then
-  PendingDraft = Undefined;
+  КонецЕсли;
+ ИначеЕсли Result = DialogReturnCode.No Тогда
+  PendingDraft = Неопределено;
   LastOutcome = "Подготовленные изменения отклонены";
- Else
+ Иначе
   LastOutcome = "Решение отложено";
- EndIf;
-EndProcedure
-&AtClient
-Procedure ShowInfo(Command)
- ShowMessageBox(New CallbackDescription("InfoCompleted", ThisObject), "Это черновик в памяти формы. Документы и движения в базе не записываются.", Undefined, "Операция без записи");
-EndProcedure
-&AtClient
-Procedure InfoCompleted(AdditionalParameters) Export
+ КонецЕсли;
+КонецПроцедуры
+&НаКлиенте
+Процедура ShowInfo(Command)
+ ПоказатьПредупреждение(Новый ОписаниеОповещения("InfoCompleted", ThisObject), "Это черновик в памяти формы. Документы и движения в базе не записываются.", Неопределено, "Операция без записи");
+КонецПроцедуры
+&НаКлиенте
+Процедура InfoCompleted(AdditionalParameters) Экспорт
  LastOutcome = "Информация просмотрена";
-EndProcedure
+КонецПроцедуры

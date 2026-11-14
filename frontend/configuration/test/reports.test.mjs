@@ -73,3 +73,31 @@ test('edited boundaries do not relabel an older report as the new period',()=>{
   assert.equal(calls,0);assert.ok(all(host).some(n=>n.textContent.includes('Displayed balance before 2026-11-11T23:59:59')));
   assert.equal(all(host).some(n=>n.textContent.includes('Displayed balance before 2028')),false);
 });
+
+test('recorder grant is accepted only in the current movement Recorder cell',async()=>{
+ const {validRecorderRequest}=await import('../src/reports.mjs');
+ const recorder='recorder-'+'a'.repeat(32),s=state({report:{report:'StockMovements',view:'Movements',at:null,start:null,end:null,columns:[{name:'Recorder',type:'Document'}],rows:[[{type:'Document',text:'Receipt 1',recorder}]]}});
+ assert.doesNotThrow(()=>validateReports(s,null));
+ assert.equal(validRecorderRequest({recorder,request:'open-1'},s),true);
+ assert.equal(validRecorderRequest({recorder:'recorder-'+'b'.repeat(32),request:'open-1'},s),false);
+ assert.equal(validRecorderRequest({recorder,request:'open-1',record:'raw-id'},s),false);
+ for(const edit of [v=>v.report.view='Balance',v=>v.report.columns[0].name='Product',v=>v.report.rows[0][0].type='Catalog',v=>v.report.rows[0][0].recorder='raw-id']){const bad=structuredClone(s);edit(bad);assert.throws(()=>validateReports(bad,null));}
+ s.choice={};assert.equal(validRecorderRequest({recorder,request:'open-1'},s),false);
+});
+test('movement recorder button passes only the grant and follows live busy state',()=>{
+ const env=environment(),host=env.document.createElement('section');env.document.root.append(host);
+ const recorder='recorder-'+'c'.repeat(32),calls=[];let blocked=false;
+ const s=state({report:{report:'StockMovements',view:'Movements',at:null,start:null,end:null,columns:[{name:'Recorder',type:'Document'}],rows:[[{type:'Document',text:'Receipt <1>',recorder}]]}});
+ const panel=createReportPanel(env.document,host,async()=>{},()=>blocked,null,{openRecorder:value=>calls.push(value)});
+ panel.update(s);const link=()=>buttons(env.document).find(b=>b.textContent==='Receipt <1>');
+ link().emit('click');assert.deepEqual(calls,[recorder]);blocked=true;panel.update(s);assert.equal(link().disabled,true);link().emit('click');assert.equal(calls.length,1);
+ s.report=null;panel.update(s);assert.equal(link(),undefined);
+});
+test('late report completion cannot reopen a panel after business navigation',async()=>{
+ const env=environment(),host=env.document.createElement('section');env.document.root.append(host);
+ let visible=true,finish;const request=new Promise(resolve=>{finish=resolve;});
+ const panel=createReportPanel(env.document,host,()=>request,()=>false,null,{visible:()=>visible});
+ panel.update(state());buttons(env.document).find(b=>b.textContent==='Show saved stock').emit('click');await flush();
+ visible=false;panel.update(state());assert.equal(host.hidden,true);
+ finish({});await flush();assert.equal(host.hidden,true);
+});

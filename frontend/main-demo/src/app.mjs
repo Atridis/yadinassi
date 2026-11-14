@@ -1,6 +1,7 @@
 import {mountEditor} from '/catalog.js';
 import {mountApplication} from '/configuration.js';
 import {createBrowserHost} from '../../form/src/attachment.mjs';
+import {readTheme,rememberTheme,resolvedTheme} from '../../catalog/src/presentation.mjs';
 import {MainDemoClient} from './client.mjs';
 
 export function mountMainDemo(environment,root){
@@ -15,7 +16,16 @@ export function mountMainDemo(environment,root){
   title.className='main-demo-title';notice.className='main-demo-notice';
   const retry=el('button','Восстановить состояние');notice.setAttribute('role','status');
   retry.className='main-demo-recover';
-  shell.append(title,nav,notice,retry,content);host.content.replaceChildren(shell);
+  const header=el('header'),services=el('details'),summary=el('summary','Сервис'),themeLabel=el('label','Тема '),themeSelect=el('select');
+  header.className='main-demo-header';services.className='main-demo-services';themeSelect.setAttribute('aria-label','Тема приложения');
+  for(const [value,label] of [['system','Системная'],['light','Светлая'],['dark','Тёмная']]){const option=el('option',label);option.value=value;themeSelect.append(option);}
+  let theme=readTheme(environment);themeSelect.value=theme;
+  const systemTheme=environment.matchMedia('(prefers-color-scheme: dark)'),themeListeners=new Set();
+  const paintTheme=()=>{const value=resolvedTheme(theme,systemTheme.matches);root.dataset.theme=value;content.dataset.theme=value;for(const listener of themeListeners)listener(theme);};
+  themeSelect.addEventListener('change',()=>{theme=themeSelect.value;rememberTheme(environment,theme);paintTheme();});
+  systemTheme.addEventListener('change',paintTheme);paintTheme();
+  themeLabel.append(themeSelect);services.append(summary,themeLabel,retry);header.append(title,services);
+  shell.append(header,nav,notice,content);host.content.replaceChildren(shell);
   let mount=null,mountedEpoch=null,busy=false,disposed=false;const timers=new Set();
   const client=new MainDemoClient(host.transport);
   const localBlocked=()=>!mount||!mount.canLeave();
@@ -30,13 +40,13 @@ export function mountMainDemo(environment,root){
     try{return await client.dispatch(request,epoch);}
     catch(error){notice.textContent='Ответ не получен или отклонён. Не повторяйте действие; восстановите состояние.';throw error;}
     finally{paint();const timer=environment.setTimeout(()=>{timers.delete(timer);if(!disposed)paint();},0);timers.add(timer);}
-  };exchange.recover=recover;return exchange;};
+  };exchange.recover=recover;exchange.theme={get:()=>theme,subscribe:listener=>{themeListeners.add(listener);return()=>themeListeners.delete(listener);}};return exchange;};
   async function install(){
     if(client.state?.uncertain)throw Error('Состояние владельца не определено. Повтор активации запрещён.');
     if(client.state?.kind==='closed'){notice.textContent='Приложение закрыто.';return;}
     if(mount&&mountedEpoch===client.state.epoch){await mount.resume();return;}
     if(mount){if(!mount.canLeave())throw Error('Сохранён локальный черновик: автоматическое переключение запрещено.');mount.destroy();}
-    content.replaceChildren();content.className='main-demo-surface '+(client.state.surface==='catalogs'?'main-demo-catalog':'main-demo-documents');mountedEpoch=client.state.epoch;
+    content.replaceChildren();content.className='main-demo-surface '+(client.state.surface==='catalogs'?'main-demo-catalog':'main-demo-documents');mountedEpoch=client.state.epoch;paintTheme();
     mount=client.state.surface==='catalogs'?mountEditor(environment,content,dispatch(mountedEpoch)):mountApplication(environment,content,dispatch(mountedEpoch));
     await mount.ready;
   }
@@ -57,7 +67,7 @@ export function mountMainDemo(environment,root){
     catch(error){notice.textContent=error.message;}
     finally{busy=false;paint();}
   }
-  for(const [surface,label] of [['catalogs','Справочники'],['documents','Документы, формы и отчёты']]){
+  for(const [surface,label] of [['catalogs','Нормативная информация'],['documents','Документы и регистры']]){
     const button=el('button',label);button.addEventListener('click',()=>select(surface));nav.append(button);buttons.push([button,surface]);
   }
   retry.addEventListener('click',recover);
@@ -69,6 +79,6 @@ export function mountMainDemo(environment,root){
   const inspect=()=>environment.queueMicrotask(paint);
   content.addEventListener('input',inspect);content.addEventListener('change',inspect);content.addEventListener('click',inspect);
   const ready=host.start(async()=>{await client.hello();await install();paint();});
-  paint();return{ready,client,recover,destroy(){if(disposed)return;if(localBlocked()||busy||client.pending)throw Error('Finish current surface');disposed=true;for(const timer of timers)environment.clearTimeout(timer);timers.clear();mount?.destroy();environment.removeEventListener('beforeunload',warn);host.attachment?.dispose();host.content.replaceChildren();}};
+  paint();return{ready,client,recover,destroy(){if(disposed)return;if(localBlocked()||busy||client.pending)throw Error('Finish current surface');disposed=true;for(const timer of timers)environment.clearTimeout(timer);timers.clear();mount?.destroy();systemTheme.removeEventListener('change',paintTheme);themeListeners.clear();environment.removeEventListener('beforeunload',warn);host.attachment?.dispose();host.content.replaceChildren();}};
 }
 if(typeof window!=='undefined'&&window.document?.getElementById('main-demo-app'))mountMainDemo(window,window.document.getElementById('main-demo-app'));
