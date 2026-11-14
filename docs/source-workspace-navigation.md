@@ -132,3 +132,9 @@ command with an action. Unsupported or unbound buttons remain unavailable.
 capabilities are manufactured. Root/nested `AutoCommandBar` automatic population
 remains unsupported. The strict form loader and original source hash are
 unchanged. This is a presentation adapter, not native Enterprise UI parity.
+
+Progressive scalar attributes with an explicit `MainAttribute=false` now retain
+normal field/value/event behavior. The exact false XML flag is removed only in
+the presentation copy. True, malformed, duplicate or unknown non-scalar/object
+declarations are not treated as ordinary scalar attributes and do not acquire
+storage access. Original source hash and the strict loader remain unchanged.

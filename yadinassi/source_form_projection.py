@@ -89,9 +89,17 @@ def project_source_form(raw):
         path='Attributes.'+node.get('name')
         trim(node,('Type','Title','MainAttribute'),path);title(node,path)
         try:
-            if node.find(L+'MainAttribute') is not None:raise ValueError('main object attribute requires persistence host')
+            main=node.find(L+'MainAttribute')
+            if main is not None:
+                # A false serialization flag is not an object/persistence grant.
+                # Normalize only exact scalar false, leaving malformed/true
+                # declarations unavailable rather than guessing their meaning.
+                if main.attrib or len(main) or (main.tail or '').strip() or (main.text or '').strip() != 'false':
+                    raise ValueError('main object attribute requires persistence host or valid false flag')
+                node.remove(main)
             kind,_,_=_type({'{'+MD+'}Type':node.find(L+'Type')},namespaces,{})
             if kind not in ('string','number','boolean','datetime'):raise ValueError('non-scalar form data')
+            if main is not None:note(path,'Explicit non-main scalar attribute retained')
         except (ValueError, TypeError) as error:
             note(path,'Attribute unavailable: '+str(error));attributes.remove(node);continue
         for value in node.findall('.//{'+V8+'}Type'):
