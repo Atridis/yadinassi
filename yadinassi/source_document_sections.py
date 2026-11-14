@@ -4,7 +4,7 @@ from .values import BSLObject,HostFunction
 from .source_constant_store import _encode
 from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 
-_METHODS={'sort':'sort','сортировать':'sort','total':'total','итог':'total','find':'find','найти':'find','findrows':'findrows','найтистроки':'findrows','insert':'insert','вставить':'insert','move':'move','сдвинуть':'move','indexof':'indexof','индекс':'indexof','add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load','unloadcolumn':'unloadcolumn','выгрузитьколонку':'unloadcolumn','loadcolumn':'loadcolumn','загрузитьколонку':'loadcolumn','fillvalues':'fillvalues','заполнитьзначения':'fillvalues'}
+_METHODS={'groupby':'groupby','свернуть':'groupby','sort':'sort','сортировать':'sort','total':'total','итог':'total','find':'find','найти':'find','findrows':'findrows','найтистроки':'findrows','insert':'insert','вставить':'insert','move':'move','сдвинуть':'move','indexof':'indexof','индекс':'indexof','add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load','unloadcolumn':'unloadcolumn','выгрузитьколонку':'unloadcolumn','loadcolumn':'loadcolumn','загрузитьколонку':'loadcolumn','fillvalues':'fillvalues','заполнитьзначения':'fillvalues'}
 
 def _index(value,length):
     if type(value) is not Decimal or not value.is_finite() or value!=value.to_integral_value() or not 0<=value<length:raise ValueError('section index requires bounded integer Number')
@@ -74,6 +74,9 @@ class SourceDocumentSectionCall:
     def __call__(self,*args):raise ValueError('section methods require interpreter invocation')
     def invoke(self,caller,values):
         section=self.section;section.authorize(caller);op=self.operation
+        if op=='groupby':
+            from .source_section_tables import group_rows
+            return group_rows(caller,section,values)
         if op in ('sort','total'):
             from .source_section_tables import order_or_total
             return order_or_total(caller,section,op,values)

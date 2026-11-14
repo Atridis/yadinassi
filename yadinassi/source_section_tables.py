@@ -225,3 +225,24 @@ def order_or_total(caller,section,operation,args):
     if any(a is not b for a,b in zip(ordered,section.rows)):
         section.rows[:]=ordered;section.version+=1
     return None
+
+
+def group_rows(caller,section,arguments):
+    """Group a detached complete-schema snapshot before atomic buffer replace."""
+    section.authorize(caller)
+    if len(arguments) not in (1,2):raise TypeError('source section GroupBy requires grouping and optional total columns')
+    def names(value):
+        if type(value) is not str:raise TypeError('source section GroupBy column list requires String')
+        return () if value=='' else _selection(section,value)
+    groups=names(arguments[0]);totals=names(arguments[1]) if len(arguments)==2 else ()
+    if set(groups)&set(totals):raise ValueError('source section grouping and total columns overlap')
+    if set(groups+totals)!=set(section.fields):
+        raise ValueError('source section GroupBy requires complete explicit schema; omitted field defaults unsupported')
+    if any(section.fields[key].kind not in ('boolean','number','string','datetime') for key in groups):
+        raise TypeError('source section GroupBy requires scalar grouping fields')
+    if any(section.fields[key].kind!='number' for key in totals):
+        raise TypeError('source section GroupBy totals require Number fields')
+    table=unload(caller,section)
+    table.group_by(','.join(section.fields[key].name for key in groups),
+                   ','.join(section.fields[key].name for key in totals))
+    load(caller,section,table)
