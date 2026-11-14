@@ -43,11 +43,15 @@ class SourceShell:
                                         compatibility_target=compatibility_target, compilation_profile=self.compilation_profile)
                 self.outcome = 'completed' if app.start() else 'cancelled'
             except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
-                self.outcome = 'failed'
-                self.error = str(error).encode('utf-8', errors='replace')[:8192].decode('utf-8', errors='ignore')
+                self.record_startup_failure(error)
             finally:
                 if app is not None:
                     app.close()
+
+    def record_startup_failure(self, error):
+        """Record an already attempted, closed startup; never execute or retry."""
+        self.outcome = 'failed'
+        self.error = str(error).encode('utf-8', errors='replace')[:8192].decode('utf-8', errors='ignore')
 
     def _output(self, message):
         if len(self.messages) < 16:
@@ -97,19 +101,38 @@ def main(argv=None):
     if args.source_form and (not args.run_startup or args.source_scratch_db):
         parser.error('--source-form requires --run-startup without a scratch database')
     server = shell = application = None
+    startup_failed = False
     try:
         path = Path(args.configuration_source)
         source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
         if args.source_workspace:
             from .source_workspace import SourceWorkspace, SourceWorkspaceHandler
-            application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
-                                            compilation_profile=args.preprocessor_profile)
-            shell = SourceWorkspace.start(application)
-            if shell is None:
-                print('Запуск источника отменён; рабочее пространство не открыто.', file=sys.stderr)
-                return 1
-            server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
-            print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
+            diagnostics = SourceShell(source, compilation_profile=args.preprocessor_profile)
+            from ..source_system_info import validate_target
+            diagnostics.target = validate_target(args.source_compatibility_target)
+            def workspace_output(message):
+                diagnostics._output(message)
+                print(message)  # Preserve the existing successful workspace CLI output.
+            try:
+                application = SourceApplication(source, output=workspace_output,
+                                                compatibility_target=args.source_compatibility_target,
+                                                compilation_profile=args.preprocessor_profile)
+                shell = SourceWorkspace.start(application)
+            except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
+                if application is not None:
+                    application.close()
+                diagnostics.record_startup_failure(error)
+                shell = diagnostics
+                startup_failed = True
+                server = LocalUIServer(shell, handler=SourceHandler)
+                print('Запуск конфигурации завершился ошибкой. Открыта только диагностика; '
+                      'runtime закрыт, действия не повторялись.\n' + diagnostics.error, file=sys.stderr)
+            else:
+                if shell is None:
+                    print('Запуск источника отменён; рабочее пространство не открыто.', file=sys.stderr)
+                    return 1
+                server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
+                print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
         elif args.source_form:
             from ..source_forms import SourceFormController
             from .form_app import FormHandler
@@ -135,9 +158,9 @@ def main(argv=None):
         if args.open_browser:
             webbrowser.open(server.launch_url)
         server.serve_forever(poll_interval=0.1)
-        return 0
+        return 1 if startup_failed else 0
     except KeyboardInterrupt:
-        return 0
+        return 1 if startup_failed else 0
     except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
         print('yadinassi: source diagnostics: ' + str(error), file=sys.stderr)
         return 1

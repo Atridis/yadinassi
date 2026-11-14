@@ -1,7 +1,7 @@
 'use strict';
 const token = new URLSearchParams(location.hash.slice(1)).get('session');
 history.replaceState(null, '', location.pathname);
-const status = document.getElementById('status'), result = document.getElementById('result'), close = document.getElementById('close');
+const status = document.getElementById('status'), result = document.getElementById('result'), close = document.getElementById('close'), failure = document.getElementById('failure');
 let id = 0;
 async function call(method) {
   const response = await fetch('/rpc', {method:'POST', headers:{'Content-Type':'application/x-ndjson','X-Yadinassi-Session':token || ''},body:JSON.stringify({jsonrpc:'2.0',id:++id,method,params:{}})+'\n'});
@@ -12,6 +12,7 @@ async function call(method) {
 }
 call('source.snapshot').then(state => {
   status.textContent = state.kind === 'closed' ? 'Закрыто' : 'Источник: ' + state.name + '; попытка запуска: ' + state.startup;
+  if(state.kind!=='closed'&&state.startup==='failed'){status.textContent='Запуск конфигурации завершился ошибкой. Открыта только диагностика; действия не повторялись.';failure.textContent=state.error||'Причина не указана';failure.hidden=false;}
   result.textContent = JSON.stringify(state, null, 2);
   close.disabled = state.kind === 'closed';
 }).catch(error => {status.textContent = error.message;});
