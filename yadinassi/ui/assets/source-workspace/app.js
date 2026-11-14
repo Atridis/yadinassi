@@ -1434,6 +1434,7 @@ return {mountForm};
 const token = new URLSearchParams(location.hash.slice(1)).get('session');
 history.replaceState(null, '', location.pathname);
 const root=document.getElementById('workspace'), title=document.createElement('h1'), status=document.createElement('p'), select=document.createElement('select'), open=document.createElement('button'), close=document.createElement('button'), formRoot=document.createElement('section');
+const preflight=document.createElement('button'),moduleResult=document.createElement('section');preflight.textContent='Проверить компиляцию BSL';moduleResult.setAttribute('aria-label','Компиляция модуля формы');
 const preview=document.createElement('button'),previewResult=document.createElement('section');preview.textContent='Проверить XML формы';previewResult.setAttribute('aria-label','Проверка XML формы');
 const search=document.createElement('input'), find=document.createElement('button');search.maxLength=128;search.setAttribute('aria-label','Поиск объявленных форм');find.textContent='Найти формы';
 select.setAttribute('aria-label','Объявленная форма'); open.textContent='Открыть форму'; close.textContent='Закрыть сеанс'; status.setAttribute('role','status');
@@ -1446,7 +1447,7 @@ const objectSearch=document.createElement('input'),families=document.createEleme
 objectSearch.maxLength=128;objectSearch.setAttribute('aria-label','Поиск объектов');families.setAttribute('aria-label','Тип объекта');objects.setAttribute('aria-label','Объект конфигурации');
 objectFind.textContent='Найти объекты';inspect.textContent='Описание объекта';detail.setAttribute('aria-label','Метаданные выбранного объекта');inventoryStatus.setAttribute('role','status');
 explorer.append(explorerTitle,objectSearch,families,subsystems,objectFind,objects,inspect,inventoryStatus,navigationDiagnostics,detail);
-root.append(title,status,explorer,search,find,select,preview,open,close,tabs,limitations,previewResult,formRoot);
+root.append(title,status,explorer,search,find,select,preview,preflight,open,close,tabs,limitations,previewResult,moduleResult,formRoot);
 const familyLabels={Catalog:'Справочники',Document:'Документы',AccumulationRegister:'Регистры накопления',InformationRegister:'Регистры сведений',Report:'Отчёты',DataProcessor:'Обработки',Subsystem:'Подсистемы',CommonForm:'Общие формы',Form:'Формы',Enum:'Перечисления',Constant:'Константы'};
 function caption(name,labels){const label=labels?.[name];return typeof label==='string'&&label&&label!==name?label+' ('+name+')':name;}
 let id=0,busy=false,view=null,state=null,failed=false,inFlight=0;
@@ -1463,7 +1464,7 @@ function paint(){
     failed=true;status.textContent='Результат действия неизвестен. Формы и черновики сохранены в этой вкладке; переключение и повтор команд заблокированы.';
   }
   const blocked=busy||failed||inFlight>0||!state||state.kind==='closed';
-  open.disabled=preview.disabled=blocked||!select.value;
+  open.disabled=preview.disabled=preflight.disabled=blocked||!select.value;
   search.disabled=find.disabled=select.disabled=Boolean(blocked);
   close.disabled=blocked||[...mounts.values()].some(entry=>entry.view.client?.snapshot?.kind!=='closed');
   for(const button of tabs.children)button.disabled=Boolean(blocked);
@@ -1507,6 +1508,8 @@ async function apply(reply){
     for(const name of data.forms){const button=document.createElement('button');button.textContent='Открыть '+caption(name,data.form_labels);button.addEventListener('click',()=>action('workspace.open',{name}));detail.append(button);}
     if(data.omitted_forms){const note=document.createElement('p');note.textContent='Ещё форм: '+data.omitted_forms+'. Уточните общий поиск форм.';detail.append(note);}
   }
+  moduleResult.replaceChildren();
+  if(state.module_preflight){const data=state.module_preflight,heading=document.createElement('h3'),notice=document.createElement('p'),source=document.createElement('p'),outcome=document.createElement('p');heading.textContent='BSL: '+data.name;notice.textContent='Проверяется только компиляция для memory-only формы: связи XML, обработчики и runtime не проверялись. Исполнения и прав хранения нет.';source.textContent=data.module_path+' · SHA256: '+(data.module_sha256||'нет файла')+' · профиль: '+data.compilation_profile;outcome.textContent=data.status==='compiled'?'Компиляция выполнена. Это не подтверждение запуска или совместимости.':'Компиляция не подтверждена: '+(data.error||'недоступно');moduleResult.append(heading,notice,source,outcome);}
   previewResult.replaceChildren();
   if(state.form_preview){const data=state.form_preview,heading=document.createElement('h3'),notice=document.createElement('p'),source=document.createElement('p');heading.textContent='XML: '+data.name;notice.textContent='Только XML-проекция: модуль и runtime не проверялись, форма не запускалась. Это не подтверждение совместимости.';source.textContent=data.source_path+' · SHA256: '+(data.source_sha256||'нет файла');previewResult.append(heading,notice,source);if(data.counts){const counts=document.createElement('p');counts.textContent='После проекции: реквизиты '+data.counts.attributes+', команды '+data.counts.commands+', элементы '+data.counts.controls;previewResult.append(counts);}for(const diagnostic of data.diagnostics||[]){const note=document.createElement('p');note.textContent=diagnostic.path+': '+diagnostic.reason;previewResult.append(note);}if(data.omitted_diagnostics){const note=document.createElement('p');note.textContent='Других ограничений: '+data.omitted_diagnostics;previewResult.append(note);}}
   const entries=state.open_forms||[];
@@ -1537,6 +1540,7 @@ inspect.addEventListener('click',()=>action('workspace.inspect',{name:objects.va
 objectSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();action('workspace.objects',{query:objectSearch.value,family:families.value,subsystem:subsystems.value});}});
 find.addEventListener('click',()=>action('workspace.search',{query:search.value}));
 search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();action('workspace.search',{query:search.value});}});
+preflight.addEventListener('click',()=>action('workspace.preflight',{name:select.value}));
 preview.addEventListener('click',()=>action('workspace.preview',{name:select.value}));
 open.addEventListener('click',()=>action('workspace.open',{name:select.value}));close.addEventListener('click',()=>action('workspace.close',{}));
 window.addEventListener('beforeunload',event=>{if([...mounts.values()].some(entry=>entry.view.hasPending())){event.preventDefault();event.returnValue='';}});

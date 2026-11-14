@@ -64,3 +64,12 @@ test('XML preview uses read-only RPC and visibly denies runtime validation',asyn
  const text=h.get('Проверка XML формы').children.map(x=>x.textContent).join('\n');assert.match(text,/модуль и runtime не проверялись/);assert.match(text,/SHA256: abc/);assert.match(text,/Items.Logo: Control unavailable/);
 });
 test('XML preview button is disabled after workspace closes',async()=>{const h=await harness({...state,kind:'closed'});assert.equal(h.elements.find(x=>x.textContent==='Проверить XML формы').disabled,true);});
+test('module preflight sends exact selected form, is blocked when closed',async()=>{
+ const h=await harness(state),button=h.elements.find(e=>e.textContent==='Проверить компиляцию BSL');
+ await button.listeners.click();assert.equal(h.requests.at(-1).method,'workspace.preflight');assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');
+ const closed=await harness({...state,kind:'closed'});assert.equal(closed.elements.find(e=>e.textContent==='Проверить компиляцию BSL').disabled,true);
+});
+test('module compile diagnostic remains literal and does not claim execution',async()=>{
+ const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'unavailable',error:'<script>bad()</script>'}});
+ const panel=h.get('Компиляция модуля формы');assert.ok(panel.children[1].textContent.includes('runtime не проверялись'));assert.ok(panel.children[3].textContent.includes('<script>bad()</script>'));assert.ok(panel.children[3].textContent.startsWith('Компиляция не подтверждена'));
+});

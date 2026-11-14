@@ -37,6 +37,7 @@ class SourceWorkspace:
         self.object_selected = None
         self.default_form_cache = {}
         self.form_preview = None
+        self.module_preflight = None
         inventory = application.metadata._inventory
         def full_name(entry):
             parent_path = entry.path.rsplit('/', 2)[0] + '.xml'
@@ -407,6 +408,31 @@ class SourceWorkspace:
             preview['diagnostics'] = [{'path': 'Form', 'reason': str(error)[:256]}]
         self.form_preview = preview
 
+    def _preflight_module(self, name):
+        """Compile declared BSL only; no definition, interpreter or lifecycle."""
+        from hashlib import sha256
+        from ..form_program import compile_form_module
+        prefix = self.objects[name].path[:-4]
+        path = prefix + '/Ext/Form/Module.bsl'
+        raw = self.application.files.get(path)
+        xml = self.application.files.get(prefix + '/Ext/Form.xml')
+        result = {'name': name, 'module_path': path,
+                  'module_sha256': sha256(raw).hexdigest() if raw is not None else None,
+                  'xml_sha256': sha256(xml).hexdigest() if xml is not None else None,
+                  'compilation_profile': self.application.compilation_profile,
+                  'status': 'unavailable', 'error': None,
+                  'bindings_checked': False, 'runtime_checked': False,
+                  'storage_granted': False, 'native_parity': False}
+        try:
+            if raw is None:
+                raise ValueError('declared form module file is absent')
+            compile_form_module(raw.decode('utf-8-sig'),
+                                compilation_profile=self.application.compilation_profile)
+            result['status'] = 'compiled'
+        except (BSLError, ValueError, TypeError, RecursionError) as error:
+            result['error'] = str(error)[:1024]
+        self.module_preflight = result
+
     def snapshot(self):
         visible, omitted = self.visible_forms()
         objects, object_omitted = self.object_inventory()
@@ -427,6 +453,7 @@ class SourceWorkspace:
                 'object_query': self.object_query, 'object_family': self.object_family,
                 'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
                 'form_preview': json.loads(json.dumps(self.form_preview)),
+                'module_preflight': dict(self.module_preflight) if self.module_preflight else None,
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -463,11 +490,14 @@ class SourceWorkspace:
                     self._new_form(params['name'])
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
-        elif method == 'workspace.preview':
+        elif method in ('workspace.preview', 'workspace.preflight'):
             if (set(params) != {'name'} or type(params['name']) is not str
                     or params['name'] not in self._visible_form_targets()):
                 raise ValueError('declared visible source form required')
-            self._preview_form(params['name'])
+            if method == 'workspace.preview':
+                self._preview_form(params['name'])
+            else:
+                self._preflight_module(params['name'])
         elif method == 'workspace.select':
             if (set(params) != {'generation'} or type(params['generation']) is not int
                     or params['generation'] not in self.open_forms):
@@ -530,4 +560,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.preview','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.preview','workspace.preflight','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')
