@@ -139,7 +139,12 @@ class FrozenUIAttachmentSmokeTests(unittest.TestCase):
         process.wait.return_value = 0
         def signal_group(pid, number):
             if number == 0: raise ProcessLookupError
+        # Same clock tick can round (tick + 25) - tick slightly above 25.
+        # Reproduce it deterministically instead of depending on OS clock granularity.
+        tick = 65527.597865678625
+        self.assertGreater((tick + 25) - tick, 25)
         with mock.patch.object(smoke, 'WINDOWS', False), \
+                mock.patch.object(smoke.time, 'monotonic', return_value=tick), \
                 mock.patch.object(smoke, 'signal', SimpleNamespace(SIGTERM=15, SIGKILL=9)), \
                 mock.patch.object(smoke.time, 'sleep'), \
                 mock.patch.object(smoke.os, 'killpg', side_effect=signal_group, create=True) as killpg:

@@ -23,6 +23,8 @@ class _SourceInterpreter(Interpreter):
             raise ValueError('source interpreter compilation profile mismatch')
         super().__init__(*args, output=kwargs.pop('output', application.output), **kwargs)
         self.application = application
+        from .common_templates import SourceTemplateCall
+        self.register_function("GetCommonTemplate", SourceTemplateCall(application.common_templates), "ПолучитьОбщийМакет")
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
         from .source_system_info import SourceSystemInfo
@@ -190,6 +192,8 @@ class SourceApplication:
         self.extensions = SourceExtensions(self)
         from .source_xdto_packages import SourceXDTOPackages
         self.xdto = SourceXDTOPackages(self)
+        from .common_templates import SourceCommonTemplates
+        self.common_templates = SourceCommonTemplates(self)
         self._instances = {}
         self._reuse_routines = {}
         self._global_exports = {}
@@ -299,7 +303,7 @@ class SourceApplication:
         self.require_open()
         side = caller.execution_context
         if side not in self._global_exports:
-            from .configuration_modules import compile_module
+            from .source_global_declarations import exported_names
             exports = {}
             for key, definition in self.modules.items():
                 root = ET.fromstring(self.files[definition.path])
@@ -311,11 +315,9 @@ class SourceApplication:
                 path = 'CommonModules/' + definition.name + '/Ext/Module.bsl'
                 if path not in self.files:
                     raise ValueError('Missing global module source: ' + path)
-                program = compile_module(self.files[path], path, side, common=True,
-                                     compilation_profile=self.compilation_profile)
-                for routine in program:
-                    if routine.exported:
-                        exports.setdefault(routine.name.casefold(), []).append(key)
+                names = exported_names(self.files[path], path, side, self.compilation_profile)
+                for exported in names:
+                    exports.setdefault(exported.casefold(), []).append(key)
             self._global_exports[side] = exports
         candidates = self._global_exports[side].get(name.casefold(), [])
         if not candidates:
