@@ -4,7 +4,7 @@ from .values import BSLObject,HostFunction
 from .source_constant_store import _encode
 from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 
-_METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete'}
+_METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load'}
 
 def _index(value,length):
     if type(value) is not Decimal or not value.is_finite() or value!=value.to_integral_value() or not 0<=value<length:raise ValueError('section index requires bounded integer Number')
@@ -74,6 +74,14 @@ class SourceDocumentSectionCall:
     def __call__(self,*args):raise ValueError('section methods require interpreter invocation')
     def invoke(self,caller,values):
         section=self.section;section.authorize(caller);op=self.operation
+        if op=='unload':
+            if values:raise TypeError('source section Unload takes no arguments')
+            from .source_section_tables import unload
+            return unload(caller,section)
+        if op=='load':
+            if len(values)!=1:raise TypeError('source section Load requires one complete ValueTable')
+            from .source_section_tables import load
+            return load(caller,section,values[0])
         if op in ('get','delete'):
             if len(values)!=1:raise TypeError('section method requires one argument')
         elif values:raise TypeError('section method takes no arguments')
