@@ -6,6 +6,7 @@ from .configuration_source_runtime import _SourceInterpreter
 
 _constructing = ContextVar("source_catalog_construction", default=())
 _active_write = ContextVar("source_catalog_write", default=False)
+_reading = ContextVar("source_catalog_read", default=False)
 from .values import BSLObject, HostFunction
 from .source_references import SourceReferenceManager
 from .source_constant_store import _encode
@@ -139,6 +140,8 @@ class SourceCatalogCall:
         if self.operation=='create':return (yield from create_object(caller,manager,definition))
         if self.operation=='select':return SourceCatalogSelection(manager,store.read_records(manager.name))
         if self.operation=='getobject':
+            if has_read_event(app,definition):
+                return (yield from read_lifecycle(caller,manager,definition,store,self.identity))
             identity,revision,fields=store.read_records(manager.name,self.identity)[0]
             return (yield from create_object(caller,manager,definition,identity,revision,fields))
         if self.operation=='next':
@@ -147,11 +150,16 @@ class SourceCatalogCall:
         if self.operation=='object':
             if not 0<=receiver.index<len(receiver.rows):raise ValueError('source selection is not positioned')
             identity,revision,fields=receiver.rows[receiver.index]
+            if has_read_event(app,definition):
+                return (yield from read_lifecycle(caller,manager,definition,store,identity))
             return (yield from create_object(caller,manager,definition,identity,revision,fields))
         receiver.authorize(caller)
         if self.operation=='new':return receiver.revision==0
         if self.operation=='metadata':return app.references.definition('Catalog',manager.name)[2]
         if self.operation=='read':
+            if has_read_event(app,definition):
+                yield from read_lifecycle(caller,manager,definition,store,receiver.identity,receiver)
+                return None
             identity,revision,fields=store.read_records(manager.name,receiver.identity)[0]
             receiver.values,receiver.revision=fields,revision
             return None
@@ -159,6 +167,49 @@ class SourceCatalogCall:
             yield from write_object(caller,receiver)
             return None
         raise ValueError('unsupported source catalog operation')
+
+
+def has_read_event(app,definition):
+    if definition.object_module is None:return False
+    from .source_catalog_definitions import catalog_module_program
+    program=catalog_module_program(app.files[definition.object_module],definition.object_module,definition.fields)
+    return any(type(n) is ast.Routine and n.name.casefold() in ('onread','причтении') for n in program)
+
+
+def read_lifecycle(caller,manager,definition,store,identity,receiver=None):
+    """Load and run one bounded catalog read event under the shared read frontier."""
+    from .source_document_runtime import _read_stack
+    from .database_transactions import admission
+    from .safe_mode import routine_frame
+    app,_=store_for(manager,caller);stack=_read_stack.get()
+    key=(id(app),definition.identity,identity)
+    if key in stack or len(stack)>=32:raise ValueError('recursive or excessive catalog OnRead')
+    owned=not store.transaction_active;token=None;reading=None;obj=receiver
+    try:
+        if owned:store.begin_transaction()
+        token=_read_stack.set((*stack,key));reading=_reading.set(True)
+        rid,revision,fields=store.read_records(manager.name,identity)[0]
+        if obj is None:obj=yield from create_object(caller,manager,definition,rid,revision,fields)
+        else:obj.values=dict(fields);obj.revision=revision
+        vm=obj.interpreter
+        if vm is None:raise ValueError('catalog OnRead module missing')
+        matches=[vm.server_routines[n] for n in ('onread','причтении') if n in vm.server_routines]
+        if len(matches)!=1:raise ValueError('catalog OnRead binding mismatch')
+        with admission(False),routine_frame(caller,vm):
+            yield from vm.call_routine(matches[0],[],vm,require_value=False)
+        if not store.transaction_active:raise ValueError('catalog OnRead transaction aborted')
+        obj.authorize(caller)
+        if owned:store.commit_transaction()
+        return obj
+    except BaseException:
+        if store.transaction_active:store.rollback_transaction()
+        if obj is not None:
+            obj._closed=True
+            if obj.interpreter is not None:obj.interpreter.close()
+        raise
+    finally:
+        if reading is not None:_reading.reset(reading)
+        if token is not None:_read_stack.reset(token)
 
 
 _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','уникальныйидентификатор','metadata','метаданные'}
@@ -320,6 +371,7 @@ def create_object(caller,manager,definition,identity=None,revision=0,values=None
 
 def write_object(caller,obj):
     app,store=obj.authorize(caller)
+    if _reading.get():raise ValueError("catalog write during OnRead unsupported")
     if not obj._ready or _active_write.get():
         raise ValueError('recursive or initializing catalog write unsupported')
     owned=not store.transaction_active

@@ -65,8 +65,8 @@ class SourceCatalogModuleTests(unittest.TestCase):
         self.assertEqual(app.constant_store.read_records('Items'),[])
     def test_invalid_signature_before_initializer(self):
         with self.assertRaises(BSLError):self.run_body('Procedure OnWrite() EndProcedure Message("should not run");',CREATE)
-    def test_unsupported_onread(self):
-        with self.assertRaises(BSLError):self.run_body('Procedure OnRead() EndProcedure',CREATE)
+    def test_invalid_onread_signature(self):
+        with self.assertRaises(BSLError):self.run_body('Procedure OnRead(Unexpected) EndProcedure',CREATE)
     def test_async_module_refused(self):
         with self.assertRaises(BSLError):self.run_body('Async Procedure Later() Export EndProcedure',CREATE)
     def test_field_declaration_conflict(self):
