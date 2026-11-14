@@ -39,7 +39,9 @@ Current root receipts are host-lifetime envelopes, explicitly not durable restar
 tokens. `RootOperation.run/resolve` marks an outcome accepted only after participant
 installation. COMMIT success alone is insufficient. An uncertain state, cleanup
 failure, unresolved receipt, or a merely committed/unaccepted result must retain
-all recovery evidence. Existing code has no receipt acknowledgement/GC API.
+all recovery evidence. The original checkpoint had no receipt acknowledgement/GC API. The opt-in v2
+duplicate-payload compaction contract is described in
+[root-receipt-acknowledgement.md](root-receipt-acknowledgement.md); it does not delete child receipts.
 
 The storage root binds ordered child operation IDs, request hashes and complete
 child outcome bytes. `sqlite_transactions.resolve` checks these children before
@@ -64,7 +66,7 @@ Before enabling deletion, an explicit retention protocol must provide:
 6. Crash injection before and after each atomic boundary and reopen tests covering
    acknowledged, committed-unaccepted, uncertain, conflict and missing states.
 
-No runtime cleanup is enabled by this document. Introducing an unversioned marker
+No runtime deletion is enabled by this document. Introducing an unversioned marker
 into existing canonical receipt JSON would silently change existing resolver and
 schema contracts. Preserve the receipts instead of disguising that as a safe GC.
 
@@ -84,9 +86,9 @@ receipts from an existing user database:
   object fails the old resolver's contract, though its root-ID guard remains.
 
 These are counterexamples to proposed deletion shortcuts, not a GC feature or
-an endorsement of the deliberately corrupted states. A future explicit retention
-profile must replace these negative demonstrations with versioned acknowledged
-resolution assertions. It must retain enough identity tombstones to deny reuse
+an endorsement of the deliberately corrupted states. A future deletion-based retention
+profile would need versioned acknowledged-resolution assertions. The v2 root
+compaction instead keeps every child outcome and rehydrates exact v1 bindings. It must retain enough identity tombstones to deny reuse
 of both roots and children. Exact historical outcome recovery cannot be promised
 once those outcomes are discarded; the new acknowledged result must be explicit,
 not silently mapped to absence. Fixed-size tombstones can bound retained payload
