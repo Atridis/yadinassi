@@ -87,3 +87,24 @@ Name descriptors. No body elision, local-variable/value caching, bound-method
 caching or altered budget accounting is introduced. Existing empty-loop _visit
 accounting remains For + bounds, not one charge per iteration. Fixing that gap
 would be a separately reviewed semantic change, not hidden in this speedup.
+
+### Measured P1 result, not native parity
+
+Raw paired data: `benchmarks/results/for-allocation-linux-20261114.json`.
+Clean candidate7377f579 vs clean baseline5db8aa70, source Linux CPython3.12.14,
+100000 iterations, 7 paired repeats, fresh process each sample, one warmup.
+No profiler. Source execution only, no Windows/packaged/native1C comparison.
+Medians in seconds (baseline → candidate; ratio of medians):
+
+| Scope | Empty | Assignment | Addition | Arithmetic |
+|---|---|---|---|---|
+| module | .1863 → .1631 (1.142×) | .3376 → .3067 (1.101×) | .4693 → .4437 (1.058×) | .6943 → .6579 (1.055×) |
+| routine | .2711 → .2336 (1.161×) | .5219 → .5017 (1.040×) | .6543 → .6258 (1.046×) | .8256 → .8191 (1.008×) |
+
+Empty cases improved in all7 paired samples; routine arithmetic distributions
+overlap substantially and do not establish a meaningful gain. This narrow
+allocation change does not close the user's reported10–14× native gap. Large
+remaining costs include expression dispatch and routine plan validation; next
+work must target those with differential semantics, not promise these ratios
+for10M or another machine. The full10M run is separate opt-in work, not covered
+by this100k measurement. No native parity or full required CI claimed.

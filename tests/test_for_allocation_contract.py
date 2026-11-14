@@ -2,6 +2,7 @@
 from decimal import Decimal
 from types import MethodType
 import unittest
+from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
@@ -127,6 +128,23 @@ class ForAllocationContractTests(unittest.TestCase):
             vm.register_function('Install',lambda:setattr(vm,'visit_Name',MethodType(hooked,vm)))
         _,_,error=self.equivalent('For i=1 To 3 Do Install(); EndDo;',setup)
         self.assertIsNone(error)
+
+    def test_class_hook_installed_inside_loop_gets_fresh_descriptors(self):
+        original=Interpreter.visit_Name
+        for cls in (LegacyFor,Interpreter):
+            nodes=[]
+            def hooked(vm,node):
+                result=original(vm,node)
+                if node.name=='i':
+                    nodes.append(node);node.name='changed'
+                return result
+            with patch.object(Interpreter,'visit_Name',original):
+                def setup(vm):
+                    vm.register_function('Install',lambda:setattr(Interpreter,'visit_Name',hooked))
+                vm,_,error=self.run_vm(cls,'For i=1 To 3 Do Install(); EndDo;',setup)
+                self.assertIsNone(error);self.assertEqual(vm.variables['i'],Decimal(4))
+                self.assertEqual(len(nodes),6)
+                self.assertEqual(len({id(n) for n in nodes}),6)
 
     def test_mutable_body_before_execution_is_not_frozen(self):
         program=parse('For i=1 To 3 Do EndDo;')

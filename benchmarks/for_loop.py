@@ -81,8 +81,8 @@ def main():
     p.add_argument('--repeats',type=int,default=5)
     p.add_argument('--warmups',type=int,default=1)
     p.add_argument('--seed',type=int,default=20261114)
-    p.add_argument('--case',choices=BODIES,default='arithmetic')
-    p.add_argument('--scope',choices=('module','routine'),default='module')
+    p.add_argument('--case',choices=BODIES,default='arithmetic',help='child mode only; parent runs all cases')
+    p.add_argument('--scope',choices=('module','routine'),default='module',help='child mode only; parent runs both scopes')
     p.add_argument('--child',action='store_true',help=argparse.SUPPRESS)
     args=p.parse_args()
     if args.iterations<1 or args.repeats<1 or args.warmups<0:
