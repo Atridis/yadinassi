@@ -194,14 +194,14 @@ class AccumulationMovementPort:
     def _references(self, rows, *, writing):
         # JSON payloads have no SQL foreign key. Never consult a different view
         # or a memoized existence result: earlier staged catalog creates count.
-        from .sqlite_catalog_layout import quote_identifier
-        for row in rows:
-            for value in row.dimensions + row.attributes:
-                if type(value) is CatalogKey and value.record_id.int:
-                    table = quote_identifier(self._reference_layout.table_name(value.catalog_id))
-                    if self.connection.execute('SELECT 1 FROM ' + table + ' WHERE record_id=?',
-                                               (str(value.record_id),)).fetchone() is None:
-                        raise BackendError('not_found' if writing else 'integrity')
+        from .sqlite_catalog_layout import quote_identifier, reference_presence
+        keys = tuple(value for row in rows for value in row.dimensions + row.attributes
+                     if type(value) is CatalogKey and value.record_id.int)
+        def source(catalog_id):
+            return quote_identifier(self._reference_layout.table_name(catalog_id)), '1', ()
+        present = reference_presence(self.connection, keys, source)
+        if any(not present[(key.catalog_id, key.record_id)] for key in keys):
+            raise BackendError('not_found' if writing else 'integrity')
 
     def _snapshot(self, schema, recorder, revision, rows):
         return _hash(['accumulation_partition_v1', str(self.database_id), self.generation,

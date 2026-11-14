@@ -148,7 +148,28 @@ class BSLCatalogManager(BSLObject):
         try:return view.read_catalog(self._key(record))
         finally:view.close()
     def _read_member(self,ref,name):
-        card=self._read(ref.reference_uuid)
+        from .sqlite_catalog import _View
+        from .inventory_enum_runtime import read_snapshot
+        key = _ALIASES.get(name.casefold(),name.casefold()) if type(name) is str else None
+        standard = {'code':'code','description':'description','deletionmark':'deletion_mark','ref':'ref'}
+        definition = next((field for field in self._schema.fields if field.name.casefold()==key),None)
+        view = self._view()
+        try:
+            if (type(view) is _View and view._operation_id is None
+                    and view._backend.storage_version >= 2 and self._schema.hierarchy == 'none'
+                    and (key in standard or definition is not None)):
+                # The lexical enum witness accepts exact admitted read views,
+                # not transaction Lease subclasses. Keep their legacy fallback.
+                with read_snapshot(self._catalogs._metadata._root,view):
+                    field = standard[key] if key in standard else definition.identity
+                    row = view.read_catalog_values(self._key(ref.reference_uuid),(field,))
+                    if row is None: return _field(self._defaults(ref),name)
+                    value = row.values[0]
+                    if definition is not None: return self._logical(definition,value)
+                    if key == 'ref': return self._ref(value.record_id)
+                    return value
+            card = view.read_catalog(self._key(ref.reference_uuid))
+        finally: view.close()
         return _field(self._defaults(ref) if card is None else self._fields(card),name)
     def _get_object(self,ref):
         card=self._read(ref.reference_uuid)
