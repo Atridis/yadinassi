@@ -97,13 +97,13 @@ def project_source_form(raw):
         for value in node.findall('.//{'+V8+'}Type'):
             value.text='xs:'+{'string':'string','number':'decimal','boolean':'boolean','datetime':'dateTime'}[kind]
         retained.add(node.get('name').casefold())
-    commands=root.find(L+'Commands'); command_names=set()
+    commands=root.find(L+'Commands'); command_names={}
     for node in _inventory(commands,{L+'Command'},64):
         path='Commands.'+node.get('name');trim(node,('Title','Action'),path);title(node,path)
         action=node.find(L+'Action')
         if action is None or not (action.text or '').strip():
             note(path,'Command unavailable: no supported action');commands.remove(node);continue
-        command_names.add(node.get('name').casefold())
+        command_names[node.get('name').casefold()]=node.get('name')
     supported={'InputField','LabelField','CheckBoxField','Button','UsualGroup','Pages','Page'}
     seen_names=set();seen_ids=set()
     def preflight(container, depth=0):
@@ -136,6 +136,15 @@ def project_source_form(raw):
                 continue
             target=node.find(L+('CommandName' if kind=='Button' else 'DataPath'))
             value=(target.text or '').strip() if target is not None else ''
+            # XML exports qualify declared form commands. This is an explicit
+            # local command binding, not a standard/global command grant.
+            if kind=='Button' and target is not None and not target.attrib and not len(target):
+                parts=value.split('.')
+                if (len(parts)==3 and [p.casefold() for p in parts[:2]]==['form','command']
+                        and parts[2].casefold() in command_names):
+                    value=command_names[parts[2].casefold()]
+                    target.text=value
+                    note(path,'Bound declared Form.Command: '+value)
             if value.casefold() not in (command_names if kind=='Button' else retained):
                 note(path,'Control unavailable: unbound '+value);container.remove(node);continue
             events(node,{'onchange'},path)
