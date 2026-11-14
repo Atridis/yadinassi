@@ -147,3 +147,11 @@ names/IDs, depth/count overflows and malformed inventories are rejected. Root
 visibility, enabled and read-only flags still constrain child dispatch. No
 `Autofill` or standard commands are synthesized; nested automatic toolbar
 population remains unsupported. This is not native command-bar behavior parity.
+
+### Адаптивные группы в progressive source UI
+
+`Group=HorizontalIfPossible` у обычной группы/страницы сохраняет дочерние
+элементы через явно диагностируемую вертикальную раскладку. Это presentation-only
+fallback, не реализация адаптивной раскладки 1С. Исходный hash, поля и команды,
+Visible/Enabled/ReadOnly сохраняются. Неизвестные и некорректные значения не
+нормализуются; strict loader не изменён.

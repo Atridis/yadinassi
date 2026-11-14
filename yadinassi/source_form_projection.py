@@ -168,6 +168,13 @@ def project_source_form(raw):
                 fields=('Title','Visible','Enabled','ReadOnly','CommandName') if kind=='Button' else ('Title','Visible','Enabled','ReadOnly','DataPath','Events')
             trim(node,fields,path);title(node,path)
             if kind in ('UsualGroup','Pages','Page'):
+                orientation=node.find(L+'Group')
+                if (kind in ('UsualGroup','Page') and orientation is not None
+                        and (orientation.text or '').strip() == 'HorizontalIfPossible'):
+                    if orientation.attrib or len(orientation) or (orientation.tail or '').strip():
+                        raise ValueError('invalid adaptive source group orientation')
+                    orientation.text='Vertical'
+                    note(path,'Adaptive HorizontalIfPossible layout projected as Vertical; no responsive layout')
                 items(node.find(L+'ChildItems'),kind,depth+1)
                 if kind=='Pages' and not len(node.find(L+'ChildItems') or []):
                     note(path,'Empty unsupported pages removed');container.remove(node)
