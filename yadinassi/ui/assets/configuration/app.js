@@ -702,6 +702,7 @@ function createBrowserHost(environment, root) {
     content.inert = !(writable || inspection); content.setAttribute('aria-disabled', String(!(writable || inspection)));
     content.dataset.inspection = String(inspection);
     banner.dataset.role = attachment.info?.role || 'connecting';
+    banner.dataset.healthy = String(writable && !attachment.pendingState && !attachment.info?.recovery && !attachment.businessUnknown && !attachment.uncertain());
     description.textContent = attachment.info?.closed ? messages.closed : attachment.businessUnknown || attachment.uncertain() ? messages.outcome_unknown
       : attachment.message || (writable ? 'You control this application in this tab.' : attachment.info?.role === 'observer'
         ? 'Another tab may control this application. Take control here to edit.' : 'Checking tab ownership before editing…');
@@ -1485,6 +1486,11 @@ function validReportRequest(params,state) {
     params.start>='1900-01-01T00:00:00' && params.end<='2099-12-31T23:59:59' &&
     state.reportSetup?.report===params.report && state.reportSetup.ticket===params.setup && !state.reportSetup.choice);
 }
+function validRecorderRequest(params,state) {
+  return keys(params,['recorder','request']) && typeof params.recorder==='string' && /^recorder-[0-9a-f]{32}$/.test(params.recorder)
+    && text(params.request,64) && /^[\x20-\x7e]{1,64}$/.test(params.request) && safe(state)
+    && state.report?.view==='Movements' && state.report.rows.some(row=>row.some(cell=>cell.type==='Document' && cell.recorder===params.recorder));
+}
 function validReportAction(method,params,state) {
   if(!safe(state))return false;
   if(method==='application.reportPage'){
@@ -1548,7 +1554,7 @@ function validateReports(state,previous) {
     row.forEach((cell,index)=>{
       if (cell?.type!==result.columns[index].type) throw new FormError('transport');
       if (['Catalog','Document'].includes(cell.type)) {
-        if (!keys(cell,['type','text']) || !text(cell.text)) throw new FormError('transport');
+        if (!keys(cell,['type','text',...(Object.hasOwn(cell,'recorder')?['recorder']:[])]) || !text(cell.text) || Object.hasOwn(cell,'recorder') && (cell.type!=='Document' || result.view!=='Movements' || result.columns[index].name!=='Recorder' || typeof cell.recorder!=='string' || !/^recorder-[0-9a-f]{32}$/.test(cell.recorder))) throw new FormError('transport');
       } else validateScalar(cell);
     });
   }
@@ -1586,8 +1592,8 @@ function validateReportReply(result,request,previous) {
 function reportCellText(cell) {
   return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
 }
-function createReportPanel(document, host, request, blocked, command=null) {
-  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
+function createReportPanel(document, host, request, blocked, command=null, options={}) {
+  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=options.localize?options.localize(content):content;return n;};
   const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), filters=el('section'), output=el('div'), notice=el('p');
   host.className='configuration-reports';host.dataset.formAction='application-navigation';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
   navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');filters.setAttribute('aria-label','Statement catalog filters');
@@ -1657,7 +1663,7 @@ function createReportPanel(document, host, request, blocked, command=null) {
     filters.append(picker);
   }
   function paint() {
-    host.hidden=!state?.reports?.length;if(host.hidden)return;
+    host.hidden=!state?.reports?.length || options.visible?.()===false;if(host.hidden)return;
     if(!state.reports.some(r=>r.id===selected))selected=state.reports[0].id;
     const disabled=busy || blocked(), report=state.reports.find(r=>r.id===selected);
     navigation.replaceChildren();
@@ -1672,11 +1678,13 @@ function createReportPanel(document, host, request, blocked, command=null) {
     drawFilters(report,disabled);
     const result=state.report?.report===selected?state.report:null;
     // Button state changes with the queue even when the immutable page does not.
-    if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
+    if(result!==lastResult || result?.page || result?.rows.some(row=>row.some(cell=>cell.recorder))){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
         for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
-        for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
+        for(const values of result.rows){const row=el('tr');for(const cell of values){const td=el('td');
+          if(cell.recorder && options.openRecorder){const open=button(td,cell.text,disabled,()=>{if(!busy&&!blocked())options.openRecorder(cell.recorder);});open.setAttribute('aria-label','Открыть регистратор: '+cell.text);}
+          else td.textContent=reportCellText(cell);row.append(td);}body.append(row);}
         const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
         if(statement(result)){
@@ -1703,7 +1711,7 @@ function createReportPanel(document, host, request, blocked, command=null) {
   return {update(next){state=next;paint();},pending:()=>busy};
 }
 
-return {validReportRequest, validReportAction, validateReports, validateReportReply, reportCellText, createReportPanel};
+return {validReportRequest, validRecorderRequest, validReportAction, validateReports, validateReportReply, reportCellText, createReportPanel};
 })();
 const __configurationInputs = (() => {
 const {FormError, validateScalar, validateSnapshot, typedInput, scalarEqual, scalarText} = __formClient;
@@ -1775,7 +1783,7 @@ function validInputAnswer(params, inputs) {
 return {INPUT_CAPABILITY, inputField, validateInputs, validInputAnswer};
 })();
 const __configurationClient = (() => {
-const {validReportRequest, validReportAction, validateReports, validateReportReply} = __configurationReports;
+const {validReportRequest, validReportAction, validRecorderRequest, validateReports, validateReportReply} = __configurationReports;
 const {INPUT_CAPABILITY, validateInputs, validInputAnswer} = __configurationInputs;
 const {FormError, validateSnapshot, PROTOCOL : FORM_PROTOCOL} = __formClient;
 
@@ -1974,7 +1982,7 @@ function validateApplicationReply(reply, request, previous) {
   if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.session !== request.params.session) throw new FormError('transport');
   if (result.form !== null) {
     const nested = result.form;
-    if (!['application.form','application.open','application.openRecord','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
+    if (!['application.form','application.open','application.openRecord','application.openRecorder','application.hello','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) || !result.session ||
         !keys(nested,['jsonrpc','id','result']) || nested.jsonrpc !== '2.0' || !integer(nested.id) ||
         request.method === 'application.form' && nested.id !== request.params.request.id ||
         ['application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && nested.id !== 1 ||
@@ -1983,7 +1991,7 @@ function validateApplicationReply(reply, request, previous) {
     validateSnapshot(nested.result.state);
     if ((nested.result.state.kind === 'closed') === sessions.has(result.session)) throw new FormError('transport');
   } else if (['application.form','application.reference','application.recoverPosting','application.answerDialog','application.answerInput'].includes(request.method) && result.error === null) throw new FormError('transport');
-  if (['application.open','application.openRecord'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
+  if (['application.open','application.openRecord','application.openRecorder'].includes(request.method) && result.error === null && !sessions.has(result.session)) throw new FormError('transport');
   return result;
 }
 class ApplicationClient {
@@ -2012,12 +2020,12 @@ class ApplicationClient {
     this.pending++;
     const operation = this.tail.then(async () => {
       if (this.terminal&&!readRecovery || this.semanticUnknown || this.state?.kind === 'closed') throw new FormError('transport');
-      if (['application.open','application.openRecord'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
+      if (['application.open','application.openRecord','application.openRecorder'].includes(method) && this.state?.entries.some(entry => entry.id === params?.entry && entry.kind === 'owned-form')) {
         const error = new FormError('open_failed'); error.preDispatch = true; throw error;
       }
       // A modal that arrived after an intent was queued must stop that older
       // business intent too. Read-only reconciliation is still allowed.
-      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
+      if ((this.dialogs.length || this.inputs.length) && (['application.open','application.openRecord','application.openRecorder','application.close','application.reference','application.recoverPosting','application.report','application.reportSetup','application.reportPage','application.catalogPage','application.catalogFilter'].includes(method) ||
           method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.length ? 'input_pending' : 'dialog_pending'); error.preDispatch = true; throw error;
       }
@@ -2026,7 +2034,7 @@ class ApplicationClient {
            method === 'application.form' && !['form.hello','form.snapshot'].includes(params.request?.method))) {
         const error = new FormError(this.inputs.some(d => d.owner === params.session) ? 'input_pending' : this.dialogs.some(d => d.owner === params.session) ? 'dialog_pending' : 'owned_child_open'); error.preDispatch = true; throw error;
       }
-      if (method === 'application.report' && !validReportRequest(params,this.state) ||
+      if (method === 'application.openRecorder' && !validRecorderRequest(params,this.state) || method === 'application.report' && !validReportRequest(params,this.state) ||
           ['application.reportSetup','application.reportPage'].includes(method) && !validReportAction(method,params,this.state)) {
         const error=new FormError('unavailable'); error.preDispatch=true; throw error;
       }
@@ -2140,16 +2148,21 @@ function mountApplication(environment, root, exchange = null) {
   root = browserHost?.content || root;
   const instance = browserHost?.instance || documentInstance(environment);
   const document = environment.document;
-  const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = text; return node; };
+  const demoLabels={'Configuration forms':'Документы и регистры','New document':'Создать документ','New record':'Создать запись','Open selected':'Открыть','Refresh records':'Обновить','Select':'Выбрать','Number':'Номер','Date':'Дата','Deletion mark':'Пометка удаления','Posted':'Проведён','Code':'Код','Description':'Наименование','Close application':'Закрыть приложение','Stock reports':'Регистр накопления: Остатки товаров','Show saved stock':'Показать записи','Stock Movements':'Движения','Stock Balance':'Остатки','Stock Turnovers':'Обороты','Stock BalanceAndTurnovers':'Остатки и обороты','Period':'Период','Recorder':'Регистратор','LineNumber':'Номер строки','RecordType':'Вид движения','Active':'Активность','Product':'Номенклатура','Warehouse':'Склад','Quantity':'Количество','Amount':'Сумма','Unit':'Единица','State':'Состояние','Prepare statement':'Настроить отбор','Previous saved page':'Предыдущая страница','Next saved page':'Следующая страница','Read-only saved database state. Unsaved form edits are not included. No movement or total can be edited here.':'Движения только для чтения. Для изменения откройте документ-регистратор. Несохранённые изменения форм не включены.'};
+  const localize=text=>demoRecovery?(demoLabels[text]??text):text;
+  let businessView='documents';
+
+  const el = (tag, text = '') => { const node = document.createElement(tag); node.textContent = localize(text); return node; };
   const shell = el('main'), title = el('h1','Configuration forms'), toolbar = el('nav'), entries = el('nav'), tabs = el('nav'), panels = el('div');
   const workarea = el('div'), catalogPanel = el('section'); workarea.className = 'configuration-workarea';
   panels.className = 'configuration-form-panels';
   catalogPanel.className = 'configuration-catalog'; catalogPanel.setAttribute('aria-label','Catalog records'); catalogPanel.hidden = true;
+  const technical=el('details'),technicalTitle=el('summary','Технические примеры'),technicalEntries=el('nav');technicalEntries.setAttribute('aria-label','Технические формы');technical.append(technicalTitle,technicalEntries);technical.hidden=!demoRecovery;
   shell.className = 'configuration-app'; entries.setAttribute('aria-label','Declared forms'); tabs.setAttribute('aria-label','Open forms');
   const reportPanel=el('section');
   const reportView=createReportPanel(document,reportPanel,params=>perform('application.report',params),
     ()=>Boolean(!client || client.pending || client.terminal || client.state?.kind==='closed' || client.state?.uncertain || client.state?.choice || dialogModal() || client.state?.posting?.some(p=>['uncertain','committed'].includes(p.state))),
-    (method,params)=>perform(method,params));
+    (method,params)=>perform(method,params),{localize,openRecorder:recorder=>openRecorder(recorder),visible:()=>!demoRecovery||businessView==='register'});
   const postingPanel = el('section'); postingPanel.setAttribute('aria-label','Posting operation');
   const notice = el('p'); notice.setAttribute('role','status');
   const applicationMessages = el('section'), exitWarning = el('p');
@@ -2197,7 +2210,7 @@ function mountApplication(environment, root, exchange = null) {
   function show(id, userNavigation = true) {
     if (userNavigation && (client.state?.choice || dialogModal())) return;
     if (userNavigation) navigation++;
-    active = id;
+    active = id;if(id!==null)businessView='documents';
     for (const [key, entry] of mounts) {
       if (!entry.panel.hidden && entry.panel.contains(document.activeElement)) {
         const node = document.activeElement; entry.focus = {node,start:node.selectionStart,end:node.selectionEnd};
@@ -2248,7 +2261,7 @@ function mountApplication(environment, root, exchange = null) {
   function drawPicker() {
     const choice = client.state?.choice;
     picker.hidden = !choice;
-    for (const node of [toolbar,entries,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
+    for (const node of [toolbar,entries,technical,tabs,workarea,reportPanel]) node.inert = Boolean(choice || dialogModal());
     for (const entry of mounts.values()) entry.mount?.repaint();
     if (!choice) {
       pickerTicket = null;
@@ -2539,17 +2552,23 @@ function mountApplication(environment, root, exchange = null) {
     applicationMessages.replaceChildren(...(client.state?.messages || []).map(message => el('p',message)));
     applicationMessages.hidden = !client.state?.messages?.length;
     exitWarning.textContent = client.state?.exitWarning || ''; exitWarning.hidden = !exitWarning.textContent;
-    title.textContent = client.state?.title || 'Configuration forms';
+    title.textContent = demoRecovery?'Документы и регистры':client.state?.title || 'Configuration forms';
     notice.textContent = client.terminal ? 'Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.' : status;
     const disabled = client.terminal || !client.state || client.state.kind === 'closed' || Boolean(client.state.choice || dialogModal());
-    close.disabled = disabled; entries.replaceChildren();
+    close.disabled = disabled; entries.replaceChildren();technicalEntries.replaceChildren();
     for (const entry of client.state?.entries || []) {
       if (entry.kind === 'owned-form') continue;
-      const node = button(entry.title || `Form ${entry.id}`,entries,() => {
+      const business=['catalog-object','document-object','posting-document'].includes(entry.kind);
+      const node = button(entry.title || `Form ${entry.id}`,demoRecovery&&!business?technicalEntries:entries,() => {
+        businessView='documents';
         if (['catalog-object','document-object','posting-document'].includes(entry.kind)) { show(null);perform('application.catalog',{entry:entry.id}); }
         else openForm(entry.id);
       });
       node.disabled = disabled || !['catalog-object','document-object','posting-document'].includes(entry.kind) && client.state.sessions.length >= 8;
+    }
+    if(demoRecovery && client.state?.reports?.length){
+      const register=button('Остатки товаров',entries,()=>{if(disabled||pending())return;businessView='register';show(null);});
+      register.setAttribute('aria-label','Регистр накопления Остатки товаров');register.setAttribute('aria-pressed',String(businessView==='register'));register.disabled=disabled||pending();
     }
     for (const [id,entry] of mounts) {
       const blocked = Boolean(client.state?.sessions.find(value => value.id === id)?.blocked);
@@ -2575,6 +2594,7 @@ function mountApplication(environment, root, exchange = null) {
       }
     }
     drawCatalog(); drawPicker(); drawDialog(); drawInput(); reportView.update(client.state);
+    if(demoRecovery){reportPanel.hidden=businessView!=='register';workarea.hidden=businessView==='register';postingPanel.hidden=businessView==='register'||!posting;}
   }
   function reconcile(result, request) {
     if(!result.error&&['application.catalogFilter','application.catalog'].includes(request?.method)&&client.state?.catalog?.entry===request.params.entry&&client.state.catalog.navigation)acceptedRecordDraft(client.state.catalog);
@@ -2616,8 +2636,9 @@ function mountApplication(environment, root, exchange = null) {
       // already executed completion. Lock the family; never replay the result.
       client.lock(); status = 'Completion state could not be reconciled. All forms are locked.';
     }
-    const generation = ['application.open','application.openRecord'].includes(request?.method) ? intents.get(request.params.request) : undefined;
+    const generation = ['application.open','application.openRecord','application.openRecorder'].includes(request?.method) ? intents.get(request.params.request) : undefined;
     if (fresh.length && (generation === undefined || generation === navigation)) show(client.state.active || fresh.at(-1),false);
+    else if (result.session && generation === navigation && mounts.has(result.session)) show(result.session,false);
     else if (removedActive) show(client.state.active,false);
     paint();
   }
@@ -2638,11 +2659,18 @@ function mountApplication(environment, root, exchange = null) {
     const opening = perform(record === null?'application.open':'application.openRecord',params).finally(() => { openings.delete(key); intents.delete(token);paint(); });
     openings.set(key,opening); return opening;
   }
+  function openRecorder(recorder) {
+    if(pending())return Promise.resolve();
+    const key='recorder:'+recorder;if(openings.has(key))return openings.get(key);
+    const token=`open-${instance}-${++openToken}`;intents.set(token,navigation);
+    const opening=perform('application.openRecorder',{recorder,request:token}).finally(()=>{openings.delete(key);intents.delete(token);paint();});
+    openings.set(key,opening);return opening;
+  }
   const close = button('Close application',toolbar,async () => {
     if (pending() || mounts.size) { status = 'Close each form, including hidden tabs, before closing the application.'; paint(); return; }
     await perform('application.close',{});
   });
-  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
+  workarea.append(catalogPanel,panels);shell.append(title,toolbar,applicationMessages,exitWarning,entries,technical,tabs,notice,postingPanel,workarea,reportPanel,picker,dialog,inputDialog); root.replaceChildren(shell);
   if (!exchange) exchange = browserHost.transport;
   const surfaceExchange = exchange;
   exchange = request => { if (destroyed) throw Error('Application mount destroyed'); return surfaceExchange(request); };
@@ -2663,7 +2691,7 @@ function mountApplication(environment, root, exchange = null) {
       paint();
       const retained = new Set(mounts.keys());
       const result = await (demoRecovery?client.recoveryRead('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}):client.request('application.hello',{protocol:APPLICATION_PROTOCOL,dialogCapability:DIALOG_CAPABILITY,inputCapability:INPUT_CAPABILITY}));
-      for (const [id,entry] of mounts) {
+    for (const [id,entry] of mounts) {
         if (retained.has(id)) await (demoRecovery?entry.mount.recoverReadOnly():entry.mount.reconcileOwnership()); else await entry.mount.ready;
         if (entry.mount.client?.transportFailed || entry.mount.client?.outcomeUnknown) throw Error('Unknown form outcome');
       }

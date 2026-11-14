@@ -20,7 +20,7 @@ class MainDemoLifecycleTests(unittest.TestCase):
         client = form_family(self.config(), side='client', output=output.append, server_exchange=exchange)
         self.addCleanup(client.close)
         client.start()
-        self.assertEqual(output, ['Основная демо: справочники, документы и складские отчёты.'])
+        self.assertEqual(output, ['Основная демо: справочники, документы и регистр накопления.'])
         self.assertEqual(len(packets), 1)
         with self.assertRaisesRegex(ValueError, 'start only once'):
             client.start()
