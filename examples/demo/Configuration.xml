@@ -96,6 +96,6 @@
 			<Enum>States</Enum>
 			<CommonForm>OperationDraft</CommonForm>
 			<CommonForm>DraftDetails</CommonForm>
-		</ChildObjects>
+		<CommonModule>DemoTools</CommonModule><CommonModule>DemoService</CommonModule><CommonForm>DemoWelcome</CommonForm></ChildObjects>
 	</Configuration>
 </MetaDataObject>

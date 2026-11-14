@@ -260,9 +260,9 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
         finally:
             context.close()
 
-    def test_checked_in_report_example_executes_end_to_end(self):
+    def test_temporary_table_report_executes_end_to_end(self):
         self.seed()
-        self.vm.execute((Path(__file__).resolve().parents[1]/'examples/document-query-report.bsl').read_text())
+        self.vm.execute('''Q=New Query("SELECT Ref, SUM(Amount) AS Total INTO LineTotals FROM Document.Orders.Lines GROUP BY Ref; SELECT C.Description AS Customer, COUNT(*) AS Orders, SUM(D.Amount) AS Amount, SUM(L.Total) AS LineAmount FROM Document.Orders AS D JOIN Catalog.Categories AS C ON D.Category=C.Ref JOIN LineTotals AS L ON D.Ref=L.Ref WHERE D.DeletionMark=FALSE GROUP BY C.Description ORDER BY Customer"); S=Q.Execute().Select(); While S.Next() Do Message(S.Customer); Message(S.Orders); Message(S.Amount); Message(S.LineAmount); EndDo;''')
         self.assertEqual(self.output, ['Customer','3','60','30'])
 
 

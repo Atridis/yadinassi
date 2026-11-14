@@ -16,6 +16,13 @@ reference-bearing Unload. Create the database explicitly from
 `--create-db --import-xml ... --source-profile inventory-enum-v1`; do not import
 this source into an existing demo or infer a migration.
 
+Пользовательские скрипты выполняются в основной базе `examples/demo`, а не в
+отдельной enum-конфигурации. Создайте её обычным `--create-demo-db ... --import-xml examples/demo`,
+затем запустите `seed.bsl` и `relational_report.bsl` из `examples/inventory_enum`.
+Единица хранится в строке документа; у исходной Номенклатуры нет поля Unit,
+поэтому отчёт явно передаёт `DefaultUnit`, не добавляя выдуманное поле в каталог.
+Исторический native replay ниже остаётся на своих неизменных source hashes.
+
 ## Closed contract
 
 Each Execute freezes exact Array/FixedArray buffers once. The direct16 bound is

@@ -1806,7 +1806,7 @@ def interpreter_provenance(root: Path) -> dict:
     # Optional prebuilt renderer resources are a closed, fully hashed inventory.
     # Do not broaden suffix admission or exclude these runtime package bytes.
     assets = {"yadinassi/ui/assets/" + renderer + "/" + name
-              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo") for name in
+              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo", "source-workspace") for name in
               ("app.js", "index.html", "style.css", "LICENSE.txt", "build-manifest.json")}
     assets |= {"yadinassi/ui/assets/source/" + name
                for name in ("app.js", "index.html", "style.css")}

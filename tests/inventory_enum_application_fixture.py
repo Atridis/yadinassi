@@ -4,7 +4,13 @@ Uses the existing host editor/command contracts, never native observer modules.
 This explicitly authored manifest grants host operations, not 1C parity.
 """
 from inventory_application_fixture import source as forms_source
-from test_configuration_inventory_enums import source as core_source
+from pathlib import Path
+
+
+def core_source():
+    root = Path(__file__).resolve().parents[1] / 'scripts/inventory_enum_behavior/runtime_source'
+    return {p.relative_to(root).as_posix(): p.read_bytes()
+            for p in root.rglob('*') if p.is_file()}
 
 
 def source():

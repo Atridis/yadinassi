@@ -5,6 +5,16 @@ from .values import BSLObject
 MANAGER_NAMES = {
     'catalogs': 'Catalog', 'справочники': 'Catalog',
     'documents': 'Document', 'документы': 'Document',
+    'informationregisters': 'InformationRegister', 'регистрысведений': 'InformationRegister',
+    'accumulationregisters': 'AccumulationRegister', 'регистрынакопления': 'AccumulationRegister',
+    'accountingregisters': 'AccountingRegister', 'регистрыбухгалтерии': 'AccountingRegister',
+    'calculationregisters': 'CalculationRegister', 'регистрырасчета': 'CalculationRegister',
+    'chartsofcharacteristictypes': 'ChartOfCharacteristicTypes', 'планывидовхарактеристик': 'ChartOfCharacteristicTypes',
+    'chartsofaccounts': 'ChartOfAccounts', 'планысчетов': 'ChartOfAccounts',
+    'chartsofcalculationtypes': 'ChartOfCalculationTypes', 'планывидоврасчета': 'ChartOfCalculationTypes',
+    'businessprocesses': 'BusinessProcess', 'бизнеспроцессы': 'BusinessProcess',
+    'tasks': 'Task', 'задачи': 'Task',
+    'exchangeplans': 'ExchangePlan', 'планыобмена': 'ExchangePlan',
     'reports': 'Report', 'отчеты': 'Report',
     'dataprocessors': 'DataProcessor', 'обработки': 'DataProcessor',
 }
@@ -15,10 +25,17 @@ class SourceManagers(BSLObject):
         self._application = weakref.ref(application)
         self._family = family
 
-    def member(self, caller, name):
+    def authorize(self, caller):
         app = self._application()
         if app is None:
             raise ValueError('source manager belongs to a closed application')
+        app.require_manager_context(caller)
+        return app
+
+    def member(self, caller, name):
+        app = self.authorize(caller)
+        if type(name) is not str:
+            raise TypeError("source manager name must be a string")
         if self._family in ('Catalog', 'Document'):
             from .source_references import SourceReferenceManager
             manager = SourceReferenceManager(app, self._family, name)

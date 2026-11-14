@@ -5970,3 +5970,10 @@ FixedStructure sources, ValueTableRow, ValueTreeRow, объектами спра
 Windows/default и metadata-backed объекты остаются отдельной локальной политикой,
 без заявления native-паритета. Старые Structure↔Structure ветки не изменены.
 Подробности, пределы и примеры: [property-transfer.md](docs/property-transfer.md).
+
+## Единый профиль компиляции XML-источника
+
+Явный `managed-thick-file` теперь проходит через приложение, сеанс, общие,
+глобальные и менеджерные модули, а также выбранную поддерживаемую форму.
+`standalone` остаётся умолчанием. Выбор ветвей не предоставляет новых прав
+и не означает полный нативный паритет. [Контракт](docs/source-compilation-profiles.md).

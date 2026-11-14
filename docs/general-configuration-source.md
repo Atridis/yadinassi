@@ -193,8 +193,11 @@ manufacture a successful Get.
 ### Source manager modules
 
 The source-only synchronous server can lazily call exported BSL routines from
-catalog, document, report and data-processor `Ext/ManagerModule.bsl` files.
-Both English and Russian namespace names are accepted. An unused module is not
+catalog, document, report, data-processor, information/accumulation/accounting/
+calculation register, chart of accounts/characteristic types/calculation types,
+business-process, task and exchange-plan `Ext/ManagerModule.bsl` files.
+Both English and Russian namespace names and dynamic string indexing are accepted.
+See [source manager families](source-manager-families.md) for scope and boundaries. An unused module is not
 compiled; a reached unsupported statement reports its original module location.
 This does not activate database managers, CRUD, object modules or client/server
 transport. Missing manager source and unavailable platform operations fail
@@ -344,3 +347,28 @@ replication are real, including source metadata and same-side common modules.
 Privileged modules still fail; form selection never grants roles. Closing the
 host releases the source runtime, not a claim of complete native application-exit
 lifecycle support. Other source forms are not automatically opened or fabricated.
+
+## Рабочее пространство исходной конфигурации
+
+```console
+yadinassi --ui --configuration-source PATH --run-startup --source-workspace --open-browser
+```
+
+Новый необязательный вход держит один сеанс исходной конфигурации и показывает
+список объявленных управляемых форм. Форма компилируется при выборе, а не при
+построении списка. Ошибка неподдерживаемой формы показывается в рабочем
+пространстве и не скрывает остальные формы. После закрытия текущей формы можно
+открыть другую без перезапуска приложения. Повторное открытие во время активной
+формы отклоняется; переход не выбрасывает её изменения. Старые запросы не могут
+попасть в новую форму благодаря номеру поколения.
+
+Это **memory-only** режим: без scratch SQLite, сохранения объектов базы,
+произвольной загрузки файлов через браузер и без новой native parity. Перечень
+объектов не даёт им права CRUD. Открывается одна форма за раз, до 512 имён в
+списке с дополнительным лимитом размера ответа; остальные учитываются в
+`omitted_forms`. Поиск применяется ко всем объявленным формам до ограничения
+выдачи, поэтому длинный список можно сузить по имени. Открытие из BSL и множественные
+окна пока не поддержаны этим рабочим пространством. Закрытие вкладки не обещает
+восстановления черновиков. При потере транспорта команды не повторяются.
+
+Существующие `--source-form` и диагностика источника остаются без изменений.

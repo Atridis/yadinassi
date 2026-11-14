@@ -6,15 +6,16 @@ It does **not** claim native modal/window/uniqueness behavior, arbitrary OpenFor
 options, or exact native callback timing. The native acquisition route is separate;
 a locally authored source or a browser test is not native evidence.
 
-Run the small authored application:
+Пользовательские сценарии теперь находятся в единственной основной конфигурации
+`examples/demo`: формы **Черновик операции** и **Подготовка изменений**.
+Запуск и создание базы описаны в [руководстве основной демо](demo-quickstart.md).
+Дочерняя форма возвращает подготовленные значения владельцу, KeepOpen запрещает
+закрытие, а отдельное подтверждение применяет результат ровно один раз в памяти.
+Запись документов и движений при этом не происходит.
 
-```sh
-python -m yadinassi.ui.configuration_app examples/configuration-form-results --application-host --browser-session
-```
-
-The example has an editable **Owner value**, **Open chooser**, an editable **Result text**,
-**Use value**, and **Keep chooser open**. The checkbox refuses the ordinary close
-lifecycle without delivering a result. Completion reports its in-process count.
+Отдельный `configuration-form-results` удалён после проверки тех же lifecycle и
+recovery-сценариев на основной демо. Негативные протокольные unit-тесты по-прежнему
+строят минимальные изолированные источники, не ещё одну пользовательскую базу.
 
 The source inventory includes the application module and both declared CommonForms.
 The same bounded interaction works with a catalog or non-posting document owner in

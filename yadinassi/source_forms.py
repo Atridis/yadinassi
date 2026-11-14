@@ -10,6 +10,7 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         super().__init__(application, session, output=output,
                          family_owner=application.interpreter, **kwargs)
         self._transaction_activation_allowed = False
+        self._application_exports_enabled = True
 
     def _activation_interpreter(self):
         child = type(self)(self.application, self._form_session, self.output,
@@ -34,7 +35,8 @@ def source_form_definition(application, name):
     if definition_path not in application.files:
         raise ValueError('selected form definition missing: ' + definition_path)
     return _definition(name, metadata._entry.identity, application.files[definition_path],
-                       application.files.get(prefix + '/Ext/Form/Module.bsl', b''))
+                       application.files.get(prefix + '/Ext/Form/Module.bsl', b''),
+                       compilation_profile=application.compilation_profile)
 
 
 class SourceFormController:

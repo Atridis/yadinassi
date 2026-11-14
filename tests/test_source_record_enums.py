@@ -73,3 +73,20 @@ class SourceRecordEnumTests(unittest.TestCase):
                 defs,errors=(source_catalog_definitions(package(where=where)) if where=='catalog' else source_document_definitions(package(where=where),allow_sections=where=='section'))
                 self.assertFalse(errors);definition=defs['items' if where=='catalog' else 'invoice'];fields=definition.sections[0].fields if where=='section' else definition.fields
                 field=next(f for f in fields if f.name=='Choice');self.assertEqual(field.kind,'enum_ref');self.assertIsNotNone(field.enum_namespace)
+
+    def test_indexed_catalog_manager_keeps_owned_enums(self):
+        _, out = self.run_body(
+            'C=Справочники["Items"].СоздатьЭлемент(); C.Код="A"; '
+            'C.Choice=Перечисления.State.Active; C.Записать(); '
+            'Сообщить(Справочники["Items"].НайтиПоРеквизиту("Choice",'
+            'Перечисления.State.Active)=C.Ссылка);')
+        self.assertEqual(out, ['Да'])
+
+    def test_indexed_document_and_section_share_runtime_dispatch(self):
+        _, out = self.run_body(
+            'D=Документы["Invoice"].СоздатьДокумент(); D.Номер="A"; '
+            'D.Дата=Дата(2026,1,1); R=D.Lines.Добавить(); '
+            'R.Choice=Перечисления.State.Active; D.Записать(); '
+            'O=D.Ссылка.ПолучитьОбъект(); '
+            'Сообщить(O.Lines[0].Choice=Перечисления.State.Active);', 'section')
+        self.assertEqual(out, ['Да'])

@@ -13,15 +13,17 @@ import webbrowser
 from ..configuration_source import load_source_directory, load_source_archive
 from ..configuration_source_runtime import SourceApplication
 from ..errors import BSLError
+from ..syntax.preprocessor import COMPILATION_PROFILES, validate_compilation_profile
 from .local_app import LocalUIServer, _Handler
 
 PROTOCOL = 'yadinassi-source-diagnostics/1'
 
 
 class SourceShell:
-    def __init__(self, source, *, run_startup=False, scratch_database=None, compatibility_target=None):
+    def __init__(self, source, *, run_startup=False, scratch_database=None, compatibility_target=None, compilation_profile="standalone"):
         if not run_startup and (scratch_database is not None or compatibility_target is not None):
             raise ValueError('scratch database and compatibility target require explicit startup')
+        self.compilation_profile = validate_compilation_profile(compilation_profile)
         self.closed = False
         self.messages = []
         self.omitted_messages = 0
@@ -38,7 +40,7 @@ class SourceShell:
             app = None
             try:
                 app = SourceApplication(source, output=self._output, scratch_database=scratch_database,
-                                        compatibility_target=compatibility_target)
+                                        compatibility_target=compatibility_target, compilation_profile=self.compilation_profile)
                 self.outcome = 'completed' if app.start() else 'cancelled'
             except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
                 self.outcome = 'failed'
@@ -80,24 +82,39 @@ class SourceHandler(_Handler):
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Source diagnostics, not configuration UI or a database editor.')
     parser.add_argument('--configuration-source', required=True, metavar='PATH')
+    parser.add_argument('--preprocessor-profile', choices=COMPILATION_PROFILES, default='standalone')
     parser.add_argument('--run-startup', action='store_true', help='Execute startup once before opening diagnostics')
     parser.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE')
     parser.add_argument('--source-compatibility-target', metavar='VERSION')
     parser.add_argument('--source-form', metavar='FULL_NAME', help='Open one explicitly selected supported managed form after successful startup')
+    parser.add_argument('--source-workspace', action='store_true', help='Browse declared forms in one memory-only source session')
     parser.add_argument('--open-browser', action='store_true')
     args = parser.parse_args(argv)
     if not args.run_startup and (args.source_scratch_db or args.source_compatibility_target is not None):
         parser.error('scratch database and compatibility target require --run-startup')
+    if args.source_workspace and (not args.run_startup or args.source_scratch_db or args.source_form):
+        parser.error('--source-workspace requires --run-startup without scratch database or --source-form')
     if args.source_form and (not args.run_startup or args.source_scratch_db):
         parser.error('--source-form requires --run-startup without a scratch database')
     server = shell = application = None
     try:
         path = Path(args.configuration_source)
         source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
-        if args.source_form:
+        if args.source_workspace:
+            from .source_workspace import SourceWorkspace, SourceWorkspaceHandler
+            application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
+                                            compilation_profile=args.preprocessor_profile)
+            if not application.start():
+                print('Запуск источника отменён; рабочее пространство не открыто.', file=sys.stderr)
+                return 1
+            shell = SourceWorkspace(application)
+            server = LocalUIServer(shell, handler=SourceWorkspaceHandler)
+            print('Source workspace: объявленные формы, memory-only; без CRUD и native parity.')
+        elif args.source_form:
             from ..source_forms import SourceFormController
             from .form_app import FormHandler
-            application = SourceApplication(source, compatibility_target=args.source_compatibility_target)
+            application = SourceApplication(source, compatibility_target=args.source_compatibility_target,
+                                            compilation_profile=args.preprocessor_profile)
             if not application.start():
                 print('Запуск источника отменён; форма не открыта.', file=sys.stderr)
                 return 1
@@ -107,7 +124,8 @@ def main(argv=None):
         else:
             shell = SourceShell(source, run_startup=args.run_startup,
                                 scratch_database=args.source_scratch_db,
-                                compatibility_target=args.source_compatibility_target)
+                                compatibility_target=args.source_compatibility_target,
+                                compilation_profile=args.preprocessor_profile)
             server = LocalUIServer(shell, handler=SourceHandler)
             print('Диагностика источника. Это не UI конфигурации: формы и CRUD не активированы; '
                   'попытка runtime завершена, активного сеанса нет.')

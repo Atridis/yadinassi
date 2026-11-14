@@ -38,15 +38,22 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': 'a2816c3263ab8ea6bb82b299b27
  'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form.xml': 'ba70bc4129509c979033632d305d4866e0e311f5e25322369bdf3998b055add6',
  'Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl': '86bccc60f288b6d8bec57dd01701b3535a73c297b1a42a97d2f5528f066426e3',
  'Catalogs/Склады.xml': '3f123ebb7eed85b1b845ae8867749e91cde2d6154cd6e8b5da16a74c9658bb3a',
+ 'CommonForms/DemoWelcome.xml': 'a7000c25563d3b9a87b62160513bbd949e0fcd20bb413819d484ea98dd82cdc5',
+ 'CommonForms/DemoWelcome/Ext/Form.xml': '3c2bf682cae3c672363d00706470b3a087f4fd5ba501279fbd29a49f0627524b',
+ 'CommonForms/DemoWelcome/Ext/Form/Module.bsl': '7d7790e43765626212d9f3812e46897cd772046f0dff345fc1be85ef3654accb',
  'CommonForms/DraftDetails.xml': '23a9a7e2e6c5eb8a23da906adf306062ad6af71beb2ba30e63e617631e60f187',
  'CommonForms/DraftDetails/Ext/Form.xml': 'b192441d5e66a1349fea0b36fa22dd8d6ef2bb56e2a1a42aa3c1ce5ba9f5a13a',
  'CommonForms/DraftDetails/Ext/Form/Module.bsl': '7aa474668ff24b52d4ef601da73791768de3b15c14b92f982176d40b93c9bd12',
  'CommonForms/OperationDraft.xml': '833a48959f40084a5550d49236df256e44f4060cb9cc2235d9edb96ae7cf0dcb',
  'CommonForms/OperationDraft/Ext/Form.xml': '33e1afff136c3bbdda92121d31c298e520cbffe6171910c8fcd6804847c5f84d',
  'CommonForms/OperationDraft/Ext/Form/Module.bsl': '31f9f03370889fc262a13ca0f89375440ee9d26a4c4734583a47007dc92f7006',
- 'Configuration.xml': 'de4c8c950e6f39f8e9dc5bf828036670a61397e78be9e4da9370f8c31d06eca8',
+ 'CommonModules/DemoService.xml': 'f473da16e8eefdae9637f1850b1b94e86a9465813b7c17afdcc16943ba090fca',
+ 'CommonModules/DemoService/Ext/Module.bsl': '05a1eb4083e3ef7ca2d52b0701087ea9b71a89223a90ecbe9228277e2b923fc8',
+ 'CommonModules/DemoTools.xml': 'b24a3375733f53fcae7b7da0419e9c29c0b22d539f7d2a84006ff592d9e7ab5b',
+ 'CommonModules/DemoTools/Ext/Module.bsl': 'ed56ae85db9800d778c27123f29889d7ab80da4076cec777a79962b61e6f289d',
+ 'Configuration.xml': '3a274a14ff5dc7dae2760e6d0bbd2d7dc819b852cfe5a9e118e8c572a55be40f',
  'Documents/Issue.xml': '4dd45972011a1e375ec1ccb65f87cec79647692c699f8bd8feb0fc60b6f08b4a',
- 'Documents/Issue/Ext/ObjectModule.bsl': '51d1231843b06360c0a77c73fb40a961d5fb6a67a1bd3f257505c2561e304c31',
+ 'Documents/Issue/Ext/ObjectModule.bsl': 'c3fc50dc1b1fe476f5b98f9aba72d4b9b20adcf8b5f005114fcee115f0bb67f2',
  'Documents/Issue/Forms/Card.xml': '6c2569339a0a3ffde1d50f8bc571a992c3c4df98032a750216f4103b5032227a',
  'Documents/Issue/Forms/Card/Ext/Form.xml': '1ff3c095f98426f1179a3f8c51b82f6bd3bd4dbd906837ecdfe2b85fd2848d32',
  'Documents/Issue/Forms/Card/Ext/Form/Module.bsl': '91325955fd484c274c86d184373be334f64177cf843f68707f78fff719f0f682',
@@ -60,6 +67,7 @@ SOURCE_SHA256 = {'AccumulationRegisters/Stock.xml': 'a2816c3263ab8ea6bb82b299b27
  'Ext/ClientApplicationInterface.xml': '407d37fdc9c46dc9ef03573c8241f574c382e329cc9670bf5eba0d529860b16a',
  'Ext/CommandInterface.xml': 'b36fdd6e977f07daa40e5b4efd4bf8ad1c536f08402642df470587600848315a',
  'Ext/HomePageWorkArea.xml': '16188438d96e87c4103ba71fe773543c1b71f3ca98e93476f3174d816672010e',
+ 'Ext/ManagedApplicationModule.bsl': '54c591d67a643c1b201e814e51fa6be85f774f0a7ae90dae656a0efe82657311',
  'InventoryApplication.xml': 'f5e2f1e13d63484bf536d150b6e9eddbd83058f1422657d7aec11442a235993a',
  'Languages/Русский.xml': 'e0438b24e18c15da067173886270b2a4806aff1ea97031b2211c3f586181cf3c',
  'Subsystems/НормативнаяИнформация.xml': 'e824868068ac9018757c8fea8adbe4eee1c597a82e0fd6d8215c8d2f94858412'}
@@ -133,7 +141,7 @@ def dump_files(root):
 def source_files(root=ROOT):
     files = dump_files(root / SOURCE_ROOT)
     require({n: digest(raw) for n, raw in files.items()} == SOURCE_SHA256)
-    require(len(files) == 39 and len(PLATFORM_FILES) == 38 and MANIFEST in files)
+    require(len(files) == 47 and len(PLATFORM_FILES) == 46 and MANIFEST in files)
     return files
 
 

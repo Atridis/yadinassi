@@ -1,2 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config"><Configuration uuid="e0c7fbcf-947c-585e-bd47-ad4e0d372374"><Properties><Name>InventoryReferences</Name></Properties><ChildObjects><Catalog>Products</Catalog><Catalog>Warehouses</Catalog><Document>Receipt</Document><Document>Issue</Document><AccumulationRegister>Stock</AccumulationRegister></ChildObjects></Configuration></MetaDataObject>
