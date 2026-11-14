@@ -65,9 +65,9 @@ class SourceServerCallTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLError,'Режим общего модуля'):
             self.run_app(configuration('ServerAPI.Answer();',global_module=True))
 
-    def test_reuse_crossing_explicitly_rejected(self):
-        with self.assertRaisesRegex(BSLError,'return-value reuse'):
-            self.run_app(configuration('ServerAPI.Answer();',reuse='DuringSession'))
+    def test_scalar_reuse_crossing(self):
+        _, output=self.run_app(configuration('Message(ServerAPI.Answer());',reuse='DuringSession'))
+        self.assertEqual(output,['42'])
 
     def test_scalar_copyback(self):
         _, output=self.run_app(configuration('X=1; ServerAPI.Change(X); Message(X);',
