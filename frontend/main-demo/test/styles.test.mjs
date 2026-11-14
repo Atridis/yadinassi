@@ -39,3 +39,20 @@ test('embedded theme stays local and responsive rules do not depend on wrapper d
  assert.match(css,/\.main-demo-navigation\{display:flex;flex-wrap:wrap/);
  assert.match(css,/white-space:normal/);assert.match(css,/\.configuration-reports table\{min-width:850px\}/);
 });
+test('main demo owns one theme selector and service recovery without hiding errors',()=>{
+ const shell=read('../src/app.mjs'),css=read('../src/style.css'),catalog=read('../../catalog/src/app.jsx');
+ assert.match(shell,/services.append\(summary,themeLabel,retry\)/);
+ assert.match(shell,/exchange.theme=\{get:\(\)=>theme,subscribe:/);
+ assert.match(shell,/systemTheme.removeEventListener\('change',paintTheme\)/);
+ assert.match(catalog,/exchange\?\.theme\?\.subscribe\(setTheme\)/);
+ assert.match(css,/browser-ownership\[data-healthy="true"\]/);
+ assert.doesNotMatch(css,/browser-ownership\s*\{display:none/);
+});
+
+test('dark table cells and readonly rows use the shared palette with matching specificity',()=>{
+ const css=read('../src/style.css');
+ assert.match(css,/\.cell-input:not\(\[type=checkbox\]\),\.cell-input\[readonly\]\{background:var\(--paper\);color:var\(--ink\)/);
+ assert.match(css,/\.data-table thead th,\.table-toolbar,\.table-help\{background:var\(--paper\);color:var\(--muted\)/);
+ assert.match(css,/\.data-table tbody tr:nth-child\(even\)\{background:var\(--canvas\)/);
+ assert.match(css,/\.data-table tbody tr.current-row\{background:var\(--accent\)/);
+});

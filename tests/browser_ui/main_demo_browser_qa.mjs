@@ -99,6 +99,7 @@ async function startHost(){
   }),15000,'host_start_timeout');
 }
 const button=name=>page.getByRole('button',{name,exact:true});
+const recoverFromService=async()=>{const control=button('Восстановить состояние');if(!await control.isVisible())await page.locator('.main-demo-services > summary').click();await control.click();};
 const openSelectedRecord=async()=>{await page.locator('.records tbody tr').first().click();await button('Open selected').click();};
 const field=name=>page.getByLabel(name,{exact:true});
 const ready=()=>page.waitForFunction(()=>[...document.querySelectorAll('button')].some(
@@ -281,7 +282,7 @@ async function main(){
   await page.goto(url);
   const actionLog=[];report.actions=actionLog;report.actionCount=0;
   const act=async(name,fn)=>{check();actionLog.push(name);report.actionCount=actionLog.length;report.progress={action:actionLog.length,name,state:'started'};await fn();check();report.progress.state='completed';};
-  const click=async name=>act(name,()=>button(name).click());
+  const click=async name=>act(name,()=>name==='Восстановить состояние'?recoverFromService():button(name).click());
   const catalog=async name=>act('catalog:'+name,()=>page.getByRole('navigation',{name:'Catalogs',exact:true}).getByRole('button',{name:new RegExp('^'+name+'\\s*›?$')}).click());
   const legacyDialog=()=>page.getByRole('dialog',{name:'Choose reference',exact:true});
   const snapshotMethods=start=>requests.slice(start).map(r=>r.method==='demo.dispatch'?r.inner:r.method);
@@ -583,7 +584,7 @@ async function main(){
     await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
     assert.equal(droppedOwnedResult,1,'owned_result_loss_not_observed');
     const afterLoss=requests.length,acceptAfterLoss=requests.filter(request=>request.control==='AcceptButton').length;
-    await act('recovery-inspect-without-replay',()=>button('Восстановить состояние').click());
+    await act('recovery-inspect-without-replay',()=>recoverFromService());
     await idle();
     assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'owned_result_recovery_mutated');
     assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'owned_result_recovery_form_mutated');
@@ -655,7 +656,7 @@ async function main(){
     await page.getByText('Connection lost. All forms are locked; copy pending edits before leaving. Requests will not be replayed.',{exact:true}).waitFor();
     assert.equal(droppedDialog,1,'dialog_loss_not_observed');
     const afterLoss=requests.length;
-    await act('dialog-readonly-inspection',()=>button('Восстановить состояние').click());await idle();
+    await act('dialog-readonly-inspection',()=>recoverFromService());await idle();
     assert.ok(snapshotMethods(afterLoss).every(method=>['demo.snapshot','application.hello','application.form'].includes(method)),'dialog_recovery_mutated');
     assert.ok(requests.slice(afterLoss).filter(request=>request.inner==='application.form').every(request=>request.nested==='form.snapshot'),'dialog_recovery_form_mutated');
     assert.ok((await page.locator('.draft-recovery-value').allTextContents()).includes('CommentField:   dialog independent raw draft  '),'dialog_raw_copy_lost');

@@ -38,7 +38,7 @@ const sectionReason=reason=>({
 function App(){
   const [snapshot,setSnapshot]=useState(null),[draft,setDraft]=useState(()=>editorDraft()),[busy,setBusy]=useState(false),
     [error,setError]=useState(''),[filter,setFilter]=useState(''),
-    [theme,setTheme]=useState(()=>readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
+    [theme,setTheme]=useState(()=>exchange?.theme?.get() ?? readTheme(window)),[preview,setPreview]=useState({catalogs:[],list:null});
   const [recoveredDraft,setRecoveredDraft]=useState(null);
   const [recordQuery,setRecordQuery]=useState(''),[recordOrder,setRecordOrder]=useState('code');
   useEffect(()=>{setRecordQuery(snapshot?.state?.listQuery?.query||'');setRecordOrder(snapshot?.state?.listQuery?.order||'code');},
@@ -64,6 +64,7 @@ function App(){
     paint();system.addEventListener('change',paint);
     return()=>system.removeEventListener('change',paint);
   },[theme]);
+  useEffect(()=>exchange?.theme?.subscribe(setTheme),[]);
   const changeTheme=value=>{setTheme(value);rememberTheme(window,value);};
   const editor=snapshot?.state?.editor;
   const localDirty=hasDraftChanges(editor,draft);
@@ -193,8 +194,8 @@ function App(){
     onPointerUpCapture={()=>{actionPointer.current=false;}} onPointerCancelCapture={()=>{actionPointer.current=false;}}>
     <header><div><span class="brand">YADINASSI</span><h1>Catalog workspace</h1></div>
       <div class="header-actions"><span class="badge connection">Local SQLite</span>
-      <label class="theme-control"><span>Theme</span><select aria-label="Color theme" value={theme}
-        onChange={e=>changeTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>
+      {!exchange?.theme&&<label class="theme-control"><span>Theme</span><select aria-label="Color theme" value={theme}
+        onChange={e=>changeTheme(e.currentTarget.value)}><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label>}
       {snapshot&&state.kind!=='closed'&&<button data-editor-action="close" class="quiet" disabled={inputBlocked||client.uncertain||editor?.editingLocked} onClick={()=>run('close',{},true)}>Close database</button>}</div>
     </header>
     <p class="scope">{editor?.originalForm?'Imported name-validation handlers · local host form adapter · no native parity claim':'Auto-generated editor · bounded references and tabular rows · no imported 1C forms'}</p>
