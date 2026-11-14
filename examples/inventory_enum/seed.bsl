@@ -1,6 +1,8 @@
-// Fresh inventory-enum-v1 database only; intentionally no implicit migration.
-P=Catalogs.Products.CreateItem(); P.Code="ER-P"; P.Unit=Enums.Units.Piece; P.Write();
-W=Catalogs.Warehouses.CreateItem(); W.Code="ER-W"; W.Write();
+// Run once in the main examples/demo database; no separate enum configuration.
+Kind=Catalogs.ВидыНоменклатуры.CreateItem(); Kind.Description="Товары"; Kind.Write();
+W=Catalogs.Склады.CreateItem(); W.Code="ER-W"; W.Description="Enum warehouse"; W.Write();
+P=Catalogs.Номенклатура.CreateItem(); P.Code="ER-P"; P.Description="Enum product";
+P.ВидНоменклатуры=Kind.Ref; SectionRow=P.Склады.Add(); SectionRow.Склад=W.Ref; P.Write();
 D=Documents.Receipt.CreateDocument(); D.Number="ER-POST"; D.Date=Date(2024,2,1);
 D.Warehouse=W.Ref; D.State=Enums.States.Approved;
 L=D.Lines.Add(); L.Product=P.Ref; L.Unit=Enums.Units.Piece; L.Quantity=6; L.Amount=12;

@@ -1,6 +1,8 @@
 // Run once in a fresh database; all identifiers below are owned demo data.
-P = Catalogs.Products.CreateItem(); P.Code = "P1"; P.Description = "Notebook"; P.Write();
-W = Catalogs.Warehouses.CreateItem(); W.Code = "W1"; W.Description = "Main warehouse"; W.Write();
+Kind = Catalogs.ВидыНоменклатуры.CreateItem(); Kind.Description = "Товары"; Kind.Write();
+W = Catalogs.Склады.CreateItem(); W.Code = "W1"; W.Description = "Main warehouse"; W.Write();
+P = Catalogs.Номенклатура.CreateItem(); P.Code = "P1"; P.Description = "Notebook";
+P.ВидНоменклатуры = Kind.Ref; SectionRow = P.Склады.Add(); SectionRow.Склад = W.Ref; P.Write();
 Receipt = Documents.Receipt.CreateDocument(); Receipt.Number = "R1"; Receipt.Date = Date(2024,1,1,12,0,0);
 Receipt.Warehouse = W.Ref;
 Line = Receipt.Lines.Add(); Line.Product = P.Ref; Line.Quantity = 10; Line.Amount = 100;
@@ -10,7 +12,7 @@ Issue.Warehouse = W.Ref;
 Line = Issue.Lines.Add(); Line.Product = P.Ref; Line.Quantity = 3; Line.Amount = 30;
 Issue.Write(DocumentWriteMode.Posting);
 
-Query = New Query("SELECT P.Description AS Product,W.Description AS Warehouse,B.QuantityBalance AS Quantity FROM AccumulationRegister.Stock.Balance(&At) AS B INNER JOIN Catalog.Products AS P ON B.Product=P.Ref INNER JOIN Catalog.Warehouses AS W ON B.Warehouse=W.Ref");
+Query = New Query("SELECT P.Description AS Product,W.Description AS Warehouse,B.QuantityBalance AS Quantity FROM AccumulationRegister.Stock.Balance(&At) AS B INNER JOIN Catalog.Номенклатура AS P ON B.Product=P.Ref INNER JOIN Catalog.Склады AS W ON B.Warehouse=W.Ref");
 Query.SetParameter("At", Date(2024,1,2));
 Rows = Query.Execute().Select(); Rows.Next();
 Message("After issue: " + Rows.Product + ", " + Rows.Warehouse + ", " + Rows.Quantity);
