@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from uuid import UUID
 from .configuration_source import ConfigurationSource
 from .configuration_source_metadata import SourceMetadataRoot
-from .configuration_xml import MD, XSI, _object, _props, _type, _text
+from .configuration_xml import MD, XSI, V8, _object, _props, _type, _text, _qname
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,9 +35,17 @@ def source_constant_definitions(source):
         try:
             obj, namespaces = _object(files[path], 'Constant')
             props = _props(obj)
-            kind, qualifiers, target = _type(props, namespaces, {})
-            if target is not None or kind not in ('string', 'number', 'boolean', 'datetime'):
-                raise ValueError('only scalar constants are supported')
+            declaration = props.get('{' + MD + '}Type')
+            special = None
+            if declaration is not None and not declaration.attrib and not (declaration.text or '').strip() and len(declaration) == 1:
+                node = declaration[0]
+                if node.tag == '{' + V8 + '}Type' and not node.attrib and not len(node) and not (node.tail or '').strip():
+                    namespace, name_type = _qname(node, namespaces)
+                    if namespace == V8:
+                        special = {'ValueStorage': 'value_storage', 'UUID': 'uuid'}.get(name_type)
+            kind, qualifiers, target = (special, (), None) if special else _type(props, namespaces, {})
+            if target is not None or kind not in ('string', 'number', 'boolean', 'datetime', 'uuid', 'value_storage'):
+                raise ValueError('unsupported source constant type')
             blockers = []
             prefix = 'Constants/' + name + '/'
             if any(p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()
