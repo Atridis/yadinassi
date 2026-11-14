@@ -138,3 +138,39 @@ def column_operation(caller,section,operation,arguments):
         candidate=[dict(row.values,**{key:value for key in keys}) for row in section.rows]
     else:raise ValueError('unsupported source column operation')
     _replace_values(caller,section,candidate)
+
+
+def search(caller,section,operation,args):
+    """Explicit typed predicates over the owned bounded buffer, no persistence."""
+    from .structures import BSLStructure
+    from .values import BSLArray,equal
+    section.authorize(caller);section.buffer_bound()
+    if operation=='find':
+        if len(args)!=2:raise TypeError('source section Find requires value and one field')
+        field=section.fields[_field(section,args[1])];selected=[(field,args[0])]
+    else:
+        if len(args)!=1 or type(args[0]) is not BSLStructure:raise TypeError('source section FindRows requires Structure')
+        filters=args[0]
+        if type(filters._items) is not dict:raise TypeError('source section filter shape')
+        if len(filters._items)>len(section.fields):raise ValueError('source section filter bound')
+        selected=[];seen=set()
+        for entry in filters._items.values():
+            if type(entry) is not tuple or len(entry)!=2:raise TypeError('source section filter entry')
+            name,value=entry;key=_field(section,name);field=section.fields[key]
+            if key in seen:raise ValueError('duplicate source section filter')
+            seen.add(key);selected.append((field,value))
+    for field,value in selected:_encode(value,field)
+    found=[]
+    if selected:
+        for row in section.rows:
+            matches=[]
+            for field,value in selected:
+                key=field.name.casefold()
+                if key not in row.values:raise ValueError('section search requires assigned fields')
+                actual=row.values[key];_encode(actual,field);matches.append(equal(actual,value))
+            if all(matches):
+                if operation=='find':return row
+                found.append(row)
+    section.authorize(caller)
+    if operation=='find':return None
+    result=BSLArray();result.items=found;return result
