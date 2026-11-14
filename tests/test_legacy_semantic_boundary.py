@@ -77,7 +77,7 @@ class LegacySemanticBoundaryTests(TestCase):
         for module in ('catalog_object_preparation','configuration_source_runtime',
                        'document_posting','form_event_simulation','form_runtime',
                        'source_constant_managers'):
-            tree=ast.parse((root/(module+'.py')).read_text())
+            tree=ast.parse((root/(module+'.py')).read_text(encoding='utf-8'))
             for cls in [n for n in tree.body if isinstance(n,ast.ClassDef)]:
                 methods={n.name:n for n in cls.body if isinstance(n,ast.FunctionDef)}
                 for semantic,visitor in PAIRS.items():
