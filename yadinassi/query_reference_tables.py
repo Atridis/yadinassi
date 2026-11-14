@@ -12,6 +12,7 @@ from .catalog_types import BSLCatalogReference
 from .document_types import BSLDocumentReference
 from .values import NULL, BSLType
 from .source_query_references import SourceBinding
+from .source_query_enums import SourceEnumBinding
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -107,7 +108,7 @@ def description_binding(description):
         raise TypeError('Invalid reference query column description')
     binding = description._query_reference
     from .query_enum_tables import _EnumBinding
-    if (type(binding) not in (_Binding, _EnumBinding, SourceBinding)
+    if (type(binding) not in (_Binding, _EnumBinding, SourceBinding, SourceEnumBinding)
             or type(description.types) is not tuple or len(description.types) != 2
             or description.types[0] is not binding.value_type or description.types[1] is not BSLType.NULL
             or description._query_scalar is not None):
@@ -171,7 +172,7 @@ def input_bindings(tables, catalogs, documents):
                     raise TypeError('Temporary reference column lacks an owned binding')
                 continue
             from .query_enum_tables import _EnumBinding
-            if type(binding) not in (_Binding, _EnumBinding, SourceBinding):
+            if type(binding) not in (_Binding, _EnumBinding, SourceBinding, SourceEnumBinding):
                 raise TypeError('Invalid temporary reference binding')
             binding.require_context(catalogs, documents)
             if id(binding) not in seen:
@@ -185,10 +186,10 @@ def validate_view(bindings, view):
     from .catalog_backend import BackendError
     for binding in bindings:
         from .query_enum_tables import _EnumBinding
-        if type(binding) not in (_Binding, _EnumBinding, SourceBinding):
+        if type(binding) not in (_Binding, _EnumBinding, SourceBinding, SourceEnumBinding):
             raise TypeError('Invalid reference view binding')
         binding.require_owner()
-        if type(binding) is SourceBinding:
+        if type(binding) in (SourceBinding,SourceEnumBinding):
             # The source adapter owns record snapshot acquisition; this is
             # only the detached canonical ownership check, never a legacy lease.
             continue

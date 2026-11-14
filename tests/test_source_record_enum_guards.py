@@ -12,13 +12,13 @@ from yadinassi.errors import BSLError
 
 class SourceRecordEnumGuardTests(unittest.TestCase):
     setUp=records.SourceDocumentRecordTests.setUp
-    def test_query_refuses_before_reading_records(self):
+    def test_query_reaches_source_reader_without_swallowing_failure(self):
         for where,table in [('catalog','Catalog.Items'),('document','Document.Invoice'),('section','Document.Invoice.Lines')]:
             path=self.path.with_name(where+'.sqlite')
             source=fixture.package('Q=New Query("SELECT Ref FROM '+table+'"); Q.Execute();',where)
             app=SourceApplication(source,scratch_database=path,source_document_sections=True);self.addCleanup(app.close)
             with patch.object(app.constant_store,'read_records',side_effect=AssertionError('read')),patch.object(app.constant_store,'read_documents',side_effect=AssertionError('read')):
-                with self.assertRaisesRegex(BSLError,'enumeration field unsupported'):app.start()
+                with self.assertRaisesRegex(AssertionError,'read'):app.start()
     def test_enum_identity_update_keeps_original_bytes(self):
         source=fixture.package(fixture.CAT+'C.Choice=Enums.State.Active; C.Write();')
         app=SourceApplication(source,scratch_database=self.path,source_catalog_records=True);app.start();app.close();before=self.path.read_bytes()

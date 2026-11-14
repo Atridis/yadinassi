@@ -87,6 +87,7 @@ class SourcePackageScope:
     tables: tuple
 
     def require_context(self, statements, catalogs):
+        from .source_constant_store import SourceConstantStore
         from .source_catalog_store import SourceCatalogStore
         from .source_document_store import SourceDocumentStore
         from .source_document_section_store import SourceDocumentSectionStore
@@ -100,7 +101,7 @@ class SourcePackageScope:
         app.require_open()
         if (statements is not self.statements or catalogs is not self.collection
                 or catalogs is not app.interpreter._catalogs
-                or type(app.constant_store) not in (SourceCatalogStore, SourceDocumentStore, SourceDocumentSectionStore) or app.constant_store._closed):
+                or type(app.constant_store) not in (SourceConstantStore, SourceCatalogStore, SourceDocumentStore, SourceDocumentSectionStore) or app.constant_store._closed):
             raise TypeError('Source package requires its exact application context')
         if type(self.tables) is not tuple or len(self.tables)>16:
             raise ValueError('Source package table bound')

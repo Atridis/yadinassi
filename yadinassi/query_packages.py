@@ -72,12 +72,19 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
     from .queries import BSLQueryResult, _Column
     from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan, snapshot_sources
+    from .source_query_enums import SourceEnumScope,SourceEnumBinding
+    source_enum = type(_enum_scope) is SourceEnumScope
     if _source_scope is not None:
         from .source_query_references import SourcePackageScope
-        if type(_source_scope) is not SourcePackageScope or _enum_scope is not None or _owned_view is not None:
+        if type(_source_scope) is not SourcePackageScope or (_enum_scope is not None and not source_enum) or _owned_view is not None:
             raise TypeError('Invalid source package capability')
         _source_scope.require_context(statements, catalogs)
-    if _enum_scope is not None:
+    if source_enum:
+        if (_source_scope is None or _source_scope.ownerapp() is not _enum_scope.app
+                or _enum_scope.catalogs is not catalogs or _owned_view is not None):
+            raise TypeError('Invalid source enum package capability')
+        _enum_scope.require_current()
+    elif _enum_scope is not None:
         from .query_enum_reporting import _EnumReportScope
         from .sqlite_documents import DocumentView
         if (type(_enum_scope) is not _EnumReportScope or _enum_scope.catalogs is not catalogs
@@ -146,10 +153,10 @@ def execute_package(statements, catalogs, parameters, manager=None, documents=No
         from .query_reference_tables import input_bindings, validate_view
         bindings = input_bindings((*external.values(), *tables.values()), catalogs, documents)
         from .source_query_references import SourceBinding
-        if _source_scope is None and any(type(binding) is SourceBinding for binding in bindings):
+        if _source_scope is None and any(type(binding) in (SourceBinding,SourceEnumBinding) for binding in bindings):
             raise ValueError("Source reference report re-query requires a source-owned snapshot; unsupported")
         if _source_scope is not None:
-            if any(type(binding) is not SourceBinding for binding in bindings):
+            if any(type(binding) not in (SourceBinding,SourceEnumBinding) for binding in bindings):
                 raise TypeError('Source packages reject legacy reference bindings')
             validate_view(bindings, None)
         elif bindings:

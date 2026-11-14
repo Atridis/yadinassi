@@ -42,6 +42,8 @@ class SourceConstantQuery(BSLQuery):
             # Its existing binder continues to reject unactivated DB sources.
             return BSLQuery.execute_batch(self) if batch else BSLQuery.execute(self)
         store = self._source_owner._store(caller)
+        if any(d.kind=='enum_ref' for d in store._definitions.values()):
+            return read(self,caller,statements,batch=batch)
         app = self._source_owner._application()
         if caller._scheduler.pending:
             raise ValueError('source constant queries require synchronous execution')

@@ -21,9 +21,18 @@ def has_catalog(statements):
 
 
 def read(query, caller, statements, *, batch=False):
+    from .source_query_enums import SourceEnumScope
+    app=query._source_owner._application()
+    scope=SourceEnumScope(app,query._catalogs)
+    try:return _read(query,caller,statements,batch=batch,enum_scope=scope)
+    finally:scope._retired=True
+
+
+def _read(query, caller, statements, *, batch=False,enum_scope=None):
     store=query._source_owner._store(caller)
     app=query._source_owner._application()
-    if type(store) not in (SourceCatalogStore, SourceDocumentStore, SourceDocumentSectionStore):
+    from .source_constant_store import SourceConstantStore
+    if type(store) not in (SourceConstantStore,SourceCatalogStore, SourceDocumentStore, SourceDocumentSectionStore):
         raise ValueError('source Catalog queries require explicit v4 scratch capability')
     if caller._scheduler.pending:
         raise ValueError('source Catalog query requires synchronous execution')
@@ -58,6 +67,7 @@ def read(query, caller, statements, *, batch=False):
                 constant_parameter=_private_name(used,'__source_constants');used.add(constant_parameter)
             mappings[key]=constant_parameter
         elif node.family in ('catalog','document'):
+            if type(store) is SourceConstantStore:raise ValueError('source record queries require explicit record capability')
             if node.family=='document' and type(store) not in (SourceDocumentStore, SourceDocumentSectionStore):
                 raise ValueError('source Document query requires v5 scratch capability')
             definition=(store.catalog if node.family=='catalog' else store.document)(node.catalog)
@@ -92,10 +102,12 @@ def read(query, caller, statements, *, batch=False):
         selected_fields=section.fields if section is not None else definition.fields
         aliases={} if section is not None else _STANDARD[family]
         for field in selected_fields:
-            if field.kind == 'enum_ref':
-                raise ValueError('source query enumeration field unsupported: '+definition.name+'.'+field.name)
             for name in (field.name, *([aliases[field.name]] if field.name in aliases else [])):
-                if field.kind == 'object_ref' and field.qualifiers[0] in ('Catalog','Document'):
+                if field.kind == 'enum_ref':
+                    from uuid import UUID
+                    descriptor=enum_scope.descriptor(UUID(field.qualifiers[0]));target=enum_scope.domain(descriptor)
+                    columns.append(_Column(name,None,'enum_ref',(),explicit_alias=True,reference_identity=target.identity,reference_binding=target,enum_descriptor=descriptor))
+                elif field.kind == 'object_ref' and field.qualifiers[0] in ('Catalog','Document'):
                     target = make_binding(app, query._catalogs, field.qualifiers[2],field.qualifiers[0])
                     columns.append(_Column(name,None,target.kind,(),explicit_alias=True,
                                            reference_identity=target.identity,reference_binding=target))
@@ -108,6 +120,10 @@ def read(query, caller, statements, *, batch=False):
         for d in constant_definitions:
             if d.kind in ('string','number','boolean','datetime'):
                 columns.append(_Column(d.name,None,d.kind,d.qualifiers,explicit_alias=True))
+            elif d.kind=='enum_ref':
+                from uuid import UUID
+                descriptor=enum_scope.descriptor(UUID(d.qualifiers[0]));target=enum_scope.domain(descriptor)
+                columns.append(_Column(d.name,None,'enum_ref',(),explicit_alias=True,reference_identity=target.identity,reference_binding=target,enum_descriptor=descriptor))
             elif d.kind=='object_ref' and d.qualifiers[0] in ('Catalog','Document'):
                 binding=make_binding(app,query._catalogs,d.qualifiers[2],d.qualifiers[0])
                 columns.append(_Column(d.name,None,binding.kind,(),explicit_alias=True,reference_identity=binding.identity,reference_binding=binding))
@@ -116,8 +132,8 @@ def read(query, caller, statements, *, batch=False):
     translated=_translate(statements if package_mode else statements[0],mappings)
     from .relational_queries import _Plan, snapshot_parameters
     from .query_sources import _UnionPlan
-    parameters=snapshot_parameters(dict(query._parameters))
-    plan = None if package_mode else (_UnionPlan if type(translated) is syntax.Union else _Plan)(translated,query._catalogs,parameters,external_tables=tables)
+    parameters=enum_scope.validate_frozen_parameters(dict(query._parameters))
+    plan = None if package_mode else (_UnionPlan if type(translated) is syntax.Union else _Plan)(translated,query._catalogs,parameters,external_tables=tables,enum_scope=enum_scope)
     owned=not store.transaction_active
     try:
         if owned:store.begin_transaction()
@@ -162,9 +178,12 @@ def read(query, caller, statements, *, batch=False):
         from .source_query_references import SourcePackageScope
         from .query_packages import execute_package
         scope=SourcePackageScope(weakref.ref(app),query._catalogs,translated,tuple(tables.items()))
-        result=execute_package(translated,query._catalogs,parameters,query._temp_tables_manager,_source_scope=scope)
+        result=execute_package(translated,query._catalogs,parameters,query._temp_tables_manager,_source_scope=scope,_enum_scope=enum_scope)
         return result if batch else result.items[-1]
-    return plan.execute()
+    result=plan.execute()
+    from .queries import BSLQueryResult
+    from .query_enum_tables import detach_columns
+    return BSLQueryResult(detach_columns(result._columns),result._rows)
 
 
 def _translate(node,mappings):
@@ -186,17 +205,22 @@ def _translate(node,mappings):
 def has_source_inputs(query):
     """Route detached source reports back to their authorized source adapter."""
     from .source_query_references import SourceBinding
+    from .source_query_enums import SourceEnumBinding
+    from .enum_types import BSLEnumReference
+    from .values import BSLArray,BSLFixedArray
     from .value_tables import BSLValueTable
     from .query_packages import BSLTempTablesManager
     for value in query._parameters.values():
+        if type(value) is BSLEnumReference:return True
+        if type(value) in (BSLArray,BSLFixedArray) and any(type(v) is BSLEnumReference for v in value.items):return True
         if type(value) is BSLValueTable:
             for column in value.columns.items:
-                if type(getattr(column.value_type, '_query_reference', None)) is SourceBinding:
+                if type(getattr(column.value_type, '_query_reference', None)) in (SourceBinding,SourceEnumBinding):
                     return True
     manager=query._temp_tables_manager
     if type(manager) is BSLTempTablesManager:
         if getattr(manager, '_source_owner', None) is not None:
             return True
-        if any(type(c.reference_binding) is SourceBinding for t in manager._tables.values() for c in t.columns):
+        if any(type(c.reference_binding) in (SourceBinding,SourceEnumBinding) for t in manager._tables.values() for c in t.columns):
             return True
     return False
