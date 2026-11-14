@@ -86,7 +86,7 @@ class MainDemoSourceTests(unittest.TestCase):
 
     def test_pending_draft_is_declared_in_client_context(self):
         module=(SOURCE/'CommonForms/OperationDraft/Ext/Form/Module.bsl').read_text(encoding='utf-8')
-        self.assertTrue(module.startswith('&AtClient\nVar PendingDraft;\n'))
+        self.assertTrue(module.startswith('&НаКлиенте\nПерем PendingDraft;\n'))
 
     def test_authored_layout_titles_and_commands_use_native_representation(self):
         from hashlib import sha256
@@ -109,4 +109,30 @@ class MainDemoSourceTests(unittest.TestCase):
                     self.assertTrue(command.text.startswith('Form.Command.'))
                 projected = re.sub(rb'<Title><v8:item><v8:lang>ru</v8:lang><v8:content>([^<]*)</v8:content></v8:item></Title>', rb'<Title>\1</Title>', raw)
                 projected = projected.replace(b'<CommandName>Form.Command.', b'<CommandName>')
-                self.assertEqual(sha256(projected).hexdigest(), digest)
+                from main_demo_russian_fixture import historical_titles
+                self.assertEqual(sha256(historical_titles(projected)).hexdigest(), digest)
+
+
+class RussianDemoContracts(unittest.TestCase):
+    def test_bsl_uses_russian_language_tokens_without_renaming_metadata(self):
+        english = set('procedure endprocedure function endfunction return export val var if then else elsif endif for each in do enddo new true false undefined atclient atserver'.split())
+        token = re.compile(r'//[^\n]*|"(?:[^"\n]|"")*"|\b[A-Za-z_][A-Za-z_0-9]*\b')
+        for path in SOURCE.rglob('*.bsl'):
+            with self.subTest(path=path.relative_to(SOURCE)):
+                words = {m[0].lower() for m in token.finditer(path.read_text(encoding='utf-8-sig')) if not m[0].startswith(('//','"'))}
+                self.assertFalse(words & english)
+        self.assertIn('Процедура Posting(Cancel, PostingMode)', (SOURCE/'Documents/Receipt/Ext/ObjectModule.bsl').read_text(encoding='utf-8'))
+
+    def test_russian_display_names_keep_document_and_register_identity(self):
+        v = '{http://v8.1c.ru/8.1/data/core}'
+        for kind, name, title in [('Document','Receipt','Поступление'),('Document','Issue','Списание'),('AccumulationRegister','Stock','Остатки товаров')]:
+            props = ET.parse(SOURCE/(kind+'s')/(name+'.xml')).getroot().find(M+kind+'/'+M+'Properties')
+            self.assertEqual(props.findtext(M+'Name'), name)
+            self.assertEqual(props.findtext(M+'Synonym/'+v+'item/'+v+'content'), title)
+
+    def test_reference_information_subsystem_contains_only_three_catalogs(self):
+        xr = '{http://v8.1c.ru/8.3/xcf/readable}'
+        root = ET.parse(SOURCE/'Subsystems/НормативнаяИнформация.xml').getroot()
+        content = root.find(M+'Subsystem/'+M+'Properties/'+M+'Content')
+        self.assertEqual({n.text for n in content}, {'Catalog.ВидыНоменклатуры','Catalog.Склады','Catalog.Номенклатура'})
+        self.assertTrue(all(n.tag == xr+'Item' for n in content))

@@ -53,3 +53,13 @@ body{margin:0}#main-demo-app{min-width:0}#main-demo-app [hidden]{display:none!im
  .data-table tbody tr.current-row{background:var(--accent)}
  .cell-input:not([type=checkbox]),.cell-input[readonly]{background:var(--paper);color:var(--ink);border-color:var(--line)}
 }
+@scope (.main-demo-documents){
+ .configuration-app>h1{font-size:24px;letter-spacing:-.035em;margin:5px 0 20px}
+ .configuration-app h2{font-size:17px;letter-spacing:-.02em}
+ .configuration-catalog,.configuration-reports{background:var(--paper);border:1px solid var(--line);border-radius:10px}
+ .configuration-reports table{width:100%;border-collapse:collapse;text-align:left}
+ .configuration-reports th,.configuration-reports td{padding:8px;border-bottom:1px solid var(--line)}
+ .configuration-reports th{font-size:12px;color:var(--muted)}
+ .configuration-app>details{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:12px}
+ .configuration-app>details>summary{cursor:pointer}.configuration-app>details>nav{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+}

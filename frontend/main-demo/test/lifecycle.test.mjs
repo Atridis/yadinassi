@@ -32,3 +32,8 @@ test('verified transport recovery does not require discarding dirty local drafts
  assert.doesNotMatch(fence,/hasDraftChanges|dirty|recoveryRef/);
  assert.match(fence,/editingLocked/);
 });
+test('recovery with reports does not recreate register navigation outside paint',()=>{
+ const resume=configuration.split('const resume = async () => {')[1].split('const ready')[0];
+ assert.doesNotMatch(resume,/const register=|register\.disabled|if\(disabled/);
+ assert.match(resume,/paint\(\)/);assert.match(resume,/client\.recoveryRead\('application.hello'/);
+});
