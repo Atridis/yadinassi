@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 from test_source_catalog_definitions import config, attribute, BASE
@@ -80,7 +81,13 @@ class SourceCatalogRecordTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(),before)
     def test_tampered_record_rejected(self):
         source=package();store=self.store(source);store.write_record('Items',uuid4(),0,self.values());store.close()
-        with sqlite3.connect(self.path) as connection:connection.execute('UPDATE source_catalog_record SET record_identity=?',('x'*10000,))
+        # A Connection context commits/rolls back, but does not close the handle.
+        # Close it before reopen and TemporaryDirectory cleanup (Windows locks).
+        with closing(sqlite3.connect(self.path)) as connection:
+            with connection:
+                connection.execute('UPDATE source_catalog_record SET record_identity=?',('x'*10000,))
+        with self.assertRaises(sqlite3.ProgrammingError):
+            connection.execute('SELECT 1')
         with self.assertRaisesRegex(ValueError,'bounds'):SourceCatalogStore.reopen(self.path,source)
     def test_no_missing_record_fabrication(self):
         store=self.store()
