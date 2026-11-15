@@ -177,6 +177,8 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
         phase='loaded_source'
         loaded=root/'loaded';full.absent(loaded);loaded.mkdir()
         designer('loaded',['/DumpConfigToFiles',str(loaded),'-Format','Hierarchical'])
+        try:fixture.verify_loaded_rights(expected,dump_files(loaded))
+        except ValueError:raise full.FullError('module_mismatch') from None
         report['loaded_sources']=loaded_probe.inspect_sources(loaded,expected,full)
         if not all(item['matched'] is True for item in report['loaded_sources'].values()):raise full.FullError('module_mismatch')
         full.absent(root/'check.log',root/'check.result',root/'check-console.log')

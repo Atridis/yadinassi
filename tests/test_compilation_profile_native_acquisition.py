@@ -568,3 +568,27 @@ class AcquisitionContracts(unittest.TestCase):
             for bad in ('16','-1','01','secret','1.0',''):
                 value['records']=bad;path.write_bytes(self.wire(value))
                 self.assertIsNone(suite.observation_step(path,'a'*32))
+
+    def test_fixture_cpstate_rights_are_exact_and_baseline_unchanged(self):
+        from compilation_profile_packet import fixture
+        from test_catalog_object_fixture import baseline
+        import xml.etree.ElementTree as ET
+        files=baseline()
+        session=(fixture.SESSION_ANCHOR+'\nКонецПроцедуры\n').encode()
+        app=(fixture.APPLICATION_ANCHOR+'\nКонецПроцедуры\n').encode()
+        files['Ext/SessionModule.bsl']=session
+        files['Ext/ManagedApplicationModule.bsl']=app
+        before=dict(files);out=fixture.prepare(files,session,app)
+        self.assertEqual(files,before)
+        path=fixture.original.ROLE_FILES[1];rn='{'+fixture.original.RIGHTS+'}'
+        old=ET.fromstring(files[path]);new=ET.fromstring(out[path])
+        self.assertEqual(len(new),len(old)+1)
+        self.assertEqual([ET.tostring(x) for x in list(new)[:-1]],[ET.tostring(x) for x in old])
+        added=new[-1];self.assertEqual(added.find(rn+'name').text,'SessionParameter.CPState')
+        self.assertEqual([(r.find(rn+'name').text,r.find(rn+'value').text) for r in added.findall(rn+'right')],[('Get','true'),('Set','true')])
+        self.assertEqual(out[fixture.original.ROLE_FILES[0]],files[fixture.original.ROLE_FILES[0]])
+        self.assertTrue(fixture.verify_loaded_rights(out,dict(out)))
+        changed=dict(out);changed[path]=out[path].replace(b'<name>Get</name>',b'<name>Delete</name>')
+        with self.assertRaises(ValueError):fixture.verify_loaded_rights(out,changed)
+        with self.assertRaises(ValueError):fixture.verify_loaded_rights(out,files)
+        with self.assertRaises(ValueError):fixture.prepare(out,session,app)

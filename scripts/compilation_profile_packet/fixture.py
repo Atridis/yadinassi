@@ -20,6 +20,13 @@ def prepare(files, bootstrap_module, bootstrap_application):
     original._require(route.normalized(files['Ext/SessionModule.bsl'])==route.normalized(bootstrap_module))
     original._require(route.normalized(files['Ext/ManagedApplicationModule.bsl'])==route.normalized(bootstrap_application))
     expected=dict(files);md=original.MD
+    # A session parameter requires explicit read/write rights (1Ci standards).
+    # Only the owned calibration parameter is added; baseline grants stay exact.
+    rights=original.ROLE_FILES[1];rn=original.RIGHTS
+    expected[rights]=original._append(files[rights],(rn+'}Rights',),lambda p:
+        '<'+p+'object><'+p+'name>SessionParameter.CPState</'+p+'name>'+''.join(
+            '<'+p+'right><'+p+'name>'+right+'</'+p+'name><'+p+'value>true</'+p+'value></'+p+'right>'
+            for right in ('Get','Set'))+'</'+p+'object>')
     children=lambda p:''.join('<'+p+'CommonModule>'+n+'</'+p+'CommonModule>' for n in ('ClientProbe','ServerProbe','DualProbe'))+'<'+p+'SessionParameter>CPState</'+p+'SessionParameter>'
     expected['Configuration.xml']=original._append(files['Configuration.xml'],(md+'}MetaDataObject',md+'}Configuration',md+'}ChildObjects'),children)
     packet=route.sources()
@@ -36,3 +43,9 @@ def prepare(files, bootstrap_module, bootstrap_application):
                     value=original._uuid(node.attrib['uuid'])
                     original._require(value not in used);used.add(value)
     return expected
+
+def verify_loaded_rights(expected,actual):
+    path=original.ROLE_FILES[1]
+    original._require(path in expected and path in actual)
+    original._require(original._signature(expected[path])==original._signature(actual[path]))
+    return True
