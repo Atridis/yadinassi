@@ -510,3 +510,22 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         for changed in (removed, missing_insert, raw.replace(b'>InteractiveInsert<',b'>InteractiveDelete<',1),
                         raw.replace(b'>View<',b'>FullAccess<',1)):
             with self.assertRaises(ValueError):material.verify_redump(expected,{**expected,path:changed})
+
+    def test_rights_difference_diagnostic_does_not_accept_native_changes(self):
+        from test_catalog_object_fixture import baseline
+        from scripts.inventory_enum_forms_packet import configuration, material
+        from inventory_enum_behavior import fixture
+        _,expected=configuration.prepare(baseline())
+        path=fixture.original.ROLE_FILES[1]
+        changed=expected[path].replace(b'>InteractiveInsert<',b'>Edit<',1)
+        actual={**expected,path:changed}
+        labels=material.diagnostic(expected,actual)
+        self.assertIn('core_rights',labels)
+        self.assertIn('products_right_interactiveinsert_changed',labels)
+        self.assertIn('products_right_edit_changed',labels)
+        self.assertTrue(material.valid_diagnostic(labels))
+        with self.assertRaises(ValueError):material.verify_redump(expected,actual)
+        hidden=expected[path].replace(b'>InteractiveInsert<',b'>private_secret<',1)
+        labels=material.diagnostic(expected,{**expected,path:hidden})
+        self.assertNotIn('private_secret',str(labels))
+        self.assertTrue(material.valid_diagnostic(labels))

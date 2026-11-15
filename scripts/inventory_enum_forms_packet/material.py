@@ -129,7 +129,10 @@ def verify_redump(expected,actual):
 # Only finite component labels, never native XML, values, paths or logs.
 DIAGNOSTIC_CODES=('configuration_inventory','products_declaration','receipt_declaration',
     'products_metadata','receipt_metadata','products_binding','receipt_binding',
-    'products_module','receipt_module','core_schema','core_modules')
+    'products_module','receipt_module','core_schema','core_modules','core_rights') + tuple(
+    owner+'_right_'+name.lower()+'_changed'
+    for owner in ('products','receipt')
+    for name in ('View','InteractiveInsert','Edit','Read','Insert','Update'))
 
 
 def diagnostic(expected,actual):
@@ -159,6 +162,9 @@ def diagnostic(expected,actual):
                     raise ValueError('schema')
             else:original.verify_redump({path:left[path]},{path:right[path]})
         except ValueError:
+            if path == original.ROLE_FILES[1]:
+                for label in rights_diagnostic(left[path], right[path]):
+                    if label not in result:result.append(label)
             code='core_modules' if path.endswith('.bsl') else 'core_schema'
             if code not in result:result.append(code)
     return result
@@ -168,3 +174,38 @@ def valid_diagnostic(value):
     return (type(value) is list and 0<len(value)<=len(DIAGNOSTIC_CODES)
             and all(type(code) is str and code in DIAGNOSTIC_CODES for code in value)
             and len(value)==len(set(value)))
+
+
+def rights_diagnostic(expected, actual):
+    """Changed allowlisted right labels only; never accepts a rights difference."""
+    ns = '{'+original.RIGHTS+'}'
+    def read(raw):
+        root, _ = original._xml(raw)
+        if root.tag != ns+'Rights':raise ValueError('rights root')
+        result = {}
+        for obj in root.findall(ns+'object'):
+            names = obj.findall(ns+'name')
+            if len(names) != 1:raise ValueError('rights object')
+            name = names[0].text
+            if name not in ('Catalog.Products','Document.Receipt'):continue
+            if name in result:raise ValueError('duplicate object')
+            rights = {}
+            for right in obj.findall(ns+'right'):
+                rn, value = right.findall(ns+'name'), right.findall(ns+'value')
+                if len(rn)!=1 or len(value)!=1 or rn[0].text in rights:
+                    raise ValueError('right structure')
+                if value[0].text not in ('true','false'):raise ValueError('right value')
+                rights[rn[0].text] = value[0].text
+            result[name] = rights
+        if set(result) != {'Catalog.Products','Document.Receipt'}:raise ValueError('owned objects')
+        return result
+    labels = ['core_rights']
+    try:
+        left,right = read(expected),read(actual)
+        for name,label in (('Catalog.Products','products'),('Document.Receipt','receipt')):
+            for grant in ('View','InteractiveInsert','Edit','Read','Insert','Update'):
+                if left[name].get(grant) != right[name].get(grant):
+                    labels.append(label+'_right_'+grant.lower()+'_changed')
+    except (ValueError,KeyError):
+        pass
+    return labels

@@ -177,3 +177,12 @@ names InteractiveInsert as interactive insertion. No Edit, interactive posting,
 delete, privileged mode, broad role or user-data access is added. Exact material
 redump remains required; opening existing/reopened objects may expose further
 separate limitations. Previous failed runs remain failed.
+
+InteractiveInsert candidate 43731829118 (4bd9beaf) failed closed during material
+redump with core_schema before Enterprise. Artifact 14168372649 SHA256
+4b2ee2e3bc5980065471206a6a3182c512de3ea3a9218b037dd57678da50492f is verified.
+No further rights are added. The next diagnostic only distinguishes a role
+material difference and changes to six allowlisted rights of the two owned
+objects. Unknown names/values are not exported. Exact redump rejection is
+unchanged; automatically normalized or expanded grants must not be accepted
+without identifying and reviewing the difference.
