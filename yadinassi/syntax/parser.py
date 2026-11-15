@@ -630,34 +630,23 @@ class PreparedBlock:
     labels: object
 
     def matches(self, source):
-        # Alternate block iterators and node iterators. Descend immediately,
-        # preserving the recursive check's observable depth-first read order.
-        pending = [(False, iter(((self, source),)))]
-        while pending:
-            nodes, items = pending[-1]
-            item = next(items, None)
-            if item is None:
-                pending.pop()
-                continue
-            if not nodes:
-                plan, body = item
-                if body is not plan.source or len(body) != len(plan.statements):
-                    return False
-                pending.append((True, iter(zip(
-                    body, plan.statements, plan.types, plan.names, plan.children))))
-                continue
-            node, old, kind, name, children = item
+        if source is not self.source or len(source) != len(self.statements):
+            return False
+        for node, old, kind, name, children in zip(
+                source, self.statements, self.types, self.names, self.children):
             if node is not old or type(node) is not kind:
                 return False
             if isinstance(node, (ast.Label, ast.Goto)) and node.name != name:
                 return False
-            # Containers own a child block even when empty. A leaf cannot gain
-            # one without a type change, rejected above.
+            # Canonical containers always own child blocks, even when empty.
+            # Leaves need no child enumeration; identity/type guards stay above.
             if children:
                 current = _control_flow_children(node)
                 if len(current) != len(children):
                     return False
-                pending.append((False, iter(zip(children, current))))
+                for child, body in zip(children, current):
+                    if not child.matches(body):
+                        return False
         return True
 
     def find(self, source):
