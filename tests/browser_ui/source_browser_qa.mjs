@@ -5,6 +5,7 @@ import {mkdtemp, mkdir, writeFile, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
+import {verifyFormCheckReport} from './source_form_check_support.mjs';
 import {launchOutputReader, childEnvironment, sandboxStatus, sha256} from './support.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const root=process.env.RUNNER_TEMP;assert.ok(root&&path.isAbsolute(root));
@@ -29,7 +30,7 @@ async function stopHost(){if(!host)return;if(host.exitCode===null&&host.signalCo
 try {
  const old=process.env.TMPDIR;process.env.TMPDIR=home;
  try{browser=await chromium.launch({channel:'chromium',headless:true,chromiumSandbox:true,env,timeout:20000});}finally{if(old===undefined)delete process.env.TMPDIR;else process.env.TMPDIR=old;}
- context=await browser.newContext({acceptDownloads:false,serviceWorkers:'block'});context.setDefaultTimeout(10000);
+ context=await browser.newContext({acceptDownloads:true,serviceWorkers:'block'});context.setDefaultTimeout(10000);
  const probe=await context.newPage();await probe.goto('chrome://sandbox');report.sandbox=sandboxStatus(await probe.locator('body').innerText());await probe.close();
  for(const form of [false,true,'workspace','workspace_loss','workspace_startup']) {
   phase=typeof form==='string'?form:form?'selected_form':'diagnostics';
@@ -83,6 +84,24 @@ try {
   }
   else if(form==='workspace'){
    await page.getByRole('heading',{name:'Demo · Source workspace'}).waitFor();
+   phase='workspace:form_check_report';
+   await page.getByRole('combobox',{name:'Объявленная форма'}).selectOption('CommonForm.Main');
+   const [checkResponse]=await Promise.all([page.waitForResponse(r=>r.url()===origin+'/rpc'&&r.request().postData()?.includes('workspace.check')),page.getByRole('button',{name:'Проверить форму без запуска',exact:true}).click()]);
+   const checked=(await observedJSON(page,checkResponse)).result.state;
+   assert.equal(checked.form_preview.status,'projected');assert.equal(checked.module_preflight.status,'compiled');
+   assert.equal(checked.form_preview.source_sha256,checked.module_preflight.xml_sha256);
+   assert.equal(checked.form_preview.source_sha256,sha256(await readFile(path.join(fixture,'CommonForms/Main/Ext/Form.xml'))));
+   assert.equal(checked.module_preflight.module_sha256,sha256(await readFile(path.join(fixture,'CommonForms/Main/Ext/Form/Module.bsl'))));
+   assert.equal(checked.open_forms.length,0);assert.equal(checked.module_preflight.runtime_checked,false);
+   const beforeDownload=await page.evaluate(()=>window.__qaResponses.length);
+   const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'Скачать отчёт проверок',exact:true}).click()]);
+   assert.equal(download.suggestedFilename(),'yadinassi-form-check.json');
+   const candidate=path.join(work,'form-check-candidate.json');await download.saveAs(candidate);
+   const reportText=await readFile(candidate,'utf8');
+   verifyFormCheckReport(reportText,checked,new URLSearchParams(new URL(url).hash.slice(1)).get('session'));
+   await writeFile(path.join(output,'form-check-report.json'),reportText);
+   assert.equal(await page.evaluate(()=>window.__qaResponses.length),beforeDownload);
+   await page.screenshot({path:path.join(output,'form-check-report.png')});
    phase='workspace:metadata_navigation';
    await page.getByRole('textbox',{name:'Поиск объектов',exact:true}).fill('Helpers');
    await page.getByRole('combobox',{name:'Тип объекта',exact:true}).selectOption('CommonModule');
@@ -179,4 +198,4 @@ try {
  }
  report.status='PASS';
 }catch(error){report.failure={phase,reason:'smoke_failed',errorCode: /No (?:resource|data).*?(?:identifier|resource)/i.test(error?.message||'')?'response_body_unavailable':/getResponseBody/.test(error?.message||'')?'response_body_protocol':/closed/i.test(error?.message||'')?'target_closed':'unclassified',errorType:['TimeoutError','AssertionError','Error','TypeError'].includes(error?.name)?error.name:'other'};if(page){try{await page.screenshot({path:path.join(output,'failure.png')});}catch{}}process.exitCode=1;}
-finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['workspace-open-close.png','progressive.png','multiform.png','metadata.png','bsl-openform.png','nocontext.png']:[]),...(report.scenarios.some(x=>x.name==='workspace_startup')?['startup-openform.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}
+finally{clearTimeout(deadline);await stopHost();await browser?.close();await writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));const sums={};for(const name of ['result.json',...(report.scenarios.some(x=>x.name==='workspace')?['form-check-report.json','form-check-report.png','workspace-open-close.png','progressive.png','multiform.png','metadata.png','bsl-openform.png','nocontext.png']:[]),...(report.scenarios.some(x=>x.name==='workspace_startup')?['startup-openform.png']:[]),...report.scenarios.map(x=>x.name+'.png')])sums[name]=sha256(await readFile(path.join(output,name)));await writeFile(path.join(output,'manifest.json'),JSON.stringify({sourceCommit:source,sha256:sums},null,2));}

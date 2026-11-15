@@ -50,6 +50,8 @@ jobs:
           path: |
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/result.json
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/manifest.json
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/form-check-report.json
+            ${{ runner.temp }}/yadinassi-source-browser-artifacts/form-check-report.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/diagnostics.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/selected_form.png
             ${{ runner.temp }}/yadinassi-source-browser-artifacts/workspace.png
