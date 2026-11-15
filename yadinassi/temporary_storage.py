@@ -138,3 +138,39 @@ class ApplicationTemporaryStorage:
         if marker is delete_marker:return self.delete(caller,*arguments)
         if marker is recognize_marker:return self.recognize(caller,*arguments)
         raise ValueError('unknown temporary storage operation')
+
+
+class SourceTemporaryStorage(ApplicationTemporaryStorage):
+    """The same bounded value store, owned by one explicit source application.
+
+    This does not turn source admission into a strict configuration/storage
+    grant. Only the server family may use these synchronous in-memory operations.
+    """
+    def authorize(self, caller):
+        app = self._application()
+        if (self._closed or app is None
+                or getattr(caller, 'application', None) is not app
+                or caller._family_owner is not app.interpreter
+                or caller._scheduler is not app.interpreter._scheduler):
+            raise ValueError('temporary storage belongs to another or closed source application')
+        app.require_open()
+        caller._require_family()
+        if caller.execution_context != 'server':
+            raise ValueError('temporary storage requires an active server application context')
+        return app
+
+
+class SourceTemporaryCall:
+    def __init__(self, owner, operation):
+        if not any(operation is marker for marker in MARKERS):
+            raise ValueError('unknown temporary storage operation')
+        self.owner = owner
+        self.operation = operation
+
+    def authorize_call(self, caller, count):
+        self.owner.authorize(caller)
+        if not (1 <= count <= 2 if self.operation is put_marker else count == 1):
+            raise TypeError('temporary storage function arity')
+
+    def invoke(self, caller, arguments):
+        return self.owner.invoke(caller, self.operation, arguments)

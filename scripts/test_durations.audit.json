@@ -1,0 +1,146 @@
+{
+  "artifacts": [
+    {
+      "id": 14110710873,
+      "name": "partition-1-mac-x86-heavy-0",
+      "sha256": "7fd2c7302ecd4db88322e6bc73d1b0ce5fff6bfe2726a1de02b590a94212125e",
+      "size": 451358
+    },
+    {
+      "id": 14110632095,
+      "name": "partition-1-mac-x86-heavy-1",
+      "sha256": "c1cf391802f9606eb09edae99922cf9372cefd6b51795379d1f7c6adc7d3b5bc",
+      "size": 431035
+    },
+    {
+      "id": 14110041356,
+      "name": "partition-1-windows-heavy-0",
+      "sha256": "3ca71fc809c0a3be555af3f42e00956f7daac952f764b2986695f8260ce657f7",
+      "size": 507263
+    },
+    {
+      "id": 14109816935,
+      "name": "partition-1-linux-heavy-0",
+      "sha256": "009cb374815814c72567ed67742c276a9967612a5a7a69342a1836a27ce61d3b",
+      "size": 507040
+    },
+    {
+      "id": 14109680718,
+      "name": "partition-1-mac-x86-light-0",
+      "sha256": "1a143816e6cc02fe39bdb7bf8272164e0afa3e98024f2283ddc1ce5d1c2f1de2",
+      "size": 1310608
+    },
+    {
+      "id": 14108572519,
+      "name": "partition-1-windows-light-0",
+      "sha256": "504ee03cf4d4ebbe77717f5344ac730c234a66425e9d56c0f066a35b24f8db23",
+      "size": 1302959
+    },
+    {
+      "id": 14108034263,
+      "name": "partition-1-linux-light-0",
+      "sha256": "e3f3a7509b5875bba83b6edb763a13c500b6d5e75bb34e6c393a5a7bdc381953",
+      "size": 1307976
+    }
+  ],
+  "binding": {
+    "base_sha": "da445b2314c428a866b95844abe293186de42e99",
+    "event": "pull_request",
+    "head_sha": "311967885abb3be080177be980c423bbce36d0b0",
+    "heavy": true,
+    "pr_number": 320,
+    "ref": "refs/pull/320/merge",
+    "repository": "Atridis/yadinassi",
+    "run_attempt": 1,
+    "run_id": 43580003908,
+    "schema": 2,
+    "source_sha": "53fdd9f0a0b25f7a635bf1f8c07b2ce94aee3cfc"
+  },
+  "coverage": {
+    "binding": {
+      "base_sha": "da445b2314c428a866b95844abe293186de42e99",
+      "event": "pull_request",
+      "head_sha": "311967885abb3be080177be980c423bbce36d0b0",
+      "heavy": true,
+      "pr_number": 320,
+      "ref": "refs/pull/320/merge",
+      "repository": "Atridis/yadinassi",
+      "run_attempt": 1,
+      "run_id": 43580003908,
+      "schema": 2,
+      "source_sha": "53fdd9f0a0b25f7a635bf1f8c07b2ce94aee3cfc"
+    },
+    "excluded_platforms": [
+      "mac-arm"
+    ],
+    "full_coverage": false,
+    "phase": "heavy-premerge",
+    "platforms": {
+      "linux": {
+        "covered": 12963,
+        "discovered": 12963,
+        "ids_sha256": "9b3830430cfc67acbd49f47fa26c102c765200934a98016a94b4f0098db81881"
+      },
+      "mac-x86": {
+        "covered": 12963,
+        "discovered": 12963,
+        "ids_sha256": "9b3830430cfc67acbd49f47fa26c102c765200934a98016a94b4f0098db81881"
+      },
+      "windows": {
+        "covered": 12963,
+        "discovered": 12963,
+        "ids_sha256": "9b3830430cfc67acbd49f47fa26c102c765200934a98016a94b4f0098db81881"
+      }
+    },
+    "required_coverage": true,
+    "required_platforms": [
+      "linux",
+      "windows",
+      "mac-x86"
+    ],
+    "schema": 2
+  },
+  "fixture_timing": "zero for fixture-only skips; not an execution measurement",
+  "previously_unknown_ids_covered": 7794,
+  "profile_sha256": "5ed5e9e430223b5032844d311e93f49ea01d8112ca04da71e97df0cb81ba1c3f",
+  "reports": [
+    {
+      "file": "partition-1-linux-heavy-0/partition.json",
+      "sha256": "c71f0338fa7b67cd5f1bf93a496e0aab62de287ac598cfff323d1b0ab1c0e263",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-linux-light-0/partition.json",
+      "sha256": "7e8bfac0f83644785d6e8e41abd069e0b10d84289e54f2e0e6e587639a09369d",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-mac-x86-heavy-0/partition.json",
+      "sha256": "e8dc77a8ea401c1464ac5dc2cf79228161efc8e021e69d53fca710ffa68a5e2e",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-mac-x86-heavy-1/partition.json",
+      "sha256": "1094e15e0f6ca03ccdba823134ab33841d33e1986505af320b10485e4a99dfde",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-mac-x86-light-0/partition.json",
+      "sha256": "58bdfe7d71a7ab89803405984ff787f140f8558a998c900745fe8d4be1eb0e58",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-windows-heavy-0/partition.json",
+      "sha256": "9f83863efffeab7d47433c778f31f4b3b08204807c57e577bee15b1ad7274273",
+      "skipped_fixture_ids": []
+    },
+    {
+      "file": "partition-1-windows-light-0/partition.json",
+      "sha256": "ba6cf5c830f27b7005b61769a5194512c4110d67dc21b3ae1e204fb91c7cf883",
+      "skipped_fixture_ids": []
+    }
+  ],
+  "schema": 1,
+  "scope": "required-platforms",
+  "timing_limitation": "Per-test execution durations exclude module/class fixture setup and teardown; no fixture overhead is invented or distributed. Fixture grouping remains unchanged."
+}

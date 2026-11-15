@@ -160,7 +160,92 @@ class DocumentView:
             self._view._validated_sources[cache_key] = (count,)
         return count
 
-    def _values(self, fields, values, *, writing=False):
+    def _reference_candidates(self, fields, values, *, writing=False):
+        # Prefetch is NOT validation: malformed data is left to the original
+        # ordered decoder, preserving its error and selection-limit frontier.
+        if type(values) is not (tuple if writing else list) or len(values) != len(fields):
+            return
+        for field, value in zip(fields, values):
+            if field.kind != 'catalog_ref':
+                continue
+            try:
+                key = value if writing else _storage()._decode(value, field, self.database_id,
+                    enum_domain=self._view._backend._enum_domain)
+                if (type(key) is CatalogKey and key.database_id == self.database_id
+                        and key.catalog_id == field.target_catalog_id
+                        and type(key.record_id) is UUID and key.record_id.int):
+                    yield key
+            except (BackendError, ValueError, TypeError, AttributeError):
+                continue
+
+    def _section_candidates(self, schema, contents, *, writing=False):
+        if type(contents) is not (tuple if writing else list) or len(contents) > 16:
+            return
+        definitions = {s.identity: s for s in schema.tabular_sections}
+        total = 0
+        for item in contents:
+            if writing:
+                if type(item) is not TabularSectionRows or type(item.rows) is not tuple:
+                    continue
+                identity, rows = item.section_id, item.rows
+            else:
+                if type(item) is not list or len(item) != 2 or type(item[1]) is not list:
+                    continue
+                try: identity = UUID(item[0])
+                except (ValueError, TypeError, AttributeError): continue
+                rows = item[1]
+            if type(identity) is not UUID or identity not in definitions: continue
+            total += len(rows)
+            if total > 1000: return
+            for row in rows:
+                if writing:
+                    if type(row) is not TabularRow: continue
+                    values = row.values
+                else:
+                    if type(row) is not list or len(row) != 2: continue
+                    values = row[1]
+                yield from self._reference_candidates(definitions[identity].fields, values, writing=writing)
+
+    def _presence(self, keys):
+        from .sqlite_catalog_layout import reference_presence
+        def source(identity):
+            schema = self._view.catalog_schema(identity)
+            table, _, where, args = self._view._source(schema)
+            return table, where, args
+        return reference_presence(self._connection, keys, source)
+
+    def _record_presence(self, schema, rows):
+        if self._view._backend.format_version not in (15, 16): return {}
+        def keys():
+            for row in rows:
+                try: values, sections = json.loads(row[5]), json.loads(row[6])
+                except (ValueError, TypeError, RecursionError): continue
+                yield from self._reference_candidates(schema.fields, values)
+                yield from self._section_candidates(schema, sections)
+        return self._presence(keys())
+
+    def _projection_presence(self, schema, rows, *, section=False):
+        if self._view._backend.format_version not in (15, 16): return {}
+        def keys():
+            for row in rows:
+                if row[4] is None: continue
+                try: payload = json.loads(row[4])
+                except (ValueError, TypeError, RecursionError): continue
+                if section: yield from self._section_candidates(schema, payload)
+                else: yield from self._reference_candidates(schema.fields, payload)
+        return self._presence(keys())
+
+    def _require_references(self, values, writing, presence):
+        keys = tuple(v for v in values if type(v) is CatalogKey and v.record_id.int)
+        if presence is None: presence = self._presence(keys)
+        for key in keys:
+            pair = (key.catalog_id, key.record_id)
+            # A bounded prefetch may omit malformed/oversized later input. It
+            # never authorizes an unexamined key or changes validation order.
+            exists = presence[pair] if pair in presence else self._view._reference_exists(key)
+            if not exists: raise BackendError('not_found' if writing else 'integrity')
+
+    def _values(self, fields, values, *, writing=False, presence=None):
         s = _storage()
         if type(values) is not (tuple if writing else list) or len(values) != len(fields): raise BackendError('invalid_input' if writing else 'integrity')
         if writing:
@@ -170,18 +255,17 @@ class DocumentView:
                 size += len(s._json(encoded)) + 1
                 if size > _MAX_ROW: raise BackendError('invalid_input')
                 result.append(encoded)
-            for value in values:
-                if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value): raise BackendError('not_found')
+            self._require_references(values, True, presence)
             return result
         decoded = tuple(s._decode(v,f,self.database_id,enum_domain=self._view._backend._enum_domain) for f,v in zip(fields,values))
         if self._view._backend.format_version in (15,16):
-            for value in decoded:
-                if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value):
-                    raise BackendError('integrity')
+            self._require_references(decoded, False, presence)
         return decoded
 
-    def _sections(self, schema, contents, *, writing=False):
+    def _sections(self, schema, contents, *, writing=False, presence=None):
         if type(contents) is not (tuple if writing else list) or len(contents) > 16: raise BackendError('invalid_input' if writing else 'integrity')
+        if presence is None and (writing or self._view._backend.format_version in (15, 16)):
+            presence = self._presence(self._section_candidates(schema, contents, writing=writing))
         definitions = {s.identity:s for s in schema.tabular_sections}
         supplied = {}; total = 0; size = 0
         for item in contents:
@@ -207,7 +291,7 @@ class DocumentView:
                 _storage()._uuid(row_id)
                 if row_id in seen: raise BackendError('integrity')
                 seen.add(row_id)
-                values = self._values(definitions[identity].fields, values, writing=writing)
+                values = self._values(definitions[identity].fields, values, writing=writing, presence=presence)
                 encoded = [str(row_id),values] if writing else TabularRow(row_id,values)
                 if writing:
                     size += len(_storage()._json(encoded)) + 1
@@ -237,7 +321,8 @@ class DocumentView:
         if limit: sql += ' LIMIT ?'
         return sql
 
-    def _decode_record(self, schema, row):
+    def _decode_record(self, schema, row, *, presence=None):
+        if presence is None: presence = self._record_presence(schema, (row,))
         record, revision, number, date, mark, values, sections = row[:7]
         identity = UUID(record); _storage()._uuid(identity)
         if str(identity) != record or type(revision) is not int or not 1 <= revision < 2**63: raise BackendError('integrity')
@@ -254,11 +339,11 @@ class DocumentView:
         return (key, DocumentRevision(self.database_id,self.configuration_generation,
                 schema.identity,identity,str(revision)), number,
                 _storage()._decode(['d',date],_DATE_FIELD,self.database_id),bool(mark),
-                self._values(schema.fields,json.loads(values)),
-                self._sections(schema,json.loads(sections)),posted)
+                self._values(schema.fields,json.loads(values), presence=presence),
+                self._sections(schema,json.loads(sections), presence=presence),posted)
 
-    def _card(self, schema, row):
-        return DocumentCard(*self._decode_record(schema, row))
+    def _card(self, schema, row, *, presence=None):
+        return DocumentCard(*self._decode_record(schema, row, presence=presence))
 
     def _record_proof_key(self, schema, key):
         return ('document-record', schema.identity, schema, key.record_id)
@@ -311,7 +396,7 @@ class DocumentView:
         if order: sql += ' ORDER BY r.date,r.number,r.record_id'
         return sql
 
-    def _project_header(self, schema, fields, row):
+    def _project_header(self, schema, fields, row, *, presence=None):
         from .document_backend import DocumentValueRow
         record, number, date, mark, payload, revision, state_revision, posted = row
         identity = UUID(record); _storage()._uuid(identity)
@@ -321,7 +406,7 @@ class DocumentView:
         validate_string(number,schema.number_length)
         if not number: raise BackendError('integrity')
         key = DocumentKey(self.database_id,schema.identity,identity)
-        values = (dict(zip((d.identity for d in schema.fields), self._values(schema.fields,json.loads(payload))))
+        values = (dict(zip((d.identity for d in schema.fields), self._values(schema.fields,json.loads(payload),presence=presence)))
                   if payload is not None else {})
         if self._view._backend.format_version in (13,14,15,16) and 'posted' in fields:
             from .sqlite_document_posting_state import decode_posted
@@ -356,7 +441,8 @@ class DocumentView:
                                         (*args,request.limit+1)).fetchall()
         if len(rows)>request.limit: raise BackendError('unsupported')
         # Keep the selection's complete detached snapshot, including GetObject.
-        return tuple(self._card(schema,row) for row in rows)
+        presence = self._record_presence(schema, rows)
+        return tuple(self._card(schema,row,presence=presence) for row in rows)
 
     def _validate_query_source(self, schema, *, selection=None):
         """Validate all logical data once; retain only bounded aggregate costs."""
@@ -369,8 +455,12 @@ class DocumentView:
         validation = self._connection.execute(
             self._record_sql(order=selection is not None), (str(schema.identity),))
         try:
-            for row in validation:
-                decoded = self._decode_record(schema, row)
+            def batches():
+                while rows := validation.fetchmany(64):
+                    presence = self._record_presence(schema, rows)
+                    for row in rows: yield row, presence
+            for row, presence in batches():
+                decoded = self._decode_record(schema, row, presence=presence)
                 if (selection is not None
                         and (selection.start is None or decoded[3] >= selection.start)
                         and (selection.end is None or decoded[3] <= selection.end)):
@@ -452,15 +542,16 @@ class DocumentView:
             rows.extend(stream.fetchmany(request.page_size + 1 - len(rows)))
             more = len(rows) > request.page_size
             output = []
+            presence = self._projection_presence(schema, rows[:request.page_size], section=section is not None)
             for row in rows[:request.page_size]:
                 if section is None:
-                    output.append(self._project_header(schema,fields,row))
+                    output.append(self._project_header(schema,fields,row,presence=presence))
                 else:
                     record, number, date, mark, payload, revision, state_revision, posted = row
                     key = DocumentKey(self.database_id,identity,UUID(record))
                     contents = next(item[1] for item in json.loads(payload) if item[0] == str(section_id))
                     for n, (_, line) in enumerate(contents, 1):
-                        values = dict(zip((d.identity for d in definitions), self._values(definitions, line)))
+                        values = dict(zip((d.identity for d in definitions), self._values(definitions, line,presence=presence)))
                         values.update(ref=key, line_number=Decimal(n))
                         output.append(DocumentValueRow(key, tuple(values[f] for f in fields), n))
             token = uuid4().hex if more else None
@@ -508,7 +599,8 @@ class DocumentView:
             rows = ([] if pending is None else [pending])
             rows.extend(stream.fetchmany(request.page_size + 1 - len(rows)))
             more = len(rows) > request.page_size
-            cards = tuple(self._card(schema, row) for row in rows[:request.page_size])
+            presence = self._record_presence(schema, rows[:request.page_size])
+            cards = tuple(self._card(schema, row,presence=presence) for row in rows[:request.page_size])
             token = uuid4().hex if more else None
             if more:
                 self._view._document_scan_lookahead = rows[-1]

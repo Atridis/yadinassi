@@ -154,7 +154,7 @@ def job_matrix(binding, *, heavy=False):
     for target, os_name, architecture in RUNNERS:
         if target not in platforms:
             continue
-        count = 2 if heavy and target == 'mac-x86' else 1
+        count = 2 if heavy else 1
         for index in range(count):
             row = {'target': target, 'os': os_name, 'architecture': architecture}
             if heavy:
@@ -195,7 +195,7 @@ def coverage(binding, reports, heavy):
     platforms = required_platforms(binding)
     expected = {(p, 'light', 0) for p in platforms}
     if heavy:
-        expected |= {(p, 'heavy', i) for p in platforms for i in range(2 if p == 'mac-x86' else 1)}
+        expected |= {(p, 'heavy', i) for p in platforms for i in range(2)}
     require(set(reports) == expected, 'missing/extra platform partition report')
     output = {}
     for platform in platforms:
@@ -206,7 +206,7 @@ def coverage(binding, reports, heavy):
             require(report['binding'] == binding, 'report source binding')
             require(report['platform'] == p and report['tier'] == tier and report['shard_index'] == index,
                     'partition identity')
-            count = 2 if p == 'mac-x86' and tier == 'heavy' else 1
+            count = 2 if tier == 'heavy' else 1
             require(report['shard_count'] == count, 'partition count')
             require(report['success'] is True, 'failed partition')
             chosen = ids(report['selected_ids']); executed = ids(report['executed_ids']); all_ids = ids(report['discovered_ids'])
@@ -266,7 +266,8 @@ def main():
         else:
             reports = {}
             paths = list(Path(args.reports).glob('**/partition.json'))
-            require(len(paths) <= 9, 'too many reports')
+            require(len(paths) <= len(required_platforms(binding)) * (3 if binding['heavy'] else 1),
+                    'too many reports')
             for path in paths:
                 report = read_json(path)
                 key = (report['platform'], report['tier'], report['shard_index'])

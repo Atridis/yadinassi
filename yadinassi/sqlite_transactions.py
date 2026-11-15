@@ -257,6 +257,127 @@ def _json_document_payload(raw):
     return value[0],value[1],_storage()._revision_number(value[2]),value[3]
 
 
+ACK_SCHEMA = 'unit-of-work-ack-v2'
+
+
+def _child_payload(view, entry):
+    """Rehydrate only a canonical bounded child with the exact retained hash."""
+    kind, child, intent_hash, receipt_hash = entry
+    if kind not in KINDS: raise BackendError('integrity')
+    if kind.startswith('catalog_'):
+        table, column = 'commit_receipt', 'revisions_json'
+    elif kind.startswith('document_') and kind != 'document_set_posted':
+        shape = view._connection.execute("SELECT typeof(document_id),length(CAST(document_id AS BLOB)),typeof(record_id),length(CAST(record_id AS BLOB)),typeof(revision),CASE WHEN typeof(revision)='integer' THEN revision ELSE NULL END,typeof(number),length(CAST(number AS BLOB)) FROM document_commit_receipt WHERE operation_id=? AND request_hash=?", (child,receipt_hash)).fetchone()
+        if (shape is None or shape[0:4] != ('text',36,'text',36)
+                or shape[4] != 'integer' or not 1 <= shape[5] < 2**63-1
+                or shape[6] != 'text' or not 0 <= shape[7] <= 65536):
+            raise BackendError('integrity')
+        row = view._connection.execute('SELECT document_id,record_id,revision,number FROM document_commit_receipt WHERE operation_id=?',(child,)).fetchone()
+        return _json([row[0],row[1],str(row[2]),row[3]])
+    else:
+        table = {'document_set_posted':'document_posting_receipt',
+                 'recorder_replace':'recorder_movement_receipt',
+                 'accumulation_replace':'accumulation_movement_receipt'}.get(kind,'information_register_receipt')
+        column = 'outcome_json'
+    shape = view._connection.execute('SELECT typeof('+column+'),length(CAST('+column+' AS BLOB)) FROM '+table+' WHERE operation_id=? AND request_hash=?',(child,receipt_hash)).fetchone()
+    if shape is None or shape[0] != 'text' or not 0 <= shape[1] <= MAX_BYTES:
+        raise BackendError('integrity')
+    return view._connection.execute('SELECT '+column+' FROM '+table+' WHERE operation_id=?',(child,)).fetchone()[0]
+
+
+def _quoted_json_size(value, limit):
+    """Size of ensure_ascii JSON string without allocating its escaped copy."""
+    size = 2
+    if size > limit: raise BackendError('unsupported')
+    for char in value:
+        code = ord(char)
+        size += (2 if char in '\\"\b\f\n\r\t' else
+                 1 if 32 <= code < 127 else 6 if code <= 65535 else 12)
+        if size > limit: raise BackendError('unsupported')
+    return size
+
+
+def _receipt_bindings(view, raw):
+    value = json.loads(raw)
+    if type(value) is not dict or value.get('schema') != ACK_SCHEMA: return value
+    if (type(value) is not dict or set(value) != {'schema','bindings'}
+            or value['schema'] != ACK_SCHEMA or _json({'schema':ACK_SCHEMA,'bindings':value['bindings']}) != raw
+            or view._backend.format_version not in (13,15,16)):
+        raise BackendError('integrity')
+    entries = value['bindings']
+    if type(entries) is not list or not 1 <= len(entries) <= MAX_OPERATIONS:
+        raise BackendError('integrity')
+    result = []; size = 2
+    for entry in entries:
+        if type(entry) is not list or len(entry) != 4 or any(type(x) is not str for x in entry):
+            raise BackendError('integrity')
+        if (str(UUID(entry[1])) != entry[1] or not UUID(entry[1]).int
+                or any(len(v) != 64 or any(c not in '0123456789abcdef' for c in v) for v in entry[2:])):
+            raise BackendError('integrity')
+        payload = _child_payload(view,entry)
+        size += (1 if result else 0) + len(_json(entry)) + 1
+        size += _quoted_json_size(payload,MAX_BYTES-size)
+        if size > MAX_BYTES: raise BackendError('unsupported')
+        result.append([*entry,payload])
+    return result
+
+
+def _commit_acknowledgement(connection):
+    connection.execute('COMMIT')
+
+
+def acknowledge_root(root):
+    """Explicit accepted-host-root payload compaction; retain every child/UUID.
+
+    No epoch-bound v12 receipts, no automatic deletion, no retention horizon.
+    The old root digest remains a commitment to the rehydrated v1 outcome bytes.
+    """
+    from uuid import uuid4
+    from .transaction_backend import TransactionAcknowledgement
+    root._admit_root(root.backend)
+    if (root.backend.format_version not in (13,15,16) or root._images is None
+            or root.receipt is not root._images[2] or not root.receipt.accepted
+            or root.locked or root._transaction is None):
+        raise BackendError('unsupported')
+    receipt = root.receipt
+    if root.backend.resolve_unit_of_work(receipt.operation_id,receipt.requests) != receipt.outcomes:
+        raise BackendError('integrity')
+    view = root.backend.begin_write(uuid4())
+    try:
+        shape = view._connection.execute('SELECT typeof(request_hash),length(CAST(request_hash AS BLOB)),typeof(outcomes_json),length(CAST(outcomes_json AS BLOB)) FROM unit_of_work_receipt WHERE operation_id=?',(str(receipt.operation_id),)).fetchone()
+        if (shape is None or shape[:3] != ('text',64,'text') or not 0 <= shape[3] <= MAX_BYTES):
+            raise BackendError('integrity')
+        row = view._connection.execute('SELECT request_hash,outcomes_json FROM unit_of_work_receipt WHERE operation_id=?',(str(receipt.operation_id),)).fetchone()
+        if (row is None or type(row[1]) is not str or len(row[1].encode('utf-8')) > MAX_BYTES):
+            raise BackendError('integrity')
+        bindings = _receipt_bindings(view,row[1])
+        encoded = _json(bindings)
+        expected = _json(root._transaction.unit._bindings)
+        digest = _hash(['unit_of_work_v1',str(view.database_id),view.configuration_generation,
+                        [entry[:3] for entry in bindings],encoded])
+        if encoded != expected or digest != row[0]: raise BackendError('integrity')
+        # Compare child bytes again under the writer lock; the preceding typed
+        # resolution is not a reusable integrity fact across separate snapshots.
+        for entry in bindings:
+            if _child_payload(view,entry[:4]) != entry[4]: raise BackendError('integrity')
+        compact = _json({'schema':ACK_SCHEMA,'bindings':[entry[:4] for entry in bindings]})
+        result = TransactionAcknowledgement(receipt.operation_id,2,len(bindings),
+                    len(encoded.encode('utf-8')),len(compact.encode('utf-8')))
+        if row[1] == compact: return result
+        if row[1] != encoded: raise BackendError('integrity')
+        cursor = view._connection.execute('UPDATE unit_of_work_receipt SET outcomes_json=? WHERE operation_id=? AND request_hash=? AND outcomes_json=?',
+                            (compact,str(receipt.operation_id),row[0],row[1]))
+        if cursor.rowcount != 1: raise BackendError('conflict')
+        try:
+            _commit_acknowledgement(view._connection)
+            view.close()
+        except BaseException as error:
+            if _storage()._interruption(error): raise
+            raise BackendError('uncertain_commit') from None
+        return result
+    finally: view.close()
+
+
 def resolve(backend, operation, requests):
     _storage()._uuid(operation)
     if type(requests) is not tuple or not 1 <= len(requests) <= MAX_OPERATIONS: raise BackendError('invalid_input')
@@ -267,7 +388,8 @@ def resolve(backend, operation, requests):
         if view._connection.execute("SELECT 1 FROM unit_of_work_receipt WHERE operation_id=? AND (typeof(request_hash)!='text' OR length(request_hash)!=64 OR typeof(outcomes_json)!='text' OR length(CAST(outcomes_json AS BLOB))>?)",(str(operation),MAX_BYTES)).fetchone(): raise BackendError('integrity')
         row = view._connection.execute('SELECT request_hash,outcomes_json FROM unit_of_work_receipt WHERE operation_id=?',(str(operation),)).fetchone()
         if row is None: return None
-        bindings = json.loads(row[1]); expected_bindings = []; total = 0; identities = set()
+        bindings = _receipt_bindings(view,row[1]); encoded = _json(bindings)
+        expected_bindings = []; total = 0; identities = set()
         if type(bindings) is not list or len(bindings) != len(requests): raise BackendError('conflict')
         for index,request in enumerate(requests):
             digest,size,identity = _describe(view,request); total += size
@@ -295,9 +417,9 @@ def resolve(backend, operation, requests):
                 exists = view._connection.execute('SELECT 1 FROM information_register_receipt WHERE operation_id=? AND request_hash=? AND outcome_json=?',(child,entry[3],entry[4])).fetchone()
             if not exists: raise BackendError('integrity')
             expected_bindings.append(expected)
-        if total + len(row[1].encode('utf-8')) > MAX_BYTES: raise BackendError('unsupported')
-        calculated = _hash(['unit_of_work_v1',str(view.database_id),view.configuration_generation,expected_bindings,row[1]])
-        if calculated != row[0] or _json(bindings) != row[1]: raise BackendError('conflict')
+        if total + len(encoded.encode('utf-8')) > MAX_BYTES: raise BackendError('unsupported')
+        calculated = _hash(['unit_of_work_v1',str(view.database_id),view.configuration_generation,expected_bindings,encoded])
+        if calculated != row[0] or (type(json.loads(row[1])) is list and encoded != row[1]): raise BackendError('conflict')
     finally: view.close()
     # Legacy receipt resolvers already validate typed revisions, numbers and
     # frozen request hashes. Receipts are immutable and written atomically.
@@ -334,3 +456,5 @@ def resolve(backend, operation, requests):
 
 for _method in ('stage','read_catalog','read_document','read_register','read_document_posted','read_recorder','read_accumulation','commit'):
     setattr(UnitOfWork,_method,_storage()._boundary(getattr(UnitOfWork,_method)))
+
+acknowledge_root = _storage()._boundary(acknowledge_root)

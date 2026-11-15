@@ -408,6 +408,10 @@ class RootOperation:
         # This public coordinator never broadens the original v13 admission.
         require_host_root(backend)
 
+    def acknowledge(self):
+        from .sqlite_transactions import acknowledge_root
+        return acknowledge_root(self)
+
     @property
     def locked(self):
         transaction = self._transaction

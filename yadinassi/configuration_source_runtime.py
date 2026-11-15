@@ -25,6 +25,14 @@ class _SourceInterpreter(Interpreter):
         self.application = application
         from .common_templates import SourceTemplateCall
         self.register_function("GetCommonTemplate", SourceTemplateCall(application.common_templates), "ПолучитьОбщийМакет")
+        from . import temporary_storage as temporary
+        for operation, english, russian in (
+                (temporary.put_marker, 'PutToTempStorage', 'ПоместитьВоВременноеХранилище'),
+                (temporary.get_marker, 'GetFromTempStorage', 'ПолучитьИзВременногоХранилища'),
+                (temporary.delete_marker, 'DeleteFromTempStorage', 'УдалитьИзВременногоХранилища'),
+                (temporary.recognize_marker, 'IsTempStorageURL', 'ЭтоАдресВременногоХранилища')):
+            self.register_function(english, temporary.SourceTemporaryCall(application.temporary_storage, operation),
+                                   russian, returns_value=operation is not temporary.delete_marker)
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
         from .source_system_info import SourceSystemInfo
@@ -221,6 +229,8 @@ class SourceApplication:
         self.compatibility_target = validate_target(compatibility_target)
         from .source_host_session import SourceHostSession
         self.host_session = SourceHostSession(self)
+        from .temporary_storage import SourceTemporaryStorage
+        self.temporary_storage = SourceTemporaryStorage(self)
         self.source = source
         self.output = output
         self._compilation_profile = compilation_profile
@@ -314,11 +324,14 @@ class SourceApplication:
         crossing = (caller_side == 'client' and not client and server
                     and properties.get('ServerCall') == 'true' and not global_call)
         side = 'server' if crossing else caller_side
-        # Cached receivers never bypass admission. Reusable cross-side results
-        # need their own measured transport/cache contract; reject rather than
-        # sharing mutable cached values across the packet boundary.
-        if crossing and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse':
-            raise ValueError('source ServerCall return-value reuse is not supported yet')
+        # A reusable ServerCall module has one closed scalar contract on both
+        # caller sides. Never let a same-side receiver bypass its admission.
+        scalar_server_reuse = (properties.get('ServerCall') == 'true'
+                               and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse')
+        if scalar_server_reuse and (client or not server or global_call
+                or properties.get('ClientOrdinaryApplication') == 'true'
+                or properties.get('ExternalConnection') == 'true'):
+            raise ValueError('source reusable ServerCall requires a server-only non-global module')
         if ((properties.get('Global') == 'true') != global_call
                 or (global_call and properties.get('ReturnValuesReuse', 'DontUse') != 'DontUse')
                 or properties.get('Privileged') == 'true'
@@ -336,6 +349,11 @@ class SourceApplication:
             from .configuration_modules import compile_module
             program = compile_module(self.files[path], path, side, common=True,
                                      compilation_profile=self.compilation_profile)
+            if scalar_server_reuse and any(
+                    not r.is_function or r.is_async
+                    or any(not p.by_value or p.default is not None for p in r.parameters)
+                    for r in program):
+                raise ValueError('source ServerCall reuse requires explicit by-value scalar functions')
             child._logical_side = side
             child._application_exports_enabled = not global_call
             if any(not isinstance(node, ast.Routine) for node in program):
@@ -346,7 +364,7 @@ class SourceApplication:
                 for routine in program:
                     if routine.is_async:
                         raise ValueError('Асинхронные повторно используемые модули пока не поддержаны')
-                    self._reuse_routines[id(routine)] = (routine, child, definition.identity, reuse)
+                    self._reuse_routines[id(routine)] = (routine, child, definition.identity, reuse, scalar_server_reuse)
             from .values import BSLType
             child._self_module._platform_type = BSLType.COMMON_MODULE
             child._self_module.ready = True
@@ -496,8 +514,8 @@ class SourceApplication:
             raise
 
     def is_scalar_server_reuse(self, routine):
-        # No IPC/wire packet exists in this same-side, source-only host.
-        return False
+        entry = self._reuse_routines.get(id(routine))
+        return entry is not None and entry[0] is routine and entry[4]
 
     def reusable_call(self, caller, owner, routine, qualified, *, execution_routine=None):
         execution = routine if execution_routine is None else execution_routine
@@ -511,7 +529,7 @@ class SourceApplication:
         if entry[0] is not routine or entry[1] is not owner:
             raise ValueError('source reusable routine owner mismatch')
         cache = self.reusable_values.cache(caller, entry[3])
-        return cache, (str(entry[2]), execution.name.casefold(), caller.execution_context)
+        return cache, (str(entry[2]), execution.name.casefold(), 'server' if entry[4] else caller.execution_context)
 
     def current_run_mode(self):
         """No managed/ordinary client is hosted by this headless source runner.
@@ -537,6 +555,7 @@ class SourceApplication:
     def close(self):
         if self.constant_store is not None:
             self.constant_store.close()
+        self.temporary_storage.close()
         self.session_parameters.close()
         self.reusable_values.close()
         self.interpreter.close()
