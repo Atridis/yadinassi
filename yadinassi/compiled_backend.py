@@ -860,6 +860,12 @@ class Engine:
                 or syntax_kind(routine) is not ast.Routine
                 or routine.body is not block.statements or block.role == 'metadata'):
             return None
+        # Cross-context activation may carry the parent engine's declaration
+        # while this child has separately admitted the body. That is not an
+        # eligible local plain plan; retain the existing compiled body adapter.
+        provenance = self._owned.versions.get(id(routine))
+        if provenance is None or provenance[1] is not routine:
+            return None
         self._verify_owned_identity(routine)
         cached = self._plain_routines.get(id(routine))
         if cached is None or cached[0] is not routine: return None
