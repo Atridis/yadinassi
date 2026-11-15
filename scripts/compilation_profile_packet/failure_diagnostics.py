@@ -18,7 +18,8 @@ LOCATION = re.compile(r'\{('+ '|'.join(map(re.escape,ALIASES))+r')\(([0-9]{1,4})
 OWNED_IDENTIFIERS = frozenset({'Client','Server','AtClient','AtServer',
     'MobileAppClient','MobileAppServer','Клиент','Сервер','НаКлиенте','НаСервере',
     'МобильноеПриложениеКлиент','МобильноеПриложениеСервер','CPState','CPStartup',
-    'CPMaskEN','CPMaskRU','CPMobileEN','CPMobileRU','ClientProbe','ServerProbe','DualProbe',
+    'CPMaskEN','CPMaskRU','CPMobileEN','CPMobileRU',
+    'CPSessionMaskEN','CPSessionMaskRU','CPSessionMobileEN','CPSessionMobileRU','ClientProbe','ServerProbe','DualProbe',
     'ClientExport','ServerExport'})
 COMPILE_PHRASES = ('неизвестная инструкция препроцессора', 'неизвестный оператор',
     'неизвестная директива препроцессора', 'unknown preprocessor instruction',

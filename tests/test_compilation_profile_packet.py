@@ -70,7 +70,21 @@ class PacketTests(unittest.TestCase):
         self.assertNotIn('yadinassi',s);self.assertNotIn('Interpreter',s)
 
     def test_complete_session_and_dual_mobile_matrix(self):
-        self.assertIn('CPMaskEN()+":"+CPMaskRU()+":"+CPMobileEN()+":"+CPMobileRU()',fixture.SESSION_INSERT)
+        self.assertIn('CPSessionMaskEN()+":"+CPSessionMaskRU()+":"+CPSessionMobileEN()+":"+CPSessionMobileRU()',fixture.SESSION_INSERT)
         self.assertIn('DualProbe.CPMobileEN()+":"+DualProbe.CPMobileRU()+":"+ServerProbe.DualMobile()',route.module().decode())
         server=packet()['CommonModules/ServerProbe/Ext/Module.bsl'].decode()
         self.assertIn('Function DualMobile() Export Return DualProbe.CPMobileEN()+":"+DualProbe.CPMobileRU()',server)
+
+    def test_session_helpers_do_not_collide_with_application_exports(self):
+        session=packet()['Extensions/Session.bsl'].decode()
+        application=packet()['Extensions/Application.bsl'].decode()
+        for suffix in ('MaskEN','MaskRU','MobileEN','MobileRU'):
+            self.assertIn('Function CPSession'+suffix+'()',session)
+            self.assertNotIn('Function CP'+suffix+'()',session)
+            self.assertIn('CPSession'+suffix+'()',fixture.SESSION_INSERT)
+            self.assertIn('Function CP'+suffix+'() Export',application)
+        # Only names differ: retain every conditional and result in the probes.
+        restored=session.replace('CPSession','CP')
+        suffix='\nFunction CPStartupValue() Export Return CPStartup; EndFunction\n'
+        self.assertTrue(application.endswith(suffix))
+        self.assertEqual(restored,application[:-len(suffix)].replace(' Export',''))

@@ -5,7 +5,7 @@ MAX_FILE=original.MAX_FILE
 MAX_TOTAL=original.MAX_TOTAL
 SESSION_ANCHOR='Процедура УстановкаПараметровСеанса(ТребуемыеПараметры)'
 APPLICATION_ANCHOR='Процедура ПриНачалеРаботыСистемы()'
-SESSION_INSERT='\n    SessionParameters.CPState = CPMaskEN()+":"+CPMaskRU()+":"+CPMobileEN()+":"+CPMobileRU();\n'
+SESSION_INSERT='\n    SessionParameters.CPState = CPSessionMaskEN()+":"+CPSessionMaskRU()+":"+CPSessionMobileEN()+":"+CPSessionMobileRU();\n'
 APPLICATION_INSERT='\n    CPStartup = "0";\n#If Client And Not Client Then\n    CPStartup = "99";\n#EndIf\n'
 
 def insert_exact(raw,anchor,addition):

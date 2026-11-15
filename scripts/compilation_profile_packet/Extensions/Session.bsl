@@ -1,4 +1,4 @@
-Function CPMaskEN()
+Function CPSessionMaskEN()
  Value = 0;
 #If Client Then
  Value = Value + 1;
@@ -29,7 +29,7 @@ Function CPMaskEN()
 #EndIf
  Return String(Value);
 EndFunction
-Function CPMaskRU()
+Function CPSessionMaskRU()
  Value = 0;
 #If Клиент Then
  Value = Value + 1;
@@ -60,7 +60,7 @@ Function CPMaskRU()
 #EndIf
  Return String(Value);
 EndFunction
-Function CPMobileEN()
+Function CPSessionMobileEN()
  Value = 0;
 #If MobileAppClient Then
  Value = Value + 1;
@@ -70,7 +70,7 @@ Function CPMobileEN()
 #EndIf
  Return String(Value);
 EndFunction
-Function CPMobileRU()
+Function CPSessionMobileRU()
  Value = 0;
 #If МобильноеПриложениеКлиент Then
  Value = Value + 1;
