@@ -109,3 +109,8 @@ test('static signature diagnostics remain text without asserting execution',asyn
  const summary=h.elements.find(x=>x.textContent.includes('Статические ошибки контекста/сигнатуры'));
  assert.ok(summary.textContent.includes('<script>bad()</script>'));assert.ok(summary.textContent.includes('ещё 3'));assert.equal(summary.children.length,0);assert.ok(summary.textContent.includes('не проверка значений аргументов, прав или исполнения'));
 });
+test('retained scalar attribute conflicts are shown as text, not runtime proof',async()=>{
+ const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'compiled',handler_names:{status:'names-checked',referenced:0,missing:[],attribute_issues:['<img> shadows module declaration'],omitted_attribute_issues:4}}});
+ const summary=h.elements.find(x=>x.textContent.includes('Конфликты реквизитов'));
+ assert.ok(summary.textContent.includes('<img> shadows module declaration'));assert.ok(summary.textContent.includes('ещё 4'));assert.equal(summary.children.length,0);
+});

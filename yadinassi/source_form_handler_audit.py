@@ -1,5 +1,6 @@
 """Static XML-to-module name inventory, never a runtime binding guarantee."""
 import xml.etree.ElementTree as ET
+import json
 from .configuration_forms import L, _events, _value, name
 from .form_model import BSLClientApplicationForm
 from .source_form_projection import project_source_form
@@ -14,13 +15,25 @@ def audit_handler_names(raw, program):
     """
     result = {'status': 'unavailable', 'referenced': 0, 'missing': [],
               'omitted_missing': 0, 'error': None, 'signature_issues': [],
-              'omitted_signature_issues': 0, 'signature_references': 0}
+              'omitted_signature_issues': 0, 'signature_references': 0,
+              'attribute_issues': [], 'omitted_attribute_issues': 0}
     try:
         if raw is None:
             raise ValueError('declared form XML is missing')
         root = ET.fromstring(project_source_form(raw).xml)
-        routines = {node.name.casefold(): node for side in (program.client, program.server, program.nocontext)
-                    for node in side.program() if isinstance(node, ast.Routine)}
+        declarations = tuple(node for side in (program.client, program.server, program.nocontext)
+                             for node in side.program())
+        routines = {node.name.casefold(): node for node in declarations if isinstance(node, ast.Routine)}
+        declared_names = {value.casefold() for node in declarations
+                          for value in ([node.name] if isinstance(node, ast.Routine) else node.names)}
+        attribute_issues = []
+        for attribute in root.findall('./'+L+'Attributes/'+L+'Attribute'):
+            attribute_name = attribute.get('name')
+            key = attribute_name.casefold()
+            if key in ('object','объект','writeobject') or key.startswith('objectfield'):
+                attribute_issues.append(attribute_name+': reserved object form attribute')
+            elif key in declared_names:
+                attribute_issues.append(attribute_name+': form attribute shadows module declaration')
         contracts = []
         for event, handler in _events(root.find(L+'Events'), BSLClientApplicationForm.EVENTS).items():
             side, arity = BSLClientApplicationForm.EVENTS[event]
@@ -45,7 +58,22 @@ def audit_handler_names(raw, program):
         missing = sorted(value for value in references if value.casefold() not in names)
         result.update(status='names-checked', referenced=len(references), missing=missing[:16],
                       omitted_missing=max(0, len(missing)-16), signature_issues=issues[:16],
-                      omitted_signature_issues=max(0, len(issues)-16), signature_references=len(contracts))
+                      omitted_signature_issues=max(0, len(issues)-16), signature_references=len(contracts),
+                      attribute_issues=attribute_issues[:16], omitted_attribute_issues=max(0,len(attribute_issues)-16))
+        # Snapshot shares a bounded transport packet with navigation and previews.
+        # Bound UTF-8 JSON bytes, not just Unicode character counts.
+        budget = 6144
+        for field, omitted in (('missing','omitted_missing'),
+                               ('signature_issues','omitted_signature_issues'),
+                               ('attribute_issues','omitted_attribute_issues')):
+            kept = []
+            for value in result[field]:
+                cost = len(json.dumps(value,ensure_ascii=False).encode('utf-8')) + 1
+                if cost > budget:
+                    result[omitted] += 1
+                else:
+                    kept.append(value);budget -= cost
+            result[field] = kept
     except (ValueError, TypeError, RecursionError, ET.ParseError) as error:
         result['error'] = str(error)[:256]
     return result
