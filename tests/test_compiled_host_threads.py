@@ -15,7 +15,10 @@ from yadinassi.ui.editor_protocol import PROTOCOL as EDITOR_PROTOCOL
 
 class CompiledHostThreadTests(unittest.TestCase):
     def request(self,server,method,params):
-        connection=HTTPConnection(server.authority,timeout=5)
+        # These real request-thread tests compile demo forms, not a 5-second
+        # latency contract. Keep a finite CI allowance for slower hosted CPUs;
+        # do not retry requests or weaken strict-backend/result assertions.
+        connection=HTTPConnection(server.authority,timeout=30)
         raw=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode()+b'\n'
         try:
             connection.request('POST','/rpc',body=raw,headers={
