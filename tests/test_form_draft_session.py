@@ -272,7 +272,12 @@ class FormDraftSessionTests(unittest.TestCase):
             with self.assertRaises(FormModuleAnalysisError):
                 self.make(source=source, binding=binding(source))
 
-    def test_failure_after_private_mutation_and_message_has_no_partial_state(self):
+    def test_legacy_visitor_failure_after_private_mutation_oracle(self):
+        from yadinassi.execution_policy import execution_backend_policy
+        with execution_backend_policy('interpreter'):
+            self._legacy_visitor_failure_after_private_mutation_oracle()
+
+    def _legacy_visitor_failure_after_private_mutation_oracle(self):
         original = sim._EventInterpreter
         observed, created, closed = [], [], []
         class Failure(original):
@@ -308,30 +313,63 @@ class FormDraftSessionTests(unittest.TestCase):
                              before.revision + 1)
         self.assertEqual(len(observed), 2)
 
+    def test_failure_after_private_mutation_and_message_has_no_partial_state(self):
+        original = sim._EventInterpreter.__init__
+        observed, created, closed = [], [], []
+        def initialize(vm, sink):
+            def fail_after_message(record):
+                observed.append(record)
+                sink(record)
+                raise ValueError('failure after private mutation and message')
+            original(vm, fail_after_message)
+            created.append(vm)
+            close = vm.close
+            def record_close():
+                closed.append(vm)
+                return close()
+            vm.close = record_close
+        for event in ('change', 'save'):
+            session = self.make(description=' x ')
+            if event == 'change': session.change_description(' z ', revision=0)
+            before = session.snapshot(); count = len(created)
+            with patch.object(sim._EventInterpreter, '__init__', initialize):
+                with self.subTest(event=event), self.assertRaisesRegex((ValueError, BSLError), 'failure after private mutation and message'):
+                    if event == 'change': session.change_description(' y ', revision=1)
+                    else: session.prepare_save(revision=0)
+            self.assertEqual(len(created), count + 1)
+            self.assertIn(created[-1], closed)
+            self.assertEqual(created[-1].variables['объект'].get_member('Description'),
+                             'y' if event == 'change' else 'x')
+            self.assertIs(session.snapshot(), before)
+            self.assertEqual(session.change_description(' recovered ', revision=before.revision).revision,
+                             before.revision + 1)
+        self.assertEqual(len(observed), 2)
+
     def test_message_rejection_after_private_change_keeps_session_state(self):
-        original = sim._EventInterpreter
+        original = sim._EventInterpreter.__init__
         for invalid in ('routing', 'overflow'):
-            class Failure(original):
-                def __init__(self, sink):
-                    def fail(record):
-                        if invalid == 'routing': sink(replace(record, data_path='forbidden'))
-                        else:
-                            sink(record)
-                            sink(record)
-                    super().__init__(fail)
+            attempts = []
+            def initialize(vm, sink):
+                def fail(record):
+                    attempts.append(record)
+                    if invalid == 'routing': sink(replace(record, data_path='forbidden'))
+                    else:
+                        sink(record)
+                        sink(record)
+                original(vm, fail)
             session = self.make(); before = session.snapshot()
-            with patch.object(sim, '_EventInterpreter', Failure):
-                with self.subTest(invalid=invalid), self.assertRaises((ValueError, BSLError)):
+            with patch.object(sim._EventInterpreter, '__init__', initialize):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex((ValueError, BSLError), 'message outside scalar profile'):
                     session.change_description(' x ', revision=0)
+            self.assertEqual(len(attempts), 1)
             self.assertIs(session.snapshot(), before)
 
     def test_no_module_activation_marshalling_or_database_context(self):
-        instances = []; original = sim._EventInterpreter
-        class Spy(original):
-            def __init__(self, sink):
-                super().__init__(sink)
-                instances.append(self)
-        with patch.object(sim, '_EventInterpreter', Spy), \
+        instances = []; original = sim._EventInterpreter.__init__
+        def initialize(vm, sink):
+            original(vm, sink)
+            instances.append(vm)
+        with patch.object(sim._EventInterpreter, '__init__', initialize), \
              patch.object(sim.Interpreter, 'execute', side_effect=AssertionError('execute')), \
              patch.object(sim.Interpreter, 'execute_program', side_effect=AssertionError('module')), \
              patch.object(sim.Interpreter, '_new_server_activation', side_effect=AssertionError('crossing')):
