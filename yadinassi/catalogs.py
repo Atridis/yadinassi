@@ -156,10 +156,12 @@ class BSLCatalogManager(BSLObject):
         view = self._view()
         try:
             if (type(view) is _View and view._operation_id is None
+                    and self._catalogs._metadata._root is not None
                     and view._backend.storage_version >= 2 and self._schema.hierarchy == 'none'
                     and (key in standard or definition is not None)):
                 # The lexical enum witness accepts exact admitted read views,
-                # not transaction Lease subclasses. Keep their legacy fallback.
+                # not transaction Lease subclasses or standalone metadata
+                # collections without an enum owner. Keep their legacy fallback.
                 with read_snapshot(self._catalogs._metadata._root,view):
                     field = standard[key] if key in standard else definition.identity
                     row = view.read_catalog_values(self._key(ref.reference_uuid),(field,))
