@@ -114,3 +114,30 @@ test('retained scalar attribute conflicts are shown as text, not runtime proof',
  const summary=h.elements.find(x=>x.textContent.includes('Конфликты реквизитов'));
  assert.ok(summary.textContent.includes('<img> shadows module declaration'));assert.ok(summary.textContent.includes('ещё 4'));assert.equal(summary.children.length,0);
 });
+const objectDetail={name:'Catalog.A',title:'Товары',source_path:'Catalogs/A.xml',execution:'declared_forms',forms:['Catalog.A.Form.Card'],form_labels:{'Catalog.A.Form.Card':'Карточка'},default_forms:[{property:'DefaultObjectForm',name:'Catalog.A.Form.Card'},{property:'DefaultListForm',name:'CommonForm.Main'}],default_form_diagnostics:[]};
+test('object form XML probe sends canonical target without opening a form',async()=>{
+ const h=await harness({...state,object_detail:objectDetail});
+ await h.get('Проверить XML Catalog.A.Form.Card').listeners.click();
+ assert.equal(h.requests.at(-1).method,'workspace.preview');assert.equal(h.requests.at(-1).params.name,'Catalog.A.Form.Card');assert.ok(!h.requests.some(r=>r.method==='workspace.open'));
+});
+test('explicit default form outside main selector can be preflighted',async()=>{
+ const h=await harness({...state,forms:[],object_detail:objectDetail});
+ await h.get('Проверить BSL CommonForm.Main').listeners.click();
+ assert.equal(h.requests.at(-1).method,'workspace.preflight');assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');assert.equal(h.requests.length,2);
+});
+test('duplicate default and child form share one diagnostic button per operation',async()=>{
+ const h=await harness({...state,object_detail:objectDetail});
+ for(const label of ['Проверить XML','Проверить BSL'])assert.equal(h.elements.filter(e=>e.attributes['aria-label']===label+' Catalog.A.Form.Card').length,1);
+ assert.ok(h.get('Проверить XML Catalog.A.Form.Card').textContent.includes('Карточка'));
+});
+test('metadata-only and closed object cards do not expose live check actions',async()=>{
+ const empty=await harness({...state,object_detail:{...objectDetail,forms:[],default_forms:[],execution:'metadata_only'}});
+ assert.ok(!empty.elements.some(e=>e.attributes['aria-label']==='Проверить XML Catalog.A.Form.Card'));
+ const closed=await harness({...state,kind:'closed',object_detail:objectDetail});
+ assert.equal(closed.get('Проверить XML Catalog.A.Form.Card').disabled,true);assert.equal(closed.get('Проверить BSL CommonForm.Main').disabled,true);
+});
+test('untrusted object form caption is literal while target stays canonical',async()=>{
+ const h=await harness({...state,object_detail:{...objectDetail,form_labels:{'Catalog.A.Form.Card':'<img onerror=bad()>'}}});
+ const button=h.get('Проверить BSL Catalog.A.Form.Card');assert.ok(button.textContent.includes('<img onerror=bad()>'));assert.equal(button.children.length,0);
+ await button.listeners.click();assert.equal(h.requests.at(-1).params.name,'Catalog.A.Form.Card');
+});
