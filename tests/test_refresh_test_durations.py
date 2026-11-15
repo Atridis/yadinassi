@@ -58,7 +58,7 @@ class ScopedRefreshTests(unittest.TestCase):
                 p,a=refresh_with_audit(d,C,1,scope='required-platforms')
                 self.assertTrue(a['coverage']['required_coverage']);self.assertFalse(a['coverage']['full_coverage'])
                 self.assertEqual(a['coverage']['excluded_platforms'],['mac-arm'])
-                self.assertEqual(len(a['reports']),7);self.assertEqual(len(p['tests']),3)
+                self.assertEqual(len(a['reports']),9);self.assertEqual(len(p['tests']),3)
                 self.assertTrue(all(v['seconds']==(0 if skipped else 1) for v in p['tests'].values()))
                 with self.assertRaises(ValueError):refresh(d,C,1)
 

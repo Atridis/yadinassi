@@ -56,12 +56,11 @@ def reports(b):
         parts = [('light', 0, ['test_mod.A.test_light'])]
         if b['heavy']:
             parts += [('heavy', 0, ['test_mod.B.test_heavy'])]
-            if p == 'mac-x86':
-                parts += [('heavy', 1, ['test_mod.C.test_heavy'])]
+            parts += [('heavy', 1, ['test_mod.C.test_heavy'])]
         all_ids = [x for _, _, chosen in parts for x in chosen]
         for tier, index, chosen in parts:
             result[p,tier,index] = {'platform': p, 'tier': tier, 'shard_index': index,
-                'shard_count': 2 if p == 'mac-x86' and tier == 'heavy' else 1,
+                'shard_count': 2 if tier == 'heavy' else 1,
                 'binding': copy.deepcopy(b), 'selected_ids': chosen[:], 'executed_ids': chosen[:],
                 'skipped_fixture_ids': [], 'covered_ids': chosen[:], 'discovered_ids': all_ids[:],
                 'tests_run': len(chosen), 'success': True,
@@ -121,7 +120,7 @@ class CITestGateTests(unittest.TestCase):
                          'failure', 'count', 'discovery', 'missing_test', 'skip_overlap', 'error_count'):
             r = reports(b); item = r['linux', 'heavy', 0]
             if mutation == 'missing': del r['linux', 'heavy', 0]
-            if mutation == 'extra': r['linux','heavy',1] = copy.deepcopy(item)
+            if mutation == 'extra': r['linux','heavy',2] = copy.deepcopy(item)
             if mutation == 'duplicated_ids': item['selected_ids'] *= 2
             if mutation == 'unexecuted': item['covered_ids'] = []
             if mutation == 'wrong_source': item['binding']['head_sha'] = 'd'*40
@@ -179,14 +178,14 @@ class CITestGateTests(unittest.TestCase):
                     for target, os_name, arch in runners:
                         if target not in gate.required_platforms(b):
                             continue
-                        count = 2 if heavy and target == 'mac-x86' else 1
+                        count = 2 if heavy else 1
                         for index in range(count):
                             row = {'target': target, 'os': os_name, 'architecture': arch}
                             if heavy:
                                 row.update(shard_count=count, shard_index=index)
                             expected.append(row)
                     self.assertEqual(gate.job_matrix(b, heavy=heavy), {'include': expected})
-                    self.assertEqual(len(expected), (5 if heavy else 4) - ('mac-arm' not in gate.required_platforms(b)))
+                    self.assertEqual(len(expected), len(gate.required_platforms(b)) * (2 if heavy else 1))
 
     def test_push_ref_cannot_be_forged_empty_deleted_or_unsupported(self):
         for ref in ('refs/heads/topic', 'refs/tags/', 'refs/tags//v1', 'refs/tags/../v1',
@@ -268,6 +267,28 @@ class CITestGateTests(unittest.TestCase):
                         item['discovered_ids'].append('not-covered')
                 with self.subTest(platform=platform), self.assertRaises(ValueError):
                     gate.coverage(b, incomplete, True)
+
+    def test_cli_rejects_artifact_count_above_exact_phase_capacity_before_reading(self):
+        for b, payload in ((binding(True), event(True)), (binding(), event()),
+                           (push_binding(), push_event('refs/tags/v1.2.3'))):
+            with self.subTest(heavy=b['heavy'], ref=b['ref']), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binding_path, event_path = root/'binding.json', root/'event.json'
+                gate.write_json(binding_path, b); gate.write_json(event_path, payload)
+                partitions = root/'partitions'
+                capacity = len(gate.required_platforms(b)) * (3 if b['heavy'] else 1)
+                for index in range(capacity + 1):
+                    path = partitions/str(index)/'partition.json'
+                    path.parent.mkdir(parents=True)
+                    path.write_text('not JSON: must reject count first')
+                argv = ['ci_test_gate.py', 'verdict', '--binding', str(binding_path),
+                        '--reports', str(partitions), '--output', str(root/'verdict.json')]
+                environ = dict(context(b), GITHUB_EVENT_PATH=str(event_path))
+                with mock.patch.dict(gate.os.environ, environ, clear=True), \
+                        mock.patch('sys.argv', argv), mock.patch.object(gate, 'coverage') as coverage, \
+                        self.assertRaisesRegex(ValueError, 'too many reports'):
+                    gate.main()
+                coverage.assert_not_called()
 
     def test_final_cli_verdict_checks_context_without_network_and_still_rechecks_freshness(self):
         b = push_binding()
