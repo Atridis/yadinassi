@@ -99,7 +99,10 @@ class PacketTests(unittest.TestCase):
             git(source,'init','-q');git(source,'-c','core.autocrlf=false','add','.')
             git(source,'-c','user.name=Reuse fixture','-c','user.email=fixture@example.invalid',
                 '-c','commit.gpgsign=false','commit','-qm','Exact fixture')
-            git(parent,'clone','-q','--no-hardlinks','-c','core.autocrlf=true',str(source),str(parent/'checkout'))
+            # Use Git's transport instead of copying the object directory: local
+            # clone can race background repacking and copy a transient .tmp pack.
+            # This still performs a real autocrlf checkout and checks every byte.
+            git(parent,'clone','-q','--no-local','-c','core.autocrlf=true',str(source),str(parent/'checkout'))
             for name,digest in wanted.items():
                 with self.subTest(path=name):
                     raw=(parent/'checkout'/name).read_bytes()
