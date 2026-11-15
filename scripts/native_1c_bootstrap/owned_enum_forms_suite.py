@@ -61,7 +61,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'roundtrip_sha256':None,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'config_verified':False,'lifecycle_verified':False,'output_sha256':None,'output_size':None,
-            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'native_diagnostic':None,'launcher_progress':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'native_diagnostic':None,'launcher_progress':None,'marker_diagnostic':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -231,6 +231,12 @@ def run_suite(platform,root,inputs,nonce):
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
         if phase in ('check_config','enterprise'):
             report['native_diagnostic'] = failure_diagnostics.collect(root, full, sanitizer, label='check' if phase == 'check_config' else 'enterprise')
+        if phase == 'markers':
+            try:
+                report['marker_diagnostic'] = route.marker_diagnostic(
+                    full.secure_bytes(completed, route.MAX_MARKER), nonce)
+            except (ValueError, full.FullError):
+                pass
         if phase in ('enterprise','markers'):
             try:
                 report['launcher_progress'] = route.launcher_progress(

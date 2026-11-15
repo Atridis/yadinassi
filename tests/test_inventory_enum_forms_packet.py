@@ -289,6 +289,8 @@ class EnumFormsRouteTests(unittest.TestCase):
         with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
         bad=copy.deepcopy(envelope);bad['report']['stage3']['launcher_progress']=dict(phase='before_open',flow=1)
         with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
+        bad=copy.deepcopy(envelope);bad['report']['stage3']['marker_diagnostic']=dict(reason='valid',group=0)
+        with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
         for flag in ('config_verified','lifecycle_verified','quiet','process_exited'):
             bad=copy.deepcopy(envelope);bad['report']['stage3'][flag]=False
             with self.subTest(flag=flag), self.assertRaises(host.FormError):
@@ -554,3 +556,25 @@ class ClosureDiagnosticTests(unittest.TestCase):
         self.assertIn('SavedReopenKey = ReopenKey;',source)
         self.assertIn('OpenOwned(2, SavedReopenKey)',source)
         self.assertNotIn('  Key = ReopenKey;',source)
+
+class MarkerFailureDiagnosticTests(unittest.TestCase):
+    def test_finite_bound_marker_diagnostic(self):
+        import json
+        from inventory_enum_forms_packet import route
+        value=dict(schema=route.SCHEMA,nonce='a'*32,phase='completed',source_sha256=route.SOURCE_SHA256,
+                   form_sha256=route.FORM_SHA256,records=''.join(g+'=ok\n' for g in route.GROUPS))
+        probe=lambda v:route.marker_diagnostic(json.dumps(v).encode(),'a'*32)
+        self.assertEqual(probe(value),dict(reason='valid',group=0))
+        self.assertEqual(probe({**value,'nonce':'b'*32}),dict(reason='binding',group=0))
+        for field in ('source_sha256','form_sha256'):
+            self.assertEqual(probe({**value,field:'0'*64,'records':'secret/файл'}),dict(reason='binding',group=0))
+        self.assertEqual(probe({**value,'records':'secret/файл'}),dict(reason='ascii',group=0))
+        self.assertEqual(probe({**value,'records':'secret/path'}),dict(reason='framing',group=0))
+        bad={**value,'records':value['records'].replace('catalog_change=ok','catalog_change=secret/path')}
+        self.assertEqual(probe(bad),dict(reason='token_chars',group=2))
+        with self.assertRaises(ValueError):route.marker(json.dumps(bad).encode(),'a'*32,'completed')
+        self.assertEqual(route.marker_diagnostic(b'{','a'*32),dict(reason='json',group=0))
+        for v in (dict(reason='/private',group=0),dict(reason='token_chars',group=True),dict(reason='token_chars',group=9),dict(reason='valid',group=1),dict(reason='valid',group=0,path='secret')):
+            self.assertFalse(route.valid_marker_diagnostic(v))
+        self.assertTrue(route.valid_marker_diagnostic(probe(bad)))
+        self.assertEqual(probe({**value,'records':value['records'].replace('conversion_unpost=ok','conversion_unpost=;ok')}),dict(reason='token_empty',group=7))

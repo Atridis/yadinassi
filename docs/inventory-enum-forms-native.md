@@ -257,3 +257,22 @@ can raise a runtime/configuration-check error; explicit Var establishes a local.
 https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1895754
 This general rule does not independently establish that Key is that property
 in this fixture; the candidate's outcome remains to be measured.
+
+### Completed-marker boundary (3ccb62ad)
+
+The explicit saved local reference passed the former reopen boundary on the exact
+native run: all ten form instances reached authored observation, including the
+reopened catalog and both independent forms; the process exited quietly. This
+is not acquisition success: completed-marker validation failed (`invalid_result`
+at `markers`). A bounded failure-only marker diagnostic now distinguishes JSON,
+binding, ASCII/bounds, framing, group and token categories, with only a fixed
+1-based group ordinal. It never exports observation text and is forbidden in a
+successful envelope. Exact source/nonce/form binding and all acceptance gates
+remain mandatory. No timing, rights or BSL change accompanies this diagnostic.
+
+A source-level hypothesis is zero formatting in `MovementShape` after undo-post:
+`Format(..., "NG=0")` uses presentation rules, whereas machine observations need
+stable numeric strings. The official localization guidance recommends `XMLString`
+for conversion of numbers to strings used in data exchange:
+https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_Development_Standards/Localization_requirements/Localization_guidelines_____Dates__numbers__and_Boolean/?language=en
+This hypothesis is not an observed native value and is not yet a runtime fix.

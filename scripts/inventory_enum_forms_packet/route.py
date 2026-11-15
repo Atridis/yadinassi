@@ -91,6 +91,61 @@ def marker(raw,nonce,phase):
     return value
 
 
+def marker_diagnostic(raw, nonce):
+    """Failure-only finite framing category; never payload text or acceptance."""
+    result = dict(reason='json', group=0)
+    try:
+        value = _json(raw)
+    except (ValueError, UnicodeError):
+        return result
+    result['reason'] = 'binding'
+    if type(value) is not dict:
+        return result
+    # Reuse the exact binding gate without accepting a completed observation.
+    check = dict(value)
+    check['phase'] = 'entered'
+    check['records'] = ''
+    try:
+        if value.get('phase') != 'completed' or type(value.get('records')) is not str:
+            return result
+        marker(json.dumps(check).encode(), nonce, 'entered')
+    except (ValueError, UnicodeError):
+        return result
+    result['reason'] = 'ascii'
+    try:
+        records = value['records'].encode('ascii')
+    except UnicodeError:
+        return result
+    result['reason'] = 'bound'
+    if not 0 < len(records) <= MAX_OUTPUT:
+        return result
+    result['reason'] = 'framing'
+    lines = records.decode('ascii').split('\n')
+    if len(lines) != len(GROUPS) + 1 or lines[-1] != '':
+        return result
+    from .records import _TOKEN
+    for index, (group, line) in enumerate(zip(GROUPS, lines[:-1]), 1):
+        name, separator, payload = line.partition('=')
+        values = payload.split(';')
+        if name != group or separator != '=':
+            return dict(reason='group', group=index)
+        if not 1 <= len(values) <= 16:
+            return dict(reason='token_count', group=index)
+        if any(v == '' for v in values):
+            return dict(reason='token_empty', group=index)
+        if any(_TOKEN.fullmatch(v) is None for v in values):
+            return dict(reason='token_chars', group=index)
+    return dict(reason='valid', group=0)
+
+
+def valid_marker_diagnostic(value):
+    return (type(value) is dict and set(value) == {'reason', 'group'}
+            and type(value['reason']) is str
+            and value['reason'] in ('json', 'binding', 'ascii', 'bound', 'framing', 'group', 'token_count', 'token_empty', 'token_chars', 'valid')
+            and type(value['group']) is int
+            and (1 <= value['group'] <= 8 if value['reason'] in ('group', 'token_count', 'token_empty', 'token_chars') else value['group'] == 0))
+
+
 def lifecycle(raw,nonce):
     value=_json(raw)
     if type(value) is not dict or set(value)!={'nonce','events'} or value['nonce']!=nonce or type(value['events']) is not list:
