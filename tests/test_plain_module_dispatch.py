@@ -1,6 +1,9 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class ModuleDispatchTests(unittest.TestCase):
  def test_actual_module_route_and_partial_error_state(self):
   for source in ('x=1;y=2;r=x+y;','x=1;y=1/0;',
@@ -29,13 +32,15 @@ class ModuleDispatchTests(unittest.TestCase):
   vm._compiled().MAX_PLAIN_SOURCE_BYTES=0;vm.execute('x=1;')
   self.assertEqual(vm.variables['x'],1);self.assertEqual(vm.compiled_backend_stats.get('plain_module_entries',0),0)
 
+@legacy_compiler_fixture
 class SharedModuleBudgetTests(unittest.TestCase):
  def test_retained_routine_and_new_module_share_cap(self):
   vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=True)
   vm.execute('Function F(Val x) Return x+1;EndFunction')
   engine=vm._compiled();used=engine._plain_source_bytes();self.assertGreater(used,0)
+  entries=engine.stats.get('plain_module_entries',0);self.assertGreater(entries,0)
   engine.MAX_PLAIN_SOURCE_BYTES=used+1;vm.execute('r=1;')
-  self.assertEqual(vm.variables['r'],1);self.assertEqual(engine.stats.get('plain_module_entries',0),0)
+  self.assertEqual(vm.variables['r'],1);self.assertEqual(engine.stats.get('plain_module_entries',0),entries)
   self.assertLessEqual(engine._plain_source_bytes(),engine.MAX_PLAIN_SOURCE_BYTES)
  def test_module_and_new_routine_share_cap(self):
   from yadinassi.syntax.parser import parse

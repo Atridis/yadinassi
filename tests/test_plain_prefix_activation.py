@@ -12,6 +12,9 @@ from yadinassi.syntax import ast
 from yadinassi.owned_syntax import syntax_kind
 
 
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class PrefixActivationTests(unittest.TestCase):
     def start(self, enabled):
         vm = Interpreter(execution_backend='compiled-strict', compiled_plain_routines=enabled)

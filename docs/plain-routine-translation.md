@@ -22,7 +22,9 @@ Historical source4e675 selected cohort:510/587 tests passed,77 failed,372 passin
 methods observed translation without gaps. Remaining failures include real gaps,
 mutable-AST contract differences, expected strict refusals and obsolete route
 assertions; they are not silently reclassified as passed. A separate919-module
-inventory remains incomplete. Historical fixtures are retained unchanged.
+inventory remains incomplete. Historical raw outcomes are retained; explicitly
+legacy compiler fixtures are labelled separately and do not establish translated
+coverage.
 
 Fusion source66760 passed all60 amplified sample controls and operation counts,
 with zero old adapter/interpreter-fallback counters and sealed inputs/source.
@@ -31,11 +33,31 @@ singleton Execute identity regression;27 forced copyback tests passed afterward.
 Fresh checks for the actual-main publication are reported in the PR, not inherited
 from previous commits. No full-suite parity or general speedup is claimed.
 
-Known work still in progress includes a form-specific argument evaluation override,
-async initializer admission gaps, and dynamic Eval/Execute unit lifetime. Repeated
-dynamic admissions can exhaust the existing1MiB generated-source budget. An attempted
-lease cleanup is NOT included: independent review found shared-node dependency loss.
-The safety/resource refusal stays in place until a sound lifecycle fix is verified.
+Since that historical checkpoint, filtered async initialization, form argument
+forwarding, and scoped dynamic Eval/Execute admission lifetime were repaired.
+Transient cleanup preserves dependencies admitted by other live units; shared
+metadata can conservatively remain until ordinary quiescent release. No resource
+limit was raised. Ordinary-default source7b175 passed the original138-client
+preflight and all60 amplified sample controls, with no old compiled node/block
+functions generated and zero interpreter fallback. Those checks are not full
+native parity or a speed comparison.
+
+Large units now reuse generated expression/control code templates with immutable,
+source-bound operands. Literal/name operations reuse existing owned plans rather
+than allocating duplicate executable entries. Actual unique generated source,
+per-function source, executable entries, owned metadata and operand bindings remain
+bounded. Large units select compact generated statement functions before execution;
+small units retain fusion. Both routes retain the same authority and scheduler
+boundaries, with no runtime AST-kind dispatch or late compilation.
+
+This fixes the collections scenario's admission-size refusals, but its original
+20-second child still times out on the reviewed shared-template checkpoint. That
+is an open execution/performance blocker, not accepted native evidence. The prior
+published native run accepted five of six scenario comparisons; collections failed
+before producing interpreter output. Tree comparison diagnostics are being refined
+using only closed failure tokens, without exporting arbitrary exception details or
+assuming that an unreproduced CI failure was a timeout. Form table receiver-specific
+indexing and remaining test-contract/behavior failures are still being repaired.
 
 This Draft is an integration/testing vehicle, not ready for production default or
 merge. Light/native gates may run; heavy/full admission remains serialized with

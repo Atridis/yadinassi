@@ -17,6 +17,8 @@ class BlockUnit:
     blocks: dict
     expressions: object
     source_bytes: int
+    statements: object = None
+    binding_count: int = 0
 
     def retained(self, owned_ids):
         """Retain code without pinning unrelated unit literals or compiling again."""
@@ -29,7 +31,7 @@ class BlockUnit:
             if id(original) in namespaces:
                 return FunctionType(function.__code__,namespaces[id(original)],function.__name__,function.__defaults__)
             namespace={k:v for k,v in original.items()
-                       if k!='translated' and not k.startswith(('_expression_', '_shared_'))}
+                       if k!='translated' and not k.startswith(('_expression_', '_shared_', '_block_template_'))}
             namespace['_nodes']=tuple(node if id(node) in owned_ids or not is_owned(node) else None
                                       for node in original['_nodes'])
             namespaces[id(original)]=namespace
@@ -38,9 +40,9 @@ class BlockUnit:
         expressions=ExpressionPlan(
             {key:(node,clone(fn)) for key,(node,fn) in self.expressions.functions.items() if id(node) in owned_ids},
             tuple(node for node in self.expressions.nodes if id(node) in owned_ids),self.expressions.source,
-            {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids})
+            {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids},self.expressions.binding_count)
         # Conservatively retain the full admitted source charge, not only keys.
-        return BlockUnit(blocks,expressions,self.source_bytes)
+        return BlockUnit(blocks,expressions,self.source_bytes,{key:(node,clone(fn)) for key,(node,fn) in (self.statements or {}).items() if id(node) in owned_ids},self.binding_count)
 
     def bind(self, engine):
         return Execution(self,engine)
@@ -51,7 +53,7 @@ class Execution:
         self.unit,self.engine,self.vm=unit,engine,engine.vm
         self.access=translated_access
         self.outer_node=None
-        self.expressions=unit.expressions.bind(self.vm,guard=self.guard,access=translated_access,resolve=engine._python_expression_execution)
+        self.expressions=unit.expressions.bind(self.vm,guard=self.guard,access=translated_access,resolve=engine._python_expression_execution,leaf_resolve=engine._python_leaf_operation)
     def before(self,node):
         if self.outer_node is not node:self.vm.compiled_before(node)
     def after(self,node,result):
@@ -60,6 +62,10 @@ class Execution:
         self.engine._verify_active_plans();self.engine.verify_node(node)
         kinds=self.engine.stats.setdefault('python_translated_node_kinds',{})
         kind=syntax_kind(node).__name__;kinds[kind]=kinds.get(kind,0)+1
+    def statement(self,key):
+        node,function=self.unit.statements[key]
+        self.engine.stats['python_compact_statement_calls']=self.engine.stats.get('python_compact_statement_calls',0)+1
+        return (yield from function(self))
     def block(self,key):
         block,function=self.unit.blocks[key]
         if function is None:
@@ -81,27 +87,31 @@ class Execution:
         gaps[kind]=gaps.get(kind,0)+1
         raise CompiledUnsupported(node,'force Python translation unsupported '+kind)
 
-def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None):
+def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
     import io, tokenize
+    import ast as python_ast
+    from types import FunctionType
     from . import python_translation_expression_fusion as PE
     # Every expression and block is generated before the admitted program runs.
-    expressions=prepare_expressions(expression_roots,max_source_bytes=max_source_bytes,max_function_bytes=max_function_bytes)
+    expressions=prepare_expressions(expression_roots,max_source_bytes=max_source_bytes,max_function_bytes=max_function_bytes,owned_leaves=owned_leaves,max_bindings=max_bindings)
+    binding_count=expressions.binding_count
     used=len(expressions.source.encode());namespace={'R':R,'Decimal':Decimal,'_PE':PE}
     originals={}
     for block in blocks:
         originals.setdefault(tuple(id(node) for node in block),block)
-    sources=[];nodes=[]
+    sources=[];nodes=[];source_templates={}
+    block_bindings={}
     queued=set(originals if entry_keys is None else entry_keys)
-    pending=[originals[key] for key in originals if key in queued]
+    pending=[(key,originals[key],False) for key in originals if key in queued]
+    operation_nodes={}
     cursor=0
     def bind(node):
         nodes.append(node);return f'_nodes[{len(nodes)-1}]'
     def body(value):return f'(yield from _s.residual_block({tuple(id(n) for n in value)!r}))'
     while cursor<len(pending):
-        block=pending[cursor];cursor+=1
-        key=tuple(id(node) for node in block)
+        key,block,is_operation=pending[cursor];cursor+=1
         lines=['def translated(_s):',' if False: yield None',' v = _s.vm',' r = None']
         emitted=sum(len(line.encode())+1 for line in lines)
         serial=0
@@ -120,13 +130,15 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             for start,stop,replacement in reversed(replacements):text=text[:start]+replacement+text[stop:]
             line=' '*d+text
             emitted+=len(line.encode())+1
-            if emitted>max_function_bytes or used+emitted>max_source_bytes:
+            if emitted>max_function_bytes:
                 raise UnsupportedTranslation('generated source budget')
             lines.append(line)
         expression_roots_stack=[]
         fusion=PE.ExpressionEmitter(bind,emit,temp,compact_leaves=True)
         def ev(node,d):
-            value=fusion.emit_expression(node,d)
+            if compact_control:
+                value=temp();emit(d,f'{value} = yield from _s.expressions.evaluate({bind(node)})')
+            else:value=fusion.emit_expression(node,d)
             expression_roots_stack[-1].append(value)
             return value
         def condition(node,d):
@@ -136,10 +148,10 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             return checked
         def nested(child,d):
             # A label dispatcher is a generated function, never an AST adapter.
-            if d > 10 or any(syntax_kind(n) is ast.Label for n in child):
+            if compact_control or d > 10 or any(syntax_kind(n) is ast.Label for n in child):
                 child_key=tuple(id(node) for node in child)
                 if child_key not in queued:
-                    queued.add(child_key);pending.append(originals[child_key])
+                    queued.add(child_key);pending.append((child_key,originals[child_key],False))
                 emit(d,body(child))
             else:
                 emit(d,f'_s.enter_inline_block({tuple(id(n) for n in child)!r})')
@@ -235,7 +247,14 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             d-=1;emit(d,'finally:');emit(d+1,f'{previous_result} = None')
         def emit_sequence(sequence,d):
             if not sequence:emit(d,'pass')
-            for node in sequence:emit_statement(node,d)
+            for node in sequence:
+                if compact_control and not is_operation:
+                    operation_key=('statement',id(node))
+                    if operation_key not in queued:
+                        queued.add(operation_key);operation_nodes[id(node)]=node
+                        pending.append((operation_key,(node,),True))
+                    emit(d,f'result = yield from _s.statement({id(node)})')
+                else:emit_statement(node,d)
         labels={node.name.casefold():i for i,node in enumerate(block) if syntax_kind(node) is ast.Label}
         if not labels:
             emit_sequence(block,1)
@@ -244,18 +263,59 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(2,f'if pc >= {len(block)}: break');emit(2,'try:')
             for i,node in enumerate(block):
                 emit(3,f'{"if" if i==0 else "elif"} pc == {i}:')
-                emit_statement(node,4)
+                emit_sequence((node,),4)
             emit(2,'except R._Goto as jump:');emit(3,f'labels = {labels!r}')
             emit(3,'if jump.name not in labels: raise');emit(3,'pc = labels[jump.name]')
             emit(2,'else:');emit(3,'pc += 1')
         emit(1,'return result')
         source='\n'.join(lines)+'\n'
-        if len(source.encode())>max_function_bytes:raise UnsupportedTranslation('generated function source budget')
-        used+=len(source.encode())
-        if used>max_source_bytes:raise UnsupportedTranslation('generated unit source budget')
-        sources.append((key,source))
-    namespace['_nodes']=tuple(nodes);functions={key:(block,None) for key,block in originals.items()}
-    for key,source in sources:
+        operands=[];handles={};constants={}
+        class BindOperands(python_ast.NodeTransformer):
+            def bind(self,value,handle=False):
+                key=id(value) if handle else (type(value),value)
+                mapping=handles if handle else constants
+                index=mapping.get(key)
+                if index is None:
+                    index=len(operands);operands.append(value);mapping[key]=index
+                return python_ast.Subscript(value=python_ast.Name(id='_p',ctx=python_ast.Load()),
+                    slice=python_ast.Constant(index),ctx=python_ast.Load())
+            def visit_Subscript(self,node):
+                if isinstance(node.value,python_ast.Name) and node.value.id=='_nodes':
+                    if not isinstance(node.slice,python_ast.Constant) or type(node.slice.value) is not int:
+                        raise UnsupportedTranslation('nonliteral block source handle')
+                    return self.bind(nodes[node.slice.value],True)
+                return self.generic_visit(node)
+            def visit_Tuple(self,node):
+                if all(isinstance(item,python_ast.Constant) for item in node.elts):
+                    return self.bind(tuple(item.value for item in node.elts))
+                return self.generic_visit(node)
+            def visit_Constant(self,node):return self.bind(node.value)
+        module=BindOperands().visit(python_ast.parse(source))
+        module.body[0].args.args.append(python_ast.arg(arg='_p'))
+        canonical=python_ast.unparse(python_ast.fix_missing_locations(module))+'\n'
+        canonical='\n'.join(' '*((len(line)-len(line.lstrip()))//4)+line.lstrip() for line in canonical.splitlines())+'\n'
+        # Count only source actually compiled, once per shared control shape.
+        # The raw emitter above remains independently bounded per function.
+        if len(canonical.encode())>max_function_bytes:raise UnsupportedTranslation('generated function source budget')
+        template=source_templates.get(canonical)
+        if template is None:
+            template=len(sources);source_templates[canonical]=template
+            used+=len(canonical.encode())
+            if used>max_source_bytes:raise UnsupportedTranslation('generated unit source budget')
+            sources.append(canonical)
+        binding_count+=len(operands)
+        if binding_count>max_bindings:raise UnsupportedTranslation('generated operand binding budget')
+        block_bindings[key]=(template,tuple(operands))
+    namespace['_nodes']=();functions={key:(block,None) for key,block in originals.items()};statements={}
+    compiled=[]
+    for source in sources:
         exec(_CODE_CACHE.get(source),namespace)
-        functions[key]=(originals[key],namespace['translated'])
-    return BlockUnit(functions,expressions,used)
+        compiled.append(namespace['translated'])
+    # Do not retain a template function back-reference to the unpruned globals.
+    namespace.pop('translated',None)
+    for key,(template,operands) in block_bindings.items():
+        function=compiled[template]
+        bound=FunctionType(function.__code__,namespace,function.__name__,(operands,))
+        if key and key[0]=='statement':statements[key[1]]=(operation_nodes[key[1]],bound)
+        else:functions[key]=(originals[key],bound)
+    return BlockUnit(functions,expressions,used,statements,binding_count)

@@ -24,9 +24,11 @@ class StrictContextTests(unittest.TestCase):
         from yadinassi.source_constant_managers import _ValueInterpreter
         from yadinassi.source_catalog_runtime import _ObjectInterpreter as CatalogInterpreter
         from yadinassi.source_document_runtime import _ObjectInterpreter as DocumentInterpreter
-        created=[];executed=set()
+        created=[];executed=set();translated=set();engines={}
         original_init=Interpreter.__init__
         original_node=Engine.run_node
+        original_python_node=Engine._run_python_node
+        original_python_block=Engine._run_python_block
         original_cli=cli.main
         def initialize(vm,*args,**kwargs):
             original_init(vm,*args,**kwargs)
@@ -36,6 +38,16 @@ class StrictContextTests(unittest.TestCase):
         def run_node(engine,node):
             executed.add(type(engine.vm).__name__)
             return (yield from original_node(engine,node))
+        def translated_node(engine,node):
+            translated.add(type(engine.vm).__name__)
+            executed.add(type(engine.vm).__name__)
+            engines[id(engine)]=engine
+            return (yield from original_python_node(engine,node))
+        def translated_block(engine,statements):
+            translated.add(type(engine.vm).__name__)
+            executed.add(type(engine.vm).__name__)
+            engines[id(engine)]=engine
+            return (yield from original_python_block(engine,statements))
         def old_visitor(*args,**kwargs):
             raise AssertionError('legacy visit_* used during strict context test')
         def run_cli(args=None):
@@ -44,6 +56,8 @@ class StrictContextTests(unittest.TestCase):
             stack.enter_context(execution_backend_policy('compiled-strict'))
             stack.enter_context(patch.object(Interpreter,'__init__',initialize))
             stack.enter_context(patch.object(Engine,'run_node',run_node))
+            stack.enter_context(patch.object(Engine,'_run_python_node',translated_node))
+            stack.enter_context(patch.object(Engine,'_run_python_block',translated_block))
             for cls in (Interpreter,_SourceInterpreter,_FormInterpreter,_EventInterpreter,
                         _ObjectInterpreter,_PostingInterpreter,_ValueInterpreter,
                         CatalogInterpreter,DocumentInterpreter):
@@ -61,6 +75,21 @@ class StrictContextTests(unittest.TestCase):
             f'{test.id()}\n{trace}' for test,trace in result.errors+result.failures))
         self.assertTrue(created,'fixture did not construct any VM')
         self.assertTrue(set(required_types)<=executed,(required_types,executed))
+        # A whole translated body need not call run_node for every expression.
+        # Keep the behavioral suite and poisoned visitors; witness the actual
+        # selected route instead of requiring obsolete per-node dispatch.
+        if Engine.FORCE_PYTHON_TRANSLATION:
+            # Entry attempts alone may reject before executing generated code.
+            translated={type(engine.vm).__name__ for engine in engines.values()
+                        if engine.stats.get('python_translated_blocks',0)>0
+                        or sum(engine.stats.get('python_translated_node_kinds',{}).values())>0}
+            self.assertTrue(set(required_types)<=translated,(required_types,translated))
+            self.assertTrue(engines,'no translated runtime entry observed')
+            for engine in engines.values():
+                self.assertEqual(engine.vm.execution_backend,'compiled-strict')
+                self.assertEqual(engine.stats['interpreter_fallbacks'],0)
+                self.assertEqual(engine.stats.get('plain_adapter_blocks',0),0)
+
 
     def test_source_lazy_session_synthetic_actuals(self):
         self.run_existing([

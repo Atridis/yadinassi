@@ -196,6 +196,14 @@ def _make_metadata_block_entry():
 _METADATA_BLOCK_ENTRY = _make_metadata_block_entry()
 
 
+def _translated_literal_value(vm,node):
+    return node.value
+
+
+def _translated_name_value(vm,node):
+    return vm.semantic_name(node)
+
+
 class Engine:
     # Broad integration branch: ordinary strict execution uses Python translation.
     FORCE_PYTHON_TRANSLATION = True
@@ -525,9 +533,11 @@ class Engine:
                 else:
                     if self.FORCE_PYTHON_TRANSLATION:
                         function, tier = None, self._node_tier(value)
+                        if kind is ast.Literal:function,tier=_translated_literal_value,'shared-leaf'
+                        elif kind is ast.Name:function,tier=_translated_name_value,'shared-leaf'
                     else:
                         function, tier = self._lower_node(value)
-                    prepared_counts['compiled_node_functions'] += function is not None
+                    prepared_counts['compiled_node_functions'] += function is not None and tier != 'shared-leaf'
                     nodes[identity] = _NodePlan(value, _signature(value), function, tier)
             elif type(value) in (list, tuple, OwnedList):
                 identity = id(value)
@@ -1010,15 +1020,23 @@ class Engine:
         retained={id(unit):unit for _,unit in self._python_units.values()}
         available=min(self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
                       self.MAX_PLAIN_SOURCE_BYTES-self._plain_source_bytes()-sum(unit.source_bytes for unit in retained.values()))
-        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys)
+        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys,owned_leaves=True,compact_control=len(nodes)>10_000,max_bindings=self.MAX_REGISTRY_ENTRIES-sum(u.binding_count for u in retained.values()))
         except (UnsupportedTranslation,UnsupportedExpression) as error:
             gaps=self.stats.setdefault('force_translation_gaps',{})
             reason='admission:'+str(error);gaps[reason]=gaps.get(reason,0)+1
             raise CompiledUnsupported(program[0] if program else None,str(error)) from None
-        if len(self._python_units)+len(unit.blocks)>self.MAX_REGISTRY_ENTRIES:
+        if (len(self._python_units)+len(unit.blocks)+len(unit.statements or {})
+                +sum(len(u.statements or {}) for u in retained.values())>self.MAX_REGISTRY_ENTRIES):
             raise CompiledUnsupported(None,'force translator registry budget')
         self._inline_unit_bytes+=unit.source_bytes
         for key,(block,_) in unit.blocks.items():self._python_units[key]=(block,unit)
+
+    def _python_leaf_operation(self, node):
+        identity=node if type(node) is int else id(node)
+        plan=self._nodes.get(identity)
+        if plan is None or plan.tier!='shared-leaf':return None
+        if type(node) is not int and plan.node is not node:return None
+        return plan.node,plan.function
 
     def _python_expression_execution(self, node):
         # Resolve only source-bound code already admitted in this caller VM.
@@ -1032,6 +1050,12 @@ class Engine:
 
     def _run_python_node(self,node):
         view=self.execution_view(node)
+        leaf=self._python_leaf_operation(view)
+        if leaf is not None:
+            self._verify_active_plans();self.verify_node(view)
+            kinds=self.stats.setdefault('python_translated_node_kinds',{})
+            kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
+            return leaf[1](self.vm,view)
         resolved=self._python_expression_execution(view)
         if resolved is not None:
             execution,view=resolved

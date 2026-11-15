@@ -811,6 +811,7 @@ FAILURE_REASONS = ('tree_native_evidence_rejected', 'tree_report_invalid', 'tree
                    'tree_staged_source_changed', 'docker_command_timeout', 'docker_command_unavailable',
                    'docker_command_failed', 'container_timeout', 'container_output_limit',
                    'container_cleanup_unverified', 'tree_container_failed', 'tree_host_changed',
+                   'interpreter_timeout', 'interpreter_output_limit', 'interpreter_unavailable',
                    'execution_provenance_changed', 'private_cleanup_unverified', 'unexpected_image_platform_or_volumes',
                    'tree_host_report_limit', 'native_artifact_export_failed', 'native_artifact_target_exists')
 

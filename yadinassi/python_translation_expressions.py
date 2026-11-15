@@ -89,16 +89,18 @@ class ExpressionPlan:
     nodes: tuple
     source: str
     sync_functions: object = None
+    binding_count: int = 0
 
-    def bind(self, vm, *, guard, access, resolve=None):
+    def bind(self, vm, *, guard, access, resolve=None, leaf_resolve=None):
         """guard(node) must perform current admission/budget/security accounting."""
-        return ExpressionExecution(self, vm, guard, access, resolve)
+        return ExpressionExecution(self, vm, guard, access, resolve, leaf_resolve)
 
 
 class ExpressionExecution:
-    def __init__(self, plan, vm, guard, access, resolve=None):
+    def __init__(self, plan, vm, guard, access, resolve=None, leaf_resolve=None):
         self.plan, self.vm, self.guard, self.access = plan, vm, guard, access
         self.resolve=resolve
+        self.leaf_resolve=leaf_resolve
         self._bound_callee = None
 
     def with_bound_callee(self, node, value):
@@ -108,18 +110,31 @@ class ExpressionExecution:
         compiler is introduced. Scope the captured host to this invocation only.
         """
         item = self.plan.functions.get(id(node))
-        if item is None or item[0] is not node:
+        if (item is None or item[0] is not node) and self._external_leaf(node) is None:
             raise UnsupportedExpression('bound callee not in prepared source')
-        clone = ExpressionExecution(self.plan, self.vm, self.guard, self.access, self.resolve)
+        clone = ExpressionExecution(self.plan, self.vm, self.guard, self.access, self.resolve,self.leaf_resolve)
         clone._bound_callee = (node, value)
         return clone
 
     def bound_callee(self, node):
         return (self._bound_callee[1],) if self._bound_callee is not None and self._bound_callee[0] is node else ()
 
+    def _external_leaf(self, node):
+        return None if self.leaf_resolve is None else self.leaf_resolve(node)
+
+    def leaf_node(self, identity):
+        item=self._external_leaf(identity)
+        if item is None:raise UnsupportedExpression('owned leaf identity not admitted')
+        return item[0]
+
+    def leaf_id(self, identity):
+        return self.leaf(self.leaf_node(identity))
+
     def leaf(self, node):
         """Invoke a source-admitted synchronous leaf; never dispatch AST kinds."""
         item=(self.plan.sync_functions or {}).get(id(node))
+        external=self._external_leaf(node) if item is None else None
+        if external is not None:item=external
         if item is None or item[0] is not node:
             raise UnsupportedExpression('synchronous leaf not admitted')
         value=converted=None
@@ -128,7 +143,7 @@ class ExpressionExecution:
             try:
                 self.guard(node)
                 value=(self._bound_callee[1] if self._bound_callee is not None and self._bound_callee[0] is node
-                       else item[1](self))
+                       else item[1](self.vm,node) if external is not None else item[1](self))
             except BaseException as error:
                 converted=self.vm.compiled_exception(node,error)
                 if converted is error:raise
@@ -139,6 +154,8 @@ class ExpressionExecution:
             value=converted=None
 
     def evaluate(self, node):
+        if self._external_leaf(node) is not None:
+            return self.leaf(node)
         if self.resolve is not None:
             stats=self.vm._compiled().stats
             stats['python_expression_registry_entries']=stats.get('python_expression_registry_entries',0)+1
@@ -175,7 +192,7 @@ class ExpressionExecution:
         return (yield from self.vm.call(node, require_value=require_value, _evaluation=self))
 
 
-def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_function_bytes=4*1024*1024):
+def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_function_bytes=4*1024*1024, owned_leaves=False, max_bindings=100_000):
     """Prepare owned/admitted expression roots, not arbitrary Python input.
 
     The plan has no late compiler. Drivers must include routine defaults in roots.
@@ -186,14 +203,55 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
     shared = {}
     templates = {}
     active = set()
+    generated_templates = {}
+    generated_bindings = {}
+    binding_count = 0
+    import ast as python_ast
+    def shared_body(text, slot):
+        """Canonicalize source-bound operands at admission, never at execution."""
+        nonlocal binding_count
+        operands=[]
+        class BindOperands(python_ast.NodeTransformer):
+            def bind(self, value):
+                index=len(operands);operands.append(value)
+                return python_ast.Subscript(value=python_ast.Name(id='_p',ctx=python_ast.Load()),
+                    slice=python_ast.Constant(index),ctx=python_ast.Load())
+            def visit_Subscript(self, node):
+                if isinstance(node.value,python_ast.Name) and node.value.id=='_nodes':
+                    if not isinstance(node.slice,python_ast.Constant) or type(node.slice.value) is not int:
+                        raise UnsupportedExpression('nonliteral generated source handle')
+                    return self.bind(nodes[node.slice.value])
+                return self.generic_visit(node)
+            def visit_Constant(self, node):
+                return self.bind(node.value)
+        body=BindOperands().visit(python_ast.parse(text))
+        body=python_ast.fix_missing_locations(body)
+        canonical=python_ast.unparse(body)
+        name=generated_templates.get(canonical)
+        if name is None:
+            name=f'_expression_template_{len(generated_templates)}'
+            generated_templates[canonical]=name
+            bodies.append(f'def {name}(_s, _p):\n if False: yield None\n '+canonical.replace('\n','\n ')+'\n')
+        binding_count+=len(operands)
+        if binding_count>max_bindings:raise UnsupportedExpression('expression operand binding budget')
+        generated_bindings[slot]=(name,tuple(operands))
+
     def lower(node):
         key = id(node)
+        if owned_leaves and syntax_kind(node) in (ast.Literal,ast.Name):return None
         if key in active: raise UnsupportedExpression('cyclic syntax')
         if key in slots: return slots[key]
         if len(nodes) >= max_nodes: raise UnsupportedExpression('expression node budget')
         slot=len(nodes); slots[key]=slot; nodes.append(node); active.add(key)
         kind=syntax_kind(node)
-        child=lambda value: f'(yield from _s.evaluate(_nodes[{lower(value)}]))'
+        def handle(value):
+            if owned_leaves and syntax_kind(value) in (ast.Literal,ast.Name):
+                return f'_s.leaf_node({id(value)})'
+            return f'_nodes[{lower(value)}]'
+        def child(value):
+            if owned_leaves and syntax_kind(value) in (ast.Literal,ast.Name):
+                return f'_s.leaf_id({id(value)})'
+            return f'(yield from _s.evaluate({handle(value)}))'
         if kind is ast.Literal: text=f'return _nodes[{slot}].value'
         elif kind is ast.Name: text=f'return _s.vm.semantic_name(_nodes[{slot}])'
         elif kind is ast.Group: text='return '+child(node.expression)
@@ -210,8 +268,8 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
         elif kind is ast.Conditional:
             text=f'return {child(node.when_true)} if _boolean({child(node.condition)}) else {child(node.when_false)}'
         elif kind is ast.Attribute:
-            obj=lower(node.object)
-            text=f'_value = yield from _s.receiver(_nodes[{obj}])\nreturn (yield from _s.access.read_attribute(_s.vm, _value, {node.name!r}))'
+            obj=handle(node.object)
+            text=f'_value = yield from _s.receiver({obj})\nreturn (yield from _s.access.read_attribute(_s.vm, _value, {node.name!r}))'
         elif kind is ast.Index:
             text=f'_value = {child(node.object)}\n_bound = _s.access.prepare_index_read(_s.vm, _value)\n_index = {child(node.index)}\nreturn (yield from _bound.finish(_index))'
         elif kind is ast.Await:
@@ -246,7 +304,7 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
             templates[template_name] = ('def '+template_name+'(_s, _node):\n if False: yield None\n '+template_text+'\n')
             shared[slot] = template_name
         else:
-            bodies.append(f'def _expression_{slot}(_s):\n if False: yield None\n '+text.replace('\n','\n ')+'\n')
+            shared_body(text, slot)
         active.remove(key)
         return slot
     for root in roots: lower(root)
@@ -274,6 +332,8 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
                 sync=namespace[sync_name]
                 sync_functions[id(node)]=(node,FunctionType(sync.__code__,namespace,sync.__name__,(node,)))
         else:
-            function=namespace[f'_expression_{index}']
+            name,operands=generated_bindings[index]
+            template=namespace[name]
+            function=FunctionType(template.__code__,namespace,template.__name__,(operands,))
         functions[id(node)]=(node,function)
-    return ExpressionPlan(functions,tuple(nodes),source,sync_functions)
+    return ExpressionPlan(functions,tuple(nodes),source,sync_functions,binding_count)

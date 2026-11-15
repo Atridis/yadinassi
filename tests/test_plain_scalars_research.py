@@ -1,5 +1,8 @@
 import unittest
 from yadinassi import Interpreter
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class ScalarTests(unittest.TestCase):
  def test_scalar_values_ternary_declarations_division_modulo(self):
   for expression,arg in [('x+"!"','"abc"'),('NOT x','False'),('x=Undefined','Undefined'),('?(x,10,20)','True'),('x/2','9'),('x%2','9')]:

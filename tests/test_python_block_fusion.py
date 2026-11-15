@@ -34,9 +34,9 @@ class BlockFusionTests(unittest.TestCase):
     def test_partial_error_state(self):
         self.pair('x=0;For i=1 To 3 Do If i=2 Then x=x+1;z=1/0;EndIf; x=x+10;EndDo;')
     def test_goto_crosses_inlined_body(self):
-        self.pair('x=0;While True Do If True Then x=1;Goto done;EndIf;EndDo;~done:x=x+2;')
+        self.pair('x=0;While True Do If True Then x=1;Goto ~done;EndIf;EndDo;~done:x=x+2;')
     def test_nested_label_dispatch_remains_generated(self):
-        self.pair('x=0;If True Then ~again:x=x+1;If x<3 Then Goto again;EndIf;EndIf;')
+        self.pair('x=0;If True Then ~again:x=x+1;If x<3 Then Goto ~again;EndIf;EndIf;')
     def test_straightline_bytecode_has_no_pc(self):
         with patch.object(Engine,'FORCE_PYTHON_TRANSLATION',True):
             vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=True)

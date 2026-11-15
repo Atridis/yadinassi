@@ -1,6 +1,9 @@
 import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class PrefixTests(unittest.TestCase):
  def test_prefix_suffix_live_locals_and_once(self):
   source='Function F(Val n) s=0;For i=1 To n Do s=s+i;EndDo;s=Host(s);Return s+1;EndFunction r=F(5);'

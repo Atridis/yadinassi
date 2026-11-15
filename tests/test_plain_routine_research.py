@@ -3,6 +3,9 @@ from decimal import Decimal,localcontext,Overflow
 from unittest.mock import patch
 from yadinassi import Interpreter
 SOURCE='Function Sum(Val n) s=0;For i=1 To n Do s=s+i; EndDo; Return s; EndFunction r=Sum(n);'
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class PlainTests(unittest.TestCase):
  def execute(self,source,n=10,mode='compiled-strict'):
   v=Interpreter(compiled_plain_routines=True,execution_backend=mode);v.variables['n']=Decimal(n);v.execute(source);return v

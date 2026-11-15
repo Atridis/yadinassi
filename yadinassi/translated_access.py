@@ -49,6 +49,14 @@ def read_attribute(vm, value, name):
 
 def prepare_index_read(vm,value):
     from . import runtime as R
+    # The form interpreter extends indexing for its owned data collections.
+    # Preserve its exact context boundary and bind the method before evaluating
+    # the index; get_index performs the live form/session checks afterwards.
+    from .form_runtime import _FormInterpreter
+    from .source_forms import _SourceFormInterpreter
+    from .form_tables import BSLFormDataCollection
+    if (type(vm) is _FormInterpreter or type(vm) is _SourceFormInterpreter) and type(value) is BSLFormDataCollection:
+        return IndexRead(value.get_index)
     from .source_document_sections import SourceDocumentSection
     if type(value) is SourceDocumentSection:
         method=value.get_index

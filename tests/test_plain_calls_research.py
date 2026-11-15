@@ -2,6 +2,9 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class TailCallTests(unittest.TestCase):
  def run_source(self,source,optin,setup=lambda v:None):
   vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=optin)

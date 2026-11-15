@@ -2,6 +2,9 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class ControlTests(unittest.TestCase):
     def compare(self, body, n=5, plain=True):
         source='Function F(Val n) '+body+' EndFunction result=F(n);'

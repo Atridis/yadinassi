@@ -1,5 +1,8 @@
 import unittest
 from yadinassi import Interpreter
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class ProcedureTests(unittest.TestCase):
  def test_val_procedures_defaults_early_and_implicit_returns(self):
   for body in ('','x=x+1;','If x>0 Then Return;EndIf;x=x+1;'):

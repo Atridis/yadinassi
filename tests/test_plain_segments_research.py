@@ -2,6 +2,9 @@ import unittest
 from decimal import Decimal
 from yadinassi import Interpreter
 SOURCE='Function F(Val x) x=x+1;y=Host(x);Return x+y;EndFunction r=F(3);'
+from compiled_contract_fixture import legacy_compiler_fixture
+
+@legacy_compiler_fixture
 class SegmentTests(unittest.TestCase):
  def compare(self,change):
   results=[]
@@ -32,6 +35,7 @@ class SegmentTests(unittest.TestCase):
   vm,result=self.compare(lambda vm:setattr(vm._compiled(),'MAX_INLINE_UNIT_BYTES',0))
   self.assertEqual(result,('ok',Decimal(8)));self.assertEqual(vm.compiled_backend_stats.get('plain_segment_entries'),1)
 
+@legacy_compiler_fixture
 class GuardOrderingTests(unittest.TestCase):
  def engine(self):
   vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=True)
