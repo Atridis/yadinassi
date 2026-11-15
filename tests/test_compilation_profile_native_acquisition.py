@@ -522,3 +522,10 @@ class AcquisitionContracts(unittest.TestCase):
             self.assertNotIn('Secret',json.dumps(value))
             value['out']['frames'][0]['line']=True
             with self.assertRaises(ValueError):d.validate_log_evidence(value,suite.diagnostics)
+
+    def test_duplicate_declaration_projection_is_finite(self):
+        for phrase in ('Процедура или функция с указанным именем уже определена','Procedure or function with the specified name is already defined'):
+            value=self.diagnostic(('{МодульСеанса(206)}: '+phrase+' (CPMaskEN)').encode())
+            self.assertEqual(value,dict(category='compile_error',module='SessionModule',line=206,identifier='CPMaskEN'))
+            secret=self.diagnostic(('{МодульСеанса(206)}: '+phrase+' (PrivateSecret)').encode())
+            self.assertIsNone(secret['identifier'])

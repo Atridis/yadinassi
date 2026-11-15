@@ -25,7 +25,9 @@ COMPILE_PHRASES = ('неизвестная инструкция препроце
     'unknown preprocessor directive', 'ожидается ключевое слово', 'expected keyword',
     'ожидается имя', 'ожидается выражение', 'неопознанный оператор',
     'неизвестный идентификатор препроцессора', 'expected identifier',
-    'expected expression', 'unrecognized statement', 'unknown preprocessor symbol')
+    'expected expression', 'unrecognized statement', 'unknown preprocessor symbol',
+    'процедура или функция с указанным именем уже определена',
+    'procedure or function with the specified name is already defined')
 
 def summarize(text, sanitizer):
     summary=sanitizer.summarize_text(text)
@@ -45,7 +47,7 @@ def summarize(text, sanitizer):
         if len(matches)==len(frames)==1:
             candidate=ALIASES[matches[0][1]];number=int(matches[0][2])
             if 1<=number<=LIMITS[candidate]:module,line=candidate,number
-        candidates={m[1].strip() for pattern in sanitizer.IDENTIFIER_PATTERNS for m in re.finditer(pattern,record,re.I)}
+        candidates={m[1].strip() for pattern in (*sanitizer.IDENTIFIER_PATTERNS, r'(?:процедура или функция с указанным именем уже определена|procedure or function with the specified name is already defined)\s*\(([^()\r\n]{1,96})\)') for m in re.finditer(pattern,record,re.I)}
         identifier=next(iter(candidates)) if len(candidates)==1 and candidates <= (sanitizer.IDENTIFIERS|OWNED_IDENTIFIERS) else None
         details.add((module,line,identifier))
     module,line,identifier=next(iter(details)) if len(details)==1 else (None,None,None)
