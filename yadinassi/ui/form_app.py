@@ -36,8 +36,7 @@ class FormProcess(RuntimeBridge):
             command += ['--f', str(Path(database).resolve())]
         from ..execution_policy import ui_backend
         self.execution_backend = ui_backend()
-        if self.execution_backend != 'interpreter':
-            command += ['--execution-backend', self.execution_backend]
+        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
     def exchange(self, raw):

@@ -18,3 +18,14 @@ class BranchDefaultTests(unittest.TestCase):
   self.assertEqual(current_backend(),'compiled-strict');self.assertEqual(ui_backend(),'compiled-strict')
   with execution_backend_policy('interpreter'):self.assertEqual(Interpreter().execution_backend,'interpreter')
   self.assertEqual(Interpreter().execution_backend,'compiled-strict')
+ def test_ui_children_receive_explicit_selected_backend(self):
+  from unittest.mock import patch
+  from yadinassi.ui.local_app import RuntimeBridge
+  from yadinassi.ui.form_app import FormProcess
+  from yadinassi.ui.configuration_app import ConfigurationProcess
+  for mode in ('compiled-strict','interpreter'):
+   for cls in (RuntimeBridge,FormProcess,ConfigurationProcess):
+    with self.subTest(mode=mode,launcher=cls.__name__),execution_backend_policy(mode),patch.object(RuntimeBridge,'_start') as start:
+     cls('.')
+     command=start.call_args.args[0]
+     self.assertEqual(command[command.index('--execution-backend')+1],mode)
