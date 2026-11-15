@@ -769,6 +769,10 @@ class ConfigurationProcess(FormProcess):
             command += ['--document-objects']
         if launch_binding is not None:
             command += ['--launch-binding', launch_binding]
+        from ..execution_policy import ui_backend
+        self.execution_backend = ui_backend()
+        if self.execution_backend != 'interpreter':
+            command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
 
@@ -2130,6 +2134,10 @@ class ConfigurationHandler(_Handler):
                'application.reportSetup', 'application.reportPage', 'application.catalogPage', 'application.catalogFilter')
 
 
+from ..execution_policy import backend_entrypoint, UI_BACKENDS
+
+
+@backend_entrypoint
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Run trusted configuration-declared managed forms.')
     parser.add_argument('configuration', metavar='CONFIGURATION_DIRECTORY')
@@ -2148,6 +2156,7 @@ def main(argv=None):
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
+    parser.add_argument('--execution-backend', choices=UI_BACKENDS, help='Explicit runtime backend; strict mode never falls back')
     args = parser.parse_args(argv)
     if sum((args.catalog_objects, args.application_host, args.document_objects, args.business_application, args.reference_application, args.posting_application, args.inventory_application, args.inventory_enum_application, args.main_demo_application)) > 1:
         parser.error('choose one explicit configuration source profile')

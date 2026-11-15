@@ -184,7 +184,15 @@ class IdleLifecycleTests(unittest.TestCase):
         # lifecycle substitutes for the real-controller checks above.
         import ast, inspect
         for module in (local_app, form_app, orders_workspace, reference_orders_workspace, configuration_app):
-            tree = ast.parse(inspect.getsource(module.main))
+            tree = ast.parse(inspect.getsource(inspect.unwrap(module.main)))
+            if module is local_app:
+                # The scoped backend entrypoint forwards the same parsed args.
+                forwards = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+                            and isinstance(n.func, ast.Name) and n.func.id == '_run_selected']
+                self.assertEqual(len(forwards), 1)
+                self.assertEqual([ast.unparse(a) for a in forwards[0].args], ['args'])
+                self.assertEqual(forwards[0].keywords, [])
+                tree = ast.parse(inspect.getsource(module._run_selected))
             calls = [n for n in ast.walk(tree) if isinstance(n,ast.Call) and isinstance(n.func,ast.Name) and n.func.id=='LocalUIServer']
             self.assertEqual(len(calls), 1)
             value = next(k.value for k in calls[0].keywords if k.arg=='browser_session')

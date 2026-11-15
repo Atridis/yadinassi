@@ -6,6 +6,7 @@ There is no object-form buffer and no persistence operation in this profile.
 from hashlib import sha256
 import re
 
+from .owned_syntax import syntax_kind
 from .catalog_backend import BackendError
 from .catalogs import BSLCatalogObject
 from .catalog_object_preparation import _ObjectInterpreter
@@ -16,6 +17,45 @@ from .syntax.parser import parse
 from .type_values import type_of
 from .user_messages import UserMessageRecord
 from .values import Reference
+
+
+class ListInterpreter(_ObjectInterpreter):
+    def __init__(self, receiver, sink, view, manager, message, object_source):
+        super().__init__(receiver, sink, view)
+        self._list_manager = manager
+        self._list_sink = sink
+        self._list_view = view
+        self._list_object_source = object_source
+        self.register_function('Тип', manager._catalogs.type_by_name)
+        self.register_function('ТипЗнч', type_of)
+        self.register_function('Сообщить', message, returns_value=False)
+
+    def _object_name(self, name):
+        return False
+
+    def call(self, node, *, require_value):
+        callee = self.ungroup(node.callee)
+        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'проверитьданные':
+            obj = yield from self.receiver(callee.object)
+            if (require_value or len(node.arguments) != 1 or type(obj) is not BSLCatalogObject
+                    or obj._manager is not self._list_manager or obj.is_new()
+                    or sum(len(s._rows) for s in obj._sections.values()) > 32):
+                raise ValueError('product list: saved bounded product required')
+            argument = yield from self.argument(node.arguments[0])
+            if not isinstance(argument, Reference) or type(argument.get()) is not bool:
+                raise ValueError('product list: Boolean reference required')
+            child = _ObjectInterpreter(obj, self._list_sink, self._list_view)
+            try:
+                child.execute_program(parse(self._list_object_source.decode('utf-8-sig')))
+                child.variables['отказ'] = argument.get()
+                child.execute('ПроверитьДанные(Отказ);')
+                if type(child.variables['отказ']) is not bool:
+                    raise ValueError('product list: Boolean result required')
+                argument.set(child.variables['отказ'])
+            finally:
+                child.close()
+            return None
+        return (yield from super().call(node, require_value=require_value))
 
 
 def check_product_list(manager, reference, view, list_source, object_source):
@@ -44,41 +84,7 @@ def check_product_list(manager, reference, view, list_source, object_source):
             raise ValueError('product list: diagnostic required')
         message(record.text, record.field)
 
-    class ListInterpreter(_ObjectInterpreter):
-        def __init__(self):
-            super().__init__(receiver, sink, view)
-            self.register_function('Тип', manager._catalogs.type_by_name)
-            self.register_function('ТипЗнч', type_of)
-            self.register_function('Сообщить', message, returns_value=False)
-
-        def _object_name(self, name):
-            return False
-
-        def call(self, node, *, require_value):
-            callee = self.ungroup(node.callee)
-            if type(callee) is ast.Attribute and callee.name.casefold() == 'проверитьданные':
-                obj = yield from self.receiver(callee.object)
-                if (require_value or len(node.arguments) != 1 or type(obj) is not BSLCatalogObject
-                        or obj._manager is not manager or obj.is_new()
-                        or sum(len(s._rows) for s in obj._sections.values()) > 32):
-                    raise ValueError('product list: saved bounded product required')
-                argument = yield from self.argument(node.arguments[0])
-                if not isinstance(argument, Reference) or type(argument.get()) is not bool:
-                    raise ValueError('product list: Boolean reference required')
-                child = _ObjectInterpreter(obj, sink, view)
-                try:
-                    child.execute_program(parse(object_source.decode('utf-8-sig')))
-                    child.variables['отказ'] = argument.get()
-                    child.execute('ПроверитьДанные(Отказ);')
-                    if type(child.variables['отказ']) is not bool:
-                        raise ValueError('product list: Boolean result required')
-                    argument.set(child.variables['отказ'])
-                finally:
-                    child.close()
-                return None
-            return (yield from super().call(node, require_value=require_value))
-
-    vm = ListInterpreter()
+    vm = ListInterpreter(receiver, sink, view, manager, message, object_source)
     try:
         program = parse(list_source.decode('utf-8-sig'))
         vm.execute_program(program)

@@ -435,3 +435,6 @@ yadinassi/ui/assets/source/* text eol=lf
 
 frontend/source-workspace/** text eol=lf
 yadinassi/ui/assets/source-workspace/* text eol=lf
+
+# Exact compiled-harness source inverse is byte-pinned on every platform.
+scripts/native_async_comparison.py text eol=lf

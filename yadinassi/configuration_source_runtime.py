@@ -109,6 +109,47 @@ class _SourceInterpreter(Interpreter):
             return self.application.extensions
         return super().known_table_receiver(node)
 
+    def semantic_name(self, node):
+        key = node.name.casefold()
+        if ((self.locals is not None and key in self.locals)
+                or (self._has_module_context and key in self.variables
+                    and (self.locals is None or key in self.module_names))):
+            return super().semantic_name(node)
+        if key in ('xdtofactory', 'фабрикаxdto'):
+            self.application.require_open()
+            return self.application.xdto.factory
+        if key in ('metadata', 'метаданные'):
+            self.application.require_open()
+            return self.application.metadata
+        from .source_manager_modules import SourceManagers, MANAGER_NAMES
+        if key in MANAGER_NAMES:
+            self.application.require_open()
+            return SourceManagers(self.application, MANAGER_NAMES[key])
+        if key in ('configurationextensions', 'расширенияконфигурации'):
+            self.application.require_open()
+            return self.application.extensions
+        if key in ('configurationextensionssource', 'источникрасширенийконфигурации'):
+            from .source_extensions import SourceExtensionSources
+            return SourceExtensionSources()
+        if key in ('enums', 'перечисления'):
+            self.application.require_open()
+            return self.application.enumerations
+        if key in ('constants', 'константы'):
+            from .source_constants_runtime import SourceConstants
+            return SourceConstants(self.application)
+        if key in ('sessionparameters', 'параметрысеанса'):
+            self.application.session_parameters._authorize(self)
+            return self.application.session_parameters
+        if key in self.application.modules:
+            return self.application.module(key, self)
+        from .source_application_exports import variable
+        reference = variable(self, key)
+        if reference is not None:
+            return reference.get()
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         key = node.name.casefold()
         if ((self.locals is not None and key in self.locals)
@@ -476,14 +517,19 @@ class SourceApplication:
         entry = self._reuse_routines.get(id(routine))
         return entry is not None and entry[0] is routine and entry[4]
 
-    def reusable_call(self, caller, owner, routine, qualified):
+    def reusable_call(self, caller, owner, routine, qualified, *, execution_routine=None):
+        execution = routine if execution_routine is None else execution_routine
+        if execution is not routine:
+            from .owned_syntax import is_owned, origin_node
+            if not is_owned(execution) or origin_node(execution) is not routine:
+                raise ValueError('reusable execution view origin mismatch')
         entry = self._reuse_routines.get(id(routine))
-        if not qualified or entry is None or not routine.is_function:
+        if not qualified or entry is None or not execution.is_function:
             return None
         if entry[0] is not routine or entry[1] is not owner:
             raise ValueError('source reusable routine owner mismatch')
         cache = self.reusable_values.cache(caller, entry[3])
-        return cache, (str(entry[2]), routine.name.casefold(), 'server' if entry[4] else caller.execution_context)
+        return cache, (str(entry[2]), execution.name.casefold(), 'server' if entry[4] else caller.execution_context)
 
     def current_run_mode(self):
         """No managed/ordinary client is hosted by this headless source runner.

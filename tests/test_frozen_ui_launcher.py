@@ -29,6 +29,10 @@ class FrozenLauncherTests(unittest.TestCase):
                     bridge = RuntimeBridge('owned.sqlite')
                     try:
                         command = popen.call_args.args[0]
-                        self.assertEqual(command, ([sys.executable, '--catalog-ui-runtime', 'owned.sqlite']
-                            if frozen else [sys.executable, '-m', 'yadinassi.ui.editor_stdio', 'owned.sqlite']))
+                        from yadinassi.execution_policy import current_backend
+                        expected = ([sys.executable, '--catalog-ui-runtime', 'owned.sqlite']
+                            if frozen else [sys.executable, '-m', 'yadinassi.ui.editor_stdio', 'owned.sqlite'])
+                        if current_backend() != 'interpreter':
+                            expected.extend(['--execution-backend', current_backend()])
+                        self.assertEqual(command, expected)
                     finally: bridge.close()

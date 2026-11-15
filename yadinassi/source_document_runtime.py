@@ -1,4 +1,5 @@
 """Explicit nonposting document objects with bounded modules and real stored data."""
+from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
 from .syntax import ast
@@ -234,6 +235,12 @@ class _ObjectInterpreter(_SourceInterpreter):
         key=_ALIASES.get(name.casefold(),name.casefold())
         return key in self.object.fields or key in self.object.sections or key=='ref'
 
+    def semantic_name(self,node):
+        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
+        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
+        if self.field(node.name):return self.object.property_read(self,node.name)
+        return super().semantic_name(node)
+
     def visit_Name(self,node):
         if node.name.casefold() in ('thisobject','этотобъект'):return self.object
         if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
@@ -243,7 +250,7 @@ class _ObjectInterpreter(_SourceInterpreter):
     def call(self,node,*,require_value):
         callee=self.ungroup(node.callee)
         # A field expression remains the value; a builtin call uses its callable.
-        if (type(callee) is ast.Name and self.field(callee.name)
+        if (syntax_kind(callee) is ast.Name and self.field(callee.name)
                 and callee.name.casefold() in self.functions
                 and self._resolve_routine(callee.name) is None):
             node=ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
@@ -258,10 +265,10 @@ class _ObjectInterpreter(_SourceInterpreter):
     def argument(self,node):
         node=self.ungroup(node)
         from .runtime import _Reference
-        if type(node) is ast.Name and node.name.casefold()=='__document_cancel':
+        if syntax_kind(node) is ast.Name and node.name.casefold()=='__document_cancel':
             return _Reference(lambda:self.variables['__document_cancel'],
                               lambda value:self.variables.__setitem__('__document_cancel',value))
-        if type(node) is ast.Name and self.field(node.name):
+        if syntax_kind(node) is ast.Name and self.field(node.name):
             self.object.property_read(self,node.name)
             return _Reference(lambda:self.object.property_read(self,node.name),
                               lambda value:self.object.property_write(self,node.name,value))
