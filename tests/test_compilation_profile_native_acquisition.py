@@ -184,7 +184,7 @@ class AcquisitionContracts(unittest.TestCase):
                      source_sha256=SOURCE_SHA256,form_sha256=FORM_SHA256,
                      module_sha256=route.module_digest(),prepared_sha256=route.module_digest(),
                      output_sha256=hashlib.sha256(raw).hexdigest(),output_size=len(raw),record_count=16)
-        stage.update({name:True for name in host.FLAGS})
+        stage.update({name:name!='error_marker' for name in host.FLAGS})
         stage['process_diagnostics'].update(stage='after_exit',reason='none')
         stage['loaded_sources']={p:dict(expected_sha256='a'*64,actual_sha256='a'*64,matched=True) for p in suite.loaded_probe.PATHS}
         stage['check_config']=dict(status='passed',result='zero',process_success=True)
@@ -529,3 +529,28 @@ class AcquisitionContracts(unittest.TestCase):
             self.assertEqual(value,dict(category='compile_error',module='SessionModule',line=206,identifier='CPMaskEN'))
             secret=self.diagnostic(('{МодульСеанса(206)}: '+phrase+' (PrivateSecret)').encode())
             self.assertIsNone(secret['identifier'])
+
+    def test_error_marker_is_bound_and_independent(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            path=Path(tmp)/'completed.json'
+            self.assertFalse(suite.has_error_marker(path,'a'*32))
+            path.write_bytes(self.wire(self.marker('error')))
+            self.assertTrue(suite.has_error_marker(path,'a'*32))
+            self.assertFalse(suite.has_error_marker(path,'b'*32))
+            path.write_bytes(self.wire(self.marker()))
+            self.assertFalse(suite.has_error_marker(path,'a'*32))
+
+    def test_error_marker_failure_projection_and_success_rejection(self):
+        host,suite=self.adapters();value,hashes,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage['error_marker']=True
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        self.assertFalse(hasattr(caught.exception,'native_failure'))
+        stage.update(status='failed',failure_kind='artifact_missing',failure_phase='markers',completed=False,event1_done=False)
+        value['report'].update(status='failed',native_tests_completed=False);value['outputs']=[]
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
+        self.assertTrue(caught.exception.native_failure['error_marker'])
+        self.assertFalse(caught.exception.native_failure['event1_done'])

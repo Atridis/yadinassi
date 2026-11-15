@@ -239,7 +239,7 @@ def export_artifact(root: Path, files: dict[str, bytes]) -> None:
 
 
 PHASES=('prerequisites','inputs','build','install','loaded_source','check_config','enterprise','markers','final')
-FLAGS={'config_verified','event1_done','entered','completed','process_exited','quiet','witness_verified'}
+FLAGS={'config_verified','event1_done','error_marker','entered','completed','process_exited','quiet','witness_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','prepared_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
     'input_sha256','output_size','record_count','process_diagnostics','diagnostic_logs','native_error','loaded_sources','check_config'}
@@ -259,6 +259,10 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         require(type(stage['failure_kind']) is str and stage['failure_kind'] in FULL.FAILURES|{'unsupported_observation'})
         require(type(stage['failure_phase']) is str and stage['failure_phase'] in PHASES)
         require(all(type(stage[k]) is bool for k in FLAGS))
+        if stage['status']=='ok' or stage['failure_phase'] not in ('enterprise','markers','final'):
+            require(stage['error_marker'] is False)
+        if stage['error_marker']:
+            require(stage['completed'] is False)
         require(all(stage[k] is None or FULL.is_digest(stage[k]) for k in HASH_FIELDS))
         require(stage['output_size'] is None or type(stage['output_size']) is int and 0<stage['output_size']<=MAX_OUTPUT)
         require(stage['record_count'] is None or type(stage['record_count']) is int and stage['record_count']==16)
@@ -280,11 +284,11 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
-            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet','process_diagnostics','diagnostic_logs','native_error','loaded_sources','check_config')}
+            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','event1_done','error_marker','completed','process_exited','quiet','process_diagnostics','diagnostic_logs','native_error','loaded_sources','check_config')}
             raise error
         require(loaded_probe.accepted(stage['loaded_sources'],stage['check_config']))
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')
-        require(report['status']=='ok' and report['native_tests_completed'] is True and all(stage[k] for k in FLAGS))
+        require(report['status']=='ok' and report['native_tests_completed'] is True and all(stage[k] for k in FLAGS-{'error_marker'}))
         require(stage['source_sha256']==SOURCE_SHA256 and stage['form_sha256']==FORM_SHA256)
         route.verify_hashes(hashes)
         module=route.module_digest()
