@@ -211,3 +211,19 @@ two objects. Existing basic rights are preserved; no FullAccess, posting or
 delete rights are added. Exact redump still rejects missing or extra rights.
 This is a documented fixture correction, not proof that the native scenarios
 pass; fresh exact-source native evidence remains required.
+
+### Close/callback boundary diagnosis (2026-11-15)
+
+Run43743290340 at59f44b87 cleared the material/redump gate and entered
+Enterprise. It recorded create/open/observed for catalog flows1,2,3 instance1,
+then timed out before flow3 instance2 (artifact14173087207 SHA256
+451b36b160e468eded46e1bdac2de1f02f825c779f4c8f18d4eef7fef48ecd6f).
+This is not a completed native measurement. The official form-data tutorial
+https://kb.1ci.com/1C_Enterprise_Platform/Tutorials/Practical_developer_guide_8.3/Lesson_27._Form_development_techniques/Form_data_types/
+explains explicit object/form conversion; it does not establish the cause of
+this timeout. Official compatibility documentation describes missing close
+notifications when Close is called during OnOpen; our close is instead in a
+later idle handler, so that special case must not be assumed applicable.
+Finite source/nonce-bound callback-entry, callback-accepted, finish-entry and
+before-reopen milestones now localize the boundary. No operation, permission,
+time limit, callback validation or successful evidence requirement is changed.

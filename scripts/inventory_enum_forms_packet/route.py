@@ -143,6 +143,7 @@ def launcher_progress(raw, nonce):
             or value['form_sha256'] != FORM_SHA256
             or type(value['phase']) is not str
             or value['phase'] not in ('owner_ready','idle_entered','before_open','after_open',
+            'callback_entered','callback_accepted','finish_entered','before_reopen',
             'open_error_unknown','open_error_access','open_error_variable','open_error_field','open_error_method')
             or type(value['flow']) is not int or not 0 <= value['flow'] <= 8):
         raise ValueError('owned launcher diagnostic')
@@ -153,5 +154,6 @@ def valid_launcher_progress(value):
     return (type(value) is dict and set(value) == {'phase','flow'}
             and type(value['phase']) is str
             and value['phase'] in ('owner_ready','idle_entered','before_open','after_open',
+            'callback_entered','callback_accepted','finish_entered','before_reopen',
             'open_error_unknown','open_error_access','open_error_variable','open_error_field','open_error_method')
             and type(value['flow']) is int and 0 <= value['flow'] <= 8)

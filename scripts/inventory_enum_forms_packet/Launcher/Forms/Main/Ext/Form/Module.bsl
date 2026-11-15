@@ -66,6 +66,7 @@ EndFunction
 
 &AtClient
 Procedure Completed(Result, Additional) Export
+ Progress("callback_entered");
  If Additional.Flow <> Flow Or TypeOf(Result) <> Type("Structure") Then Raise "owned callback identity refused"; EndIf;
  If TypeOf(Result.payload) <> Type("String") Or StrLen(Result.payload) > 512 Then Raise "owned observation size refused"; EndIf;
  If Additional.Instance = 1 And Not SeenOne Then
@@ -76,12 +77,15 @@ Procedure Completed(Result, Additional) Export
   Raise "owned callback repeated";
  EndIf;
  CompletedCount = CompletedCount + 1;
+ Progress("callback_accepted");
 EndProcedure
 
 &AtClient
 Procedure FinishFlow() Export
+ Progress("finish_entered");
  WaitTurns = WaitTurns + 1;
  If Flow = 3 And CompletedCount = 1 And ReopenKey <> Undefined Then
+  Progress("before_reopen");
   Key = ReopenKey; ReopenKey = Undefined;
   If Not OpenOwned(2, Key) Then Return; EndIf;
  EndIf;

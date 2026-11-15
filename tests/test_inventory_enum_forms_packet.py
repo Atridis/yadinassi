@@ -532,3 +532,16 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         labels=material.diagnostic(expected,{**expected,path:hidden})
         self.assertNotIn('private_secret',str(labels))
         self.assertTrue(material.valid_diagnostic(labels))
+
+
+class ClosureDiagnosticTests(unittest.TestCase):
+    def test_callback_milestones_are_finite_and_source_bound(self):
+        from scripts.inventory_enum_forms_packet import route
+        import json
+        for phase in ('callback_entered','callback_accepted','finish_entered','before_reopen'):
+            value=dict(schema='native-owned-enum-forms-progress-v1',nonce='a'*32,
+                       phase=phase,flow=3,source_sha256=route.SOURCE_SHA256,form_sha256=route.FORM_SHA256)
+            self.assertEqual(route.launcher_progress(json.dumps(value).encode(),'a'*32),dict(phase=phase,flow=3))
+            self.assertIn('Progress("'+phase+'");',route.module().decode())
+            with self.assertRaises(ValueError):route.launcher_progress(json.dumps(value).encode(),'b'*32)
+        self.assertFalse(route.valid_launcher_progress(dict(phase='callback_secret',flow=3)))
