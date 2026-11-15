@@ -35,8 +35,12 @@ EndProcedure
 
 &AtClient
 Function OpenOwned(Instance, Key)
+ Progress("open_prepare_entered");
  P = New Structure("Flow,Instance,TracePath,Nonce", Flow, Instance, Request.trace, Request.nonce);
- If Key <> Undefined Then P.Insert("Key", Key); EndIf;
+ If Key <> Undefined Then
+  P.Insert("Key", Key);
+  Progress("open_key_inserted");
+ EndIf;
  N = New CallbackDescription("Completed", ThisObject, New Structure("Flow,Instance", Flow, Instance));
  Name = ?(Flow <= 3 Or Flow = 8, "Catalog.Products.Form.Card", "Document.Receipt.Form.Card");
  // True forces a distinct instance. No reuse of an earlier managed form.
@@ -86,7 +90,10 @@ Procedure FinishFlow() Export
  WaitTurns = WaitTurns + 1;
  If Flow = 3 And CompletedCount = 1 And ReopenKey <> Undefined Then
   Progress("before_reopen");
-  Key = ReopenKey; ReopenKey = Undefined;
+  Key = ReopenKey;
+  Progress("reopen_key_copied");
+  ReopenKey = Undefined;
+  Progress("reopen_key_cleared");
   If Not OpenOwned(2, Key) Then Return; EndIf;
  EndIf;
  If CompletedCount <> ExpectedCount Then

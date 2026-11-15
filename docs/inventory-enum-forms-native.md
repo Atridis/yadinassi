@@ -227,3 +227,15 @@ later idle handler, so that special case must not be assumed applicable.
 Finite source/nonce-bound callback-entry, callback-accepted, finish-entry and
 before-reopen milestones now localize the boundary. No operation, permission,
 time limit, callback validation or successful evidence requirement is changed.
+
+### Reopen preparation localization (2026-11-15)
+
+Exact run43748992118 at120185a6 reported before_reopen at flow3, after
+callback processing and before the next before_open marker. Artifact14175617403
+SHA25658e99b9eecfd2e86acd7e8e75e4e69553a781f175c24cbb6ff8c682cbb6fbf60
+remains a rejected timeout. Source review and primary-documentation searches
+did not establish a Key context collision or reference-aliasing bug. Additional
+finite milestones after key copy/reset, at OpenOwned entry and after inserting
+the Key parameter distinguish these preparation steps. No variable rename,
+permissions change, callback bypass or claimed fix is made. The marker remains
+a last-phase diagnostic, not a full event history or success evidence.
