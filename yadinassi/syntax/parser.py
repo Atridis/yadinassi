@@ -630,18 +630,34 @@ class PreparedBlock:
     labels: object
 
     def matches(self, source):
-        if source is not self.source or len(source) != len(self.statements):
-            return False
-        for node, old, kind, name, children in zip(source, self.statements, self.types, self.names, self.children):
+        # Alternate block iterators and node iterators. Descend immediately,
+        # preserving the recursive check's observable depth-first read order.
+        pending = [(False, iter(((self, source),)))]
+        while pending:
+            nodes, items = pending[-1]
+            item = next(items, None)
+            if item is None:
+                pending.pop()
+                continue
+            if not nodes:
+                plan, body = item
+                if body is not plan.source or len(body) != len(plan.statements):
+                    return False
+                pending.append((True, iter(zip(
+                    body, plan.statements, plan.types, plan.names, plan.children))))
+                continue
+            node, old, kind, name, children = item
             if node is not old or type(node) is not kind:
                 return False
             if isinstance(node, (ast.Label, ast.Goto)) and node.name != name:
                 return False
-            current = _control_flow_children(node)
-            if len(current) != len(children):
-                return False
-            if any(not child.matches(body) for child, body in zip(children, current)):
-                return False
+            # Containers own a child block even when empty. A leaf cannot gain
+            # one without a type change, rejected above.
+            if children:
+                current = _control_flow_children(node)
+                if len(current) != len(children):
+                    return False
+                pending.append((False, iter(zip(children, current))))
         return True
 
     def find(self, source):
