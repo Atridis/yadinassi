@@ -21,11 +21,17 @@ class _SourceNoContextInterpreter(_SourceInterpreter):
         super()._inherit_host_bindings(parent)
 
     def _visit(self, node):
+        if self.execution_backend == 'compiled-strict':
+            return (yield from super()._visit(node))
+        self.compiled_before(node)
+        return (yield from super()._visit(node))
+
+    def compiled_before(self, node):
         self._source_call_budget[0] += 1
         if self._source_call_budget[0] > 100000:
             from .form_runtime import FormLimitError
             raise FormLimitError('Source NoContext execution limit')
-        return (yield from super()._visit(node))
+        return super().compiled_before(node)
 
     def _activation_interpreter(self):
         return type(self)(self.application, output=self.output, budget=self._source_call_budget,
