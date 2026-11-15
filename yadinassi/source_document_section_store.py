@@ -125,7 +125,11 @@ class SourceDocumentSectionStore(SourceDocumentStore):
     def read_documents(self,name,identity=None):
         owned=not self.transaction_active
         try:
-            if owned:self.begin_transaction()
+            if owned:
+                self._guard_transaction_restart()
+                self._open()
+                self._connection.execute('BEGIN')
+                self._explicit_transaction = True
             result=super().read_documents(name,identity)
             definition=self.document(name)
             self._validate_selection_sections(definition,(rid for rid,_,_ in result),identity)
@@ -136,7 +140,11 @@ class SourceDocumentSectionStore(SourceDocumentStore):
     def read_document_bundle(self,name,identity):
         owned=not self.transaction_active
         try:
-            if owned:self.begin_transaction()
+            if owned:
+                self._guard_transaction_restart()
+                self._open()
+                self._connection.execute('BEGIN')
+                self._explicit_transaction = True
             self._open()
             rid,revision,values=super().read_documents(name,identity)[0]
             sections=self._sections(self.document(name),rid)

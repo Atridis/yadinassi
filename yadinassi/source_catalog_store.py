@@ -54,11 +54,14 @@ def decode_record(definition, raw):
 class SourceCatalogStore(SourceConstantStore):
     PROFILE = 'source-catalog-records-v4'
 
-    def begin_transaction(self):
+    def _guard_transaction_restart(self):
         from .source_catalog_runtime import _active_write, _constructing
         from .source_document_runtime import _active_write as document_write, _constructing as document_construction
         if (_active_write.get() or _constructing.get() or document_write.get() or document_construction.get()) and not self.transaction_active:
             raise ValueError('catalog lifecycle transaction aborted; cannot restart')
+
+    def begin_transaction(self):
+        self._guard_transaction_restart()
         return super().begin_transaction()
 
     @staticmethod
