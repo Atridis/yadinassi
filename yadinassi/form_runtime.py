@@ -10,6 +10,7 @@ from threading import Lock
 from decimal import localcontext
 from .runtime import Interpreter, _Return
 from .syntax import ast
+from .owned_syntax import syntax_kind
 from .syntax.parser import parse
 from .values import Reference, HostFunction
 from .native_targets import target_context
@@ -221,18 +222,18 @@ class _FormInterpreter(Interpreter):
             form.set_member(variable, value); return
         return super().set_variable(variable, value)
 
-    def argument(self, node):
+    def argument(self, node, *, _evaluation=None):
         ungrouped = self.ungroup(node); form = self._form_session.form
-        if isinstance(ungrouped, ast.Name) and (ungrouped.name.casefold() in form._static or ungrouped.name.casefold() in form._tables) and not (self.locals is not None and ungrouped.name.casefold() in self.locals):
+        if syntax_kind(ungrouped) is ast.Name and (ungrouped.name.casefold() in form._static or ungrouped.name.casefold() in form._tables) and not (self.locals is not None and ungrouped.name.casefold() in self.locals):
             # !todo Native form-attribute non-Val crossing/copyout needs its own proof.
             raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
-        if (isinstance(ungrouped, ast.Attribute) and isinstance(ungrouped.object, ast.Name)
+        if (syntax_kind(ungrouped) is ast.Attribute and syntax_kind(ungrouped.object) is ast.Name
                 and ungrouped.object.name.casefold() in ('thisobject','этотобъект','items','элементы','commands','команды')):
-            receiver = yield from self.receiver(ungrouped.object)
+            receiver = yield from (self.receiver(ungrouped.object) if _evaluation is None else _evaluation.receiver(ungrouped.object))
             if receiver is form or receiver is form.items or receiver is form.commands:
                 receiver.get_member(ungrouped.name)
                 return Reference(lambda: receiver.get_member(ungrouped.name), lambda v: receiver.set_member(ungrouped.name,v))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 class FormSession:
