@@ -139,8 +139,8 @@ _METADATA_BLOCK_ENTRY = _make_metadata_block_entry()
 
 
 class Engine:
-    # Research-only fail-closed rollout switch; never selected by production API.
-    FORCE_PYTHON_TRANSLATION = False
+    # Broad integration branch: ordinary strict execution uses Python translation.
+    FORCE_PYTHON_TRANSLATION = True
 
     def _force_translation_gap(self, node, route):
         if not self.FORCE_PYTHON_TRANSLATION:
@@ -441,7 +441,9 @@ class Engine:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
             walk(program)
-            self._prepare_plain_routines(nodes)
+            # The forced whole-program path never dispatches optional scalar
+            # plans. Do not generate or charge a second unused implementation.
+            if not self.FORCE_PYTHON_TRANSLATION:self._prepare_plain_routines(nodes)
             if self.FORCE_PYTHON_TRANSLATION:
                 self._prepare_python_unit(program, nodes, blocks, module_entry)
             elif module_entry:self._prepare_plain_module(program)
@@ -852,11 +854,16 @@ class Engine:
         if not self.OWNED_SNAPSHOT:
             raise CompiledUnsupported(None, 'force translator requires owned snapshot')
         selected_blocks=[plan.statements for plan in blocks.values() if plan.role=='structural']
+        entry_keys={tuple(id(node) for node in program)}
+        for plan in nodes.values():
+            if syntax_kind(plan.node) in (ast.Routine,ast.ServerInitializer):
+                entry_keys.add(tuple(id(node) for node in plan.node.body))
         if not any(block is program for block in selected_blocks):selected_blocks.append(program)
         if module_entry:
             selected=[node for node in program if syntax_kind(node) is not ast.Import
                       and syntax_kind(node) is not ast.ServerInitializer
                       and not (syntax_kind(node) is ast.Var and node.execution_context=='server')]
+            entry_keys.add(tuple(id(node) for node in selected))
             cached=self._python_units.get(tuple(id(node) for node in selected))
             if cached is not None and len(cached[0])==len(selected) and all(a is b for a,b in zip(cached[0],selected)):
                 self._verify_owned_identity(cached[0]);selected_blocks.append(cached[0])
@@ -865,6 +872,7 @@ class Engine:
             if syntax_kind(plan.node) in (ast.Import,ast.Execute):
                 if len(self._owned.versions)>=self.MAX_REGISTRY_ENTRIES:
                     raise CompiledUnsupported(plan.node,'force singleton registry budget')
+                entry_keys.add((id(plan.node),))
                 cached=self._python_units.get((id(plan.node),))
                 if cached is not None and len(cached[0])==1 and cached[0][0] is plan.node:
                     self._verify_owned_identity(cached[0]);selected_blocks.append(cached[0])
@@ -875,8 +883,10 @@ class Engine:
         retained={id(unit):unit for _,unit in self._python_units.values()}
         available=min(self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
                       self.MAX_PLAIN_SOURCE_BYTES-self._plain_source_bytes()-sum(unit.source_bytes for unit in retained.values()))
-        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES)
+        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys)
         except (UnsupportedTranslation,UnsupportedExpression) as error:
+            gaps=self.stats.setdefault('force_translation_gaps',{})
+            reason='admission:'+str(error);gaps[reason]=gaps.get(reason,0)+1
             raise CompiledUnsupported(program[0] if program else None,str(error)) from None
         if len(self._python_units)+len(unit.blocks)>self.MAX_REGISTRY_ENTRIES:
             raise CompiledUnsupported(None,'force translator registry budget')

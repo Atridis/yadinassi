@@ -1,3 +1,49 @@
+# FORCE Python translation integration (Draft)
+
+This isolated broad integration branch selects Python translation by default for
+ordinary API, CLI and UI execution (`compiled-strict` with FORCE enabled). The main
+branch is unchanged. Explicit `execution_backend="interpreter"` /
+`--execution-backend interpreter` remains the oracle. FORCE requires owned snapshot admission and emits
+Python statement/control functions and expression code; unsupported routes fail
+explicitly rather than dispatching the original AST interpreter or node adapter.
+Shared runtime services remain necessary for BSL values, invocation/byref, context,
+forms, live authority and scheduler operations. Their use is not hidden AST execution.
+
+## Current boundaries and evidence
+
+Generated code includes assignments, expressions, calls/defaults, routine bodies,
+If/For/While/ForEach/Try, exceptions/Return, labels/Goto, imports, Execute/Eval,
+JSON/callback services, collections and Await. This is implemented scope, not a
+claim of complete language parity. Generated residual functions remain for labels
+and bounded nesting; fused bodies retain owned provenance metadata. Source byte,
+per-function, registry and node budgets are unchanged and checked before effects.
+
+Historical source4e675 selected cohort:510/587 tests passed,77 failed,372 passing
+methods observed translation without gaps. Remaining failures include real gaps,
+mutable-AST contract differences, expected strict refusals and obsolete route
+assertions; they are not silently reclassified as passed. A separate919-module
+inventory remains incomplete. Historical fixtures are retained unchanged.
+
+Fusion source66760 passed all60 amplified sample controls and operation counts,
+with zero old adapter/interpreter-fallback counters and sealed inputs/source.
+This single run is not a paired performance result. Source53d086 corrects a retained
+singleton Execute identity regression;27 forced copyback tests passed afterward.
+Fresh checks for the actual-main publication are reported in the PR, not inherited
+from previous commits. No full-suite parity or general speedup is claimed.
+
+Known work still in progress includes a form-specific argument evaluation override,
+async initializer admission gaps, and dynamic Eval/Execute unit lifetime. Repeated
+dynamic admissions can exhaust the existing1MiB generated-source budget. An attempted
+lease cleanup is NOT included: independent review found shared-node dependency loss.
+The safety/resource refusal stays in place until a sound lifecycle fix is verified.
+
+This Draft is an integration/testing vehicle, not ready for production default or
+merge. Light/native gates may run; heavy/full admission remains serialized with
+other repository work. The older prototype sections below are historical and their
+adapter behavior does not describe FORCE mode.
+
+---
+
 # Experimental whole-routine translation
 
 Opt in per VM with `Interpreter(execution_backend='compiled-strict',

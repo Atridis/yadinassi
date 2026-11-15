@@ -117,6 +117,9 @@ class ExpressionExecution:
         return (self._bound_callee[1],) if self._bound_callee is not None and self._bound_callee[0] is node else ()
 
     def evaluate(self, node):
+        if self.resolve is not None:
+            stats=self.vm._compiled().stats
+            stats['python_expression_registry_entries']=stats.get('python_expression_registry_entries',0)+1
         item = self.plan.functions.get(id(node))
         if item is None or item[0] is not node:
             if self.resolve is not None:

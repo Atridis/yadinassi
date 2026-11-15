@@ -34,7 +34,7 @@ class BlockUnit:
                                       for node in original['_nodes'])
             namespaces[id(original)]=namespace
             return FunctionType(function.__code__,namespace,function.__name__)
-        blocks={key:(block,clone(fn)) for key,(block,fn) in self.blocks.items() if id(block) in owned_ids}
+        blocks={key:(block,clone(fn) if fn is not None else None) for key,(block,fn) in self.blocks.items() if id(block) in owned_ids}
         expressions=ExpressionPlan(
             {key:(node,clone(fn)) for key,(node,fn) in self.expressions.functions.items() if id(node) in owned_ids},
             tuple(node for node in self.expressions.nodes if id(node) in owned_ids),self.expressions.source)
@@ -57,9 +57,18 @@ class Execution:
         kind=syntax_kind(node).__name__;kinds[kind]=kinds.get(kind,0)+1
     def block(self,key):
         block,function=self.unit.blocks[key]
+        if function is None:
+            self.engine._force_translation_gap(block[0] if block else None,'non-entry-block')
         self.engine._verify_owned_identity(block)
         self.engine.stats['python_translated_blocks']=self.engine.stats.get('python_translated_blocks',0)+1
         return (yield from function(self))
+    def residual_block(self,key):
+        self.engine.stats['python_residual_block_calls']=self.engine.stats.get('python_residual_block_calls',0)+1
+        return (yield from self.block(key))
+    def enter_inline_block(self,key):
+        block,_ = self.unit.blocks[key]
+        self.engine._verify_owned_identity(block)
+        self.engine.stats['python_inlined_blocks']=self.engine.stats.get('python_inlined_blocks',0)+1
     def unsupported(self,node):
         from .compiled_backend import CompiledUnsupported
         kind=syntax_kind(node).__name__
@@ -67,97 +76,165 @@ class Execution:
         gaps[kind]=gaps.get(kind,0)+1
         raise CompiledUnsupported(node,'force Python translation unsupported '+kind)
 
-def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes):
+def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
+    from . import python_translation_expression_fusion as PE
     # Every expression and block is generated before the admitted program runs.
     expressions=prepare_expressions(expression_roots,max_source_bytes=max_source_bytes,max_function_bytes=max_function_bytes)
-    used=len(expressions.source.encode());namespace={'R':R,'Decimal':Decimal}
-    originals={};sources=[];nodes=[]
+    used=len(expressions.source.encode());namespace={'R':R,'Decimal':Decimal,'_PE':PE}
+    originals={}
+    for block in blocks:
+        originals.setdefault(tuple(id(node) for node in block),block)
+    sources=[];nodes=[]
+    queued=set(originals if entry_keys is None else entry_keys)
+    pending=[originals[key] for key in originals if key in queued]
+    cursor=0
     def bind(node):
         nodes.append(node);return f'_nodes[{len(nodes)-1}]'
-    def ev(node):return f'(yield from _s.expressions.evaluate({bind(node)}))'
-    def body(value):return f'(yield from _s.block({tuple(id(n) for n in value)!r}))'
-    for block in blocks:
+    def body(value):return f'(yield from _s.residual_block({tuple(id(n) for n in value)!r}))'
+    while cursor<len(pending):
+        block=pending[cursor];cursor+=1
         key=tuple(id(node) for node in block)
-        if key in originals:continue
-        originals[key]=block
-        lines=['def translated(_s):','    if False: yield None','    vm = _s.vm','    result = None','    pc = 0','    while True:',f'        if pc >= {len(block)}: break','        try:']
-        def emit(d,s):lines.append('    '*d+s)
-        if not block:emit(3,'pass')
-        for i,node in enumerate(block):
+        lines=['def translated(_s):',' if False: yield None',' vm = _s.vm',' result = None']
+        emitted=sum(len(line.encode())+1 for line in lines)
+        serial=0
+        def temp():
+            nonlocal serial
+            serial+=1
+            return f'_t{serial}'
+        def emit(d,text):
+            nonlocal emitted
+            line=' '*d+text
+            emitted+=len(line.encode())+1
+            if emitted>max_function_bytes or used+emitted>max_source_bytes:
+                raise UnsupportedTranslation('generated source budget')
+            lines.append(line)
+        expression_roots_stack=[]
+        fusion=PE.ExpressionEmitter(bind,emit,temp)
+        def ev(node,d):
+            value=fusion.emit_expression(node,d)
+            expression_roots_stack[-1].append(value)
+            return value
+        def condition(node,d):
+            value=ev(node,d);checked=temp()
+            emit(d,f'{checked} = R.boolean({value})')
+            fusion.release(value,d)
+            return checked
+        def nested(child,d):
+            # A label dispatcher is a generated function, never an AST adapter.
+            if d > 10 or any(syntax_kind(n) is ast.Label for n in child):
+                child_key=tuple(id(node) for node in child)
+                if child_key not in queued:
+                    queued.add(child_key);pending.append(originals[child_key])
+                emit(d,body(child))
+            else:
+                emit(d,f'_s.enter_inline_block({tuple(id(n) for n in child)!r})')
+                emit_sequence(child,d)
+            emit(d,'result = None')
+        def emit_statement(node,d):
             n=bind(node);kind=syntax_kind(node)
-            emit(3,f'{"if" if i==0 else "elif"} pc == {i}:')
-            emit(4,f'if _s.outer_node is not {n}: vm.compiled_before({n})');emit(4,'try:');emit(5,f'_s.guard({n})');emit(5,'result = None')
-            d=5
+            expression_roots_stack.append([])
+            previous_result=temp();emit(d,f'{previous_result} = result')
+            emit(d,'try:');d+=1
+            first,last,collection,item,receiver,writer,binder,handled_error,handled_index=(temp() for _ in range(9))
+            emit(d,f'if _s.outer_node is not {n}: vm.compiled_before({n})')
+            emit(d,'try:');d+=1
+            emit(d,f'_s.guard({n})');emit(d,'result = None')
             if kind is ast.ExpressionStatement:
                 expression=node.expression
                 while syntax_kind(expression) is ast.Group:expression=expression.expression
                 if syntax_kind(expression) is ast.Call:emit(d,f'result = yield from _s.expressions.call({bind(expression)}, require_value=False)')
-                else:emit(d,f'result = {ev(node.expression)}')
+                else:emit(d,f'result = {ev(node.expression,d)}')
             elif kind is ast.Assign:
                 target=syntax_kind(node.target)
-                if target is ast.Name:emit(d,f'vm.set_variable({node.target.name!r}, {ev(node.value)})')
+                if target is ast.Name:emit(d,f'vm.set_variable({node.target.name!r}, {ev(node.value,d)})')
                 elif target is ast.Attribute:
-                    emit(d,f'receiver = yield from _s.expressions.receiver({bind(node.target.object)})')
-                    emit(d,f'writer = _s.access.prepare_attribute_write(vm, receiver, {node.target.name!r})')
-                    emit(d,f'writer({ev(node.value)})')
+                    emit(d,f'{receiver} = yield from _s.expressions.receiver({bind(node.target.object)})')
+                    emit(d,f'{writer} = _s.access.prepare_attribute_write(vm, {receiver}, {node.target.name!r})')
+                    emit(d,f'{writer}({ev(node.value,d)})')
                 elif target is ast.Index:
-                    emit(d,f'receiver = yield from _s.expressions.receiver({bind(node.target.object)})')
-                    emit(d,'binder = _s.access.prepare_index_write(vm, receiver)')
-                    emit(d,f'writer = binder({ev(node.target.index)})');emit(d,f'writer({ev(node.value)})')
+                    emit(d,f'{receiver} = yield from _s.expressions.receiver({bind(node.target.object)})')
+                    emit(d,f'{binder} = _s.access.prepare_index_write(vm, {receiver})')
+                    emit(d,f'{writer} = {binder}({ev(node.target.index,d)})');emit(d,f'{writer}({ev(node.value,d)})')
                 else:emit(d,f'_s.unsupported({n})')
             elif kind is ast.Var:
                 names=tuple(node.names)
                 emit(d,f'if vm.locals is None and any(name.casefold() in vm.imports for name in {names!r}):')
-                emit(d+1,'raise ValueError("Имя импорта конфликтует с объявлением")')
-                emit(d,f'for name in {names!r}:');emit(d+1,'(vm.variables if vm.locals is None else vm.locals).setdefault(name.casefold(), None)')
-            elif kind in (ast.Routine,ast.Label):emit(d,'pass')
+                emit(d+1,f'raise ValueError("Имя импорта конфликтует с объявлением")')
+                emit(d,f'for name in {names!r}:');emit(d+1,f'(vm.variables if vm.locals is None else vm.locals).setdefault(name.casefold(), None)')
+            elif kind in (ast.Routine,ast.Label):emit(d,f'pass')
             elif kind is ast.If:
-                for j,(condition,child) in enumerate(node.branches):
-                    emit(d,f'{"if" if j==0 else "elif"} R.boolean({ev(condition)}):');emit(d+1,body(child))
-                emit(d,'else:');emit(d+1,body(node.otherwise))
+                matched=temp();emit(d,f'{matched} = False')
+                for test,child in node.branches:
+                    emit(d,f'if not {matched}:')
+                    check=condition(test,d+1)
+                    emit(d+1,f'if {check}:');emit(d+2,f'{matched} = True');nested(child,d+2)
+                emit(d,f'if not {matched}:');nested(node.otherwise,d+1)
             elif kind in (ast.For,ast.While,ast.ForEach):
                 if kind is ast.For:
-                    emit(d,f'first = R.require_number({ev(node.start)})');emit(d,f'last = R.require_number({ev(node.end)})')
-                    emit(d,f'vm.set_variable({node.name!r},first)')
+                    emit(d,f'{first} = R.require_number({ev(node.start,d)})');emit(d,f'{last} = R.require_number({ev(node.end,d)})')
+                    emit(d,f'vm.set_variable({node.name!r},{first})')
                     counter=ast.Name(node.token,node.name.casefold());counter_name=bind(counter)
-                    emit(d,f'while R.require_number(vm.semantic_name({counter_name})) <= last:')
-                elif kind is ast.While:emit(d,f'while R.boolean({ev(node.condition)}):')
+                    emit(d,f'while R.require_number(vm.semantic_name({counter_name})) <= {last}:')
+                elif kind is ast.While:
+                    emit(d,'while True:')
+                    check=condition(node.condition,d+1);emit(d+1,f'if not {check}: break')
                 else:
-                    emit(d,f'collection = {ev(node.collection)}');emit(d,'for item in vm.compiled_iterable(collection):')
-                    emit(d+1,f'vm.set_variable({node.name!r},item)')
-                emit(d+1,'try:');emit(d+2,body(node.body))
-                emit(d+1,'except R._Continue:');emit(d+2,'pass')
-                emit(d+1,'except R._Break:');emit(d+2,'break')
+                    emit(d,f'{collection} = {ev(node.collection,d)}');emit(d,f'for {item} in vm.compiled_iterable({collection}):')
+                    emit(d+1,f'vm.set_variable({node.name!r},{item})')
+                emit(d+1,f'try:');nested(node.body,d+2)
+                emit(d+1,f'except R._Continue:');emit(d+2,f'pass')
+                emit(d+1,f'except R._Break:');emit(d+2,f'break')
                 if kind is ast.For:emit(d+1,f'vm.set_variable({node.name!r}, R.require_number(vm.semantic_name({counter_name})) + Decimal(1))')
             elif kind is ast.Try:
-                emit(d,'try:');emit(d+1,body(node.body))
-                emit(d,'except R.BSLRuntimeError as handled_error:')
-                emit(d+1,'for handled_index in range(len(vm._handled_errors)):');emit(d+2,'vm._handled_errors[handled_index] = None')
-                emit(d+1,'vm._handled_errors.append(handled_error)');emit(d+1,'try:');emit(d+2,body(node.handler))
-                emit(d+1,'finally:');emit(d+2,'vm._handled_errors.pop()')
-            elif kind is ast.Return:emit(d,f'raise R._Return({ev(node.value) if node.value is not None else "None"})')
+                emit(d,f'try:');nested(node.body,d+1)
+                emit(d,f'except R.BSLRuntimeError as {handled_error}:')
+                emit(d+1,f'for {handled_index} in range(len(vm._handled_errors)):');emit(d+2,f'vm._handled_errors[{handled_index}] = None')
+                emit(d+1,f'vm._handled_errors.append({handled_error})');emit(d+1,f'try:');nested(node.handler,d+2)
+                emit(d+1,f'finally:');emit(d+2,f'vm._handled_errors.pop()')
+            elif kind is ast.Return:emit(d,f'raise R._Return({ev(node.value,d) if node.value is not None else "None"})')
             elif kind is ast.Import:emit(d,f'vm.semantic_import({n})')
             elif kind is ast.Execute:emit(d,f'yield from vm.semantic_execute({n}, _evaluation=_s.expressions)')
             elif kind is ast.Raise:emit(d,f'yield from vm.semantic_raise({n}, _evaluation=_s.expressions)')
             elif kind is ast.Goto:emit(d,f'raise R._Goto({n})')
-            elif kind is ast.Break:emit(d,'raise R._Break')
-            elif kind is ast.Continue:emit(d,'raise R._Continue')
+            elif kind is ast.Break:emit(d,f'raise R._Break')
+            elif kind is ast.Continue:emit(d,f'raise R._Continue')
             else:emit(d,f'_s.unsupported({n})')
-            emit(4,'except BaseException as error:');emit(5,f'if _s.outer_node is {n}: raise');emit(5,f'converted = vm.compiled_exception({n},error)')
-            emit(5,'if converted is error: raise');emit(5,'raise converted from None')
-            emit(4,f'if _s.outer_node is not {n}: result = vm.compiled_after({n}, result)')
+            d-=1
+            error,converted=temp(),temp()
+            emit(d,f'except BaseException as {error}:')
+            emit(d+1,f'if _s.outer_node is {n}: raise')
+            emit(d+1,f'{converted} = vm.compiled_exception({n},{error})')
+            emit(d+1,f'if {converted} is {error}: raise')
+            emit(d+1,f'raise {converted} from None')
+            emit(d,'finally:')
+            temporaries=[first,last,collection,item,receiver,writer,binder,handled_error,handled_index,converted,*expression_roots_stack.pop()]
+            emit(d+1,' = '.join(temporaries)+' = None')
+            emit(d,f'if _s.outer_node is not {n}: result = vm.compiled_after({n}, result)')
+            d-=1;emit(d,'finally:');emit(d+1,f'{previous_result} = None')
+        def emit_sequence(sequence,d):
+            if not sequence:emit(d,'pass')
+            for node in sequence:emit_statement(node,d)
         labels={node.name.casefold():i for i,node in enumerate(block) if syntax_kind(node) is ast.Label}
-        emit(2,'except R._Goto as jump:');emit(3,f'labels = {labels!r}')
-        emit(3,'if jump.name not in labels: raise');emit(3,'pc = labels[jump.name]')
-        emit(2,'else:');emit(3,'pc += 1');emit(1,'return result')
+        if not labels:
+            emit_sequence(block,1)
+        else:
+            emit(1,'pc = 0');emit(1,'while True:')
+            emit(2,f'if pc >= {len(block)}: break');emit(2,'try:')
+            for i,node in enumerate(block):
+                emit(3,f'{"if" if i==0 else "elif"} pc == {i}:')
+                emit_statement(node,4)
+            emit(2,'except R._Goto as jump:');emit(3,f'labels = {labels!r}')
+            emit(3,'if jump.name not in labels: raise');emit(3,'pc = labels[jump.name]')
+            emit(2,'else:');emit(3,'pc += 1')
+        emit(1,'return result')
         source='\n'.join(lines)+'\n'
         if len(source.encode())>max_function_bytes:raise UnsupportedTranslation('generated function source budget')
         used+=len(source.encode())
         if used>max_source_bytes:raise UnsupportedTranslation('generated unit source budget')
         sources.append((key,source))
-    namespace['_nodes']=tuple(nodes);functions={}
+    namespace['_nodes']=tuple(nodes);functions={key:(block,None) for key,block in originals.items()}
     for key,source in sources:
         exec(_CODE_CACHE.get(source),namespace)
         functions[key]=(originals[key],namespace['translated'])
