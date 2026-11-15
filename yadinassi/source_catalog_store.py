@@ -143,9 +143,7 @@ class SourceCatalogStore(SourceConstantStore):
             raise ValueError('unknown source catalog: '+name) from None
 
     def _abort(self):
-        if self._connection.in_transaction:
-            self._connection.execute('ROLLBACK')
-        self._explicit_transaction = False
+        self._abort_transaction()
 
     def read_records(self, name, identity=None):
         definition = self.catalog(name)

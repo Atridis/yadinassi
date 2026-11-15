@@ -104,11 +104,6 @@ class SourceDocumentStore(SourceCatalogStore):
         except KeyError:
             raise ValueError('unknown source document: '+name) from None
 
-    def _abort(self):
-        if self._connection.in_transaction:
-            self._connection.execute('ROLLBACK')
-        self._explicit_transaction = False
-
     def read_documents(self, name, identity=None):
         definition = self.document(name)
         owned = not self.transaction_active
