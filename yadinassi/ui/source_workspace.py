@@ -492,13 +492,13 @@ class SourceWorkspace:
                     self._new_form(params['name'])
                 except (BSLError, ValueError, TypeError, RecursionError) as error:
                     self.error = str(error)[:4096]
-        elif method in ('workspace.preview', 'workspace.preflight'):
+        elif method in ('workspace.preview', 'workspace.preflight', 'workspace.check'):
             if (set(params) != {'name'} or type(params['name']) is not str
                     or params['name'] not in self._visible_form_targets()):
                 raise ValueError('declared visible source form required')
-            if method == 'workspace.preview':
+            if method in ('workspace.preview', 'workspace.check'):
                 self._preview_form(params['name'])
-            else:
+            if method in ('workspace.preflight', 'workspace.check'):
                 self._preflight_module(params['name'])
         elif method == 'workspace.select':
             if (set(params) != {'generation'} or type(params['generation']) is not int
@@ -565,4 +565,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.preview','workspace.preflight','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.preview','workspace.preflight','workspace.check','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')

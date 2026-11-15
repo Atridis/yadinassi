@@ -4,6 +4,7 @@ const token = new URLSearchParams(location.hash.slice(1)).get('session');
 history.replaceState(null, '', location.pathname);
 const root=document.getElementById('workspace'), title=document.createElement('h1'), status=document.createElement('p'), select=document.createElement('select'), open=document.createElement('button'), close=document.createElement('button'), formRoot=document.createElement('section');
 const preflight=document.createElement('button'),moduleResult=document.createElement('section');preflight.textContent='Проверить компиляцию BSL';moduleResult.setAttribute('aria-label','Компиляция модуля формы');
+const check=document.createElement('button');check.textContent='Проверить форму без запуска';
 const preview=document.createElement('button'),previewResult=document.createElement('section');preview.textContent='Проверить XML формы';previewResult.setAttribute('aria-label','Проверка XML формы');
 const search=document.createElement('input'), find=document.createElement('button');search.maxLength=128;search.setAttribute('aria-label','Поиск объявленных форм');find.textContent='Найти формы';
 select.setAttribute('aria-label','Объявленная форма'); open.textContent='Открыть форму'; close.textContent='Закрыть сеанс'; status.setAttribute('role','status');
@@ -16,7 +17,7 @@ const objectSearch=document.createElement('input'),families=document.createEleme
 objectSearch.maxLength=128;objectSearch.setAttribute('aria-label','Поиск объектов');families.setAttribute('aria-label','Тип объекта');objects.setAttribute('aria-label','Объект конфигурации');
 objectFind.textContent='Найти объекты';inspect.textContent='Описание объекта';detail.setAttribute('aria-label','Метаданные выбранного объекта');inventoryStatus.setAttribute('role','status');
 explorer.append(explorerTitle,objectSearch,families,subsystems,objectFind,objects,inspect,inventoryStatus,navigationDiagnostics,detail);
-root.append(title,status,explorer,search,find,select,preview,preflight,open,close,tabs,limitations,previewResult,moduleResult,formRoot);
+root.append(title,status,explorer,search,find,select,check,preview,preflight,open,close,tabs,limitations,previewResult,moduleResult,formRoot);
 const familyLabels={Catalog:'Справочники',Document:'Документы',AccumulationRegister:'Регистры накопления',InformationRegister:'Регистры сведений',Report:'Отчёты',DataProcessor:'Обработки',Subsystem:'Подсистемы',CommonForm:'Общие формы',Form:'Формы',Enum:'Перечисления',Constant:'Константы'};
 function caption(name,labels){const label=labels?.[name];return typeof label==='string'&&label&&label!==name?label+' ('+name+')':name;}
 let id=0,busy=false,view=null,state=null,failed=false,inFlight=0;
@@ -33,7 +34,7 @@ function paint(){
     failed=true;status.textContent='Результат действия неизвестен. Формы и черновики сохранены в этой вкладке; переключение и повтор команд заблокированы.';
   }
   const blocked=busy||failed||inFlight>0||!state||state.kind==='closed';
-  open.disabled=preview.disabled=preflight.disabled=blocked||!select.value;
+  open.disabled=check.disabled=preview.disabled=preflight.disabled=blocked||!select.value;
   search.disabled=find.disabled=select.disabled=Boolean(blocked);
   close.disabled=blocked||[...mounts.values()].some(entry=>entry.view.client?.snapshot?.kind!=='closed');
   for(const button of tabs.children)button.disabled=Boolean(blocked);
@@ -73,7 +74,7 @@ async function apply(reply){
     const checkedForms=new Set();
     function addFormChecks(name){
       if(checkedForms.has(name))return;checkedForms.add(name);
-      for(const [label,method] of [['Проверить XML','workspace.preview'],['Проверить BSL','workspace.preflight']]){
+      for(const [label,method] of [['Проверить без запуска','workspace.check'],['Проверить XML','workspace.preview'],['Проверить BSL','workspace.preflight']]){
         const button=document.createElement('button');button.textContent=label+' '+caption(name,data.form_labels);button.setAttribute('aria-label',label+' '+name);
         button.addEventListener('click',()=>action(method,{name}));detail.append(button);
       }
@@ -117,6 +118,7 @@ inspect.addEventListener('click',()=>action('workspace.inspect',{name:objects.va
 objectSearch.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();action('workspace.objects',{query:objectSearch.value,family:families.value,subsystem:subsystems.value});}});
 find.addEventListener('click',()=>action('workspace.search',{query:search.value}));
 search.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();action('workspace.search',{query:search.value});}});
+check.addEventListener('click',()=>action('workspace.check',{name:select.value}));
 preflight.addEventListener('click',()=>action('workspace.preflight',{name:select.value}));
 preview.addEventListener('click',()=>action('workspace.preview',{name:select.value}));
 open.addEventListener('click',()=>action('workspace.open',{name:select.value}));close.addEventListener('click',()=>action('workspace.close',{}));

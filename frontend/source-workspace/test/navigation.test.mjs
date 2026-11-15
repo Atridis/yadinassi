@@ -141,3 +141,15 @@ test('untrusted object form caption is literal while target stays canonical',asy
  const button=h.get('Проверить BSL Catalog.A.Form.Card');assert.ok(button.textContent.includes('<img onerror=bad()>'));assert.equal(button.children.length,0);
  await button.listeners.click();assert.equal(h.requests.at(-1).params.name,'Catalog.A.Form.Card');
 });
+test('combined form check sends one readonly request for selected canonical form',async()=>{
+ const h=await harness(state);await h.elements.find(e=>e.textContent==='Проверить форму без запуска').listeners.click();
+ assert.deepEqual(h.requests.map(r=>r.method),['workspace.snapshot','workspace.check']);assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');
+});
+test('object combined check also uses one canonical request without automatic open',async()=>{
+ const h=await harness({...state,object_detail:objectDetail});await h.get('Проверить без запуска Catalog.A.Form.Card').listeners.click();
+ assert.equal(h.requests.at(-1).method,'workspace.check');assert.equal(h.requests.at(-1).params.name,'Catalog.A.Form.Card');assert.equal(h.requests.length,2);
+});
+test('closed and empty selection disable combined checks',async()=>{
+ for(const extra of [{kind:'closed'}, {forms:[]}]){const h=await harness({...state,...extra});assert.equal(h.elements.find(e=>e.textContent==='Проверить форму без запуска').disabled,true);}
+ const h=await harness({...state,kind:'closed',object_detail:objectDetail});assert.equal(h.get('Проверить без запуска Catalog.A.Form.Card').disabled,true);
+});
