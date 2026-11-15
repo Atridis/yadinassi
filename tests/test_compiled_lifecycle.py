@@ -1,3 +1,4 @@
+from compiled_contract_fixture import mutable_compiled_contract
 """Runtime-owned strict compiler lifetime and late scheduler context regressions."""
 from decimal import Decimal
 import unittest
@@ -23,6 +24,7 @@ class CompiledLifecycleTests(unittest.TestCase):
         self.assertEqual(engine._nodes, {})
         self.assertEqual(engine._blocks, {})
 
+    @mutable_compiled_contract
     def test_repeated_host_routine_calls_release_materialized_plans(self):
         vm = self.vm()
         vm.execute('Function F(Val x=1) Return x+2; EndFunction')
@@ -44,6 +46,7 @@ class CompiledLifecycleTests(unittest.TestCase):
         self.assertTrue(vm._compiled()._nodes)
         return vm, signal
 
+    @mutable_compiled_contract
     def test_pending_plans_survive_until_settlement(self):
         vm, signal = self.pending_vm()
         vm._scheduler.resolve(signal, Decimal(9))
@@ -52,12 +55,14 @@ class CompiledLifecycleTests(unittest.TestCase):
         self.assertEqual(vm.variables['p'].result, Decimal(9))
         self.assert_released(vm)
 
+    @mutable_compiled_contract
     def test_reset_closes_suspended_frames_before_release(self):
         vm, signal = self.pending_vm()
         vm._scheduler.reset()
         self.assertEqual(vm.pending_promises, ())
         self.assert_released(vm)
 
+    @mutable_compiled_contract
     def test_late_host_callback_child_inherits_strict_scheduler_policy(self):
         from yadinassi.execution_policy import current_backend
         entry_backend = current_backend()
@@ -110,6 +115,7 @@ class LegacyCompatibilityTests(unittest.TestCase):
         self.assertEqual(vm.reads[-1], 'x')
 
 class ReentrantAdmissionTests(unittest.TestCase):
+    @mutable_compiled_contract
     def test_reentrant_root_cannot_readmit_mutated_active_routine(self):
         from yadinassi.compiled_backend import CompiledUnsupported
         vm = Interpreter(execution_backend='compiled-strict')

@@ -186,3 +186,11 @@ material difference and changes to six allowlisted rights of the two owned
 objects. Unknown names/values are not exported. Exact redump rejection is
 unchanged; automatically normalized or expanded grants must not be accepted
 without identifying and reviewing the difference.
+
+Run 43737412598 (3b524fc5) identified Edit material changes on both Products
+and Receipt. Artifact 14171131513 SHA256
+692da02ff1f045bd54a561e11ffbb34a71244e67177545e91affd141f667ab92 is verified.
+No Edit grant or acceptance exception is added. The follow-up diagnostic reports
+only its finite transition among absent/true/false, so an automatic platform
+normalization can be distinguished before any decision about permitted rights.
+Unknown rights remain redacted and every material difference remains rejected.

@@ -73,8 +73,8 @@ class Rejection(unittest.TestCase):
             self.assertEqual(waiting['observed_execution_contracts'], [])
             self.assertTrue(executing['compiled_execution_observed'])
             self.assertEqual(executing['observed_execution_contracts'], [{
-                'owned_snapshot': False, 'origin_mutation_monitor': 'full',
-                'active_ast_contract': 'fail-closed'}])
+                'owned_snapshot': True, 'origin_mutation_monitor': 'off',
+                'active_ast_contract': 'snapshot'}])
             health = json.loads(report.with_suffix('.health.json').read_text(encoding='utf-8'))
             self.assertGreater(health['pid'], 0)
             self.assertGreaterEqual(health['process_cpu_seconds'], 0)
@@ -128,8 +128,8 @@ class Metadata(unittest.TestCase):
                 for key in ('inline_blocks','inline_fragments','emitted_executions','helper_executions'):
                     self.assertEqual(case[key], 0)
                 self.assertEqual(case['observed_execution_contracts'], [{
-                    'owned_snapshot': False, 'origin_mutation_monitor': 'full',
-                    'active_ast_contract': 'fail-closed'}] if executed else [])
+                    'owned_snapshot': True, 'origin_mutation_monitor': 'off',
+                    'active_ast_contract': 'snapshot'}] if executed else [])
 
     def test_context_early_return_legacy_visitors_remain_a_gap_with_compiled_execution(self):
         root=Path(__file__).resolve().parents[1]

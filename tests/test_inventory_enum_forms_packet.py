@@ -523,6 +523,7 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         self.assertIn('core_rights',labels)
         self.assertIn('products_right_interactiveinsert_changed',labels)
         self.assertIn('products_right_edit_changed',labels)
+        self.assertIn('products_edit_absent_to_true',labels)
         self.assertTrue(material.valid_diagnostic(labels))
         with self.assertRaises(ValueError):material.verify_redump(expected,actual)
         hidden=expected[path].replace(b'>InteractiveInsert<',b'>private_secret<',1)

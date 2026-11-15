@@ -132,7 +132,11 @@ DIAGNOSTIC_CODES=('configuration_inventory','products_declaration','receipt_decl
     'products_module','receipt_module','core_schema','core_modules','core_rights') + tuple(
     owner+'_right_'+name.lower()+'_changed'
     for owner in ('products','receipt')
-    for name in ('View','InteractiveInsert','Edit','Read','Insert','Update'))
+    for name in ('View','InteractiveInsert','Edit','Read','Insert','Update')) + tuple(
+    owner+'_edit_'+before+'_to_'+after
+    for owner in ('products','receipt')
+    for before in ('absent','true','false')
+    for after in ('absent','true','false') if before != after)
 
 
 def diagnostic(expected,actual):
@@ -206,6 +210,8 @@ def rights_diagnostic(expected, actual):
             for grant in ('View','InteractiveInsert','Edit','Read','Insert','Update'):
                 if left[name].get(grant) != right[name].get(grant):
                     labels.append(label+'_right_'+grant.lower()+'_changed')
+                    if grant == 'Edit':
+                        labels.append(label+'_edit_'+left[name].get(grant,'absent')+'_to_'+right[name].get(grant,'absent'))
     except (ValueError,KeyError):
         pass
     return labels

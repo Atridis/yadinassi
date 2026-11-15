@@ -161,8 +161,12 @@ class Engine:
         from .runtime import _Reference
         self._reference_type = _Reference
         # Class flags select new engines only; never change a live contract.
-        self.OWNED_SNAPSHOT = self.OWNED_SNAPSHOT
-        self.ORIGIN_MUTATION_MONITOR = self.ORIGIN_MUTATION_MONITOR
+        ast_contract = vm.compiled_ast_contract
+        from .execution_policy import AST_CONTRACTS
+        if type(ast_contract) is not str or ast_contract not in AST_CONTRACTS:
+            raise ValueError('unsupported compiled AST contract')
+        self.OWNED_SNAPSHOT = ast_contract == 'snapshot'
+        self.ORIGIN_MUTATION_MONITOR = ast_contract == 'mutable'
         self._owned = OwnedStore(_signature, self._block_signature)
         self._origin_signatures = {}
         self._origin_blocks = {}
@@ -211,7 +215,7 @@ class Engine:
         return result
 
     def _owned_program(self, program, allow_reprepare):
-        if allow_reprepare and not self._active_frames:
+        if allow_reprepare and not self._active_frames and self.ORIGIN_MUTATION_MONITOR:
             self._owned.clear()
             self._origin_signatures.clear()
             self._origin_blocks.clear()
@@ -220,6 +224,19 @@ class Engine:
         collection_entries = 0
         def visit(value, depth=0):
             nonlocal collection_entries
+            if not self.ORIGIN_MUTATION_MONITOR:
+                # An admitted identity denotes its immutable version. New
+                # source requires a new graph; retained routines survive REPL.
+                # Do not accept another engine's view as a local cache hit.
+                entry = self._owned.memo.get(id(value))
+                if entry is not None and entry[0] is value:
+                    if allow_reprepare and not self._active_frames:
+                        # An explicit quiescent unit admission publishes a new
+                        # version of this graph only. Unrelated routines keep
+                        # their previous version; admission journals rollback.
+                        self._owned.memo.pop(id(value), None)
+                    else:
+                        return
             if depth > self.MAX_DEPTH:
                 raise CompiledUnsupported(None, 'owned admission depth limit')
             if isinstance(value, ast.Node):
@@ -287,17 +304,17 @@ class Engine:
         # Journal only this admission's writes, not the entire active registry.
         # Nested admission writes into these overlays; any outer failure discards
         # all of them. No AST/host code runs while publishing builtin-map writes.
-        bases = (self._owned.memo, self._origin_signatures, self._origin_blocks,
+        bases = (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
                  self._nodes, self._blocks, self._inline_ir)
         journals = tuple(AdmissionMap(base) for base in bases)
-        (self._owned.memo, self._origin_signatures, self._origin_blocks,
+        (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
          self._nodes, self._blocks, self._inline_ir) = journals
         try:
             result = self._prepare(program, allow_reprepare=allow_reprepare)
             for journal in journals: journal.commit()
             return result
         finally:
-            (self._owned.memo, self._origin_signatures, self._origin_blocks,
+            (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
              self._nodes, self._blocks, self._inline_ir) = bases
 
     def _prepare(self, program, *, allow_reprepare=True):
@@ -426,16 +443,57 @@ class Engine:
     def active_frames(self):
         return self._active_frames
 
-    def release(self):
+    def release(self, *, retain_routines=False):
         """Drop plans at a quiescent owner boundary; counters remain available."""
         if self._active_frames:
             raise RuntimeError('cannot release compiled plans with active frames')
-        self._nodes.clear()
-        self._blocks.clear()
+        retained = {}
+        retained_versions = {}
+        if retain_routines and self.OWNED_SNAPSHOT and not self.ORIGIN_MUTATION_MONITOR:
+            # Routine declarations outlive a quiescent scheduler activation.
+            # Keep their immutable versions, not executable temporary plans.
+            visited = set()
+            def retain(value):
+                if id(value) in visited:
+                    return
+                if type(value) is tuple:
+                    visited.add(id(value))
+                    for item in value:
+                        retain(item)
+                    return
+                if not is_owned(value):
+                    return
+                visited.add(id(value))
+                original = syntax_origin(value)
+                entry = self._owned.versions.get(id(value))
+                if entry is None or entry[0] is not original or entry[1] is not value:
+                    return
+                retained_versions[id(value)] = entry
+                latest = self._owned.memo.get(id(original))
+                if id(original) not in retained or (latest is not None and latest[1] is value):
+                    retained[id(original)] = entry
+                if syntax_kind(value) in _SUPPORTED:
+                    for field in fields(value):
+                        if field.name != 'token' and not (syntax_kind(value) is ast.Literal and field.name == 'value'):
+                            retain(getattr(value, field.name))
+                elif type(value) is OwnedList:
+                    for item in value:
+                        retain(item)
+            for mapping in (self.vm.routines, self.vm.server_routines):
+                if type(mapping) is dict:
+                    for original in mapping.values():
+                        entry = self._owned.memo.get(id(original))
+                        if entry is not None and entry[0] is original:
+                            retain(entry[1])
+        owned_ids = set(retained_versions)
+        self._nodes = {key: plan for key, plan in self._nodes.items() if key in owned_ids}
+        self._blocks = {key: plan for key, plan in self._blocks.items() if key in owned_ids}
         self._owned.clear()
+        self._owned.memo.update(retained)
+        self._owned.versions.update(retained_versions)
         self._origin_signatures.clear()
         self._origin_blocks.clear()
-        self._inline_ir.clear()
+        self._inline_ir = {key: value for key, value in self._inline_ir.items() if key in owned_ids}
         self._fast_ready = None
 
     def has_node(self, node):
@@ -507,7 +565,7 @@ class Engine:
         if not is_owned(value):
             raise CompiledUnsupported(None, 'unregistered owned execution view')
         original = syntax_origin(value)
-        entry = self._owned.memo.get(id(original))
+        entry = self._owned.versions.get(id(value))
         if entry is None or entry[0] is not original or entry[1] is not value:
             raise CompiledUnsupported(None, 'owned view belongs to no admitted unit')
         return original
