@@ -16,6 +16,7 @@ from threading import BoundedSemaphore, Lock, Thread
 from queue import Empty, Full, Queue
 import webbrowser
 
+from ..execution_policy import UI_BACKENDS, ui_backend, execution_backend_policy
 from .protocol import MAX_COUNTER, MAX_LINE_BYTES, UIError, decode_line, encode_line
 from .browser_session import BrowserSession, AttachmentError, PROTOCOL as ATTACHMENT_PROTOCOL
 
@@ -30,6 +31,7 @@ EXCHANGE_TIMEOUT = 30
 class RuntimeBridge:
     """One persistent child and sequential transport; never retries a write."""
     def __init__(self, database, *, launch_binding=None):
+        backend = ui_backend()
         environment = dict(os.environ)
         environment['PYTHONIOENCODING'] = 'utf-8'
         if getattr(sys, 'frozen', False):
@@ -37,6 +39,8 @@ class RuntimeBridge:
         else:
             environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
             command = [sys.executable, '-m', 'yadinassi.ui.editor_stdio', database]
+        if backend != 'interpreter':
+            command += ['--execution-backend', backend]
         if launch_binding is not None:
             command += ['--launch-binding', launch_binding]
         self._start(command, environment)
@@ -269,6 +273,9 @@ class LocalUIServer(ThreadingHTTPServer):
     def __init__(self, bridge, token=None, *, handler=_Handler, browser_session=False,
                  idle_close=None):
         self.bridge = bridge
+        # ThreadingHTTPServer starts fresh threads without ContextVar inheritance.
+        # Capture the host-selected backend, never accept it from an HTTP request.
+        self._execution_backend = ui_backend()
         self._connections = BoundedSemaphore(8)
         self.token = secrets.token_urlsafe(32) if token is None else token
         if type(self.token) is not str or not 32 <= len(self.token) <= 128 or not self.token.isascii():
@@ -294,7 +301,8 @@ class LocalUIServer(ThreadingHTTPServer):
 
     def process_request_thread(self, request, address):
         try:
-            super().process_request_thread(request, address)
+            with execution_backend_policy(self._execution_backend):
+                super().process_request_thread(request, address)
         finally:
             self._connections.release()
 
@@ -365,7 +373,13 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true', help='Explicitly open the launch URL in your browser')
     parser.add_argument('--browser-session', action='store_true', help='Single writer attachment, reconnect and safe idle lifetime')
     parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
+    parser.add_argument('--execution-backend', choices=UI_BACKENDS, default=ui_backend())
     args = parser.parse_args(argv)
+    with execution_backend_policy(args.execution_backend):
+        return _run_selected(args)
+
+
+def _run_selected(args):
     bridge = server = None
     try:
         bridge = (RuntimeBridge(args.f) if args.launch_binding is None else

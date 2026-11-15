@@ -632,16 +632,21 @@ class PreparedBlock:
     def matches(self, source):
         if source is not self.source or len(source) != len(self.statements):
             return False
-        for node, old, kind, name, children in zip(source, self.statements, self.types, self.names, self.children):
+        for node, old, kind, name, children in zip(
+                source, self.statements, self.types, self.names, self.children):
             if node is not old or type(node) is not kind:
                 return False
             if isinstance(node, (ast.Label, ast.Goto)) and node.name != name:
                 return False
-            current = _control_flow_children(node)
-            if len(current) != len(children):
-                return False
-            if any(not child.matches(body) for child, body in zip(children, current)):
-                return False
+            # Canonical containers always own child blocks, even when empty.
+            # Leaves need no child enumeration; identity/type guards stay above.
+            if children:
+                current = _control_flow_children(node)
+                if len(current) != len(children):
+                    return False
+                for child, body in zip(children, current):
+                    if not child.matches(body):
+                        return False
         return True
 
     def find(self, source):

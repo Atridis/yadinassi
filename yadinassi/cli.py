@@ -148,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--module-runtime", choices=("managed-client-server-v1",),
                         help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
+    parser.add_argument("--execution-backend", choices=("interpreter", "hybrid", "compiled-strict"), default="interpreter",
+                        help="standalone execution: interpreter (default) or opt-in Decimal-loop hybrid")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
@@ -181,6 +183,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--source-compatibility-target', metavar='VERSION',
                         help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
+    from .execution_policy import execution_backend_policy
+    with execution_backend_policy(args.execution_backend):
+        return _run_selected(args, parser)
+
+
+def _run_selected(args, parser):
+    if args.execution_backend == 'hybrid' and (
+            args.f is not None or args.preprocessor_profile != 'standalone'
+            or any((args.create_db, args.create_demo_db, args.import_xml,
+                    args.module_runtime, args.check_xml, args.configuration_source,
+                    args.save_source, args.run_startup, args.source_scratch_db,
+                    args.open_source_scratch_db, args.update_source_scratch_db))):
+        parser.error('--execution-backend hybrid supports standalone BSL only')
     if args.configuration_source is not None or args.open_source_scratch_db is not None or args.update_source_scratch_db is not None:
         if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
                 args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
@@ -355,7 +370,8 @@ def main(argv: list[str] | None = None) -> int:
             interpreter = application.interpreter
         else:
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
-                                      compilation_profile=args.preprocessor_profile)
+                                      compilation_profile=args.preprocessor_profile,
+                                      execution_backend=args.execution_backend)
     except (BSLError, ValueError, TypeError):
         if database_context is not None:
             database_context.close()

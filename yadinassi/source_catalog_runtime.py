@@ -1,4 +1,5 @@
 """Explicit v4 source catalog objects with actual-caller authorization."""
+from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
 from .syntax import ast
@@ -306,6 +307,12 @@ class _ObjectInterpreter(_SourceInterpreter):
         key=_ALIASES.get(name.casefold(),name.casefold())
         return key in self.object.fields or key=='ref'
 
+    def semantic_name(self,node):
+        if node.name.casefold() in ('thisobject','этотобъект'):return self.object
+        if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
+        if self.field(node.name):return self.object.property_read(self,node.name)
+        return super().semantic_name(node)
+
     def visit_Name(self,node):
         if node.name.casefold() in ('thisobject','этотобъект'):return self.object
         if node.name.casefold() in _OBJECT_METHODS:return self.object.get_member(node.name)
@@ -321,10 +328,10 @@ class _ObjectInterpreter(_SourceInterpreter):
     def argument(self,node):
         node=self.ungroup(node)
         from .runtime import _Reference
-        if type(node) is ast.Name and node.name.casefold()=='__catalog_cancel':
+        if syntax_kind(node) is ast.Name and node.name.casefold()=='__catalog_cancel':
             return _Reference(lambda:self.variables['__catalog_cancel'],
                               lambda value:self.variables.__setitem__('__catalog_cancel',value))
-        if type(node) is ast.Name and self.field(node.name):
+        if syntax_kind(node) is ast.Name and self.field(node.name):
             self.object.property_read(self,node.name)
             return _Reference(lambda:self.object.property_read(self,node.name),
                               lambda value:self.object.property_write(self,node.name,value))

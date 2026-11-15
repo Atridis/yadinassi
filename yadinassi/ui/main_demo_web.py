@@ -39,11 +39,16 @@ class MainDemoHandler(_Handler):
         return self._reply(200, body, kind)
 
 
+from ..execution_policy import backend_entrypoint, UI_BACKENDS
+
+
+@backend_entrypoint
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Open the canonical unified demo.')
     parser.add_argument('--f', required=True)
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--launch-binding', help=argparse.SUPPRESS)
+    parser.add_argument('--execution-backend', choices=UI_BACKENDS, help='Explicit runtime backend; strict mode never falls back')
     args = parser.parse_args(argv)
     host = server = None
     try:

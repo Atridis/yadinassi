@@ -110,11 +110,40 @@ class _FormInterpreter(Interpreter):
         return child
 
     def _visit(self, node):
+        if self.execution_backend == 'compiled-strict':
+            return (yield from super()._visit(node))
+        # Preserve the original reference-backend context wrapper. The base
+        # interpreter does not pay for or promise the new strict-only ABI.
+        self.compiled_before(node)
+        result = yield from super()._visit(node)
+        return self.compiled_after(node, result)
+
+    def compiled_before(self, node):
         session = self._form_session
         session._steps += 1
         if session._steps > MAX_STEPS: raise FormLimitError('Форма: превышен предел исполнения события')
-        return (yield from super()._visit(node))
+        return super().compiled_before(node)
 
+    def semantic_name(self, node):
+        key = node.name.casefold()
+        if self.locals is not None and key in self.locals:
+            return super().semantic_name(node)
+        if key in ('parameters', 'параметры') and hasattr(self._form_session, '_parameters'):
+            self._form_session.form._check()
+            return self._form_session._parameters
+        if key in ('видполяформы','formfieldtype'):
+            return FORM_FIELD_VIEWS
+        form = self._form_session.form
+        if key in ('thisobject','этотобъект','items','элементы','commands','команды') or key in form._static or key in form._tables:
+            form._check()
+            if key in ('thisobject','этотобъект'): return form
+            if key in ('items','элементы'): return form.items
+            if key in ('commands','команды'): return form.commands
+            return form.get_member(node.name)
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         key = node.name.casefold()
         if self.locals is not None and key in self.locals:
@@ -133,6 +162,29 @@ class _FormInterpreter(Interpreter):
             return form.get_member(node.name)
         return super().visit_Name(node)
 
+    def semantic_index(self, node):
+        # Evaluate the receiver once. Keep the ordinary collection rules intact.
+        from . import runtime
+        value = yield from self._visit(node.object)
+        from .source_manager_modules import SourceManagers
+        if type(value) is SourceManagers:
+            value.authorize(self)
+            return value.member(self, (yield from self._visit(node.index)))
+        if type(value) is BSLFormDataCollection:
+            return value.get_index((yield from self._visit(node.index)))
+        if type(value) in (runtime.BSLChars, runtime.BSLCatalogMetadataCollection,
+                           runtime.BSLCatalogs, runtime.BSLDocumentMetadataCollection,
+                           runtime.BSLDocuments):
+            return value.get_index((yield from self._visit(node.index)))
+        if not isinstance(value, runtime._COLLECTIONS):
+            raise TypeError('Индексирование поддерживается только для коллекций')
+        index = yield from self._visit(node.index)
+        if isinstance(value, (runtime.BSLFixedMap, *runtime._TABLE_COLLECTIONS)):
+            return value.get_index(index)
+        return value.get(index)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Index(self, node):
         # Evaluate the receiver once. Keep the ordinary collection rules intact.
         from . import runtime
@@ -154,21 +206,14 @@ class _FormInterpreter(Interpreter):
             return value.get_index(index)
         return value.get(index)
 
-    def visit_ForEach(self, node):
+    def compiled_iterable(self, collection):
         from .form_model import BSLFormItems, BSLFormCommands
-        collection = yield from self._visit(node.collection)
         if type(collection) in (BSLFormItems, BSLFormCommands, BSLFormDataCollection):
-            for item in collection:
-                self.set_variable(node.name,item)
-                if not (yield from self.iteration(node.body)): break
-            return
-        # Existing generic behavior without re-evaluating the collection.
+            return collection
         from .runtime import _COLLECTIONS, BSLRoundModes, BSLSearchDirections, BSLSortDirections
-        if not isinstance(collection,_COLLECTIONS) and type(collection) not in (BSLRoundModes,BSLSearchDirections,BSLSortDirections):
+        if not isinstance(collection, _COLLECTIONS) and type(collection) not in (BSLRoundModes, BSLSortDirections, BSLSearchDirections):
             raise TypeError("Для Каждого: неподдерживаемая коллекция формы")
-        for item in collection:
-            self.set_variable(node.name,item)
-            if not (yield from self.iteration(node.body)): break
+        return collection
 
     def set_variable(self, variable, value):
         key = variable.casefold(); form = self._form_session.form

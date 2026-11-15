@@ -4,6 +4,7 @@ An await always suspends, even for scalars and settled promises. Only the host
 execution boundary pumps the FIFO; calling a routine never pumps other tasks.
 """
 import builtins
+from weakref import WeakSet
 from collections import deque
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -138,7 +139,10 @@ class SchedulerLimitError(RuntimeError):
 
 
 class Scheduler:
-    def __init__(self, native_target: str):
+    def __init__(self, native_target: str, *, execution_backend=None):
+        from .execution_policy import current_backend
+        self.execution_backend = current_backend() if execution_backend is None else execution_backend
+        self._compilers = WeakSet()
         self.native_target = validate_native_target(native_target)
         self.active_context = ExecutionContext()
         self._active_task = None
@@ -150,6 +154,15 @@ class Scheduler:
         self._pumping = False
         self._inline_depth = 0
         self.procedure_errors: list[BSLRuntimeError] = []
+
+    def register_compiler(self, engine):
+        self._compilers.add(engine)
+
+    def _release_compilers_if_quiescent(self):
+        if self.is_active or self._pumping or self._pending:
+            return
+        for engine in tuple(self._compilers):
+            engine.release()
 
     @property
     def is_active(self):
@@ -235,7 +248,8 @@ class Scheduler:
         if task is not None:
             self.active_context, self._active_task = task.context, task
         try:
-            with target_context(self.native_target), localcontext() as context:
+            from .execution_policy import execution_backend_policy
+            with target_context(self.native_target), execution_backend_policy(self.execution_backend), localcontext() as context:
                 context.prec = 38
                 yield
         finally:
@@ -365,6 +379,7 @@ class Scheduler:
             if root_request:
                 context.request_cache.clear()
                 context.request_cache = previous_request
+            self._release_compilers_if_quiescent()
 
     def run_until_idle(self, *, max_steps=100_000):
         """Drain ready work, with a host safety budget of 100,000 resumptions.
@@ -387,6 +402,7 @@ class Scheduler:
                 steps += 1
         finally:
             self._pumping = False
+            self._release_compilers_if_quiescent()
 
     def reset(self):
         """Close suspended frames in their own context and discard all work."""
@@ -416,5 +432,6 @@ class Scheduler:
             self._pending.clear()
             self.procedure_errors.clear()
             self.active_context = ExecutionContext()
+            self._release_compilers_if_quiescent()
         if failure is not None:
             raise failure

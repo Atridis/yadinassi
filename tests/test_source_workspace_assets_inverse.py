@@ -9,7 +9,10 @@ class SourceWorkspaceAssetsInverseTests(unittest.TestCase):
         return (Path(__file__).resolve().parents[1]/'scripts/native_1c_full_host.py').read_text(encoding='utf-8')
 
     def test_exact_new_layer_restores_previous_bytes_and_history(self):
-        raw=self.source();prior=history.without_source_workspace_assets_provenance(raw)
+        raw=self.source()
+        # Remove the newer, independently hash-pinned harness layer first.
+        previous=history.without_compiled_backend_harness(raw)
+        prior=history.without_source_workspace_assets_provenance(previous)
         self.assertEqual(hashlib.sha256(prior.encode()).hexdigest(),'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe')
         self.assertEqual(history.without_source_workspace_assets_provenance(prior),prior)
         restored=history.without_repository_inventory_budget(raw)
