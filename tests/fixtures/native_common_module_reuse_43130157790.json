@@ -1,0 +1,45 @@
+{
+  "run_id": 43130157790,
+  "head_sha": "e27ab7a56a0b3295ad7ac9a69ccf48fecd701d18",
+  "merge_sha": "7a0c7a46b3d303d58e7e2724d2b08931b4013b3d",
+  "base_sha": "8f9367802387e0c3e86025d22a4d0a8963f4db6b",
+  "tree_sha": "e4c9a2466107796d9e38ef588a36e91412f73d5b",
+  "source_sha256": "dc810a62628e6919e115488d17ca4cd444b39813f00e182fdfafadbd9c181447",
+  "form_sha256": "06bb1943fcc9ab460baa9a143717b24e53f14d684ad8023c9f386b7a742d3de5",
+  "modules_sha256": "fb5046a26ee08d426d7de4d2ae90e97f0176d538806876278b23010e366e58c5",
+  "module_sha256": "4a19034ff832593faf9a7fbc72bd8956f993c1afcb33b75033653bd1b408b0af",
+  "output_sha256": "f7061029af1851e83443890f73046228d32e879f86eeca433497500cc657ac16",
+  "runtime_version": "8.3.27.1508",
+  "observations": [
+    "1",
+    "0",
+    "1",
+    "0:0",
+    "1",
+    "1:1:0",
+    "1:1:0",
+    "1:2",
+    "1:1",
+    "0:0:0",
+    "2",
+    "0:1",
+    "1:2",
+    "0:0",
+    "1:1",
+    "1:0"
+  ],
+  "artifact_sha256": {
+    "observations": "60ba8386fc93470577c5e3a975c748248d24cb5c7cc5effc160ea1351ed1ee88",
+    "summary": "79dc742f44d1c2b5ee713b9a5973d1acf104b2fa76b0a15f2abe16c6f60b1d03"
+  },
+  "verification": {
+    "exact_source": true,
+    "merge_parents": true,
+    "prepared_modules": true,
+    "owned_configuration_load_update": true,
+    "two_real_client_events": true,
+    "process_cleanup": true,
+    "nonce_binding": "Verified by the exact source-bound host before export; raw nonce intentionally removed by public_report."
+  },
+  "note": "Client-only native observations. No ServerCall/dual-cache or full parity claim. Case9 records repeated Undefined acceptance, not proof of cache reuse. No tokens or exception text exported."
+}

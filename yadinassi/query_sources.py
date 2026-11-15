@@ -21,6 +21,11 @@ def _external_column(column):
     description = column.value_type
     if type(description) is not BSLTypeDescription:
         raise TypeError('External query columns require TypeDescription')
+    if description._query_reference is not None:
+        from .query_reference_tables import description_binding
+        binding = description_binding(description)
+        return _Column(column.name, None, binding.kind, (), explicit_alias=True,
+                       reference_identity=binding.identity, reference_binding=binding)
     kinds = tuple(t for t in description.types if t is not BSLType.NULL)
     if len(kinds) != 1:
         raise TypeError('External query columns require one scalar type, optionally nullable')
@@ -66,6 +71,8 @@ def _external_value(value, column, nullable):
     if value is NULL:
         if not nullable: raise TypeError('External query NULL requires nullable column metadata')
         return value
+    if column.reference_binding is not None:
+        return column.reference_binding.value(value)
     expected = {'string': str, 'number': Decimal, 'datetime': BSLDate, 'boolean': bool}[column.kind]
     if type(value) is not expected:
         raise TypeError('External query cell requires exact declared scalar type')
@@ -87,7 +94,7 @@ def _external_value(value, column, nullable):
     return value
 
 
-def _snapshot(value, budget):
+def _snapshot(value, budget, catalogs=None, documents=None):
     from .queries import _MAX_CELLS, _MAX_RESULT_TEXT
     from .query_packages import _Table
     if type(value) is not BSLValueTable:
@@ -109,7 +116,10 @@ def _snapshot(value, budget):
         key = column.name.casefold()
         if key in names: raise ValueError('Duplicate external query column')
         names.add(key)
-        columns.append(_external_column(column))
+        output_column = _external_column(column)
+        if output_column.reference_binding is not None:
+            output_column.reference_binding.require_context(catalogs, documents)
+        columns.append(output_column)
         nullables.append(any(t is BSLType.NULL for t in column.value_type.types))
     rows = []
     for row in value.rows:
@@ -128,7 +138,7 @@ def _snapshot(value, budget):
     return _Table(tuple(columns), tuple(rows))
 
 
-def snapshot_sources(statements, parameters):
+def snapshot_sources(statements, parameters, catalogs=None, documents=None):
     """Capture each referenced parameter once, before any statement/database read."""
     result, budget = {}, [0, 0]
     for arm in syntax.selects(statements):
@@ -137,11 +147,11 @@ def snapshot_sources(statements, parameters):
             key = name.casefold()
             if key in result: continue
             if key not in parameters: raise ValueError('External query parameter is not set')
-            result[key] = _snapshot(parameters[key], budget)
+            result[key] = _snapshot(parameters[key], budget, catalogs, documents)
     return result
 
 
-def _union_column(columns):
+def _union_column(columns, enum_scope=None):
     first = columns[0]
     typed = [c for c in columns if c.kind != 'null']
     if not typed: raise TypeError('UNION NULL column requires a typed arm')
@@ -163,20 +173,29 @@ def _union_column(columns):
     elif kind in ('catalog_ref', 'document_ref'):
         if any(c.reference_identity[0] is not identity[0] or c.reference_identity[1] != identity[1] for c in typed):
             raise TypeError('UNION references require same database and catalog')
-    return replace(first, kind=kind, qualifiers=qualifiers, custom=None, reference_identity=identity)
+    descriptor = None
+    if kind == 'enum_ref':
+        if enum_scope is None:
+            raise ValueError('Enum UNION output is outside this profile')
+        descriptor = enum_scope.require_same(tuple(c.enum_descriptor for c in typed))
+        identity = (descriptor.value_type.snapshot, descriptor.value_type.metadata_uuid)
+    return replace(first, kind=kind, qualifiers=qualifiers, custom=None,
+                   reference_identity=identity, enum_descriptor=descriptor,
+                   reference_binding=typed[0].reference_binding)
 
 
 class _UnionPlan:
-    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None):
+    def __init__(self, query, catalogs, parameters, temporary_tables=None, external_tables=None, *, documents=None, information_registers=None, enum_scope=None, condition_budget=None):
         from .relational_queries import _Plan
         self.query = query
+        if condition_budget is None: condition_budget = [0, 0]
         self.arms = tuple(_Plan(arm, catalogs, parameters, temporary_tables, external_tables, allow_null=True, documents=documents,
-                                 information_registers=information_registers)
+                                 information_registers=information_registers, enum_scope=enum_scope, condition_budget=condition_budget)
                           for arm in query.arms)
         width = len(self.arms[0].columns)
         if any(len(arm.columns) != width for arm in self.arms):
             raise ValueError('UNION column counts must match')
-        self.columns = tuple(_union_column(columns) for columns in zip(*(arm.columns for arm in self.arms)))
+        self.columns = tuple(_union_column(columns, enum_scope) for columns in zip(*(arm.columns for arm in self.arms)))
         self.managers = tuple(manager for arm in self.arms for manager in arm.all_managers)
         self.all_managers = self.managers
         aliases = {p.alias.casefold(): i for i, p in enumerate(query.arms[0].projections)}
@@ -186,7 +205,10 @@ class _UnionPlan:
             if (type(order.field) is not syntax.Field or len(order.field.parts) != 1
                     or order.field.parts[0].casefold() not in aliases):
                 raise ValueError('UNION ORDER BY requires a first-arm output column')
-            self.orders.append((aliases[order.field.parts[0].casefold()], order.descending))
+            index = aliases[order.field.parts[0].casefold()]
+            if self.columns[index].kind == 'enum_ref':
+                raise ValueError('Enum UNION ordering is outside this profile')
+            self.orders.append((index, order.descending))
 
     def execute(self, view=None, budget=None):
         from .queries import BSLQueryResult, _MAX_CELLS, _MAX_RESULT_TEXT

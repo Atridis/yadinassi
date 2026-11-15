@@ -144,3 +144,34 @@ test('report pointer and focus boundaries preserve raw form draft without OnChan
   }
   assert.equal(changes,0);assert.deepEqual(view.changes(),[{control:'Name',value:{type:'String',value:'Unsaved raw'}}]);
 });
+
+const pagedChoice=(total=65,page=1)=>({...choice(),rows:Array.from({length:Math.min(32,Math.max(0,total-(page-1)*32))},(_,i)=>({choice:(i+1).toString(16).padStart(32,'0'),code:'P'+i,description:'Product '+i})),navigation:{page,pages:Math.max(1,Math.ceil(total/32)),total,query:'',previous:page>1?'report-choice-page-'+'a'.repeat(32):null,next:page<Math.ceil(total/32)?'report-choice-page-'+'b'.repeat(32):null}});
+test('statement picker validates complete bounded navigation, not partial totals',()=>{
+ const s=state({reportSetup:setup({choice:pagedChoice()})});assert.doesNotThrow(()=>validateReports(s,null));
+ for(const edit of [c=>c.navigation.total=8193,c=>c.navigation.page=true,c=>c.navigation.previous='report-choice-page-'+'a'.repeat(32),c=>c.rows.pop(),c=>c.navigation.extra='x']){
+  const bad=structuredClone(s);edit(bad.reportSetup.choice);assert.throws(()=>validateReports(bad,null));
+ }
+ const over={...choice(),rows:[],error:'snapshot_limit',navigation:null};assert.doesNotThrow(()=>validateReports(state({reportSetup:setup({choice:over})}),null));
+});
+test('statement picker actions use issued cursors and bounded search, old exact-code remains',()=>{
+ const c=pagedChoice(),s=state({reportSetup:setup({choice:c})}),base={report:'StockStatement',ticket:setupTicket(1),choice:c.ticket};
+ for(const p of [{action:'page',cursor:c.navigation.next},{action:'search',query:'widget'},{action:'refresh'},{action:'filter',code:'P1'}])assert.equal(validReportAction('application.reportSetup',{...base,...p},s),true);
+ for(const p of [{action:'page',cursor:null},{action:'page',cursor:'old'},{action:'search',query:'x'.repeat(129)},{action:'refresh',extra:1}])assert.equal(validReportAction('application.reportSetup',{...base,...p},s),false);
+});
+test('statement page transition cannot silently change totals query or page direction',()=>{
+ const old=state({reportSetup:setup({choice:pagedChoice()})}),next=pagedChoice(65,2);next.ticket=choiceTicket(3);
+ const request={method:'application.reportSetup',params:{report:'StockStatement',ticket:setupTicket(1),choice:choiceTicket(2),action:'page',cursor:old.reportSetup.choice.navigation.next}};
+ assert.doesNotThrow(()=>validateReportReply({error:null,state:state({reportSetup:setup({choice:next})})},request,old));
+ for(const edit of [c=>c.navigation.total=66,c=>c.navigation.query='new',c=>c.navigation.page=3]){const c=structuredClone(next);edit(c);assert.throws(()=>validateReportReply({error:null,state:state({reportSetup:setup({choice:c})})},request,old));}
+});
+test('statement picker renders page search refresh and dispatches current ticket',async()=>{
+ const calls=[],c=pagedChoice();const {env,host}=mount(state({reportSetup:setup({choice:c})}),async()=>{},async(m,p)=>calls.push([m,p]));
+ assert.equal(btn(env,'Previous statement choices').disabled,true);btn(env,'Next statement choices').emit('click');await flush();
+ assert.equal(calls[0][1].cursor,c.navigation.next);
+ const input=all(host).find(n=>n.getAttribute?.('aria-label')==='Statement reference search');input.value='widget';btn(env,'Search statement references').emit('click');await flush();assert.equal(calls[1][1].query,'widget');
+ btn(env,'Refresh statement choices').emit('click');await flush();assert.equal(calls[2][1].action,'refresh');
+});
+test('retired statement picker page DOM cannot target replacement choice',async()=>{
+ let calls=0;const {env,panel}=mount(state({reportSetup:setup({choice:pagedChoice()})}),async()=>{},async()=>{calls++;});
+ const next=btn(env,'Next statement choices');panel.update(state());next.emit('click');await flush();assert.equal(calls,0);
+});

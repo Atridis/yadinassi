@@ -285,6 +285,8 @@ class EnumFormsRouteTests(unittest.TestCase):
         # NEW stage acceptance, not a substitute permissive production validator.
         validator=lambda raw,**kwargs:json.loads(raw)
         self.assertEqual(host.validate_envelope(self.encode(envelope),nonce,hashes,validator)[1],raw)
+        bad=copy.deepcopy(envelope);bad['report']['stage3']['lifecycle_progress']=[]
+        with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
         for flag in ('config_verified','lifecycle_verified','quiet','process_exited'):
             bad=copy.deepcopy(envelope);bad['report']['stage3'][flag]=False
             with self.subTest(flag=flag), self.assertRaises(host.FormError):
@@ -337,4 +339,62 @@ class EnumFormsCheckoutTests(unittest.TestCase):
         with self.assertRaises(host.FormError) as caught:
             host.validate_envelope(json.dumps(envelope).encode(),'a'*32,{},
                                    validator=lambda raw,**kwargs:json.loads(raw))
+        self.assertFalse(hasattr(caught.exception,'native_failure'))
+
+
+class EnumFormsFailureProgressTests(unittest.TestCase):
+    def test_progress_is_finite_incomplete_diagnostic_not_acceptance(self):
+        import json
+        from scripts.inventory_enum_forms_packet import route
+        nonce = 'a' * 32
+        events = [dict(flow=1, instance=1, code='create')]
+        raw = json.dumps(dict(nonce=nonce, events=events)).encode()
+        self.assertEqual(route.lifecycle_progress(raw, nonce), events)
+        with self.assertRaises(ValueError):
+            route.lifecycle(raw, nonce)
+
+    def test_progress_rejects_sensitive_extra_or_unbounded_values(self):
+        import json
+        from scripts.inventory_enum_forms_packet import route
+        nonce = 'a' * 32
+        valid = dict(flow=1, instance=1, code='create')
+        for events in ([dict(valid, path='/private')], [dict(valid, code='/private')],
+                       [dict(valid, flow=True)], [dict(valid, instance=2)], [valid]*31):
+            with self.subTest(events=events), self.assertRaises(ValueError):
+                route.lifecycle_progress(json.dumps(dict(nonce=nonce, events=events)).encode(), nonce)
+        with self.assertRaises(ValueError):
+            route.lifecycle_progress(json.dumps(dict(nonce='b'*32, events=[])).encode(), nonce)
+
+    def test_dynamic_attributes_use_form_receiver(self):
+        import re
+        from scripts.inventory_enum_forms_packet import route
+        packet = route.packet()
+        lifecycle = packet['lifecycle.bsl'].decode().split('&AtClientAtServerNoContext', 1)[0]
+        observer = packet['Products/observer.bsl'].decode()
+        for source in (lifecycle, observer):
+            code = re.sub(r'"[^"\n]*"', '', source)
+            for name in ('ProbeFlow', 'ProbeInstance', 'ProbeWaits', 'ExplicitChangeCount', 'ProbeTracePath', 'ProbeNonce'):
+                self.assertIsNone(re.search(r'(?<![\w.])' + name + r'\b', code), name)
+        self.assertIn('ThisObject.ProbeFlow = Parameters.Flow', lifecycle)
+        self.assertIn('ThisObject.ExplicitChangeCount = ThisObject.ExplicitChangeCount + 1', observer)
+
+
+    def test_failure_envelope_exports_only_valid_progress(self):
+        import json, sys
+        sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
+        import native_1c_owned_enum_forms_profile as host
+        import owned_enum_forms_suite as stage
+        nonce='a'*32
+        report=stage.empty_report(nonce)
+        progress=[dict(flow=1,instance=1,code='create')]
+        report.update(status='failed',failure_kind='timeout',failure_phase='enterprise',lifecycle_progress=progress)
+        envelope=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce=nonce,
+                      report=dict(status='stage3_failed',native_tests_completed=False,stage3=report),outputs=[])
+        validator=lambda raw,**kwargs:json.loads(raw)
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
+        self.assertEqual(caught.exception.native_failure['lifecycle_progress'],progress)
+        progress[0]['code']='/private/path'
+        with self.assertRaises(host.FormError) as caught:
+            host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
         self.assertFalse(hasattr(caught.exception,'native_failure'))

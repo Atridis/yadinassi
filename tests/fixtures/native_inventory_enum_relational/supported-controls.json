@@ -1,0 +1,596 @@
+{
+  "schema": "inventory-enum-relational-supported-controls-v1",
+  "native_run": 43119374440,
+  "source_commit": "0b481c58488b84f326fa81f5036b4d3eb5dc137b",
+  "source_tree": "d81e471823a408ac4d4daec1ba09cb1934b29fdc",
+  "observer_sha256": "71f1709cec2c9f1b8eba46698eae93195af779ec389c60c6a34b6c04f28fd4f8",
+  "raw_output_sha256": "5e3acfe6d4a8836cc04443733f618157cfb2c0ae2e405a093568175dfe90f993",
+  "native_groups": 12,
+  "total_controls": 79,
+  "full_observer_parity": false,
+  "host_replay_status": "supported-subset-passed",
+  "boundaries": [
+    "Empty or NULL-only output has no column metadata witness.",
+    "Array mutation is measured before and between Execute, not during materialization.",
+    "Foreign/forged/stale ownership and one-lease guarantees are host regressions, not native evidence."
+  ],
+  "controls": [
+    {
+      "group": 1,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 1,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 1,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 1,
+      "control": 4,
+      "classification": "measured-syntax-refusal",
+      "native_fragment": "execute-refused",
+      "reason": "Bare Array IN spelling is refused; no parser reinterpretation."
+    },
+    {
+      "group": 1,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 1,
+      "control": 6,
+      "classification": "measured-syntax-refusal",
+      "native_fragment": "execute-refused",
+      "reason": "Bare Array IN spelling is refused; no parser reinterpretation."
+    },
+    {
+      "group": 2,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "null,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 6,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 7,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 8,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 9,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 10,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 11,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 12,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 13,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 14,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 15,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 16,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 17,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 18,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 19,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 2,
+      "control": 20,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 6,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 3,
+      "control": 7,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 4,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 4,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "null,1;unit-piece,3;",
+      "reason": null
+    },
+    {
+      "group": 4,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,10;",
+      "reason": null
+    },
+    {
+      "group": 4,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,2;unit-pack,2;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 5,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 5,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "null,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 5,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;",
+      "reason": null
+    },
+    {
+      "group": 5,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;",
+      "reason": null
+    },
+    {
+      "group": 5,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 6,
+      "control": 1,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "state-draft,1;unit-piece,1;",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 6,
+      "control": 2,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "unit-piece,1;",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 6,
+      "control": 3,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "unit-piece,1;",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 6,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "state-draft,1;",
+      "reason": null
+    },
+    {
+      "group": 6,
+      "control": 5,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "empty",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 7,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 7,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 7,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,3;",
+      "reason": null
+    },
+    {
+      "group": 7,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 7,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "null,1;null,1;null,1;",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 6,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 7,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 8,
+      "control": 8,
+      "classification": "measured-runtime-value",
+      "native_fragment": "empty",
+      "reason": null
+    },
+    {
+      "group": 9,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 9,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-empty,1;unit-piece,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 9,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "null,1;unit-empty,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 9,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 9,
+      "control": 5,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "state-draft,1;unit-empty,1;unit-piece,1;",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 9,
+      "control": 6,
+      "classification": "intentional-host-refusal",
+      "native_fragment": "empty",
+      "reason": "Mixed enum/scalar output schemas remain outside the homogeneous host descriptor grant."
+    },
+    {
+      "group": 10,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,7;unit-piece,6;",
+      "reason": null
+    },
+    {
+      "group": 10,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,7;unit-piece,6;",
+      "reason": null
+    },
+    {
+      "group": 10,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,7;unit-piece,6;",
+      "reason": null
+    },
+    {
+      "group": 10,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,14;unit-piece,12;",
+      "reason": null
+    },
+    {
+      "group": 11,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 11,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;",
+      "reason": null
+    },
+    {
+      "group": 11,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-pack,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 11,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-empty,1;unit-piece,1;",
+      "reason": null
+    },
+    {
+      "group": 12,
+      "control": 1,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,6;",
+      "reason": null
+    },
+    {
+      "group": 12,
+      "control": 2,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,23;",
+      "reason": null
+    },
+    {
+      "group": 12,
+      "control": 3,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,6;",
+      "reason": null
+    },
+    {
+      "group": 12,
+      "control": 4,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,20;",
+      "reason": null
+    },
+    {
+      "group": 12,
+      "control": 5,
+      "classification": "measured-runtime-value",
+      "native_fragment": "unit-piece,1;",
+      "reason": null
+    }
+  ],
+  "host_validation": {
+    "tested_head": "5393aeb550e201859a7f20c4b869a234ecd11207",
+    "tested_tree": "8559ac993e4a6b24c8e3f2a5be9c5b882bb6e3af",
+    "focused": {
+      "head": "c21b4c4957c86057765508e8fddbedee4d1a401e",
+      "tree": "ff0ea20b169b8b4f7e0e310a9df638b4f3bcde43",
+      "normal": 106,
+      "optimized": 106
+    },
+    "broad": {
+      "top_level_per_mode": 2276,
+      "nested_per_mode": 1,
+      "actual_per_mode": 2277,
+      "modes": [
+        "normal",
+        "optimized"
+      ]
+    },
+    "nested_witness": {
+      "outer": "test_ui_asset_provenance.UIAssetProvenanceTests.test_windows_offline_adapter_keeps_exact_inventory_and_byte_drift_checks",
+      "inner": "UIAssetProvenanceTests.test_actual_inventory_includes_all_assets_and_modules"
+    },
+    "scope": "Partial measured subset: 71 exact value controls and 2 syntax refusals; 6 native-accepted compound outputs remain intentional host refusals. Runtime sources identical between focused and broad; later checkpoint changes only documentation and this evidence metadata."
+  }
+}

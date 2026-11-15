@@ -268,7 +268,10 @@ class PostingApplicationTests(unittest.TestCase):
     def test_reopen_preserves_posted_and_sections(self):
         sid=self.open();self.rpc('catalog',entry=1);self.event(sid,control='NewLineButton')
         response=self.event(sid,control='PostButton');record=response['state']['catalog']['rows'][0]['key']
-        self.event(sid,'close');other=self.open('reopened',record)
+        closed=self.event(sid,'close')
+        with self.assertRaisesRegex(ValueError, 'record is not in the selected catalog projection'):
+            self.open('stale-reopened',record)
+        other=self.open('reopened',closed['state']['catalog']['rows'][0]['key'])
         owned=self.broker.objects[other]
         self.assertTrue(owned.object.get_member('Posted'));self.assertEqual(len(owned.image().sections[0][1]),1)
 

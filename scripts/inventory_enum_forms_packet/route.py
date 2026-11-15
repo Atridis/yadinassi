@@ -113,3 +113,22 @@ def lifecycle(raw,nonce):
 def require_available(records):
     if tuple(name for name,_ in records)!=GROUPS:raise ValueError('all eight groups required')
     return records
+
+
+def lifecycle_progress(raw, nonce):
+    """Finite incomplete trace for diagnostics only, never acceptance evidence."""
+    value = _json(raw)
+    if (type(value) is not dict or set(value) != {'nonce', 'events'}
+            or value['nonce'] != nonce or type(value['events']) is not list
+            or len(value['events']) > 30):
+        raise ValueError('owned diagnostic envelope')
+    events = value['events']
+    for event in events:
+        if (type(event) is not dict or set(event) != {'flow', 'instance', 'code'}
+                or type(event['flow']) is not int or not 1 <= event['flow'] <= 8
+                or type(event['instance']) is not int
+                or event['instance'] not in ((1, 2) if event['flow'] in (3, 8) else (1,))
+                or type(event['code']) is not str
+                or event['code'] not in ('create', 'open', 'observed')):
+            raise ValueError('owned diagnostic event')
+    return events

@@ -75,6 +75,7 @@ class ConfigurationUpdateApplyTests(ConfigurationUpdatePlanningTests):
         backend=SQLiteCatalogBackend(self.path)
         try:
             self.assertEqual((backend.format_version,backend.storage_version,backend.configuration_generation),(12,2,2))
+            self.assertIsNone(backend._enum_domain)  # Legacy maintenance grants no enum domain.
             self.assertEqual(backend.export_configuration(),{f.path:f.content for f in self.target.files})
             view=backend.begin_read()
             try:self.assertEqual(view.read_catalog(key).values,(False,))

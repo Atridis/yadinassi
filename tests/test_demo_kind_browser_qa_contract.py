@@ -23,9 +23,9 @@ class DemoKindBrowserContractTests(unittest.TestCase):
 
     def test_exact_demo_source_and_eight_real_ui_scenarios(self):
         source = self.source()
-        self.assertIn('SQLiteCatalogBackend.create_demo_kinds', source)
-        self.assertIn('tests/fixtures/demo_cf/source', source)
-        self.assertIn('assert len(f)==19', source)
+        self.assertIn('SQLiteCatalogBackend.create_main_demo', source)
+        self.assertIn('examples/demo', source)
+        self.assertIn('assert len(f)==39', source)
         self.assertEqual(source.count("await scenario('"), 8)
         self.assertIn("page.locator('.editor').waitFor({state:'detached'})", source)
         self.assertIn("button.textContent.trim()==='+ New record'&&!button.disabled", source)

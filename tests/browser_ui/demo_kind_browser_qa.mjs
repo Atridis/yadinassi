@@ -28,7 +28,7 @@ const tokens=[],results=[];
 const report={status:'FAIL',sourceCommit:execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8',timeout:5000,maxBuffer:128}).trim(),scenarios:results,sandbox:null};
 const bounded=(promise,ms,reason)=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(reason)),ms);})]).finally(()=>clearTimeout(timer));};
 const py=code=>JSON.parse(execFileSync(python,['-c',code,repo,path.join(owned,'demo.sqlite')],{cwd:repo,env,encoding:'utf8',timeout:remaining(15000),maxBuffer:16384,stdio:['ignore','pipe','pipe']}));
-const audit=()=>py(`import sys,json\nfrom yadinassi.sqlite_catalog import SQLiteCatalogBackend\nfrom yadinassi.catalog_backend import CatalogSelection\nb=SQLiteCatalogBackend(sys.argv[2],read_only=True)\nv=b.begin_read()\ns=v.catalogs()[0]\nrows=v.select_catalog(s.identity,CatalogSelection(limit=5))\nprint(json.dumps([{'code':r.code,'description':r.description,'id':str(r.key.record_id),'revision':r.revision.token} for r in rows]))\nv.close();b.close()`);
+const audit=()=>py(`import sys,json\nfrom yadinassi.sqlite_catalog import SQLiteCatalogBackend\nfrom yadinassi.catalog_backend import CatalogSelection\nb=SQLiteCatalogBackend(sys.argv[2],read_only=True)\nv=b.begin_read()\ns=next(s for s in v.catalogs() if s.name=='ВидыНоменклатуры')\nrows=v.select_catalog(s.identity,CatalogSelection(limit=5))\nprint(json.dumps([{'code':r.code,'description':r.description,'id':str(r.key.record_id),'revision':r.revision.token} for r in rows]))\nv.close();b.close()`);
 function killHost(signal){if(host?.pid)try{process.kill(-host.pid,signal);}catch(e){if(e.code!=='ESRCH')throw e;}}
 async function stopHost(){if(!host)return;const done=host.exitCode!==null||host.signalCode!==null;if(!done){const ended=new Promise(r=>host.once('exit',r));killHost('SIGINT');try{await bounded(ended,5000,'host_close_timeout');}catch{killHost('SIGKILL');await bounded(ended,2000,'host_kill_timeout');}}killHost('SIGKILL');}
 async function startHost(){
@@ -50,12 +50,12 @@ async function main(){
   const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',timeout:remaining(5000),maxBuffer:1024*1024}).trim();
   assert.equal(report.sourceCommit,process.env.QA_SOURCE_SHA,'source_commit_mismatch');
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','tests/fixtures/demo_cf/source','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','examples/demo','.github/workflows/ui-browser-qa.yml').split('\0').filter(Boolean);
   const source={};for(const name of names)source[name]=sha256(await readFile(path.join(repo,name)));
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
   report.versions={node:process.version,playwright:JSON.parse(await readFile(new URL('./node_modules/playwright/package.json',import.meta.url),'utf8')).version};
   assert.equal(report.versions.playwright,'1.64.1');
-  py(`import sys,json\nfrom pathlib import Path\nfrom yadinassi.sqlite_catalog import SQLiteCatalogBackend\nr=Path(sys.argv[1])/'tests/fixtures/demo_cf/source'\nf={p.relative_to(r).as_posix():p.read_bytes() for p in r.rglob('*') if p.is_file()}\nassert len(f)==19\nb=SQLiteCatalogBackend.create_demo_kinds(sys.argv[2],f);b.close()\nprint(json.dumps({'files':len(f)}))`);
+  py(`import sys,json\nfrom pathlib import Path\nfrom yadinassi.sqlite_catalog import SQLiteCatalogBackend\nr=Path(sys.argv[1])/'examples/demo'\nf={p.relative_to(r).as_posix():p.read_bytes() for p in r.rglob('*') if p.is_file()}\nassert len(f)==39\nb=SQLiteCatalogBackend.create_main_demo(sys.argv[2],__import__('yadinassi.configuration_main_demo',fromlist=['import_main_demo_configuration']).import_main_demo_configuration(f,profile='main-demo-v1'));b.close()\nprint(json.dumps({'files':len(f)}))`);
   phase='sandbox_launch';
   const childrenPath='/proc/'+process.pid+'/task/'+process.pid+'/children';
   const priorChildren=new Set(readFileSync(childrenPath,'utf8').trim().split(/\s+/).filter(Boolean));

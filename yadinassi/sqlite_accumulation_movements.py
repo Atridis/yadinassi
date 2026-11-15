@@ -51,15 +51,22 @@ def _hash(value):
     return sha256(_json(value).encode('utf-8')).hexdigest()
 
 
-def schema_data(schema):
-    validate_schema(schema)
+def schema_data(schema, *, enum_domain=None):
+    validate_schema(schema, enum_domain=enum_domain)
     groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers)] for f in group]
               for group in (schema.dimensions, schema.resources, schema.attributes)]
     if schema.value_profile == 'catalog_reference_v1':
         groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers),
                     str(f.target_catalog_id) if f.target_catalog_id is not None else None]
                    for f in group] for group in (schema.dimensions, schema.resources, schema.attributes)]
+    if schema.value_profile == 'catalog_enum_reference_v1':
+        groups = [[[str(f.identity), f.name, f.kind, list(f.qualifiers),
+                    str(f.target_catalog_id) if f.target_catalog_id is not None else None,
+                    str(f.target_enum_id) if f.target_enum_id is not None else None]
+                   for f in group] for group in (schema.dimensions, schema.resources, schema.attributes)]
     tag = 'accumulation_scalar_v1' if schema.value_profile == 'scalar_v1' else 'accumulation_reference_v1'
+    if schema.value_profile == 'catalog_enum_reference_v1':
+        tag = 'accumulation_enum_reference_v1'
     data = [tag, str(schema.identity), schema.name,
             schema.kind.value, sorted(str(v) for v in schema.recorder_documents), *groups]
     if len(_json(data).encode('utf-8')) > MAX_SCHEMA_BYTES:
@@ -86,7 +93,7 @@ def validate_database_budget(connection):
 class AccumulationMovementPort:
     """Private host primitive; the owning application supplies the transaction."""
 
-    def __init__(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=()):
+    def __init__(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=(), enum_domain=None):
         if (type(connection) is not sqlite3.Connection or type(database_id) is not UUID
                 or not database_id.int or type(generation) is not int
                 or not 1 <= generation < 2**63 or type(schemas) is not tuple
@@ -94,7 +101,9 @@ class AccumulationMovementPort:
             raise BackendError('invalid_input')
         if connection.execute('PRAGMA foreign_keys').fetchone() != (1,):
             raise BackendError('unsupported')
-        data = tuple(schema_data(schema) for schema in schemas)
+        if enum_domain is not None:_storage()._enum_domain(enum_domain,database_id)
+        self._enum_domain=enum_domain
+        data = tuple(schema_data(schema,enum_domain=enum_domain) for schema in schemas)
         identities = [item.identity for schema in schemas for item in (schema, *schema.fields)]
         if (len(set(identities)) != len(identities)
                 or len({s.name.casefold() for s in schemas}) != len(schemas)):
@@ -114,9 +123,10 @@ class AccumulationMovementPort:
                 or any(type(c) is not CatalogSchema for c in reference_catalogs)):
             raise BackendError('invalid_input')
         targets = {c.identity for c in reference_catalogs}
-        reference_profile = any(schema.value_profile == 'catalog_reference_v1' for schema in schemas)
+        reference_profile = any(schema.value_profile in ('catalog_reference_v1','catalog_enum_reference_v1') for schema in schemas)
+        expected_profile=('catalog_enum_reference_v1' if enum_domain is not None else 'catalog_reference_v1' if reference_profile else 'scalar_v1')
         if (reference_profile != bool(reference_catalogs)
-                or any(schema.value_profile != ('catalog_reference_v1' if reference_profile else 'scalar_v1')
+                or any(schema.value_profile != expected_profile
                        for schema in schemas)
                 or any(f.target_catalog_id not in targets for schema in schemas
                        for f in schema.fields if f.kind == 'catalog_ref')):
@@ -133,7 +143,7 @@ class AccumulationMovementPort:
         if schema is None:
             raise BackendError('unsupported')
         validate_replacement(schema, AccumulationReplacement(register_id, recorder, (), '0' * 64),
-                             self.database_id)
+                             self.database_id,enum_domain=self._enum_domain)
         if self.connection.execute('PRAGMA foreign_keys').fetchone() != (1,):
             raise BackendError('unsupported')
         key = (str(register_id),)
@@ -166,7 +176,7 @@ class AccumulationMovementPort:
         result = []
         size = 0
         for row in rows:
-            data = [[_storage()._encode(value, field, self.database_id)
+            data = [[_storage()._encode(value, field, self.database_id,enum_domain=self._enum_domain)
                      for value, field in zip(values, fields)]
                     for values, fields in ((row.dimensions, schema.dimensions),
                                            (row.resources, schema.resources),
@@ -246,9 +256,9 @@ class AccumulationMovementPort:
                 for values, fields in zip(data, (schema.dimensions, schema.resources, schema.attributes)):
                     if type(values) is not list or len(values) != len(fields):
                         raise BackendError('integrity')
-                    groups.append(tuple(_storage()._decode(value, field, self.database_id)
+                    groups.append(tuple(_storage()._decode(value, field, self.database_id,enum_domain=self._enum_domain)
                                         for value, field in zip(values, fields)))
-                date = _storage()._decode(['d', period], _PERIOD_FIELD, self.database_id)
+                date = _storage()._decode(['d', period], _PERIOD_FIELD, self.database_id,enum_domain=self._enum_domain)
                 rows.append(AccumulationMovementRow(line, date, bool(active),
                                                     AccumulationDirection(direction), *groups))
             except (ValueError, TypeError, RecursionError):
@@ -257,7 +267,7 @@ class AccumulationMovementPort:
         rows = tuple(rows)
         try:
             validate_replacement(schema, AccumulationReplacement(schema.identity, recorder, rows, '0' * 64),
-                                 self.database_id)
+                                 self.database_id,enum_domain=self._enum_domain)
         except BackendError:
             raise BackendError('integrity') from None
         if self.active_only and any(row.active is not True for row in rows):
@@ -314,7 +324,7 @@ class AccumulationMovementPort:
         if type(request) is not AccumulationReplacement:
             raise BackendError('invalid_input')
         schema = self._require(request.register_id, request.recorder)
-        validate_replacement(schema, request, self.database_id)
+        validate_replacement(schema, request, self.database_id,enum_domain=self._enum_domain)
         if self.active_only and any(row.active is not True for row in request.rows):
             raise BackendError('unsupported')
         self._references(request.rows, writing=True)

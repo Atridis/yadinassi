@@ -100,17 +100,18 @@ def _read_form_document(context, definition, key):
         view.close()
 
 
-def require_document_form_schema(schema, *, reference_fields=False):
-    if type(reference_fields) is not bool:
+def require_document_form_schema(schema, *, reference_fields=False, enum_fields=False):
+    if type(reference_fields) is not bool or type(enum_fields) is not bool:
         raise TypeError("explicit reference field admission required")
     if type(schema) is not DocumentSchema:
         raise TypeError('document schema required')
     fields = list(schema.fields)
     for section in schema.tabular_sections:
         fields.extend(section.fields)
-    allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ())
+    allowed = ('string', 'number', 'boolean', 'datetime') + (('catalog_ref',) if reference_fields else ()) + (('enum_ref',) if enum_fields else ())
     if any(f.kind not in allowed or (f.target_catalog_id is not None and
-           not (reference_fields and f.kind == 'catalog_ref')) for f in fields):
+           not (reference_fields and f.kind == 'catalog_ref')) or (f.target_enum_id is not None and
+           not (enum_fields and f.kind == 'enum_ref')) for f in fields):
         raise ValueError('scalar document form fields and sections required')
 
 
@@ -236,7 +237,7 @@ class DocumentObjectSession:
         try:
             card = view.read_document(self.object._key)
             if card is None: raise BackendError('not_found')
-            listing = view.select_documents(self.schema.identity, DocumentSelection())
+            listing = (card,) if getattr(self,"_paged_listing",False) is True else view.select_documents(self.schema.identity, DocumentSelection())
             if not any(row.key == card.key for row in listing): raise BackendError('not_found')
         finally: view.close()
         fresh = BSLDocumentObject(self.manager, card)

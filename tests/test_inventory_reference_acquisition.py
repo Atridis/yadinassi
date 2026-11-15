@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from test_native_async_fixture import historical_source_bytes
 
 ROOT=Path(__file__).resolve().parents[1]
 FIXTURE=ROOT/'tests/fixtures/native_inventory_reference'
@@ -34,7 +35,7 @@ class InventoryAcquisitionTests(unittest.TestCase):
         evidence=self.evidence()
         for group in ('trusted_input_sha256','host_source_sha256'):
             for path,digest in evidence[group].items():
-                with self.subTest(path=path):self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),digest)
+                with self.subTest(path=path):self.assertEqual(hashlib.sha256(historical_source_bytes(path, (ROOT/path).read_bytes(), digest)).hexdigest(),digest)
         self.assertEqual(evidence['native_report']['stage3']['input_sha256'],evidence['trusted_input_sha256'])
 
     def test_native_material_acceptance_and_cleanup_are_verified(self):

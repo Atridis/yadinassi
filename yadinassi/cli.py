@@ -148,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--module-runtime", choices=("managed-client-server-v1",),
                         help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
+    parser.add_argument("--execution-backend", choices=("interpreter", "hybrid", "compiled-strict"), default="interpreter",
+                        help="standalone execution: interpreter (default) or opt-in Decimal-loop hybrid")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")
@@ -159,8 +161,109 @@ def main(argv: list[str] | None = None) -> int:
                         help='read-only source/schema/compile preflight; creates no database')
     parser.add_argument('--report-json', action='store_true',
                         help='bounded machine-readable preflight report; requires --check-xml')
+    parser.add_argument('--configuration-source', metavar='PATH',
+                        help='экспериментальный источник XML/архив без активации базы')
+    parser.add_argument('--save-source', metavar='ARCHIVE',
+                        help='сохранить загруженный источник в проверяемый архив')
+    parser.add_argument('--run-startup', action='store_true',
+                        help='явно исполнить запуск источника без базы и UI')
+    scratch = parser.add_mutually_exclusive_group()
+    scratch.add_argument('--source-scratch-db', metavar='NEW_SQLITE_FILE',
+                        help='создать отдельную новую базу констант для запуска источника')
+    scratch.add_argument('--open-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
+                         help='открыть сохранённую базу источника; XML/архив необязателен, без миграции')
+    scratch.add_argument('--update-source-scratch-db', metavar='EXISTING_SQLITE_FILE',
+                         help='явно обновить источник scratch-базы без запуска кода; только совместимое добавление')
+    parser.add_argument('--source-catalog-records', action='store_true',
+                        help='явно использовать v4 scratch с записями справочников; v3 не мигрируется')
+    parser.add_argument('--source-document-records', action='store_true',
+                        help='явно использовать v5 scratch с непроведёнными документами и справочниками; старые базы не мигрируются')
+    parser.add_argument('--source-document-sections', action='store_true',
+                        help='явно использовать v6 scratch с табличными частями непроведённых документов; старые базы не мигрируются')
+    parser.add_argument('--source-compatibility-target', metavar='VERSION',
+                        help='явный экспериментальный AppVersion target, не установленная версия 1С')
     args = parser.parse_args(arguments)
+    from .execution_policy import execution_backend_policy
+    with execution_backend_policy(args.execution_backend):
+        return _run_selected(args, parser)
+
+
+def _run_selected(args, parser):
+    if args.execution_backend == 'hybrid' and (
+            args.f is not None or args.preprocessor_profile != 'standalone'
+            or any((args.create_db, args.create_demo_db, args.import_xml,
+                    args.module_runtime, args.check_xml, args.configuration_source,
+                    args.save_source, args.run_startup, args.source_scratch_db,
+                    args.open_source_scratch_db, args.update_source_scratch_db))):
+        parser.error('--execution-backend hybrid supports standalone BSL only')
+    if args.configuration_source is not None or args.open_source_scratch_db is not None or args.update_source_scratch_db is not None:
+        if any((args.f, args.file, args.command, args.create_db, args.create_demo_db,
+                args.import_xml, args.check_xml, args.source_profile, args.module_runtime,
+                args.numbering_policy, args.inactive, args.report_json)):
+            parser.error('--configuration-source не совмещается с режимами базы/профилей/BSL')
+        if args.update_source_scratch_db is not None and (args.configuration_source is None or args.run_startup or args.save_source):
+            parser.error('--update-source-scratch-db требует --configuration-source и отдельный запуск; --run-startup/--save-source несовместимы')
+        if args.source_compatibility_target is not None and not args.run_startup:
+            parser.error('--source-compatibility-target требует --run-startup')
+        if (args.source_catalog_records or args.source_document_records or args.source_document_sections) and not (args.source_scratch_db or args.open_source_scratch_db or args.update_source_scratch_db):
+            parser.error('--source-catalog-records/--source-document-records/--source-document-sections требует scratch-базу')
+        if (args.source_scratch_db or args.open_source_scratch_db) and not args.run_startup:
+            parser.error('--source-scratch-db/--open-source-scratch-db требует --run-startup')
+        from .configuration_source import load_source_directory, load_source_archive, save_source_archive
+        from .configuration_source_runtime import SourceApplication
+        application = None
+        try:
+            from .source_constant_store import SourceConstantStore
+            if args.source_catalog_records:
+                from .source_catalog_store import SourceCatalogStore
+                SourceConstantStore = SourceCatalogStore
+            if args.source_document_records:
+                from .source_document_store import SourceDocumentStore
+                SourceConstantStore = SourceDocumentStore
+            if args.source_document_sections:
+                from .source_document_section_store import SourceDocumentSectionStore
+                SourceConstantStore = SourceDocumentSectionStore
+            if args.configuration_source is None:
+                source = SourceConstantStore.load_source(args.open_source_scratch_db)
+            else:
+                path = Path(args.configuration_source)
+                source = load_source_directory(path) if path.is_dir() else load_source_archive(path)
+            if args.update_source_scratch_db is not None:
+                result = SourceConstantStore.update_source(args.update_source_scratch_db, source)
+                print('Источник scratch-базы обновлён; сохранено значений: ' + str(result['preserved_values']) + '; добавлено констант: ' + str(result['added_constants']) + '; SHA256: ' + result['source_sha256'] + '. Код не запускался.')
+                return 0
+            if args.save_source:
+                save_source_archive(args.save_source, source)
+            print('Источник загружен: ' + source.name + '; файлов: ' + str(len(source.files))
+                  + ('. UI и обычная база конфигурации не активированы.' if args.source_scratch_db or args.open_source_scratch_db
+                     else '. База данных и UI не активированы.'))
+            if args.run_startup:
+                application = SourceApplication(source, compilation_profile=args.preprocessor_profile,
+                                                source_catalog_records=args.source_catalog_records,
+                                                source_document_records=args.source_document_records,
+                                                source_document_sections=args.source_document_sections,
+                                                scratch_database=args.source_scratch_db,
+                                                existing_scratch_database=args.open_source_scratch_db,
+                                                compatibility_target=args.source_compatibility_target)
+                if args.source_compatibility_target is not None:
+                    print('Экспериментальный compatibility target: ' + args.source_compatibility_target
+                          + '; фактический runtime: yadinassi ' + __version__
+                          + '. Это не установленная 1С и не гарантия совместимости. '
+                          + 'Строковые представления source-перечислений метаданных канонические XML, не native-локализация.', file=sys.stderr)
+                started = application.start()
+                print('Обработчики запуска завершены.' if started else 'Запуск отменён обработчиком.')
+            return 0
+        except (BSLError, ValueError, TypeError, OSError, RecursionError) as error:
+            print('yadinassi: запуск/загрузка источника: ' + str(error), file=sys.stderr)
+            return 1
+        finally:
+            if application is not None:
+                application.close()
+    if args.save_source or args.run_startup or args.source_scratch_db or args.open_source_scratch_db or args.source_catalog_records or args.source_document_records or args.source_document_sections or args.source_compatibility_target is not None:
+        parser.error('--save-source/--run-startup требует --configuration-source')
+
     demo = args.create_demo_db is not None
+    main_demo = False
     from .configuration_diagnostics import from_exception
     if args.report_json and args.check_xml is None:
         parser.error('--report-json requires --check-xml')
@@ -199,6 +302,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if demo:
                 configuration = read_configuration_directory(args.import_xml)
+                # The historical exact 19-file demo remains supported. A full
+                # application manifest selects the new closed main-demo grant;
+                # failure never falls back to weaker legacy admission.
+                main_demo = 'InventoryApplication.xml' in configuration
+                if main_demo:
+                    from .configuration_profile_import import prepare_files
+                    from .configuration_main_demo import PROFILE as MAIN_DEMO
+                    prepared = prepare_files(configuration, profile=MAIN_DEMO)
             else:
                 prepared = prepare_directory(args.import_xml, profile=args.source_profile or 'legacy',
                     numbering_policy=args.numbering_policy or 'explicit', module_runtime=args.module_runtime,
@@ -215,7 +326,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if demo:
                 from .sqlite_catalog import SQLiteCatalogBackend
-                context = SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration)
+                context = (create_prepared(args.create_demo_db, prepared) if main_demo else
+                           SQLiteCatalogBackend.create_demo_products(args.create_demo_db, configuration))
             else:
                 context = create_prepared(args.create_db, prepared)
             context.close()
@@ -229,7 +341,8 @@ def main(argv: list[str] | None = None) -> int:
             print("yadinassi: database creation failed; if a destination exists, preserve and inspect it before retrying or deleting", file=sys.stderr)
             return 1
         if demo:
-            print("Created demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура.")
+            print("Created main demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура, Receipt, Issue, Stock, Units, States."
+                  if main_demo else "Created demo SQLite database: ВидыНоменклатуры, Склады, Номенклатура.")
             print("Original demo handlers; bounded local editor, not native 1C managed-form parity.")
         else:
             print("Created inactive SQLite archive." if args.inactive else "Created SQLite database.")
@@ -257,7 +370,8 @@ def main(argv: list[str] | None = None) -> int:
             interpreter = application.interpreter
         else:
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
-                                      compilation_profile=args.preprocessor_profile)
+                                      compilation_profile=args.preprocessor_profile,
+                                      execution_backend=args.execution_backend)
     except (BSLError, ValueError, TypeError):
         if database_context is not None:
             database_context.close()

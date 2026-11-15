@@ -12,6 +12,7 @@ import ssl
 import sys
 import warnings
 
+from .safe_mode import require_external_access
 from .values import BSLObject
 from .file_io import _FileMethods, _methods, _open_regular, _file_errors
 from .binary_streams import _number, _stream_path
@@ -99,6 +100,7 @@ class BSLOSCertificationAuthorityCertificates(BSLObject):
         return 'СертификатыУдостоверяющихЦентровОС'
 
     def _context(self):
+        require_external_access("load OS certificate authorities")
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         # load_default_certs() honors SSL_CERT_FILE / SSL_CERT_DIR. Selecting
         # OS trust must not silently select a process-environment trust bundle.

@@ -44,7 +44,7 @@ def _row(value, size):
 def _column(column):
     kind = column.value_type
     if is_reference(kind):
-        return [column.name, "FormCatalogRef", [kind.target], column.title, column.read_only]
+        return [column.name, kind.scope.wire_type(kind.target), [kind.target], column.title, column.read_only]
     return [column.name, kind.types[0].value,
         [int(kind.number_qualifiers.digits), int(kind.number_qualifiers.fraction_digits),
          kind.number_qualifiers.allowed_sign.value, int(kind.string_qualifiers.length),
@@ -54,11 +54,12 @@ def _column(column):
 
 def _decode_column(row, session):
     column_name, kind, qualifiers, title, readonly = _row(row, 5)
-    if kind == 'FormCatalogRef':
+    if kind in ('FormCatalogRef','FormEnumRef'):
         if session.reference_scope is None or session.reference_scope.server or type(readonly) is not bool:
             raise ValueError('explicit client reference column required')
         target, = _row(qualifiers, 1)
         _integer(target, 1, 128)
+        if session.reference_scope.wire_type(target)!=kind:raise ValueError('form reference family mismatch')
         return FormTableColumn(column_name, session.reference_scope.descriptor(target), title, readonly)
     q = _row(qualifiers, 6)
     for value, maximum in zip(q, (128, 128, 1, 65536, 1, 3)):

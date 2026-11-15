@@ -111,7 +111,7 @@ class DerivedQueryTests(unittest.TestCase):
             'JOIN Catalog.Categories AS C ON D.C=C.Ref ORDER BY D.Item').execute()
         self.assertEqual([r[0] for r in result._rows], ['1','2','3'])
         self.assertEqual(result._rows[0][1].get_member('Code'), '1')
-        with self.assertRaisesRegex(ValueError, 'dynamic reference'): result.unload()
+        self.assertIs(result.unload().rows[0].get_member('R'), result._rows[0][1])
 
     def test_reference_type_mismatch_rejected_before_scan(self):
         text = 'SELECT D.R FROM (SELECT Ref AS R FROM Catalog.Products) AS D JOIN Catalog.Categories AS C ON D.R=C.Ref'
@@ -287,7 +287,7 @@ class DerivedDocumentTests(unittest.TestCase):
         q=BSLQuery(self.vm._catalogs,'SELECT X.R FROM (SELECT D.R FROM (SELECT Ref AS R,Number FROM Document.Orders) AS D '
                    'WHERE D.Number="000000001") AS X',documents=self.vm._documents)
         result=q.execute();self.assertEqual(result._rows[0][0].get_member('Number'),'000000001')
-        with self.assertRaisesRegex(ValueError, 'dynamic reference'):result.unload()
+        self.assertIs(result.unload().rows[0].get_member('R'), result._rows[0][0])
 
     def test_derived_document_sections_grouped_before_join(self):
         self.seed()

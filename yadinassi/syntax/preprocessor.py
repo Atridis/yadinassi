@@ -29,6 +29,12 @@ _APPLICATION_SYMBOLS = (
     "thickclientordinaryapplication", "толстыйклиентобычноеприложение",
     "thickclientmanagedapplication", "толстыйклиентуправляемоеприложение",
     "externalconnection", "внешнеесоединение",
+    # Neither supported compilation profile is a mobile platform. Recognizing
+    # these flags does not enable a mobile host or guess arbitrary symbols.
+    "mobileclient", "мобильныйклиент",
+    "mobilestandaloneserver", "мобильныйавтономныйсервер",
+    "mobileappclient", "мобильноеприложениеклиент",
+    "mobileappserver", "мобильноеприложениесервер",
 )
 _STANDALONE_SYMBOLS = MappingProxyType({
     site: MappingProxyType({

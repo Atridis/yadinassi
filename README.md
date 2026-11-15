@@ -56,8 +56,8 @@ BSL. Браузер автоматически не открывается бе�
 демо-базу и запустите редактор двумя командами:
 
 ```console
-python -m yadinassi --create-demo-db demo.sqlite --import-xml tests/fixtures/demo_cf/source
-python -m yadinassi.ui.local_app --f demo.sqlite --open-browser
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
 Доступны **ВидыНоменклатуры**, **Склады** и **Номенклатура** с исходными
@@ -342,3 +342,10 @@ CatalogRef в карточке справочника, шапке докумен
 Пример `examples/configuration-scalar-editors` сохраняет DateTime справочника,
 шапки документа и строк в существующем явном reference-профиле. Схемы хранения,
 generic Invocation, миграции и права транзакций не расширяются.
+
+### Opt-in hybrid execution
+
+Standalone numeric loops can be tried with
+`yadinassi --execution-backend hybrid file.bsl`; the default remains the ordinary
+interpreter. Unsupported contexts fall back before loop effects. See
+[the bounded hybrid backend contract and benchmark](docs/hybrid-backend.md).

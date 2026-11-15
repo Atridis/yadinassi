@@ -34,12 +34,12 @@ def _storage():
     return sqlite_catalog
 
 
-def schema_data(schema):
+def schema_data(schema, *, enum_domain=None):
     if type(schema) is not DocumentSchema or type(schema.number_length) is not int or not 1 <= schema.number_length <= 9:
         raise BackendError('invalid_input')
     surrogate = CatalogSchema(schema.identity, schema.name, schema.number_length, 0,
                               schema.fields, schema.tabular_sections, schema.numbering)
-    data = _storage()._schema_data(surrogate)
+    data = _storage()._schema_data(surrogate,enum_domain=enum_domain)
     names = _RESERVED.copy(); ids = {schema.identity}
     for item in (*schema.fields, *schema.tabular_sections):
         if item.identity in ids or item.name.casefold() in names: raise BackendError('invalid_input')
@@ -50,25 +50,25 @@ def schema_data(schema):
                     raise BackendError('invalid_input')
                 ids.add(field.identity)
     # This is a versioned local schema encoding, not a catalog registration.
-    return ['nonposting_document_v1', data]
+    return ['enum_document_v1' if enum_domain is not None else 'nonposting_document_v1', data]
 
 
-def parse_schema(raw):
+def parse_schema(raw, *, enum_domain=None):
     if type(raw) is not str or len(raw) > 65536: raise BackendError('integrity')
     data = json.loads(raw)
-    if type(data) is not list or len(data) != 2 or data[0] != 'nonposting_document_v1': raise BackendError('integrity')
-    old = _storage()._schema(_storage()._json(data[1]), allow_numbering=True)
+    if type(data) is not list or len(data) != 2 or data[0] != ('enum_document_v1' if enum_domain is not None else 'nonposting_document_v1'): raise BackendError('integrity')
+    old = _storage()._schema(_storage()._json(data[1]), allow_numbering=True,enum_domain=enum_domain)
     schema = DocumentSchema(old.identity, old.name, old.code_length, old.fields, old.tabular_sections, old.numbering)
-    if schema_data(schema) != data: raise BackendError('integrity')
+    if schema_data(schema,enum_domain=enum_domain) != data: raise BackendError('integrity')
     return schema
 
 
-def load_schemas(connection, catalogs, *, allow_empty=False):
+def load_schemas(connection, catalogs, *, allow_empty=False, enum_domain=None):
     invalid = connection.execute("SELECT 1 FROM document_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>512 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>262144 LIMIT 1").fetchone()
     count, size = connection.execute('SELECT COUNT(*),COALESCE(SUM(length(CAST(definition AS BLOB))),0) FROM document_schema').fetchone()
     if invalid or not (0 if allow_empty else 1) <= count <= 512 or size > _MAX_TOTAL: raise BackendError('integrity')
     rows = tuple(connection.execute('SELECT identity,name,definition FROM document_schema ORDER BY identity'))
-    schemas = tuple(parse_schema(row[2]) for row in rows)
+    schemas = tuple(parse_schema(row[2],enum_domain=enum_domain) for row in rows)
     if any(row[:2] != (str(s.identity),s.name) for row,s in zip(rows,schemas)):
         raise BackendError('integrity')
     catalog_ids = {s.identity for s in catalogs}
@@ -166,15 +166,15 @@ class DocumentView:
         if writing:
             result = []; size = 0
             for field,value in zip(fields,values):
-                encoded = s._encode(normalize_field(value,field),field,self.database_id)
+                encoded = s._encode(normalize_field(value,field),field,self.database_id,enum_domain=self._view._backend._enum_domain)
                 size += len(s._json(encoded)) + 1
                 if size > _MAX_ROW: raise BackendError('invalid_input')
                 result.append(encoded)
             for value in values:
                 if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value): raise BackendError('not_found')
             return result
-        decoded = tuple(s._decode(v,f,self.database_id) for f,v in zip(fields,values))
-        if self._view._backend.format_version == 15:
+        decoded = tuple(s._decode(v,f,self.database_id,enum_domain=self._view._backend._enum_domain) for f,v in zip(fields,values))
+        if self._view._backend.format_version in (15,16):
             for value in decoded:
                 if type(value) is CatalogKey and value.record_id.int and not self._view._reference_exists(value):
                     raise BackendError('integrity')
@@ -219,14 +219,14 @@ class DocumentView:
                 tuple(TabularSectionRows(section.identity,tuple(supplied[section.identity])) for section in schema.tabular_sections))
 
     def _posted_value(self, key):
-        if self._view._backend.format_version not in (13, 14, 15): return False
+        if self._view._backend.format_version not in (13, 14, 15, 16): return False
         from .sqlite_document_posting_state import read_posted
         return read_posted(self._connection, self.database_id, key)
 
     def _record_sql(self, *, where='r.document_id=?', order=False, limit=False):
         sql = ('SELECT r.record_id,r.revision,r.number,r.date,r.deletion_mark,'
                'r.values_json,r.sections_json')
-        posted = self._view._backend.format_version in (13, 14, 15)
+        posted = self._view._backend.format_version in (13, 14, 15, 16)
         if posted: sql += ',p.document_revision,p.posted'
         sql += ' FROM document_record AS r'
         if posted:
@@ -245,7 +245,7 @@ class DocumentView:
         if not number or type(mark) is not int or mark not in (0,1): raise BackendError('integrity')
         key = DocumentKey(self.database_id,schema.identity,identity)
         posted = False
-        if self._view._backend.format_version in (13, 14, 15):
+        if self._view._backend.format_version in (13, 14, 15, 16):
             if len(row) == 9:
                 from .sqlite_document_posting_state import decode_posted
                 posted = decode_posted(revision, row[7], row[8])
@@ -301,7 +301,7 @@ class DocumentView:
         payload = ('r.sections_json' if section else
                    'r.values_json' if any(type(f) is UUID for f in fields) else 'NULL')
         sql = 'SELECT r.record_id,r.number,r.date,r.deletion_mark,'+payload+',r.revision'
-        posted = self._view._backend.format_version in (13,14,15) and 'posted' in fields
+        posted = self._view._backend.format_version in (13,14,15,16) and 'posted' in fields
         sql += ',p.document_revision,p.posted' if posted else ',NULL,NULL'
         sql += ' FROM document_record AS r'
         if posted:
@@ -323,7 +323,7 @@ class DocumentView:
         key = DocumentKey(self.database_id,schema.identity,identity)
         values = (dict(zip((d.identity for d in schema.fields), self._values(schema.fields,json.loads(payload))))
                   if payload is not None else {})
-        if self._view._backend.format_version in (13,14,15) and 'posted' in fields:
+        if self._view._backend.format_version in (13,14,15,16) and 'posted' in fields:
             from .sqlite_document_posting_state import decode_posted
             posted = decode_posted(revision,state_revision,posted)
         else: posted = False

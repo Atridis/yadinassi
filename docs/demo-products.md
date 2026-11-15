@@ -1,19 +1,20 @@
 # Original demo products in the local editor
 
-The fresh `demo_products_v1` profile admits the original **ВидыНоменклатуры**, **Склады**, and **Номенклатура** catalogs from the exact 19-file editable demo archive. Source bytes are retained unchanged. Older kinds-only, directories-only and inert databases are not migrated or silently expanded.
+The historical `demo_products_v1` profile admitted the original **ВидыНоменклатуры**, **Склады**, and **Номенклатура** catalogs from the exact 19-file editable demo archive. Source bytes are retained unchanged. Older kinds-only, directories-only and inert databases are not migrated or silently expanded.
 
 ## Create and open an owned database
 
 From the repository checkout, with the project's Python dependencies installed:
 
 ```console
-python -m yadinassi --create-demo-db demo-products.sqlite --import-xml tests/fixtures/demo_cf/source
-python -m yadinassi.ui.local_app --f demo-products.sqlite --open-browser
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
 The destination must not exist. For later sessions, run only the second command.
-The explicit demo command retains all source bytes and activates only the existing
-exact-demo profile. It does not seed records, rewrite handlers, or upgrade an
+The current command uses the single `examples/demo` source and its explicit
+`main-demo-v1` profile, including documents and reports. The older profile is retained
+only for compatibility; it is not a second user-facing demo. It does not seed records, rewrite handlers, or upgrade an
 existing database. The Python API `SQLiteCatalogBackend.create_demo_products`
 remains available. See the [step-by-step quickstart](demo-quickstart.md).
 

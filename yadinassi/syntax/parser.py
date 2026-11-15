@@ -219,9 +219,11 @@ class Parser:
     def statement(self) -> ast.Node:
         token = self.current
         if self.accept("EXECUTE"):
-            self.expect("(")
-            expression = self.expression()
-            self.expect(")")
+            if self.accept("("):
+                expression = self.expression()
+                self.expect(")")
+            else:
+                expression = self.expression()
             return ast.Execute(token, expression)
         if self.accept("~"):
             name = self.expect("IDENT").value

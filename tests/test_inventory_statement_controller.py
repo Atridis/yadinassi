@@ -131,7 +131,7 @@ class StatementControllerTests(unittest.TestCase):
     def test_pending_commit_blocks_setup_and_page_without_read(self):
         sid,first=self.two_pages();owned=self.broker.objects[sid];owned.pending_commit=True
         try:
-            with patch.object(self.broker._inventory_reports,'choices',side_effect=AssertionError('read')):
+            with patch.object(self.broker._inventory_reports,'choice_snapshot',side_effect=AssertionError('read')):
                 result=self.raw('reportSetup',report='StockStatement',action='open')
             self.assertEqual(result['error'],'report_busy')
             result=self.raw('reportPage',snapshot=first['page']['snapshot'],cursor=first['page']['next'])
@@ -216,6 +216,36 @@ class StatementControllerTests(unittest.TestCase):
         self.app.catalog=None
         stale=self.raw('reportSetup',report='StockStatement',ticket=original['ticket'],action='empty',filter='Product')
         self.assertEqual(stale['error'],'report_unavailable');self.assertFalse(self.app.uncertain)
+
+
+
+    def test_choice_navigation_crosses_broker_with_exact_shape(self):
+        self.prepare();self.setup_report()
+        state=self.action('begin',filter='Product')
+        choice=state['choice']
+        self.assertEqual(choice['navigation']['total'],1)
+        self.assertEqual(choice['navigation']['page'],1)
+        previous=choice['ticket']
+        state=self.action('search',choice=previous,query='Wid')
+        self.assertNotEqual(state['choice']['ticket'],previous)
+        self.assertEqual(state['choice']['navigation']['query'],'Wid')
+        state=self.action('refresh',choice=state['choice']['ticket'])
+        self.assertEqual(state['choice']['navigation']['page'],1)
+
+    def test_choice_navigation_protocol_refuses_forged_totals_and_cursors(self):
+        self.prepare();self.setup_report();state=self.action('begin',filter='Product')
+        for mutate in (lambda n:n.update(total=8193),lambda n:n.update(page=True),lambda n:n.update(next='bad')):
+            bad=deepcopy(state);mutate(bad['choice']['navigation'])
+            with self.assertRaises(ValueError):validate_setup(bad,self.broker.posting_configuration)
+
+    def test_choice_snapshot_limit_has_no_fabricated_partial_page(self):
+        import yadinassi.inventory_application_reports as reports
+        self.prepare();self.setup_report()
+        with patch.object(reports,'MAX_CHOICE_SNAPSHOT_ROWS',0):
+            state=self.action('begin',filter='Product')
+        self.assertEqual(state['choice']['error'],'snapshot_limit')
+        self.assertEqual(state['choice']['rows'],[])
+        self.assertIsNone(state['choice']['navigation'])
 
 
 del _Setup

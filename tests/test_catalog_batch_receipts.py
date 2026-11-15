@@ -4,6 +4,7 @@ from dataclasses import replace
 from decimal import Decimal
 import hashlib
 import json
+from legacy_demo_fixture import legacy_demo_files
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -361,8 +362,7 @@ class CatalogBatchReceiptTests(unittest.TestCase):
                     self.assertEqual(_receipt_digest(iter(values), outcomes), expected)
 
     def test_v6_batch_receipt_survives_archived_source_drift_without_reactivation(self):
-        root = Path(__file__).parent / 'fixtures/demo_cf/source'
-        files = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        files = legacy_demo_files()
         path = Path(self.temp.name) / 'demo.sqlite'
         with closing(SQLiteCatalogBackend.create_demo_directories(path, files)) as backend:
             schema = next(s for s in backend._schemas if s.name == 'Склады')

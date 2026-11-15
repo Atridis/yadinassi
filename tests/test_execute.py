@@ -12,6 +12,15 @@ class ExecuteTests(unittest.TestCase):
     def setUp(self):
         self.vm = Interpreter()
 
+    def test_statement_operand_without_parentheses(self):
+        for name in ('Execute', 'Выполнить'):
+            self.vm.execute('x=1; code="x=x+"; ' + name + ' code + "41;";')
+            self.assertEqual(self.vm.execute('x'), Decimal(42))
+
+    def test_statement_form_keeps_fragment_safety(self):
+        self.vm.execute('x=1; Try Execute "x=42; x=;"; Except EndTry;')
+        self.assertEqual(self.vm.execute('x'), Decimal(1))
+
     def test_aliases_and_existing_binding(self):
         for name in ('Выполнить', 'Execute', 'вЫпОлНиТь', 'eXeCuTe'):
             self.vm.execute(f'x = 5; {name}("x = x + 3;");')

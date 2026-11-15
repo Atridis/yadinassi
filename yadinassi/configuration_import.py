@@ -62,8 +62,15 @@ def load_configuration_directory(directory, *, numbering_policy='explicit', modu
                                 numbering_policy=numbering_policy, module_runtime=module_runtime)
 
 
-def read_configuration_directory(directory):
+def read_configuration_directory(directory, *, max_files=MAX_FILES,
+                                 max_file_bytes=MAX_FILE_BYTES,
+                                 max_total_bytes=MAX_TOTAL_BYTES, max_depth=8):
     """Read bounded, unchanged source bytes without choosing an active profile."""
+    limits = (max_files, max_file_bytes, max_total_bytes, max_depth)
+    if any(type(value) is not int or value < 1 for value in limits):
+        raise ValueError('invalid source read limits')
+    if max_files > 50000 or max_file_bytes > 32 * 1024 * 1024 or max_total_bytes > 512 * 1024 * 1024 or max_depth > 32:
+        raise ValueError('invalid source read limits')
     with location(stage='read'):
         raw = os.fspath(directory)
         if type(raw) is not str or not raw or '\x00' in raw or raw.startswith(('//','\\\\')):
@@ -78,15 +85,15 @@ def read_configuration_directory(directory):
             while pending:
                 path, relative, depth = pending.pop()
                 directories += 1
-                if directories > MAX_FILES or depth > 8:
+                if directories > max_files or depth > max_depth:
                     raise ValueError('configuration directory bound')
                 with os.scandir(path) as iterator:
                     entries = []
                     for entry in iterator:
-                        if len(entries) >= MAX_FILES:
+                        if len(entries) >= max_files:
                             raise ValueError("configuration directory entry bound")
                         entries.append(entry)
-                if len(entries) > MAX_FILES:
+                if len(entries) > max_files:
                     raise ValueError('configuration directory entry bound')
                 for entry in entries:
                     name = entry.name
@@ -101,16 +108,16 @@ def read_configuration_directory(directory):
                             raise ValueError('configuration reparse point unsupported')
                         if stat.S_ISDIR(before.st_mode):
                             pending.append((entry.path, logical+'/', depth+1));continue
-                        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > MAX_FILE_BYTES:
+                        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > max_file_bytes:
                             raise ValueError('unsupported configuration file')
-                        if len(files) >= MAX_FILES or total + before.st_size > MAX_TOTAL_BYTES:
+                        if len(files) >= max_files or total + before.st_size > max_total_bytes:
                             raise ValueError('configuration file bound')
                         fd = os.open(entry.path, os.O_RDONLY | getattr(os,'O_BINARY',0) | getattr(os,'O_NOFOLLOW',0))
                         try:
                             opened = os.fstat(fd)
                             if not _path_matches_descriptor(before, opened) or not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
                                 raise ValueError('configuration source changed')
-                            chunks=[]; remaining=MAX_FILE_BYTES+1
+                            chunks=[]; remaining=max_file_bytes+1
                             while remaining:
                                 chunk=os.read(fd,min(65536,remaining))
                                 if not chunk:break

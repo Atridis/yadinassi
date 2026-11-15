@@ -24,7 +24,7 @@ def derive():
     catalog=(ROOT/'scripts/catalog_object_behavior/generated/Catalog.xml').read_text(encoding='utf-8-sig')
     for name in ('Products','Warehouses'):
         files[name+'.xml']=remap(catalog.replace('OwnedCatalog4f4ccaa9',name),name).encode()
-    demo=(ROOT/'tests/fixtures/demo_cf/source/Catalogs/Номенклатура.xml').read_text(encoding='utf-8-sig')
+    demo=(ROOT/'examples/demo/Catalogs/Номенклатура.xml').read_text(encoding='utf-8-sig')
     section=re.search(r'<TabularSection .*?</TabularSection>',demo,re.S)[0]
     template=re.search(r'<Attribute .*?</Attribute>',section,re.S)[0]
     doc=(ROOT/'scripts/accumulation_register_behavior/Document.xml').read_text(encoding='utf-8')

@@ -123,7 +123,7 @@ class CompilationProfileCLITests(unittest.TestCase):
 
     def test_unknown_condition_precedes_effects_for_file_command_and_stdin(self):
         code = ('Message("MUST_NOT_EXECUTE");\n#If ThinClient Then\n'
-                "#If MobileClient Then\n#EndIf\n#EndIf\n")
+                "#If FutureUnsupportedClient Then\n#EndIf\n#EndIf\n")
         self.source.write_text(code, encoding="utf-8")
         entries = [((flag, code), None) for flag in ("-c", "-с", "--command")]
         entries.extend((((str(self.source),), None), (("-",), code)))
@@ -134,12 +134,12 @@ class CompilationProfileCLITests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("Неподдерживаемый символ", result.stderr)
-                self.assertIn("MobileClient", result.stderr)
+                self.assertIn("FutureUnsupportedClient", result.stderr)
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_repl_recovers_from_unknown_profile_symbol(self):
         result = run_cli("--preprocessor-profile", "standalone", stdin=(
-            "#If MobileClient Then\nMessage(42);\n/exit\n"), cwd=self.root)
+            "#If FutureUnsupportedClient Then\nMessage(42);\n/exit\n"), cwd=self.root)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, "42\n")
         self.assertIn("Неподдерживаемый символ", result.stderr)

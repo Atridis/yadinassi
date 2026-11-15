@@ -148,6 +148,14 @@ class EnumerationNativeAcquisitionTests(unittest.TestCase):
     def test_explicit_adapter_uses_guarded_processes_without_shared_mutation(self):
         import types
         suite=self.adapter()
+        if os.name=='nt':
+            from test_native_1c_full_host import read_synthetic_file
+            # Static Windows fixture only: descriptor/path identity fields can
+            # differ there. Keep the real native secure_bytes guard unchanged.
+            def read_fixture(path,limit,*,allow_empty=False):
+                return read_synthetic_file(path,limit,nonempty=not allow_empty)
+            reader=mock.patch.object(suite.full,'secure_bytes',side_effect=read_fixture)
+            reader.start();self.addCleanup(reader.stop)
         launcher=types.SimpleNamespace(TEMPLATES=ROOT/'integrational_tests/launcher_1c',read_result=object(),run_process=object(),build_epf=object())
         before=dict(vars(launcher))
         platform=types.SimpleNamespace(timeout=120,command=lambda mode:['/owned/1cv8',mode])

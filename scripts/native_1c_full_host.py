@@ -95,6 +95,44 @@ source = Path(sys.argv[2])
 source_text = source.read_text(encoding="utf-8-sig")
 post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
+if len(sys.argv) > 4:
+    if len(sys.argv) != 6 or sys.argv[4] != 'compiled-strict':
+        raise ValueError('invalid execution backend')
+    options['execution_backend'] = sys.argv[4]
+    from yadinassi.compiled_backend import Engine, CompiledUnsupported
+    counters = []
+    original_engine_init = Engine.__init__
+    def observe_engine(engine, vm):
+        original_engine_init(engine, vm)
+        counters.append(engine.stats)  # Numeric dictionaries, never retain engine/VM.
+    Engine.__init__ = observe_engine
+    violations = {'old_backend_executions': 0, 'strict_rejections': 0}
+    from yadinassi.configuration_source_runtime import _SourceInterpreter
+    from yadinassi.form_runtime import _FormInterpreter
+    from yadinassi.catalog_object_preparation import _ObjectInterpreter
+    from yadinassi.document_posting import _PostingInterpreter
+    from yadinassi.form_event_simulation import _EventInterpreter
+    from yadinassi.source_constant_managers import _ValueInterpreter
+    old_visitors = {(cls, name): method for cls in (Interpreter, _SourceInterpreter, _FormInterpreter, _ObjectInterpreter, _PostingInterpreter, _EventInterpreter, _ValueInterpreter)
+                    for name, method in cls.__dict__.items() if name.startswith('visit_')}
+    def count_legacy(method):
+        def counted(vm, *args, **kwargs):
+            violations['old_backend_executions'] += 1
+            return method(vm, *args, **kwargs)
+        return counted
+    for (cls, name), method in old_visitors.items():
+        setattr(cls, name, count_legacy(method))
+    original_visit = Interpreter._visit
+    def observe_visit(vm, node):
+        if vm.execution_backend != 'compiled-strict':
+            violations['old_backend_executions'] += 1
+        return (yield from original_visit(vm, node))
+    Interpreter._visit = observe_visit
+    original_rejection = CompiledUnsupported.__init__
+    def observe_rejection(error, node, reason):
+        violations['strict_rejections'] += 1
+        original_rejection(error, node, reason)
+    CompiledUnsupported.__init__ = observe_rejection
 interpreter = Interpreter(output=emit, **options)
 interpreter.execute(source_text, str(source))
 if post_create:
@@ -111,6 +149,15 @@ if post_create:
         sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
     else:
         emit("export-phase.post-create: [ok]")
+if len(sys.argv) > 4:
+    import json
+    keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
+    observed = {key: sum(stats.get(key, 0) for stats in counters) for key in keys}
+    observed["node_coverage"] = "unobserved" if any(stats.get("node_coverage") == "unobserved" for stats in counters) else "observed"
+    observed.update(violations)
+    observed["lowering_variant"] = "inline" if Engine.INLINE else "node-scaffold"
+    observed["fast_inline_enabled"] = bool(Engine.FAST_INLINE)
+    Path(sys.argv[5]).write_text(json.dumps(observed), encoding='utf-8')
 '''
 
 
@@ -1510,7 +1557,13 @@ try:
     runtime = importlib.util.module_from_spec(spec)
     sys.modules["yadinassi"] = runtime
     spec.loader.exec_module(runtime)
-    sys.stdout.buffer.write(module.canonical(module.execute_actual(bodies)))
+    evidence = []
+    backend = sys.argv[2] if len(sys.argv) > 2 else 'interpreter'
+    actual = module.execute_actual(bodies, execution_backend=backend, execution_evidence=evidence)
+    sys.stdout.buffer.write(module.canonical(actual))
+    if len(sys.argv) > 2:
+        import json
+        Path(sys.argv[3]).write_text(json.dumps(evidence), encoding='utf-8')
 except BaseException:
     sys.exit(1)
 """
@@ -1524,6 +1577,11 @@ def async_contract(root: Path):
 
 
 def validate_async_comparison(result):
+    if type(result) is dict and 'execution' in result:
+        validate_execution_evidence(result['execution'], 8)
+        plain = {k: v for k, v in result.items() if k != 'execution'}
+        validate_async_comparison(plain)
+        return result
     if (type(result) is not dict or set(result) != {"profile", "status", "cases", "actual_sha256"}
             or result["profile"] != "async-language-8-v1"
             or type(result["status"]) is not str or result["status"] not in {"matched", "mismatched"}
@@ -1541,8 +1599,10 @@ def validate_async_comparison(result):
     return result
 
 
-def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child):
+def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child, execution_backend="interpreter"):
     """Execute actual-only rows in isolation; compare accepted same-run evidence here."""
+    if execution_backend not in ("interpreter", "compiled-strict"):
+        raise FullError("execution_backend_invalid")
     source_path = "scripts/native_1c_bootstrap/full_suite.py"
     validate_semantic_context(report, APPROVED_IMAGE)
     if report["trusted_input_sha256"] != input_hashes:
@@ -1562,12 +1622,18 @@ def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes:
         contract.validate_inputs(template, bodies, native)
         with tempfile.TemporaryDirectory(prefix="async-cache-", dir=private) as cache:
             code, stdout, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-                "-c", ASYNC_EXECUTE_SCRIPT, str(root)], root,
+                "-c", ASYNC_EXECUTE_SCRIPT, str(root),
+                *([execution_backend, str(Path(cache) / 'execution.json')]
+                  if execution_backend == 'compiled-strict' else [])], root,
                 stdout_limit=ASYNC_ACTUAL_LIMIT, stderr_limit=MAX_STDERR)
+            evidence = (strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536)
+                        if execution_backend == 'compiled-strict' else None)
         if code or stderr:
             raise FullError("async_execution_failed")
         actual = strict_json(stdout, ASYNC_ACTUAL_LIMIT)
         result = contract.compare_observations(template, bodies, native, actual)
+        if execution_backend == 'compiled-strict':
+            result['execution'] = execution_evidence(evidence)
     except FullError:
         raise
     except Exception:
@@ -1604,6 +1670,10 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
 def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str) -> None:
     """Validate both raw evidence and separately named acceptance, never conflate them."""
     validate_comparison_options(native_target, comparison_mode)
+    if type(comparison) is dict and comparison.get('schema') == 3:
+        validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
+        comparison = {k: v for k, v in comparison.items() if k != 'execution'}
+        comparison['schema'] = 2
     try:
         if (type(comparison) is not dict or set(comparison) != {"schema", "configured_timezone", "configured_locale",
                 "native_target", "comparison_mode", "status", "acceptance_status", "cases"}
@@ -1676,8 +1746,39 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
         raise FullError("comparison_evidence_invalid") from None
 
 
+def validate_execution_evidence(value, count):
+    if (type(value) is not dict or set(value) != {'schema', 'execution_backend', 'cases'}
+            or value['schema'] != 'compiled-native-execution-v1'
+            or value['execution_backend'] != 'compiled-strict'
+            or type(value['cases']) is not list or len(value['cases']) != count):
+        raise FullError('compiled_execution_unverified')
+    for stats in value['cases']:
+        if type(stats) is not dict or set(stats) != {'emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'lowering_variant', 'fast_inline_enabled', 'node_coverage', 'inline_blocks', 'inline_fragments'}:
+            raise FullError('compiled_execution_unverified')
+        if stats.get('lowering_variant') not in ('inline', 'node-scaffold') or type(stats.get('fast_inline_enabled')) is not bool:
+            raise FullError('compiled_execution_unverified')
+        if stats.get('node_coverage') not in ('observed', 'unobserved'):
+            raise FullError('compiled_execution_unverified')
+        for key in ('emitted_executions', 'helper_executions', 'rejected_units',
+                    'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'inline_blocks', 'inline_fragments'):
+            if type(stats.get(key)) is not int or not 0 <= stats[key] <= 10**12:
+                raise FullError('compiled_execution_unverified')
+        if (not (stats['emitted_executions'] + stats['helper_executions'] + stats['inline_blocks'] + stats['inline_fragments'])
+                or any(stats[k] for k in ('rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections'))):
+            raise FullError('compiled_execution_unverified')
+    return value
+
+
+def execution_evidence(cases):
+    return validate_execution_evidence({'schema': 'compiled-native-execution-v1',
+        'execution_backend': 'compiled-strict', 'cases': cases}, len(cases))
+
+
 def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child,
-                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None) -> dict:
+                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None, execution_backend="interpreter") -> dict:
+    if execution_backend not in ('interpreter', 'compiled-strict'):
+        raise FullError('execution_backend_invalid')
+    compiled_cases = []
     validate_comparison_options(native_target, comparison_mode)
     if comparison_mode == MAP_MODE:
         validate_semantic_context(runtime_evidence, APPROVED_IMAGE)
@@ -1713,7 +1814,11 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             # provenance. Use a new empty private cache prefix and never write it.
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
-                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target], root, **limits)
+                                              "-c", EXECUTE_SCRIPT, str(root), str(source), native_target,
+                                              *([execution_backend, str(Path(cache) / 'execution.json')]
+                                                if execution_backend == 'compiled-strict' else [])], root, **limits)
+                if execution_backend == 'compiled-strict':
+                    compiled_cases.append(strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536))
             if code != 0 or stderr:
                 if interpreter_post_create_failed(source_bytes, code, actual, stderr):
                     raise FullError(POST_CREATE_FAILURE)
@@ -1759,6 +1864,9 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
               "status": "ok" if all(case["status"] == "matched" for case in records) else "failed",
               "acceptance_status": "accepted" if all(case["acceptance_status"] == "accepted" for case in records) else "rejected",
               "cases": records}
+    if execution_backend == 'compiled-strict':
+        result['schema'] = 3
+        result['execution'] = execution_evidence(compiled_cases)
     validate_comparison(result, stage3, native_target, comparison_mode)
     return result
 
@@ -1771,7 +1879,8 @@ def windows_fingerprints(root: Path) -> dict[str, str]:
 def repository_provenance(root: Path) -> dict:
     def git(*args):
         code, stdout, stderr = bounded_child(["git", "-C", str(root), *args], root,
-                                             stdout_limit=8192, stderr_limit=8192)
+                                             stdout_limit=(65536 if args[0] == "ls-files" else 8192),
+                                             stderr_limit=8192)
         if code != 0 or stderr:
             raise FullError("repository_identity_unverified")
         return stdout.decode("ascii").strip()
@@ -1805,8 +1914,10 @@ def interpreter_provenance(root: Path) -> dict:
     # Optional prebuilt renderer resources are a closed, fully hashed inventory.
     # Do not broaden suffix admission or exclude these runtime package bytes.
     assets = {"yadinassi/ui/assets/" + renderer + "/" + name
-              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in
+              for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo", "source-workspace") for name in
               ("app.js", "index.html", "style.css", "LICENSE.txt", "build-manifest.json")}
+    assets |= {"yadinassi/ui/assets/source/" + name
+               for name in ("app.js", "index.html", "style.css")}
     names = {path.relative_to(root).as_posix() for path in files}
     if (not assets <= names or any(
             (path.relative_to(root).as_posix().startswith("yadinassi/ui/assets/")
@@ -1961,12 +2072,16 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
             metadata["client_async_measurement_completed"] = True
             metadata["client_async_parity_claimed"] = False
             if "async_comparison" in report:
+                if comparison.get('schema') == 3:
+                    validate_execution_evidence(report['async_comparison'].get('execution'), 8)
                 validate_semantic_context(report, image)
                 metadata["async_comparison"] = validate_async_comparison(report["async_comparison"])
                 metadata["client_async_parity_claimed"] = bool(
                     metadata["async_comparison"]["status"] == "matched"
                     and comparison["acceptance_status"] == "accepted")
             metadata["purpose"] = "client-async-language-measurement-v1"
+        if comparison.get('schema') == 3:
+            metadata['execution'] = validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
         if stage3.get("schema") == 9:
             if (stage3.get("preprocessor_status") != "matched"
                     or stage3.get("compilation_profile") != PREPROCESSOR_COMPILATION_PROFILE

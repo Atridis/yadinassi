@@ -12,6 +12,9 @@ def main(argv=None):
         for stream in (sys.stdout, sys.stderr):
             if hasattr(stream, 'reconfigure'):
                 stream.reconfigure(encoding='utf-8')
+        if '--configuration-source' in arguments[1:] or any(arg.startswith('--configuration-source=') for arg in arguments[1:]):
+            from .ui import source_shell
+            return source_shell.main(arguments[1:])
         return database_launch.main(arguments[1:])
     # Private child protocols, retained for frozen process isolation.
     if arguments and arguments[0] == '--catalog-ui-runtime':

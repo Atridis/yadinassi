@@ -238,7 +238,7 @@ PHASES=('prerequisites','inputs','build','redump','enterprise','markers','instal
 FLAGS={'entered','completed','process_exited','quiet','witness_verified','config_verified','lifecycle_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','roundtrip_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','lifecycle_events','process_diagnostics','redump_projection'}
+    'input_sha256','output_size','record_count','lifecycle_events','lifecycle_progress','process_diagnostics','redump_projection'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -263,6 +263,9 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
         events=stage['lifecycle_events']
         if events is not None:
             route.lifecycle(json.dumps({'nonce':nonce,'events':events},separators=(',',':')).encode(),nonce)
+        progress = stage['lifecycle_progress']
+        if progress is not None:
+            route.lifecycle_progress(json.dumps({'nonce':nonce,'events':progress},separators=(',',':')).encode(),nonce)
         projection=stage['redump_projection']
         from inventory_enum_forms_packet import material
         require(projection is None or material.valid_diagnostic(projection))
@@ -271,9 +274,10 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
             error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet')}
+            if progress is not None:error.native_failure['lifecycle_progress']=progress
             if projection is not None:error.native_failure['redump_projection']=projection
             raise error
-        require(projection is None and events is not None)
+        require(projection is None and events is not None and progress is None)
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')
         require(report['status']=='ok' and report['native_tests_completed'] is True and all(stage[k] for k in FLAGS))
         require(stage['source_sha256']==SOURCE_SHA256 and stage['form_sha256']==FORM_SHA256)

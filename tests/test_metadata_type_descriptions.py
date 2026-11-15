@@ -321,9 +321,11 @@ class BoundMetadataReferenceDescriptionTests(unittest.TestCase):
         with self.assertRaises(TypeError): target.set_member('Category', foreign)
         self.assertIs(target.get_member('Category'), own)
 
-    def test_reference_query_projection_still_cannot_unload_to_typed_table(self):
+    def test_reference_query_projection_has_owned_nullable_report_schema(self):
         self.vm.execute('Q=New Query("SELECT Ref FROM Catalog.Products");Result=Q.Execute();')
-        with self.assertRaises(ValueError): self.vm.variables['result'].unload()
+        table = self.vm.variables['result'].unload()
+        self.assertTrue(table.columns.items[0].value_type.contains_type(BSLType.NULL))
+        with self.assertRaises((TypeError, ValueError)): table.add()
 
     def test_imported_reference_description_binds_shared_family_snapshot(self):
         path = Path(self.temp.name) / 'Helper.bsl'

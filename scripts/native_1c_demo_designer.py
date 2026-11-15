@@ -25,7 +25,9 @@ IMAGE = 'ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97
 ONEC = '/opt/1cv8t/x86_64/' + VERSION + '/1cv8t'
 CHECK_FLAGS = ('-ConfigLogIntegrity', '-IncorrectReferences', '-ThinClient', '-Server',
                '-ThickClientManagedApplication', '-HandlersExistence', '-ExtendedModulesCheck')
-SOURCE_ROOT = 'tests/fixtures/demo_cf/source'
+# Retired historical acquisition: offline comparison still uses exact old bytes.
+SOURCE_ROOT = 'examples/demo'
+HISTORICAL_ROOT = 'tests/fixtures/legacy_demo_root.xml'
 SOURCE_FILES = (
     'Catalogs/ВидыНоменклатуры.xml',
     'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента.xml',
@@ -48,7 +50,8 @@ SOURCE_FILES = (
     'Subsystems/НормативнаяИнформация.xml',
 )
 INPUTS = ('scripts/native_1c_demo_designer.py', 'scripts/native_1c_demo_designer.sh',
-          *(SOURCE_ROOT + '/' + name for name in SOURCE_FILES))
+          'tests/legacy_demo_fixture.py', HISTORICAL_ROOT,
+          *(SOURCE_ROOT + '/' + name for name in SOURCE_FILES if name != 'Configuration.xml'))
 PHASES = ('inputs', 'create', 'load', 'check', 'update', 'redump', 'witness', 'complete')
 FAILURES = ('none', 'invalid_input', 'process_failed', 'timeout', 'invalid_result', 'witness_mismatch')
 
@@ -117,7 +120,15 @@ def dump_files(root):
 
 
 def source_files(root=ROOT):
-    files = dump_files(root / SOURCE_ROOT)
+    # This is the historical 19-file projection, not current main-demo acceptance.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('legacy_demo_fixture', root / 'tests/legacy_demo_fixture.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        files = module.legacy_demo_files(root)
+    except (ValueError, OSError):
+        raise DemoError('invalid_input') from None
     require(set(files) == set(SOURCE_FILES))
     return files
 

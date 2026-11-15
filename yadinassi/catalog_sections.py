@@ -39,6 +39,9 @@ def _units(value):
     if type(value) is bool: return 1
     if type(value) is BSLDate: return 14
     if type(value) is BSLCatalogReference: return 36
+    from .enum_types import BSLEnumReference
+    # Size accounting only, after the owning manager validated its field grant.
+    if type(value) is BSLEnumReference: return 36
     raise TypeError('unsupported tabular field value')
 
 

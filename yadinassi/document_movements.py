@@ -73,7 +73,7 @@ def validate_replacement(schema, request, database_id):
             or type(request.rows) is not tuple or len(request.rows) > MAX_MOVEMENT_ROWS):
         raise BackendError('invalid_input')
     scalar_types = {'string': str, 'number': Decimal, 'boolean': bool, 'datetime': datetime}
-    if any(f.kind not in scalar_types or f.target_catalog_id is not None
+    if any(f.kind not in scalar_types or f.target_catalog_id is not None or f.target_enum_id is not None
            or (f.kind == 'boolean' and f.qualifiers != ())
            or (f.kind == 'datetime' and f.qualifiers != ('DateTime',))
            for f in schema.fields):

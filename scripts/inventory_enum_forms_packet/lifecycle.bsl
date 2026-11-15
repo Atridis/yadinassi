@@ -9,28 +9,28 @@ Procedure ObservedCreate(Cancel, StandardProcessing)
  A.Add(New FormAttribute("ProbeTracePath", New TypeDescription("String")));
  A.Add(New FormAttribute("ProbeNonce", New TypeDescription("String")));
  ChangeAttributes(A);
- ProbeFlow = Parameters.Flow; ProbeInstance = Parameters.Instance;
- ProbeTracePath = Parameters.TracePath; ProbeNonce = Parameters.Nonce;
- ProbeWaits = 0; ExplicitChangeCount = 0;
- AppendLifecycle(ProbeTracePath, ProbeNonce, ProbeFlow, ProbeInstance, "create");
- If ProbeFlow = 8 Then PrepareIndependentDraft(); EndIf;
+ ThisObject.ProbeFlow = Parameters.Flow; ThisObject.ProbeInstance = Parameters.Instance;
+ ThisObject.ProbeTracePath = Parameters.TracePath; ThisObject.ProbeNonce = Parameters.Nonce;
+ ThisObject.ProbeWaits = 0; ThisObject.ExplicitChangeCount = 0;
+ AppendLifecycle(ThisObject.ProbeTracePath, ThisObject.ProbeNonce, ThisObject.ProbeFlow, ThisObject.ProbeInstance, "create");
+ If ThisObject.ProbeFlow = 8 Then PrepareIndependentDraft(); EndIf;
 EndProcedure
 
 &AtClient
 Procedure ObservedOpen(Cancel)
- AppendLifecycle(ProbeTracePath, ProbeNonce, ProbeFlow, ProbeInstance, "open");
+ AppendLifecycle(ThisObject.ProbeTracePath, ThisObject.ProbeNonce, ThisObject.ProbeFlow, ThisObject.ProbeInstance, "open");
  AttachIdleHandler("ObserveAndClose", 1, True);
 EndProcedure
 
 &AtClient
 Procedure ObserveAndClose() Export
- ProbeWaits = ProbeWaits + 1;
- If ProbeFlow = 8 And Not BothIndependentFormsOpened() Then
-  If ProbeWaits >= 10 Then Raise "owned peer lifecycle incomplete"; EndIf;
+ ThisObject.ProbeWaits = ThisObject.ProbeWaits + 1;
+ If ThisObject.ProbeFlow = 8 And Not BothIndependentFormsOpened() Then
+  If ThisObject.ProbeWaits >= 10 Then Raise "owned peer lifecycle incomplete"; EndIf;
   AttachIdleHandler("ObserveAndClose", 1, True); Return;
  EndIf;
- Result = ObserveOwnedFlow(ProbeFlow, ProbeInstance);
- AppendLifecycle(ProbeTracePath, ProbeNonce, ProbeFlow, ProbeInstance, "observed");
+ Result = ObserveOwnedFlow(ThisObject.ProbeFlow, ThisObject.ProbeInstance);
+ AppendLifecycle(ThisObject.ProbeTracePath, ThisObject.ProbeNonce, ThisObject.ProbeFlow, ThisObject.ProbeInstance, "observed");
  // These are authored observers, not a standard Write/Post form command.
  Modified = False;
  Close(Result);
@@ -38,9 +38,9 @@ EndProcedure
 
 &AtClient
 Function BothIndependentFormsOpened()
- Reader = New JSONReader; Reader.OpenFile(ProbeTracePath);
+ Reader = New JSONReader; Reader.OpenFile(ThisObject.ProbeTracePath);
  T = ReadJSON(Reader); Reader.Close();
- If T.nonce <> ProbeNonce Then Raise "owned trace binding refused"; EndIf;
+ If T.nonce <> ThisObject.ProbeNonce Then Raise "owned trace binding refused"; EndIf;
  One = False; Two = False;
  For Each E In T.events Do
   If E.flow = 8 And E.code = "open" Then

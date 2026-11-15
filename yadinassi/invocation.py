@@ -192,7 +192,8 @@ class InvocationServer:
         if type(endpoints) is not dict or not 1 <= len(endpoints) <= MAX_ENDPOINTS:
             raise ValueError('invalid endpoint inventory')
         from .form_program import admitted_program
-        program = admitted_program(source, side='nocontext', label='<invocation-server>')
+        program = admitted_program(source, side='nocontext', label='<invocation-server>',
+                                   compilation_profile='standalone')
         if not program or any(not isinstance(node, ast.Routine) or
                 node.execution_context != 'server' or node.module_context or node.is_async or node.is_dual
                 for node in program):

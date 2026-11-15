@@ -294,3 +294,62 @@ test('observer closed and pagehide transitions permanently revoke the retained i
     host.attachment.dispose();
   }
 });
+
+test('main demo reconciliation admits only exact read envelopes, never surface mutations',async()=>{
+ const {client,requests}=await attached((path,body)=>response(path==='/attachment'?issued():{jsonrpc:'2.0',id:body.id,result:{}}));
+ client.paused=true;client.reconciling=true;
+ const wrap=request=>({jsonrpc:'2.0',id:90,method:'demo.dispatch',params:{epoch:'a'.repeat(32),request}});
+ for(const method of ['demo.hello','demo.snapshot'])await client.exchange({jsonrpc:'2.0',id:90,method,params:{protocol:'yadinassi-main-demo/1'}});
+ for(const method of ['editor.hello','editor.snapshot','application.hello','application.snapshot'])await client.exchange(wrap({jsonrpc:'2.0',id:2,method,params:{}}));
+ for(const request of [
+  {jsonrpc:'2.0',id:90,method:'demo.snapshot',params:{protocol:'wrong'}},
+  {jsonrpc:'2.0',id:90,method:'demo.select',params:{epoch:'a'.repeat(32),surface:'documents'}},
+  wrap({jsonrpc:'2.0',id:2,method:'editor.event',params:{event:'command',control:'SaveButton'}}),
+  wrap({jsonrpc:'2.0',id:2,method:'application.form',params:{request:{method:'form.event'}}})]){
+  const before=requests.length;await assert.rejects(client.exchange(request),AttachmentRefusal);assert.equal(requests.length,before);
+ }
+ client.dispose();
+});
+
+test('demo inspection never dispatches a write even for a writable owner',async()=>{
+ const {client,requests}=await attached((path,body)=>response(path==='/attachment'?issued():{jsonrpc:'2.0',id:body.id,result:{}}));
+ const before=requests.length;
+ await assert.rejects(client.inspectDemo(()=>client.exchange({method:'demo.select',params:{surface:'documents'}})),AttachmentRefusal);
+ assert.equal(requests.length,before);client.dispose();
+});
+test('demo inspection preserves unknown fence on callback failure',async()=>{
+ const {client}=await attached(()=>response(issued()));client.businessUnknown=true;
+ await assert.rejects(client.inspectDemo(async()=>{throw Error('inspection failed');}));
+ assert.equal(client.businessUnknown,true);assert.equal(client.demoInspection,null);client.dispose();
+});
+test('demo inspection refuses generation changes and takeover during callback',async()=>{
+ for(const change of [{generation:2},{role:'observer'}]){
+  const {client}=await attached(()=>response(issued()));client.businessUnknown=true;
+  await assert.rejects(client.inspectDemo(async()=>{client.info={...client.info,...change};return {protocol:'yadinassi-main-demo/1',epoch:'a'.repeat(32),ready:true};}),AttachmentRefusal);
+  assert.equal(client.businessUnknown,true);client.dispose();
+ }
+});
+test('demo inspection cannot clear unknown merely from caller assertion',async()=>{
+ const {client}=await attached(()=>response(issued()));client.businessUnknown=true;
+ await client.inspectDemo(async()=>({protocol:'yadinassi-main-demo/1',epoch:'a'.repeat(32),ready:true}));
+ assert.equal(client.businessUnknown,true);client.dispose();
+});
+test('demo inspection clears fence only after observed snapshot and same epoch renderer read',async()=>{
+ const epoch='a'.repeat(32);
+ const {client}=await attached((path,body)=>response(path==='/attachment'?issued():{jsonrpc:'2.0',id:body.id,result:{protocol:'yadinassi-main-demo/1',state:{kind:'main-demo',surface:'catalogs',epoch,canSwitch:false,uncertain:false},error:null,payload:body.method==='demo.dispatch'?{jsonrpc:'2.0',id:body.params.request.id,result:{}}:null}}));
+ client.businessUnknown=true;client.paused=true;
+ for(const claim of [{epoch,ready:false},{epoch:'b'.repeat(32),ready:true}]){
+  await client.inspectDemo(async()=>{
+   await client.exchange({jsonrpc:'2.0',id:1,method:'demo.snapshot',params:{protocol:'yadinassi-main-demo/1'}});
+   await client.exchange({jsonrpc:'2.0',id:2,method:'demo.dispatch',params:{epoch,request:{jsonrpc:'2.0',id:1,method:'editor.snapshot',params:{}}}});
+   return {protocol:'yadinassi-main-demo/1',...claim};
+  });
+  assert.equal(client.businessUnknown,true);assert.equal(client.paused,true);
+ }
+ await client.inspectDemo(async()=>{
+  await client.exchange({jsonrpc:'2.0',id:1,method:'demo.snapshot',params:{protocol:'yadinassi-main-demo/1'}});
+  await client.exchange({jsonrpc:'2.0',id:2,method:'demo.dispatch',params:{epoch,request:{jsonrpc:'2.0',id:1,method:'editor.snapshot',params:{}}}});
+  return {protocol:'yadinassi-main-demo/1',epoch,ready:true};
+ });
+ assert.equal(client.businessUnknown,false);assert.equal(client.paused,false);client.dispose();
+});

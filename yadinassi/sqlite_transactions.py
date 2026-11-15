@@ -41,11 +41,12 @@ def _accumulation_port(view):
     from .sqlite_accumulation_movements import AccumulationMovementPort
     return AccumulationMovementPort(view._connection,view.database_id,view.configuration_generation,schemas,
                                     active_only=True, reference_catalogs=(view._backend._schemas
-                                        if view._backend.format_version == 15 else ()))
+                                        if view._backend.format_version in (15,16) else ()),
+                                    enum_domain=view._backend._enum_domain)
 
 
 def _posting_port(view):
-    return _accumulation_port(view) if view._backend.format_version in (14,15) else _recorder_port(view)
+    return _accumulation_port(view) if view._backend.format_version in (14,15,16) else _recorder_port(view)
 
 
 def _describe(view, request):

@@ -2,6 +2,7 @@
 
 Local host adapter evidence, not native 1C managed-form parity.
 """
+from legacy_demo_fixture import legacy_demo_files
 from pathlib import Path
 import tempfile
 import sqlite3
@@ -21,9 +22,7 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'demo.sqlite'
-        root = Path(__file__).parent / 'fixtures/demo_cf/source'
-        files = {path.relative_to(root).as_posix(): path.read_bytes()
-                 for path in root.rglob('*') if path.is_file()}
+        files = legacy_demo_files()
         backend = SQLiteCatalogBackend.create_demo_kinds(self.path, files)
         backend.close()
         self.context = SQLiteDBContext(self.path)

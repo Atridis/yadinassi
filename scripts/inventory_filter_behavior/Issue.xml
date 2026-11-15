@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20"><Document uuid="0e9acacb-6885-56c2-b1f1-fabadccaad91"><InternalInfo><xr:GeneratedType name="DocumentObject.Issue" category="Object"><xr:TypeId>e0d675d3-6f79-5b40-b9f8-11c1da39829f</xr:TypeId><xr:ValueId>c902efcb-8507-5674-ba42-1ad3e8de01cb</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentRef.Issue" category="Ref"><xr:TypeId>39cec72d-00e0-5304-b218-aa026a5cfc93</xr:TypeId><xr:ValueId>3b34093f-fe45-5f91-9366-a574d9e715a4</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentSelection.Issue" category="Selection"><xr:TypeId>107ee10a-6c5d-5f6a-8130-992f7ced2dea</xr:TypeId><xr:ValueId>98a28153-93a6-59c3-b6f7-26781fa3e84d</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentList.Issue" category="List"><xr:TypeId>8e877df4-38e2-5450-8290-5237ab10fce7</xr:TypeId><xr:ValueId>f419ddbf-a440-5f26-af89-18c4bee2d12a</xr:ValueId></xr:GeneratedType><xr:GeneratedType name="DocumentManager.Issue" category="Manager"><xr:TypeId>09bc5be9-a3b8-5db4-9f44-2bf3a17c8c8a</xr:TypeId><xr:ValueId>9c425939-64bc-5764-8e3b-8510f1ef9396</xr:ValueId></xr:GeneratedType></InternalInfo><Properties><Name>Issue</Name><Synonym></Synonym><Comment></Comment><UseStandardCommands>false</UseStandardCommands><NumberType>String</NumberType><NumberLength>9</NumberLength><NumberAllowedLength>Variable</NumberAllowedLength><NumberPeriodicity>Nonperiodical</NumberPeriodicity><CheckUnique>true</CheckUnique><Autonumbering>false</Autonumbering><StandardAttributes></StandardAttributes><Posting>Allow</Posting><RealTimePosting>Deny</RealTimePosting><RegisterRecordsDeletion>AutoDeleteOnUnpost</RegisterRecordsDeletion><RegisterRecordsWritingOnPost>WriteSelected</RegisterRecordsWritingOnPost><SequenceFilling>AutoFill</SequenceFilling><RegisterRecords><xr:Item xsi:type="xr:MDObjectRef">AccumulationRegister.Stock</xr:Item></RegisterRecords><PostInPrivilegedMode>false</PostInPrivilegedMode><UnpostInPrivilegedMode>false</UnpostInPrivilegedMode><DataLockControlMode>Managed</DataLockControlMode></Properties><ChildObjects><Attribute uuid="9cdc9cd3-d50a-599d-9bf0-010bca600e15">
+						<Properties>
+							<Name>Warehouse</Name>
+							<Synonym/>
+							<Comment />
+							<Type><v8:Type>cfg:CatalogRef.Warehouses</v8:Type></Type>
+							<PasswordMode>false</PasswordMode>
+							<Format />
+							<EditFormat />
+							<ToolTip />
+							<MarkNegatives>false</MarkNegatives>
+							<Mask />
+							<MultiLine>false</MultiLine>
+							<ExtendedEdit>false</ExtendedEdit>
+							<MinValue xsi:nil="true" />
+							<MaxValue xsi:nil="true" />
+							<FillChecking>DontCheck</FillChecking>
+							<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+							<ChoiceParameterLinks />
+							<ChoiceParameters />
+							<QuickChoice>Auto</QuickChoice>
+							<CreateOnInput>Auto</CreateOnInput>
+							<ChoiceForm />
+							<LinkByType />
+							<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+						</Properties>
+					</Attribute><TabularSection uuid="d8ef5b5f-7ca3-5d6b-8ffd-d19cbbd33f9b">
+				<InternalInfo>
+					<xr:GeneratedType name="DocumentTabularSection.Issue.Lines" category="TabularSection">
+						<xr:TypeId>2b546a22-b353-59a9-b6b7-046933e6e69d</xr:TypeId>
+						<xr:ValueId>9989abb1-39c6-5e10-aa64-3665cc9d7154</xr:ValueId>
+					</xr:GeneratedType>
+					<xr:GeneratedType name="DocumentTabularSectionRow.Issue.Lines" category="TabularSectionRow">
+						<xr:TypeId>5540eed2-bbbc-523f-ad83-98dd6a87d5c8</xr:TypeId>
+						<xr:ValueId>6c278134-e2cb-5988-ac4d-e460e0c6ad4e</xr:ValueId>
+					</xr:GeneratedType>
+				</InternalInfo>
+				<Properties>
+					<Name>Lines</Name>
+					<Synonym/>
+					<Comment />
+					<ToolTip />
+					<FillChecking>DontCheck</FillChecking>
+				</Properties>
+				<ChildObjects><Attribute uuid="aae0677a-f7dc-54cc-9bc7-9e1f57a729c9">
+						<Properties>
+							<Name>Product</Name>
+							<Synonym/>
+							<Comment />
+							<Type><v8:Type>cfg:CatalogRef.Products</v8:Type></Type>
+							<PasswordMode>false</PasswordMode>
+							<Format />
+							<EditFormat />
+							<ToolTip />
+							<MarkNegatives>false</MarkNegatives>
+							<Mask />
+							<MultiLine>false</MultiLine>
+							<ExtendedEdit>false</ExtendedEdit>
+							<MinValue xsi:nil="true" />
+							<MaxValue xsi:nil="true" />
+							<FillChecking>DontCheck</FillChecking>
+							<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+							<ChoiceParameterLinks />
+							<ChoiceParameters />
+							<QuickChoice>Auto</QuickChoice>
+							<CreateOnInput>Auto</CreateOnInput>
+							<ChoiceForm />
+							<LinkByType />
+							<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+						</Properties>
+					</Attribute><Attribute uuid="eed4128d-9718-50e6-bca7-a9e6df79ed36">
+						<Properties>
+							<Name>Quantity</Name>
+							<Synonym/>
+							<Comment />
+							<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>10</v8:Digits><v8:FractionDigits>3</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+							<PasswordMode>false</PasswordMode>
+							<Format />
+							<EditFormat />
+							<ToolTip />
+							<MarkNegatives>false</MarkNegatives>
+							<Mask />
+							<MultiLine>false</MultiLine>
+							<ExtendedEdit>false</ExtendedEdit>
+							<MinValue xsi:nil="true" />
+							<MaxValue xsi:nil="true" />
+							<FillChecking>DontCheck</FillChecking>
+							<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+							<ChoiceParameterLinks />
+							<ChoiceParameters />
+							<QuickChoice>Auto</QuickChoice>
+							<CreateOnInput>Auto</CreateOnInput>
+							<ChoiceForm />
+							<LinkByType />
+							<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+						</Properties>
+					</Attribute><Attribute uuid="b54d9c3e-206f-5fa2-8ff8-c1d98e35692a">
+						<Properties>
+							<Name>Amount</Name>
+							<Synonym/>
+							<Comment />
+							<Type><v8:Type>xs:decimal</v8:Type><v8:NumberQualifiers><v8:Digits>10</v8:Digits><v8:FractionDigits>2</v8:FractionDigits><v8:AllowedSign>Any</v8:AllowedSign></v8:NumberQualifiers></Type>
+							<PasswordMode>false</PasswordMode>
+							<Format />
+							<EditFormat />
+							<ToolTip />
+							<MarkNegatives>false</MarkNegatives>
+							<Mask />
+							<MultiLine>false</MultiLine>
+							<ExtendedEdit>false</ExtendedEdit>
+							<MinValue xsi:nil="true" />
+							<MaxValue xsi:nil="true" />
+							<FillChecking>DontCheck</FillChecking>
+							<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+							<ChoiceParameterLinks />
+							<ChoiceParameters />
+							<QuickChoice>Auto</QuickChoice>
+							<CreateOnInput>Auto</CreateOnInput>
+							<ChoiceForm />
+							<LinkByType />
+							<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+						</Properties>
+					</Attribute></ChildObjects>
+			</TabularSection></ChildObjects></Document></MetaDataObject>

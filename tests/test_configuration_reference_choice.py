@@ -53,7 +53,7 @@ class PickerTests(unittest.TestCase):
     def test_begin_scan_closed_and_opaque_projection(self):
         p=self.begin();self.assertEqual(self.views_closed,1);self.assertTrue(self.choice.active)
         self.assertNotIn(str(self.key.record_id),str(p));self.assertNotIn(str(self.db),str(p))
-        self.assertEqual(set(p),{'ticket','control','row','column','title','code','rows','error'})
+        self.assertEqual(set(p),{'ticket','control','row','column','title','code','rows','error','navigation'})
         p['rows'].clear();self.assertEqual(len(self.choice.projection()['rows']),1)
 
     def test_apply_header_then_clear_and_replay_rejected(self):
@@ -77,7 +77,8 @@ class PickerTests(unittest.TestCase):
         self.assertIsNone(self.choice.changed_control);self.assertTrue(self.server.session.form._data['product'].is_empty())
 
     def test_overflow_is_empty_explicit_not_truncated(self):
-        self.overflow=True;p=self.begin();self.assertEqual(p['rows'],[]);self.assertEqual(p['error'],'too_many_matches')
+        with patch('yadinassi.reference_choice_pages.MAX_ROWS',0):p=self.begin()
+        self.assertEqual(p['rows'],[]);self.assertEqual(p['error'],'snapshot_limit');self.assertIsNone(p['navigation'])
         self.overflow=False;self.execute({'action':'filter','ticket':p['ticket'],'code':'P1'})
         self.assertEqual(len(self.choice.projection()['rows']),1);self.assertIsNone(self.choice.projection()['error'])
 

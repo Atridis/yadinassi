@@ -156,7 +156,7 @@ def _pack_state(session, handlers):
         kind = attribute.value_type
         if is_reference(kind):
             require_scope(kind, session)
-            attributes.append([attribute.name, "FormCatalogRef", [kind.target], attribute.title,
+            attributes.append([attribute.name, kind.scope.wire_type(kind.target), [kind.target], attribute.title,
                 key in form._static, encode(kind, form._data[key], _encode_form_scalar)])
             continue
         attributes.append([attribute.name, kind.types[0].value,
@@ -208,11 +208,12 @@ def _unpack_state_candidate(packet, session, handlers):
         key = name(attr_name).casefold()
         if key in candidate._attributes or key in session.reserved_names:
             raise ValueError('duplicate or reserved form attribute')
-        if kind == 'FormCatalogRef':
+        if kind in ('FormCatalogRef','FormEnumRef'):
             if session.reference_scope is None or session.reference_scope.server:
                 raise ValueError('explicit client reference scope required')
             target, = _row(qualifiers, 1)
             _integer(target, 1, 128)
+            if session.reference_scope.wire_type(target)!=kind:raise ValueError('form reference family mismatch')
             kind = session.reference_scope.descriptor(target)
             _booleans([static])
             attribute = BSLFormAttribute(attr_name, kind, title=title)

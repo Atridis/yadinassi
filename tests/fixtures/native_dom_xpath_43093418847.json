@@ -1,0 +1,32 @@
+{
+  "schema": "verified-dom-xpath-observations-v1",
+  "run_id": 43093418847,
+  "commit": "202fb7f7a17fd49691be1a8e5eb213c63fcd7fa0",
+  "tree": "33215b3130b651128cb00e153838fa80eebdfe5c",
+  "parents": [
+    "db04699d1bad4743bed76102067a4a2e2a9e6d0a",
+    "8c3638fe5efda8f756762baf17f9841c2e3eec1d"
+  ],
+  "source_sha256": "b88838e4c3770465dc50c5a36ed180bdd97f852e1f768396f4ca2444818dd848",
+  "module_sha256": "aed69cbb4ff4993de451440d0adda7b1ec2e3990a3be5dc2c5fd08f418230bf1",
+  "output_sha256": "ddca38b693dcc0a9c1c454a1f0cd366ecedb6f059eb0342b582300ff3ba120e1",
+  "output_size": 459,
+  "observations": [
+    "Разыменователь пространств имен DOM XPath:Результат DOM XPath:Нет:a:2",
+    "1",
+    "count:1",
+    "1",
+    "a:c:Да",
+    "1",
+    "b:Да",
+    "Нет:ok",
+    "Нет:3",
+    "Нет:Нет",
+    "Нет",
+    "error:error"
+  ],
+  "summary_sha256": "4e646f61b4fd0882456cb97ee3757b8bc2f4495a0415f649f68854d9e243c748",
+  "provenance_sha256": "e5842d72b1c653f7fcb60415da5d4e9f2b61399a76457f3668937d72c33fe7f9",
+  "native_runtime": "8.3.27.1508",
+  "binding": "source, nonce, module readback, output, cleanup and exact Git merge parents verified; native behavior evidence, not recovered runtime test result"
+}

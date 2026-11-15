@@ -32,6 +32,7 @@ class FieldSchema:
     kind: str
     qualifiers: tuple = ()
     target_catalog_id: UUID | None = None
+    target_enum_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

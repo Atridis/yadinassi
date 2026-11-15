@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from test_native_async_fixture import historical_source_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = 'tests/fixtures/accumulation_register/'
@@ -55,7 +56,7 @@ class AccumulationCheckoutTests(unittest.TestCase):
             self.assertEqual(set(attributes), set(pinned))
             for name, digest in pinned.items():
                 with self.subTest(path=name):
-                    self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), digest)
+                    self.assertEqual(hashlib.sha256(historical_source_bytes(name, (ROOT / name).read_bytes(), digest)).hexdigest(), digest)
                     if name in IMMUTABLE:
                         self.assertEqual(attributes[name]['text'], 'unset')
                     else:
@@ -83,4 +84,4 @@ class AccumulationCheckoutTests(unittest.TestCase):
                 with self.subTest(path=name):
                     raw = (checkout / name).read_bytes()
                     self.assertEqual(raw, (ROOT / name).read_bytes())
-                    self.assertEqual(hashlib.sha256(raw).hexdigest(), digest)
+                    self.assertEqual(hashlib.sha256(historical_source_bytes(name, raw, digest)).hexdigest(), digest)

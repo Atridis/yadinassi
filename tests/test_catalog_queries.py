@@ -47,8 +47,8 @@ T[0].Amount=999;S=R.Select();S.Next();Message(S.Amount);Message(Catalogs.Product
     def test_reference_parameter_and_projection_keep_snapshot_identity(self):
         self.vm.execute('''Q=New Query("SELECT Ref,Category FROM Catalog.Products WHERE Category=&Target ORDER BY Code");
 Q.SetParameter("Target",C.Ref);R=Q.Execute();S=R.Select();S.Next();Message(S.Category=C.Ref);
-Message(S.Ref.Code);Message(S.Category.Description);Try T=R.Unload();Except Message("unsupported-reference-column");EndTry;''')
-        self.assertEqual(self.output, ['Да','1','target','unsupported-reference-column'])
+Message(S.Ref.Code);Message(S.Category.Description);T=R.Unload();Message(T[0].Category=C.Ref);''')
+        self.assertEqual(self.output, ['Да','1','target','Да'])
 
     def test_empty_result_and_cursor_boundaries_are_explicit(self):
         self.vm.execute('''Q=New Запрос("ВЫБРАТЬ Код ИЗ Справочник.Products ГДЕ Amount>100");

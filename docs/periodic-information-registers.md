@@ -77,9 +77,34 @@ Q.SetParameter("At", Date(2024, 1, 2));
 Result = Q.Execute().Unload();
 ```
 
-The virtual-source argument is one Date parameter. Arbitrary source expressions,
-resource predicates inside source parentheses, optional omitted boundaries and
-extra source arguments remain unsupported. Russian source names
+The first virtual-source argument is one Date parameter. An optional second
+argument now admits explicit pre-slice conditions: `Field=&Parameter`,
+`Field IN (&ArrayParameter)`, AND and parentheses. Declared dimensions, resources,
+attributes and Period (also Период) accept their exact scalar or owned catalog
+reference type. Array and FixedArray contents are frozen once per Execute;
+changing the original array is observed on the next Execute. Equality does not
+perform assignment truncation, decimal rounding, or period normalization.
+
+These conditions apply before choosing the first/last row for each dimension
+key. For example, `SliceLast(&At, Enabled=&Enabled)` with Enabled=True can select
+an older enabled record; `SliceLast(&At) WHERE Enabled=TRUE` cannot. Explicit
+conditions are never inferred from WHERE. JOIN, derived sources, UNION and query
+packages retain that order and share the existing read snapshot.
+
+The bounded host contract permits 16 terms, nesting depth 16 and 256 array
+members before deduplication. Every binding use charges the parameter budget.
+All historical rows are decoded, validated and input-budgeted before exclusion,
+including nonmatches, corrupt hidden fields and rows outside the date boundary.
+Canonical reference type/issuer callbacks and metadata family are checked before
+opening a view, even for empty scans, then checked again within the read owner.
+No reference existence lookup, new connection, write authority or storage format
+is introduced. Comparison uses the existing casefold_v1 relational host policy,
+not a new claim about native regional collation or filter parity.
+
+Arbitrary expressions, literals, OR/NOT/inequality/subquery conditions, scalar
+IN arguments, omitted date boundaries and further source arguments remain
+unsupported. Native measurement is still future calibration; these authored
+host tests are not native evidence. Russian source names
 `РегистрСведений`, `СрезПоследних`, `СрезПервых` and field `Период` are admitted.
 
 The slice is computed first; Query `WHERE` is applied **afterwards**. If the latest

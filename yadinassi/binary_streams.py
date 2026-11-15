@@ -8,6 +8,7 @@ from enum import Enum
 import os
 import stat
 
+from .safe_mode import require_external_access
 from .values import BSLObject
 from .file_io import (_FileMethods, _methods, _file_errors, _path, MAX_BYTES,
                       BSLBinaryData)
@@ -183,6 +184,8 @@ class BSLStream(_FileMethods):
     def __str__(self): return 'Поток'
     def _open(self):
         if self._closed: raise ValueError('Поток закрыт')
+        if self._state.file is not None:
+            require_external_access("access file stream")
         source = getattr(self, '_data_io_source', None)
         if source is not None: source._open()
         if self._state.file is not None and self._state.file.closed: raise ValueError('Поток закрыт')
@@ -368,6 +371,7 @@ class BSLFileStream(BSLStream):
         if mode in (BSLFileOpenMode.CREATE, BSLFileOpenMode.CREATE_NEW, BSLFileOpenMode.OPEN_OR_CREATE, BSLFileOpenMode.APPEND): flags |= os.O_CREAT
         if mode is BSLFileOpenMode.CREATE_NEW: flags |= os.O_EXCL
         flags |= getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0)
+        require_external_access("open file stream")
         self._filename = os.path.abspath(_stream_path(filename))
         fd = os.open(self._filename, flags, 0o666)
         try:

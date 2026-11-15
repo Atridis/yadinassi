@@ -96,3 +96,21 @@ opened independent forms, eight complete records, process/cleanup evidence and
 no immutable fixture changes. Any semantic difference remains a measured result,
 not grounds for changing the observer to force success. Acquisition output does
 not yet create runtime semantic parity or a new UI/storage grant.
+
+## 2026-11-15 repair checkpoint
+
+The historical native run 43193336908 entered Enterprise, then timed out without
+completion. No observations were accepted. Its summary cannot identify which
+child event failed. The old generic Windows artifact-missing fixture failure is
+addressed by merging current main's canonical checkout-owned temporary paths.
+
+The repaired packet qualifies programmatically added form attributes through
+`ThisObject`, as required by the platform; bare names are not a reliable way to
+access dynamic form attributes. Offline tests pin this receiver contract and
+updated authored hashes. This is a concrete source defect fix, not proof that the
+historical timeout is resolved: a fresh exact-source native acquisition is still
+required. Failed acquisitions may now export only bounded finite lifecycle event
+labels and numeric flow/instance identities, with nonce validation; no paths,
+raw exception text, logs or nonce are exported. Partial lifecycle diagnostics
+never satisfy the complete acceptance gate. Timeouts, rights and all eight groups
+remain unchanged.

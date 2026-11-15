@@ -89,13 +89,13 @@ async function main(){
   const git=(...args)=>execFileSync('git',args,{cwd:repo,encoding:'utf8',timeout:remaining(5000),maxBuffer:1024*1024}).trim();
   assert.equal(report.sourceCommit,process.env.QA_SOURCE_SHA,'source_commit_mismatch');
   assert.equal(git('status','--porcelain','--untracked-files=no'),'','tracked_checkout_dirty');
-  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','.github/workflows/ui-browser-qa.yml',...(demoProducts?['tests/fixtures/demo_cf/source']:[])).split('\0').filter(Boolean);
+  const names=git('ls-files','-z','yadinassi','pyproject.toml','tests/browser_ui','.github/workflows/ui-browser-qa.yml',...(demoProducts?['examples/demo']:[])).split('\0').filter(Boolean);
   for(const required of ['tests/browser_ui/reference_rows_browser_qa.mjs','tests/browser_ui/reference_rows_fixture.py',
     'tests/browser_ui/support.mjs','tests/browser_ui/package-lock.json'])assert.ok(names.includes(required),'fixture_or_harness_not_tracked');
   if(demoProducts)for(const required of ['Configuration.xml','Catalogs/Номенклатура.xml',
     'Catalogs/Номенклатура/Ext/ObjectModule.bsl','Catalogs/Номенклатура/Forms/ФормаЭлемента/Ext/Form/Module.bsl',
     ...(demoProductListCheck?['Catalogs/Номенклатура/Forms/ФормаСписка/Ext/Form/Module.bsl']:[])])
-    assert.ok(names.includes('tests/fixtures/demo_cf/source/'+required),'original_fixture_not_tracked');
+    assert.ok(names.includes('examples/demo/'+required),'original_fixture_not_tracked');
   const source={};for(const name of names){check();source[name]=sha256(await readFile(path.join(repo,name)));}
   report.binding={commit:report.sourceCommit,tree:git('rev-parse','HEAD^{tree}'),source};
   report.versions={node:process.version,playwright:JSON.parse(await readFile(new URL('./node_modules/playwright/package.json',import.meta.url),'utf8')).version};

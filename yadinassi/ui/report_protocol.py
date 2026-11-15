@@ -64,13 +64,30 @@ def validate_setup(value, configuration, report=None):
     choice = value['choice']
     if choice is None:
         return
-    _keys(choice, 'filter ticket code rows error')
+    paged = type(choice) is dict and 'navigation' in choice
+    _keys(choice, 'filter ticket code rows error' + (' navigation' if paged else ''))
     if (choice['filter'] not in [f.dimension for f in grant.filters]
             or not _ticket(choice['ticket'], 'choice') or not _text(choice['code'], 64)
-            or choice['error'] not in (None, 'too_many_matches')
+            or choice['error'] not in ((None, 'snapshot_limit') if paged else (None, 'too_many_matches'))
             or type(choice['rows']) is not list or len(choice['rows']) > 32
             or choice['error'] is not None and choice['rows']):
         raise ValueError('invalid report choice')
+    if paged:
+        nav = choice['navigation']
+        if choice['error'] is not None:
+            if nav is not None: raise ValueError('overflow has no partial page')
+        else:
+            _keys(nav,'page pages total query previous next')
+            if (any(type(nav[k]) is not int for k in ('page','pages','total'))
+                    or not 0 <= nav['total'] <= 8192 or nav['pages'] != max(1,(nav['total']+31)//32)
+                    or not 1 <= nav['page'] <= nav['pages'] or not _text(nav['query'],128)
+                    or len(choice['rows']) != min(32,max(0,nav['total']-(nav['page']-1)*32))
+                    or (nav['previous'] is None) != (nav['page']==1)
+                    or (nav['next'] is None) != (nav['page']==nav['pages'])):
+                raise ValueError('invalid choice page')
+            cursors=[nav[k] for k in ('previous','next') if nav[k] is not None]
+            if len(set(cursors)) != len(cursors) or any(type(c) is not str or re.fullmatch(r'report-choice-page-[0-9a-f]{32}',c) is None for c in cursors):
+                raise ValueError('invalid choice cursor')
     seen = set()
     for row in choice['rows']:
         _keys(row, 'choice code description')
@@ -135,7 +152,12 @@ def validate_projection(result, configuration, request, *, paged=True):
             if type(value) is not dict or value.get('type') != column['type']:
                 raise ValueError('invalid typed report cell')
             if column['type'] in ('Catalog', 'Document'):
-                _keys(value, 'type text')
+                linked = 'recorder' in value
+                _keys(value, 'type text' + (' recorder' if linked else ''))
+                if linked and (result['view'] != 'Movements' or column != {'name':'Recorder','type':'Document'}
+                               or type(value['recorder']) is not str
+                               or re.fullmatch(r'recorder-[0-9a-f]{32}', value['recorder']) is None):
+                    raise ValueError('invalid recorder link')
                 if not _text(value['text'], 1152):
                     raise ValueError('invalid report presentation')
             elif _encode_scalar(_decode_scalar(value)) != value:

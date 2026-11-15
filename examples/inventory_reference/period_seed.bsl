@@ -1,7 +1,9 @@
-// Run once in a separate fresh database using the existing reference source grant.
-Function Product(Val Code, Val Description)
-    Item = Catalogs.Products.CreateItem(); Item.Code = Code;
-    Item.Description = Description; Item.Write(); Return Item.Ref;
+// Run once in a fresh main demo database (examples/demo).
+Function Product(Val Code, Val Description, Val Kind, Val Warehouse)
+    Item = Catalogs.Номенклатура.CreateItem(); Item.Code = Code;
+    Item.Description = Description; Item.ВидНоменклатуры = Kind.Ref;
+    SectionRow = Item.Склады.Add(); SectionRow.Склад = Warehouse.Ref;
+    Item.Write(); Return Item.Ref;
 EndFunction
 Function Receipt(Val Number, Val At, Val Product, Val Warehouse, Val Quantity)
     Doc = Documents.Receipt.CreateDocument(); Doc.Number = Number; Doc.Date = At;
@@ -15,11 +17,12 @@ Function Issue(Val Number, Val At, Val Product, Val Warehouse, Val Quantity)
     Row.Quantity = Quantity; Row.Amount = Quantity * 10;
     Doc.Write(DocumentWriteMode.Posting); Return Doc.Ref;
 EndFunction
-Warehouse = Catalogs.Warehouses.CreateItem(); Warehouse.Code = "PS-W";
+Kind = Catalogs.ВидыНоменклатуры.CreateItem(); Kind.Description="Товары"; Kind.Write();
+Warehouse = Catalogs.Склады.CreateItem(); Warehouse.Code = "PS-W";
 Warehouse.Description = "Statement warehouse"; Warehouse.Write();
-Stock = Product("PS-STOCK", "Notebook");
-Carry = Product("PS-CARRY", "Opening stock only");
-Balanced = Product("PS-ZERO", "Balanced movements");
+Stock = Product("PS-STOCK", "Notebook", Kind, Warehouse);
+Carry = Product("PS-CARRY", "Opening stock only", Kind, Warehouse);
+Balanced = Product("PS-ZERO", "Balanced movements", Kind, Warehouse);
 Receipt("PS-R0", Date(2023,12,31), Stock, Warehouse.Ref, 5);
 Receipt("PS-RC", Date(2023,12,31), Carry, Warehouse.Ref, 7);
 Receipt("PS-R1", Date(2024,1,15), Stock, Warehouse.Ref, 10);

@@ -368,6 +368,10 @@ class WorkspaceHandler(_Handler):
     methods = ('workspace.hello', 'workspace.list', 'workspace.open', 'workspace.form', 'workspace.discard', 'workspace.close')
 
 
+from ..execution_policy import backend_entrypoint, UI_BACKENDS
+
+
+@backend_entrypoint
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Run the bounded trusted Orders workspace.')
     parser.add_argument('packages', help='Trusted forms root containing order-intake and order-editor')
@@ -375,6 +379,7 @@ def main(argv=None):
     parser.add_argument('--open-browser', action='store_true')
     parser.add_argument('--browser-session', action='store_true')
     parser.add_argument('--runtime', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--execution-backend', choices=UI_BACKENDS, help='Explicit runtime backend; strict mode never falls back')
     args = parser.parse_args(argv)
     if args.runtime:
         return serve_runtime(args.packages, args.f)

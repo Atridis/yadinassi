@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {MainDemoClient,PROTOCOL} from '../src/client.mjs';
+const epoch='a'.repeat(32);
+const reply=(q,patch={})=>({jsonrpc:'2.0',id:q.id,result:{protocol:PROTOCOL,state:{kind:'main-demo',surface:'catalogs',epoch,canSwitch:true,uncertain:false},error:null,payload:null,...patch}});
+test('hello and switch bind exact epoch',async()=>{const calls=[];const c=new MainDemoClient(async q=>{calls.push(q);return reply(q);});await c.hello();await c.select('documents');assert.deepEqual(calls[1].params,{epoch,surface:'documents'});});
+test('lost dispatch blocks replay and recovery sends snapshot only',async()=>{const calls=[];const c=new MainDemoClient(async q=>{calls.push(q);if(q.method==='demo.dispatch')throw Error('lost');return reply(q);});await c.hello();await assert.rejects(c.dispatch({jsonrpc:'2.0',id:4,method:'editor.snapshot',params:{}}));await assert.rejects(c.dispatch({id:5}));await c.snapshot();assert.deepEqual(calls.map(q=>q.method),['demo.hello','demo.dispatch','demo.snapshot']);assert.equal(c.uncertain,false);});
+test('retired renderer epoch never reaches transport',async()=>{let count=0;const c=new MainDemoClient(async q=>{count++;return reply(q);});await c.hello();assert.throws(()=>c.dispatch({id:1},'b'.repeat(32)),/Retired/);assert.equal(count,1);});
+test('malformed state locks client without adopting it',async()=>{const c=new MainDemoClient(async q=>reply(q,{state:{kind:'main-demo'}}));await assert.rejects(c.hello());assert.equal(c.state,null);assert.equal(c.uncertain,true);});
+test('host refusal retains authoritative state and is not unknown',async()=>{const c=new MainDemoClient(async q=>reply(q,{error:'finish_current_surface'}));await assert.rejects(c.hello());assert.equal(c.uncertain,false);assert.equal(c.state.epoch,epoch);});
+test('dispatch returns matching nested response',async()=>{const c=new MainDemoClient(async q=>reply(q,{payload:q.method==='demo.dispatch'?{jsonrpc:'2.0',id:q.params.request.id,result:{ok:true}}:null}));await c.hello();assert.deepEqual(await c.dispatch({id:8,method:'editor.snapshot'}),{jsonrpc:'2.0',id:8,result:{ok:true}});});

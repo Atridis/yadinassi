@@ -12,7 +12,7 @@ from yadinassi.database_context import SQLiteDBContext
 from yadinassi.catalog_object_preparation import prepare_catalog_object
 from test_sqlite_catalog_backend import configuration
 
-SOURCE = (Path(__file__).parent / 'fixtures/demo_cf/source/Catalogs/Номенклатура/Ext/ObjectModule.bsl').read_text(encoding='utf-8-sig')
+SOURCE = (Path(__file__).resolve().parents[1] / 'examples/demo/Catalogs/Номенклатура/Ext/ObjectModule.bsl').read_text(encoding='utf-8-sig')
 
 
 class CatalogObjectPreparationTests(unittest.TestCase):

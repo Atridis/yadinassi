@@ -24,11 +24,16 @@ performs fresh admission.
 
 Supported existing paths are catalog/application forms, non-posting document
 forms, mixed business/reference applications, and the closed physical-13
-posting variants. Posting recorder/schema/row checks still run as required;
+posting variants, scalar accumulation format 14 and reference inventory core
+format 15, including the separately source-granted full inventory form variant.
+Posting/accumulation recorder/schema/row checks still run as required;
 reusing the full form variant never substitutes its core projection for the
 original source. Other source/storage profiles retain their existing paths.
-There is no profile conversion, migration, physical-14 grant, long-lived
-observer connection or `PRAGMA data_version` shortcut.
+There is no new source grant, profile conversion, migration, long-lived
+observer connection or `PRAGMA data_version` shortcut. The inventory form
+variant retains its complete original source and immutable command/report
+grants. Its temporary core projection cannot occupy a full-variant entry; the
+original core creator still refuses the form variant.
 
 Receipt lookup, uncertain commit handling and handler execution are unchanged.
 Prepared admission does not replay actions or establish that an unknown
@@ -40,3 +45,23 @@ machine-specific latency thresholds. It checks repeated scalar reads and
 exports plus unchanged-generation tampering, profile/schema changes,
 independent backends, failed/interrupted admission and the exact full posting
 source grant.
+
+## Stock read admission
+
+Repeated read/write beginnings in the existing accumulation profiles reuse only
+the frozen XML import. Actual stored bytes are read, bounded and SHA-256 hashed
+inside every current snapshot. The key includes the complete path/kind/size/hash
+inventory, application/storage/schema versions, database and configuration
+identity, exact profile marker and source digest, and catalog/document schemas.
+Register fields and recorder membership are compared by the live movement port
+even on a hit. Full row validation on open and explicit validation requests is
+unchanged. Closing or explicitly clearing the entry makes the next owner cold.
+Changed bytes or metadata cannot reuse an old admission; a failed candidate
+does not replace the first positive entry, so repair can safely recover it.
+
+This does not cache movement rows, read-validation proofs, query results,
+transactions, compiled mutable programs or handler execution. In particular,
+read leases retain their existing lifetime and staged/committed/rolled-back
+stock remains visible only through the original transaction authority.
+Deterministic importer call counts cover a 23-snapshot sequence; they are not
+an end-to-end UI latency claim.

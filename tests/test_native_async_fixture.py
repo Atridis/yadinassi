@@ -376,6 +376,131 @@ def without_tree_profile_measurement(source):
     return source
 
 
+def without_source_workspace_assets_provenance(source):
+    """Exact inventory inverse; historical native outputs are not rewritten."""
+    candidate = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
+    base = 'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe'
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
+        return source
+    old = '"configuration", "main-demo") for name in'
+    new = '"configuration", "main-demo", "source-workspace") for name in'
+    if source.count(new) != 1:
+        raise AssertionError('source workspace inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('source workspace inventory inner source identity')
+    return source
+
+
+def without_source_ui_assets_provenance(source):
+    """Exact source-UI inventory inverse for historical checks, not new evidence."""
+    source = without_source_workspace_assets_provenance(source)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != 'fe969cfcf973e68e2be1ab418eed31a2f6f3b6ecebcce5d1c7fbdfd3d25132fe':
+        return source
+    hunk = '    assets |= {"yadinassi/ui/assets/source/" + name\n               for name in ("app.js", "index.html", "style.css")}\n'
+    if source.count(hunk) != 1:
+        raise AssertionError('source UI inventory inverse unique hunk')
+    source = source.replace(hunk, '', 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != 'ae7c7d309d2faec1d3318df32d050ceb7b50fa7d2b4b1d6e7905990472babdc3':
+        raise AssertionError('source UI inventory inner source identity')
+    return source
+
+
+def without_main_demo_assets_provenance(source):
+    """Restore the exact prior renderer inventory; never rewrite native evidence."""
+    source = without_source_ui_assets_provenance(without_compiled_backend_harness(source))
+    base = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
+    candidate = 'ae7c7d309d2faec1d3318df32d050ceb7b50fa7d2b4b1d6e7905990472babdc3'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest != candidate:
+        return source  # Older layers enforce their own exact outer identity.
+    old = 'for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration") for name in'
+    new = 'for renderer in ("catalog", "form", "workspace", "reference-workspace", "configuration", "main-demo") for name in'
+    if source.count(new) != 1:
+        raise AssertionError('main demo inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('main demo inventory inner source identity')
+    return source
+
+
+def without_compiled_backend_harness(source):
+    """Exact source-only inverse of opt-in host execution; never rewrite native bytes."""
+    base = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
+    candidate = '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest != candidate:
+        return source  # Older layers still enforce their own exact identities.
+    contract = json.loads((REPOSITORY / 'tests/native_compiled_source_inverse.json').read_text(encoding='utf-8'))
+    if contract['base_sha256'] != base or contract['candidate_sha256'] != candidate:
+        raise AssertionError('compiled harness inverse identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('compiled harness inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('compiled harness inverse inner source identity')
+    return source
+
+
+def without_repository_inventory_budget(source):
+    """Exact inverse of the bounded Git inventory budget, not native evidence."""
+    source = without_main_demo_assets_provenance(without_compiled_backend_harness(source))
+    base = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
+    candidate = 'c4ec7682edce0148a266917e22db661e887a80e2d1b1601f14490687b70aff69'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest == base:
+        return source
+    if digest != candidate:
+        raise AssertionError('repository inventory outer source identity')
+    old = '                                             stdout_limit=8192, stderr_limit=8192)'
+    new = '                                             stdout_limit=(65536 if args[0] == "ls-files" else 8192),\n                                             stderr_limit=8192)'
+    if source.count(new) != 1:
+        raise AssertionError('repository inventory inverse unique hunk')
+    source = source.replace(new, old, 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('repository inventory inner source identity')
+    return source
+
+
+def historical_source_bytes(path, raw, expected_sha256):
+    """Exact test-only source inverses; captured native evidence is never rewritten.
+
+    Only the named paths and recorded historical target pins below are admitted.
+    Current source pins, unknown target pins and other paths keep their bytes.
+    """
+    pins = {
+        'scripts/native_1c_full_host.py': ('19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb',
+                                         '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'),
+        'scripts/native_1c_smoke.py': ('d41b75e56bbc66b26c7103116302007b8df3a5318995934aacd13fd9c55b3d1d', '5a13a74bc901192c0fa503171cacb4573797ab2fd8e3b75b471e0fd8ba3db5eb'),
+        'scripts/native_async_comparison.py': ('7eec7c2e95fa7ea6d59d50f4cf53bc37967e2afe6cf7b59eae82a6e585ce4941', 'b29f03d16e0a74ecaf93f7e7c1f6718fbc7e4a8b4158e8ee36418fe78f4b1a46'),
+    }
+    if path in pins and expected_sha256 == pins[path][0]:
+        base, candidate = pins[path]
+        actual = hashlib.sha256(raw).hexdigest()
+        if actual == base:
+            return raw
+        if actual != candidate:
+            raise AssertionError('compiled harness source outer identity')
+        inventory = json.loads((REPOSITORY / 'tests/native_compiled_source_inverse.json').read_text(encoding='utf-8'))
+        contract = inventory if path == 'scripts/native_1c_full_host.py' else inventory['additional_sources'][path]
+        if (contract['base_sha256'], contract['candidate_sha256']) != (base, candidate):
+            raise AssertionError('compiled harness source inverse identity')
+        source = raw.decode('utf-8')
+        for edit in reversed(contract['edits']):
+            if source.count(edit['new']) != 1:
+                raise AssertionError('compiled harness source inverse unique hunk')
+            source = source.replace(edit['new'], edit['old'], 1)
+        restored = source.encode('utf-8')
+        if hashlib.sha256(restored).hexdigest() != base:
+            raise AssertionError('compiled harness source inner identity')
+        return restored
+    if (path == 'scripts/native_1c_full_host.py'
+            and expected_sha256 == '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'):
+        return without_repository_inventory_budget(raw.decode('utf-8')).encode('utf-8')
+    return raw
+
+
 def without_configuration_assets_provenance(source):
     """Hash-bound configuration layer, standalone or after reference assets."""
     base = '84ca95af4d23eb30e65f78027aa6e53c538381c518b3f67c5f984cbee4cf1238'
@@ -383,6 +508,9 @@ def without_configuration_assets_provenance(source):
     reference = '887ed4d309a8ea591608c656ac0ab2aaf3a70f7120c99768374f68ce22447568'
     combined = '5a096d8db934a21c83fbb24fbaa81215c260c2b4a0f61c14bef470794a15d133'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest not in (base, reference, candidate, combined):
+        source = without_repository_inventory_budget(source)
+        digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest in (base, reference):
         return source
     if digest == combined:
@@ -543,6 +671,7 @@ def without_execution_wait_rounding(source):
 
 def without_child_cleanup_rounding(source):
     """Exact test-only cap-rounding inverse; historical pins remain unchanged."""
+    source = without_compiled_backend_harness(source)
     contract = json.loads((REPOSITORY / 'tests/child_cleanup_rounding_source_inverse.json').read_text(encoding='utf-8'))
     if (contract.get('base_sha256') != '9249cca10b29455d12bb4ab806b33f572a9f462890d2a2940e4e93aac4c9beb9'
             or contract.get('candidate_sha256') != '785dd4f696ee0c0a9b52f2bfbc183404c6a9980d62ee508e165b0a09ee19478b'):

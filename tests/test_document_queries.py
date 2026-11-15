@@ -185,14 +185,16 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
         with self.assertRaises(TypeError): _key(hostile)
         self.assertEqual(calls, [])
 
-    def test_dynamic_reference_unload_and_codec_remain_rejected(self):
+    def test_dynamic_reference_unload_preserves_closed_codec(self):
         for seeded in (False, True):
             if seeded:
                 self.seed()
             for text in ('SELECT Ref FROM Document.Orders','SELECT Ref FROM Document.Orders.Lines',
                          'SELECT Category FROM Document.Orders'):
-                with self.subTest(seeded=seeded,text=text), self.assertRaises((TypeError,ValueError)):
-                    self.query(text).execute().unload()
+                with self.subTest(seeded=seeded,text=text):
+                    result = self.query(text).execute()
+                    table = result.unload()
+                    self.assertEqual(len(table.rows), len(result._rows))
         for code in ('ValueToStringInternal(D.Ref)', 'New TypeDescription("DocumentRef.Orders")'):
             with self.subTest(code=code), self.assertRaises(BSLRuntimeError):
                 self.vm.execute(code)
@@ -258,9 +260,9 @@ Message(TypeOf(S.Ref)=Type("DocumentRef.Orders"));Message(S.Ref.Amount);Message(
         finally:
             context.close()
 
-    def test_checked_in_report_example_executes_end_to_end(self):
+    def test_temporary_table_report_executes_end_to_end(self):
         self.seed()
-        self.vm.execute((Path(__file__).resolve().parents[1]/'examples/document-query-report.bsl').read_text())
+        self.vm.execute('''Q=New Query("SELECT Ref, SUM(Amount) AS Total INTO LineTotals FROM Document.Orders.Lines GROUP BY Ref; SELECT C.Description AS Customer, COUNT(*) AS Orders, SUM(D.Amount) AS Amount, SUM(L.Total) AS LineAmount FROM Document.Orders AS D JOIN Catalog.Categories AS C ON D.Category=C.Ref JOIN LineTotals AS L ON D.Ref=L.Ref WHERE D.DeletionMark=FALSE GROUP BY C.Description ORDER BY Customer"); S=Q.Execute().Select(); While S.Next() Do Message(S.Customer); Message(S.Orders); Message(S.Amount); Message(S.LineAmount); EndDo;''')
         self.assertEqual(self.output, ['Customer','3','60','30'])
 
 

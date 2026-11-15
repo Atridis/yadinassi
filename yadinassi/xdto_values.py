@@ -70,9 +70,10 @@ class BSLXDTOProperty(_Readonly):
 
 class BSLXDTOValueType(_Readonly):
     _methods=_methods(('is_descendant',True,'IsDescendant ЭтоПотомок'),('validate',False,'Validate Проверить'))
-    def __init__(self,factory,name,uri=XS):self._factory=factory;self._name=name;self._uri=uri
+    def __init__(self,factory,name,uri=XS):self._factory=factory;self._name=name;self._uri=uri;self._base=None
     def __str__(self):return 'ТипЗначенияXDTO'
-    def is_descendant(self,other):return self is other
+    def is_descendant(self,other):
+        return self is other or (type(other) is BSLXDTOValueType and other._factory is self._factory and other._base is self)
     def validate(self,value):
         if type(self) is BSLXDTOObjectType:
             if type(value) is not BSLXDTODataObject or value._type is not self:raise TypeError('XDTO: неверный тип объекта')
@@ -82,7 +83,7 @@ class BSLXDTOValueType(_Readonly):
         key=name.casefold()
         if key in ('name','имя'):return self._name
         if key in ('namespaceuri','uriпространстваимен'):return self._uri
-        if key in ('basetype','базовыйтип'):return None
+        if key in ('basetype','базовыйтип'):return self._base
         return super().get_member(name)
 
 
@@ -123,7 +124,7 @@ class BSLXDTOPackageCollection(BSLXDTOPropertyCollection):
 
 def scalar(kind,value):
     """Closed conversions; no arbitrary host coercion or ambient decimal rounding."""
-    name=kind._name
+    name=kind._base._name if kind._base is not None else kind._name
     if name=='string':
         value=text(value);return value,value
     if name=='boolean':
@@ -188,7 +189,13 @@ def _prepare(prop,value,owner):
         if not prop._nil:raise ValueError('XDTO: пустое значение не разрешено')
         return None
     if (type(value) is BSLXDTODataObject or type(value) is BSLXDTODataValue):
-        if value._type is not prop._type:raise TypeError('XDTO: тип свойства не совпадает')
+        if value._type is not prop._type:
+            if type(value) is BSLXDTODataValue and type(prop._type) is BSLXDTOValueType and value._factory is prop._type._factory:
+                if prop._type._base is value._type:
+                    return BSLXDTODataValue(prop._type, value._value)
+                if value._type._base is not prop._type:
+                    raise TypeError('XDTO: тип свойства не совпадает')
+            else: raise TypeError('XDTO: тип свойства не совпадает')
         if type(value) is BSLXDTODataObject:
             if value._owner is not None:raise ValueError('XDTO: объект уже принадлежит свойству')
             current=owner;depth=0

@@ -57,11 +57,11 @@ it does not rewrite the acquisition report or claim a complete 1C implementation
 ## Runnable stock example
 
 The owned example uses public BSL and separate CLI invocations; it does not need
-browser forms. Run once against a fresh file:
+browser forms. It now uses the same canonical `examples/demo` configuration and
+its original catalogs/validation. Run once against a fresh file:
 
 ```console
-python -m yadinassi --check-xml examples/inventory_reference/source --source-profile accumulation-reference-v1 --report-json
-python -m yadinassi --create-db inventory.sqlite --import-xml examples/inventory_reference/source --source-profile accumulation-reference-v1
+python -m yadinassi --create-demo-db inventory.sqlite --import-xml examples/demo
 python -m yadinassi --f inventory.sqlite examples/inventory_reference/run.bsl
 python -m yadinassi --f inventory.sqlite examples/inventory_reference/reopen.bsl
 ```

@@ -325,8 +325,12 @@ class FormHTTPTests(unittest.TestCase):
         conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=3)
         values={'Host':self.server.authority,'Origin':self.server.origin,'Content-Type':'application/x-ndjson','X-Yadinassi-Session':self.server.token}
         values.update(headers or {})
+        # Static GET routes do not consume a body before closing the socket.
+        # Sending unused JSON races that close on Windows instead of testing HTTP.
+        if body is None:
+            body = encode_line(request()) if method == 'POST' else b''
         try:
-            conn.request(method,path,body=encode_line(request()) if body is None else body,headers=values)
+            conn.request(method,path,body=body,headers=values)
             response=conn.getresponse();return response.status,dict(response.getheaders()),response.read()
         finally:conn.close()
 

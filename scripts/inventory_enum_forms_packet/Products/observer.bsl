@@ -12,7 +12,7 @@ Function ObserveCatalogFlow(Flow)
   Object.Unit = Enums.Units.EmptyRef();
   Cleared = EnumUnitTag(Object.Unit);
   ExplicitUnitObserver();
-  Return Named + ";" + Cleared + ";" + Format(ExplicitChangeCount, "NG=0");
+  Return Named + ";" + Cleared + ";" + Format(ThisObject.ExplicitChangeCount, "NG=0");
  ElsIf Flow = 3 Then
   Object.Code = "EF0001";
   Object.Description = "Owned enum form probe";
@@ -29,7 +29,7 @@ EndFunction
 
 &AtServer
 Procedure ExplicitUnitObserver()
- ExplicitChangeCount = ExplicitChangeCount + 1;
+ ThisObject.ExplicitChangeCount = ThisObject.ExplicitChangeCount + 1;
 EndProcedure
 
 &AtServerNoContext
@@ -41,7 +41,7 @@ EndFunction
 
 &AtServer
 Procedure PrepareIndependentDraft()
- Object.Unit = ?(ProbeInstance = 1, Enums.Units.Piece, Enums.Units.Pack);
+ Object.Unit = ?(ThisObject.ProbeInstance = 1, Enums.Units.Piece, Enums.Units.Pack);
 EndProcedure
 
 &AtServer

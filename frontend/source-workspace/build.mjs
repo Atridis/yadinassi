@@ -1,0 +1,13 @@
+import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {fileURLToPath} from 'node:url';
+import path from 'node:path';
+const root=path.dirname(fileURLToPath(import.meta.url)), target=path.resolve(root,'../../yadinassi/ui/assets/source-workspace');
+await mkdir(target,{recursive:true});
+const sources={};
+for(const name of ['build.mjs','src/app.js','src/index.html','../../yadinassi/ui/assets/form/app.js','../../yadinassi/ui/assets/form/style.css'])sources[name]=createHash('sha256').update(await readFile(path.join(root,name))).digest('hex');
+await writeFile(path.join(target,'app.js'),await readFile(path.resolve(root,'../../yadinassi/ui/assets/form/app.js'),'utf8')+'\n'+await readFile(path.join(root,'src/app.js'),'utf8'));
+await copyFile(path.join(root,'src/index.html'),path.join(target,'index.html'));
+for(const name of ['style.css','LICENSE.txt'])await copyFile(path.resolve(root,'../../yadinassi/ui/assets/form',name),path.join(target,name));
+const outputs={};for(const name of ['app.js','style.css','index.html','LICENSE.txt'])outputs[name]=createHash('sha256').update(await readFile(path.join(target,name))).digest('hex');
+await writeFile(path.join(target,'build-manifest.json'),JSON.stringify({schema:'yadinassi-source-workspace-assets/0',sources,outputs},null,2)+'\n');

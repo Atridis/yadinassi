@@ -96,6 +96,7 @@ _TYPE_IDS = {
 _TREE_CODEC_TYPES = frozenset({BSLType.VALUE_TREE, BSLType.VALUE_TREE_COLUMN,
     BSLType.VALUE_TREE_COLUMN_COLLECTION, BSLType.VALUE_TREE_ROW, BSLType.VALUE_TREE_ROW_COLLECTION})
 _UNSUPPORTED_CODEC_TYPES = frozenset({
+    BSLType.COMMON_MODULE,
     BSLType.QUESTION_DIALOG_MODE, BSLType.DIALOG_RETURN_CODE,
     # Type/TypeOf identity is measured; no internal stream/identifier is admitted.
     BSLType.ACCUMULATION_RECORD_TYPE,
@@ -108,6 +109,7 @@ _UNSUPPORTED_CODEC_TYPES = frozenset({
     BSLType.FORM, BSLType.FORM_ATTRIBUTE, BSLType.FORM_FIELD, BSLType.FORM_GROUP, BSLType.FORM_BUTTON, BSLType.FORM_COMMAND, BSLType.FORM_ITEMS, BSLType.FORM_COMMANDS, BSLType.FORM_FIELD_VIEW,
     BSLType.XDTO_FACTORY, BSLType.XDTO_OBJECT, BSLType.XDTO_VALUE, BSLType.XDTO_LIST, BSLType.XDTO_VALUE_TYPE, BSLType.XDTO_OBJECT_TYPE, BSLType.XDTO_PROPERTY, BSLType.XDTO_PROPERTIES, BSLType.XDTO_PACKAGE, BSLType.XDTO_PACKAGES, BSLType.XML_FORM,
     BSLType.DOM_DOCUMENT, BSLType.DOM_ELEMENT, BSLType.DOM_ATTRIBUTE, BSLType.DOM_TEXT, BSLType.DOM_CDATA, BSLType.DOM_COMMENT, BSLType.DOM_PI, BSLType.DOM_FRAGMENT, BSLType.DOM_NODE_LIST, BSLType.DOM_ELEMENT_LIST, BSLType.DOM_ATTRIBUTE_MAP, BSLType.DOM_NODE_TYPE, BSLType.DOM_BUILDER, BSLType.DOM_WRITER,
+    BSLType.DOM_XPATH_RESULT, BSLType.DOM_NAMESPACE_RESOLVER,
     BSLType.DATA_HASHING, BSLType.HASH_FUNCTION,
     BSLType.DATA_READER, BSLType.DATA_WRITER, BSLType.READ_DATA_RESULT,
     BSLType.REGEX_RESULT, BSLType.REGEX_GROUP,
@@ -297,7 +299,7 @@ class _Writer:
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация типов ошибок пока не поддерживается")
         if kind not in _CODECS:
             raise ValueError("ЗначениеВСтрокуВнутр: для типа не задана политика сериализации Yadinassi")
-        if depth and (kind is BSLType.UUID or (kind is BSLType.TYPE and value is BSLType.UUID)):
+        if depth and kind is BSLType.TYPE and value is BSLType.UUID:
             raise ValueError("Вложенная сериализация UUID пока не поддерживается")
         if kind is BSLType.UNDEFINED:
             self.emit('{"U"}')
@@ -855,12 +857,12 @@ class _Reader:
             self.fail()
         kind = _TYPES_BY_ID[group[1].text]
         if tag == 'T':
-            if kind is BSLType.UUID:
-                self.fail()  # UUID Type record inverse has not been measured.
+            if depth and kind is BSLType.UUID:
+                self.fail()  # Nested UUID Type records remain outside the measured scope.
             return kind
         body = group[2]
         if kind is BSLType.UUID:
-            if depth or type(body) is not _Atom:
+            if type(body) is not _Atom:
                 self.fail()
             try:
                 return canonical_codec_uuid(body.text)

@@ -16,8 +16,14 @@ from .configuration_accumulation import PROFILE as ACCUMULATION, import_accumula
 
 from .configuration_accumulation_references import PROFILE as INVENTORY, import_inventory_configuration
 
+from .configuration_inventory_enums import PROFILE as INVENTORY_ENUM, import_inventory_enum_configuration
+
+from .configuration_inventory_enum_application import PROFILE as INVENTORY_ENUM_FORMS, import_inventory_application
+
+from .configuration_main_demo import PROFILE as MAIN_DEMO, import_main_demo_configuration
+
 LEGACY = 'legacy'
-PROFILES = (LEGACY, POSTING, POSTING_FORMS, ACCUMULATION, INVENTORY)
+PROFILES = (LEGACY, POSTING, POSTING_FORMS, ACCUMULATION, INVENTORY, INVENTORY_ENUM, INVENTORY_ENUM_FORMS, MAIN_DEMO)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +39,7 @@ class PreparedConfiguration:
 
     def report(self):
         config = self.configuration
-        catalogs = config.catalogs if self.profile in (LEGACY, INVENTORY) else ()
+        catalogs = config.catalogs if self.profile in (LEGACY, INVENTORY, INVENTORY_ENUM, INVENTORY_ENUM_FORMS, MAIN_DEMO) else ()
         documents = config.documents
         registers = config.information_registers if self.profile == LEGACY else config.registers
         digest = sha256(b''.join(path.encode('utf-8') + b'\0' + sha256(raw).digest()
@@ -74,19 +80,21 @@ def _prepare_imported(config, profile, numbering_policy, module_runtime, activat
             config = preflight_configuration(config)
         files = config.files
         version = 13
-    elif profile in (ACCUMULATION, INVENTORY):
+    elif profile in (ACCUMULATION, INVENTORY, INVENTORY_ENUM, INVENTORY_ENUM_FORMS, MAIN_DEMO):
         from .document_posting_program import compile_handlers
         if profile == ACCUMULATION:
             from .sqlite_accumulation_profile import _preflight_config
-        else:
+        elif profile == INVENTORY:
             from .sqlite_inventory_profile import _preflight_config
+        else:
+            from .sqlite_inventory_enum_profile import _preflight_config
         # Preserve source-aware compilation diagnostics before the storage
         # boundary's intentionally generic BackendError translation.
         compile_handlers(config)
         with location(stage='storage'):
             _preflight_config(config)
         files = config.files
-        version = 14 if profile == ACCUMULATION else 15
+        version = {ACCUMULATION:14, INVENTORY:15, INVENTORY_ENUM:16, INVENTORY_ENUM_FORMS:16, MAIN_DEMO:16}[profile]
     else:
         raise ImportRefusal(ImportDiagnostic('profile_unsupported', 'schema'))
     return PreparedConfiguration(profile, tuple(sorted(files)), numbering_policy,
@@ -105,8 +113,14 @@ def prepare_files(files, *, profile=LEGACY, numbering_policy='explicit', module_
             config = import_variant(files, profile)
         elif profile == ACCUMULATION:
             config = import_accumulation_configuration(files, accumulation_runtime=profile)
-        else:
+        elif profile == INVENTORY:
             config = import_inventory_configuration(files, inventory_runtime=profile)
+        elif profile == MAIN_DEMO:
+            config = import_main_demo_configuration(files, profile=profile)
+        elif profile == INVENTORY_ENUM_FORMS:
+            config = import_inventory_application(files, inventory_runtime=profile)
+        else:
+            config = import_inventory_enum_configuration(files, inventory_runtime=profile)
         return _prepare_imported(config, profile, numbering_policy, module_runtime, activate)
 
 
@@ -143,4 +157,10 @@ def create_prepared(path, prepared):
         return SQLiteDBContext.create_posting(path, fresh.configuration)
     if fresh.profile == ACCUMULATION:
         return SQLiteDBContext.create_accumulation(path, fresh.configuration)
+    if fresh.profile == MAIN_DEMO:
+        return SQLiteDBContext.create_main_demo(path, fresh.configuration)
+    if fresh.profile == INVENTORY_ENUM_FORMS:
+        return SQLiteDBContext.create_inventory_enum_application(path, fresh.configuration)
+    if fresh.profile == INVENTORY_ENUM:
+        return SQLiteDBContext.create_inventory_enum(path, fresh.configuration)
     return SQLiteDBContext.create_inventory(path, fresh.configuration)

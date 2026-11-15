@@ -1,0 +1,44 @@
+{
+  "backend": "interpreter",
+  "lowering": "interpreter",
+  "iterations": 10000000,
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "commit": "94775298e594eb025a8fcc362635d87e1199d8d8",
+  "source_sha256": "8df3bc2633b2c1fda1c3dc7b406c39ee24372843b1e83c3b0571b73f3a3b379a",
+  "parse_seconds": 0.0028754719969583675,
+  "elapsed_seconds": 95.2104055000018,
+  "process_cpu_seconds": 94.907148208,
+  "compile_seconds": 0.0,
+  "empty_seconds": "19.899",
+  "arithmetic_seconds": "75.294",
+  "result": "149999945000000",
+  "expected": "149999945000000",
+  "stats": {},
+  "output": [
+    "Количество итераций: 10 000 000",
+    "Пустой цикл: 19 899 мс; 19,899 с",
+    "Цикл с арифметикой: 75 294 мс; 75,294 с",
+    "Результат: 149 999 945 000 000",
+    "Ожидаемый результат: 149 999 945 000 000"
+  ],
+  "sample_label": "current",
+  "round": 2,
+  "before": {
+    "utc": "2026-11-14T19:23:24.830661+00:00",
+    "loadavg": [
+      1.251953125,
+      1.095703125,
+      1.2529296875
+    ],
+    "git_status": ""
+  },
+  "after": {
+    "utc": "2026-11-14T19:25:00.559544+00:00",
+    "loadavg": [
+      1.07666015625,
+      1.0791015625,
+      1.23095703125
+    ]
+  }
+}
