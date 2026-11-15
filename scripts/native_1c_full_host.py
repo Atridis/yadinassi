@@ -94,7 +94,11 @@ def post_create_requested(source: str) -> bool:
 source = Path(sys.argv[2])
 source_text = source.read_text(encoding="utf-8-sig")
 post_create = post_create_requested(source_text)
-options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
+# This driver is an explicitly selected interpreter oracle unless its caller
+# requests strict evidence. Never inherit the application default here.
+options = {"execution_backend": "interpreter"}
+if len(sys.argv) > 3:
+    options["native_target"] = sys.argv[3]
 if len(sys.argv) > 4:
     if len(sys.argv) != 6 or sys.argv[4] != 'compiled-strict':
         raise ValueError('invalid execution backend')
@@ -456,7 +460,8 @@ context = SQLiteDBContext(sys.argv[4])
 if context.connection_string() != "SQLite=" + str(Path(sys.argv[4]).absolute()):
     raise RuntimeError("invalid SQLite host identity")
 vm = Interpreter(lambda value: (_ for _ in ()).throw(RuntimeError("unexpected message")),
-                 database_context=context, compilation_profile=sys.argv[2])
+                 database_context=context, compilation_profile=sys.argv[2],
+                 execution_backend="interpreter")
 vm.execute(Path(sys.argv[3]).read_text(encoding="utf-8-sig"))
 values = list(vm.execute("ВычислитьПробу()"))
 result = []

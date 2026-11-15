@@ -293,11 +293,11 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         session = self.make(); before = session.snapshot()
         real_vm = sim._EventInterpreter
         owner = self
-        class Race(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink)
-                owner.mutate('UPDATE database_info SET generation=2')
-        with patch.object(sim, '_EventInterpreter', Race):
+        original_init = real_vm.__init__
+        def racing_init(vm, sink):
+            original_init(vm, sink)
+            owner.mutate('UPDATE database_info SET generation=2')
+        with patch.object(real_vm, '__init__', racing_init):
             with self.assertRaisesRegex(BackendError, 'schema_changed'):
                 session.change_description(' x ', revision=0)
         self.assertIs(session.snapshot(), before)
@@ -373,17 +373,32 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
 
     def test_execution_failure_after_private_change_does_not_retry_or_adopt(self):
         real_vm = sim._EventInterpreter; created = []; closed = []
-        class Failure(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink); created.append(self)
-            def visit_ExpressionStatement(self, node):
-                yield from super().visit_ExpressionStatement(node)
+        original_init = real_vm.__init__; original_close = real_vm.close
+        original_after = real_vm.compiled_after
+        messages = []; failures = []
+        owner = self
+        def capture_init(vm, sink):
+            def capture_message(record):
+                sink(record); messages.append(record)
+            original_init(vm, capture_message); created.append(vm)
+        def fail_after(vm, node, value):
+            result = original_after(vm, node, value)
+            if sim.syntax_kind(node) is sim.ast.ExpressionStatement:
+                # The exact production adapter executes both backends. Inject
+                # only after the real private mutation AND message have happened.
+                owner.assertEqual(len(messages), len(failures) + 1)
+                description = vm.variables['объект'].get_member('Description')
+                owner.assertEqual(description, 'y' if not failures else 'x')
+                failures.append(description)
                 raise ValueError('failure after private mutation and message')
-            def close(self):
-                closed.append(self); return super().close()
+            return result
+        def capture_close(vm):
+            closed.append(vm); return original_close(vm)
         for action in ('change', 'prepare'):
             session = self.make(description=' x '); before = session.snapshot()
-            with patch.object(sim, '_EventInterpreter', Failure), \
+            with patch.object(real_vm, '__init__', capture_init), \
+                 patch.object(real_vm, 'compiled_after', fail_after), \
+                 patch.object(real_vm, 'close', capture_close), \
                  patch.object(self.backend, 'read_form_source', wraps=self.backend.read_form_source) as read:
                 with self.subTest(action=action), self.assertRaises((ValueError, BSLError)):
                     if action == 'change': session.change_description(' y ', revision=0)
@@ -393,7 +408,24 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
             self.assertFalse(session.stale)
         self.assertEqual(len(created), 2)
         self.assertEqual(created, closed)
+        self.assertEqual(failures, ['y', 'x'])
+        self.assertEqual(len(messages), 2)
         self.assertEqual([vm.variables['объект'].get_member('Description') for vm in created], ['y', 'x'])
+
+    def test_strict_rejects_unregistered_event_adapter_before_adoption(self):
+        from yadinassi.compiled_backend import CompiledUnsupported
+        from yadinassi.execution_policy import execution_backend_policy
+        class Unknown(sim._EventInterpreter):
+            pass
+        session = self.make(); before = session.snapshot()
+        with execution_backend_policy('compiled-strict'), \
+             patch.object(sim, '_EventInterpreter', Unknown), \
+             patch.object(self.backend, 'read_form_source', wraps=self.backend.read_form_source) as read:
+            with self.assertRaisesRegex(CompiledUnsupported, 'unregistered Python interpreter context adapter'):
+                session.change_description('new', revision=0)
+        self.assertEqual(read.call_count, 1)
+        self.assertIs(session.snapshot(), before)
+        self.assertFalse(session.stale)
 
     def test_repeated_prepares_and_refusal_are_pure_informational_results(self):
         session = self.make(); before = session.change_description(' x ', revision=0)
@@ -458,16 +490,16 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         real_vm = sim._EventInterpreter; owner = self
         def capture():
             handle = real_connect(); handles.append(handle); return handle
-        class Spy(real_vm):
-            def __init__(self, sink):
-                for handle in handles:
-                    with owner.assertRaises(sqlite3.ProgrammingError): handle.execute('SELECT 1')
-                owner.assertIsNone(owner.backend._active)
-                # A real independent writer commits during the BSL interval.
-                owner.mutate('UPDATE database_info SET name=name')
-                super().__init__(sink); instances.append(self)
+        original_init = real_vm.__init__
+        def checking_init(vm, sink):
+            for handle in handles:
+                with owner.assertRaises(sqlite3.ProgrammingError): handle.execute('SELECT 1')
+            owner.assertIsNone(owner.backend._active)
+            # A real independent writer commits during the BSL interval.
+            owner.mutate('UPDATE database_info SET name=name')
+            original_init(vm, sink); instances.append(vm)
         with patch.object(self.backend, '_connect', side_effect=capture), \
-             patch.object(sim, '_EventInterpreter', Spy):
+             patch.object(real_vm, '__init__', checking_init):
             session = self.make()
             session.change_description('new', revision=0)
             session.prepare_save(revision=1)
@@ -479,10 +511,10 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
 
     def test_no_activation_marshalling_module_registration_or_database_write(self):
         real_vm = sim._EventInterpreter; instances = []
-        class Spy(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink); instances.append(self)
-        with patch.object(sim, '_EventInterpreter', Spy), \
+        original_init = real_vm.__init__
+        def capture_init(vm, sink):
+            original_init(vm, sink); instances.append(vm)
+        with patch.object(real_vm, '__init__', capture_init), \
              patch.object(sim.Interpreter, 'execute', side_effect=AssertionError('execute')), \
              patch.object(sim.Interpreter, 'execute_program', side_effect=AssertionError('module')), \
              patch.object(sim.Interpreter, '_new_server_activation', side_effect=AssertionError('marshalling')), \

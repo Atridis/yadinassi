@@ -192,7 +192,6 @@ class ConfigurationApplicationTests(unittest.TestCase):
                 ConfigurationProcess(ROOT/'counter', ROOT/'existing.sqlite')
                 command, env = start.call_args.args
                 expected = [sys.executable, '--configuration-ui-runtime', str((ROOT/'counter').resolve()), '--f', str((ROOT/'existing.sqlite').resolve())]
-                if mode != 'interpreter':
-                    expected.extend(['--execution-backend', mode])
+                expected.extend(['--execution-backend', mode])
                 self.assertEqual(command, expected)
                 self.assertEqual(env['PYTHONIOENCODING'], 'utf-8')

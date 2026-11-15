@@ -33,7 +33,7 @@ unspecified `Interpreter()` construction exercise snapshot. However:
 - A successful process return code is not a witness of compiled execution or
   full semantic equivalence. Existing source-bound triage gaps remain separate.
 
-A static AST inventory on the migration candidate found 895 direct
+A static AST inventory on the initial migration candidate (902f10be) found 895 direct
 `Interpreter(...)` calls without `execution_backend`, across 401 test files;
 58 explicit compiled-strict calls, 3 interpreter, 1 hybrid, 7 dynamic expressions
 and 1 invalid-mode test. These counts exclude aliases, subclasses, embedded
@@ -56,3 +56,23 @@ A green full is strong regression evidence for changing the default, not proof
 of universal parity. Release assessment must also classify known snapshot triage
 gaps, exercise real form/configuration and dynamic-code boundaries, and review
 cold/warm performance separately. The interpreter rollback stays available.
+
+## Initial CI findings and repairs
+
+The first default candidate exposed selection and lifecycle issues, not merely
+an all-green switch. Native oracle parent APIs selected interpreter but their
+child scripts omitted that selection and inherited snapshot. The child scripts
+now bind the declared interpreter oracle explicitly; the opt-in strict evidence
+branch, time caps and acceptance checks are unchanged. This does not claim that
+the snapshot collections workload meets the native oracle's time budget.
+
+Tests of legacy `_prepared_control_flow` caches and live original-AST mutation
+are explicit interpreter tests, with separate default snapshot version/re-admission
+coverage. Generic BSL tests retain default selection. Form failure injection
+keeps the exact registered adapter rather than admitting arbitrary subclasses.
+Windows additionally exposed actual snapshot temporary-lifetime regressions
+through HTTP file cleanup. Compiler-owned assignment RHS temporaries are released
+at the assignment boundary and converted-exception temporaries are cleared during
+reraising to avoid self-retaining traceback cycles. Cross-platform weakref/file
+handle tests cover release, live aliases, replacement and returned/byref values.
+HTTP stays on the application default; fresh Windows CI remains required.
