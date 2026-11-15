@@ -8,6 +8,7 @@ from .source_constant_store import _json, _encode, _decode
 _MAX_ROWS=1000
 _MAX_SECTION_BYTES=262144
 _MAX_DOCUMENT_BYTES=1048576
+_MAX_STORAGE_BYTES=16777216
 _SECTION_DDL=(
  'CREATE TABLE source_document_section(document_identity TEXT NOT NULL, record_identity TEXT NOT NULL, section_identity TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(document_identity,record_identity,section_identity), FOREIGN KEY(document_identity,record_identity) REFERENCES source_document_record(document_identity,record_identity))',
 )
@@ -69,7 +70,7 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         # malformed-row failure first, as before, and do not decode/cache here.
         invalid,count,total=self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(section_identity)!='text' OR length(CAST(section_identity AS BLOB))!=36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>262144 THEN 1 ELSE 0 END),0),count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section").fetchone()
         if invalid:raise ValueError('section storage bounds')
-        if count>160000 or total>16777216:raise ValueError('section aggregate storage bound')
+        if count>160000 or total>_MAX_STORAGE_BYTES:raise ValueError('section aggregate storage bound')
     def _sections(self,definition,identity):
         # Fetch at most the declared inventory plus one: an extra row proves
         # corruption without an aggregate pre-query or unbounded materialization.
@@ -126,12 +127,15 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         # One globally bounded ordered stream, even across many document families.
         from itertools import groupby
         payloads=self._connection.execute('SELECT document_identity,record_identity,section_identity,payload FROM source_document_section ORDER BY document_identity,record_identity,section_identity LIMIT 160001')
-        seen=set();total=0
+        seen=set();total=0;total_bytes=0
         def bounded():
-            nonlocal total
+            nonlocal total,total_bytes
             for row in payloads:
                 total+=1
                 if total>160000:raise ValueError('section aggregate storage bound')
+                if type(row[3]) is str:
+                    total_bytes+=len(row[3].encode())
+                    if total_bytes>_MAX_STORAGE_BYTES:raise ValueError('section aggregate storage bound')
                 yield row
         try:
             for did,rows in groupby(bounded(),key=lambda row:row[0]):

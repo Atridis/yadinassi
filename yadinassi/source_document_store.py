@@ -89,11 +89,15 @@ class SourceDocumentStore(SourceCatalogStore):
         super().validate_records()
         known = {str(d.identity):d for d in self.document_definitions.values()}
         rows=self._connection.execute('SELECT document_identity,record_identity,revision,payload,number FROM source_document_record LIMIT ?', (_MAX_RECORDS+1,))
+        total_bytes=0
         try:
             for index,(cid,rid,rev,raw,number) in enumerate(rows):
                 if index>=_MAX_RECORDS:raise ValueError('source document record bound')
                 if cid not in known:raise ValueError('source document record identity/revision integrity')
                 _record_identity(rid,rev,'document')
+                if type(raw) is str:
+                    total_bytes+=len(raw.encode())
+                    if total_bytes>_MAX_RECORD_BYTES:raise ValueError('source document record bounds')
                 if decode_record(known[cid],raw)['number']!=number:
                     raise ValueError('source document number integrity')
         finally:rows.close()

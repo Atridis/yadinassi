@@ -137,11 +137,15 @@ class SourceCatalogStore(SourceConstantStore):
     def validate_records(self):
         known = {str(d.identity):d for d in self.catalog_definitions.values()}
         rows=self._connection.execute('SELECT catalog_identity,record_identity,revision,payload,code FROM source_catalog_record LIMIT ?', (_MAX_RECORDS+1,))
+        total_bytes=0
         try:
             for index,(cid,rid,rev,raw,code) in enumerate(rows):
                 if index>=_MAX_RECORDS:raise ValueError('source catalog record bound')
                 if cid not in known:raise ValueError('source catalog record identity/revision integrity')
                 _record_identity(rid,rev,'catalog')
+                if type(raw) is str:
+                    total_bytes+=len(raw.encode())
+                    if total_bytes>_MAX_RECORD_BYTES:raise ValueError('source catalog record bounds')
                 if decode_record(known[cid],raw)['code']!=code:
                     raise ValueError('source catalog code integrity')
         finally:rows.close()
