@@ -114,3 +114,19 @@ labels and numeric flow/instance identities, with nonce validation; no paths,
 raw exception text, logs or nonce are exported. Partial lifecycle diagnostics
 never satisfy the complete acceptance gate. Timeouts, rights and all eight groups
 remain unchanged.
+
+The first repaired native acquisition (43700977876, head a562889d) still timed out:
+entered=true, completed=false, lifecycle_progress=[] and quiet=true. Artifact
+14156119321 SHA256 4fef4386a16cacc26f349701b272edfb82b8b4706d4e95e7baeac83164b6d5cb
+was verified, including ZIP CRC. This only localizes failure before the first
+completed lifecycle write, not a proven rights or platform defect.
+
+A subsequent diagnostic refresh merges audited main 2e346ad3 and checks loaded
+configuration modules with Designer /CheckConfig -ThickClientManagedApplication -Server
+before Enterprise. Existing 120-second process and zero DumpResult/quiet gates
+remain mandatory. Failure exports only allowlisted category, authored module,
+bounded source line and authored identifier; no raw native text leaves the
+container. This check is diagnostic, not an accepted eight-scenario measurement.
+
+CheckConfig covers loaded configuration client/server contexts, not the external
+launcher EPF. A clean check does not rule out launcher/runtime issues.

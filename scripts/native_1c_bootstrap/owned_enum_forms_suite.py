@@ -4,7 +4,8 @@ import json
 import os
 import stat
 from inventory_enum_behavior import fixture
-from inventory_enum_forms_packet import configuration, material
+from inventory_enum_forms_packet import configuration, material, failure_diagnostics
+import diagnostics as sanitizer
 from pathlib import Path
 import full_suite as full
 from inventory_enum_forms_packet import route
@@ -24,9 +25,9 @@ INPUT_FILES={
     'scripts/native_1c_bootstrap/run_owned_enum_forms_stage.py':'bootstrap/run_stage.py',
     'scripts/native_1c_bootstrap/owned_enum_forms_suite.py':'bootstrap/owned_enum_forms_suite.py',
     **{'scripts/inventory_enum_forms_packet/'+name:'bootstrap/inventory_enum_forms_packet/'+name
-       for name in ('__init__.py','route.py','records.py','assets.py','inputs.py','configuration.py','material.py',*PACKET_HASHES)},
+       for name in ('__init__.py','route.py','records.py','assets.py','inputs.py','configuration.py','material.py','failure_diagnostics.py',*PACKET_HASHES)},
 }
-PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','install_load','install_update','install_redump','install_material','configuration','final')
+PHASES=('prerequisites','inputs','build','redump','enterprise','markers','install','install_load','install_update','install_redump','install_material','check_config','configuration','final')
 
 
 def dump_files(root):
@@ -60,7 +61,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'roundtrip_sha256':None,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'config_verified':False,'lifecycle_verified':False,'output_sha256':None,'output_size':None,
-            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'native_diagnostic':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -143,6 +144,8 @@ def run_suite(platform,root,inputs,nonce):
             report['redump_projection']=material.diagnostic(expected_configuration,actual_configuration)
             raise full.FullError('module_mismatch') from None
         report['config_verified']=True
+        phase='check_config'
+        designer('check',['/CheckConfig','-ThickClientManagedApplication','-Server'])
         src=root/'src';src.mkdir()
         for relative,raw in prepared.items():
             target=src/relative;target.parent.mkdir(parents=True,exist_ok=True)
@@ -226,6 +229,8 @@ def run_suite(platform,root,inputs,nonce):
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
+        if phase in ('check_config','enterprise'):
+            report['native_diagnostic'] = failure_diagnostics.collect(root, full, sanitizer, label='check' if phase == 'check_config' else 'enterprise')
         if phase == 'enterprise':
             try:
                 report['lifecycle_progress'] = route.lifecycle_progress(

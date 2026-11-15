@@ -1,7 +1,7 @@
 """Source-owned synchronous constant value managers, not native parity."""
 from contextvars import ContextVar
 from .owned_syntax import syntax_kind
-from .values import BSLObject, HostFunction
+from .values import BSLObject, HostFunction, InterpreterCall
 from .syntax import ast
 from .configuration_source_runtime import _SourceInterpreter
 from .source_constants_runtime import SourceConstants
@@ -72,7 +72,7 @@ class SourceConstantValueManager(BSLObject):
         operation = aliases.get(name.casefold())
         if operation is None:
             raise ValueError('unsupported value-manager property or exported routine: ' + name)
-        return HostFunction(name, ValueManagerCall(self, operation), returns_value=operation == 'metadata')
+        return HostFunction(name, ValueManagerCall(self, operation).descriptor(), returns_value=operation == 'metadata')
 
     def authorize(self, caller):
         store = self.owner._store(caller)
@@ -163,7 +163,8 @@ def create_manager(caller, owner, name):
     manager = SourceConstantValueManager(owner, definition.name)
     if module_files:
         from .configuration_modules import compile_module
-        program = compile_module(app.files[path], path, 'server', common=False)
+        program = compile_module(app.files[path], path, 'server', common=False,
+                                 compilation_profile=app.compilation_profile)
         reserved = {'value', 'значение', 'thisobject', 'этотобъект', '__constant_cancel'} | _STANDARD_METHODS
         if any((type(node) is ast.Var and any(n.casefold() in reserved for n in node.names))
                or (type(node) is ast.Routine and (node.name.casefold() in reserved
@@ -284,10 +285,25 @@ class ValueManagerCall:
     def __call__(self, *args):
         raise ValueError('value manager requires interpreter invocation')
 
+    def authorize(self, caller):
+        if self.operation == 'create':
+            from .source_constants_runtime import SourceConstant
+            if type(self.receiver) is not SourceConstant:
+                raise TypeError('value manager creation requires a constant')
+            return self.receiver._owner._store(caller)
+        if self.operation not in ('read', 'write', 'metadata'):
+            raise ValueError('invalid value manager operation')
+        if type(self.receiver) is not SourceConstantValueManager:
+            raise TypeError('value manager operation requires a value manager')
+        return self.receiver.authorize(caller)
+
+    def descriptor(self):
+        return InterpreterCall(0, 0, self.authorize, self.invoke)
+
     def invoke(self, caller, values):
         receiver = self.receiver
         owner = receiver._owner if self.operation == 'create' else receiver.owner
-        store = owner._store(caller)
+        store = self.authorize(caller)
         if values:
             raise TypeError('constant value manager method takes no arguments')
         if self.operation == 'create':

@@ -387,14 +387,45 @@ class EnumFormsFailureProgressTests(unittest.TestCase):
         nonce='a'*32
         report=stage.empty_report(nonce)
         progress=[dict(flow=1,instance=1,code='create')]
-        report.update(status='failed',failure_kind='timeout',failure_phase='enterprise',lifecycle_progress=progress)
+        report.update(status='failed',failure_kind='timeout',failure_phase='enterprise',lifecycle_progress=progress,
+                      native_diagnostic=dict(category='compile_error',module='ProductsCard',line=12,identifier='ProbeFlow'))
         envelope=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce=nonce,
                       report=dict(status='stage3_failed',native_tests_completed=False,stage3=report),outputs=[])
         validator=lambda raw,**kwargs:json.loads(raw)
         with self.assertRaises(host.FormError) as caught:
             host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
         self.assertEqual(caught.exception.native_failure['lifecycle_progress'],progress)
+        self.assertEqual(caught.exception.native_failure['native_diagnostic']['module'],'ProductsCard')
         progress[0]['code']='/private/path'
         with self.assertRaises(host.FormError) as caught:
             host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
         self.assertFalse(hasattr(caught.exception,'native_failure'))
+
+
+class EnumFormsNativeDiagnosticTests(unittest.TestCase):
+    def test_only_finite_owned_location_and_identifier_exported(self):
+        import sys
+        sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
+        import diagnostics
+        from scripts.inventory_enum_forms_packet import failure_diagnostics as diagnostic
+        value=diagnostic.summarize('{Справочник.Products.Форма.Card.Форма(12, 4)}: Переменная не определена (ProbeFlow)', diagnostics)
+        self.assertEqual(value['module'],'ProductsCard')
+        self.assertEqual(value['line'],12)
+        diagnostic.validate(value,set())
+        private=diagnostic.summarize('{Private.Module(12, 4)}: Переменная не определена (secret_value)', diagnostics)
+        self.assertIsNone(private['module'])
+        self.assertIsNone(private['identifier'])
+        for change in (dict(module='/private'),dict(identifier='secret'),dict(line=True),dict(line=126)):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                diagnostic.validate({**value,**change},set())
+
+    def test_check_uses_bounded_designer_and_closed_phase(self):
+        import sys
+        sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
+        import owned_enum_forms_suite as stage
+        import native_1c_owned_enum_forms_profile as host
+        self.assertIn('check_config',stage.PHASES)
+        self.assertEqual(stage.PHASES,host.PHASES)
+        source=(ROOT.parent/'native_1c_bootstrap/owned_enum_forms_suite.py').read_text()
+        self.assertIn("designer('check',['/CheckConfig','-ThickClientManagedApplication','-Server'])",source)
+        self.assertLess(source.index("designer('check'"),source.index("phase='enterprise'"))
