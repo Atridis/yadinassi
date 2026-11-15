@@ -425,3 +425,43 @@ class AcquisitionContracts(unittest.TestCase):
         self.assertEqual(len(application.splitlines()),d.LIMITS['ManagedApplicationModule'])
         for name in ('ClientProbe','ServerProbe','DualProbe'):
             self.assertEqual(len(packet()[f'CommonModules/{name}/Ext/Module.bsl'].splitlines()),d.LIMITS[name])
+
+    def test_check_console_known_failure_and_conflict(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp);(root/'check.log').write_bytes(b'Configuration check')
+            console=root/'check-console.log'
+            console.write_bytes('{CommonModule.DualProbe.Module(11)}: expected expression <?>Client'.encode())
+            value=suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check')
+            self.assertEqual(value,dict(category='compile_error',module='DualProbe',line=11,identifier='Client'))
+            (root/'check.log').write_bytes(b'access denied')
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check')['category'],'conflicting_evidence')
+            console.write_bytes(b'x'*65537)
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check')['category'],'evidence_invalid')
+
+    def test_check_console_symlink_closed(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp);(root/'check.log').write_bytes(b'Configuration check')
+            (root/'private').write_bytes(b'secret')
+            try:(root/'check-console.log').symlink_to(root/'private')
+            except OSError as error:
+                if sys.platform=='win32' and getattr(error,'winerror',None)==1314:self.skipTest('Windows symlink privilege unavailable')
+                raise
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check')['category'],'evidence_invalid')
+
+    def test_empty_console_preserves_out_and_console_only(self):
+        import tempfile
+        _,suite=self.adapters()
+        known=b'{CommonModule.DualProbe.Module(11)}: expected expression <?>Client'
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp);primary=root/'check.log';console=root/'check-console.log'
+            primary.write_bytes(known);console.write_bytes(b'')
+            expected=dict(category='compile_error',module='DualProbe',line=11,identifier='Client')
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check'),expected)
+            primary.write_bytes(b'');console.write_bytes(known)
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check'),expected)
+            primary.unlink()
+            self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check'),expected)

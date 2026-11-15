@@ -22,7 +22,10 @@ OWNED_IDENTIFIERS = frozenset({'Client','Server','AtClient','AtServer',
     'ClientExport','ServerExport'})
 COMPILE_PHRASES = ('неизвестная инструкция препроцессора', 'неизвестный оператор',
     'неизвестная директива препроцессора', 'unknown preprocessor instruction',
-    'unknown preprocessor directive', 'ожидается ключевое слово', 'expected keyword')
+    'unknown preprocessor directive', 'ожидается ключевое слово', 'expected keyword',
+    'ожидается имя', 'ожидается выражение', 'неопознанный оператор',
+    'неизвестный идентификатор препроцессора', 'expected identifier',
+    'expected expression', 'unrecognized statement', 'unknown preprocessor symbol')
 
 def summarize(text, sanitizer):
     summary=sanitizer.summarize_text(text)
@@ -70,8 +73,16 @@ def collect(root, full, sanitizer, *, label="enterprise"):
     # Caller supplies its exclusive TemporaryDirectory root, never a path from1C.
     # secure_bytes rejects links/nonregular files and enforces read/stat bounds.
     try:
-        raw=full.secure_bytes(root/(label+'.log'),MAX_LOG)
-        summary=summarize(sanitizer.native_text(raw),sanitizer)
+        # Designer may use only /Out or only stdout. Empty owned logs are valid;
+        # missing both, links/nonregular files and oversized logs fail closed.
+        texts=[]
+        for suffix in ('.log','-console.log'):
+            path=root/(label+suffix)
+            if path.exists() or path.is_symlink():
+                texts.append(sanitizer.native_text(full.secure_bytes(path,MAX_LOG,allow_empty=True)))
+        if not texts:raise ValueError('missing diagnostic logs')
+        text='\n'.join(texts)
+        summary=summarize(text,sanitizer)
         value={key:summary[key] for key in empty()}
         return validate(value,sanitizer.IDENTIFIERS)
     except (OSError,ValueError,full.FullError):
