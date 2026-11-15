@@ -86,15 +86,16 @@ EndProcedure
 
 &AtClient
 Procedure FinishFlow() Export
+ Var SavedReopenKey;
  Progress("finish_entered");
  WaitTurns = WaitTurns + 1;
  If Flow = 3 And CompletedCount = 1 And ReopenKey <> Undefined Then
   Progress("before_reopen");
-  Key = ReopenKey;
+  SavedReopenKey = ReopenKey;
   Progress("reopen_key_copied");
   ReopenKey = Undefined;
   Progress("reopen_key_cleared");
-  If Not OpenOwned(2, Key) Then Return; EndIf;
+  If Not OpenOwned(2, SavedReopenKey) Then Return; EndIf;
  EndIf;
  If CompletedCount <> ExpectedCount Then
   If WaitTurns >= 15 Then ЗавершитьРаботуСистемы(Ложь); Return; EndIf;

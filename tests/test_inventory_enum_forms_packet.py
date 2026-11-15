@@ -546,3 +546,11 @@ class ClosureDiagnosticTests(unittest.TestCase):
             self.assertIn('Progress("'+phase+'");',route.module().decode())
             with self.assertRaises(ValueError):route.launcher_progress(json.dumps(value).encode(),'b'*32)
         self.assertFalse(route.valid_launcher_progress(dict(phase='callback_secret',flow=3)))
+
+    def test_reopen_reference_uses_explicit_local_storage(self):
+        from scripts.inventory_enum_forms_packet import route
+        source=route.module().decode()
+        self.assertIn('Procedure FinishFlow() Export\n Var SavedReopenKey;',source)
+        self.assertIn('SavedReopenKey = ReopenKey;',source)
+        self.assertIn('OpenOwned(2, SavedReopenKey)',source)
+        self.assertNotIn('  Key = ReopenKey;',source)

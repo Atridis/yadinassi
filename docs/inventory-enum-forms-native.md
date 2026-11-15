@@ -239,3 +239,21 @@ finite milestones after key copy/reset, at OpenOwned entry and after inserting
 the Key parameter distinguish these preparation steps. No variable rename,
 permissions change, callback bypass or claimed fix is made. The marker remains
 a last-phase diagnostic, not a full event history or success evidence.
+
+### Explicit local reopen-key candidate (2026-11-15)
+
+Exact run43758395413 at9a138ae0 still stopped at before_reopen, without
+reopen_key_copied (artifact14179258209 SHA256
+0b51b348e500e971662259afa2659e6856bf84da5e8beac0a95d8618df16d545).
+This narrows the boundary to the implicit Key assignment or its following
+marker write. Primary-source searches did not confirm a built-in Key collision;
+that explanation remains a hypothesis. The next candidate uses explicitly
+declared local SavedReopenKey for the same reference transfer before clearing
+the module variable. It changes neither permissions nor OpenOwned's Key
+parameter contract. Only fresh native evidence can establish the outcome.
+The official 8.3.27 Developer Guide sections4.4 and4.6.1 support this defensive
+scope choice: assignment to an undeclared name matching a context property
+can raise a runtime/configuration-check error; explicit Var establishes a local.
+https://1c-dn.com/library/tutorials/1c_enterprise_developer_guide_8_3_27/?sphrase_id=1895754
+This general rule does not independently establish that Key is that property
+in this fixture; the candidate's outcome remains to be measured.
