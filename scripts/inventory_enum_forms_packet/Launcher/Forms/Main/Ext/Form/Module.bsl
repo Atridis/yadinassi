@@ -26,22 +26,43 @@ Procedure NextFlow() Export
  EndIf;
  WaitTurns = 0; CompletedCount = 0; ExpectedCount = ?(Flow = 3 Or Flow = 8, 2, 1);
  SeenOne = False; SeenTwo = False; PayloadOne = ""; PayloadTwo = ""; ReopenKey = Undefined;
- OpenOwned(1, Undefined);
- If Flow = 8 Then OpenOwned(2, Undefined); EndIf;
+ If Not OpenOwned(1, Undefined) Then Return; EndIf;
+ If Flow = 8 Then
+  If Not OpenOwned(2, Undefined) Then Return; EndIf;
+ EndIf;
  AttachIdleHandler("FinishFlow", 1, True);
 EndProcedure
 
 &AtClient
-Procedure OpenOwned(Instance, Key)
+Function OpenOwned(Instance, Key)
  P = New Structure("Flow,Instance,TracePath,Nonce", Flow, Instance, Request.trace, Request.nonce);
  If Key <> Undefined Then P.Insert("Key", Key); EndIf;
  N = New CallbackDescription("Completed", ThisObject, New Structure("Flow,Instance", Flow, Instance));
  Name = ?(Flow <= 3 Or Flow = 8, "Catalog.Products.Form.Card", "Document.Receipt.Form.Card");
  // True forces a distinct instance. No reuse of an earlier managed form.
  Progress("before_open");
- OpenForm(Name, P, ThisObject, True, Undefined, Undefined, N);
+ Try
+  OpenForm(Name, P, ThisObject, True, Undefined, Undefined, N);
+ Except
+  // Finite diagnosis only: never write native text, paths or error details.
+  Description = Lower(Left(ErrorDescription(), 4096));
+  Phase = "open_error_unknown";
+  If StrFind(Description, "недостаточно прав") > 0 Or StrFind(Description, "access denied") > 0 Then
+   Phase = "open_error_access";
+  ElsIf StrFind(Description, "переменная не определена") > 0 Or StrFind(Description, "variable is not defined") > 0 Then
+   Phase = "open_error_variable";
+  ElsIf StrFind(Description, "поле объекта не обнаружено") > 0 Or StrFind(Description, "object field not found") > 0 Then
+   Phase = "open_error_field";
+  ElsIf StrFind(Description, "метод объекта не обнаружен") > 0 Or StrFind(Description, "object method not found") > 0 Then
+   Phase = "open_error_method";
+  EndIf;
+  Progress(Phase);
+  ЗавершитьРаботуСистемы(Ложь);
+  Return False;
+ EndTry;
  Progress("after_open");
-EndProcedure
+ Return True;
+EndFunction
 
 &AtClient
 Procedure Completed(Result, Additional) Export
@@ -62,7 +83,7 @@ Procedure FinishFlow() Export
  WaitTurns = WaitTurns + 1;
  If Flow = 3 And CompletedCount = 1 And ReopenKey <> Undefined Then
   Key = ReopenKey; ReopenKey = Undefined;
-  OpenOwned(2, Key);
+  If Not OpenOwned(2, Key) Then Return; EndIf;
  EndIf;
  If CompletedCount <> ExpectedCount Then
   If WaitTurns >= 15 Then ЗавершитьРаботуСистемы(Ложь); Return; EndIf;

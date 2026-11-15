@@ -231,7 +231,7 @@ def run_suite(platform,root,inputs,nonce):
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
         if phase in ('check_config','enterprise'):
             report['native_diagnostic'] = failure_diagnostics.collect(root, full, sanitizer, label='check' if phase == 'check_config' else 'enterprise')
-        if phase == 'enterprise':
+        if phase in ('enterprise','markers'):
             try:
                 report['launcher_progress'] = route.launcher_progress(
                     full.secure_bytes(root/'progress.json', route.MAX_MARKER), nonce)

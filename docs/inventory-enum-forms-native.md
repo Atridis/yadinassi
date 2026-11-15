@@ -142,3 +142,13 @@ These markers do not replace lifecycle/observation acceptance and contain no
 paths or exception text. Generic run 43706442571 separately failed collections
 interpreter_timeout while the other five comparisons matched; its failure is not
 relabelled as infrastructure or native semantic success.
+
+Run 43712681367 (c37555f7) localized the timeout to flow 1 before OpenForm
+returned: launcher_progress=before_open, lifecycle empty. CheckConfig passed;
+this is not proof that rights or a particular child method caused the failure.
+Artifact 14161111966 SHA256
+05026758a8db01ac2df75734e7f6b3e8c686ca639caf58f5d3a8e99d6d172349 is verified.
+The next diagnostic catches OpenForm errors and emits only a closed error phase
+(access/variable/field/method/unknown), then terminates without a completion
+marker. Native error text stays in memory and is never exported. Existing
+process deadlines, minimal rights and success acceptance remain unchanged.

@@ -459,3 +459,18 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
             diagnostic.validate(value,set())
             (root/'enterprise-console.log').write_bytes(b'x'*(diagnostic.MAX_LOG+1))
             self.assertEqual(diagnostic.collect(root,full_suite,diagnostics)['category'],'evidence_invalid')
+
+    def test_open_error_is_closed_and_never_completion(self):
+        import json
+        from scripts.inventory_enum_forms_packet import route
+        for phase in ('open_error_unknown','open_error_access','open_error_variable','open_error_field','open_error_method'):
+            value=dict(schema='native-owned-enum-forms-progress-v1',nonce='a'*32,
+                       phase=phase,flow=1,source_sha256=route.SOURCE_SHA256,form_sha256=route.FORM_SHA256)
+            self.assertEqual(route.launcher_progress(json.dumps(value).encode(),'a'*32),dict(phase=phase,flow=1))
+        source=route.module().decode()
+        self.assertIn('Try\n  OpenForm',source)
+        self.assertIn('Left(ErrorDescription(), 4096)',source)
+        self.assertNotIn('SaveJSON(Request.progress, Description)',source)
+        self.assertIn('Progress(Phase);\n  ЗавершитьРаботуСистемы(Ложь);\n  Return False;',source)
+        self.assertIn('EndTry;\n Progress("after_open");\n Return True;',source)
+        self.assertEqual(source.count('If Not OpenOwned('),3)
