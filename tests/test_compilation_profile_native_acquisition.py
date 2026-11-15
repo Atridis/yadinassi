@@ -554,3 +554,17 @@ class AcquisitionContracts(unittest.TestCase):
             host.validate_envelope(self.wire(value),'a'*32,hashes,validator=lambda raw,**kw:json.loads(raw))
         self.assertTrue(caught.exception.native_failure['error_marker'])
         self.assertFalse(caught.exception.native_failure['event1_done'])
+
+    def test_progress_marker_is_finite_and_bound(self):
+        import tempfile
+        _,suite=self.adapters()
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            path=Path(tmp)/'trace.json'
+            for n in range(16):
+                value=self.marker('error');value.update(phase='progress',records=str(n))
+                path.write_bytes(self.wire(value))
+                self.assertEqual(suite.observation_step(path,'a'*32),n)
+                self.assertIsNone(suite.observation_step(path,'b'*32))
+            for bad in ('16','-1','01','secret','1.0',''):
+                value['records']=bad;path.write_bytes(self.wire(value))
+                self.assertIsNone(suite.observation_step(path,'a'*32))

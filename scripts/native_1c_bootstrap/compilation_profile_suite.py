@@ -44,7 +44,7 @@ def empty_report(nonce):
     return {'schema':STAGE_SCHEMA,'profile':PROFILE,'nonce':nonce,'status':'not_started',
             'failure_kind':'prerequisites_failed','failure_phase':'prerequisites',
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
-            'prepared_sha256':None,'config_verified':False,'event1_done':False,'error_marker':False,'entered':False,'completed':False,'process_exited':False,
+            'prepared_sha256':None,'config_verified':False,'event1_done':False,'error_marker':False,'observation_step':None,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'output_sha256':None,'output_size':None,
             'loaded_sources':loaded_probe.empty_sources(),'check_config':loaded_probe.empty_check(),
             'diagnostic_logs':failure_diagnostics.empty_log_evidence(),'record_count':None,'native_error':failure_diagnostics.empty(),'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
@@ -57,6 +57,13 @@ def has_error_marker(path,nonce):
         return True
     except (ValueError,full.FullError):
         return False
+
+
+def observation_step(path,nonce):
+    try:
+        return int(route.marker(full.secure_bytes(path,route.MAX_MARKER),nonce,'progress')['records'])
+    except (ValueError,full.FullError):
+        return None
 
 
 def _dump_files(directory):
@@ -234,6 +241,7 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
                     report[label]=True
                 except (ValueError,full.FullError):pass
             report['error_marker']=has_error_marker(completed,nonce)
+            report['observation_step']=observation_step(trace,nonce)
         phase='markers'
         try:
             route.marker(full.secure_bytes(entered,route.MAX_MARKER),nonce,'entered')

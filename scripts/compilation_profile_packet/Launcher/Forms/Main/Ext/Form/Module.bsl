@@ -49,9 +49,11 @@ EndFunction
 Procedure FirstEvent() Export
  Try
   For Number = 1 To 15 Do
+   Marker(Request.trace, "progress", String(Number));
    Value = Observe(Number);
    Records = Records + "CP" + String(Number) + "=" + Value + "|";
   EndDo;
+  Marker(Request.trace, "progress", "0");
   Marker(Request.event1_done, "event1_done", Records);
   // Actual event-loop return, never call SecondEvent directly.
   AttachIdleHandler("SecondEvent", 1, True);

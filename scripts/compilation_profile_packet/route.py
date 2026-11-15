@@ -6,7 +6,7 @@ from . import MAX_SOURCE, MAX_OUTPUT, PACKET_HASHES, SOURCE_SHA256, FORM_SHA256,
 SCHEMA='native-compilation-profile-v1'
 MAX_MARKER=16384
 MODULES=tuple(p for p in PACKET_HASHES if p.endswith('.bsl'))
-PHASES=('entered','event1_done','completed','error')
+PHASES=('entered','event1_done','completed','error','progress')
 
 def verify_hashes(hashes):
     if any(hashes.get('scripts/compilation_profile_packet/'+p)!=h for p,h in PACKET_HASHES.items()):raise ValueError('packet staged identity')
@@ -48,6 +48,8 @@ def marker(raw,nonce,phase):
     if (value['schema']!=SCHEMA or value['nonce']!=nonce or value['phase']!=phase or value['source_sha256']!=SOURCE_SHA256 or value['form_sha256']!=FORM_SHA256 or value['modules_sha256']!=MODULES_SHA256):raise ValueError('marker binding')
     if type(value['records']) is not str:raise ValueError('marker records')
     if phase in ('completed','event1_done'):parse_records(value['records'].encode('ascii'),16 if phase=='completed' else 15)
+    elif phase=='progress':
+        if not re.fullmatch(r'(?:[0-9]|1[0-5])',value['records']):raise ValueError('progress range')
     elif value['records']!='':raise ValueError('marker phase payload')
     return value
 
