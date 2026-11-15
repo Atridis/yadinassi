@@ -1,3 +1,4 @@
+from compiled_contract_fixture import mutable_compiled_contract
 """Strict codegen tests: legacy visit dispatch is poisoned, not counted as coverage."""
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -183,6 +184,7 @@ class StrictCodegenTests(unittest.TestCase):
         self.assertGreater(vm.compiled_backend_stats['emitted_executions'],0)
         self.assertGreater(vm.compiled_backend_stats['helper_executions'],0)
 
+    @mutable_compiled_contract
     def test_known_mutation_is_not_late_preflight(self):
         vm=Interpreter(execution_backend='compiled-strict')
         nodes=parse('r=1;')
@@ -192,6 +194,7 @@ class StrictCodegenTests(unittest.TestCase):
         with self.assertRaises(CompiledUnsupported):next(engine.run_node(nodes[0]))
         self.assertTrue(engine.has_node(nodes[0]))
 
+    @mutable_compiled_contract
     def test_block_mutation_between_statements_rejected(self):
         vm=Interpreter(execution_backend='compiled-strict')
         nodes=parse('For i=1 To 1 Do Change();r=1;EndDo;')
@@ -215,6 +218,7 @@ class StrictCodegenTests(unittest.TestCase):
         self.assertNotIn('Parameter',vm.compiled_backend_stats['node_kinds'])
         with self.assertRaises(CompiledUnsupported):next(vm._compiled().run_node(program[0].parameters[0]))
 
+    @mutable_compiled_contract
     def test_signature_checks_do_not_invoke_host_metaclass_equality(self):
         class Meta(type):
             def __eq__(cls,other):
@@ -237,6 +241,7 @@ class StrictCodegenTests(unittest.TestCase):
         self.assertIs(done.exception.value,cycle)
 
 class MetadataMutationTests(unittest.TestCase):
+    @mutable_compiled_contract
     def test_unvisited_callee_metadata_cannot_redirect_routine(self):
         vm = Interpreter(execution_backend='compiled-strict')
         program = parse('Procedure Original() Mark();EndProcedure Procedure Hijack() Mark();EndProcedure Mutate();Original();')
@@ -249,6 +254,7 @@ class MetadataMutationTests(unittest.TestCase):
             vm.execute_program(program)
         self.assertEqual(marks, [])
 
+    @mutable_compiled_contract
     def test_rhs_cannot_mutate_assignment_target_before_write(self):
         vm = Interpreter(execution_backend='compiled-strict')
         program = parse('target=Mutate();')
@@ -261,6 +267,7 @@ class MetadataMutationTests(unittest.TestCase):
         self.assertNotIn('target', vm.variables)
         self.assertNotIn('hijacked', vm.variables)
 
+    @mutable_compiled_contract
     def test_late_unit_cannot_readmit_known_mutated_descendant(self):
         vm = Interpreter(execution_backend='compiled-strict')
         engine = vm._compiled()
@@ -270,6 +277,7 @@ class MetadataMutationTests(unittest.TestCase):
         with self.assertRaises(CompiledUnsupported):
             engine.prepare_node(node)
 
+    @mutable_compiled_contract
     def test_parameter_metadata_is_part_of_routine_guard(self):
         vm = Interpreter(execution_backend='compiled-strict')
         engine = vm._compiled()
@@ -380,6 +388,7 @@ class BlockRoleCompilationTests(unittest.TestCase):
         self.assertEqual(engine.stats['metadata_block_executions'],1)
         self.assertEqual(engine.stats['interpreter_fallbacks'],0)
 
+    @mutable_compiled_contract
     def test_shared_metadata_entry_preserves_lexical_goto_and_mutation_guards(self):
         vm=Interpreter(execution_backend='compiled-strict');engine=vm._compiled()
         call=parse('Unused();')[0].expression

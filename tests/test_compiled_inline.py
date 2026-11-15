@@ -1,3 +1,4 @@
+from compiled_contract_fixture import mutable_compiled_contract
 """Inline compiler parity, explicit compiled outlining, and policy traces."""
 import unittest
 from unittest.mock import patch
@@ -76,6 +77,7 @@ class FastInlineTests(InlineCodegenTests):
         flag.start()
         self.addCleanup(flag.stop)
 
+    @mutable_compiled_contract
     def test_host_equality_invalidates_future_metadata_before_write(self):
         vm = Interpreter(execution_backend='compiled-strict')
         program = parse('r=(x=x);final=1;')
@@ -89,6 +91,7 @@ class FastInlineTests(InlineCodegenTests):
         self.assertNotIn('r', vm.variables)
         self.assertNotIn('final', vm.variables)
 
+    @mutable_compiled_contract
     def test_host_decimal_subclass_unary_is_opaque(self):
         from decimal import Decimal
         vm = Interpreter(execution_backend='compiled-strict')
@@ -149,6 +152,7 @@ assert not vm._compiled().fast_available()
         completed = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    @mutable_compiled_contract
     def test_caught_host_bsl_error_checks_dirty_metadata_before_handler(self):
         from yadinassi.errors import BSLRuntimeError
         vm = Interpreter(execution_backend='compiled-strict')
@@ -174,6 +178,7 @@ assert not vm._compiled().fast_available()
                 vm.execute('r=0;For i=1 To limit Do r=r+1;Break;EndDo;')
             self.assertEqual(vm.variables['r'], 0)
 
+    @mutable_compiled_contract
     def test_for_decimal_subclass_comparison_cannot_mutate_before_body(self):
         from decimal import Decimal
         vm = Interpreter(execution_backend='compiled-strict')
@@ -187,6 +192,7 @@ assert not vm._compiled().fast_available()
             vm.execute_program(program)
         self.assertNotIn('r', vm.variables)
 
+    @mutable_compiled_contract
     def test_for_decimal_subclass_increment_is_opaque(self):
         from decimal import Decimal
         vm = Interpreter(execution_backend='compiled-strict')

@@ -10,6 +10,18 @@ _PRELUDE = '''
 from yadinassi.owned_syntax import enable_isolated_process_experiment, syntax_kind
 from yadinassi.compiled_backend import Engine
 enable_isolated_process_experiment()
+# Research-only constructor adapter. Production Engine captures the VM API
+# contract, never mutable class flags. These isolated tests intentionally retain
+# the historical FULL/OFF representation matrix as a separate diagnostic oracle.
+_original_engine_init = Engine.__init__
+def _research_engine_init(self, vm, **kwargs):
+    _original_engine_init(self, vm, **kwargs)
+    self.OWNED_SNAPSHOT = type(self).OWNED_SNAPSHOT
+    self.ORIGIN_MUTATION_MONITOR = type(self).ORIGIN_MUTATION_MONITOR
+    self.stats['owned_snapshot'] = self.OWNED_SNAPSHOT
+    self.stats['origin_mutation_monitor'] = 'full' if self.ORIGIN_MUTATION_MONITOR else 'off'
+    self.stats['active_ast_contract'] = 'snapshot' if self.OWNED_SNAPSHOT and not self.ORIGIN_MUTATION_MONITOR else 'fail-closed'
+Engine.__init__ = _research_engine_init
 Engine.OWNED_SNAPSHOT = True
 Engine.ORIGIN_MUTATION_MONITOR = True
 Engine.INLINE = True
@@ -707,7 +719,7 @@ assert stats['origin_monitor_checks']==0
 assert stats['interpreter_fallbacks']==0
 ''')
 
-    def test_quiescent_changed_routine_still_validates_before_arguments(self):
+    def test_quiescent_routine_respects_mutable_vs_snapshot_contract(self):
         self.probe('''
 from yadinassi.errors import BSLError
 for monitor in (True,False):
@@ -715,10 +727,15 @@ for monitor in (True,False):
  output=[];vm=Interpreter(execution_backend='compiled-strict',output=output.append)
  vm.execute('Procedure P(Val ignored) Message("bad");Goto ~Done;~Done:EndProcedure')
  vm.routines['p'].body[1].name='Caller'
- try:vm.execute('P(Message("bad argument"));~Caller:Message("bad caller");')
- except BSLError as failure:assert 'Метка не определена' in str(failure)
- else:raise AssertionError('changed quiescent routine not validated')
- assert output==[] and vm.locals is None
+ if monitor:
+  try:vm.execute('P(Message("bad argument"));~Caller:Message("bad caller");')
+  except BSLError as failure:assert 'Метка не определена' in str(failure)
+  else:raise AssertionError('changed mutable routine not validated')
+  assert output==[]
+ else:
+  vm.execute('P(Message("bad argument"));~Caller:Message("bad caller");')
+  assert output==['bad argument','bad','bad caller']
+ assert vm.locals is None
 ''')
 
 
