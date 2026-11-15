@@ -134,7 +134,9 @@ class TieredWorkflowTests(unittest.TestCase):
         light = section(self.source, 'light').split('    steps:', 1)[0]
         self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$', light, re.M),
                          ["${{ matrix.target == 'mac-x86' && 60 || 30 }}"])
-        for job, minutes in (('heavy', 45), ('build', 40), ('javascript', 15)):
+        # Refreshed 4350-test heavy plan uses two ~46min measured shards/OS.
+        # Keep a finite 60min job bound; per-test and coverage gates stay intact.
+        for job, minutes in (('heavy', 60), ('build', 40), ('javascript', 15)):
             block = section(self.source, job).split('    steps:', 1)[0]
             self.assertIn(f'    timeout-minutes: {minutes}\n', block)
 

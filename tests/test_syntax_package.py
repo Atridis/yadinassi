@@ -24,7 +24,7 @@ EXPORTS = {
     "lexer": ("KEYWORDS", "EXECUTION_DIRECTIVES", "Token", "Lexer"),
     "parser": (
         "PRECEDENCE", "Parser", "validate_async", "validate_labels", "parse",
-        "parse_expression", "parse_fragment",
+        "parse_expression", "parse_fragment", "PreparedBlock", "prepare_control_flow",
     ),
     "preprocessor": (
         "DIRECTIVES", "COMPILATION_PROFILES", "validate_compilation_profile",
@@ -240,7 +240,7 @@ class SyntaxPackageTests(unittest.TestCase):
         from yadinassi.syntax import ast, lexer, parser, preprocessor
 
         self.assertIs(runtime.ast, ast)
-        for name in ("parse", "parse_expression", "parse_fragment", "validate_async",
+        for name in ("parse", "parse_expression", "parse_fragment", "PreparedBlock", "prepare_control_flow", "validate_async",
                      "validate_labels"):
             self.assertIs(getattr(runtime, name), getattr(parser, name))
         self.assertIs(runtime.KEYWORDS, lexer.KEYWORDS)

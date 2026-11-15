@@ -106,7 +106,7 @@ class SourceConstantSetTests(unittest.TestCase):
         app = self.app(''); app.start()
         receiver = SourceConstantSet(SourceConstants(app), ('Flag',))
         marker = ConstantSetCall(receiver, 'read')
-        app.interpreter.register_function('CapturedRead', marker, returns_value=False)
+        app.interpreter.register_function('CapturedRead', marker.descriptor(), returns_value=False)
         with self.assertRaisesRegex(BSLError, 'owning synchronous server'): app.interpreter.execute('CapturedRead();')
         app.close()
         with self.assertRaises(ValueError): marker.invoke(app.interpreter, [])
