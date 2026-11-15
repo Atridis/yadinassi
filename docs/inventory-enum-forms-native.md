@@ -165,3 +165,15 @@ all shared fixture grants unchanged. No FullAccess, privileged mode, default
 rights, interactive insert/post/delete rights or user databases are involved.
 Material redump still verifies the exact intended rights. A fresh native run must
 verify whether this resolves the observed access failure; no success is assumed.
+
+View-only run 43725414381 (ed50933e) still reported flow 1 open_error_access
+and exited cleanly. Artifact 14166082563 SHA256
+5cac5baaf163b1abb17efa8e0cc2ea3a95aa038a3afbbeb59f196cf444ad64f7 is verified.
+The first form is a new object (no Key), so the next narrow candidate adds
+InteractiveInsert for the same two owned objects, retaining View and existing
+basic Insert. This is a testable hypothesis about the remaining interactive
+creation check, not a proven successful fix. The official access-rights appendix
+names InteractiveInsert as interactive insertion. No Edit, interactive posting,
+delete, privileged mode, broad role or user-data access is added. Exact material
+redump remains required; opening existing/reopened objects may expose further
+separate limitations. Previous failed runs remain failed.

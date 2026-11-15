@@ -44,7 +44,7 @@ def prepare(files):
 
 
 def grant_owned_form_view(raw):
-    """Only View for the two objects whose forms this isolated packet opens."""
+    """Only View/InteractiveInsert for the two owned new-object forms."""
     core.original._xml(raw)
     for name in (b'Catalog.Products', b'Document.Receipt'):
         pattern = rb'<(?P<p>(?:[A-Za-z_][A-Za-z_0-9.-]*:)?)name>' + re.escape(name) + rb'</(?P=p)name>'
@@ -52,9 +52,9 @@ def grant_owned_form_view(raw):
         if len(matches) != 1:
             raise ValueError('owned form rights identity')
         match = matches[0]; prefix = match['p']
-        right = (b'<' + prefix + b'right><' + prefix + b'name>View</' + prefix
+        right = b''.join(b'<' + prefix + b'right><' + prefix + b'name>' + grant + b'</' + prefix
                  + b'name><' + prefix + b'value>true</' + prefix + b'value></'
-                 + prefix + b'right>')
+                 + prefix + b'right>' for grant in (b'View', b'InteractiveInsert'))
         raw = raw[:match.end()] + right + raw[match.end():]
     core.original._xml(raw)
     return raw

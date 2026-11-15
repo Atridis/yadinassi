@@ -486,9 +486,12 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
             changed=grant_owned_form_view(raw)
             addition=f'<{p}right><{p}name>View</{p}name><{p}value>true</{p}value></{p}right>'.encode()
             self.assertEqual(changed.count(addition),2)
-            self.assertEqual(changed.replace(addition,b''),raw)
+            insert=f'<{p}right><{p}name>InteractiveInsert</{p}name><{p}value>true</{p}value></{p}right>'.encode()
+            self.assertEqual(changed.count(insert),2)
+            self.assertEqual(changed.replace(addition,b'').replace(insert,b''),raw)
             self.assertNotIn(b'FullAccess',changed)
-            self.assertNotIn(b'InteractiveInsert',changed)
+            self.assertNotIn(b'>Edit<',changed)
+            self.assertNotIn(b'InteractivePosting',changed)
             with self.assertRaises(ValueError):grant_owned_form_view(raw.replace(b'Catalog.Products',b'Catalog.Other'))
 
     def test_prepared_view_rights_are_verified_by_redump(self):
@@ -502,5 +505,8 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         import re
         removed=re.sub(rb'<(?:\w+:)?right><(?:\w+:)?name>View</(?:\w+:)?name><(?:\w+:)?value>true</(?:\w+:)?value></(?:\w+:)?right>',b'',raw,count=1)
         self.assertNotEqual(removed,raw)
-        for changed in (removed,raw.replace(b'>View<',b'>FullAccess<',1)):
+        missing_insert=re.sub(rb'<(?:\w+:)?right><(?:\w+:)?name>InteractiveInsert</(?:\w+:)?name><(?:\w+:)?value>true</(?:\w+:)?value></(?:\w+:)?right>',b'',raw,count=1)
+        self.assertNotEqual(missing_insert,raw)
+        for changed in (removed, missing_insert, raw.replace(b'>InteractiveInsert<',b'>InteractiveDelete<',1),
+                        raw.replace(b'>View<',b'>FullAccess<',1)):
             with self.assertRaises(ValueError):material.verify_redump(expected,{**expected,path:changed})
