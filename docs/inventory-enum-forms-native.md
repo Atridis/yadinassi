@@ -194,3 +194,20 @@ No Edit grant or acceptance exception is added. The follow-up diagnostic reports
 only its finite transition among absent/true/false, so an automatic platform
 normalization can be distinguished before any decision about permitted rights.
 Unknown rights remain redacted and every material difference remains rejected.
+
+### Documented interactive-right dependency closure (2026-11-15)
+
+The official platform release history explicitly requires Edit when granting
+InteractiveInsert outside the old 8.1 compatibility behavior:
+https://downloads.v8.1c.ru/content/Platform/8_2_19_60/1cv8upd.htm .
+The general dependency mechanism is documented at
+https://kb.1ci.com/1C_Enterprise_Platform/1C_Enterprise_Platform_Overview/Access_rights/Access_rights/?language=en .
+Exact-source run 43742450310 on af21c60b reported Edit absent-to-true for
+Products and Receipt during redump (artifact 14173076632, SHA256
+745ad760a5be983c83e250c16c62806c7c566147e5ffdbc80b431e281e2a240c).
+It remained rejected before Enterprise entry, not accepted as a measurement.
+The owned fixture now explicitly declares only that prerequisite on those
+two objects. Existing basic rights are preserved; no FullAccess, posting or
+delete rights are added. Exact redump still rejects missing or extra rights.
+This is a documented fixture correction, not proof that the native scenarios
+pass; fresh exact-source native evidence remains required.

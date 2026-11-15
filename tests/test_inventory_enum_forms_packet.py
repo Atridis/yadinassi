@@ -488,9 +488,10 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
             self.assertEqual(changed.count(addition),2)
             insert=f'<{p}right><{p}name>InteractiveInsert</{p}name><{p}value>true</{p}value></{p}right>'.encode()
             self.assertEqual(changed.count(insert),2)
-            self.assertEqual(changed.replace(addition,b'').replace(insert,b''),raw)
+            edit=f'<{p}right><{p}name>Edit</{p}name><{p}value>true</{p}value></{p}right>'.encode()
+            self.assertEqual(changed.count(edit),2)
+            self.assertEqual(changed.replace(addition,b'').replace(insert,b'').replace(edit,b''),raw)
             self.assertNotIn(b'FullAccess',changed)
-            self.assertNotIn(b'>Edit<',changed)
             self.assertNotIn(b'InteractivePosting',changed)
             with self.assertRaises(ValueError):grant_owned_form_view(raw.replace(b'Catalog.Products',b'Catalog.Other'))
 
@@ -507,7 +508,9 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         self.assertNotEqual(removed,raw)
         missing_insert=re.sub(rb'<(?:\w+:)?right><(?:\w+:)?name>InteractiveInsert</(?:\w+:)?name><(?:\w+:)?value>true</(?:\w+:)?value></(?:\w+:)?right>',b'',raw,count=1)
         self.assertNotEqual(missing_insert,raw)
-        for changed in (removed, missing_insert, raw.replace(b'>InteractiveInsert<',b'>InteractiveDelete<',1),
+        missing_edit=re.sub(rb'<(?:\w+:)?right><(?:\w+:)?name>Edit</(?:\w+:)?name><(?:\w+:)?value>true</(?:\w+:)?value></(?:\w+:)?right>',b'',raw,count=1)
+        self.assertNotEqual(missing_edit,raw)
+        for changed in (removed, missing_insert, missing_edit, raw.replace(b'>InteractiveInsert<',b'>InteractiveDelete<',1),
                         raw.replace(b'>View<',b'>FullAccess<',1)):
             with self.assertRaises(ValueError):material.verify_redump(expected,{**expected,path:changed})
 
@@ -517,13 +520,12 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         from inventory_enum_behavior import fixture
         _,expected=configuration.prepare(baseline())
         path=fixture.original.ROLE_FILES[1]
-        changed=expected[path].replace(b'>InteractiveInsert<',b'>Edit<',1)
+        changed=expected[path].replace(b'>Edit<',b'>InteractiveDelete<',1)
         actual={**expected,path:changed}
         labels=material.diagnostic(expected,actual)
         self.assertIn('core_rights',labels)
-        self.assertIn('products_right_interactiveinsert_changed',labels)
         self.assertIn('products_right_edit_changed',labels)
-        self.assertIn('products_edit_absent_to_true',labels)
+        self.assertIn('products_edit_true_to_absent',labels)
         self.assertTrue(material.valid_diagnostic(labels))
         with self.assertRaises(ValueError):material.verify_redump(expected,actual)
         hidden=expected[path].replace(b'>InteractiveInsert<',b'>private_secret<',1)
