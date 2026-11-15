@@ -76,14 +76,15 @@ from .errors import BSLError, BSLRuntimeError
 from .error_info import (BSLErrorInfo, BSLErrorCategory, ERROR_CATEGORIES,
                          FORBIDDEN_RAISE_CATEGORIES, empty_error_info)
 from .collation import string_key
-from .syntax.parser import parse, parse_expression, parse_fragment, validate_labels, validate_async
+from .syntax.parser import (parse, parse_expression, parse_fragment, validate_labels, validate_async,
+                            prepare_control_flow, PreparedBlock)
 from .syntax.lexer import KEYWORDS
 from .syntax.preprocessor import validate_compilation_profile
 from .maps import BSLFixedMap, BSLMap
 from .native_targets import WINDOWS_8_3_27_2342, target_context, validate_native_target
 from .structures import BSLFixedStructure, BSLStructure, fill_property_values
 from .values import (
-    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, NULL, Reference as _Reference,
+    BSLArray, BSLFixedArray, BSLObject, BSLType, HostFunction, InterpreterCall, NULL, Reference as _Reference,
     boolean, divide, equal, number, require_number, to_string,
 )
 
@@ -107,6 +108,9 @@ EXECUTE_MAX_DEPTH = 16
 def _eval_marker(value: object) -> object:
     # The interpreter supplies the current module/frame at the call site.
     raise TypeError("Вычислить требует контекст интерпретатора")
+
+
+_CONTROL_FLOW_PLANS = object()
 
 
 class _Goto(Exception):
@@ -908,6 +912,32 @@ class Interpreter:
             if not isinstance(node, (ast.Import, ast.ServerInitializer))
             and not (isinstance(node, ast.Var) and node.execution_context == "server")]))
 
+    @staticmethod
+    def _routine_plan(function):
+        plan = getattr(function, '_prepared_control_flow', None)
+        if type(plan) is not PreparedBlock or not plan.matches(function.body):
+            # Validation completes before publication: invalid mutations do not
+            # install a partially prepared plan or reach argument side effects.
+            plan = prepare_control_flow(function.body)
+            function._prepared_control_flow = plan
+        return plan
+
+    def _planned_routine_block(self, function):
+        if self._execution_backend == 'compiled-strict':
+            return (yield from self.block(function.body))
+        plan = self._routine_plan(function)
+        state = self._scheduler.active_context.state
+        entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
+        stack = entry['stack']
+        frame = [self, function, plan]
+        stack.append(frame)
+        try:
+            return (yield from self.block(function.body))
+        finally:
+            stack.pop()
+            if not stack:
+                state.pop(_CONTROL_FLOW_PLANS, None)
+
     def block(self, statements: list[ast.Node]) -> object:
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
@@ -915,8 +945,21 @@ class Interpreter:
                 engine.prepare_block(statements)
             return (yield from engine.run_block(statements))
         result = None
-        labels = {node.name.casefold(): index for index, node in enumerate(statements)
-                  if isinstance(node, ast.Label)}
+        prepared = None
+        entry = self._scheduler.active_context.state.get(_CONTROL_FLOW_PLANS)
+        if entry and entry['stack']:
+            frame = entry['stack'][-1]
+            if frame[0] is self:
+                prepared = frame[2].find(statements)
+                if prepared is None or not prepared.matches(statements):
+                    # Nested loop entries normally inspect only their subtree,
+                    # not every statement in the owning routine. A changed or
+                    # newly attached block revalidates its complete scope.
+                    frame[2] = self._routine_plan(frame[1])
+                    prepared = frame[2].find(statements)
+        labels = (prepared.labels if prepared is not None else
+                  {node.name.casefold(): index for index, node in enumerate(statements)
+                   if isinstance(node, ast.Label)})
         position = 0
         while position < len(statements):
             try:
@@ -1354,6 +1397,9 @@ class Interpreter:
             function = (yield from self._visit(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
+        interpreter_call = function.function if type(function.function) is InterpreterCall else None
+        if interpreter_call is not None:
+            interpreter_call.prepare(self, len(node.arguments))
         from .reusable_values import refresh_reusable_marker
         refresh_call = function.function is refresh_reusable_marker
         if refresh_call:
@@ -1379,6 +1425,8 @@ class Interpreter:
             self._configuration_runtime.common_templates.authorize(self)
             if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
         from . import temporary_storage
+        if type(function.function) is temporary_storage.SourceTemporaryCall:
+            function.function.authorize_call(self, len(node.arguments))
         temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
         if temporary_call:
             if self._configuration_runtime is None:
@@ -1457,6 +1505,8 @@ class Interpreter:
             return self._configuration_runtime.common_templates.get(self,values[0])
         if temporary_call:
             return self._configuration_runtime.temporary_storage.invoke(self,function.function,values)
+        if interpreter_call is not None:
+            return (yield from interpreter_call.invoke(self, values))
         (SourceCatalogCall, SourceDocumentSectionCall, SourceDocumentCall,
          SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
          ExtensionCall, SourceSessionCall, SourceTransactionCall,
@@ -1464,22 +1514,9 @@ class Interpreter:
         marker = function.function
         if type(marker) in (SourceCatalogCall, SourceDocumentCall):
             return (yield from marker.invoke(self, values))
-        if type(marker) is ValueManagerCall:
-            return (yield from marker.invoke(self, values))
-        if type(marker) is ConstantCall and marker.writing:
-            marker.owner._store(self)
-            if len(values) != 1:
-                raise TypeError('invalid constant method argument count')
-            return (yield from write_values(self, marker.owner, {marker.name: values[0]}))
-        if type(marker) is ConstantSetCall and marker.operation == 'write':
-            receiver = marker.receiver
-            receiver.owner._store(self)
-            if values:
-                raise TypeError('constant set Read/Write take no arguments')
-            if len(receiver.values) != len(receiver.keys):
-                raise ValueError('all selected constant fields must be assigned or read before Write')
-            return (yield from write_values(self, receiver.owner, {name: receiver.values[name.casefold()] for name in receiver.names}))
-        if type(function.function) in (ConstantCall, ConstantSetCall, ExtensionCall, SourceSessionCall, SourceTransactionCall, SourceQueryCall, SourceReferenceCall, SourceDocumentSectionCall, SourceTemplateCall):
+        if type(marker) in (ExtensionCall, SourceSessionCall, SourceTransactionCall,
+                            SourceQueryCall, SourceReferenceCall, SourceDocumentSectionCall,
+                            SourceTemplateCall, temporary_storage.SourceTemporaryCall):
             return function.function.invoke(self, values)
         return function(*values)
 
@@ -1825,8 +1862,10 @@ class Interpreter:
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
-        validate_labels(function.body)
+        if self._execution_backend != 'compiled-strict':
+            self._routine_plan(function)
         if self._execution_backend == 'compiled-strict':
+            validate_labels(function.body)
             # Actuals may be host-materialized Literal plans, and defaults execute
             # in the caller even when the declaration is owned by another VM.
             for expression in list(arguments) + [parameter.default for parameter in function.parameters
@@ -1941,7 +1980,7 @@ class Interpreter:
                         owner.locals = bindings
                     result = None
                     try:
-                        (yield from owner.block(function.body))
+                        (yield from owner._planned_routine_block(function))
                     except _Return as returned:
                         result = returned.value
                     if scalar_server_reuse: _encode_scalar(result)
@@ -1976,7 +2015,7 @@ class Interpreter:
         self._module_context_stack.append(True)
         try:
             try:
-                yield from self.block(function.body)
+                yield from self._planned_routine_block(function)
             except _Return as returned:
                 return returned.value
             return None

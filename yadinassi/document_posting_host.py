@@ -172,6 +172,12 @@ class RootPostingOperations:
         self._verify()
         return operation.resolve()
 
+    def acknowledge(self, operation_id):
+        if type(operation_id) is not UUID or operation_id not in self._operations:
+            raise PostingRecoveryUnavailable()
+        self._verify()
+        return self._operations[operation_id][1].acknowledge()
+
     def receipt(self, operation_id):
         if type(operation_id) is not UUID or operation_id not in self._operations:
             raise PostingRecoveryUnavailable()

@@ -54,6 +54,20 @@ class PreparedBusinessAdmissionTests(unittest.TestCase):
             for _ in range(10): self.assertEqual(reference.get_member('Description'), 'kept')
             importer.assert_not_called(); compiler.assert_not_called()
 
+    def test_standalone_metadata_read_keeps_legacy_path_without_enum_witness(self):
+        context = SQLiteDBContext(self.path); self.addCleanup(context.close)
+        metadata = BSLCatalogMetadataCollection(context)
+        self.assertIsNone(metadata._root)
+        manager = BSLCatalogs(metadata, context).get_index('Items')
+        obj = manager.create_item(); obj.set_member('Description', 'kept'); obj.write()
+        reference = obj.get_member('Ref')
+        with patch('yadinassi.inventory_enum_runtime.read_snapshot',
+                   side_effect=AssertionError('standalone metadata has no enum owner')):
+            self.assertEqual(reference.get_member('Description'), 'kept')
+        metadata._root = object()
+        with self.assertRaises(BackendError):
+            reference.get_member('Description')
+
     def test_reads_exports_and_form_preparation_reuse_positive_import(self):
         from test_configuration_catalog_profile import CATALOG
         with patch('yadinassi.configuration_business_profile.business_configuration') as importer:
