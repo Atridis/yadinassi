@@ -90,7 +90,7 @@ def collect(root, full, sanitizer, *, label="enterprise"):
 
 
 def empty_log_evidence():
-    return {key:{'state':'not_checked','encoding':'none','has_nul':False,'head':[],'tail':[],'omitted_middle':False}
+    return {key:{'state':'not_checked','encoding':'none','has_nul':False,'head':[],'tail':[],'omitted_middle':False,'frames':[],'frames_truncated':False}
             for key in ('out','console')}
 
 
@@ -108,8 +108,18 @@ def log_evidence(root, full, sanitizer, *, label):
             item['has_nul']=b'\0' in raw
             item['encoding']='utf16_bom' if raw[:2] in (b'\xff\xfe',b'\xfe\xff') else 'utf8_bom' if raw.startswith(b'\xef\xbb\xbf') else 'no_bom'
             # Reuse only the finite reviewed vocabulary, never the raw text,
-            # source names, origin labels, paths or error hierarchy.
-            context=sanitizer.rendered_context(sanitizer.native_text(raw),'owned_log')
+            # unknown source names, origin labels, paths or error hierarchy.
+            text=sanitizer.native_text(raw)
+            frames=[]
+            for match in LOCATION.finditer(text):
+                module,line=ALIASES[match[1]],int(match[2])
+                frame={'module':module,'line':line}
+                if not 1<=line<=LIMITS[module] or frame in frames:continue
+                if len(frames)==4:
+                    item['frames_truncated']=True;break
+                frames.append(frame)
+            item['frames']=frames
+            context=sanitizer.rendered_context(text,'owned_log')
             for field in ('head','tail','omitted_middle'):item[field]=context[field]
         except (OSError,ValueError,full.FullError):
             result[key]={**empty_log_evidence()[key],'state':'invalid'}
@@ -123,7 +133,11 @@ def validate_log_evidence(value,sanitizer):
         if type(item) is not dict or set(item)!=set(empty_log_evidence()[key]):raise ValueError('log shape')
         if type(item['state']) is not str or item['state'] not in ('not_checked','absent','empty','present','invalid'):raise ValueError('log state')
         if type(item['encoding']) is not str or item['encoding'] not in ('none','utf16_bom','utf8_bom','no_bom'):raise ValueError('log encoding')
-        if type(item['has_nul']) is not bool or type(item['omitted_middle']) is not bool:raise ValueError('log flags')
+        if type(item['has_nul']) is not bool or type(item['omitted_middle']) is not bool or type(item['frames_truncated']) is not bool:raise ValueError('log flags')
+        if type(item['frames']) is not list or len(item['frames'])>4:raise ValueError('log frames')
+        for frame in item['frames']:
+            if type(frame) is not dict or set(frame)!={'module','line'} or type(frame['module']) is not str or frame['module'] not in LIMITS or type(frame['line']) is not int or not 1<=frame['line']<=LIMITS[frame['module']]:raise ValueError('log frame')
+        if item['frames_truncated'] and len(item['frames'])!=4:raise ValueError('log frame truncation')
         for part in ('head','tail'):
             if type(item[part]) is not list or len(item[part])>sanitizer.MAX_CONTEXT_TOKENS or any(type(x) is not str or x not in sanitizer.CONTEXT_TOKENS for x in item[part]):raise ValueError('log vocabulary')
         if item['state']!='present':

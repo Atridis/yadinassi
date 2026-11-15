@@ -491,7 +491,7 @@ class AcquisitionContracts(unittest.TestCase):
         stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='check_config')
         longest=max(suite.diagnostics.CONTEXT_TOKENS,key=len)
         for item in stage['diagnostic_logs'].values():
-            item.update(state='present',encoding='no_bom',head=[longest]*32,tail=[longest]*32,omitted_middle=True)
+            item.update(state='present',encoding='no_bom',head=[longest]*32,tail=[longest]*32,omitted_middle=True,frames=[{'module':'ManagedApplicationModule','line':n} for n in range(1,5)],frames_truncated=True)
         stage['native_error']['category']='unknown'
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
             root=Path(tmp);path=root/'stage3-report.json'
@@ -508,3 +508,17 @@ class AcquisitionContracts(unittest.TestCase):
         source=(ROOT/'scripts/native_1c_bootstrap/run_compilation_profile_stage.py').read_text()
         self.assertIn('if compilation_profile:\n                import compilation_profile_suite',source)
         self.assertIn('limit = compilation_profile_suite.MAX_STAGE_REPORT',source)
+
+    def test_owned_frames_survive_unclassified_headers_without_cause_claim(self):
+        import tempfile
+        _,suite=self.adapters();d=suite.failure_diagnostics
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            text='Configuration check\n{CommonModule.DualProbe.Module(11)}: unclassified diagnostic\n{Secret(1)}: private\nCheck finished'
+            (root/'check.log').write_text(text)
+            value=d.log_evidence(root,suite.full,suite.diagnostics,label='check')
+            self.assertEqual(value['out']['frames'],[{'module':'DualProbe','line':11}])
+            self.assertEqual(d.collect(root,suite.full,suite.diagnostics,label='check')['category'],'unknown')
+            self.assertNotIn('Secret',json.dumps(value))
+            value['out']['frames'][0]['line']=True
+            with self.assertRaises(ValueError):d.validate_log_evidence(value,suite.diagnostics)
