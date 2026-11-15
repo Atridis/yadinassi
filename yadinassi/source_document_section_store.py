@@ -65,8 +65,10 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         result.document_definitions,result.document_errors,result._document_rows=_definitions(source,enum_namespace,reference_scope)
     def verify_extra(self):
         super().verify_extra()
-        if self._connection.execute("SELECT count(*) FROM source_document_section WHERE typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(section_identity)!='text' OR length(CAST(section_identity AS BLOB))!=36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>262144").fetchone()[0]:raise ValueError('section storage bounds')
-        count,total=self._connection.execute('SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section').fetchone()
+        # One scan supplies both malformed-row and aggregate bounds. Keep the
+        # malformed-row failure first, as before, and do not decode/cache here.
+        invalid,count,total=self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(section_identity)!='text' OR length(CAST(section_identity AS BLOB))!=36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>262144 THEN 1 ELSE 0 END),0),count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section").fetchone()
+        if invalid:raise ValueError('section storage bounds')
         if count>160000 or total>16777216:raise ValueError('section aggregate storage bound')
     def _sections(self,definition,identity):
         # Fetch at most the declared inventory plus one: an extra row proves
