@@ -374,8 +374,12 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(report, stream, sort_keys=True)
     if full_nonce is not None:
         try:
+            limit = full_suite.MAX_STAGE_REPORT
+            if compilation_profile:
+                import compilation_profile_suite
+                limit = compilation_profile_suite.MAX_STAGE_REPORT
             suite = full_suite.strict_json(full_suite.secure_bytes(
-                ROOT / 'stage3-report.json', full_suite.MAX_STAGE_REPORT))
+                ROOT / 'stage3-report.json', limit))
             if suite['status'] != 'ok':
                 return 1
         except Exception:

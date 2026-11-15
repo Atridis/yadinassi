@@ -483,3 +483,28 @@ class AcquisitionContracts(unittest.TestCase):
             with self.assertRaises(ValueError):d.validate_log_evidence(value,suite.diagnostics)
             (root/'check-console.log').write_bytes(b'x'*65537)
             self.assertEqual(d.log_evidence(root,suite.full,suite.diagnostics,label='check')['console']['state'],'invalid')
+
+    def test_stage_wire_budget_roundtrip_and_overflow(self):
+        import tempfile
+        from unittest.mock import patch
+        host,suite=self.adapters();value,_,_=self.envelope(host,suite)
+        stage=value['report']['stage3'];stage.update(status='failed',failure_kind='process_failed',failure_phase='check_config')
+        longest=max(suite.diagnostics.CONTEXT_TOKENS,key=len)
+        for item in stage['diagnostic_logs'].values():
+            item.update(state='present',encoding='no_bom',head=[longest]*32,tail=[longest]*32,omitted_middle=True)
+        stage['native_error']['category']='unknown'
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp);path=root/'stage3-report.json'
+            suite.write_report(path,stage)
+            self.assertGreater(path.stat().st_size,suite.full.MAX_STAGE_REPORT)
+            self.assertLessEqual(path.stat().st_size,suite.MAX_STAGE_REPORT)
+            with patch.object(suite.full,'final_client_process_census'):
+                raw=suite.finish_report(dict(status='stage3_failed',native_tests_completed=False),'a'*32,root/'stage3-owned',quiet=True,bus_cleanup_failed=False)
+            self.assertEqual(json.loads(raw)['report']['stage3'],stage)
+            path.unlink();stage['unexpected_padding']='x'*suite.MAX_STAGE_REPORT
+            with self.assertRaises(suite.full.FullError):suite.write_report(path,stage)
+            self.assertFalse(path.exists())
+        self.assertEqual(suite.full.MAX_STAGE_REPORT,8192)
+        source=(ROOT/'scripts/native_1c_bootstrap/run_compilation_profile_stage.py').read_text()
+        self.assertIn('if compilation_profile:\n                import compilation_profile_suite',source)
+        self.assertIn('limit = compilation_profile_suite.MAX_STAGE_REPORT',source)

@@ -14,6 +14,9 @@ import full_suite as full
 from compilation_profile_packet import failure_diagnostics, loaded_probe
 from compilation_profile_packet import route, SOURCE_SHA256, FORM_SHA256, PACKET_HASHES, MAX_OUTPUT, parse_records, require_available
 
+# Own bounded wire includes source manifest and two finite diagnostic projections.
+# Do not change shared full-suite limits.
+MAX_STAGE_REPORT=16384
 PROFILE='compilation-profile-v1'
 SCHEMA='native-1c-compilation_profile-v1'
 STAGE_SCHEMA='native-1c-compilation_profile-stage-v1'
@@ -255,14 +258,14 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
 
 def write_report(path,report):
     raw=json.dumps(report,sort_keys=True,separators=(',',':'),allow_nan=False).encode()
-    if len(raw)>full.MAX_STAGE_REPORT:raise full.FullError('export_failed')
+    if len(raw)>MAX_STAGE_REPORT:raise full.FullError('export_failed')
     with path.open('xb') as stream:stream.write(raw)
 
 
 def finish_report(report,nonce,root,*,quiet,bus_cleanup_failed):
     suite=empty_report(nonce);outputs=[]
     try:
-        suite=full.strict_json(full.secure_bytes(root.parent/'stage3-report.json',full.MAX_STAGE_REPORT))
+        suite=full.strict_json(full.secure_bytes(root.parent/'stage3-report.json',MAX_STAGE_REPORT))
         if type(suite) is not dict or suite.get('schema')!=STAGE_SCHEMA or suite.get('profile')!=PROFILE or suite.get('nonce')!=nonce:
             raise full.FullError('invalid_result')
         if not quiet or bus_cleanup_failed:raise full.FullError('process_failed')
