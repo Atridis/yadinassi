@@ -96,11 +96,16 @@ test('change-event reply reaches parent before workspace snapshot activates chil
 test('static handler audit is text and does not claim runtime binding',async()=>{
  const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'compiled',handler_names:{status:'names-checked',referenced:3,missing:['<img onerror=bad()>'],omitted_missing:2}}});
  const summary=h.elements.find(x=>x.textContent.includes('Имена обработчиков: ссылок'));
- assert.ok(summary);assert.ok(summary.textContent.includes('<img onerror=bad()>'));assert.ok(summary.textContent.includes('ещё 2'));assert.ok(summary.textContent.includes('не проверка контекста'));assert.equal(summary.children.length,0);
+ assert.ok(summary);assert.ok(summary.textContent.includes('<img onerror=bad()>'));assert.ok(summary.textContent.includes('ещё 2'));assert.ok(summary.textContent.includes('не проверка значений аргументов'));assert.equal(summary.children.length,0);
  assert.deepEqual(h.requests.map(x=>x.method),['workspace.snapshot']);
 });
 test('unavailable XML name audit remains distinct from successful compilation',async()=>{
  const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'compiled',handler_names:{status:'unavailable',error:'XML missing'}}});
  assert.ok(h.elements.some(x=>x.textContent.startsWith('Компиляция выполнена')));
  assert.ok(h.elements.some(x=>x.textContent==='Имена обработчиков не проверены: XML missing'));
+});
+test('static signature diagnostics remain text without asserting execution',async()=>{
+ const h=await harness({...state,module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'abc',compilation_profile:'standalone',status:'compiled',handler_names:{status:'names-checked',referenced:1,missing:[],signature_issues:['<script>bad()</script> requires client procedure(1)'],omitted_signature_issues:3}}});
+ const summary=h.elements.find(x=>x.textContent.includes('Статические ошибки контекста/сигнатуры'));
+ assert.ok(summary.textContent.includes('<script>bad()</script>'));assert.ok(summary.textContent.includes('ещё 3'));assert.equal(summary.children.length,0);assert.ok(summary.textContent.includes('не проверка значений аргументов, прав или исполнения'));
 });
