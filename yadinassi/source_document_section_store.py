@@ -189,8 +189,13 @@ class SourceDocumentSectionStore(SourceDocumentStore):
             if sum(len(raw.encode()) for _,raw in encoded)>_MAX_DOCUMENT_BYTES or sum(len(r) for r in sections.values())>_MAX_ROWS:raise ValueError('document section aggregate bound')
             if owned:self.begin_transaction()
             new_revision=super().write_document(name,identity,revision,values,_handled=_handled)
-            self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=?',(str(definition.identity),str(identity)))
-            self._connection.executemany('INSERT INTO source_document_section VALUES(?,?,?,?)',[(str(definition.identity),str(identity),sid,raw) for sid,raw in encoded])
+            owner=(str(definition.identity),str(identity))
+            if encoded:
+                placeholders=','.join('?' for _ in encoded)
+                self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=? AND section_identity NOT IN ('+placeholders+')',owner+tuple(sid for sid,_ in encoded))
+                self._connection.executemany('INSERT INTO source_document_section VALUES(?,?,?,?) ON CONFLICT(document_identity,record_identity,section_identity) DO UPDATE SET payload=excluded.payload WHERE source_document_section.payload!=excluded.payload',[owner+(sid,raw) for sid,raw in encoded])
+            else:
+                self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=?',owner)
             self._open();self._sections(definition,identity)
             if owned:self.commit_transaction()
             return new_revision
