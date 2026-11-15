@@ -420,15 +420,17 @@ class SourceWorkspace:
                   'module_sha256': sha256(raw).hexdigest() if raw is not None else None,
                   'xml_sha256': sha256(xml).hexdigest() if xml is not None else None,
                   'compilation_profile': self.application.compilation_profile,
-                  'status': 'unavailable', 'error': None,
+                  'status': 'unavailable', 'error': None, 'handler_names': None,
                   'bindings_checked': False, 'runtime_checked': False,
                   'storage_granted': False, 'native_parity': False}
         try:
             if raw is None:
                 raise ValueError('declared form module file is absent')
-            compile_form_module(raw.decode('utf-8-sig'),
+            program = compile_form_module(raw.decode('utf-8-sig'),
                                 compilation_profile=self.application.compilation_profile)
             result['status'] = 'compiled'
+            from ..source_form_handler_audit import audit_handler_names
+            result['handler_names'] = audit_handler_names(xml, program)
         except (BSLError, ValueError, TypeError, RecursionError) as error:
             result['error'] = str(error)[:1024]
         self.module_preflight = result
@@ -453,7 +455,7 @@ class SourceWorkspace:
                 'object_query': self.object_query, 'object_family': self.object_family,
                 'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
                 'form_preview': json.loads(json.dumps(self.form_preview)),
-                'module_preflight': dict(self.module_preflight) if self.module_preflight else None,
+                'module_preflight': json.loads(json.dumps(self.module_preflight)),
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
