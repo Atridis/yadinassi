@@ -36,4 +36,9 @@ class SourceManagers(BSLObject):
         app = self.authorize(caller)
         if type(name) is not str:
             raise TypeError("source manager name must be a string")
+        if self._family in ('Catalog', 'Document'):
+            from .source_references import SourceReferenceManager
+            manager = SourceReferenceManager(app, self._family, name)
+            manager.authorize(caller)
+            return manager
         return app.manager_module(self._family, name, caller)

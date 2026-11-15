@@ -22,6 +22,8 @@ class StrictContextTests(unittest.TestCase):
         from yadinassi.catalog_object_preparation import _ObjectInterpreter
         from yadinassi.document_posting import _PostingInterpreter
         from yadinassi.source_constant_managers import _ValueInterpreter
+        from yadinassi.source_catalog_runtime import _ObjectInterpreter as CatalogInterpreter
+        from yadinassi.source_document_runtime import _ObjectInterpreter as DocumentInterpreter
         created=[];executed=set()
         original_init=Interpreter.__init__
         original_node=Engine.run_node
@@ -43,7 +45,8 @@ class StrictContextTests(unittest.TestCase):
             stack.enter_context(patch.object(Interpreter,'__init__',initialize))
             stack.enter_context(patch.object(Engine,'run_node',run_node))
             for cls in (Interpreter,_SourceInterpreter,_FormInterpreter,_EventInterpreter,
-                        _ObjectInterpreter,_PostingInterpreter,_ValueInterpreter):
+                        _ObjectInterpreter,_PostingInterpreter,_ValueInterpreter,
+                        CatalogInterpreter,DocumentInterpreter):
                 for name in tuple(cls.__dict__):
                     if name.startswith('visit_'):
                         stack.enter_context(patch.object(cls,name,old_visitor))
@@ -127,5 +130,15 @@ class StrictContextTests(unittest.TestCase):
             'test_configuration_runtime.ConfigurationRuntimeStorageTests.test_cli_explicit_activation_and_ordinary_database_open',
         ],('Interpreter',),explicit_cli=True)
 
+
+
+    def test_merged_source_object_guards_and_sections(self):
+        self.run_existing([
+            'test_source_document_sections',
+            'test_source_document_module_guards',
+            'test_source_document_object_modules',
+            'test_source_catalog_object_modules',
+            'test_source_constant_handlers',
+        ], ('_SourceInterpreter', '_ObjectInterpreter'))
 
 if __name__=='__main__':unittest.main()
