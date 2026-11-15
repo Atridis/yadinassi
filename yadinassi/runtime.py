@@ -1,6 +1,6 @@
 from functools import lru_cache
 from weakref import WeakValueDictionary
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -195,7 +195,8 @@ class Interpreter:
                  user_message_sink: Callable | None = None,
                  family_owner: "Interpreter | None" = None,
                  execution_backend: str | None = None,
-                 compiled_ast_contract: str | None = None):
+                 compiled_ast_contract: str | None = None,
+                 compiled_plain_routines: bool | None = None):
         from .execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
@@ -215,6 +216,12 @@ class Interpreter:
                 and family_owner.compiled_ast_contract != compiled_ast_contract):
             raise ValueError('interpreter family cannot silently change AST contract')
         self._compiled_ast_contract = compiled_ast_contract
+        if compiled_plain_routines is None:
+            compiled_plain_routines = (family_owner.compiled_plain_routines
+                                       if isinstance(family_owner, Interpreter) else False)
+        if type(compiled_plain_routines) is not bool:
+            raise ValueError('compiled_plain_routines must be bool')
+        self._compiled_plain_routines = compiled_plain_routines
         self._compiled_engine = None
         self._execution_backend = execution_backend
         self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
@@ -791,6 +798,10 @@ class Interpreter:
             engine.prepare_node(node)
 
     @property
+    def compiled_plain_routines(self):
+        return self._compiled_plain_routines
+
+    @property
     def compiled_ast_contract(self):
         return self._compiled_ast_contract
 
@@ -938,7 +949,11 @@ class Interpreter:
 
     def _planned_routine_block(self, function):
         if self._execution_backend == 'compiled-strict':
-            return (yield from self.block(function.body))
+            if type(self) is not Interpreter or type(self).block is not _PLAIN_BLOCK_ABI or 'block' in vars(self):
+                return (yield from self.block(function.body))
+            engine = self._compiled()
+            if not engine.has_block(function.body): engine.prepare_block(function.body)
+            return (yield from engine.run_block(function.body, plain_routine=function))
         plan = self._routine_plan(function)
         state = self._scheduler.active_context.state
         entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
@@ -1835,8 +1850,14 @@ class Interpreter:
             return child
         return None
 
-    def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
-                     owner: "Interpreter", *, require_value: bool, qualified: bool = False) -> object:
+    def _admit_routine_call(self, function: ast.Routine, arguments: list[ast.Node],
+                            owner: "Interpreter", *, require_value: bool):
+        """Live per-invocation checks, not a reusable permission/plan cache.
+
+        Keep check order before actual argument effects. This transient result
+        must be consumed immediately by the same invocation; no authority is
+        stored in an immutable compilation plan.
+        """
         self._require_family()
         owner._require_family()
         # Authority registries key the original declaration object. An optional
@@ -1876,6 +1897,12 @@ class Interpreter:
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
+        return function, authority_function, caller_side, crossing, invocation
+
+    def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
+                     owner: "Interpreter", *, require_value: bool, qualified: bool = False) -> object:
+        (function, authority_function, caller_side, crossing, invocation) = self._admit_routine_call(
+            function, arguments, owner, require_value=require_value)
         if self._execution_backend != 'compiled-strict':
             self._routine_plan(function)
         if self._execution_backend == 'compiled-strict':
@@ -1977,9 +2004,38 @@ class Interpreter:
                       self._configuration_runtime.input_call(self, owner,
                           not crossing and caller_side == 'client' and function.execution_context == 'client'
                           and function.module_context))
+        with self._routine_activation(owner, function, bindings, crossing, input_call):
+            if crossing:
+                for initializer in owner.server_initializers:
+                    yield from owner.block(initializer.body)
+                owner.locals = bindings
+            result = None
+            try:
+                (yield from owner._planned_routine_block(function))
+            except _Return as returned:
+                result = returned.value
+            if scalar_server_reuse: _encode_scalar(result)
+            if crossing:
+                # Validate the entire outgoing packet before touching caller
+                # storage. Escaping errors never reach this normal-return path.
+                packet = self._copy_context_packet(
+                    [result] + [bindings[name] for name, _ in copyback])
+                result = packet[0]
+                # Every output/result gets an independent per-occurrence copy.
+                # Publish only after the whole packet validates and allocates.
+                for (_, reference), value in zip(copyback, packet[1:]):
+                    reference.set(value)
+            if reuse is not None:
+                reusable_runtime.reusable_values.authorize(self)
+                cache, reservation = reuse
+                cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
+            return result
+
+    @contextmanager
+    def _routine_activation(self, owner, function, bindings, crossing, input_call):
+        """Shared live activation/cleanup boundary, never a stored grant."""
         previous = owner.locals
         # Fresh server module initialization precedes formal parameter storage.
-        # One cleanup boundary encloses BOTH initializer and routine execution.
         owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
         owner._module_context_stack.append(function.module_context)
@@ -1988,31 +2044,7 @@ class Interpreter:
             try:
                 from .safe_mode import routine_frame
                 with input_call, routine_frame(self, owner):
-                    if crossing:
-                        for initializer in owner.server_initializers:
-                            yield from owner.block(initializer.body)
-                        owner.locals = bindings
-                    result = None
-                    try:
-                        (yield from owner._planned_routine_block(function))
-                    except _Return as returned:
-                        result = returned.value
-                    if scalar_server_reuse: _encode_scalar(result)
-                    if crossing:
-                        # Validate the entire outgoing packet before touching caller
-                        # storage. Escaping errors never reach this normal-return path.
-                        packet = self._copy_context_packet(
-                            [result] + [bindings[name] for name, _ in copyback])
-                        result = packet[0]
-                        # Every output/result gets an independent per-occurrence copy.
-                        # Publish only after the whole packet validates and allocates.
-                        for (_, reference), value in zip(copyback, packet[1:]):
-                            reference.set(value)
-                    if reuse is not None:
-                        reusable_runtime.reusable_values.authorize(self)
-                        cache, reservation = reuse
-                        cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
-                    return result
+                    yield
             finally:
                 owner._module_context_stack.pop()
                 owner._context_stack.pop()
@@ -2771,3 +2803,5 @@ def _source_call_dispatch_types():
             SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
             ExtensionCall, SourceSessionCall, SourceTransactionCall,
             ValueManagerCall, write_values)
+
+_PLAIN_BLOCK_ABI = Interpreter.block
