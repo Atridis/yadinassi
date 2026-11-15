@@ -163,13 +163,15 @@ class NativeCompiledBackendTests(unittest.TestCase):
             smoke.run_smoke(Path('/not-used'),full_suite=True,execution_backend='garbage')
 
     def test_three_harness_inverses_are_exact_and_reject_unknown_changes(self):
-        from test_native_async_fixture import historical_source_bytes
+        from test_native_async_fixture import historical_source_bytes, without_explicit_oracle_backend
         import hashlib
         inventory=json.loads((ROOT/'tests/native_compiled_source_inverse.json').read_text(encoding='utf-8'))
         contracts={'scripts/native_1c_full_host.py':inventory,**inventory['additional_sources']}
         for path,contract in contracts.items():
             with self.subTest(path=path):
                 raw=(ROOT/path).read_bytes()
+                if path == 'scripts/native_1c_full_host.py':
+                    raw=without_explicit_oracle_backend(raw.decode('utf-8')).encode('utf-8')
                 self.assertEqual(hashlib.sha256(raw).hexdigest(),contract['candidate_sha256'])
                 restored=historical_source_bytes(path,raw,contract['base_sha256'])
                 self.assertEqual(hashlib.sha256(restored).hexdigest(),contract['base_sha256'])

@@ -48,3 +48,28 @@ if bool(seen)!=(mode=='default'): raise RuntimeError((mode,seen))
             with self.subTest(mode=mode):
                 subprocess.run([sys.executable, '-c', code, mode], check=True,
                                capture_output=True, timeout=20)
+
+    def test_fresh_threads_use_snapshot_and_explicit_rollback_is_preserved(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from contextvars import Context, copy_context
+
+        def execute(mode=None):
+            vm = Interpreter(execution_backend=mode)
+            try:
+                vm.execute('r=1+2;')
+                return vm.execution_backend, vm.variables['r'], vm.compiled_backend_stats
+            finally:
+                vm.close()
+
+        # Explicit empty contexts make this portable even to Python builds that
+        # inherit a thread context by default. Context policy is not global.
+        with execution_backend_policy('interpreter'), ThreadPoolExecutor(max_workers=1) as pool:
+            default = pool.submit(Context().run, execute).result(timeout=20)
+            explicit = pool.submit(Context().run, execute, 'interpreter').result(timeout=20)
+            copied = pool.submit(copy_context().run, execute).result(timeout=20)
+        self.assertEqual(default[:2], ('compiled-strict', 3))
+        self.assertGreater(default[2]['block_executions'], 0)
+        self.assertEqual(default[2]['interpreter_fallbacks'], 0)
+        for row in (explicit, copied):
+            self.assertEqual(row, ('interpreter', 3, {}))
+        self.assertEqual(current_backend(), 'compiled-strict')
