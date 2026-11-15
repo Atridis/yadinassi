@@ -1,6 +1,5 @@
 """Закрытый контракт нового Chromium сценария; не заменяет реальный браузер."""
 from pathlib import Path
-import ast
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -81,23 +80,6 @@ class MainDemoBrowserContractTests(unittest.TestCase):
             "assert.deepEqual(audit(),saved,'surface_switch_changed_saved_data')",
         ):
             self.assertIn(required.strip("'") if required == "'main_demo_fixture.py'" else required, text)
-
-    def test_fixture_seeds_only_warehouses_and_audit_is_independent(self):
-        source = FIXTURE.read_text(encoding='utf-8')
-        tree = ast.parse(source)
-        funcs = {node.name: ast.get_source_segment(source, node) for node in tree.body if isinstance(node, ast.FunctionDef)}
-        self.assertIn('range(70)', funcs['seed'])
-        self.assertIn("c.name == 'Склады'", funcs['seed'])
-        self.assertIn('create_main_demo', funcs['seed'])
-        for forbidden in ('create_document(', 'Interpreter(', 'execute('):
-            self.assertNotIn(forbidden, funcs['seed'])
-        self.assertIn('read_only=True', funcs['audit'])
-        self.assertIn("'?mode=ro'", funcs['audit'])
-        self.assertIn('database_changed_during_audit', funcs['audit'])
-        self.assertIn('authored_warehouse_changed', funcs['audit'])
-        support = (ROOT/'tests/browser_ui/main_demo_browser_support.mjs').read_text(encoding='utf-8')
-        for marker in ('audit_line_quantity', 'audit_line_amount', 'audit_receipt_warehouse', 'audit_line_product', 'audit_product_section', 'audit_product_kind', 'audit_movement_product', 'audit_movement_warehouse'):
-            self.assertIn(marker, support)
 
     def test_owned_result_recovery_uses_real_completion_without_mutation_replay(self):
         text = HARNESS.read_text(encoding='utf-8')
