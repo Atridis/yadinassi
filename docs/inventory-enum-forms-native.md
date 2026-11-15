@@ -130,3 +130,15 @@ container. This check is diagnostic, not an accepted eight-scenario measurement.
 
 CheckConfig covers loaded configuration client/server contexts, not the external
 launcher EPF. A clean check does not rule out launcher/runtime issues.
+
+Native run 43706442581 (head 63b630b2) passed the loaded configuration check
+but still timed out in Enterprise before any lifecycle event. Artifact
+14157649567 SHA256 b746209f0dbcf46fab1582196d60d57c04ed138a4a100ecf9465a085316cd5a6
+is retained and ZIP-verified. The native /Out log was not usable; this is not
+proof of a rights problem. The next diagnostic version reads bounded owned
+console output as well and retains finite nonce/source-bound launcher milestones
+(owner_ready, idle_entered, before_open, after_open), exported only on failure.
+These markers do not replace lifecycle/observation acceptance and contain no
+paths or exception text. Generic run 43706442571 separately failed collections
+interpreter_timeout while the other five comparisons matched; its failure is not
+relabelled as infrastructure or native semantic success.

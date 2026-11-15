@@ -9,6 +9,7 @@ Procedure OwnerOpen(Cancel)
   Marker(Request.entered, "entered", "");
   SaveJSON(Request.trace, New Structure("nonce,events", Request.nonce, New Array));
   Flow = 0; Records = "";
+  Progress("owner_ready");
   AttachIdleHandler("NextFlow", 1, True);
  Except
   ЗавершитьРаботуСистемы(Ложь);
@@ -17,6 +18,7 @@ EndProcedure
 
 &AtClient
 Procedure NextFlow() Export
+ Progress("idle_entered");
  Flow = Flow + 1;
  If Flow > 8 Then
   Marker(Request.completed, "completed", Records);
@@ -36,7 +38,9 @@ Procedure OpenOwned(Instance, Key)
  N = New CallbackDescription("Completed", ThisObject, New Structure("Flow,Instance", Flow, Instance));
  Name = ?(Flow <= 3 Or Flow = 8, "Catalog.Products.Form.Card", "Document.Receipt.Form.Card");
  // True forces a distinct instance. No reuse of an earlier managed form.
+ Progress("before_open");
  OpenForm(Name, P, ThisObject, True, Undefined, Undefined, N);
+ Progress("after_open");
 EndProcedure
 
 &AtClient
@@ -85,4 +89,9 @@ EndProcedure
 &AtClient
 Procedure Marker(Path, Phase, Value)
  SaveJSON(Path, New Structure("schema,nonce,phase,source_sha256,form_sha256,records", "native-owned-enum-forms-v1", Request.nonce, Phase, "SOURCE_VALUE", "FORM_VALUE", Value));
+EndProcedure
+
+&AtClient
+Procedure Progress(Phase)
+ SaveJSON(Request.progress, New Structure("schema,nonce,phase,flow,source_sha256,form_sha256", "native-owned-enum-forms-progress-v1", Request.nonce, Phase, Flow, "SOURCE_VALUE", "FORM_VALUE"));
 EndProcedure

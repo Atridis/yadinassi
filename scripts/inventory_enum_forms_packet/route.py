@@ -132,3 +132,24 @@ def lifecycle_progress(raw, nonce):
                 or event['code'] not in ('create', 'open', 'observed')):
             raise ValueError('owned diagnostic event')
     return events
+
+
+def launcher_progress(raw, nonce):
+    value = _json(raw)
+    if (type(value) is not dict
+            or set(value) != {'schema','nonce','phase','flow','source_sha256','form_sha256'}
+            or value['schema'] != 'native-owned-enum-forms-progress-v1'
+            or value['nonce'] != nonce or value['source_sha256'] != SOURCE_SHA256
+            or value['form_sha256'] != FORM_SHA256
+            or type(value['phase']) is not str
+            or value['phase'] not in ('owner_ready','idle_entered','before_open','after_open')
+            or type(value['flow']) is not int or not 0 <= value['flow'] <= 8):
+        raise ValueError('owned launcher diagnostic')
+    return {'phase':value['phase'], 'flow':value['flow']}
+
+
+def valid_launcher_progress(value):
+    return (type(value) is dict and set(value) == {'phase','flow'}
+            and type(value['phase']) is str
+            and value['phase'] in ('owner_ready','idle_entered','before_open','after_open')
+            and type(value['flow']) is int and 0 <= value['flow'] <= 8)

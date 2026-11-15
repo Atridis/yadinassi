@@ -61,7 +61,7 @@ def empty_report(nonce):
             'input_sha256':{},'source_sha256':None,'form_sha256':None,'module_sha256':None,
             'roundtrip_sha256':None,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'config_verified':False,'lifecycle_verified':False,'output_sha256':None,'output_size':None,
-            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'native_diagnostic':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'record_count':None,'lifecycle_events':None,'lifecycle_progress':None,'native_diagnostic':None,'launcher_progress':None,'redump_projection':None,'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -170,8 +170,8 @@ def run_suite(platform,root,inputs,nonce):
         if report['roundtrip_sha256']!=report['module_sha256']:raise full.FullError('module_mismatch')
         entered,completed,request=root/'entered.json',root/'completed.json',root/'request.json'
         trace=root/'trace.json'
-        full.absent(entered,completed,request,trace)
-        request_value={'nonce':nonce,'entered':str(entered),'completed':str(completed),'trace':str(trace)}
+        full.absent(entered,completed,request,trace,root/'progress.json')
+        request_value={'nonce':nonce,'entered':str(entered),'completed':str(completed),'trace':str(trace),'progress':str(root/'progress.json')}
         with request.open('x',encoding='utf-8') as stream:json.dump(request_value,stream)
         # Read back the exact owned request before handing its only path to1C.
         if full.strict_json(full.secure_bytes(request,4096))!=request_value:raise full.FullError('invalid_input')
@@ -232,6 +232,11 @@ def run_suite(platform,root,inputs,nonce):
         if phase in ('check_config','enterprise'):
             report['native_diagnostic'] = failure_diagnostics.collect(root, full, sanitizer, label='check' if phase == 'check_config' else 'enterprise')
         if phase == 'enterprise':
+            try:
+                report['launcher_progress'] = route.launcher_progress(
+                    full.secure_bytes(root/'progress.json', route.MAX_MARKER), nonce)
+            except (ValueError, full.FullError):
+                pass
             try:
                 report['lifecycle_progress'] = route.lifecycle_progress(
                     full.secure_bytes(root/'trace.json', route.MAX_MARKER), nonce)

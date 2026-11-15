@@ -287,6 +287,8 @@ class EnumFormsRouteTests(unittest.TestCase):
         self.assertEqual(host.validate_envelope(self.encode(envelope),nonce,hashes,validator)[1],raw)
         bad=copy.deepcopy(envelope);bad['report']['stage3']['lifecycle_progress']=[]
         with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
+        bad=copy.deepcopy(envelope);bad['report']['stage3']['launcher_progress']=dict(phase='before_open',flow=1)
+        with self.assertRaises(host.FormError):host.validate_envelope(self.encode(bad),nonce,hashes,validator)
         for flag in ('config_verified','lifecycle_verified','quiet','process_exited'):
             bad=copy.deepcopy(envelope);bad['report']['stage3'][flag]=False
             with self.subTest(flag=flag), self.assertRaises(host.FormError):
@@ -388,7 +390,8 @@ class EnumFormsFailureProgressTests(unittest.TestCase):
         report=stage.empty_report(nonce)
         progress=[dict(flow=1,instance=1,code='create')]
         report.update(status='failed',failure_kind='timeout',failure_phase='enterprise',lifecycle_progress=progress,
-                      native_diagnostic=dict(category='compile_error',module='ProductsCard',line=12,identifier='ProbeFlow'))
+                      native_diagnostic=dict(category='compile_error',module='ProductsCard',line=12,identifier='ProbeFlow'),
+                      launcher_progress=dict(phase='before_open',flow=1))
         envelope=dict(schema=host.SCHEMA,profile=host.PROFILE,nonce=nonce,
                       report=dict(status='stage3_failed',native_tests_completed=False,stage3=report),outputs=[])
         validator=lambda raw,**kwargs:json.loads(raw)
@@ -396,6 +399,7 @@ class EnumFormsFailureProgressTests(unittest.TestCase):
             host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
         self.assertEqual(caught.exception.native_failure['lifecycle_progress'],progress)
         self.assertEqual(caught.exception.native_failure['native_diagnostic']['module'],'ProductsCard')
+        self.assertEqual(caught.exception.native_failure['launcher_progress'],dict(phase='before_open',flow=1))
         progress[0]['code']='/private/path'
         with self.assertRaises(host.FormError) as caught:
             host.validate_envelope(json.dumps(envelope).encode(),nonce,{},validator)
@@ -429,3 +433,29 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         source=(ROOT.parent/'native_1c_bootstrap/owned_enum_forms_suite.py').read_text()
         self.assertIn("designer('check',['/CheckConfig','-ThickClientManagedApplication','-Server'])",source)
         self.assertLess(source.index("designer('check'"),source.index("phase='enterprise'"))
+
+    def test_launcher_progress_is_source_bound_finite_and_not_acceptance(self):
+        import json
+        from scripts.inventory_enum_forms_packet import route
+        value=dict(schema='native-owned-enum-forms-progress-v1',nonce='a'*32,
+                   phase='before_open',flow=1,source_sha256=route.SOURCE_SHA256,form_sha256=route.FORM_SHA256)
+        self.assertEqual(route.launcher_progress(json.dumps(value).encode(),'a'*32),dict(phase='before_open',flow=1))
+        for change in (dict(nonce='b'*32),dict(phase='/private'),dict(flow=True),dict(flow=9),dict(source_sha256='0'*64),dict(extra='secret')):
+            with self.subTest(change=change),self.assertRaises(ValueError):
+                route.launcher_progress(json.dumps({**value,**change}).encode(),'a'*32)
+        self.assertFalse(route.valid_launcher_progress(dict(phase='before_open',flow=1,path='secret')))
+
+    def test_console_only_and_empty_out_are_finite(self):
+        import sys,tempfile
+        sys.path.insert(0,str(ROOT.parent/'native_1c_bootstrap'))
+        import diagnostics,full_suite
+        from scripts.inventory_enum_forms_packet import failure_diagnostics as diagnostic
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
+            root=Path(temp).resolve()
+            (root/'enterprise.log').write_bytes(b'')
+            (root/'enterprise-console.log').write_text('{Справочник.Products.Форма.Card.Форма(12, 4)}: Переменная не определена (ProbeFlow)', encoding='utf-8')
+            value=diagnostic.collect(root,full_suite,diagnostics)
+            self.assertEqual(value['module'],'ProductsCard')
+            diagnostic.validate(value,set())
+            (root/'enterprise-console.log').write_bytes(b'x'*(diagnostic.MAX_LOG+1))
+            self.assertEqual(diagnostic.collect(root,full_suite,diagnostics)['category'],'evidence_invalid')
