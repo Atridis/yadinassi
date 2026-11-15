@@ -156,6 +156,7 @@ class Engine:
     MAX_REGISTRY_ENTRIES = 100_000
     MAX_INLINE_FUNCTION_BYTES = 4 * 1024 * 1024
     MAX_INLINE_UNIT_BYTES = 64 * 1024 * 1024
+    MAX_PLAIN_SOURCE_BYTES = 1024 * 1024
 
     def __init__(self, vm):
         from .runtime import _Reference
@@ -171,6 +172,7 @@ class Engine:
         self._origin_signatures = {}
         self._origin_blocks = {}
         self._inline_ir = {}
+        self._plain_routines = {}
         self.vm = vm
         self._nodes = {}
         self._blocks = {}
@@ -305,17 +307,17 @@ class Engine:
         # Nested admission writes into these overlays; any outer failure discards
         # all of them. No AST/host code runs while publishing builtin-map writes.
         bases = (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-                 self._nodes, self._blocks, self._inline_ir)
+                 self._nodes, self._blocks, self._inline_ir, self._plain_routines)
         journals = tuple(AdmissionMap(base) for base in bases)
         (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-         self._nodes, self._blocks, self._inline_ir) = journals
+         self._nodes, self._blocks, self._inline_ir, self._plain_routines) = journals
         try:
             result = self._prepare(program, allow_reprepare=allow_reprepare)
             for journal in journals: journal.commit()
             return result
         finally:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-             self._nodes, self._blocks, self._inline_ir) = bases
+             self._nodes, self._blocks, self._inline_ir, self._plain_routines) = bases
 
     def _prepare(self, program, *, allow_reprepare=True):
         self._inline_unit_bytes = 0
@@ -425,6 +427,7 @@ class Engine:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
             walk(program)
+            self._prepare_plain_routines(nodes)
         except CompiledUnsupported:
             self.stats['rejected_units'] += 1
             raise
@@ -494,6 +497,7 @@ class Engine:
         self._origin_signatures.clear()
         self._origin_blocks.clear()
         self._inline_ir = {key: value for key, value in self._inline_ir.items() if key in owned_ids}
+        self._plain_routines = {key: value for key, value in self._plain_routines.items() if key in owned_ids}
         self._fast_ready = None
 
     def has_node(self, node):
@@ -773,7 +777,7 @@ class Engine:
                     break
             self._active_frames -= 1
 
-    def run_block(self, statements):
+    def run_block(self, statements, *, plain_routine=None):
         if self.OWNED_SNAPSHOT:
             view = self._owned.existing(statements)
             if view is None:
@@ -793,6 +797,14 @@ class Engine:
         elif self.INLINE: self.stats['inline_blocks'] += 1
         self._active_frames += 1
         try:
+            plain = self._plain_routine_plan(plan, plain_routine)
+            if plain is not None:
+                function, values = plain
+                result = function(self.vm, *values)
+                self.stats['plain_routine_calls'] = self.stats.get('plain_routine_calls', 0) + 1
+                from .runtime import _Return
+                raise _Return(result)
+            self.stats['plain_adapter_blocks'] = self.stats.get('plain_adapter_blocks', 0) + 1
             if plan.role == 'metadata':
                 return (yield from plan.function(self.vm, self, plan))
             return (yield from plan.function(self.vm))
@@ -801,6 +813,71 @@ class Engine:
             raise
         finally:
             self._active_frames -= 1
+
+    def _prepare_plain_routines(self, nodes):
+        """Optional lowering is part of transactional admission, not execution.
+
+        Source generation is charged to the same unit-byte counter. Exhausting
+        optional room retains the already admitted compiled adapter instead.
+        """
+        if not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR: return
+        from .plain_routines import lower, Ineligible
+        used = sum(len(entry[1].source.encode()) for entry in self._plain_routines.values() if entry[1] is not None)
+        for plan in nodes.values():
+            routine = plan.node
+            if syntax_kind(routine) is not ast.Routine: continue
+            cached = self._plain_routines.get(id(routine))
+            if cached is not None and cached[0] is routine:
+                if cached[1] is not None:
+                    size = len(cached[1].source.encode())
+                    if (size > self.MAX_INLINE_FUNCTION_BYTES
+                            or size > self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes
+                            or used > self.MAX_PLAIN_SOURCE_BYTES):
+                        self._plain_routines[id(routine)] = (routine, None)
+                        used -= size
+                    else:
+                        self._inline_unit_bytes += size
+                continue
+            available = min(self.MAX_INLINE_FUNCTION_BYTES, self.MAX_PLAIN_SOURCE_BYTES - used,
+                            self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes)
+            try: lowered = lower(routine, max_source_bytes=max(0, available))
+            except Ineligible: lowered = None
+            if lowered is not None:
+                size = len(lowered.source.encode())
+                used += size
+                self._inline_unit_bytes += size
+            self._plain_routines[id(routine)] = (routine, lowered)
+
+    def _plain_routine_plan(self, block, routine):
+        # Host tracing/profiling may observe or mutate the live VM scope on
+        # Python calls/lines. Do not capture detached local slots in that mode.
+        import sys
+        if sys.gettrace() is not None or sys.getprofile() is not None:
+            return None
+        if (not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR
+                or not self._fast_ready or self.DETAILED_INLINE_STATS
+                or routine is None or not is_owned(routine)
+                or syntax_kind(routine) is not ast.Routine
+                or routine.body is not block.statements or block.role == 'metadata'):
+            return None
+        # Cross-context activation may carry the parent engine's declaration
+        # while this child has separately admitted the body. That is not an
+        # eligible local plain plan; retain the existing compiled body adapter.
+        provenance = self._owned.versions.get(id(routine))
+        if provenance is None or provenance[1] is not routine:
+            return None
+        self._verify_owned_identity(routine)
+        cached = self._plain_routines.get(id(routine))
+        if cached is None or cached[0] is not routine: return None
+        lowered = cached[1]
+        if lowered is None: return None
+        # Structural code is reusable; live storage and policy eligibility are not.
+        local = self.vm.locals
+        if type(local) is not dict: return None
+        if any(name in self.vm.module_names or name in self.vm.imports for name in lowered.names): return None
+        values = tuple(local.get(name) for name in lowered.parameters)
+        if any(type(value) is not Decimal for value in values): return None
+        return lowered.function, values
 
     def _check_block_plan(self, plan):
         if self.OWNED_SNAPSHOT:
