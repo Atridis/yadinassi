@@ -242,7 +242,7 @@ PHASES=('prerequisites','inputs','build','install','loaded_source','check_config
 FLAGS={'config_verified','event1_done','entered','completed','process_exited','quiet','witness_verified'}
 HASH_FIELDS={'source_sha256','form_sha256','module_sha256','prepared_sha256','output_sha256'}
 STAGE_KEYS=FLAGS|HASH_FIELDS|{'schema','profile','nonce','status','failure_kind','failure_phase',
-    'input_sha256','output_size','record_count','process_diagnostics','native_error','loaded_sources','check_config'}
+    'input_sha256','output_size','record_count','process_diagnostics','diagnostic_logs','native_error','loaded_sources','check_config'}
 
 
 def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
@@ -270,15 +270,17 @@ def validate_envelope(raw,nonce,hashes,validator=SMOKE.validate_report):
             require(all(item['matched'] is True for item in stage['loaded_sources'].values()))
         else:
             require(stage['check_config']==loaded_probe.empty_check())
+        failure_diagnostics.validate_log_evidence(stage['diagnostic_logs'],DIAGNOSTICS)
         failure_diagnostics.validate(stage['native_error'],DIAGNOSTICS.IDENTIFIERS)
         if stage['status']=='ok' or stage['failure_phase'] not in ('enterprise','check_config'):
             require(stage['native_error']==failure_diagnostics.empty())
+            require(stage['diagnostic_logs']==failure_diagnostics.empty_log_evidence())
         require(type(stage['input_sha256']) is dict and stage['input_sha256'] in ({},hashes))
         if stage['status']!='ok':
             require(report['native_tests_completed'] is False and value['outputs']==[])
             require(report['status']!='ok' and stage['failure_kind']!='none')
             error=FormError('form_native_failed')
-            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet','process_diagnostics','native_error','loaded_sources','check_config')}
+            error.native_failure={key:stage[key] for key in ('failure_kind','failure_phase','entered','completed','process_exited','quiet','process_diagnostics','diagnostic_logs','native_error','loaded_sources','check_config')}
             raise error
         require(loaded_probe.accepted(stage['loaded_sources'],stage['check_config']))
         require(stage['input_sha256']==hashes and stage['failure_kind']=='none' and stage['failure_phase']=='final')

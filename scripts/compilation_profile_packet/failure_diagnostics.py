@@ -87,3 +87,49 @@ def collect(root, full, sanitizer, *, label="enterprise"):
         return validate(value,sanitizer.IDENTIFIERS)
     except (OSError,ValueError,full.FullError):
         return {**empty(),'category':'evidence_invalid'}
+
+
+def empty_log_evidence():
+    return {key:{'state':'not_checked','encoding':'none','has_nul':False,'head':[],'tail':[],'omitted_middle':False}
+            for key in ('out','console')}
+
+
+def log_evidence(root, full, sanitizer, *, label):
+    if label not in ('check','enterprise'):raise ValueError('diagnostic origin')
+    result=empty_log_evidence()
+    for key,suffix in (('out','.log'),('console','-console.log')):
+        item=result[key];path=root/(label+suffix)
+        if not path.exists() and not path.is_symlink():
+            item['state']='absent';continue
+        try:
+            raw=full.secure_bytes(path,MAX_LOG,allow_empty=True)
+            item['state']='present' if raw else 'empty'
+            if not raw:continue
+            item['has_nul']=b'\0' in raw
+            item['encoding']='utf16_bom' if raw[:2] in (b'\xff\xfe',b'\xfe\xff') else 'utf8_bom' if raw.startswith(b'\xef\xbb\xbf') else 'no_bom'
+            # Reuse only the finite reviewed vocabulary, never the raw text,
+            # source names, origin labels, paths or error hierarchy.
+            context=sanitizer.rendered_context(sanitizer.native_text(raw),'owned_log')
+            for field in ('head','tail','omitted_middle'):item[field]=context[field]
+        except (OSError,ValueError,full.FullError):
+            result[key]={**empty_log_evidence()[key],'state':'invalid'}
+    validate_log_evidence(result,sanitizer)
+    return result
+
+
+def validate_log_evidence(value,sanitizer):
+    if type(value) is not dict or set(value)!=set(empty_log_evidence()):raise ValueError('log keys')
+    for key,item in value.items():
+        if type(item) is not dict or set(item)!=set(empty_log_evidence()[key]):raise ValueError('log shape')
+        if type(item['state']) is not str or item['state'] not in ('not_checked','absent','empty','present','invalid'):raise ValueError('log state')
+        if type(item['encoding']) is not str or item['encoding'] not in ('none','utf16_bom','utf8_bom','no_bom'):raise ValueError('log encoding')
+        if type(item['has_nul']) is not bool or type(item['omitted_middle']) is not bool:raise ValueError('log flags')
+        for part in ('head','tail'):
+            if type(item[part]) is not list or len(item[part])>sanitizer.MAX_CONTEXT_TOKENS or any(type(x) is not str or x not in sanitizer.CONTEXT_TOKENS for x in item[part]):raise ValueError('log vocabulary')
+        if item['state']!='present':
+            if item!={**empty_log_evidence()[key],'state':item['state']}:raise ValueError('unobserved log detail')
+        elif item['encoding']=='none':raise ValueError('missing log encoding')
+        elif item['omitted_middle']:
+            if len(item['head'])!=32 or len(item['tail'])!=32:raise ValueError('truncated log shape')
+        elif item['tail']:raise ValueError('log tail')
+    return value

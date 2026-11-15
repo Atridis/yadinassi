@@ -44,7 +44,7 @@ def empty_report(nonce):
             'prepared_sha256':None,'config_verified':False,'event1_done':False,'entered':False,'completed':False,'process_exited':False,
             'quiet':False,'witness_verified':False,'output_sha256':None,'output_size':None,
             'loaded_sources':loaded_probe.empty_sources(),'check_config':loaded_probe.empty_check(),
-            'record_count':None,'native_error':failure_diagnostics.empty(),'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
+            'diagnostic_logs':failure_diagnostics.empty_log_evidence(),'record_count':None,'native_error':failure_diagnostics.empty(),'process_diagnostics':{**full.empty_process_diagnostics(),'stage':'before_probe','reason':'unverified'}}
 
 
 def _dump_files(directory):
@@ -247,6 +247,7 @@ def run_suite(platform,root,inputs,nonce,launcher_epf):
         report['failure_kind']=error.kind if isinstance(error,full.FullError) else 'unexpected_failure'
         report['failure_phase']=phase
         if phase in ('enterprise','check_config'):
+            report['diagnostic_logs']=failure_diagnostics.log_evidence(root,full,diagnostics,label='check' if phase=='check_config' else 'enterprise')
             report['native_error']=failure_diagnostics.collect(root,full,diagnostics,label='check' if phase=='check_config' else 'enterprise')
         if isinstance(error,full.ClientProcessError):report['process_diagnostics']=error.diagnostics
     return report

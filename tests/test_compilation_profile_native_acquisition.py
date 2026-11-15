@@ -465,3 +465,21 @@ class AcquisitionContracts(unittest.TestCase):
             self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check'),expected)
             primary.unlink()
             self.assertEqual(suite.failure_diagnostics.collect(root,suite.full,suite.diagnostics,label='check'),expected)
+
+    def test_closed_log_shape_encoding_and_privacy(self):
+        import tempfile
+        _,suite=self.adapters();d=suite.failure_diagnostics
+        with tempfile.TemporaryDirectory(dir=ROOT.parent) as tmp:
+            root=Path(tmp)
+            self.assertEqual(d.log_evidence(root,suite.full,suite.diagnostics,label='check')['out']['state'],'absent')
+            (root/'check.log').write_bytes(b'')
+            (root/'check-console.log').write_bytes('access denied SecretToken /private/file "password123"'.encode('utf-16'))
+            value=d.log_evidence(root,suite.full,suite.diagnostics,label='check')
+            self.assertEqual(value['out']['state'],'empty')
+            self.assertEqual(value['console']['encoding'],'utf16_bom')
+            self.assertTrue(value['console']['has_nul'])
+            self.assertNotIn('SecretToken',json.dumps(value));self.assertNotIn('password123',json.dumps(value));self.assertNotIn('/private',json.dumps(value))
+            value['console']['head']=['secret']
+            with self.assertRaises(ValueError):d.validate_log_evidence(value,suite.diagnostics)
+            (root/'check-console.log').write_bytes(b'x'*65537)
+            self.assertEqual(d.log_evidence(root,suite.full,suite.diagnostics,label='check')['console']['state'],'invalid')
