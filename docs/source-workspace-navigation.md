@@ -155,3 +155,12 @@ population remains unsupported. This is not native command-bar behavior parity.
 fallback, не реализация адаптивной раскладки 1С. Исходный hash, поля и команды,
 Visible/Enabled/ReadOnly сохраняются. Неизвестные и некорректные значения не
 нормализуются; strict loader не изменён.
+
+### Статические надписи source-форм
+
+Progressive проекция сохраняет `LabelDecoration` как пустую группу с видимым
+заголовком, включая русскую локализацию и Visible/Enabled/ReadOnly. Это текстовая
+подсказка, не поле данных: атрибуты не создаются. Hyperlink, Events, DataPath,
+CommandName и ChildItems явно диагностируются и исключаются. Нажатие такой
+надписи не вызывает обработчик или команду; это не native parity оформления,
+ссылок или событий. Строгий загрузчик и исходный hash остаются неизменными.

@@ -112,7 +112,7 @@ def project_source_form(raw):
         if action is None or not (action.text or '').strip():
             note(path,'Command unavailable: no supported action');commands.remove(node);continue
         command_names[node.get('name').casefold()]=node.get('name')
-    supported={'InputField','LabelField','CheckBoxField','Button','UsualGroup','Pages','Page','CommandBar'}
+    supported={'InputField','LabelField','CheckBoxField','Button','UsualGroup','Pages','Page','CommandBar','LabelDecoration'}
     seen_names=set();seen_ids=set()
     def preflight(container, depth=0):
         if container is None:return
@@ -154,6 +154,15 @@ def project_source_form(raw):
             item_name=node.get('name','');kind=node.tag.removeprefix(L);path='Items.'+item_name
             if kind not in supported:
                 note(path,'Control unavailable: '+kind);container.remove(node);continue
+            if kind == 'LabelDecoration':
+                # A decoration is text, not a field or executable command.
+                # Retain only its caption/state; never project child controls,
+                # hyperlinks, events, or data paths as capabilities.
+                trim(node,('Title','Visible','Enabled','ReadOnly'),path)
+                node.tag=L+'UsualGroup';kind='UsualGroup'
+                ET.SubElement(node,L+'Group').text='Vertical'
+                ET.SubElement(node,L+'ShowTitle').text='true'
+                note(path,'Static label decoration projected as text group; no links or actions')
             if kind == 'CommandBar':
                 # Presentation only: retain explicit children, never synthesize
                 # standard commands or infer database capabilities from Autofill.
