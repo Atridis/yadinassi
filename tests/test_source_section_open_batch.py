@@ -16,7 +16,7 @@ class SourceSectionOpenBatchTests(unittest.TestCase):
         s,ids=self.populated(32);q=[];s._connection.set_trace_callback(q.append)
         try:s.validate_records()
         finally:s._connection.set_trace_callback(None)
-        payload=[sql for sql in q if sql.startswith('SELECT record_identity,section_identity,payload FROM source_document_section')]
+        payload=[sql for sql in q if sql.startswith('SELECT document_identity,record_identity,section_identity,payload FROM source_document_section')]
         self.assertEqual(len(payload),1)
         self.assertFalse(any(sql.startswith('SELECT section_identity,payload') for sql in q))
         self.assertTrue(any(sql=='PRAGMA foreign_key_check' for sql in q))
@@ -57,6 +57,6 @@ class SourceSectionOpenBatchTests(unittest.TestCase):
         q=[];s._connection.set_trace_callback(q.append)
         try:s.validate_records()
         finally:s._connection.set_trace_callback(None)
-        self.assertEqual(len([x for x in q if x.startswith('SELECT record_identity,section_identity,payload FROM source_document_section')]),2)
+        self.assertEqual(len([x for x in q if x.startswith('SELECT document_identity,record_identity,section_identity,payload FROM source_document_section')]),1)
         s.close();r=SourceDocumentSectionStore.reopen(self.path,src);self.addCleanup(r.close)
         self.assertEqual(len(r.read_documents('Invoice')),1);self.assertEqual(len(r.read_documents('Receipt')),1)

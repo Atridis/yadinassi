@@ -82,15 +82,18 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         return result
     def _validate_selection_sections(self,definition,identities,identity=None):
         """One bounded ordered payload query, preserving every selected row check."""
-        from itertools import groupby
-        expected={str(value) for value in identities};seen=set()
-        known={str(section.identity):section for section in definition.sections}
         sql='SELECT record_identity,section_identity,payload FROM source_document_section WHERE document_identity=?'
         args=[str(definition.identity)]
         if identity is not None:
             sql+=' AND record_identity=?';args.append(str(identity))
         sql+=' ORDER BY record_identity,section_identity LIMIT 160001'
         payloads=self._connection.execute(sql,args)
+        self._validate_section_payloads(definition,identities,payloads)
+
+    def _validate_section_payloads(self,definition,identities,payloads):
+        from itertools import groupby
+        expected={str(value) for value in identities};seen=set()
+        known={str(section.identity):section for section in definition.sections}
         total_count=0
         for rid,rows in groupby(payloads,key=lambda row:row[0]):
             if rid not in expected:raise ValueError('section foreign record integrity')
@@ -119,8 +122,22 @@ class SourceDocumentSectionStore(SourceDocumentStore):
             if count>_MAX_RECORDS:raise ValueError('source document record bound')
             if did not in known:raise ValueError('source document identity integrity')
             identities.setdefault(did,[]).append(rid)
-        for did,ids in identities.items():
-            self._validate_selection_sections(known[did],ids)
+        # One globally bounded ordered stream, even across many document families.
+        from itertools import groupby
+        payloads=self._connection.execute('SELECT document_identity,record_identity,section_identity,payload FROM source_document_section ORDER BY document_identity,record_identity,section_identity LIMIT 160001')
+        seen=set();total=0
+        def bounded():
+            nonlocal total
+            for row in payloads:
+                total+=1
+                if total>160000:raise ValueError('section aggregate storage bound')
+                yield row
+        for did,rows in groupby(bounded(),key=lambda row:row[0]):
+            if did not in identities:raise ValueError('section foreign record integrity')
+            self._validate_section_payloads(known[did],identities[did],(row[1:] for row in rows))
+            seen.add(did)
+        for did in identities.keys()-seen:
+            self._validate_section_payloads(known[did],identities[did],())
         if self._connection.execute('PRAGMA foreign_key_check').fetchone() is not None:raise ValueError('section foreign key integrity')
     def read_documents(self,name,identity=None):
         owned=not self.transaction_active
