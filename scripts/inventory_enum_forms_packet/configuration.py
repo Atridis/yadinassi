@@ -5,6 +5,7 @@ arbitrary configuration is admitted. Installation/redump/lifecycle acceptance is
 not implemented by this preparation helper.
 """
 from pathlib import Path
+import re
 from inventory_enum_behavior import fixture as core
 
 ROOT = Path(__file__).resolve().parent
@@ -14,6 +15,8 @@ OWNERS = (('Catalog', 'Products'), ('Document', 'Receipt'))
 def prepare(files):
     setup, result = core.prepare(files)
     original = core.original
+    rights = original.ROLE_FILES[1]
+    result[rights] = grant_owned_form_view(result[rights])
     from .route import packet
     assets = packet()
     module = assets['lifecycle.bsl']
@@ -38,3 +41,20 @@ def prepare(files):
     if len(identities) != len(set(identities)):
         raise ValueError('duplicate configuration/form metadata identity')
     return setup, result
+
+
+def grant_owned_form_view(raw):
+    """Only View for the two objects whose forms this isolated packet opens."""
+    core.original._xml(raw)
+    for name in (b'Catalog.Products', b'Document.Receipt'):
+        pattern = rb'<(?P<p>(?:[A-Za-z_][A-Za-z_0-9.-]*:)?)name>' + re.escape(name) + rb'</(?P=p)name>'
+        matches = list(re.finditer(pattern, raw))
+        if len(matches) != 1:
+            raise ValueError('owned form rights identity')
+        match = matches[0]; prefix = match['p']
+        right = (b'<' + prefix + b'right><' + prefix + b'name>View</' + prefix
+                 + b'name><' + prefix + b'value>true</' + prefix + b'value></'
+                 + prefix + b'right>')
+        raw = raw[:match.end()] + right + raw[match.end():]
+    core.original._xml(raw)
+    return raw

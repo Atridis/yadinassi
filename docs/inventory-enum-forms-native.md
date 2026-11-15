@@ -152,3 +152,16 @@ The next diagnostic catches OpenForm errors and emits only a closed error phase
 (access/variable/field/method/unknown), then terminates without a completion
 marker. Native error text stays in memory and is never exported. Existing
 process deadlines, minimal rights and success acceptance remain unchanged.
+
+Run 43719067482 (c9ee2a57) now exited and cleaned up instead of hanging:
+flow 1 reported open_error_access, with no child lifecycle and no completion.
+Artifact 14163328637 SHA256
+5d0910a2195967ea56c645dd50e68c654bceeb6717aac070911dccbc56dd3574 is ZIP-verified.
+The owned baseline role has Read/Insert/Update but no View. The official
+[Developer Guide](https://1c-dn.com/download-trial/files/guides/developer_guide.pdf)
+requires View for opening an object form. This packet therefore adds only View
+for Catalog.Products and Document.Receipt in its fresh isolated database, leaving
+all shared fixture grants unchanged. No FullAccess, privileged mode, default
+rights, interactive insert/post/delete rights or user databases are involved.
+Material redump still verifies the exact intended rights. A fresh native run must
+verify whether this resolves the observed access failure; no success is assumed.

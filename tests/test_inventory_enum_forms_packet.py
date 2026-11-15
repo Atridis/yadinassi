@@ -474,3 +474,33 @@ class EnumFormsNativeDiagnosticTests(unittest.TestCase):
         self.assertIn('Progress(Phase);\n  ЗавершитьРаботуСистемы(Ложь);\n  Return False;',source)
         self.assertIn('EndTry;\n Progress("after_open");\n Return True;',source)
         self.assertEqual(source.count('If Not OpenOwned('),3)
+
+    def test_owned_view_grants_are_exactly_two_and_preserve_existing_rights(self):
+        from scripts.inventory_enum_forms_packet.configuration import grant_owned_form_view
+        for prefix in ('','r:'):
+            p=prefix
+            raw=(f'<{p}Rights xmlns="http://v8.1c.ru/8.2/roles" xmlns:r="http://v8.1c.ru/8.2/roles">'
+                 + ''.join(f'<{p}object><{p}name>{name}</{p}name><{p}right><{p}name>Read</{p}name><{p}value>true</{p}value></{p}right></{p}object>'
+                           for name in ('Catalog.Products','Document.Receipt','Catalog.Warehouses'))
+                 +f'</{p}Rights>').encode()
+            changed=grant_owned_form_view(raw)
+            addition=f'<{p}right><{p}name>View</{p}name><{p}value>true</{p}value></{p}right>'.encode()
+            self.assertEqual(changed.count(addition),2)
+            self.assertEqual(changed.replace(addition,b''),raw)
+            self.assertNotIn(b'FullAccess',changed)
+            self.assertNotIn(b'InteractiveInsert',changed)
+            with self.assertRaises(ValueError):grant_owned_form_view(raw.replace(b'Catalog.Products',b'Catalog.Other'))
+
+    def test_prepared_view_rights_are_verified_by_redump(self):
+        from test_catalog_object_fixture import baseline
+        from scripts.inventory_enum_forms_packet import configuration, material
+        from inventory_enum_behavior import fixture
+        _,expected=configuration.prepare(baseline())
+        self.assertTrue(material.verify_redump(expected,expected))
+        path=fixture.original.ROLE_FILES[1]
+        raw=expected[path]
+        import re
+        removed=re.sub(rb'<(?:\w+:)?right><(?:\w+:)?name>View</(?:\w+:)?name><(?:\w+:)?value>true</(?:\w+:)?value></(?:\w+:)?right>',b'',raw,count=1)
+        self.assertNotEqual(removed,raw)
+        for changed in (removed,raw.replace(b'>View<',b'>FullAccess<',1)):
+            with self.assertRaises(ValueError):material.verify_redump(expected,{**expected,path:changed})
