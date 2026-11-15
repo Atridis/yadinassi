@@ -38,6 +38,7 @@ class SourceWorkspace:
         self.default_form_cache = {}
         self.form_preview = None
         self.module_preflight = None
+        self.object_checks = None
         inventory = application.metadata._inventory
         def full_name(entry):
             parent_path = entry.path.rsplit('/', 2)[0] + '.xml'
@@ -435,6 +436,38 @@ class SourceWorkspace:
             result['error'] = str(error)[:1024]
         self.module_preflight = result
 
+    def _check_object_forms(self):
+        """Bounded static inspection only; preserve individual diagnostic panels."""
+        detail = self.object_detail()
+        targets = list(dict.fromkeys(detail['forms'] + [item['name'] for item in detail['default_forms']]))
+        results = []; size = 2
+        old_preview, old_module = self.form_preview, self.module_preflight
+        try:
+            for target in targets[:4]:
+                self._preview_form(target); self._preflight_module(target)
+                xml, module = self.form_preview, self.module_preflight
+                audit = module.get('handler_names') or {}
+                row = {'name': target, 'xml_sha256': xml['source_sha256'],
+                       'module_sha256': module['module_sha256'], 'xml_status': xml['status'],
+                       'module_status': module['status'],
+                       'audit_status': audit.get('status','not-run'),
+                       'audit_error': (audit.get('error') or '')[:160] or None,
+                       'static_issues': sum(len(audit.get(key, [])) + audit.get(omitted, 0)
+                           for key, omitted in (('missing','omitted_missing'),
+                             ('signature_issues','omitted_signature_issues'),('attribute_issues','omitted_attribute_issues'))),
+                       'xml_error': (xml['diagnostics'][0]['reason'][:160]
+                           if xml['status']=='unavailable' and xml['diagnostics'] else None),
+                       'module_error': (module['error'] or '')[:160] or None}
+                cost = len(json.dumps(row, ensure_ascii=False).encode('utf-8')) + 1
+                if size + cost > 8192:
+                    break
+                results.append(row); size += cost
+        finally:
+            self.form_preview, self.module_preflight = old_preview, old_module
+        self.object_checks = {'name': detail['name'], 'forms': results,
+            'uninspected_targets': len(targets)-len(results), 'inventory_omitted_forms': detail['omitted_forms'],
+            'limit': 4, 'runtime_checked': False, 'storage_granted': False, 'native_parity': False}
+
     def snapshot(self):
         visible, omitted = self.visible_forms()
         objects, object_omitted = self.object_inventory()
@@ -456,6 +489,7 @@ class SourceWorkspace:
                 'object_families': self.object_families, 'omitted_families': self.omitted_families, 'object_detail': self.object_detail(),
                 'form_preview': json.loads(json.dumps(self.form_preview)),
                 'module_preflight': json.loads(json.dumps(self.module_preflight)),
+                'object_checks': json.loads(json.dumps(self.object_checks)),
                 'memory_only': True, 'native_parity': False}}
 
     def exchange(self, request):
@@ -500,6 +534,11 @@ class SourceWorkspace:
                 self._preview_form(params['name'])
             if method in ('workspace.preflight', 'workspace.check'):
                 self._preflight_module(params['name'])
+        elif method == 'workspace.checkObject':
+            if (set(params) != {'name'} or type(params['name']) is not str
+                    or params['name'] != self.object_selected or params['name'] not in self.object_inventory()[0]):
+                raise ValueError('current visible selected object required')
+            self._check_object_forms()
         elif method == 'workspace.select':
             if (set(params) != {'generation'} or type(params['generation']) is not int
                     or params['generation'] not in self.open_forms):
@@ -565,4 +604,4 @@ class SourceWorkspace:
 
 class SourceWorkspaceHandler(_Handler):
     asset_directory = 'source-workspace'
-    methods = ('workspace.snapshot','workspace.preview','workspace.preflight','workspace.check','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')
+    methods = ('workspace.snapshot','workspace.preview','workspace.preflight','workspace.check','workspace.checkObject','workspace.open','workspace.search','workspace.objects','workspace.inspect','workspace.select','workspace.form','workspace.close')

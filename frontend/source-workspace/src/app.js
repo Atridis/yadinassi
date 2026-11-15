@@ -73,6 +73,8 @@ async function apply(reply){
     heading.textContent=caption(data.name,{[data.name]:data.title});path.textContent='XML: '+data.source_path;
     notice.textContent=data.execution==='metadata_only'?'Только метаданные: объявленной исполняемой формы нет. CRUD и хранилище не предоставляются.':'Объявленные формы открываются явно и могут выдавать ошибки неподдерживаемых возможностей. CRUD и хранилище не предоставляются.';
     detail.append(heading,path,notice);
+    if(data.forms.length||(data.default_forms||[]).length){const batch=document.createElement('button');batch.textContent='Проверить формы объекта без запуска (до 4)';batch.addEventListener('click',()=>action('workspace.checkObject',{name:data.name}));detail.append(batch);}
+    if(state.object_checks?.name===data.name){const summary=document.createElement('section');summary.setAttribute('aria-label','Проверки форм объекта');const notice=document.createElement('p');notice.textContent='Только статические проверки, без исполнения. Не проверено целей: '+state.object_checks.uninspected_targets+'; вне показанного списка: '+state.object_checks.inventory_omitted_forms;summary.append(notice);for(const row of state.object_checks.forms){const item=document.createElement('p');item.textContent=row.name+' · XML: '+row.xml_status+' · BSL: '+row.module_status+' · аудит обработчиков: '+(row.audit_status||'not-run')+(row.audit_error?' ('+row.audit_error+')':'')+' · статических проблем: '+row.static_issues+(row.xml_error?' · XML: '+row.xml_error:'')+(row.module_error?' · BSL: '+row.module_error:'');summary.append(item);}detail.append(summary);}
     const checkedForms=new Set();
     function addFormChecks(name){
       if(checkedForms.has(name))return;checkedForms.add(name);

@@ -51,7 +51,7 @@ test('retained tabs use supplied labels even when current search excludes form',
 test('declared default action opens canonical target explicitly, with diagnostic text',async()=>{
  const h=await harness({...state,object_detail:{name:'Catalog.A',source_path:'Catalogs/A.xml',execution:'explicit_form_selection',forms:[],form_labels:{'CommonForm.Main':'Главная'},default_forms:[{property:'DefaultListForm',name:'CommonForm.Main'}],default_form_diagnostics:['DefaultObjectForm: unavailable']}});
  assert.equal(h.requests.length,1);
- const button=h.get('Метаданные выбранного объекта').children.find(x=>x.tag==='button');assert.equal(button.textContent,'Форма списка: Главная (CommonForm.Main)');
+ const button=h.get('Метаданные выбранного объекта').children.find(x=>x.tag==='button'&&x.textContent==='Форма списка: Главная (CommonForm.Main)');assert.equal(button.textContent,'Форма списка: Главная (CommonForm.Main)');
  button.listeners.click();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.requests.at(-1).method,'workspace.open');assert.equal(h.requests.at(-1).params.name,'CommonForm.Main');
  assert.ok(h.get('Метаданные выбранного объекта').children.some(x=>x.textContent==='DefaultObjectForm: unavailable'));
 });
@@ -181,4 +181,21 @@ test('undefined and malformed source digests cannot create a bound report',async
   const h=await harness({...checkedState,form_preview:{...checkedState.form_preview,source_sha256:digest},module_preflight:{...checkedState.module_preflight,xml_sha256:digest}});
   assert.equal(h.elements.find(e=>e.textContent==='Скачать отчёт проверок').disabled,true);
  }
+});
+test('object batch check uses one canonical RPC and never opens forms',async()=>{
+ const h=await harness({...state,object_detail:objectDetail});await h.elements.find(e=>e.textContent==='Проверить формы объекта без запуска (до 4)').listeners.click();
+ assert.equal(h.requests.at(-1).method,'workspace.checkObject');assert.equal(h.requests.at(-1).params.name,'Catalog.A');assert.equal(h.requests.length,2);
+});
+test('batch summary retains failed checks and omissions as literal text',async()=>{
+ const h=await harness({...state,object_detail:objectDetail,object_checks:{name:'Catalog.A',uninspected_targets:3,inventory_omitted_forms:2,forms:[{name:'Catalog.A.Form.Card',xml_status:'unavailable',module_status:'compiled',static_issues:1,xml_error:'<script>bad()</script>'}]}});
+ const panel=h.get('Проверки форм объекта');assert.ok(panel.children[0].textContent.includes('Не проверено целей: 3'));assert.ok(panel.children[1].textContent.includes('<script>bad()</script>'));assert.equal(panel.children[1].children.length,0);
+});
+test('batch action is absent for metadata-only objects and disabled when closed',async()=>{
+ const empty=await harness({...state,object_detail:{...objectDetail,forms:[],default_forms:[]}});assert.ok(!empty.elements.some(e=>e.textContent==='Проверить формы объекта без запуска (до 4)'));
+ const closed=await harness({...state,kind:'closed',object_detail:objectDetail});assert.equal(closed.elements.find(e=>e.textContent==='Проверить формы объекта без запуска (до 4)').disabled,true);
+ const other=await harness({...state,object_detail:objectDetail,object_checks:{name:'Catalog.B'}});assert.equal(other.get('Проверки форм объекта'),undefined);
+});
+test('batch unavailable handler audit remains visible alongside successful compilation',async()=>{
+ const h=await harness({...state,object_detail:objectDetail,object_checks:{name:'Catalog.A',uninspected_targets:0,inventory_omitted_forms:0,forms:[{name:'Catalog.A.Form.Card',xml_status:'projected',module_status:'compiled',static_issues:0,audit_status:'unavailable',audit_error:'duplicate event'}]}});
+ const text=h.get('Проверки форм объекта').children[1].textContent;assert.ok(text.includes('аудит обработчиков: unavailable (duplicate event)'));assert.ok(text.includes('BSL: compiled'));
 });
