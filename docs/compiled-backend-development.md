@@ -58,8 +58,9 @@ pay for unconditional no-op hook calls. Reference instrumentation uses its
 existing `_visit` embedding boundary. No absence-of-authority decision is cached.
 
 Selecting `compiled-strict` now selects the whole-program inline pipeline, including
-fresh UI/stdio subprocesses. The application-wide default remains `interpreter`
-until integration gates are complete. The node-scaffold compiler is an explicit
+fresh UI/stdio subprocesses. The application-wide default is `compiled-strict`
+with the snapshot contract. Explicit `interpreter` selection remains available
+for rollback and is forwarded unchanged into fresh UI/stdio subprocesses. The node-scaffold compiler is an explicit
 diagnostic runner option, not a silent execution fallback. Production-style strict
 execution records real block/fragment entries without detailed node counters;
 coverage tests explicitly enable detailed instrumentation. Both variants retain

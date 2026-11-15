@@ -4,10 +4,13 @@ from yadinassi import Interpreter
 def HybridInterpreter(**kwargs):
     return Interpreter(execution_backend="hybrid", **kwargs)
 
+def ReferenceInterpreter(**kwargs):
+    return Interpreter(execution_backend="interpreter", **kwargs)
+
 class Differential(unittest.TestCase):
     def pair(self, source, compiled=None, initial=None):
         records=[]
-        for cls in (Interpreter, HybridInterpreter):
+        for cls in (ReferenceInterpreter, HybridInterpreter):
             out=[];vm=cls(output=out.append)
             if initial: vm.variables.update(initial)
             error=None
@@ -91,8 +94,8 @@ class Differential(unittest.TestCase):
 
 
 class AdmissionTests(unittest.TestCase):
-    def test_default_is_unchanged_and_stats_are_copy(self):
-        vm=Interpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
+    def test_explicit_interpreter_rollback_and_stats_are_copy(self):
+        vm=Interpreter(execution_backend="interpreter");vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
         self.assertEqual(vm.execution_backend,'interpreter')
         self.assertEqual(vm.execution_backend_stats['compiled'],0)
         copy=vm.execution_backend_stats;copy['compiled']=99

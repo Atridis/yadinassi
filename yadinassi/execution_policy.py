@@ -3,7 +3,8 @@ from contextvars import ContextVar
 from contextlib import contextmanager
 
 BACKENDS = ('interpreter', 'hybrid', 'compiled-strict')
-_POLICY = ContextVar('yadinassi_execution_backend', default='interpreter')
+DEFAULT_BACKEND = 'compiled-strict'
+_POLICY = ContextVar('yadinassi_execution_backend', default=DEFAULT_BACKEND)
 
 def current_backend():
     return _POLICY.get()

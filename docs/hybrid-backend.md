@@ -1,6 +1,7 @@
 # Opt-in hybrid backend: Decimal module loops
 
-The default remains the ordinary interpreter. The opt-in `hybrid` backend lowers
+The default is the whole-program `compiled-strict` snapshot backend.
+The ordinary interpreter remains available explicitly for rollback. The opt-in `hybrid` backend lowers
 eligible BSL `Для` loops to Python AST and uses Python `compile`; it does not emit
 version-specific CPython opcodes. Unsupported regions execute once through the
 ordinary interpreter. This is a bounded first integration, not compilation of all
