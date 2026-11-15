@@ -2,7 +2,7 @@
 import json
 import sqlite3
 from uuid import UUID
-from .source_catalog_store import SourceCatalogStore, _MAX_RECORDS, _MAX_RECORD_BYTES
+from .source_catalog_store import SourceCatalogStore, _MAX_RECORDS, _MAX_RECORD_BYTES, _record_identity
 from .source_constant_store import _json, _encode, _decode, _MAX_DATABASE_BYTES
 
 _HANDLED_DOCUMENT_WRITE = object()
@@ -88,11 +88,15 @@ class SourceDocumentStore(SourceCatalogStore):
     def validate_records(self):
         super().validate_records()
         known = {str(d.identity):d for d in self.document_definitions.values()}
-        for cid, rid, rev, raw, number in self._connection.execute('SELECT document_identity,record_identity,revision,payload,number FROM source_document_record LIMIT ?', (_MAX_RECORDS+1,)):
-            if cid not in known or type(rid) is not str or str(UUID(rid)) != rid or UUID(rid).int == 0 or type(rev) is not int or not 1 <= rev <= 2**53:
-                raise ValueError('source document record identity/revision integrity')
-            if decode_record(known[cid], raw)['number'] != number:
-                raise ValueError('source document number integrity')
+        rows=self._connection.execute('SELECT document_identity,record_identity,revision,payload,number FROM source_document_record LIMIT ?', (_MAX_RECORDS+1,))
+        try:
+            for index,(cid,rid,rev,raw,number) in enumerate(rows):
+                if index>=_MAX_RECORDS:raise ValueError('source document record bound')
+                if cid not in known:raise ValueError('source document record identity/revision integrity')
+                _record_identity(rid,rev,'document')
+                if decode_record(known[cid],raw)['number']!=number:
+                    raise ValueError('source document number integrity')
+        finally:rows.close()
 
     def document(self, name):
         if type(name) is not str:
@@ -120,11 +124,10 @@ class SourceDocumentStore(SourceCatalogStore):
             try:
                 for index,(rid,rev,raw,number) in enumerate(rows):
                     if index>=_MAX_RECORDS:raise ValueError('source document record bound')
-                    if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
-                        raise ValueError('source document record identity/revision integrity')
+                    parsed_identity=_record_identity(rid,rev,'document')
                     values=decode_record(definition,raw)
                     if values['number']!=number:raise ValueError('source document number integrity')
-                    result.append((UUID(rid),rev,values))
+                    result.append((parsed_identity,rev,values))
             finally:
                 rows.close()
             if identity is not None and not result:raise ValueError('source document record not found')

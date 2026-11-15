@@ -13,6 +13,16 @@ _HANDLED_CATALOG_WRITE = object()
 _MAX_RECORD_BYTES = 16 * 1024 * 1024
 
 
+def _record_identity(raw,revision,family):
+    """Decode once, retaining canonical/nonempty identity and exact revision rules."""
+    error='source '+family+' record identity/revision integrity'
+    if type(raw) is not str:raise ValueError(error)
+    identity=UUID(raw)
+    if str(identity)!=raw or identity.int==0 or type(revision) is not int or not 1<=revision<=2**53:
+        raise ValueError(error)
+    return identity
+
+
 def _definitions(source, enums=None, refs=None):
     from .source_catalog_definitions import source_catalog_definitions, catalog_definition_record
     definitions, errors = source_catalog_definitions(source, enums, refs)
@@ -126,11 +136,15 @@ class SourceCatalogStore(SourceConstantStore):
 
     def validate_records(self):
         known = {str(d.identity):d for d in self.catalog_definitions.values()}
-        for cid, rid, rev, raw, code in self._connection.execute('SELECT catalog_identity,record_identity,revision,payload,code FROM source_catalog_record LIMIT ?', (_MAX_RECORDS+1,)):
-            if cid not in known or type(rid) is not str or str(UUID(rid)) != rid or UUID(rid).int == 0 or type(rev) is not int or not 1 <= rev <= 2**53:
-                raise ValueError('source catalog record identity/revision integrity')
-            if decode_record(known[cid], raw)['code'] != code:
-                raise ValueError('source catalog code integrity')
+        rows=self._connection.execute('SELECT catalog_identity,record_identity,revision,payload,code FROM source_catalog_record LIMIT ?', (_MAX_RECORDS+1,))
+        try:
+            for index,(cid,rid,rev,raw,code) in enumerate(rows):
+                if index>=_MAX_RECORDS:raise ValueError('source catalog record bound')
+                if cid not in known:raise ValueError('source catalog record identity/revision integrity')
+                _record_identity(rid,rev,'catalog')
+                if decode_record(known[cid],raw)['code']!=code:
+                    raise ValueError('source catalog code integrity')
+        finally:rows.close()
 
     def catalog(self, name):
         if type(name) is not str:
@@ -161,11 +175,10 @@ class SourceCatalogStore(SourceConstantStore):
             try:
                 for index,(rid,rev,raw,code) in enumerate(rows):
                     if index>=_MAX_RECORDS:raise ValueError('source catalog record bound')
-                    if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
-                        raise ValueError('source catalog record identity/revision integrity')
+                    parsed_identity=_record_identity(rid,rev,'catalog')
                     values=decode_record(definition,raw)
                     if values['code']!=code:raise ValueError('source catalog code integrity')
-                    result.append((UUID(rid),rev,values))
+                    result.append((parsed_identity,rev,values))
             finally:
                 rows.close()
             if identity is not None and not result:raise ValueError('source catalog record not found')
