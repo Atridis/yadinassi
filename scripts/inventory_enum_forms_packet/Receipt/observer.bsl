@@ -8,19 +8,19 @@ EndProcedure
 Function UnitTag(Value)
  If TypeOf(Value) <> Type("EnumRef.Units") Then Return "other"; EndIf;
  If Value.IsEmpty() Then Return "empty"; EndIf;
- Return "unit" + Format(Enums.Units.IndexOf(Value), "NG=0");
+ Return "unit" + XMLString(Enums.Units.IndexOf(Value));
 EndFunction
 
 &AtServerNoContext
 Function StateTag(Value)
  If TypeOf(Value) <> Type("EnumRef.States") Then Return "other"; EndIf;
  If Value.IsEmpty() Then Return "empty"; EndIf;
- Return "state" + Format(Enums.States.IndexOf(Value), "NG=0");
+ Return "state" + XMLString(Enums.States.IndexOf(Value));
 EndFunction
 
 &AtServer
 Procedure PrepareRows(Flow)
- Object.Number = "EF00000" + Format(Flow, "NG=0"); Object.Date = Date(2024,1,1,12,0,0);
+ Object.Number = "EF00000" + XMLString(Flow); Object.Date = Date(2024,1,1,12,0,0);
  Object.State = Enums.States.Approved;
  Object.Lines.Clear();
  One = Object.Lines.Add(); One.Unit = Enums.Units.Piece; One.Quantity = 1; One.Amount = 2;
@@ -31,7 +31,7 @@ EndProcedure
 Function MovementShape(Reference)
  Rows = AccumulationRegisters.Stock.CreateRecordSet();
  Rows.Filter.Recorder.Set(Reference); Rows.Read();
- Payload = Format(Rows.Count(), "NG=0");
+ Payload = XMLString(Rows.Count());
  If Rows.Count() > 0 Then
   Payload = Payload + ";" + UnitTag(Rows[0].Unit) + ";" + StateTag(Rows[0].State);
  EndIf;

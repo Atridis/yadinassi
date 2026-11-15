@@ -276,3 +276,16 @@ stable numeric strings. The official localization guidance recommends `XMLString
 for conversion of numbers to strings used in data exchange:
 https://kb.1ci.com/1C_Enterprise_Platform/Guides/Developer_Guides/1C_Enterprise_Development_Standards/Localization_requirements/Localization_guidelines_____Dates__numbers__and_Boolean/?language=en
 This hypothesis is not an observed native value and is not yet a runtime fix.
+
+### Bound diagnostic and numeric serialization correction
+
+Exact `b6760ddb` native artifact `14184266965` verified source-bound marker
+framing with `group=7, reason=token_empty`: the undo-post record contains an
+empty token. All form lifecycles still completed and the process exited quietly;
+this remains failed acquisition, not parity. The observer's zero movement count
+used presentation formatting (`NG=0`). Following the official serialization
+rule above, numeric count/index/fixture-number conversions now use `XMLString`
+instead. This preserves actual measured values, including zero and zero-based
+enum indices, without inserting expected outcomes. Packet hashes are refreshed;
+strict token framing, source bindings, rights and redump gates are unchanged.
+Native verification of the corrected output is still required.

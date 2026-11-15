@@ -578,3 +578,14 @@ class MarkerFailureDiagnosticTests(unittest.TestCase):
             self.assertFalse(route.valid_marker_diagnostic(v))
         self.assertTrue(route.valid_marker_diagnostic(probe(bad)))
         self.assertEqual(probe({**value,'records':value['records'].replace('conversion_unpost=ok','conversion_unpost=;ok')}),dict(reason='token_empty',group=7))
+
+class ObserverNumericSerializationTests(unittest.TestCase):
+    def test_numeric_observations_use_locale_independent_xml(self):
+        from inventory_enum_forms_packet import route
+        packet=route.packet()
+        for name in ('Products/observer.bsl','Receipt/observer.bsl'):
+            source=packet[name].decode()
+            self.assertNotIn('Format(',source)
+            self.assertIn('XMLString(Enums.Units.IndexOf(Value))',source)
+        self.assertIn('XMLString(Rows.Count())',packet['Receipt/observer.bsl'].decode())
+        self.assertIn('XMLString(ThisObject.ExplicitChangeCount)',packet['Products/observer.bsl'].decode())
