@@ -56,7 +56,8 @@ class SectionGlobalStreamTests(unittest.TestCase):
             connection=Mock()
             def execute(sql,args=()):
                 if 'FROM source_document_record' in sql:return iter([(first,'rid'),(second,'rid')])
-                if 'FROM source_document_section' in sql:return row_stream(count)
+                if 'FROM source_document_section' in sql:
+                    result=Mock();result.__iter__=Mock(return_value=row_stream(count));return result
                 result=Mock();result.fetchone.return_value=None;return result
             connection.execute.side_effect=execute;s._connection=connection
             try:

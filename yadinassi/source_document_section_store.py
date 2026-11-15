@@ -88,7 +88,8 @@ class SourceDocumentSectionStore(SourceDocumentStore):
             sql+=' AND record_identity=?';args.append(str(identity))
         sql+=' ORDER BY record_identity,section_identity LIMIT 160001'
         payloads=self._connection.execute(sql,args)
-        self._validate_section_payloads(definition,identities,payloads)
+        try:self._validate_section_payloads(definition,identities,payloads)
+        finally:payloads.close()
 
     def _validate_section_payloads(self,definition,identities,payloads):
         from itertools import groupby
@@ -132,10 +133,12 @@ class SourceDocumentSectionStore(SourceDocumentStore):
                 total+=1
                 if total>160000:raise ValueError('section aggregate storage bound')
                 yield row
-        for did,rows in groupby(bounded(),key=lambda row:row[0]):
-            if did not in identities:raise ValueError('section foreign record integrity')
-            self._validate_section_payloads(known[did],identities[did],(row[1:] for row in rows))
-            seen.add(did)
+        try:
+            for did,rows in groupby(bounded(),key=lambda row:row[0]):
+                if did not in identities:raise ValueError('section foreign record integrity')
+                self._validate_section_payloads(known[did],identities[did],(row[1:] for row in rows))
+                seen.add(did)
+        finally:payloads.close()
         for did in identities.keys()-seen:
             self._validate_section_payloads(known[did],identities[did],())
         if self._connection.execute('PRAGMA foreign_key_check').fetchone() is not None:raise ValueError('section foreign key integrity')

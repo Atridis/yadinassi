@@ -115,15 +115,18 @@ class SourceDocumentStore(SourceCatalogStore):
             if identity is not None:
                 sql += ' AND record_identity=?'; args.append(str(identity))
             sql += ' ORDER BY record_identity LIMIT ?';args.append(_MAX_RECORDS+1)
-            rows = self._connection.execute(sql, args).fetchall()
-            if len(rows)>_MAX_RECORDS:raise ValueError('source document record bound')
+            rows = self._connection.execute(sql, args)
             result=[]
-            for rid,rev,raw,number in rows:
-                if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
-                    raise ValueError('source document record identity/revision integrity')
-                values=decode_record(definition,raw)
-                if values['number']!=number:raise ValueError('source document number integrity')
-                result.append((UUID(rid),rev,values))
+            try:
+                for index,(rid,rev,raw,number) in enumerate(rows):
+                    if index>=_MAX_RECORDS:raise ValueError('source document record bound')
+                    if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
+                        raise ValueError('source document record identity/revision integrity')
+                    values=decode_record(definition,raw)
+                    if values['number']!=number:raise ValueError('source document number integrity')
+                    result.append((UUID(rid),rev,values))
+            finally:
+                rows.close()
             if identity is not None and not result:raise ValueError('source document record not found')
             if owned:self._connection.execute('ROLLBACK')
             return result
