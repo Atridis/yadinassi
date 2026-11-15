@@ -8,6 +8,7 @@ from .form_model import BSLClientApplicationForm, BSLFormAttribute, BSLFormField
 from .xdto_values import (BSLXDTODataObject, BSLXDTODataValue, BSLXDTOList, BSLXDTOValueType, BSLXDTOObjectType, BSLXDTOProperty, BSLXDTOPropertyCollection, BSLXDTOPackage, BSLXDTOPackageCollection)
 from .xdto_io import BSLXDTOFactory, BSLXMLForm, XML_FORMS, create_xdto_factory
 from .dom_nodes import (BSLDOMDocument, BSLDOMElement, BSLDOMAttribute, BSLDOMText, BSLDOMCDATASection, BSLDOMComment, BSLDOMProcessingInstruction, BSLDOMDocumentFragment, BSLDOMNodeList, BSLDOMElementList, BSLDOMAttributeMap, BSLDOMNodeType, DOM_NODE_TYPES)
+from .dom_xpath import BSLDOMNamespaceResolver, BSLDOMXPathResult
 from .dom_io import BSLDOMBuilder, BSLDOMWriter
 from .data_hashing import BSLDataHashing, BSLHashFunction
 from .data_io import BSLDataReader, BSLDataWriter, BSLReadDataResult
@@ -109,6 +110,8 @@ _VALUE_TYPES = (
     (BSLXDTOPackageCollection, BSLType.XDTO_PACKAGES, "XDTOPackageCollection"),
     (BSLXMLForm, BSLType.XML_FORM, "XMLForm"),
 
+    (BSLDOMNamespaceResolver, BSLType.DOM_NAMESPACE_RESOLVER, "DOMNamespaceResolver"),
+    (BSLDOMXPathResult, BSLType.DOM_XPATH_RESULT, "DOMXPathResult"),
     (BSLDOMDocument, BSLType.DOM_DOCUMENT, "DOMDocument"),
     (BSLDOMElement, BSLType.DOM_ELEMENT, "DOMElement"),
     (BSLDOMAttribute, BSLType.DOM_ATTRIBUTE, "DOMAttribute"),
@@ -244,6 +247,10 @@ _BY_NAME = {name.casefold(): value_type
             if alias is not None
             for name in (value_type.value, alias)}
 
+# Runtime-owned types with conditional identities cannot enter the static class table.
+_CONDITIONAL_VALUE_TYPES = frozenset({BSLType.COMMON_MODULE})
+_BY_NAME.update({"commonmodule": BSLType.COMMON_MODULE,
+                 "общиймодуль": BSLType.COMMON_MODULE})
 
 def type_by_name(name: object) -> BSLType:
     if type(name) is not str:
@@ -255,6 +262,11 @@ def type_by_name(name: object) -> BSLType:
 
 
 def type_of(value: object) -> BSLType | BSLCatalogType:
+    # Only explicitly admitted metadata modules carry this identity. Standalone
+    # file modules and arbitrary host objects do not become common modules.
+    from .runtime import _Module
+    if type(value) is _Module and value._platform_type is BSLType.COMMON_MODULE:
+        return BSLType.COMMON_MODULE
     from .enum_types import BSLEnumType, BSLEnumReference
     from .enumerations import BSLEnumManager
     if type(value) is BSLEnumType: return BSLType.TYPE

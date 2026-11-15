@@ -165,7 +165,7 @@ class BSLFormDataCollection(_Owned):
         return row
 
     def _snapshot(self):
-        columns = tuple((c.name, c.title, 'FormCatalogRef' if is_reference(c.value_type) else _TYPE_NAMES[c.value_type.types[0]], c.read_only)
+        columns = tuple((c.name, c.title, c.value_type.scope.wire_type(c.value_type.target) if is_reference(c.value_type) else _TYPE_NAMES[c.value_type.types[0]], c.read_only)
                         for c in self.schema.columns)
         rows = tuple((r._row_id, tuple(r._data[c.name.casefold()] for c in self.schema.columns))
                      for r in self._rows)

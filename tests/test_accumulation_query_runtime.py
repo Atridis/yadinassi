@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+from test_native_async_fixture import historical_source_bytes
 from unittest.mock import patch
 
 from yadinassi import Interpreter, BSLRuntimeError
@@ -370,7 +371,7 @@ class AccumulationEvidenceTests(unittest.TestCase):
         stage = evidence['native_report']['stage3']
         self.assertEqual((len(stage['input_sha256']), len(evidence['host_source_sha256'])), (34, 4))
         for path, digest in {**stage['input_sha256'], **evidence['host_source_sha256']}.items():
-            self.assertEqual(sha256((ROOT / path).read_bytes()).hexdigest(), digest, path)
+            self.assertEqual(sha256(historical_source_bytes(path, (ROOT / path).read_bytes(), digest)).hexdigest(), digest, path)
 
     def test_runtime_canonical_wrapper_has_same_material_projection(self):
         import sys

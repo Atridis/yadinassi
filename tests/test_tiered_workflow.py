@@ -128,11 +128,12 @@ class TieredWorkflowTests(unittest.TestCase):
 
     def test_main_jobs_have_bounded_timeouts_with_measured_headroom(self):
         import re
-        # Measured stock UI/source admission exceeds the old 30-minute cap
-        # on mac-x86. Keep other platforms and all test/coverage routing exact.
+        # The same 7799 tests took 1920s then 2624s on mac-x86 (+36.7%).
+        # The full light suite projects to 52min: bound it at 60min without
+        # changing other platforms, test selection, or coverage routing.
         light = section(self.source, 'light').split('    steps:', 1)[0]
         self.assertEqual(re.findall(r'^    timeout-minutes: (.+)$', light, re.M),
-                         ["${{ matrix.target == 'mac-x86' && 45 || 30 }}"])
+                         ["${{ matrix.target == 'mac-x86' && 60 || 30 }}"])
         for job, minutes in (('heavy', 45), ('build', 40), ('javascript', 5)):
             block = section(self.source, job).split('    steps:', 1)[0]
             self.assertIn(f'    timeout-minutes: {minutes}\n', block)

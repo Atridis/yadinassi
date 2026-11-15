@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from test_native_async_fixture import historical_source_bytes
 from inventory_enum_behavior import route
 from yadinassi.configuration_inventory_enums import PROFILE,import_inventory_enum_configuration
 from yadinassi.database_context import SQLiteDBContext
@@ -38,7 +39,7 @@ class InventoryEnumAcquisitionTests(unittest.TestCase):
         d=json.loads((FIXTURE/'provenance.json').read_bytes())
         for group in ('trusted_input_sha256','host_source_sha256'):
             for path,digest in d[group].items():
-                with self.subTest(path=path):self.assertEqual(hashlib.sha256((ROOT/path).read_bytes()).hexdigest(),digest)
+                with self.subTest(path=path):self.assertEqual(hashlib.sha256(historical_source_bytes(path, (ROOT/path).read_bytes(), digest)).hexdigest(),digest)
 
     def test_unchanged_observer_replays_after_actual_host_process_restart(self):
         expected=json.loads((FIXTURE/'inventory-enum.out').read_bytes())

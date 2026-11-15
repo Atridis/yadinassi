@@ -1,4 +1,4 @@
-name: Native demo DESIGNER acceptance
+name: Retired historical demo DESIGNER comparison
 on:
   workflow_dispatch:
     inputs:
@@ -85,7 +85,7 @@ jobs:
           PYTHON
   designer:
     needs: eligibility
-    if: needs.eligibility.result == 'success'
+    if: ${{ false }} # Retired: historical redump is offline-only.
     permissions:
       contents: read
       packages: read

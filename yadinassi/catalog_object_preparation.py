@@ -8,6 +8,7 @@ profile exposes no backend write operation. The host writer owns persistence.
 """
 from decimal import Decimal
 
+from .owned_syntax import syntax_kind
 from .catalogs import BSLCatalogObject
 from .catalog_backend import BackendError
 from .catalog_types import BSLCatalogReference
@@ -61,15 +62,27 @@ class _ObjectInterpreter(Interpreter):
                 and not (self.locals is not None and name in self.locals))
 
     def _visit(self, node):
+        if self.execution_backend == 'compiled-strict':
+            return (yield from super()._visit(node))
+        # Preserve the original reference-backend context wrapper. The base
+        # interpreter does not pay for or promise the new strict-only ABI.
+        self.compiled_before(node)
+        result = yield from super()._visit(node)
+        return self.compiled_after(node, result)
+
+    def compiled_before(self, node):
         self.remaining -= 1
-        if self.remaining < 0 or type(node) not in (
+        if self.remaining < 0 or syntax_kind(node) not in (
                 ast.Routine, ast.Literal, ast.Name, ast.Attribute, ast.Call,
                 ast.New, ast.Assign, ast.If, ast.Return, ast.ExpressionStatement,
                 ast.Binary, ast.Unary, ast.ForEach, ast.Continue):
             raise ValueError('catalog preparation: unsupported node or budget')
-        result = (yield from super()._visit(node))
+        return super().compiled_before(node)
+
+    def compiled_after(self, node, result):
+        result = super().compiled_after(node, result)
         if isinstance(result, HostFunction) and not (
-                type(node) is ast.Name
+                syntax_kind(node) is ast.Name
                 and self.functions.get(node.name.casefold()) is result):
             raise ValueError('catalog preparation: captured method forbidden')
         if type(result) is Decimal and (not result.is_finite()
@@ -81,6 +94,19 @@ class _ObjectInterpreter(Interpreter):
                 raise ValueError("catalog preparation: text budget")
         return result
 
+    def semantic_name(self, node):
+        name = node.name.casefold()
+        if self._object_name(name):
+            return self.receiver_object.get_member(name)
+        if name in _SELF:
+            return self.receiver_object
+        if not ((self.locals is not None and name in self.locals)
+                or name in self.variables or name in self.functions):
+            raise ValueError('catalog preparation: unavailable name')
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         name = node.name.casefold()
         if self._object_name(name):
@@ -94,9 +120,9 @@ class _ObjectInterpreter(Interpreter):
 
     def call(self, node, *, require_value):
         callee = self.ungroup(node.callee)
-        if type(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
+        if syntax_kind(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
             raise ValueError('catalog preparation: unavailable method')
-        if (self.write_view is not None and type(callee) is ast.Attribute
+        if (self.write_view is not None and syntax_kind(callee) is ast.Attribute
                 and callee.name.casefold() in ('getobject', 'получитьобъект')):
             if node.arguments:
                 raise TypeError('catalog preparation: GetObject takes no arguments')
@@ -115,6 +141,13 @@ class _ObjectInterpreter(Interpreter):
             return None if card is None else BSLCatalogObject(manager, card)
         return (yield from super().call(node, require_value=require_value))
 
+    def semantic_attribute(self, node):
+        if node.name.casefold() not in self.member_names | _METHODS:
+            raise ValueError('catalog preparation: unavailable member')
+        return (yield from super().semantic_attribute(node))
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Attribute(self, node):
         if node.name.casefold() not in self.member_names | _METHODS:
             raise ValueError('catalog preparation: unavailable member')
@@ -128,13 +161,20 @@ class _ObjectInterpreter(Interpreter):
 
     def argument(self, node):
         target = self.ungroup(node)
-        if type(target) is ast.Name and self._object_name(target.name.casefold()):
+        if syntax_kind(target) is ast.Name and self._object_name(target.name.casefold()):
             return Reference(lambda: self.receiver_object.get_member(target.name),
                              lambda value: self.receiver_object.set_member(target.name, value))
         return (yield from super().argument(node))
 
+    def semantic_assign(self, node):
+        if syntax_kind(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:
+            raise ValueError('catalog preparation: unavailable assignment')
+        return (yield from super().semantic_assign(node))
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Assign(self, node):
-        if type(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:
+        if syntax_kind(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:
             raise ValueError('catalog preparation: unavailable assignment')
         return (yield from super().visit_Assign(node))
 

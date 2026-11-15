@@ -52,8 +52,6 @@ def _text(value):
 
 
 def _default(description):
-    if BSLType.UUID in description.types:
-        raise ValueError("Типизированные ячейки UUID пока не поддерживаются")
     if description.types == (BSLType.STRING,):
         q = description.string_qualifiers
         if q.allowed_length is BSLAllowedLength.FIXED:
@@ -64,8 +62,6 @@ def _default(description):
 
 
 def _adjust(description, value):
-    if BSLType.UUID in description.types:
-        raise ValueError("Типизированные ячейки UUID пока не поддерживаются")
     if not description.types:
         return value  # Native untyped cells retain nested collections by identity.
     if description.types == (BSLType.NUMBER,) and value is NULL:
@@ -107,6 +103,9 @@ def _index_token(value):
         return Decimal, value
     if kind is BSLDate:
         return BSLDate, value.require_known().ticks
+    from .unique_identifiers import BSLUUID
+    if kind is BSLUUID:
+        return BSLUUID, value.text
     if kind is BSLTypeDescription:
         return BSLTypeDescription, value
     if issubclass(kind, BSLFixedCollection):

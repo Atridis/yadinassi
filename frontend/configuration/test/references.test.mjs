@@ -27,7 +27,9 @@ function host(options={}){
     if(request.method==='application.reference'){
       const a=request.params.action;
       if(a.action==='begin')appState={...appState,choice:choice({control:a.control,row:a.row,column:a.column,...options.projection})};
-      if(a.action==='filter')appState={...appState,choice:{...appState.choice,code:a.code,error:null,rows:[{choice:'e'.repeat(32),code:a.code,description:'Filtered'}]}};
+      if(a.action==='page')appState={...appState,choice:{...appState.choice,rows:[{choice:'e'.repeat(32),code:'P33',description:'Last'}],navigation:{...appState.choice.navigation,page:2,previous:'reference-page-'+('f'.repeat(32)),next:null}}};
+      if(a.action==='search')appState={...appState,choice:{...appState.choice,code:'',rows:[{choice:'e'.repeat(32),code:'P33',description:'Last'}],navigation:{page:1,pages:1,total:1,previous:null,next:null,query:a.query}}};
+      if(a.action==='filter')appState={...appState,choice:{...appState.choice,code:a.code,error:null,rows:[{choice:'e'.repeat(32),code:a.code,description:'Filtered'}],...(Object.hasOwn(appState.choice,'navigation')?{navigation:{page:1,pages:1,total:1,previous:null,next:null,query:''}}:{})}};
       if(['apply','clear'].includes(a.action)){
         const locator=a.action==='apply'?appState.choice:a;
         const value=ref(a.action==='clear'?{key:null,text:''}:{key:'f'.repeat(32),text:'Selected'});
@@ -164,4 +166,42 @@ test('Escape cancels without synthetic clear and modal Tab wraps to accessible c
   const code=locate(h.env.document.root,'Exact code');code.focus();let prevented=false;
   dialog.emit('keydown',{key:'Tab',shiftKey:true,preventDefault(){prevented=true;}});assert.equal(prevented,true);assert.equal(h.env.document.activeElement,named(h.env,'Choose record'));
   dialog.emit('keydown',{key:'Escape'});await settle();assert.equal(h.requests.at(-1).params.action.action,'cancel');assert.equal(locate(h.env.document.root,'Product').value,'Original');
+});
+
+const navigation=()=>({page:1,pages:2,total:33,previous:null,next:'reference-page-'+('a'.repeat(32)),query:''});
+const pagedChoice=()=>choice({navigation:navigation(),rows:Array.from({length:32},(_,i)=>({choice:(i+1).toString(16).padStart(32,'0'),code:'P'+i,description:'Product '+i}))});
+test('reference navigation rejects incomplete or forged totals and keeps overflow explicit',()=>{
+ const request={id:1,method:'application.hello',params:{}};
+ validateApplicationReply(response(request,snapshot({choice:pagedChoice()})),request,null);
+ for(const patch of [{total:32},{page:0},{pages:3},{previous:'reference-page-'+('b'.repeat(32))},{next:'bad'},{query:'x'.repeat(129)}]){
+  const c=pagedChoice();c.navigation={...c.navigation,...patch};assert.throws(()=>validateApplicationReply(response(request,snapshot({choice:c})),request,null));
+ }
+ const overflow=choice({rows:[],error:'snapshot_limit',navigation:null});validateApplicationReply(response(request,snapshot({choice:overflow})),request,null);
+ for(const c of [choice({error:'snapshot_limit',navigation:null}),choice({rows:[],navigation:null}),choice({rows:[],error:'snapshot_limit'})])
+  assert.throws(()=>validateApplicationReply(response(request,snapshot({choice:c})),request,null));
+});
+test('reference page request accepts only current picker cursor and bounded search',async()=>{
+ const calls=[],c=pagedChoice(),client=new ApplicationClient(async r=>{calls.push(r);return response(r,snapshot({choice:c}));});
+ await client.request('application.hello',{});
+ for(const action of [{action:'page',ticket:c.ticket,cursor:'retired'},{action:'page',ticket:c.ticket,cursor:null},{action:'search',ticket:c.ticket,query:'x'.repeat(129)}])
+  await assert.rejects(client.request('application.reference',{session:'form-1',revision:0,action}));
+ assert.equal(calls.length,1);assert.equal(client.terminal,false);
+});
+test('catalog picker turns pages and searches without widening enum picker',async()=>{
+ const c=pagedChoice(),h=host({projection:c});await h.ready();await h.begin();
+ assert.equal(named(h.env,'Previous choices').disabled,true);assert.equal(named(h.env,'Next choices').disabled,false);
+ named(h.env,'Next choices').emit('click');await h.app.client.tail;await settle();
+ assert.deepEqual(h.requests.filter(r=>r.method==='application.reference').at(-1).params.action,{action:'page',cursor:c.navigation.next,ticket:c.ticket});
+ assert.equal(named(h.env,'Next choices').disabled,true);assert.equal(named(h.env,'Previous choices').disabled,false);
+ const exact=locate(h.env.document.root,'Exact code');exact.value='P33';named(h.env,'Find exact code').emit('click');await h.app.client.tail;await settle();
+ const input=locate(h.env.document.root,'Reference search');input.value='Last';named(h.env,'Search references').emit('click');await h.app.client.tail;await settle();
+ assert.deepEqual(h.requests.filter(r=>r.method==='application.reference').at(-1).params.action,{action:'search',query:'Last',ticket:c.ticket});
+ assert.equal(named(h.env,'Previous choices').disabled,true);assert.equal(exact.value,'');
+ const legacy=host();await legacy.ready();await legacy.begin();assert.equal(named(legacy.env,'Search references').hidden,true);
+});
+test('old visible choice is retired after a page projection',async()=>{
+ const c=pagedChoice(),h=host({projection:c});await h.ready();await h.begin();
+ await h.owner().reference({action:'page',ticket:c.ticket,cursor:c.navigation.next});await settle();const count=h.requests.length;
+ await h.owner().reference({action:'apply',ticket:c.ticket,choice:c.rows[0].choice});
+ assert.equal(h.requests.length,count);assert.equal(h.app.client.terminal,false);
 });

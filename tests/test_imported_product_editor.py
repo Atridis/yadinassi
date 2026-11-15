@@ -1,4 +1,5 @@
 """Original exact-demo product form projection and atomic durable UI writes."""
+from legacy_demo_fixture import legacy_demo_files
 from pathlib import Path
 from dataclasses import replace
 import tempfile
@@ -16,8 +17,7 @@ class ImportedProductEditorTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.path = Path(temp.name) / 'demo.sqlite'
-        root = Path(__file__).parent / 'fixtures/demo_cf/source'
-        files = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+        files = legacy_demo_files()
         SQLiteCatalogBackend.create_demo_products(self.path, files).close()
         self.app = CatalogEditorApplication(SQLiteDBContext(self.path)); self.addCleanup(self.app.close)
         self.kind = self.app.catalogs.get_member('ВидыНоменклатуры').create_item()

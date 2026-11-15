@@ -300,11 +300,11 @@ class DimensionConditionRuntimeTests(unittest.TestCase):
         self.assertEqual(seen,[((Decimal(7),),)])
         self.assertEqual(self.report()._rows,((Decimal(0),),))
 
-    def test_reference_results_remain_cursor_typed_without_unload_extension(self):
+    def test_reference_results_keep_owned_types_in_unload(self):
         self.seed();result=self.report(fields='Product,Warehouse,QuantityBalance')
         self.assertEqual(result._rows,((self.p,self.w,Decimal(12)),))
         self.assertEqual(result._columns[0].reference_identity[1],self.p.value_type.metadata_uuid)
-        with self.assertRaisesRegex(ValueError,'Unload'):result.unload()
+        self.assertIs(result.unload().rows[0].get_member('Product'), result._rows[0][0])
 
     def test_scalar_profile_does_not_gain_unmeasured_dimension_predicates(self):
         from test_accumulation_query_runtime import AccumulationQueryRuntimeTests, REG as SCALAR_REG

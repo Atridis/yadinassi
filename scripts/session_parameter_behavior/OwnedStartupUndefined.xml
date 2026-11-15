@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="2.20"><SessionParameter uuid="549005b9-20ad-5d12-ade6-5261f3b9775d"><Properties><Name>OwnedStartupUndefined</Name><Synonym/><Comment/><Type><v8:Type>xs:boolean</v8:Type></Type></Properties></SessionParameter></MetaDataObject>

@@ -2,8 +2,8 @@
 Function N(Val Value)
     Return Format(Value,"NG=0;NDS=.;NZ=0");
 EndFunction
-Product=Catalogs.Products.FindByCode("PS-STOCK");
-Warehouse=Catalogs.Warehouses.FindByCode("PS-W");
+Product=Catalogs.Номенклатура.FindByCode("PS-STOCK");
+Warehouse=Catalogs.Склады.FindByCode("PS-W");
 If Product.IsEmpty() Or Warehouse.IsEmpty() Then
     Raise "Create the period stock example first";
 EndIf;

@@ -14,6 +14,7 @@ import socket
 import time
 from urllib.parse import quote
 
+from .safe_mode import require_external_access
 from .file_io import (BSLBinaryData, BSLTextEncoding, _FileMethods, _methods,
                       _encoding, _decode, _BOMS, _open_regular, _write_bytes, _file_errors)
 from .binary_streams import (_Enum, _Namespace, _number, _stream_path, binary_data_stream,
@@ -204,6 +205,7 @@ class BSLHTTPRequest(_FileMethods):
     @_file_errors
     def _bytes(self):
         if self._file_handle is not None:
+            require_external_access("read HTTP body file")
             self._file_handle.seek(0)
             return _body(self._file_handle.read(MAX_BODY + 1))
         return None if self._body is None else _body(bytes(self._body))
@@ -253,6 +255,7 @@ class _DeadlineReader(io.RawIOBase):
         self._raw = sock.makefile('rb', buffering=0)
     def readable(self): return True
     def readinto(self, buffer):
+        require_external_access("read HTTP socket")
         remaining = self._deadline - time.monotonic()
         if remaining <= 0: raise TimeoutError('HTTP socket deadline')
         self._sock.settimeout(remaining)
@@ -276,6 +279,7 @@ class _Connection(http.client.HTTPConnection):
         self.seconds = seconds; self.deadline = None
         self._tls_context, self._proxy = tls_context, proxy
     def connect(self):
+        require_external_access("connect HTTP socket")
         # OS name resolution has its own platform policy and may exceed this
         # socket budget. !todo cancellation-aware resolver, not orphan threads.
         peer_host = self._proxy.host if self._proxy is not None else self.host
@@ -346,6 +350,7 @@ class _Connection(http.client.HTTPConnection):
             response.close()
 
     def send(self, data):
+        require_external_access("send HTTP data")
         if self.sock is None: self.connect()
         remaining = self.deadline - time.monotonic()
         if remaining <= 0: raise TimeoutError('HTTP socket deadline')
@@ -384,6 +389,7 @@ class BSLHTTPConnection(_FileMethods):
         if key in values: return values[key]
         return super().get_member(name)
     def call_http_method(self, method, request, output_file=None):
+        require_external_access("HTTP request")
         method = _text(method,32)
         if not _TOKEN.fullmatch(method) or method.upper() in ('CONNECT','TRACE'):
             raise ValueError('HTTP: метод не поддерживается')

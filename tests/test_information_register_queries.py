@@ -139,7 +139,7 @@ Q.SetParameter("Minimum",10);S=Q.Execute().Select();While S.Next() Do Message(S.
         for value in (other.execute('Catalogs.Categories.EmptyRef()'), self.vm.execute('D.Ref')):
             query.set_parameter('Category', value)
             with self.assertRaises(TypeError): query.execute()
-        with self.assertRaises(ValueError): self.query('SELECT Category FROM InformationRegister.Rates').execute().unload()
+        self.assertEqual(len(self.query('SELECT Category FROM InformationRegister.Rates').execute().unload().rows), 3)
         with self.assertRaises(TypeError): query.set_parameter('Category', self.vm.execute('R'))
 
     def test_no_fabricated_standard_fields_or_virtual_tables(self):

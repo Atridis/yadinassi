@@ -60,11 +60,14 @@ Q.SetParameter("Since", Date(2026, 11, 1));
 Table = Q.Execute().Unload();
 ```
 
-See [the complete report example](../examples/document-query-report.bsl).
+The [complete report example](../examples/document-query-report.bsl) now uses
+Receipt and the original warehouses in the single `examples/demo`, rather than
+the isolated Orders/Categories test schema. See [running the main demo reports](main-demo-query-examples.md).
 It first groups section amounts by owner into a temporary table, then joins
-headers and customer catalog records. Aggregating lines first prevents header
-amounts from being counted once per line. Its inner joins intentionally omit
-orders without lines or a matching category. The script reads existing data;
+Receipt headers and warehouse catalog records. Aggregating lines first counts
+each receipt once per warehouse and sums its line amounts. Its inner joins
+intentionally omit receipts without lines or a matching warehouse. Deleted
+receipts are excluded. The script reads existing data;
 it does not create or post documents.
 
 ## Results and boundaries

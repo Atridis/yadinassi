@@ -19,6 +19,7 @@ NULL = BSLNull.VALUE
 
 
 class BSLType(Enum):
+    COMMON_MODULE = "ОбщийМодуль"
     ACCUMULATION_RECORD_TYPE = "ВидДвиженияНакопления"
     USER_MESSAGE = "СообщениеПользователю"
     FORM = "ФормаКлиентскогоПриложения"
@@ -44,6 +45,8 @@ class BSLType(Enum):
     XDTO_PACKAGE = "ПакетXDTO"
     XDTO_PACKAGES = "КоллекцияПакетовXDTO"
     XML_FORM = "ФормаXML"
+    DOM_NAMESPACE_RESOLVER = "Разыменователь пространств имен DOM XPath"
+    DOM_XPATH_RESULT = "Результат DOM XPath"
     DOM_DOCUMENT = "ДокументDOM"
     DOM_ELEMENT = "ЭлементDOM"
     DOM_ATTRIBUTE = "АтрибутDOM"
@@ -187,6 +190,14 @@ class BSLType(Enum):
         # Enum values stay unspaced lookup names, not presentation aliases.
         if self in (BSLType.VALUE_STORAGE, BSLType.DEFLATION):
             raise ValueError("ХранилищеЗначения/СжатиеДанных: представление типа не измерено")
+        # Native common-template observation 43083042989, case 5.
+        if self is BSLType.BINARY_DATA:
+            return "Двоичные данные"
+        # Source-bound configuration XDTO runs 43086017286 / 43089477510.
+        if self is BSLType.XDTO_OBJECT_TYPE:
+            return "Тип объекта XDTO"
+        if self is BSLType.XDTO_VALUE_TYPE:
+            return "Тип значения XDTO"
         if self is BSLType.TEXT_DOCUMENT:
             return "Текстовый документ"
         if self is BSLType.UUID:

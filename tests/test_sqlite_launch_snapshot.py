@@ -134,7 +134,8 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assert_route(b, files, 'catalog')
 
     def test_three_exact_demo_grants_use_catalog_route(self):
-        files = files_at('tests/fixtures/demo_cf/source')
+        from legacy_demo_fixture import legacy_demo_files
+        files = legacy_demo_files()
         for name in ('kinds','directories','products'):
             with self.subTest(profile=name):
                 self.path = Path(self.temp.name) / (name+'.sqlite')
@@ -200,8 +201,8 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
 
     def test_unknown_and_future_profiles_denied_before_lease(self):
         b, _, _ = self.plain()
-        # Exact forms15 is now supported; core15 refusal has its own grant test.
-        for version in (0, 8, 9, 16, 999):
+        # Exact full forms15/16 are supported; raw core profiles still have no UI grant.
+        for version in (0, 8, 9, 17, 999):
             with self.subTest(version=version), mock.patch.object(b, 'format_version', version), mock.patch.object(b, 'begin_read', side_effect=AssertionError('unsupported profile must not lease')):
                 self.assert_refused(b)
 
@@ -212,7 +213,8 @@ class SQLiteLaunchSnapshotTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(),before)
 
     def test_inert_v5_source_not_activated(self):
-        files = files_at('tests/fixtures/demo_cf/source')
+        from legacy_demo_fixture import legacy_demo_files
+        files = legacy_demo_files()
         b = self.retain(SQLiteCatalogBackend.create(self.path,import_inert_configuration(files),activate=False))
         self.assertEqual(b.format_version,5)
         self.assert_refused(b)

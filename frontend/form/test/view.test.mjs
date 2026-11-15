@@ -184,3 +184,12 @@ test('missing capability causes no network request and beforeunload only warns f
   assert.equal(app.client, null); assert.ok(env.document.root.textContent.includes('Reopen the complete URL'));
   let prevented = false; env.listeners.get('beforeunload')({preventDefault() { prevented = true; }}); assert.equal(prevented, false);
 });
+
+test('readonly recovery preserves a local draft after transport loss',async()=>{
+ const env=environment();const requests=[];
+ const mounted=mountForm(env,env.document.root,{transport:async request=>{requests.push(request.method);return reply(request,state(0,{items:[field('Name',{type:'String',value:'saved'})]}));}});
+ await mounted.ready;edit(env.document,'local unsaved');mounted.lock();
+ await mounted.recoverReadOnly();
+ assert.equal(input(env.document).value,'local unsaved');assert.equal(mounted.view.hasDrafts(),true);
+ assert.equal(mounted.client.transportFailed,false);assert.deepEqual(requests,['form.hello','form.snapshot']);
+});

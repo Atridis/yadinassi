@@ -350,13 +350,12 @@ class InertSourceStorageTests(unittest.TestCase):
 
 class DemoKindsSourceImportTests(unittest.TestCase):
     """Original source admission evidence only, never native 1C parity."""
-    ROOT = Path(__file__).parent / 'fixtures' / 'demo_cf' / 'source'
     CATALOG = 'Catalogs/ВидыНоменклатуры.xml'
     MODULE = 'Catalogs/ВидыНоменклатуры/Forms/ФормаЭлемента/Ext/Form/Module.bsl'
 
     def source(self):
-        return {p.relative_to(self.ROOT).as_posix(): p.read_bytes()
-                for p in self.ROOT.rglob('*') if p.is_file()}
+        from legacy_demo_fixture import legacy_demo_files
+        return legacy_demo_files()
 
     def test_original_full_source_retained_with_only_numbered_kinds(self):
         from yadinassi.configuration_xml import DEMO_KINDS_PROFILE, DEMO_KINDS_SOURCE_ISSUE, import_demo_kinds_configuration

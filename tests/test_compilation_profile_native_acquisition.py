@@ -285,7 +285,7 @@ class AcquisitionContracts(unittest.TestCase):
         host,_=self.adapters();d=host.failure_diagnostics
         bad=[{**d.empty(),'text':'secret'},{**d.empty(),'category':'secret'},
              {**d.empty(),'category':'compile_error','module':'SessionModule','line':True},
-             {**d.empty(),'category':'compile_error','module':'SessionModule','line':203},
+             {**d.empty(),'category':'compile_error','module':'SessionModule','line':288},
              {**d.empty(),'category':'compile_error','identifier':'secret'}]
         for value in bad:
             with self.assertRaises(ValueError): d.validate(value,host.DIAGNOSTICS.IDENTIFIERS)
@@ -403,3 +403,25 @@ class AcquisitionContracts(unittest.TestCase):
         self.assertLess(source.index("phase='build'"),source.index("src=root/'src'"))
 
         self.assertLess(source.index("full.absent(root/'check.log'"),source.index("phase='check_config'"))
+
+    def test_owned_common_module_projection(self):
+        self.assertEqual(self.diagnostic('{ОбщийМодуль.DualProbe.Модуль(11, 2)}: Переменная не определена (CPStartup)'.encode()),
+            dict(category='compile_error',module='DualProbe',line=11,identifier='CPStartup'))
+    def test_owned_unknown_directive(self):
+        self.assertEqual(self.diagnostic('{МодульСеанса(250)}: Неизвестная инструкция препроцессора <?>MobileAppClient'.encode()),
+            dict(category='compile_error',module='SessionModule',line=250,identifier='MobileAppClient'))
+    def test_unknown_common_name_is_redacted(self):
+        value=self.diagnostic('{ОбщийМодуль.PrivateSecret.Модуль(11)}: Переменная не определена (PrivateSecret)'.encode())
+        self.assertEqual(value,dict(category='compile_error',module=None,line=None,identifier=None))
+    def test_multiple_locations_are_not_attributed(self):
+        value=self.diagnostic('{CommonModule.DualProbe.Module(11)} {Private(3)}: variable not defined (CPStartup)'.encode())
+        self.assertIsNone(value['module']);self.assertIsNone(value['line'])
+    def test_owned_line_limits_match_rendered_packet(self):
+        from compilation_profile_packet import failure_diagnostics as d, fixture
+        bootstrap=ROOT/'scripts/native_1c_bootstrap/modules'
+        session=fixture.insert_exact((bootstrap/'SessionModule.bsl').read_bytes(),fixture.SESSION_ANCHOR,fixture.SESSION_INSERT)+b'\n'+packet()['Extensions/Session.bsl']
+        application=b'Var CPStartup;\n'+fixture.insert_exact((bootstrap/'ManagedApplicationModule.bsl').read_bytes(),fixture.APPLICATION_ANCHOR,fixture.APPLICATION_INSERT)+b'\n'+packet()['Extensions/Application.bsl']
+        self.assertEqual(len(session.splitlines()),d.LIMITS['SessionModule'])
+        self.assertEqual(len(application.splitlines()),d.LIMITS['ManagedApplicationModule'])
+        for name in ('ClientProbe','ServerProbe','DualProbe'):
+            self.assertEqual(len(packet()[f'CommonModules/{name}/Ext/Module.bsl'].splitlines()),d.LIMITS[name])

@@ -316,6 +316,8 @@ class BSLMetadata(_MetadataObject):
         self._information_registers = BSLInformationRegisterMetadataCollection(context, self._catalogs,self)
         self._common_modules = None
         self._enumerations = None
+        self._session_parameters = None
+        self._common_templates = None
         self._enum_storage = None
         self._enum_storage_scope = None
         self._catalog_managers = self._document_managers = None
@@ -371,7 +373,9 @@ class BSLMetadata(_MetadataObject):
                       'catalog':self._catalogs,'справочник':self._catalogs,
                       'document':self._documents,'документ':self._documents,
                       'informationregister':self._information_registers,'регистрсведений':self._information_registers,
-                      'commonmodule':self._common_modules,'общиймодуль':self._common_modules}.get(parts[0].casefold())
+                      'commonmodule':self._common_modules,'общиймодуль':self._common_modules,
+                      'commontemplate':self._common_templates,'общиймакет':self._common_templates,
+                      'sessionparameter':self._session_parameters,'параметрсеанса':self._session_parameters}.get(parts[0].casefold())
         if collection is None: return None
         item = collection.find(parts[1])
         aliases = {'attribute':'attributes','реквизит':'attributes','dimension':'dimensions','измерение':'dimensions',
@@ -397,6 +401,10 @@ class BSLMetadata(_MetadataObject):
             if self._configuration_name is None: self._ensure_source_info()
             if self._configuration_name is None: raise ValueError('configuration metadata unavailable')
             return self._configuration_name if name.casefold() in ('name','имя') else ''
+        if name.casefold() in ('commontemplates','общиемакеты') and self._common_templates is not None:
+            return self._common_templates
+        if name.casefold() in ('sessionparameters','параметрысеанса') and self._session_parameters is not None:
+            return self._session_parameters
         if name.casefold() in ('commonmodules', 'общиемодули') and self._common_modules is not None:
             return self._common_modules
         if name.casefold() in ('enums', 'перечисления') and self._enumerations is not None:
@@ -495,6 +503,65 @@ def is_metadata_collection(value):
 def is_metadata_object(value):
     from .enumerations import EnumMetadata, EnumValueMetadata
     if type(value) is EnumMetadata or type(value) is EnumValueMetadata: return True
+    from .common_templates import CommonTemplateMetadata
+    if type(value) is CommonTemplateMetadata:return True
+    from .session_parameters import BSLSessionParameterMetadata
+    if type(value) is BSLSessionParameterMetadata: return True
     return is_metadata_collection(value) or any(type(value) is cls for cls in (
         BSLMetadata,BSLCatalogMetadata,BSLDocumentMetadata,BSLInformationRegisterMetadata,
         BSLCommonModuleMetadata,BSLAttributeMetadata,BSLTabularSectionMetadata,StandardAttributeDescription))
+
+
+def _prepare_enum_query_metadata(root, view):
+    """Atomically prime cold catalog/document caches from one exact owned view.
+
+    This internal enum-report path never refreshes a mismatching existing cache
+    and never changes ordinary lazy _snapshot admission or reader ownership.
+    """
+    from .inventory_enum_runtime import _EnumScope
+    from .sqlite_documents import DocumentView
+    from .sqlite_catalog import _View
+    if type(root) is not BSLMetadata or type(view) is not DocumentView:
+        raise BackendError('unsupported')
+    scope = root._enum_storage_scope
+    if type(scope) is not _EnumScope:
+        raise BackendError('unsupported')
+    scope._require_owner()
+    scope._require_snapshot(view._view)
+    if (view.database_id != view._view.database_id or view.configuration_generation != view._view.configuration_generation):
+        raise BackendError('schema_changed')
+    identity = view.database_id, view.configuration_generation
+    if root._identity is not None and root._identity != identity:
+        raise BackendError('schema_changed')
+    staged = []
+    for collection, expected, item_type, entries in (
+            (root._catalogs, BSLCatalogMetadataCollection, BSLCatalogMetadata, view._view.catalogs),
+            (root._documents, BSLDocumentMetadataCollection, BSLDocumentMetadata, view.documents)):
+        if type(collection) is not expected or collection._context is not scope.context or collection._root is not root:
+            raise BackendError('invalid_input')
+        items = {}
+        for entry in entries():
+            key = entry.name.casefold()
+            if key in items:
+                raise BackendError('integrity')
+            item = item_type(entry.name, str(entry.identity))
+            item._schema, item._root = entry, root
+            items[key] = item
+        if collection._items is not None:
+            if ((collection._database_id, collection._generation) != identity
+                    or type(collection._items) is not dict or collection._items.keys() != items.keys()
+                    or any(type(collection._items[k]) is not item_type
+                           or type(collection._items[k]._schema) is not type(v._schema)
+                           or collection._items[k]._schema != v._schema
+                           or collection._items[k]._root is not root
+                           or type(collection._items[k]._name) is not str or collection._items[k]._name != v._name
+                           or type(collection._items[k]._metadata_uuid) is not str
+                           or collection._items[k]._metadata_uuid != v._metadata_uuid for k, v in items.items())):
+                raise BackendError('schema_changed')
+        else:
+            staged.append((collection, items))
+    # No cache is visible before every family has been completely validated.
+    root._accept_snapshot(*identity)
+    for collection, items in staged:
+        collection._database_id, collection._generation = identity
+        collection._items = items

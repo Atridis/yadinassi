@@ -61,10 +61,16 @@ class RegisterConfigurationRuntimeTests(unittest.TestCase):
         files = combined_files()
         self.assertTrue(import_configuration(files).activation_issues)
         for fragment, replacement in ((b'<Privileged>false', b'<Privileged>true'),
-                (b'<ReturnValuesReuse>DontUse', b'<ReturnValuesReuse>DuringSession')):
+                (b'<ReturnValuesReuse>DontUse', b'<ReturnValuesReuse>Forever')):
             candidate = dict(files)
             candidate['CommonModules/Tools.xml'] = candidate['CommonModules/Tools.xml'].replace(fragment, replacement)
             with self.subTest(fragment=fragment), self.assertRaises(ValueError):
                 import_configuration(candidate, module_runtime=MODULE_RUNTIME)
+        # Private session declarations are now admitted explicitly and remain
+        # inert during construction; they do not grant export/privilege rights.
         files['Ext/SessionModule.bsl'] = b'Procedure OnSessionStart() EndProcedure'
+        app = ConfigurationApplication.from_files(files)
+        self.assertEqual(app.state, 'prepared')
+        app.close(force=True)
+        files['Ext/SessionModule.bsl'] = b'Procedure OnSessionStart() Export EndProcedure'
         with self.assertRaises(ValueError): ConfigurationApplication.from_files(files)

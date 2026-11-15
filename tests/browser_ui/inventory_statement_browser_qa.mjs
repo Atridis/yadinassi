@@ -1,4 +1,4 @@
-/** Four detached stock statement flows; typed setup is not a browser effect. */
+/** Five detached stock statement flows; typed setup is not a browser effect. */
 import {chromium} from 'playwright';
 import {spawn,execFileSync} from 'node:child_process';
 import {mkdtemp,mkdir,writeFile,readFile,rm,lstat,readdir} from 'node:fs/promises';
@@ -16,21 +16,22 @@ const rpcFetchMs=35000,rpcReplyMs=50000; // Existing transport and observer budg
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const python=process.env.QA_PYTHON||'python';
 const temporary=process.env.RUNNER_TEMP;
-const screenshots=['statement-pages.png','statement-filters.png','statement-fences.png','statement-reopened.png'];
+const screenshots=['statement-pages.png','statement-filters.png','statement-fences.png','statement-reopened.png','statement-historical.png'];
 const artifacts=['result.json','manifest.json',...screenshots];
 const scenarioNames=['periods_pages_exact_saved_totals','typed_filters_closed_choices',
- 'raw_draft_retirement_delayed_page','natural_restart_new_setup_readonly_audit'];
+ 'raw_draft_retirement_delayed_page','natural_restart_new_setup_readonly_audit','historical_selection_external_deletion'];
 // Only hello/snapshot reads are excluded. These fixed lists include every
 // business request, including read-only setup/choice/page commands.
 const businessPlan=[
  ['setup:open','report:Day','page','page','report:Month','page','report:None','page'],
- ['setup:begin','setup:filter','setup:apply','report:None',
+ ['setup:begin','setup:page','setup:page','setup:search','setup:refresh','setup:filter','setup:search','setup:apply','report:None',
   'setup:begin','setup:apply','report:None','setup:begin','setup:cancel','report:None',
   'setup:empty','report:None','setup:clear','report:None','setup:empty','report:None',
   'setup:clear','report:None','setup:begin','setup:filter','setup:cancel'],
  ['catalog','openRecord','setup:open','report:None','page','setup:begin','setup:filter','setup:cancel',
   'report:None','close:','setup:open','report:None'],
- ['close','setup:open','report:None','page','close']
+ ['close','setup:open','report:None','page','close'],
+ ['setup:open','setup:begin','setup:filter','setup:apply','report:None','setup:begin','setup:search','setup:cancel','report:None','close']
 ];
 const businessEvents=[];
 // Closed diagnostic vocabulary only. Values from assertions, DOM, callbacks,
@@ -183,6 +184,7 @@ import json,sys
 from pathlib import Path
 from contextlib import closing
 from datetime import datetime
+from dataclasses import replace
 from decimal import Decimal, localcontext
 from hashlib import sha256
 from uuid import uuid4
@@ -198,10 +200,10 @@ from yadinassi.sqlite_transactions import _accumulation_port
 from yadinassi.accumulation_movements import AccumulationDirection
 from yadinassi.dates import _date_from_datetime
 root=Path(sys.argv[2]); source=Path(sys.argv[3]); database=root/'stock.sqlite'
-try:
+def run(mode):
  files=read_configuration_directory(source)
  config=import_inventory_application(files,inventory_runtime=PROFILE)
- if sys.argv[1]=='create':
+ if mode=='create':
   assert not database.exists()
   with closing(SQLiteDBContext.create_inventory_application(database,config)) as context:
    backend=context.backend; schemas={s.name:s for s in config.catalogs}; cards={}
@@ -224,7 +226,7 @@ try:
    except BackendError as failure: assert failure.code=='unsupported'
    else: raise AssertionError('core15_ui_grant')
   result={'created':True,'core15Denied':True,'setupCatalogs':54,'setupDocuments':1,'setupMovements':52}
- elif sys.argv[1]=='audit':
+ elif mode in ('audit','audit-after-mark'):
   before=sha256(database.read_bytes()).digest()
   with closing(SQLiteCatalogBackend(database,read_only=True)) as backend:
    snap=backend.launch_snapshot()
@@ -239,7 +241,8 @@ try:
      rows=owner.select_catalog(catalogs[name].identity,CatalogSelection(limit=64))
      assert len(rows)==(52 if name=='Products' else 2)
      for card in sorted(rows,key=lambda c:c.code):
-      assert type(card.key) is CatalogKey and not card.deletion_mark
+      assert type(card.key) is CatalogKey
+      assert card.deletion_mark is (mode=='audit-after-mark' and name=='Products' and card.code=='P001')
       assert card.key.database_id==owner.database_id and card.key.catalog_id==catalogs[name].identity
       cards[name,card.code]=card;labels[card.key]=card.code;fingerprint.append(repr(card))
     reader=DocumentView(owner);documents=[];recorder=None
@@ -271,17 +274,44 @@ try:
     assert quantity==Decimal(1378) and amount==Decimal(13780)
     result={'catalogs':54,'documents':1,'movements':52,'quantity':str(quantity),'amount':str(amount),
      'fingerprint':sha256('\n'.join(fingerprint).encode()).hexdigest(),'sourceDigest':snap.source_digest,
+     'invariantFingerprint':sha256('\n'.join(repr(replace(cards['Products','P001'],deletion_mark=False,revision=None)) if item==repr(cards['Products','P001']) else item for item in fingerprint).encode()).hexdigest(),
+     'p001Revision':cards['Products','P001'].revision.token,
      'databaseSha256':before.hex(),
      'dayTicks':str(_date_from_datetime(datetime(2026,11,11)).ticks),
      'monthTicks':str(_date_from_datetime(datetime(2026,11,1)).ticks)}
   assert sha256(database.read_bytes()).digest()==before
+ elif mode=='mark-product':
+  # Единственный внешний writer сценария. Не запускает handlers/report service.
+  previous=run('audit')
+  with closing(SQLiteCatalogBackend(database)) as backend:
+   snap=backend.launch_snapshot()
+   assert snap.route=='inventory' and snap.profile==PROFILE
+   assert {f.path:f.content for f in snap.files}==files
+   with closing(backend.begin_read()) as owner:
+    schema=next(s for s in owner.catalogs() if s.name=='Products')
+    matches=[card for card in owner.select_catalog(schema.identity,CatalogSelection(limit=64)) if card.code=='P001']
+    assert len(matches)==1
+    card=matches[0];assert card.deletion_mark is False
+   with closing(backend.begin_write(uuid4())) as owner:
+    owner.update(CatalogDraft(card.key,card.code,card.description,True,card.values,card.tabular_sections),card.revision)
+    outcomes=owner.commit();assert len(outcomes)==1
+  after=run('audit-after-mark')
+  assert after['invariantFingerprint']==previous['invariantFingerprint']
+  assert after['p001Revision']!=previous['p001Revision']
+  assert after['fingerprint']!=previous['fingerprint']
+  result={'marked':True,'product':'P001','before':previous,'after':after}
  else: raise AssertionError('fixture_mode')
- print(json.dumps(result))
+ return result
+
+try:
+ assert len(sys.argv)==4
+ assert root.is_absolute() and root.is_dir()
+ print(json.dumps(run(sys.argv[1])))
 except Exception:
  print('{"error":"owned_statement_fixture_failed"}',file=sys.stderr);sys.exit(1)
 `;
 function inventoryFixture(operation){
-  assert.ok(['create','audit'].includes(operation),'fixture_mode');
+  assert.ok(['create','audit','mark-product','audit-after-mark'].includes(operation),'fixture_mode');
   checkpoint(operation==='create'?'fixture_create':'fixture_audit');
   let raw;
   try{raw=execFileSync(python,['-c',fixtureCode,operation,owned,path.join(repo,'examples/configuration-inventory-application')],
@@ -366,13 +396,15 @@ function checkRequest(request,trace){
     assert.equal(packet.params.dialogCapability,'yadinassi-owned-dialog/1');
   }else if(packet.method==='application.reportSetup'){
     const p=packet.params,a=p.action;
-    const fields=a==='open'?'report action':'report ticket action'+(['begin','clear','empty'].includes(a)?' filter':a==='filter'?' choice code':a==='apply'?' choice value':' choice');
+    const fields=a==='open'?'report action':'report ticket action'+(['begin','clear','empty'].includes(a)?' filter':a==='filter'?' choice code':a==='search'?' choice query':a==='page'?' choice cursor':a==='apply'?' choice value':' choice');
     exactKeys(p,fields);assert.equal(p.report,'StockStatement');
-    assert.ok(['open','begin','filter','apply','cancel','clear','empty'].includes(a));
+    assert.ok(['open','begin','filter','search','page','refresh','apply','cancel','clear','empty'].includes(a));
     if(a!=='open')assert.equal(p.ticket,lastApplicationState?.reportSetup?.ticket,'unissued_setup');
     if(p.filter)assert.ok(['Product','Warehouse'].includes(p.filter));
     if(p.choice)assert.equal(p.choice,lastApplicationState?.reportSetup?.choice?.ticket,'unissued_chooser');
     if(a==='apply')assert.ok(lastApplicationState.reportSetup.choice.rows.some(r=>r.choice===p.value),'unissued_row');
+    if(a==='search')assert.ok(['product 005','product 001','P001'].includes(p.query),'fixed_search_query');
+    if(a==='page'){const nav=lastApplicationState.reportSetup.choice.navigation;assert.ok(p.cursor!==null&&[nav.previous,nav.next].includes(p.cursor),'unissued_choice_page');}
     if(a==='filter')assert.ok(['P001','P002','ABSENT'].includes(p.code),'fixed_exact_code');
   }else if(packet.method==='application.reportPage'){
     exactKeys(packet.params,'snapshot cursor');const p=lastApplicationState?.report?.page;
@@ -440,8 +472,15 @@ async function auditResponse(response,packet,trace){
     const setup=lastApplicationState.reportSetup;exactKeys(setup,'report ticket filters choice');
     assert.equal(setup.report,'StockStatement');assert.match(setup.ticket,/^setup-[0-9a-f]{32}-[1-9][0-9]*$/);
     for(const f of setup.filters)exactKeys(f,'id mode text');
-    if(setup.choice){const choice=setup.choice;exactKeys(choice,'filter ticket code rows error');
-      assert.ok(choice.rows.length<=32);assert.ok(choice.error===null||choice.error==='too_many_matches'&&choice.rows.length===0,'too_many_partial');
+    if(setup.choice){const choice=setup.choice;exactKeys(choice,'filter ticket code rows error navigation');
+      assert.ok(choice.rows.length<=32);assert.ok(choice.error===null||choice.error==='snapshot_limit'&&choice.rows.length===0,'too_many_partial');
+      const nav=choice.navigation;
+      if(nav){exactKeys(nav,'page pages total query previous next');assert.ok(Number.isSafeInteger(nav.total)&&nav.total>=0&&nav.total<=8192);
+        assert.equal(nav.pages,Math.max(1,Math.ceil(nav.total/32)));assert.ok(Number.isSafeInteger(nav.page)&&nav.page>=1&&nav.page<=nav.pages);
+        assert.equal(choice.rows.length,Math.min(32,Math.max(0,nav.total-(nav.page-1)*32)));
+        for(const cursor of [nav.previous,nav.next])if(cursor!==null)assert.match(cursor,/^report-choice-page-[0-9a-f]{32}$/);
+        assert.equal(nav.previous===null,nav.page===1);assert.equal(nav.next===null,nav.page===nav.pages);
+      }else assert.equal(choice.error,'snapshot_limit');
       for(const row of choice.rows)exactKeys(row,'choice code description');}
   }
   if(lastApplicationState?.report){
@@ -479,7 +518,7 @@ async function sourceBinding(){
   const names=git('ls-files','-z','yadinassi','pyproject.toml','frontend/form','frontend/configuration','examples/configuration-inventory-application','tests/browser_ui',
     'tests/test_configuration_inventory_app.py','tests/test_inventory_application_reports.py','tests/test_configuration_inventory_reports_ui.py',
     'tests/test_inventory_application_statements.py','tests/test_inventory_report_controls.py','tests/test_inventory_statement_controller.py','tests/test_inventory_report_pages.py',
-    'docs/inventory-statement-browser-qa.md','tests/test_inventory_statement_browser_qa_contract.py','.github/workflows/inventory-statement-browser-qa.yml').split('\0').filter(Boolean);
+    'docs/inventory-statement-browser-qa.md','tests/test_inventory_statement_browser_qa_contract.py','tests/test_inventory_statement_fixture_smoke.py','.github/workflows/inventory-statement-browser-qa.yml').split('\0').filter(Boolean);
   for(const required of ['yadinassi/inventory_application_reports.py','yadinassi/inventory_host_operations.py',
     'yadinassi/sqlite_launch.py','yadinassi/ui/database_launch.py','frontend/configuration/src/reports.mjs',
     'examples/configuration-inventory-application/InventoryApplication.xml',
@@ -642,6 +681,12 @@ async function main(){
     await choicePanel().getByLabel('Statement exact code',{exact:true}).fill(code);
     return setupAction('filter',reportButton('Find statement code'));
   };
+  const searchReferences=async query=>{
+    await choicePanel().getByLabel('Statement reference search',{exact:true}).fill(query);
+    return setupAction('search',reportButton('Search statement references'));
+  };
+  const choicePage=direction=>setupAction('page',reportButton(direction+' statement choices'));
+  const refreshChoices=()=>setupAction('refresh',reportButton('Refresh statement choices'));
   const apply=label=>setupAction('apply',choicePanel().getByRole('button',{name:label,exact:true}));
   const cancel=()=>setupAction('cancel',reportButton('Cancel statement choice'));
   const filterAction=(action,dimension)=>setupAction(action,reportButton((action==='empty'?'Empty ':'All ')+dimension));
@@ -684,15 +729,16 @@ async function main(){
     assert.equal(cell.type,'Number','report_typed_totals');assert.match(cell.value,/^-?[0-9]+(?:\.0+)?$/,'report_typed_totals');
     return BigInt(cell.value.split('.')[0]);
   };
-  const verifyRows=(result,rows,{opening=false,all=true,product=null}={})=>{
+  const verifyRows=(result,rows,{opening=false,all=true,product=null,historical=false}={})=>{
     const named=rows.map(row=>Object.fromEntries(result.columns.map((c,i)=>[c.name,row[i]])));
     const labels=[];let quantity=0n,amount=0n;
     for(const row of named){
       exactKeys(row.Product,'type text');exactKeys(row.Warehouse,'type text');
       assert.equal(row.Product.type,'Catalog');assert.equal(row.Warehouse.type,'Catalog');
-      assert.match(row.Product.text,/^Product (00[1-9]|0[1-4][0-9]|05[0-2])$/,'report_saved_labels');
+      if(historical)assert.equal(row.Product.text,'[Unavailable record]','report_saved_labels');
+      else assert.match(row.Product.text,/^Product (00[1-9]|0[1-4][0-9]|05[0-2])$/,'report_saved_labels');
       assert.equal(row.Warehouse.text,'Main warehouse','report_saved_labels');
-      const n=BigInt(row.Product.text.slice(-3));labels.push(row.Product.text);
+      const n=historical?1n:BigInt(row.Product.text.slice(-3));labels.push(row.Product.text);
       if(product!==null)assert.equal(Number(n),product,'report_saved_labels');
       if(result.periodicity==='None')assert.equal(Object.hasOwn(row,'Period'),false);
       else{exactKeys(row.Period,'type ticks');assert.equal(row.Period.type,'Date');assert.equal(row.Period.ticks,result.periodicity==='Day'?initialAudit.dayTicks:initialAudit.monthTicks,'report_typed_totals');}
@@ -725,8 +771,13 @@ async function main(){
     unchanged();await reportPanel().scrollIntoViewIfNeeded();await screenshot(screenshots[0]);
   });
   await scenario(scenarioNames[1],async()=>{
-    let setup=await begin('Product');assert.equal(setup.choice.error,'too_many_matches','too_many_partial');assert.deepEqual(setup.choice.rows,[],'too_many_partial');
+    let setup=await begin('Product');assert.equal(setup.choice.error,null);assert.equal(setup.choice.rows.length,32);assert.equal(setup.choice.navigation.total,52);
+    const firstTicket=setup.choice.ticket;setup=await choicePage('Next');assert.equal(setup.choice.rows.length,20);assert.equal(setup.choice.navigation.page,2);assert.notEqual(setup.choice.ticket,firstTicket);
+    setup=await choicePage('Previous');assert.equal(setup.choice.rows.length,32);assert.equal(setup.choice.navigation.page,1);
+    setup=await searchReferences('product 005');assert.equal(setup.choice.navigation.total,1);assert.equal(setup.choice.rows[0].code,'P005');
+    const searchedTicket=setup.choice.ticket;setup=await refreshChoices();assert.equal(setup.choice.navigation.query,'product 005');assert.equal(setup.choice.rows[0].code,'P005');assert.notEqual(setup.choice.ticket,searchedTicket);
     setup=await search('P001');assert.deepEqual(setup.choice.rows.map(r=>[r.code,r.description]),[['P001','Product 001']],'exact_choice_mismatch');
+    setup=await searchReferences('product 001');assert.equal(setup.choice.code,'');assert.equal(setup.choice.navigation.total,1);
     await apply('Product 001');let result=await showStatement();assert.equal(result.page.total,1);verifyRows(result,result.rows,{all:false,product:1});
     setup=await begin('Warehouse');assert.equal(setup.choice.rows.length,2);await apply('Unused warehouse');result=await showStatement();assert.equal(result.page.total,0,'excluded_filter_rows');
     const committed=structuredClone(lastApplicationState.reportSetup.filters);await begin('Warehouse');setup=await cancel();assert.deepEqual(setup.filters,committed,'cancel_changed_selection');
@@ -786,10 +837,26 @@ async function main(){
     await naturalStop();unchanged();
     report.acceptance={storedSourceLauncher:true,explicitFullForms15:true,core15Denied:true,
       typedSetupBeforeBrowser:true,oneCatalogTransaction:true,oneReceiptPost:true,real52Rows:true,dayMonthNone:true,
-      sameSnapshotPages:true,exactTypedSums:true,sourceGrantedFilters:true,tooManyRequiresCode:true,emptyDistinctFromAll:true,
+      sameSnapshotPages:true,exactTypedSums:true,sourceGrantedFilters:true,boundedChoicePages:true,choiceSearchRefresh:true,exactCodeRetained:true,emptyDistinctFromAll:true,
       labelsNotCapabilities:true,smallSiblingDraft:true,localDraftRestored:true,closeRetiresPages:true,noFormWrites:true,rawDraftPreserved:true,retiredDomDenied:true,realResponseDelay:true,noReplay:true,
       naturalRestart:true,independentTypedAudit:true,reportWrites:false,restartReceiptRecovery:false,nativeWindowParity:false};
     report.audit={unchanged:true,fingerprint:initialAudit.fingerprint,sourceDigest:initialAudit.sourceDigest};
+  });
+  await scenario(scenarioNames[4],async()=>{
+    checkpoint('restart');await page.close();page=await context.newPage();await startHost();await page.goto(url);await writer();await idle();
+    await page.getByRole('navigation',{name:'Declared stock reports',exact:true}).getByRole('button',{name:'Stock BalanceAndTurnovers',exact:true}).click();
+    await prepareStatement();await begin('Product');await search('P001');await apply('Product 001');
+    // Deliberate competing typed writer, not a browser action or a report write.
+    const marked=inventoryFixture('mark-product');assert.equal(marked.marked,true);assert.deepEqual(marked.before,initialAudit,'readonly_audit_changed');
+    const markedAudit=inventoryFixture('audit-after-mark');assert.deepEqual(markedAudit,marked.after,'readonly_audit_changed');assert.equal(markedAudit.invariantFingerprint,initialAudit.invariantFingerprint,'readonly_audit_changed');
+    let result=await showStatement();assert.equal(result.page.total,1);verifyRows(result,result.rows,{all:false,product:1,historical:true});
+    assert.equal(result.filters[0].text,'[Unavailable record]','report_saved_labels');
+    await begin('Product');const setup=await searchReferences('P001');assert.deepEqual(setup.choice.rows,[]);assert.equal(setup.choice.navigation.total,0);
+    await cancel();result=await showStatement();assert.equal(result.page.total,1);verifyRows(result,result.rows,{all:false,product:1,historical:true});
+    await reportPanel().scrollIntoViewIfNeeded();await screenshot(screenshots[4]);await naturalStop();
+    assert.deepEqual(inventoryFixture('audit-after-mark'),markedAudit,'readonly_audit_changed');
+    report.acceptance.historicalSelectedDeletion=true;report.acceptance.markedTargetNotNewChoice=true;
+    report.audit={unchanged:false,firstFourUnchanged:true,externalTypedMarkOnly:true,invariantFingerprint:markedAudit.invariantFingerprint,sourceDigest:markedAudit.sourceDigest};
   });
   assert.equal(git('status','--porcelain','--untracked-files=all'),'','source_changed');
   assert.deepEqual(await sourceBinding(),report.binding,'source_binding_changed');
@@ -855,5 +922,5 @@ finally{
   clearTimeout(totalTimer);
 }
 // Fixed verdicts only: no raw exception, URL, request, database or profile path.
-console.log(JSON.stringify({status:report.status,completed:results.length,total:4,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
+console.log(JSON.stringify({status:report.status,completed:results.length,total:5,source:report.sourceCommit,failure:report.failure,cleanup:report.cleanup}));
 if(failed||report.status!=='PASS')process.exitCode=1;

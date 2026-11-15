@@ -20,12 +20,25 @@ function filterValues(values,declared) {
     keys(v,['id','mode','text']) && v.id===declared.filters[i].id && ['all','empty','selected'].includes(v.mode) && text(v.text) &&
     (v.mode!=='all' || v.text==='') && (v.mode!=='empty' || v.text==='(empty reference)'));
 }
+function choiceNavigation(choice) {
+  if(!Object.hasOwn(choice,'navigation'))return true;
+  const nav=choice.navigation;
+  if(choice.error!==null)return choice.error==='snapshot_limit'&&nav===null&&choice.rows.length===0;
+  if(!keys(nav,['page','pages','total','query','previous','next']) ||
+      !['page','pages','total'].every(k=>Number.isSafeInteger(nav[k])) || nav.total<0 || nav.total>8192 ||
+      nav.pages!==Math.max(1,Math.ceil(nav.total/32)) || nav.page<1 || nav.page>nav.pages || !text(nav.query,128) ||
+      choice.rows.length!==Math.min(32,Math.max(0,nav.total-(nav.page-1)*32)) ||
+      (nav.previous===null)!==(nav.page===1) || (nav.next===null)!==(nav.page===nav.pages))return false;
+  const cursors=[nav.previous,nav.next].filter(v=>v!==null);
+  return new Set(cursors).size===cursors.length&&cursors.every(v=>typeof v==='string'&&/^report-choice-page-[0-9a-f]{32}$/.test(v));
+}
 function setupValid(setup,reports) {
   const declared=reports.find(r=>r.id===setup?.report);
   if(!keys(setup,['report','ticket','filters','choice']) || !statement(declared) || !ticket(setup.ticket,'setup') || !filterValues(setup.filters,declared))return false;
   const choice=setup.choice;if(choice===null)return true;
-  if(!keys(choice,['filter','ticket','code','rows','error']) || !declared.filters.some(f=>f.id===choice.filter) || !ticket(choice.ticket,'choice') || !text(choice.code,64) ||
-     ![null,'too_many_matches'].includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length>32 || choice.error!==null && choice.rows.length)return false;
+  const paged=Object.hasOwn(choice,'navigation');
+  if(!keys(choice,['filter','ticket','code','rows','error',...(paged?['navigation']:[])]) || !declared.filters.some(f=>f.id===choice.filter) || !ticket(choice.ticket,'choice') || !text(choice.code,64) ||
+     !(paged?[null,'snapshot_limit']:[null,'too_many_matches']).includes(choice.error) || !Array.isArray(choice.rows) || choice.rows.length>32 || choice.error!==null && choice.rows.length || !choiceNavigation(choice))return false;
   const seen=new Set();return choice.rows.every(row=>{
     if(!keys(row,['choice','code','description']) || !rowToken(row.choice) || seen.has(row.choice) || !text(row.code,64) || !text(row.description,1024))return false;
     seen.add(row.choice);return true;
@@ -40,6 +53,11 @@ export function validReportRequest(params,state) {
   return bounds && (!statement(declared) || declared.periodicities.includes(params.periodicity) &&
     params.start>='1900-01-01T00:00:00' && params.end<='2099-12-31T23:59:59' &&
     state.reportSetup?.report===params.report && state.reportSetup.ticket===params.setup && !state.reportSetup.choice);
+}
+export function validRecorderRequest(params,state) {
+  return keys(params,['recorder','request']) && typeof params.recorder==='string' && /^recorder-[0-9a-f]{32}$/.test(params.recorder)
+    && text(params.request,64) && /^[\x20-\x7e]{1,64}$/.test(params.request) && safe(state)
+    && state.report?.view==='Movements' && state.report.rows.some(row=>row.some(cell=>cell.type==='Document' && cell.recorder===params.recorder));
 }
 export function validReportAction(method,params,state) {
   if(!safe(state))return false;
@@ -56,6 +74,9 @@ export function validReportAction(method,params,state) {
   if(['begin','clear','empty'].includes(params.action))return keys(params,[...base,'filter']) && setup.choice===null && declared.filters.some(f=>f.id===params.filter);
   if(!setup.choice || setup.choice.ticket!==params.choice)return false;
   if(params.action==='filter')return keys(params,[...base,'choice','code']) && text(params.code,64);
+  if(params.action==='search')return Object.hasOwn(setup.choice,'navigation')&&keys(params,[...base,'choice','query'])&&text(params.query,128);
+  if(params.action==='page')return keys(params,[...base,'choice','cursor'])&&[setup.choice.navigation?.previous,setup.choice.navigation?.next].filter(Boolean).includes(params.cursor);
+  if(params.action==='refresh')return Object.hasOwn(setup.choice,'navigation')&&keys(params,[...base,'choice']);
   if(params.action==='cancel')return keys(params,[...base,'choice']);
   return params.action==='apply' && keys(params,[...base,'choice','value']) && setup.choice.error===null && setup.choice.rows.some(r=>r.choice===params.value);
 }
@@ -101,7 +122,7 @@ export function validateReports(state,previous) {
     row.forEach((cell,index)=>{
       if (cell?.type!==result.columns[index].type) throw new FormError('transport');
       if (['Catalog','Document'].includes(cell.type)) {
-        if (!keys(cell,['type','text']) || !text(cell.text)) throw new FormError('transport');
+        if (!keys(cell,['type','text',...(Object.hasOwn(cell,'recorder')?['recorder']:[])]) || !text(cell.text) || Object.hasOwn(cell,'recorder') && (cell.type!=='Document' || result.view!=='Movements' || result.columns[index].name!=='Recorder' || typeof cell.recorder!=='string' || !/^recorder-[0-9a-f]{32}$/.test(cell.recorder))) throw new FormError('transport');
       } else validateScalar(cell);
     });
   }
@@ -126,8 +147,12 @@ export function validateReportReply(result,request,previous) {
       if(!old || old.ticket!==request.params.ticket)throw new FormError('transport');
       const changed=['apply','empty','clear'].includes(action);
       if(changed===(next.ticket===old.ticket) || !changed && JSON.stringify(next.filters)!==JSON.stringify(old.filters))throw new FormError('transport');
-      if(['begin','filter'].includes(action)){
+      if(['begin','filter','search','page','refresh'].includes(action)){
         if(!next.choice || next.choice.filter!==(action==='begin'?request.params.filter:old.choice?.filter) || next.choice.ticket===old.choice?.ticket)throw new FormError('transport');
+        if(action==='page' && (next.choice.code!==old.choice.code || next.choice.navigation?.total!==old.choice.navigation?.total || next.choice.navigation?.query!==old.choice.navigation?.query ||
+          next.choice.navigation?.page!==old.choice.navigation.page+(request.params.cursor===old.choice.navigation.next?1:-1)))throw new FormError('transport');
+        if(action==='search' && next.choice.navigation && (next.choice.code!=='' || next.choice.navigation.query!==request.params.query || next.choice.navigation.page!==1))throw new FormError('transport');
+
       }else if(next.choice!==null)throw new FormError('transport');
     }
   }
@@ -135,8 +160,8 @@ export function validateReportReply(result,request,previous) {
 export function reportCellText(cell) {
   return ['Catalog','Document'].includes(cell.type) ? cell.text : scalarText(cell);
 }
-export function createReportPanel(document, host, request, blocked, command=null) {
-  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=content;return n;};
+export function createReportPanel(document, host, request, blocked, command=null, options={}) {
+  const el=(tag,content='')=>{const n=document.createElement(tag);n.textContent=options.localize?options.localize(content):content;return n;};
   const title=el('h2','Stock reports'), navigation=el('nav'), controls=el('div'), filters=el('section'), output=el('div'), notice=el('p');
   host.className='configuration-reports';host.dataset.formAction='application-navigation';host.setAttribute('aria-label','Saved stock reports');host.hidden=true;
   navigation.setAttribute('aria-label','Declared stock reports');notice.setAttribute('role','status');filters.setAttribute('aria-label','Statement catalog filters');
@@ -183,16 +208,30 @@ export function createReportPanel(document, host, request, blocked, command=null
     const captured={...base,choice:choice.ticket};
     const search=()=>{if(!text(code.value,64)){localError='Enter an exact code of at most 64 characters.';paint();return;}run('application.reportSetup',{...captured,action:'filter',code:code.value});};
     button(picker,'Find statement code',disabled,search);
+    if(Object.hasOwn(choice,'navigation')){
+      const queryLabel=el('label','Search saved references'),query=el('input');query.type='search';query.maxLength=128;
+      query.value=choice.navigation?.query||'';query.setAttribute('aria-label','Statement reference search');query.disabled=disabled;queryLabel.append(query);picker.append(queryLabel);
+      const searchReferences=()=>{if(!text(query.value,128)){localError='Search is limited to 128 characters.';paint();return;}run('application.reportSetup',{...captured,action:'search',query:query.value});};
+      button(picker,'Search statement references',disabled,searchReferences);
+      query.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();searchReferences();}});
+      button(picker,'Refresh statement choices',disabled,()=>run('application.reportSetup',{...captured,action:'refresh'}));
+      const nav=choice.navigation;
+      if(nav){
+        picker.append(el('p',`Page ${nav.page} of ${nav.pages}; ${nav.total} matching references`));
+        button(picker,'Previous statement choices',disabled||!nav.previous,()=>run('application.reportSetup',{...captured,action:'page',cursor:nav.previous}));
+        button(picker,'Next statement choices',disabled||!nav.next,()=>run('application.reportSetup',{...captured,action:'page',cursor:nav.next}));
+      }
+    }
     button(picker,'Cancel statement choice',disabled,()=>run('application.reportSetup',{...captured,action:'cancel'}));
     code.addEventListener('keydown',event=>{if(event.key==='Enter' && !event.isComposing){event.preventDefault();search();}});
     picker.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();run('application.reportSetup',{...captured,action:'cancel'});}});
-    if(choice.error)picker.append(el('p','Too many matches. Enter an exact code; no partial choices are shown.'));
+    if(choice.error)picker.append(el('p',choice.error==='snapshot_limit'?'Reference snapshot limit exceeded. Enter an exact code; no partial choices are shown.':'Too many matches. Enter an exact code; no partial choices are shown.'));
     for(const row of choice.rows)button(picker,row.description || row.code,disabled,()=>run('application.reportSetup',{...captured,action:'apply',value:row.choice}));
     if(!choice.error && !choice.rows.length)picker.append(el('p','No matching saved record.'));
     filters.append(picker);
   }
   function paint() {
-    host.hidden=!state?.reports?.length;if(host.hidden)return;
+    host.hidden=!state?.reports?.length || options.visible?.()===false;if(host.hidden)return;
     if(!state.reports.some(r=>r.id===selected))selected=state.reports[0].id;
     const disabled=busy || blocked(), report=state.reports.find(r=>r.id===selected);
     navigation.replaceChildren();
@@ -207,11 +246,13 @@ export function createReportPanel(document, host, request, blocked, command=null
     drawFilters(report,disabled);
     const result=state.report?.report===selected?state.report:null;
     // Button state changes with the queue even when the immutable page does not.
-    if(result!==lastResult || result?.page){output.replaceChildren();lastResult=result;
+    if(result!==lastResult || result?.page || result?.rows.some(row=>row.some(cell=>cell.recorder))){output.replaceChildren();lastResult=result;
       if(result){const table=el('table'),header=el('tr'),head=el('thead'),body=el('tbody');
         table.setAttribute('aria-label',report.title+' results');
         for(const column of result.columns)header.append(el('th',column.name));head.append(header);table.append(head,body);
-        for(const values of result.rows){const row=el('tr');for(const cell of values)row.append(el('td',reportCellText(cell)));body.append(row);}
+        for(const values of result.rows){const row=el('tr');for(const cell of values){const td=el('td');
+          if(cell.recorder && options.openRecorder){const open=button(td,cell.text,disabled,()=>{if(!busy&&!blocked())options.openRecorder(cell.recorder);});open.setAttribute('aria-label','Открыть регистратор: '+cell.text);}
+          else td.textContent=reportCellText(cell);row.append(td);}body.append(row);}
         const bounds=result.view==='Balance'?`Displayed balance before ${result.at} (exclusive).`:['Turnovers','BalanceAndTurnovers'].includes(result.view)?`Displayed saved period from ${result.start} through ${result.end} (inclusive).`:'Displayed saved movements, without a period filter.';
         output.append(el('p',bounds+' Editing the controls does not change this result until Show saved stock.'));
         if(statement(result)){

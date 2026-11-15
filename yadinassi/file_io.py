@@ -15,6 +15,7 @@ import stat
 import tempfile
 import uuid
 
+from .safe_mode import require_external_access
 from .values import BSLObject, BSLArray, HostFunction
 
 MAX_BYTES = 16 * 1024 * 1024
@@ -56,6 +57,7 @@ def _bool(value, default=False):
 
 @_file_errors
 def _open_regular(path, writing=False, append=False):
+    require_external_access('open file')
     # Inspect the opened descriptor before truncating, as in JSON file I/O.
     flags = os.O_WRONLY | os.O_CREAT if writing else os.O_RDONLY
     if append:
@@ -70,7 +72,8 @@ def _open_regular(path, writing=False, append=False):
             raise ValueError("Файлы: превышен предел ресурсов Yadinassi")
         if writing and not append:
             os.ftruncate(fd, 0)
-        stream = os.fdopen(fd, 'ab' if append else ('wb' if writing else 'rb'))
+        # No buffered write may escape later through cleanup in a restricted frame.
+        stream = os.fdopen(fd, 'ab' if append else ('wb' if writing else 'rb'), buffering=0)
         fd = None
         return stream
     finally:
@@ -88,9 +91,24 @@ def _read_bytes(path):
 
 
 @_file_errors
+def _write_all(stream, data):
+    """Commit bounded bytes to an unbuffered file without losing short writes."""
+    view = memoryview(data)
+    if len(view) > MAX_BYTES:
+        raise ValueError("Файлы: превышен предел ресурсов Yadinassi")
+    offset = 0
+    while offset < len(view):
+        require_external_access("write file bytes")
+        written = stream.write(view[offset:])
+        if type(written) is not int or written <= 0 or written > len(view) - offset:
+            raise ValueError("Файлы: запись не завершена")
+        offset += written
+
+
+@_file_errors
 def _write_bytes(path, data):
     with _open_regular(path, writing=True) as stream:
-        stream.write(data)
+        _write_all(stream, data)
 
 
 class BSLTextEncoding(Enum):
@@ -196,9 +214,15 @@ class BSLFile(_FileMethods):
         if key in values:
             return values[key]
         return super().get_member(name)
-    def exists(self): return os.path.exists(self._filename)
-    def is_file(self): return os.path.isfile(self._filename)
-    def is_directory(self): return os.path.isdir(self._filename)
+    def exists(self):
+        require_external_access("inspect file")
+        return os.path.exists(self._filename)
+    def is_file(self):
+        require_external_access("inspect file")
+        return os.path.isfile(self._filename)
+    def is_directory(self):
+        require_external_access("inspect file")
+        return os.path.isdir(self._filename)
     @_file_errors
     def size(self):
         with _open_regular(self._filename) as stream:
@@ -355,7 +379,7 @@ class BSLTextWriter(_FileMethods):
             size = os.fstat(stream.fileno()).st_size
             if not size:
                 mark = _encode('', enc, True)
-                stream.write(mark); size = len(mark)
+                _write_all(stream, mark); size = len(mark)
         except BaseException:
             stream.close(); raise
         self._stream, self._encoding, self._size = stream, enc, size
@@ -385,7 +409,13 @@ class BSLTextWriter(_FileMethods):
         data = _encode(value, self._encoding)
         if self._size + len(data) > MAX_BYTES:
             raise ValueError("ЗаписьТекста: превышен предел ресурсов Yadinassi")
-        self._stream.write(data); self._stream.flush(); self._size += len(data)
+        from .text_streams import BinaryStreamSink
+        if not isinstance(self._stream, BinaryStreamSink):
+            require_external_access("write text file")
+            _write_all(self._stream, data)
+        else:
+            self._stream.write(data)
+        self._stream.flush(); self._size += len(data)
     def write_line(self, value, splitter=None):
         if self._stream is None: raise ValueError("ЗаписьТекста: файл не открыт")
         value = _text(value)
@@ -399,9 +429,12 @@ class BSLTextWriter(_FileMethods):
                         ('write', False, 'Write Записать'), ('write_line', False, 'WriteLine ЗаписатьСтроку'))
 
 
-def temp_files_dir(): return tempfile.gettempdir() + os.sep
+def temp_files_dir():
+    require_external_access("locate temporary directory")
+    return tempfile.gettempdir() + os.sep
 
 def temp_file_name(extension=None):
+    require_external_access('locate temporary directory')
     extension = 'tmp' if extension is None else _text(extension).lstrip('.')
     if any(c in extension for c in '/\\\0') or len(extension) > 100:
         raise ValueError("Недопустимое расширение временного файла")
@@ -410,15 +443,19 @@ def temp_file_name(extension=None):
     return os.path.join(tempfile.gettempdir(), 'yadinassi-' + uuid.uuid4().hex + ('.' + extension if extension else ''))
 
 @_file_errors
-def create_directory(path): os.makedirs(_path(path), exist_ok=True)
+def create_directory(path):
+    require_external_access("create directory")
+    os.makedirs(_path(path), exist_ok=True)
 @_file_errors
 def copy_file(source, destination):
+    require_external_access('copy file')
     data = _read_bytes(source)
     if os.path.exists(destination) and os.path.samefile(source, destination):
         raise ValueError("Источник и приемник совпадают")
     _write_bytes(destination, data)
 @_file_errors
 def move_file(source, destination):
+    require_external_access('move file')
     # Validate both names and ordinary source before the operation.
     source, destination = _path(source), _path(destination)
     with _open_regular(source): pass
@@ -453,6 +490,7 @@ def _search_root(path):
 
 @_file_errors
 def find_files(path, mask=None, recursive=None):
+    require_external_access('enumerate files')
     path = _path(path)
     recursive = _bool(recursive)
     if mask is None:
@@ -488,6 +526,7 @@ def find_files(path, mask=None, recursive=None):
 
 @_file_errors
 def delete_files(path, mask=None):
+    require_external_access('delete files')
     path = _path(path)
     if mask is not None:
         raise ValueError("Удаление по маске пока не поддерживается")

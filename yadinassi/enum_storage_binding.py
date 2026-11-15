@@ -114,6 +114,21 @@ class EnumStorageBinding:
                 or hook.__func__ is not self._hook_function):
             raise BackendError('closed')
         hook()
+        self._require_namespace()
+
+    def _require_detached(self):
+        """Integrity/owner only; detached report operations acquire no lease."""
+        from .inventory_enum_runtime import _EnumScope
+        hook = self._hook
+        if (type(hook) is not MethodType or type(self._hook_owner) is not _EnumScope
+                or hook.__self__ is not self._hook_owner
+                or hook.__func__ is not _EnumScope.require_live
+                or self._hook_function is not _EnumScope.require_live):
+            raise BackendError('closed')
+        self._hook_owner._require_owner()
+        self._require_namespace()
+
+    def _require_namespace(self):
         namespace = self._namespace
         if namespace.metadata is not self._snapshot:
             raise BackendError('closed')

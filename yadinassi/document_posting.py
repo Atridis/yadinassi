@@ -6,6 +6,7 @@ module initializer, imports, asynchronous execution or arbitrary handler grant
 is exposed by this adapter.
 """
 from enum import Enum
+from .owned_syntax import syntax_kind
 from .catalog_backend import BackendError
 from .configuration_posting_application import canonical_runtime as canonical
 from .document_posting_program import compile_handlers
@@ -44,14 +45,32 @@ class _PostingInterpreter(Interpreter):
         self._information_registers = parent._information_registers
         self.routines = {routine.name.casefold():routine for routine in program}
     def _visit(self, node):
+        if self.execution_backend == 'compiled-strict':
+            return (yield from super()._visit(node))
+        # Preserve the original reference-backend context wrapper. The base
+        # interpreter does not pay for or promise the new strict-only ABI.
+        self.compiled_before(node)
+        result = yield from super()._visit(node)
+        return self.compiled_after(node, result)
+
+    def compiled_before(self, node):
         self._steps += 1
         if self._steps > MAX_STEPS: raise PostingLimitError('document handler execution budget')
-        return (yield from super()._visit(node))
+        return super().compiled_before(node)
     def _member(self, name):
         from .documents import _name
         key = _name(name)
         return (key in self._document._values or key in self._document._sections or
                 key in ('additionalproperties','дополнительныесвойства','registerrecords','движения'))
+    def semantic_name(self, node):
+        key = node.name.casefold()
+        if self.locals is not None and key in self.locals: return super().semantic_name(node)
+        if key in ('thisobject','этотобъект'): return self._document
+        if self._member(node.name): return self._document.get_member(node.name)
+        return super().semantic_name(node)
+
+
+    # Legacy extension point keeps superclass visitor instrumentation.
     def visit_Name(self, node):
         key = node.name.casefold()
         if self.locals is not None and key in self.locals: return super().visit_Name(node)
@@ -60,7 +79,7 @@ class _PostingInterpreter(Interpreter):
         return super().visit_Name(node)
     def call(self, node, *, require_value):
         callee = self.ungroup(node.callee)
-        if type(callee) is ast.Name and self._member(callee.name) and callee.name.casefold() in self.functions:
+        if syntax_kind(callee) is ast.Name and self._member(callee.name) and callee.name.casefold() in self.functions:
             node = ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
         return (yield from super().call(node,require_value=require_value))
     def set_variable(self, name, value):
@@ -69,7 +88,7 @@ class _PostingInterpreter(Interpreter):
         return super().set_variable(name,value)
     def argument(self, node):
         value = self.ungroup(node)
-        if type(value) is ast.Name and self._member(value.name) and not (self.locals is not None and value.name.casefold() in self.locals):
+        if syntax_kind(value) is ast.Name and self._member(value.name) and not (self.locals is not None and value.name.casefold() in self.locals):
             return Reference(lambda:self._document.get_member(value.name),lambda item:self._document.set_member(value.name,item))
         return (yield from super().argument(node))
     def invoke(self, routine, values):
@@ -97,9 +116,15 @@ class PostingRuntime:
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration, canonical_runtime as accumulation_canonical
         from .configuration_inventory_application import InventoryApplicationConfiguration, canonical as application_canonical
+        from .configuration_main_demo import MainDemoConfiguration
+        from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
         from .configuration_inventory_enums import InventoryEnumConfiguration, canonical as enum_canonical
-        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration)
-        self.configuration = (enum_canonical(configuration) if type(configuration) is InventoryEnumConfiguration else
+        self.accumulation = type(configuration) in (AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration)
+        from .configuration_inventory_enum_application import canonical as enum_application_canonical
+        from .configuration_main_demo import canonical as main_demo_canonical
+        self.configuration = (main_demo_canonical(configuration) if type(configuration) is MainDemoConfiguration else
+                              enum_application_canonical(configuration) if type(configuration) is InventoryEnumApplicationConfiguration else
+                              enum_canonical(configuration) if type(configuration) is InventoryEnumConfiguration else
                               application_canonical(configuration) if type(configuration) is InventoryApplicationConfiguration else
                               accumulation_canonical(configuration) if self.accumulation
                               else canonical(configuration))

@@ -64,10 +64,12 @@ class BSLDocuments(BSLObject):
         from .configuration_accumulation import AccumulationConfiguration
         from .configuration_accumulation_references import InventoryConfiguration
         from .configuration_inventory_application import InventoryApplicationConfiguration
+        from .configuration_main_demo import MainDemoConfiguration
+        from .configuration_inventory_enum_application import InventoryEnumApplicationConfiguration
         from .configuration_inventory_enums import InventoryEnumConfiguration
         configuration = backend.accumulation_configuration
         if configuration is None: configuration = backend.posting_configuration
-        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration): return None
+        if type(configuration) not in (PostingConfiguration, PostingApplicationConfiguration, AccumulationConfiguration, InventoryConfiguration, InventoryApplicationConfiguration, InventoryEnumConfiguration, InventoryEnumApplicationConfiguration, MainDemoConfiguration): return None
         if self._posting_runtime is None:
             from .document_posting import PostingRuntime
             self._posting_runtime = PostingRuntime(self, configuration)

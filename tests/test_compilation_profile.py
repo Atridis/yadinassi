@@ -198,8 +198,8 @@ class CompilationProfileTests(unittest.TestCase):
                 self.assertTrue(all(node.body[0].value.value == Decimal(42) for node in routines))
 
     def test_unknown_symbols_are_validated_even_when_excluded_or_not_short_circuited(self):
-        unknowns = ("UnknownProfileFlag", "MobileClient", "МобильныйКлиент",
-                    "MobileServer", "МобильныйСервер", "MobileAppClient", "MobileAppServer",
+        unknowns = ("UnknownProfileFlag", "FutureUnsupportedClient", "НеизвестныйБудущийКлиент",
+                    "MobileServer", "МобильныйСервер", "FutureUnsupportedAppClient", "FutureUnsupportedAppServer",
                     "AtClientAtServer", "НаКлиентеНаСервере", "AtServerNoContext",
                     "AtClientAtServerNoContext", "dual_client", "dual_server")
         for unknown in unknowns:
@@ -293,7 +293,7 @@ class CompilationProfileTests(unittest.TestCase):
             root = Path(temporary).resolve()
             leaf = root / "Leaf.bsl"
             leaf.write_text('Message("must-not-run-leaf");\n#If ThinClient Then\n'
-                            "#If MobileClient Then\n#EndIf\n#EndIf\n", encoding="utf-8")
+                            "#If FutureUnsupportedClient Then\n#EndIf\n#EndIf\n", encoding="utf-8")
             with self.assertRaises(BSLError) as caught:
                 self.vm.execute('// #Import Leaf.bsl\nMessage("must-not-run-root");',
                                 str(root / "Main.bsl"))
@@ -581,7 +581,7 @@ Message(Dual()); Message(ServerCall()); Message(Detached());
             self.vm.execute("New Form")
 
     def test_unknown_and_combined_side_symbols_still_fail_before_effects(self):
-        for unknown in ("UnknownProfileFlag", "MobileClient", "AtClientAtServer",
+        for unknown in ("UnknownProfileFlag", "FutureUnsupportedClient", "AtClientAtServer",
                         "ClientAtServer", "НаКлиентеНаСервере", "КлиентНаСервере"):
             for condition in (unknown, f"Client Or {unknown}", f"ThinClient And {unknown}"):
                 for annotation in ("&AtClient", "&AtServer", "&AtServerNoContext",

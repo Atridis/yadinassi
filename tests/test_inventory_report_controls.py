@@ -186,7 +186,7 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
 
     def test_begin_rows_are_tokens_not_catalog_keys(self):
         key=self.catalog('Products','P1','Widget');self.open();choice=self.begin()['choice']
-        self.assertEqual(set(choice),{'filter','ticket','code','rows','error'})
+        self.assertEqual(set(choice),{'filter','ticket','code','rows','error','navigation'})
         self.assertRegex(choice['ticket'],r'^choice-[0-9a-f]{32}-[1-9][0-9]*$')
         self.assertRegex(choice['rows'][0]['choice'],r'^[0-9a-f]{32}$')
         self.assertEqual(set(choice['rows'][0]),{'choice','code','description'})
@@ -254,14 +254,14 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
                    {'report':'StockStatement','ticket':state['ticket'],'action':'empty','filter':'product'},
                    {'report':'StockBalance','action':'open'},
                    {'report':'StockStatement','ticket':'stale','action':'clear','filter':'Product'}]
-        with patch.object(InventoryReports,'choices',side_effect=AssertionError('scan')):
+        with patch.object(InventoryReports,'choice_snapshot',side_effect=AssertionError('scan')):
             for params in malformed:
                 with self.subTest(params=params),self.assertRaises(BackendError):self.controls.action(params)
                 self.assertEqual(self.controls.state,state)
 
     def test_failed_scan_retires_old_rows_preserves_committed_selection(self):
         self.catalog('Products','P1','One');self.open();self.begin();saved=self.apply_first();old=self.begin()['choice']
-        with patch.object(InventoryReports,'choices',side_effect=BackendError('storage_error')):
+        with patch.object(InventoryReports,'choice_snapshot',side_effect=BackendError('storage_error')):
             with self.assertRaises(BackendError):self.act('filter',choice=old['ticket'],code='P1')
         state=self.controls.state;self.assertIsNone(state['choice']);self.assertEqual(state['filters'],saved['filters'])
         self.assertEqual(state['ticket'],saved['ticket'])
@@ -299,18 +299,21 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
         self.assertEqual(self.controls.state,state)
 
     def test_wrong_snapshot_binding_or_target_cannot_be_applied(self):
-        self.catalog('Products','P1','One');snapshot=self.choices();self.open()
+        self.catalog('Products','P1','One');snapshot=self.service.choice_snapshot('StockStatement','Product');self.open()
         invalid=[replace(snapshot,database_id=uuid4()),replace(snapshot,configuration_generation=2),
                  replace(snapshot,source_digest='0'*64),replace(snapshot,dimension='Warehouse'),
                  replace(snapshot,rows=(replace(snapshot.rows[0],key=replace(snapshot.rows[0].key,catalog_id=uuid4())),)),
                  replace(snapshot,rows=list(snapshot.rows)),replace(snapshot,error='too_many_matches')]
+        invalid.append(replace(snapshot,rows=tuple(replace(snapshot.rows[0],key=replace(snapshot.rows[0].key,record_id=UUID(int=i+100)),description='x'*1024) for i in range(4096))))
         for value in invalid:
-            with self.subTest(value=value),patch.object(InventoryReports,'choices',return_value=value),self.assertRaises(BackendError):self.begin()
+            with self.subTest(value=value),patch.object(InventoryReports,'choice_snapshot',return_value=value),self.assertRaises(BackendError):self.begin()
             self.assertIsNone(self.controls.state['choice'])
 
-    def test_too_many_matches_has_no_row_tokens_and_can_filter_again(self):
+    def test_33_matches_are_paged_and_can_filter_again(self):
         for n in range(33):self.catalog('Products','P'+str(n).zfill(2),'Item')
-        self.open();choice=self.begin()['choice'];self.assertEqual((choice['rows'],choice['error']),([], 'too_many_matches'))
+        self.open();choice=self.begin()['choice'];self.assertEqual(len(choice['rows']),32)
+        self.assertIsNone(choice['error']);self.assertEqual(choice['navigation']['total'],33)
+        self.assertEqual(choice['navigation']['pages'],2)
         exact=self.act('filter',choice=choice['ticket'],code='P01')['choice']
         self.assertEqual(len(exact['rows']),1);self.assertIsNone(exact['error'])
 
@@ -356,6 +359,58 @@ class InventoryReportControlTests(ControlsFixture,unittest.TestCase):
 
     def test_no_service_scan_on_all_empty_clear_cancel_or_resolve(self):
         self.open();self.begin();choice=self.controls.state['choice']
-        with patch.object(InventoryReports,'choices',side_effect=AssertionError('scan')):
+        with patch.object(InventoryReports,'choice_snapshot',side_effect=AssertionError('scan')):
             self.act('cancel',choice=choice['ticket']);self.act('empty',filter='Product');self.act('clear',filter='Product')
             state=self.controls.state;self.assertEqual(self.controls.resolve(state['report'],state['ticket']),())
+
+    def test_65_pages_revoke_old_choice_and_cursor_without_rescan(self):
+        for n in range(65):self.catalog('Products',f'P{n:02}','Item')
+        self.open();first=self.begin()['choice']
+        with patch.object(InventoryReports,'choice_snapshot',side_effect=AssertionError('rescan')):
+            second=self.act('page',choice=first['ticket'],cursor=first['navigation']['next'])['choice']
+            self.assertEqual((second['navigation']['page'],len(second['rows'])),(2,32))
+            before=self.controls.state
+            with self.assertRaises(BackendError):self.act('page',choice=second['ticket'],cursor=first['navigation']['next'])
+            with self.assertRaises(BackendError):self.act('apply',choice=second['ticket'],value=first['rows'][0]['choice'])
+            self.assertEqual(self.controls.state,before)
+            third=self.act('page',choice=second['ticket'],cursor=second['navigation']['next'])['choice']
+            self.assertEqual((third['navigation']['page'],len(third['rows'])),(3,1))
+
+    def test_casefold_search_after_exact_restores_full_snapshot(self):
+        self.catalog('Products','P1','First');self.catalog('Products','P2','Straße')
+        self.open();first=self.begin()['choice']
+        exact=self.act('filter',choice=first['ticket'],code='P1')['choice']
+        found=self.act('search',choice=exact['ticket'],query='STRASSE')['choice']
+        self.assertEqual(found['code'],'');self.assertEqual([r['code'] for r in found['rows']],['P2'])
+        with patch.object(InventoryReports,'choice_snapshot',side_effect=AssertionError('rescan')):
+            all_rows=self.act('search',choice=found['ticket'],query='')['choice']
+            self.assertEqual(all_rows['navigation']['total'],2)
+
+    def test_refresh_exposes_external_rows_preserving_query(self):
+        self.catalog('Products','P1','One');self.open();first=self.begin()['choice']
+        searched=self.act('search',choice=first['ticket'],query='P')['choice']
+        self.catalog('Products','P2','Two')
+        unchanged=self.act('search',choice=searched['ticket'],query='P')['choice']
+        self.assertEqual(unchanged['navigation']['total'],1)
+        fresh=self.act('refresh',choice=unchanged['ticket'])['choice']
+        self.assertEqual((fresh['navigation']['total'],fresh['navigation']['query']),(2,'P'))
+        with self.assertRaises(BackendError):self.act('apply',choice=fresh['ticket'],value=unchanged['rows'][0]['choice'])
+
+    def test_snapshot_overflow_exact_recovers_full_search_refuses_partial(self):
+        self.catalog('Products','P1','One');self.catalog('Products','P2','Two');self.open()
+        with patch('yadinassi.inventory_application_reports.MAX_CHOICE_SNAPSHOT_ROWS',1):
+            over=self.begin()['choice']
+            self.assertEqual((over['rows'],over['navigation'],over['error']),([],None,'snapshot_limit'))
+            exact=self.act('filter',choice=over['ticket'],code='P2')['choice']
+            self.assertEqual(exact['navigation']['total'],1)
+            full=self.act('search',choice=exact['ticket'],query='P2')['choice']
+            self.assertEqual((full['rows'],full['navigation'],full['error']),([],None,'snapshot_limit'))
+
+    def test_new_snapshot_choice_can_be_historical_after_external_deletion_mark(self):
+        key=self.catalog('Products','P1','Old');self.open();choice=self.begin()['choice']
+        with closing(self.backend.begin_read()) as owner:card=owner.read_catalog(key)
+        with closing(self.backend.begin_write(uuid4())) as owner:
+            owner.update(CatalogDraft(card.key,card.code,card.description,True,card.values,card.tabular_sections),card.revision);owner.commit()
+        self.act('apply',choice=choice['ticket'],value=choice['rows'][0]['choice'])
+        self.assertEqual(self.controls.display(self.report())[0]['text'],UNAVAILABLE)
+        self.assertEqual(self.begin()['choice']['navigation']['total'],0)

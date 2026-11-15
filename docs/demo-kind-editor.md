@@ -1,8 +1,8 @@
 # Original demo kind editor (bounded local adapter)
 
-For a fresh database containing both original kinds and warehouses, see
-[Original demo kinds and warehouses](demo-directories.md). The kinds-only
-profile below remains unchanged; existing databases are not upgraded.
+Use the single [main demo](demo-quickstart.md) for current kinds, warehouses,
+products and document scenarios. The kinds-only profile documented here is
+historical compatibility; existing databases are not upgraded.
 
 Goal: open the original `ВидыНоменклатуры` form, edit Description, execute its
 original OnChange and BeforeWriteAtServer handlers, allocate its code, save to
@@ -64,26 +64,26 @@ labels the bounded host adapter honestly. Native parity remains false.
 
 ## Run the bounded demo
 
-From the repository root, create a new disposable database from the original
-retained fixture (the destination must not exist):
+From the repository root, create the one canonical main-demo database (the destination must not exist):
 
-```python
-from pathlib import Path
-from yadinassi.sqlite_catalog import SQLiteCatalogBackend
-root = Path("tests/fixtures/demo_cf/source")
-files = {p.relative_to(root).as_posix(): p.read_bytes()
-         for p in root.rglob("*") if p.is_file()}
-backend = SQLiteCatalogBackend.create_demo_kinds("demo-kinds.sqlite", files)
-backend.close()
+```console
+python -m yadinassi --create-demo-db demo.sqlite --import-xml examples/demo
+python -m yadinassi --ui --f demo.sqlite --open-browser
 ```
 
-Then launch `python -m yadinassi.ui.local_app --f demo-kinds.sqlite` and open
-its printed local session URL. Select `ВидыНоменклатуры` and create a record.
+These commands use the one current `main-demo-v1` configuration. The partial
+profiles described below remain compatibility behavior for existing databases,
+not additional demo sources or recommended new databases. The exact historical
+root XML survives only in a test-only fixture assembled with pinned original
+catalog/form/handler bytes from `examples/demo`.
+
+
+In the opened main demo, select `ВидыНоменклатуры` and create a record.
 Code is read-only. Edit Description and leave the field to run original OnChange;
 Save runs original server validation. A short name is refused without allocating
 a code; a valid name is trimmed, numbered and persisted. Close and reopen the
-record/database to see the stored value. Other original catalogs are not active
-in this slice; their source files remain byte-for-byte retained.
+record/database to see the stored value. Other catalogs remain inactive only in existing legacy kinds-only databases;
+the current main demo exposes all three original catalogs.
 
 Moving directly to Save/Back/Close uses that command's flush instead of racing a
 blur request. Discard does not flush. Failed change requests preserve local text.

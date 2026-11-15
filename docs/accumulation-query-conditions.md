@@ -80,7 +80,7 @@ Use a new file with the existing inventory source profile, seed its supported st
 documents, then run three parameterized read-only reports in one query package:
 
 ```console
-python -m yadinassi --create-db scoped-stock.sqlite --import-xml examples/inventory_reference/source --source-profile accumulation-reference-v1
+python -m yadinassi --create-demo-db scoped-stock.sqlite --import-xml examples/demo
 python -m yadinassi --f scoped-stock.sqlite examples/inventory_reference/period_seed.bsl
 python -m yadinassi --f scoped-stock.sqlite examples/inventory_reference/scoped_statement.bsl
 ```

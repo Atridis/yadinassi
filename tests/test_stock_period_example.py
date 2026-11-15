@@ -1,6 +1,7 @@
 """Fresh-only period example, read-only reopen and explicit reconciliation."""
 from contextlib import closing
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -35,7 +36,9 @@ class StockPeriodExampleTests(unittest.TestCase):
         self.temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(self.temp.cleanup)
         self.path=Path(self.temp.name)/'period.sqlite'
     def create(self):
-        with closing(create_prepared(self.path,prepare_directory(EXAMPLE/'source',profile=PROFILE))):pass
+        from yadinassi.configuration_main_demo import import_main_demo_configuration
+        from test_main_demo_configuration import source
+        with closing(SQLiteDBContext.create_main_demo(self.path,import_main_demo_configuration(source(),profile='main-demo-v1'))):pass
     def run_script(self,name,*,read_only=False):
         output=[]
         # The public CLI context has no read_only argument. This test host
@@ -66,10 +69,11 @@ class StockPeriodExampleTests(unittest.TestCase):
     def test_cli_create_seed_report_and_reconcile(self):
         def cli(*args):
             run=subprocess.run([sys.executable,*(['-O'] if sys.flags.optimize else []),'-m','yadinassi',*map(str,args)],
-                               cwd=ROOT,capture_output=True,text=True)
+                               cwd=ROOT,capture_output=True,text=True,
+                               encoding='utf-8',env={**os.environ,'PYTHONIOENCODING':'utf-8'})
             self.assertEqual(run.returncode,0,run.stdout+'\n'+run.stderr)
             return run.stdout.splitlines()
-        cli('--create-db',self.path,'--import-xml',EXAMPLE/'source','--source-profile',PROFILE)
+        cli('--create-demo-db',self.path,'--import-xml',ROOT/'examples/demo')
         self.assertEqual(cli('--f',self.path,EXAMPLE/'period_seed.bsl'),['Stock period example created.'])
         self.assertEqual(cli('--f',self.path,EXAMPLE/'period_statement.bsl'),INITIAL)
         cli('--f',self.path,EXAMPLE/'period_reconcile.bsl')

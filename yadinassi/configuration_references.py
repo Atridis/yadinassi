@@ -9,7 +9,7 @@ from .catalog_types import BSLCatalogReference
 from .form_references import FormReferenceBinding, FormReferenceScope
 
 
-def owned_reference_scope(owned, targets):
+def owned_reference_scope(owned, targets, enum_targets=()):
     catalogs = owned.manager._catalogs
     metadata = catalogs._metadata
     metadata._snapshot()
@@ -33,6 +33,15 @@ def owned_reference_scope(owned, targets):
             card = manager._read(value.reference_uuid)
             return '[Unavailable record]' if card is None or card.deletion_mark else card.description
         bindings[target] = FormReferenceBinding(manager._value_type, manager.empty_ref(), normalize, presentation)
+    if enum_targets:
+        from .inventory_enum_runtime import binding as enum_binding
+        from .form_references import FormEnumBinding
+        storage=enum_binding(metadata._root)
+        for target,identity,enum_name in enum_targets:
+            kind=storage.value_type(identity)
+            if kind.name!=enum_name:raise ValueError('enum target source mismatch')
+            bindings[target]=FormEnumBinding(storage,identity)
+            managers[target]=storage._entry(identity)[2]
     scope = FormReferenceScope(bindings=bindings)
     def enroll(interpreter):
         other = interpreter._catalogs
@@ -45,5 +54,12 @@ def owned_reference_scope(owned, targets):
         for target, identity, name in targets:
             if other._manager_by_metadata_uuid(identity)._schema != managers[target]._schema:
                 raise ValueError('reference activation schema mismatch')
+        if enum_targets:
+            source=enum_binding(snapshot._root)
+            for target,identity,enum_name in enum_targets:
+                if source.value_type(identity).name!=enum_name:raise ValueError('enum activation schema mismatch')
+                previous=scope.targets[target]
+                if source is not previous.storage and all(source is not b for b in previous.sources):
+                    scope.targets[target]=FormEnumBinding(previous.storage,identity,(*previous.sources,source))
         enrolled.add(snapshot)
     return scope, managers, enroll

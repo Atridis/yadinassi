@@ -2,6 +2,7 @@
 from contextlib import closing
 from dataclasses import replace
 from hashlib import sha256
+from legacy_demo_fixture import legacy_demo_files
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -22,9 +23,7 @@ class DemoProductsProfileTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'products.sqlite'
-        root = Path(__file__).parent / 'fixtures/demo_cf/source'
-        self.files = {p.relative_to(root).as_posix(): p.read_bytes()
-                      for p in root.rglob('*') if p.is_file()}
+        self.files = legacy_demo_files()
         self.backend = SQLiteCatalogBackend.create_demo_products(self.path, self.files)
         self.addCleanup(self.backend.close)
         self.schemas = {s.name: s for s in self.backend._schemas}

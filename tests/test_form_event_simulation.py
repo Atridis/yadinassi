@@ -124,11 +124,10 @@ class FormEventSimulationTests(unittest.TestCase):
 
     def test_vm_closed_capabilities_and_cleanup(self):
         instances = []
-        original = sim._EventInterpreter
-        class Spy(original):
-            def __init__(self, sink):
-                super().__init__(sink); instances.append(self)
-        with patch.object(sim, '_EventInterpreter', Spy): self.run_event(description=' x ')
+        original = sim._EventInterpreter.__init__
+        def initialize(vm, sink):
+            original(vm, sink); instances.append(vm)
+        with patch.object(sim._EventInterpreter, '__init__', initialize): self.run_event(description=' x ')
         vm = instances[0]
         self.assertIsNone(vm.database_context)
         self.assertEqual(set(vm.functions), {'сокрлп', 'стрдлина'})
@@ -139,32 +138,29 @@ class FormEventSimulationTests(unittest.TestCase):
         program, _ = sim._parse(SOURCE)
         for name in ('Metadata', 'ThisObject', 'Catalogs', 'Eval', 'Message'):
             with self.subTest(name=name), self.assertRaises(ValueError):
-                vm.visit_Name(sim.ast.Name(program[0].token, name))
+                vm.semantic_name(sim.ast.Name(program[0].token, name))
 
     def test_sink_rejects_routing_and_overflow_no_retry(self):
-        original = sim._EventInterpreter
+        original = sim._EventInterpreter.__init__
         records = [UserMessageRecord('x', 'Объект.Наименование', 'Object', None, None),
                    UserMessageRecord('x', 'Объект.Наименование', '', object(), None),
                    UserMessageRecord('x', 'Объект.Наименование', '', None, object()),
                    UserMessageRecord('x' * 1025, 'Объект.Наименование', '', None, None)]
         for record in records:
-            class Invalid(original):
-                def __init__(self, sink):
-                    super().__init__(sink); sink(record)
-            with self.subTest(record=record), patch.object(sim, '_EventInterpreter', Invalid), self.assertRaises(ValueError):
+            def initialize(vm, sink):
+                original(vm, sink); sink(record)
+            with self.subTest(record=record), patch.object(sim._EventInterpreter, '__init__', initialize), self.assertRaisesRegex((ValueError, BSLError), 'message outside scalar profile'):
                 self.run_event()
-        class Overflow(original):
-            def __init__(self, sink):
-                super().__init__(sink)
-                sink(UserMessageRecord('x', 'Объект.Наименование', '', None, None))
-        with patch.object(sim, '_EventInterpreter', Overflow), self.assertRaises((ValueError, BSLError)):
+        def overflow(vm, sink):
+            original(vm, sink)
+            sink(UserMessageRecord('x', 'Объект.Наименование', '', None, None))
+        with patch.object(sim._EventInterpreter, '__init__', overflow), self.assertRaisesRegex((ValueError, BSLError), 'message outside scalar profile'):
             self.run_event(description=' x ')
         self.assertEqual(self.run_event().messages, ())
 
     def test_execution_budget_failure_then_fresh_success(self):
-        original = sim._EventInterpreter
-        class Exhausted(original):
-            def __init__(self, sink):
-                super().__init__(sink); self._remaining = 0
-        with patch.object(sim, '_EventInterpreter', Exhausted), self.assertRaises(ValueError): self.run_event()
+        original = sim._EventInterpreter.__init__
+        def initialize(vm, sink):
+            original(vm, sink); vm._remaining = 0
+        with patch.object(sim._EventInterpreter, '__init__', initialize), self.assertRaisesRegex((ValueError, BSLError), 'execution budget or node'): self.run_event()
         self.assertEqual(self.run_event().messages, ())

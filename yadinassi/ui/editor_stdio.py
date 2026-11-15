@@ -7,6 +7,10 @@ from .editor_protocol import CatalogEditorSession
 from .protocol import MAX_LINE_BYTES
 
 
+from ..execution_policy import backend_entrypoint
+
+
+@backend_entrypoint
 def main(argv=None, *, source=None, target=None):
     args = sys.argv[1:] if argv is None else argv
     binding = None

@@ -81,9 +81,10 @@ class InventoryEnumQueryTests(unittest.TestCase):
         for value in ('Piece',Decimal(1),True):
             with self.assertRaises(TypeError):self.query('SELECT Unit FROM Catalog.Products WHERE Unit=&U',U=value)
 
-    def test_enum_unload_and_packages_stay_closed(self):
-        with self.assertRaises((ValueError,TypeError)):self.query('SELECT Unit FROM Catalog.Products').unload()
-        with self.assertRaises(ValueError):self.query('SELECT Unit FROM Catalog.Products;SELECT Unit FROM Catalog.Products')
+    def test_enum_unload_and_packages_keep_canonical_values(self):
+        table = self.query('SELECT Unit FROM Catalog.Products').unload()
+        self.assertEqual(len(table.rows), 3)
+        self.assertEqual(len(self.query('SELECT Unit FROM Catalog.Products;SELECT Unit FROM Catalog.Products')._rows), 3)
 
     def test_document_header_and_lines_projection(self):
         self.seed_document()

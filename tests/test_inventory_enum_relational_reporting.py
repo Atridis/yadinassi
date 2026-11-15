@@ -31,8 +31,11 @@ def array(*values):
 class EnumRelationalEvidenceTests(unittest.TestCase):
     def test_fresh_example_combines_posted_and_pending_receipts(self):
         with tempfile.TemporaryDirectory(dir=ROOT.parent) as temp:
-            with closing(create_prepared(Path(temp) / 'stock.sqlite',
-                    prepare_directory(SOURCE / 'runtime_source', profile=PROFILE))) as context:
+            from yadinassi.database_context import SQLiteDBContext
+            from yadinassi.configuration_main_demo import import_main_demo_configuration
+            from test_main_demo_configuration import source
+            with closing(SQLiteDBContext.create_main_demo(Path(temp) / 'stock.sqlite',
+                    import_main_demo_configuration(source(), profile='main-demo-v1'))) as context:
                 output=[]
                 with closing(Interpreter(database_context=context,output=output.append)) as vm:
                     vm.execute((ROOT/'examples/inventory_enum/seed.bsl').read_text(encoding='utf-8'))
@@ -157,16 +160,21 @@ class EnumRelationalGuardTests(unittest.TestCase):
         self.assertIs(rows[1][0],self.pack)
         self.assertIs(rows[2][0],self.piece)
 
-    def test_mixed_output_schemas_refused_before_lease_even_for_empty_arms(self):
+    def test_mixed_output_schemas_refused_before_scan_even_for_empty_arms(self):
         for text in (
             'SELECT CASE WHEN Code="absent" THEN Unit ELSE &State END AS Unit FROM Catalog.Products WHERE Code="absent"',
             'SELECT ISNULL(Unit,&State) AS Unit FROM Catalog.Products WHERE Code="absent"',
             'SELECT Unit FROM Catalog.Products WHERE Code="absent" UNION ALL SELECT &State AS Unit FROM Catalog.Products WHERE Code="absent"'):
             q = self.vm.execute('New Query'); q.set_member('Text',text)
             q.set_parameter('State',self.vm.execute('Enums.States.Draft'))
-            with patch.object(self.context.backend,'begin_query_read') as opened:
+            from yadinassi.sqlite_catalog import _View
+            from yadinassi.query_packages import BSLTempTablesManager
+            manager = BSLTempTablesManager()
+            q.set_member('TempTablesManager', manager)
+            with patch.object(_View, 'scan_catalog_values', side_effect=AssertionError('source scan')):
                 with self.assertRaises(TypeError):q.execute()
-                opened.assert_not_called()
+            self.assertEqual(manager._tables, {})
+            self.assertIsNone(self.context.backend._active)
 
     def test_internal_union_derived_and_subquery_share_one_query_view(self):
         text = ('SELECT T.Unit FROM (SELECT Unit FROM Catalog.Products UNION ALL '
@@ -276,11 +284,9 @@ class EnumRelationalGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'membership resource'):
                 self.query(text,V=array(self.piece,self.piece))
 
-    def test_compound_enum_ordering_and_persistent_paths_remain_closed(self):
+    def test_compound_enum_ordering_and_unbound_inputs_remain_closed(self):
         for text in ('SELECT Unit FROM Catalog.Products UNION SELECT Unit FROM Catalog.Products ORDER BY Unit',
                      'SELECT Unit FROM Catalog.Products WHERE NOT (Unit=&U)',
-                     'SELECT Unit INTO T FROM Catalog.Products',
-                     'SELECT Unit FROM Catalog.Products;SELECT Unit FROM Catalog.Products',
                      'SELECT Unit FROM &External'):
             with self.subTest(text=text),self.assertRaises((ValueError,TypeError)):
                 self.query(text,U=self.piece)

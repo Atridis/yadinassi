@@ -140,7 +140,7 @@ class UICatalogViewTests(unittest.TestCase):
 
     def test_adapter_has_only_logical_backend_dependencies(self):
         import yadinassi.ui.catalog_view as module
-        tree = ast.parse(Path(module.__file__).read_text())
+        tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
         imported = {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
         self.assertTrue({'catalog_backend', 'dates', 'protocol'}.issubset(imported))
         self.assertFalse({'database_context', 'sqlite_catalog', 'catalogs', 'catalog_types',

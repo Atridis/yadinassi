@@ -345,7 +345,10 @@ class _Parser:
             names={'slicelast':'last','срезпоследних':'last','slicefirst':'first','срезпервых':'first'}
             if section.casefold() not in names: raise ValueError('Unsupported information-register virtual source')
             section=names[section.casefold()]
-            self.take('('); self.take('&'); boundary=Parameter(self.take('name')); self.take(')')
+            self.take('('); self.take('&'); boundary=Parameter(self.take('name'))
+            if self.accept(',') and self.peek() != ')':
+                virtual_condition = self.dimension_condition()
+            self.take(')')
         if source_family == 'accumulation_register' and section is not None:
             names = {'balance': 'balance', 'остатки': 'balance',
                      'turnovers': 'turnovers', 'обороты': 'turnovers',
