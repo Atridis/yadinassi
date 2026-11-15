@@ -1435,6 +1435,7 @@ const token = new URLSearchParams(location.hash.slice(1)).get('session');
 history.replaceState(null, '', location.pathname);
 const root=document.getElementById('workspace'), title=document.createElement('h1'), status=document.createElement('p'), select=document.createElement('select'), open=document.createElement('button'), close=document.createElement('button'), formRoot=document.createElement('section');
 const preflight=document.createElement('button'),moduleResult=document.createElement('section');preflight.textContent='Проверить компиляцию BSL';moduleResult.setAttribute('aria-label','Компиляция модуля формы');
+const downloadCheck=document.createElement('button');downloadCheck.textContent='Скачать отчёт проверок';
 const check=document.createElement('button');check.textContent='Проверить форму без запуска';
 const preview=document.createElement('button'),previewResult=document.createElement('section');preview.textContent='Проверить XML формы';previewResult.setAttribute('aria-label','Проверка XML формы');
 const search=document.createElement('input'), find=document.createElement('button');search.maxLength=128;search.setAttribute('aria-label','Поиск объявленных форм');find.textContent='Найти формы';
@@ -1448,7 +1449,7 @@ const objectSearch=document.createElement('input'),families=document.createEleme
 objectSearch.maxLength=128;objectSearch.setAttribute('aria-label','Поиск объектов');families.setAttribute('aria-label','Тип объекта');objects.setAttribute('aria-label','Объект конфигурации');
 objectFind.textContent='Найти объекты';inspect.textContent='Описание объекта';detail.setAttribute('aria-label','Метаданные выбранного объекта');inventoryStatus.setAttribute('role','status');
 explorer.append(explorerTitle,objectSearch,families,subsystems,objectFind,objects,inspect,inventoryStatus,navigationDiagnostics,detail);
-root.append(title,status,explorer,search,find,select,check,preview,preflight,open,close,tabs,limitations,previewResult,moduleResult,formRoot);
+root.append(title,status,explorer,search,find,select,check,preview,preflight,downloadCheck,open,close,tabs,limitations,previewResult,moduleResult,formRoot);
 const familyLabels={Catalog:'Справочники',Document:'Документы',AccumulationRegister:'Регистры накопления',InformationRegister:'Регистры сведений',Report:'Отчёты',DataProcessor:'Обработки',Subsystem:'Подсистемы',CommonForm:'Общие формы',Form:'Формы',Enum:'Перечисления',Constant:'Константы'};
 function caption(name,labels){const label=labels?.[name];return typeof label==='string'&&label&&label!==name?label+' ('+name+')':name;}
 let id=0,busy=false,view=null,state=null,failed=false,inFlight=0;
@@ -1465,6 +1466,7 @@ function paint(){
     failed=true;status.textContent='Результат действия неизвестен. Формы и черновики сохранены в этой вкладке; переключение и повтор команд заблокированы.';
   }
   const blocked=busy||failed||inFlight>0||!state||state.kind==='closed';
+  downloadCheck.disabled=Boolean(blocked)||!matchingChecks(state);
   open.disabled=check.disabled=preview.disabled=preflight.disabled=blocked||!select.value;
   search.disabled=find.disabled=select.disabled=Boolean(blocked);
   close.disabled=blocked||[...mounts.values()].some(entry=>entry.view.client?.snapshot?.kind!=='closed');
@@ -1543,6 +1545,33 @@ async function apply(reply){
   for(const [generation,entry] of mounts)entry.panel.hidden=generation!==state.generation;
   paint();
 }
+function matchingChecks(value){
+  const xml=value?.form_preview,module=value?.module_preflight;
+  const hash=value=>value===null||(typeof value==='string'&&/^[0-9a-f]{64}$/.test(value));
+  return Boolean(xml&&module&&typeof xml.name==='string'&&xml.name===module.name&&hash(xml.source_sha256)&&hash(module.module_sha256)&&xml.source_sha256===module.xml_sha256);
+}
+function checkReport(value){
+  if(!matchingChecks(value))return null;
+  const xml=value.form_preview,module=value.module_preflight;
+  // Deliberately exclude workspace state, form values, browser session and BSL.
+  return {schema:'yadinassi-source-form-check/1',name:xml.name,
+    scope:'Static XML projection and BSL preflight only; not runtime or native parity',
+    xml:{source_path:xml.source_path,source_sha256:xml.source_sha256,status:xml.status,
+      counts:xml.counts,diagnostics:xml.diagnostics,omitted_diagnostics:xml.omitted_diagnostics},
+    module:{source_path:module.module_path,source_sha256:module.module_sha256,xml_sha256:module.xml_sha256,
+      compilation_profile:module.compilation_profile,status:module.status,error:module.error,handler_names:module.handler_names},
+    runtime_checked:false,storage_granted:false,native_parity:false};
+}
+downloadCheck.addEventListener('click',()=>{
+  if(busy||failed||inFlight||state?.kind==='closed')return;
+  const report=checkReport(state);if(!report)return;
+  let url;
+  try{
+    url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)+'\n'],{type:'application/json;charset=utf-8'}));
+    const link=document.createElement('a');link.href=url;link.download='yadinassi-form-check.json';link.click();
+  }catch(error){status.textContent='Не удалось скачать отчёт. Проверки сохранены на экране; команды не повторяются.';}
+  finally{if(url)setTimeout(()=>URL.revokeObjectURL(url),1000);}
+});
 async function action(method,params){if(busy||failed||inFlight)return;busy=true;paint();try{await apply(await call(method,params));}catch(error){failed=true;status.textContent=error.message;}finally{busy=false;paint();queueMicrotask(syncForms);}}
 objectFind.addEventListener('click',()=>action('workspace.objects',{query:objectSearch.value,family:families.value,subsystem:subsystems.value}));
 inspect.addEventListener('click',()=>action('workspace.inspect',{name:objects.value}));

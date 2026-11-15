@@ -9,12 +9,13 @@ class Element{
  replaceChildren(...nodes){this.children=[];this.value='';this.append(...nodes);}
  setAttribute(k,v){this.attributes[k]=v;}
  addEventListener(k,v){this.listeners[k]=v;}
+ click(){this.clicked=true;}
  querySelectorAll(tag){return this.children.flatMap(x=>[...(x.tag===tag?[x]:[]),...x.querySelectorAll(tag)]);}
 }
-async function harness(state){
+async function harness(state,extras={}){
  const elements=[],root=new Element('main'),requests=[];
  const document={getElementById:()=>root,createElement:tag=>{const e=new Element(tag);elements.push(e);return e;}};
- const context=vm.createContext({document,location:{hash:'#session=secret',pathname:'/'},history:{replaceState(){}},URLSearchParams,queueMicrotask,window:{addEventListener(){}},fetch:async(_url,options)=>{requests.push(JSON.parse(options.body));return{ok:true,json:async()=>({result:{protocol:'yadinassi-source-workspace/1',state}})};}});
+ const context=vm.createContext({document,location:{hash:'#session=secret',pathname:'/'},history:{replaceState(){}},URLSearchParams,queueMicrotask,window:{addEventListener(){}},fetch:async(_url,options)=>{requests.push(JSON.parse(options.body));return{ok:true,json:async()=>({result:{protocol:'yadinassi-source-workspace/1',state}})};},...extras});
  vm.runInContext(code,context);await new Promise(resolve=>setImmediate(resolve));
  return{elements,requests,context,get:label=>elements.find(x=>x.attributes['aria-label']===label)};
 }
@@ -152,4 +153,32 @@ test('object combined check also uses one canonical request without automatic op
 test('closed and empty selection disable combined checks',async()=>{
  for(const extra of [{kind:'closed'}, {forms:[]}]){const h=await harness({...state,...extra});assert.equal(h.elements.find(e=>e.textContent==='Проверить форму без запуска').disabled,true);}
  const h=await harness({...state,kind:'closed',object_detail:objectDetail});assert.equal(h.get('Проверить без запуска Catalog.A.Form.Card').disabled,true);
+});
+const checkedState={...state,form_preview:{name:'CommonForm.Main',source_path:'Main/Form.xml',source_sha256:'a'.repeat(64),status:'projected',counts:{controls:2},diagnostics:[],omitted_diagnostics:0},module_preflight:{name:'CommonForm.Main',module_path:'Main/Module.bsl',module_sha256:'d'.repeat(64),xml_sha256:'a'.repeat(64),compilation_profile:'standalone',status:'compiled',error:null,handler_names:{status:'names-checked',missing:[]}}};
+test('check report downloads local JSON without RPC, session or form data',async()=>{
+ let captured,revoked;const extras={Blob:class{constructor(parts,options){captured={parts,options};}},URL:{createObjectURL(){return 'blob:local';},revokeObjectURL(url){revoked=url;}},setTimeout:fn=>fn()};
+ const h=await harness({...checkedState,privateValue:'do-not-export'},extras);
+ const button=h.elements.find(e=>e.textContent==='Скачать отчёт проверок');assert.equal(button.disabled,false);button.listeners.click();
+ const report=JSON.parse(captured.parts.join(''));assert.equal(report.schema,'yadinassi-source-form-check/1');assert.equal(report.xml.source_sha256,'a'.repeat(64));assert.equal(report.module.source_sha256,'d'.repeat(64));assert.equal(report.runtime_checked,false);assert.equal(report.native_parity,false);
+ assert.ok(!JSON.stringify(report).includes('secret'));assert.ok(!JSON.stringify(report).includes('do-not-export'));assert.deepEqual(h.requests.map(r=>r.method),['workspace.snapshot']);
+ const link=h.elements.find(e=>e.tag==='a');assert.equal(link.download,'yadinassi-form-check.json');assert.equal(link.clicked,true);assert.equal(revoked,'blob:local');
+});
+test('report rejects mismatched names/hashes and absent checks',async()=>{
+ for(const source of [state,{...checkedState,module_preflight:{...checkedState.module_preflight,name:'Other'}},{...checkedState,module_preflight:{...checkedState.module_preflight,xml_sha256:'different'}}]){
+  let created=false;const h=await harness(source,{URL:{createObjectURL(){created=true;}}});const button=h.elements.find(e=>e.textContent==='Скачать отчёт проверок');assert.equal(button.disabled,true);button.listeners.click();assert.equal(created,false);
+ }
+});
+test('failed probes remain exportable as failures, never converted into success',async()=>{
+ let captured;const h=await harness({...checkedState,module_preflight:{...checkedState.module_preflight,status:'unavailable',error:'<script>syntax</script>',handler_names:null}},{Blob:class{constructor(parts){captured=parts.join('');}},URL:{createObjectURL(){return 'blob:x';},revokeObjectURL(){}},setTimeout:fn=>fn()});
+ h.elements.find(e=>e.textContent==='Скачать отчёт проверок').listeners.click();const report=JSON.parse(captured);assert.equal(report.module.status,'unavailable');assert.equal(report.module.error,'<script>syntax</script>');assert.equal(report.xml.status,'projected');
+});
+test('closed workspace and download failure never trigger remote retry',async()=>{
+ let created=false;const closed=await harness({...checkedState,kind:'closed'},{URL:{createObjectURL(){created=true;}}});const button=closed.elements.find(e=>e.textContent==='Скачать отчёт проверок');assert.equal(button.disabled,true);button.listeners.click();assert.equal(created,false);
+ const h=await harness(checkedState,{Blob:class{constructor(){throw Error('blocked');}}});h.elements.find(e=>e.textContent==='Скачать отчёт проверок').listeners.click();assert.ok(h.elements.some(e=>e.textContent.startsWith('Не удалось скачать отчёт')));assert.equal(h.requests.length,1);
+});
+test('undefined and malformed source digests cannot create a bound report',async()=>{
+ for(const digest of [undefined,'abc','A'.repeat(64)]){
+  const h=await harness({...checkedState,form_preview:{...checkedState.form_preview,source_sha256:digest},module_preflight:{...checkedState.module_preflight,xml_sha256:digest}});
+  assert.equal(h.elements.find(e=>e.textContent==='Скачать отчёт проверок').disabled,true);
+ }
 });
