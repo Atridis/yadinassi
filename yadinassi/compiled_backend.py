@@ -156,6 +156,7 @@ class Engine:
     MAX_REGISTRY_ENTRIES = 100_000
     MAX_INLINE_FUNCTION_BYTES = 4 * 1024 * 1024
     MAX_INLINE_UNIT_BYTES = 64 * 1024 * 1024
+    MAX_PLAIN_SOURCE_BYTES = 1024 * 1024
 
     def __init__(self, vm):
         from .runtime import _Reference
@@ -171,6 +172,7 @@ class Engine:
         self._origin_signatures = {}
         self._origin_blocks = {}
         self._inline_ir = {}
+        self._plain_routines = {}
         self.vm = vm
         self._nodes = {}
         self._blocks = {}
@@ -305,17 +307,17 @@ class Engine:
         # Nested admission writes into these overlays; any outer failure discards
         # all of them. No AST/host code runs while publishing builtin-map writes.
         bases = (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-                 self._nodes, self._blocks, self._inline_ir)
+                 self._nodes, self._blocks, self._inline_ir, self._plain_routines)
         journals = tuple(AdmissionMap(base) for base in bases)
         (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-         self._nodes, self._blocks, self._inline_ir) = journals
+         self._nodes, self._blocks, self._inline_ir, self._plain_routines) = journals
         try:
             result = self._prepare(program, allow_reprepare=allow_reprepare)
             for journal in journals: journal.commit()
             return result
         finally:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-             self._nodes, self._blocks, self._inline_ir) = bases
+             self._nodes, self._blocks, self._inline_ir, self._plain_routines) = bases
 
     def _prepare(self, program, *, allow_reprepare=True):
         self._inline_unit_bytes = 0
@@ -425,6 +427,7 @@ class Engine:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
             walk(program)
+            self._prepare_plain_routines(nodes)
         except CompiledUnsupported:
             self.stats['rejected_units'] += 1
             raise
@@ -494,6 +497,7 @@ class Engine:
         self._origin_signatures.clear()
         self._origin_blocks.clear()
         self._inline_ir = {key: value for key, value in self._inline_ir.items() if key in owned_ids}
+        self._plain_routines = {key: value for key, value in self._plain_routines.items() if key in owned_ids}
         self._fast_ready = None
 
     def has_node(self, node):
@@ -773,7 +777,7 @@ class Engine:
                     break
             self._active_frames -= 1
 
-    def run_block(self, statements):
+    def run_block(self, statements, *, plain_routine=None):
         if self.OWNED_SNAPSHOT:
             view = self._owned.existing(statements)
             if view is None:
@@ -793,6 +797,17 @@ class Engine:
         elif self.INLINE: self.stats['inline_blocks'] += 1
         self._active_frames += 1
         try:
+            plain = self._plain_routine_plan(plan, plain_routine)
+            if plain is not None:
+                function, values, is_generator, prefix_only = plain
+                result = function(self.vm, *values)
+                if is_generator:
+                    result = yield from result
+                counter = 'plain_prefix_calls' if prefix_only else 'plain_routine_calls'
+                self.stats[counter] = self.stats.get(counter, 0) + 1
+                from .runtime import _Return
+                raise _Return(result)
+            self.stats['plain_adapter_blocks'] = self.stats.get('plain_adapter_blocks', 0) + 1
             if plan.role == 'metadata':
                 return (yield from plan.function(self.vm, self, plan))
             return (yield from plan.function(self.vm))
@@ -801,6 +816,155 @@ class Engine:
             raise
         finally:
             self._active_frames -= 1
+
+    def _prepare_plain_routines(self, nodes):
+        """Optional lowering is part of transactional admission, not execution.
+
+        Source generation is charged to the same unit-byte counter. Exhausting
+        optional room retains the already admitted compiled adapter instead.
+        """
+        if not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR: return
+        from .plain_routines import lower, Ineligible
+        used = sum(len(entry[1].source.encode()) for entry in self._plain_routines.values() if entry[1] is not None)
+        for plan in nodes.values():
+            routine = plan.node
+            if syntax_kind(routine) is not ast.Routine: continue
+            cached = self._plain_routines.get(id(routine))
+            if cached is not None and cached[0] is routine:
+                if cached[1] is not None:
+                    size = len(cached[1].source.encode())
+                    if (size > self.MAX_INLINE_FUNCTION_BYTES
+                            or size > self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes
+                            or used > self.MAX_PLAIN_SOURCE_BYTES):
+                        self._plain_routines[id(routine)] = (routine, None)
+                        used -= size
+                    else:
+                        self._inline_unit_bytes += size
+                continue
+            available = min(self.MAX_INLINE_FUNCTION_BYTES, self.MAX_PLAIN_SOURCE_BYTES - used,
+                            self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes)
+            try: lowered = lower(routine, max_source_bytes=max(0, available))
+            except Ineligible: lowered = None
+            if lowered is not None:
+                size = len(lowered.source.encode())
+                used += size
+                self._inline_unit_bytes += size
+            self._plain_routines[id(routine)] = (routine, lowered)
+
+    def _plain_routine_plan(self, block, routine):
+        # Host tracing/profiling may observe or mutate the live VM scope on
+        # Python calls/lines. Do not capture detached local slots in that mode.
+        import sys
+        if sys.gettrace() is not None or sys.getprofile() is not None:
+            return None
+        if (not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR
+                or not self._fast_ready or self.DETAILED_INLINE_STATS
+                or routine is None or not is_owned(routine)
+                or syntax_kind(routine) is not ast.Routine
+                or routine.body is not block.statements or block.role == 'metadata'):
+            return None
+        # Cross-context activation may carry the parent engine's declaration
+        # while this child has separately admitted the body. That is not an
+        # eligible local plain plan; retain the existing compiled body adapter.
+        provenance = self._owned.versions.get(id(routine))
+        if provenance is None or provenance[1] is not routine:
+            return None
+        if self._plain_scope_snapshot() is None:return None
+        self._verify_owned_identity(routine)
+        cached = self._plain_routines.get(id(routine))
+        if cached is None or cached[0] is not routine: return None
+        lowered = cached[1]
+        if lowered is None: return None
+        # Structural code is reusable; live storage and policy eligibility are not.
+        local = self.vm.locals
+        if type(local) is not dict: return None
+        if any(name in self.vm.module_names or name in self.vm.imports for name in lowered.names): return None
+        values = tuple(local.get(name) for name in lowered.parameters)
+        if any(not any(type(value) is scalar for scalar in (Decimal, bool, str, type(None)))
+               for value in values): return None
+        return lowered.function, values, lowered.generator, lowered.prefix_only
+
+    def _plain_scope_snapshot(self):
+        """Side-effect-free guard before touching replaceable scope accessors."""
+        from . import runtime as R
+        from .async_runtime import Scheduler, ExecutionContext
+        vm=self.vm
+        if type(vm) is not R.Interpreter:return None
+        for cls,_,_ in R._PLAIN_STORAGE_ABI:
+            if any(type(key) is not str for key in vars(cls)):return None
+        class_fields=vars(R.Interpreter)
+        if (class_fields.get('__hash__',object.__hash__) is not object.__hash__
+                or class_fields.get('__eq__',object.__eq__) is not object.__eq__):return None
+        def storage(value,cls):
+            if type(value) is not cls:return None
+            namespace=vars(cls)
+            if (namespace.get('__getattribute__',object.__getattribute__) is not object.__getattribute__
+                    or '__getattr__' in namespace):return None
+            for registered,descriptor,mro in R._PLAIN_STORAGE_ABI:
+                if cls is registered:
+                    current=type.__getattribute__(cls,'__mro__')
+                    if (len(current)!=len(mro) or any(a is not b for a,b in zip(current,mro))
+                            or namespace.get('__dict__') is not descriptor):return None
+                    fields=object.__getattribute__(value,'__dict__')
+                    if type(fields) is not dict or any(type(key) is not str for key in fields):return None
+                    return fields
+            return None
+        vm_fields=storage(vm,R.Interpreter)
+        if vm_fields is None:return None
+        for name,original in zip(('locals','_context_stack','_module_context_stack'),R._PLAIN_SCOPE_ABI):
+            if vars(R.Interpreter).get(name) is not original:return None
+        scheduler=vm_fields.get('_scheduler')
+        if type(scheduler) is not Scheduler or 'active_context' in vars(Scheduler):return None
+        if any(name in vars(ExecutionContext) for name in ('locals','context_stack','module_context_stack')):
+            return None
+        scheduler_fields=storage(scheduler,Scheduler)
+        if scheduler_fields is None:return None
+        context=scheduler_fields.get('active_context')
+        if type(context) is not ExecutionContext:return None
+        fields=storage(context,ExecutionContext)
+        if fields is None:return None
+        scopes=fields.get('locals');sides=fields.get('context_stack');modules=fields.get('module_context_stack')
+        if type(scopes) is not dict or type(sides) is not list or type(modules) is not list:return None
+        # Exact dict lookup can still hash the VM or compare colliding hostile
+        # keys. Scan identities, and reject keys unsafe for subsequent trusted
+        # runtime accessors which use normal dictionary lookup.
+        scope=None
+        for key,value in scopes.items():
+            if type(key) is not R.Interpreter:return None
+            if key is vm:scope=value
+        return scope,context,tuple(sides),tuple(modules)
+
+    def _resume_plain_segment(self, routine, segment, saved_frame):
+        """Fresh live eligibility after an opaque statement, never replay it."""
+        import sys
+        def denied(reason):
+            key='plain_resume_denied_'+reason
+            self.stats[key]=self.stats.get(key,0)+1
+            return None
+        vm=self.vm
+        if sys.gettrace() is not None or sys.getprofile() is not None:return denied('instrumentation')
+        current=self._plain_scope_snapshot()
+        if current is None or saved_frame is None:return denied('context')
+        scope,context,sides,modules=current
+        old_scope,old_context,old_sides,old_modules=saved_frame
+        if (scope is not old_scope or context is not old_context
+                or len(sides)!=len(old_sides) or len(modules)!=len(old_modules)
+                or any(a is not b for a,b in zip(sides,old_sides))
+                or any(a is not b for a,b in zip(modules,old_modules))):return denied('context')
+        if vars(vm).get('_compiled_plain_routines') is not True or not self.fast_available(refresh=True):
+            return denied('policy')
+        root=self._plain_routines.get(id(routine))
+        if root is None or root[0] is not routine or root[1] is None:return denied('provenance')
+        if not any(segment is item for item in root[1].segments):return denied('provenance')
+        self.verify_all();self._verify_owned_identity(routine)
+        if type(scope) is not dict or any(type(key) is not str for key in scope):return denied('scope')
+        if any(name in vm.module_names or name in vm.imports for name in segment.names):return denied('collision')
+        if any(name not in scope for name in segment.parameters):return denied('missing')
+        values=tuple(scope[name] for name in segment.parameters)
+        if any(not any(type(value) is scalar for scalar in (Decimal,bool,str,type(None))) for value in values):
+            return denied('type')
+        self.stats['plain_segment_entries']=self.stats.get('plain_segment_entries',0)+1
+        return segment.function,values,segment.generator
 
     def _check_block_plan(self, plan):
         if self.OWNED_SNAPSHOT:
