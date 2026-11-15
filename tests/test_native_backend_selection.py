@@ -46,7 +46,8 @@ class NativeBackendSelectionTests(unittest.TestCase):
                       if kw.arg == 'execution_backend' and isinstance(kw.value, ast.Constant)]
         self.assertEqual(selections, ['interpreter'])
 
-    @unittest.skipIf(os.name == 'nt', 'owned witness uses POSIX process groups')
+    @unittest.skipUnless(sys.platform.startswith('linux'),
+                         'owned witness requires Linux proc/waitid ownership; no macOS/Windows claim')
     def test_real_client_witness_retains_oracle_under_snapshot_default(self):
         full = smoke.FULL
         full.verify_client_interpreter(smoke.ROOT, smoke.ROOT / full.CLIENT_SOURCE,
