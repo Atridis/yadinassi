@@ -199,11 +199,13 @@ class AdmissionMap:
 class OwnedStore:
     def __init__(self, node_signature, block_signature):
         self.memo = {}
+        self.versions = {}
         self.node_signature = node_signature
         self.block_signature = block_signature
 
     def clear(self):
         self.memo.clear()
+        self.versions.clear()
 
     def existing(self, value):
         if is_owned(value):
@@ -216,6 +218,7 @@ class OwnedStore:
         if existing is not None:
             if is_owned(value):
                 original = origin_node(value)
+                self.versions[id(value)] = (original, value)
                 if id(original) not in self.memo:
                     self.memo[id(original)] = (original, value)
                     if isinstance(value, ast.Node):
@@ -231,6 +234,7 @@ class OwnedStore:
         if kind in _CLASSES:
             result = object.__new__(_CLASSES[kind])
             self.memo[id(value)] = (value, result)
+            self.versions[id(result)] = (value, result)
             _record(result, value, 'node', self.node_signature(value))
             for field in fields(value):
                 original = getattr(value, field.name)
@@ -241,6 +245,7 @@ class OwnedStore:
         if kind is list:
             result = list.__new__(OwnedList)
             self.memo[id(value)] = (value, result)
+            self.versions[id(result)] = (value, result)
             _record(result, value, 'block', self.block_signature(value))
             list.extend(result, (self.freeze(item) for item in value))
             return result
