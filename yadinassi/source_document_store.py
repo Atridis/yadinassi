@@ -73,14 +73,15 @@ class SourceDocumentStore(SourceCatalogStore):
         super().verify_extra()
         if self._connection.execute("SELECT count(*) FROM source_document_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>1024 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>65536").fetchone()[0]:
             raise ValueError('source document schema byte bound')
-        if self._connection.execute("SELECT count(*) FROM source_document_record WHERE typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992").fetchone()[0]:
+        # Collect both guards in one scan; retain the existing error order.
+        invalid, *counts = self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992 THEN 1 ELSE 0 END),0),count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_record").fetchone()
+        if invalid:
             raise ValueError('source document record storage bounds')
         if self._connection.execute('PRAGMA page_count').fetchone()[0]*self._connection.execute('PRAGMA page_size').fetchone()[0]>_MAX_DATABASE_BYTES:
             raise ValueError('source document database size bound')
         rows = tuple(self._connection.execute('SELECT identity,name,definition FROM source_document_schema ORDER BY identity LIMIT 4097'))
         if rows != self._document_rows:
             raise ValueError('source document schema binding integrity')
-        counts = self._connection.execute('SELECT count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_record').fetchone()
         if counts[0] > _MAX_RECORDS or counts[1] > 65536 or counts[2] > _MAX_RECORD_BYTES:
             raise ValueError('source document record bounds')
 
