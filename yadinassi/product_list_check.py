@@ -33,15 +33,15 @@ class ListInterpreter(_ObjectInterpreter):
     def _object_name(self, name):
         return False
 
-    def call(self, node, *, require_value):
+    def call(self, node, *, require_value, _evaluation=None):
         callee = self.ungroup(node.callee)
         if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'проверитьданные':
-            obj = yield from self.receiver(callee.object)
+            obj = yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)
             if (require_value or len(node.arguments) != 1 or type(obj) is not BSLCatalogObject
                     or obj._manager is not self._list_manager or obj.is_new()
                     or sum(len(s._rows) for s in obj._sections.values()) > 32):
                 raise ValueError('product list: saved bounded product required')
-            argument = yield from self.argument(node.arguments[0])
+            argument = yield from (_evaluation.argument if _evaluation is not None else self.argument)(node.arguments[0])
             if not isinstance(argument, Reference) or type(argument.get()) is not bool:
                 raise ValueError('product list: Boolean reference required')
             child = _ObjectInterpreter(obj, self._list_sink, self._list_view)
@@ -55,7 +55,7 @@ class ListInterpreter(_ObjectInterpreter):
             finally:
                 child.close()
             return None
-        return (yield from super().call(node, require_value=require_value))
+        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
 
 def check_product_list(manager, reference, view, list_source, object_source):

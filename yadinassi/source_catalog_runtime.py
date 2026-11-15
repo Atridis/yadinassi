@@ -274,7 +274,7 @@ class _ObjectInterpreter(_SourceInterpreter):
         if self.field(name):return self.object.property_write(self,name,value)
         return super().set_variable(name,value)
 
-    def argument(self,node):
+    def argument(self,node,*,_evaluation=None):
         node=self.ungroup(node)
         from .runtime import _Reference
         if syntax_kind(node) is ast.Name and node.name.casefold()=='__catalog_cancel':
@@ -284,7 +284,7 @@ class _ObjectInterpreter(_SourceInterpreter):
             self.object.property_read(self,node.name)
             return _Reference(lambda:self.object.property_read(self,node.name),
                               lambda value:self.object.property_write(self,node.name,value))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 def create_object(caller,manager,definition,identity=None,revision=0,values=None):

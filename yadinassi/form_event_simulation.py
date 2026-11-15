@@ -370,15 +370,15 @@ class ProductInterpreter(_ObjectInterpreter):
         # Form globals do not implicitly alias the object's unqualified fields.
         return False
 
-    def call(self, node, *, require_value):
+    def call(self, node, *, require_value, _evaluation=None):
         from .syntax.parser import parse
         from .values import Reference
         callee = self.ungroup(node.callee)
         if syntax_kind(callee) is ast.Attribute and callee.name.casefold() == 'подготовитьданныекзаписи':
             if (require_value or len(node.arguments) != 1
-                    or (yield from self.receiver(callee.object)) is not self._product_receiver):
+                    or (yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)) is not self._product_receiver):
                 raise ValueError('product form: invalid preparation call')
-            argument = yield from self.argument(node.arguments[0])
+            argument = yield from (_evaluation.argument if _evaluation is not None else self.argument)(node.arguments[0])
             if not isinstance(argument, Reference) or type(argument.get()) is not bool:
                 raise ValueError('product form: cancellation reference required')
             object_vm = _ObjectInterpreter(self._product_receiver, self._product_sink)
@@ -393,7 +393,7 @@ class ProductInterpreter(_ObjectInterpreter):
             finally:
                 object_vm.close()
             return None
-        return (yield from super().call(node, require_value=require_value))
+        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
 
 def simulate_product_form_event(form_source, object_source, receiver, *, event,

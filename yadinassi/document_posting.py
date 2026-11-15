@@ -77,20 +77,25 @@ class _PostingInterpreter(Interpreter):
         if key in ('thisobject','этотобъект'): return self._document
         if self._member(node.name): return self._document.get_member(node.name)
         return super().visit_Name(node)
-    def call(self, node, *, require_value):
+    def call(self, node, *, require_value, _evaluation=None):
         callee = self.ungroup(node.callee)
         if syntax_kind(callee) is ast.Name and self._member(callee.name) and callee.name.casefold() in self.functions:
-            node = ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
-        return (yield from super().call(node,require_value=require_value))
+            if _evaluation is not None:
+                _evaluation = _evaluation.with_bound_callee(node.callee, self.functions[callee.name.casefold()])
+            else:
+                node = ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
+        return (yield from super().call(node,require_value=require_value, _evaluation=_evaluation))
+
     def set_variable(self, name, value):
         if self._member(name) and not (self.locals is not None and name.casefold() in self.locals):
             self._document.set_member(name,value); return
         return super().set_variable(name,value)
-    def argument(self, node):
+    def argument(self, node, *, _evaluation=None):
         value = self.ungroup(node)
         if syntax_kind(value) is ast.Name and self._member(value.name) and not (self.locals is not None and value.name.casefold() in self.locals):
             return Reference(lambda:self._document.get_member(value.name),lambda item:self._document.set_member(value.name,item))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
+
     def invoke(self, routine, values):
         if routine is None: return
         arguments = [ast.Attribute(routine.token,ast.Literal(routine.token,values),name)

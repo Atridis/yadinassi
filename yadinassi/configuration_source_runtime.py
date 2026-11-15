@@ -79,7 +79,7 @@ class _SourceInterpreter(Interpreter):
         from .source_constant_queries import SourceConstantQuery
         return SourceConstantQuery(self, self.application, text)
 
-    def call(self, node, *, require_value):
+    def call(self, node, *, require_value, _evaluation=None):
         callee = self.ungroup(node.callee)
         if (isinstance(callee, ast.Name)
                 and self._resolve_routine(callee.name) is None
@@ -92,8 +92,8 @@ class _SourceInterpreter(Interpreter):
             if resolved is not None:
                 routine, owner = resolved
                 return (yield from self.call_routine(routine, node.arguments, owner,
-                                                     require_value=require_value))
-        return (yield from super().call(node, require_value=require_value))
+                                                     require_value=require_value, _evaluation=_evaluation))
+        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
     def known_table_receiver(self, node):
         from .source_extensions import SourceExtensions
@@ -197,14 +197,14 @@ class _SourceInterpreter(Interpreter):
             return
         return super().set_variable(name, value)
 
-    def argument(self, node):
+    def argument(self, node, *, _evaluation=None):
         ungrouped = self.ungroup(node)
         if isinstance(ungrouped, ast.Name):
             from .source_application_exports import variable
             reference = variable(self, ungrouped.name)
             if reference is not None:
                 return reference
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 def _walk(value):
@@ -220,6 +220,7 @@ def _walk(value):
 
 class SourceApplication:
     """One explicit source-only startup attempt; no implicit database or UI."""
+
     def __init__(self, source, *, output=print, compilation_profile='standalone', scratch_database=None, existing_scratch_database=None, compatibility_target=None, source_catalog_records=False, source_document_records=False, source_document_sections=False):
         if type(source) is not ConfigurationSource:
             raise TypeError('admitted ConfigurationSource required')
