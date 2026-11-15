@@ -17,10 +17,11 @@ from .async_runtime import AwaitRequest
 
 class ExpressionEmitter:
     def __init__(self, bind, emit, temp, *, services='_s.expressions', vm='vm',
-                 helpers='_PE', max_nodes=10000):
+                 helpers='_PE', max_nodes=10000, compact_leaves=False):
         self.bind, self.emit, self.temp = bind, emit, temp
         self.services, self.vm, self.helpers = services, vm, helpers
         self.max_nodes = max_nodes
+        self.compact_leaves = compact_leaves
         self.count = 0
         self.active = set()
         # Static emission inventory, not a claim about reached runtime coverage.
@@ -31,6 +32,10 @@ class ExpressionEmitter:
         self.emit(depth, f'{result} = None')
 
     def emit_expression(self, node, depth):
+        if self.compact_leaves and syntax_kind(node) in (ast.Literal, ast.Name):
+            result=self.temp()
+            self.emit(depth,f'{result} = {self.services}.leaf({self.bind(node)})')
+            return result
         if depth >= 8:
             # Keep deeply nested code in its already admitted generated function,
             # not an AST adapter or a runtime compiler. Avoid CPython's static

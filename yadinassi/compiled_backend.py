@@ -92,6 +92,64 @@ def _verify_block(statements, expected):
                                   'block changed after compilation-unit admission')
 
 
+_ABSENT_ADMISSION = object()
+
+class _TransientAdmission:
+    """A dynamic admission lease, retaining dependencies of later live units."""
+    def __init__(self, engine):
+        self.engine = engine
+        self.entries = []
+        self.dependencies = {}
+        self.introduced = set()
+        self.origins = {}
+        self.owned_registry = engine._owned.versions
+        self.owned_key_registries = (engine._owned.versions, engine._nodes, engine._blocks,
+                                    engine._inline_ir, engine._plain_routines, engine._plain_modules)
+        self.origin_key_registries = (engine._owned.memo, engine._origin_signatures, engine._origin_blocks)
+        self.unit_registry = engine._python_units
+
+    def activate(self):
+        for registry, key, previous, admitted in self.entries:
+            if registry is self.owned_registry and previous is _ABSENT_ADMISSION:
+                self.introduced.add(key)
+                self.origins[key] = id(admitted[0])
+        self.engine._transient_leases.append(self)
+
+    def observe(self, owned_ids, anchors):
+        shared = self.introduced.intersection(owned_ids)
+        if not shared:return
+        # Prune ended/replaced transient dependents; retain only live anchors.
+        self.dependencies = {key:entry for key,entry in self.dependencies.items()
+                             if entry[0].get(entry[1], _ABSENT_ADMISSION) is entry[2]}
+        shared=frozenset(shared)
+        for registry,key,value in anchors:
+            self.dependencies[(id(registry),key)] = (registry,key,value,shared)
+
+    def close(self):
+        self.engine._transient_leases[:] = [lease for lease in self.engine._transient_leases if lease is not self]
+        if not self.entries:return
+        protected=set()
+        for registry,key,value,shared in self.dependencies.values():
+            if registry.get(key, _ABSENT_ADMISSION) is value:protected.update(shared)
+        protected_origins={self.origins[key] for key in protected}
+        entries, self.entries = self.entries, []
+        self.dependencies.clear()
+        for registry, key, previous, admitted in reversed(entries):
+            if registry.get(key, _ABSENT_ADMISSION) is not admitted:
+                continue
+            if any(registry is candidate for candidate in self.owned_key_registries) and key in protected:
+                continue
+            if any(registry is candidate for candidate in self.origin_key_registries) and key in protected_origins:
+                continue
+            if registry is self.unit_registry and id(admitted[0]) in protected:
+                continue
+            if previous is _ABSENT_ADMISSION:
+                registry.pop(key, None)
+            else:
+                registry[key] = previous
+        self.introduced.clear();self.origins.clear()
+
+
 @dataclass(frozen=True)
 class _NodePlan:
     node: ast.Node
@@ -187,6 +245,7 @@ class Engine:
         self._plain_routines = {}
         self._plain_modules = {}
         self._python_units = {}
+        self._transient_leases = []
         self.vm = vm
         self._nodes = {}
         self._blocks = {}
@@ -314,7 +373,7 @@ class Engine:
         except (TypeError, RuntimeError) as failure:
             raise CompiledUnsupported(None, str(failure)) from None
 
-    def prepare(self, program, *, allow_reprepare=True, module_entry=False):
+    def prepare(self, program, *, allow_reprepare=True, module_entry=False, _transient=None):
         if not self.OWNED_SNAPSHOT:
             return self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry)
         # Journal only this admission's writes, not the entire active registry.
@@ -327,11 +386,74 @@ class Engine:
          self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = journals
         try:
             result = self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry)
+            captured = []
+            if _transient is not None:
+                for base, journal in zip(bases, journals):
+                    if journal.cleared or any(value is AdmissionMap._DELETED for value in journal.changes.values()):
+                        raise CompiledUnsupported(None, 'transient admission cannot clear registries')
+                    captured.extend((base, key, base.get(key, _ABSENT_ADMISSION), value)
+                                    for key, value in journal.changes.items())
+            # Record owned dependency edges before publication, using the
+            # already-validated graph and only this admission's journal writes.
+            owned_ids=set()
+            anchors=[]
+            if self._transient_leases:
+                dependency_seen=set()
+                def dependencies(value):
+                    if id(value) in dependency_seen:return
+                    dependency_seen.add(id(value))
+                    if type(value) is tuple:
+                        for child in value:dependencies(child)
+                        return
+                    if not is_owned(value):return
+                    owned_ids.add(id(value))
+                    kind=syntax_kind(value)
+                    if kind in _SUPPORTED:
+                        for field in fields(value):
+                            if field.name != 'token' and not (kind is ast.Literal and field.name == 'value'):
+                                dependencies(getattr(value,field.name))
+                    elif type(value) is OwnedList:
+                        for child in value:dependencies(child)
+                dependencies(self._owned.existing(program))
+                for index in (4,5,9):
+                    anchors.extend((bases[index], key, value)
+                                   for key,value in journals[index].changes.items()
+                                   if value is not AdmissionMap._DELETED
+                                   and bases[index].get(key, _ABSENT_ADMISSION) is not value)
             for journal in journals: journal.commit()
+            for lease in self._transient_leases:
+                lease.observe(owned_ids, anchors)
+            if _transient is not None:
+                _transient.entries.extend(captured)
             return result
         finally:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
              self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = bases
+
+    def prepare_transient(self, program):
+        """Admit declaration-free dynamic code with unchanged live-unit limits."""
+        if not self.FORCE_PYTHON_TRANSLATION or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR:
+            raise CompiledUnsupported(None, 'transient unit requires force owned translation')
+        # The caller supplies a fresh parse_expression/parse_fragment result.
+        # No declaration/import unit may acquire this shorter lifetime.
+        seen=set()
+        def validate(value):
+            if id(value) in seen:return
+            seen.add(id(value))
+            kind=syntax_kind(value)
+            if kind in (ast.Routine, ast.Import, ast.ServerInitializer):
+                raise CompiledUnsupported(value, 'transient unit cannot declare or import')
+            if kind in _SUPPORTED:
+                for field in fields(value):
+                    if field.name != 'token' and not (kind is ast.Literal and field.name == 'value'):
+                        validate(getattr(value, field.name))
+            elif type(value) in (list, tuple, OwnedList):
+                for child in value:validate(child)
+        validate(program)
+        lease=_TransientAdmission(self)
+        self.prepare(program, allow_reprepare=False, _transient=lease)
+        lease.activate()
+        return lease
 
     def _prepare(self, program, *, allow_reprepare=True, module_entry=False):
         self._inline_unit_bytes = 0
@@ -401,7 +523,10 @@ class Engine:
                     nodes[identity] = self._nodes[identity]
                     prepared_counts['reused_node_plans'] += 1
                 else:
-                    function, tier = self._lower_node(value)
+                    if self.FORCE_PYTHON_TRANSLATION:
+                        function, tier = None, self._node_tier(value)
+                    else:
+                        function, tier = self._lower_node(value)
                     prepared_counts['compiled_node_functions'] += function is not None
                     nodes[identity] = _NodePlan(value, _signature(value), function, tier)
             elif type(value) in (list, tuple, OwnedList):
@@ -422,21 +547,21 @@ class Engine:
                             and existing.statements is value
                             and (existing.role == 'structural' or role == 'metadata')):
                         _verify_block(value, existing.signature)
-                        if existing.role == 'metadata': charge_metadata_source()
+                        if existing.role == 'metadata' and not self.FORCE_PYTHON_TRANSLATION: charge_metadata_source()
                         blocks[identity] = existing
                         prepared_counts['reused_block_plans'] += 1
                     elif role == 'metadata':
-                        charge_metadata_source()
+                        if not self.FORCE_PYTHON_TRANSLATION: charge_metadata_source()
                         entries = tuple(value)
                         labels = {node.name.casefold(): i for i,node in enumerate(entries)
                                   if syntax_kind(node) is ast.Label}
                         blocks[identity] = _BlockPlan(value, self._block_signature(value),
-                                                     _METADATA_BLOCK_ENTRY, role, entries, labels)
+                                                     None if self.FORCE_PYTHON_TRANSLATION else _METADATA_BLOCK_ENTRY, role, entries, labels)
                         self.stats['metadata_block_plans'] += 1
                     else:
                         blocks[identity] = _BlockPlan(value, self._block_signature(value),
-                                                      self._lower_block(value))
-                        prepared_counts['compiled_block_functions'] += 1
+                                                      None if self.FORCE_PYTHON_TRANSLATION else self._lower_block(value))
+                        prepared_counts['compiled_block_functions'] += not self.FORCE_PYTHON_TRANSLATION
         try:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
@@ -822,6 +947,8 @@ class Engine:
             raise CompiledUnsupported(statements[0] if statements else None,
                                       'block belongs to no prepared compilation unit')
         self._check_block_plan(plan)
+        if plan.function is None:
+            raise CompiledUnsupported(statements[0] if statements else None, 'legacy block executable was not prepared')
         self.stats['block_executions'] += 1
         if plan.role == 'metadata': self.stats['metadata_block_executions'] += 1
         elif self.INLINE: self.stats['inline_blocks'] += 1
@@ -1189,6 +1316,21 @@ class Engine:
         module = python_ast.parse(source, filename='<bsl-compiled>')
         exec(compile(module, '<bsl-compiled>', 'exec'), namespace)
         return namespace['generated']
+
+    def _node_tier(self, node):
+        """Validate shared semantic dependencies without generating unused code."""
+        kind = syntax_kind(node)
+        if kind in _SYNTAX_ONLY:
+            return 'syntax-only'
+        if kind in _HELPERS and not callable(getattr(self.vm, _HELPERS[kind], None)):
+            raise CompiledUnsupported(node, f'missing semantic adapter {_HELPERS[kind]}')
+        tier = 'semantic-helper' if kind in _HELPERS or kind is ast.Call else 'emitted'
+        if kind is ast.ExpressionStatement:
+            expression = node.expression
+            while syntax_kind(expression) is ast.Group:
+                expression = expression.expression
+            if syntax_kind(expression) is ast.Call: tier = 'semantic-helper'
+        return tier
 
     def _lower_node(self, node):
         kind = syntax_kind(node)

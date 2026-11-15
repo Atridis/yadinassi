@@ -88,6 +88,7 @@ class ExpressionPlan:
     functions: dict
     nodes: tuple
     source: str
+    sync_functions: object = None
 
     def bind(self, vm, *, guard, access, resolve=None):
         """guard(node) must perform current admission/budget/security accounting."""
@@ -115,6 +116,27 @@ class ExpressionExecution:
 
     def bound_callee(self, node):
         return (self._bound_callee[1],) if self._bound_callee is not None and self._bound_callee[0] is node else ()
+
+    def leaf(self, node):
+        """Invoke a source-admitted synchronous leaf; never dispatch AST kinds."""
+        item=(self.plan.sync_functions or {}).get(id(node))
+        if item is None or item[0] is not node:
+            raise UnsupportedExpression('synchronous leaf not admitted')
+        value=converted=None
+        self.vm.compiled_before(node)
+        try:
+            try:
+                self.guard(node)
+                value=(self._bound_callee[1] if self._bound_callee is not None and self._bound_callee[0] is node
+                       else item[1](self))
+            except BaseException as error:
+                converted=self.vm.compiled_exception(node,error)
+                if converted is error:raise
+                raise converted from None
+            return self.vm.compiled_after(node,value)
+        finally:
+            # A retained exception traceback must not retain a discarded value.
+            value=converted=None
 
     def evaluate(self, node):
         if self.resolve is not None:
@@ -161,6 +183,8 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
     through the AST evaluator. Unsupported syntax fails preparation explicitly.
     """
     nodes, slots, bodies = [], {}, []
+    shared = {}
+    templates = {}
     active = set()
     def lower(node):
         key = id(node)
@@ -212,10 +236,25 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
             text=f'return (yield from _s.vm.semantic_dynamic_new(_nodes[{slot}], _evaluation=_s))'
         else:
             text=f'raise _unsupported({("unsupported expression: " + kind.__name__)!r})'
-        bodies.append(f'def _expression_{slot}(_s):\n    if False: yield None\n    '+text.replace('\n','\n    ')+'\n')
+        if kind in (ast.Literal, ast.Name, ast.Group):
+            template_name = '_shared_' + kind.__name__
+            template_text = {
+                ast.Literal: 'return _node.value',
+                ast.Name: 'return _s.vm.semantic_name(_node)',
+                ast.Group: 'return (yield from _s.evaluate(_node.expression))',
+            }[kind]
+            templates[template_name] = ('def '+template_name+'(_s, _node):\n if False: yield None\n '+template_text+'\n')
+            shared[slot] = template_name
+        else:
+            bodies.append(f'def _expression_{slot}(_s):\n if False: yield None\n '+text.replace('\n','\n ')+'\n')
         active.remove(key)
         return slot
     for root in roots: lower(root)
+    for name in ('Literal','Name'):
+        original=templates.get('_shared_'+name)
+        if original is not None:
+            templates['_shared_sync_'+name]=original.replace('_shared_'+name,'_shared_sync_'+name).replace(' if False: yield None\n','')
+    bodies = list(templates.values()) + bodies
     if any(len(body.encode())>max_function_bytes for body in bodies):raise UnsupportedExpression('expression function source budget')
     source='\n'.join(bodies)
     if len(source.encode())>max_source_bytes: raise UnsupportedExpression('expression source budget')
@@ -223,5 +262,18 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
                '_require_transfer':require_transfer,'_forbid_transfer':forbid_transfer,
                '_await_request':AwaitRequest}
     exec(compile(source,'<bsl-python-expressions>','exec',dont_inherit=True), namespace)
-    functions={id(node):(node,namespace[f'_expression_{index}']) for index,node in enumerate(nodes)}
-    return ExpressionPlan(functions,tuple(nodes),source)
+    from types import FunctionType
+    functions={}
+    sync_functions={}
+    for index,node in enumerate(nodes):
+        if index in shared:
+            template=namespace[shared[index]]
+            function=FunctionType(template.__code__,namespace,template.__name__,(node,))
+            sync_name=shared[index].replace('_shared_','_shared_sync_')
+            if sync_name in namespace:
+                sync=namespace[sync_name]
+                sync_functions[id(node)]=(node,FunctionType(sync.__code__,namespace,sync.__name__,(node,)))
+        else:
+            function=namespace[f'_expression_{index}']
+        functions[id(node)]=(node,function)
+    return ExpressionPlan(functions,tuple(nodes),source,sync_functions)

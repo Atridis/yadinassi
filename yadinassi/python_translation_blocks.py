@@ -27,17 +27,18 @@ class BlockUnit:
         def clone(function):
             original=function.__globals__
             if id(original) in namespaces:
-                return FunctionType(function.__code__,namespaces[id(original)],function.__name__)
+                return FunctionType(function.__code__,namespaces[id(original)],function.__name__,function.__defaults__)
             namespace={k:v for k,v in original.items()
-                       if k!='translated' and not k.startswith('_expression_')}
+                       if k!='translated' and not k.startswith(('_expression_', '_shared_'))}
             namespace['_nodes']=tuple(node if id(node) in owned_ids or not is_owned(node) else None
                                       for node in original['_nodes'])
             namespaces[id(original)]=namespace
-            return FunctionType(function.__code__,namespace,function.__name__)
+            return FunctionType(function.__code__,namespace,function.__name__,function.__defaults__)
         blocks={key:(block,clone(fn) if fn is not None else None) for key,(block,fn) in self.blocks.items() if id(block) in owned_ids}
         expressions=ExpressionPlan(
             {key:(node,clone(fn)) for key,(node,fn) in self.expressions.functions.items() if id(node) in owned_ids},
-            tuple(node for node in self.expressions.nodes if id(node) in owned_ids),self.expressions.source)
+            tuple(node for node in self.expressions.nodes if id(node) in owned_ids),self.expressions.source,
+            {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids})
         # Conservatively retain the full admitted source charge, not only keys.
         return BlockUnit(blocks,expressions,self.source_bytes)
 
@@ -51,6 +52,10 @@ class Execution:
         self.access=translated_access
         self.outer_node=None
         self.expressions=unit.expressions.bind(self.vm,guard=self.guard,access=translated_access,resolve=engine._python_expression_execution)
+    def before(self,node):
+        if self.outer_node is not node:self.vm.compiled_before(node)
+    def after(self,node,result):
+        return result if self.outer_node is node else self.vm.compiled_after(node,result)
     def guard(self,node):
         self.engine._verify_active_plans();self.engine.verify_node(node)
         kinds=self.engine.stats.setdefault('python_translated_node_kinds',{})
@@ -79,6 +84,7 @@ class Execution:
 def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
+    import io, tokenize
     from . import python_translation_expression_fusion as PE
     # Every expression and block is generated before the admitted program runs.
     expressions=prepare_expressions(expression_roots,max_source_bytes=max_source_bytes,max_function_bytes=max_function_bytes)
@@ -96,22 +102,29 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
     while cursor<len(pending):
         block=pending[cursor];cursor+=1
         key=tuple(id(node) for node in block)
-        lines=['def translated(_s):',' if False: yield None',' vm = _s.vm',' result = None']
+        lines=['def translated(_s):',' if False: yield None',' v = _s.vm',' r = None']
         emitted=sum(len(line.encode())+1 for line in lines)
         serial=0
         def temp():
             nonlocal serial
             serial+=1
-            return f'_t{serial}'
+            return f't{serial}'
         def emit(d,text):
             nonlocal emitted
+            # Shorten compiler-private locals, never names inside BSL literals.
+            tokens=list(tokenize.generate_tokens(io.StringIO(text).readline))
+            replacements=[]
+            for index, token in enumerate(tokens):
+                if token.type==tokenize.NAME and token.string in ('vm','result') and (index==0 or tokens[index-1].string!='.'):
+                    replacements.append((token.start[1],token.end[1],{'vm':'v','result':'r'}[token.string]))
+            for start,stop,replacement in reversed(replacements):text=text[:start]+replacement+text[stop:]
             line=' '*d+text
             emitted+=len(line.encode())+1
             if emitted>max_function_bytes or used+emitted>max_source_bytes:
                 raise UnsupportedTranslation('generated source budget')
             lines.append(line)
         expression_roots_stack=[]
-        fusion=PE.ExpressionEmitter(bind,emit,temp)
+        fusion=PE.ExpressionEmitter(bind,emit,temp,compact_leaves=True)
         def ev(node,d):
             value=fusion.emit_expression(node,d)
             expression_roots_stack[-1].append(value)
@@ -138,7 +151,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             previous_result=temp();emit(d,f'{previous_result} = result')
             emit(d,'try:');d+=1
             first,last,collection,item,receiver,writer,binder,handled_error,handled_index=(temp() for _ in range(9))
-            emit(d,f'if _s.outer_node is not {n}: vm.compiled_before({n})')
+            emit(d,f'_s.before({n})')
             emit(d,'try:');d+=1
             emit(d,f'_s.guard({n})');emit(d,'result = None')
             if kind is ast.ExpressionStatement:
@@ -209,9 +222,16 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(d+1,f'if {converted} is {error}: raise')
             emit(d+1,f'raise {converted} from None')
             emit(d,'finally:')
-            temporaries=[first,last,collection,item,receiver,writer,binder,handled_error,handled_index,converted,*expression_roots_stack.pop()]
+            scratch=[]
+            if kind is ast.For:scratch=[first,last]
+            elif kind is ast.ForEach:scratch=[collection,item]
+            elif kind is ast.Try:scratch=[handled_error,handled_index]
+            elif kind is ast.Assign:
+                if target is ast.Attribute:scratch=[receiver,writer]
+                elif target is ast.Index:scratch=[receiver,binder,writer]
+            temporaries=[*scratch,converted,*expression_roots_stack.pop()]
             emit(d+1,' = '.join(temporaries)+' = None')
-            emit(d,f'if _s.outer_node is not {n}: result = vm.compiled_after({n}, result)')
+            emit(d,f'result = _s.after({n}, result)')
             d-=1;emit(d,'finally:');emit(d+1,f'{previous_result} = None')
         def emit_sequence(sequence,d):
             if not sequence:emit(d,'pass')

@@ -29,3 +29,12 @@ class BranchDefaultTests(unittest.TestCase):
      cls('.')
      command=start.call_args.args[0]
      self.assertEqual(command[command.index('--execution-backend')+1],mode)
+ def test_pending_scheduler_still_preadmits_filtered_module(self):
+  vm=Interpreter()
+  pending=vm._scheduler.new_pending()
+  try:
+   vm.execute('&AtServer\nVar State;\n#If AtServer Then\nState=42;\n#EndIf\nx=3;')
+   self.assertEqual(vm.variables['x'],3)
+   self.assertGreater(vm.compiled_backend_stats.get('python_translated_blocks',0),0)
+   self.assertFalse(vm.compiled_backend_stats.get('force_translation_gaps',{}))
+  finally:vm.close()

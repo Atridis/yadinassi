@@ -678,12 +678,17 @@ class Interpreter:
         # Native Eval does not inherit the enclosing ErrorInfo context. A handler
         # entered by evaluated code can still establish its own diagnostic frame.
         self._error_info_boundaries.append(len(self._handled_errors))
+        transient = None
         try:
             # Parse and consume the entire input before executing even its first call.
             try:
                 expression = parse_expression(text)
                 if self._execution_backend == "compiled-strict":
-                    self._admit_compiled_node(expression)
+                    engine = self._compiled()
+                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
+                        transient = engine.prepare_transient([expression])
+                    else:
+                        self._admit_compiled_node(expression)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
             from .safe_mode import routine_frame
@@ -692,6 +697,7 @@ class Interpreter:
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
+            if transient is not None: transient.close()
             self._error_info_boundaries.pop()
             self._eval_depth[0] -= 1
 
@@ -709,11 +715,16 @@ class Interpreter:
             raise ValueError("Выполнить: превышен предел вложенности Yadinassi (16)")
         self._execute_depth[0] += 1
         previous = self.locals
+        transient = None
         try:
             try:
                 program = parse_fragment(value)
                 if self._execution_backend == "compiled-strict":
-                    self._compiled().prepare(program, allow_reprepare=False)
+                    engine = self._compiled()
+                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
+                        transient = engine.prepare_transient(program)
+                    else:
+                        engine.prepare(program, allow_reprepare=False)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
             # Existing bindings are live references, including reference parameters.
@@ -733,6 +744,7 @@ class Interpreter:
         except RecursionError:
             raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
         finally:
+            if transient is not None: transient.close()
             self.locals = previous
             self._execute_depth[0] -= 1
 
@@ -829,7 +841,7 @@ class Interpreter:
             engine = self._compiled()
             engine.prepare(program, allow_reprepare=not (self._scheduler.is_active or
                                                         engine.active_frames or self._scheduler.pending),
-                           module_entry=not (self._scheduler.is_active or engine.active_frames or self._scheduler.pending))
+                           module_entry=(engine.FORCE_PYTHON_TRANSLATION or not (self._scheduler.is_active or engine.active_frames or self._scheduler.pending)))
         outermost = not self._scheduler.is_active
         try:
             from .database_transactions import admission, execution
