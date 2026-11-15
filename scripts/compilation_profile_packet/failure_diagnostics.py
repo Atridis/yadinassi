@@ -19,6 +19,7 @@ OWNED_IDENTIFIERS = frozenset({'Client','Server','AtClient','AtServer',
     'MobileAppClient','MobileAppServer','Клиент','Сервер','НаКлиенте','НаСервере',
     'МобильноеПриложениеКлиент','МобильноеПриложениеСервер','CPState','CPStartup',
     'CPMaskEN','CPMaskRU','CPMobileEN','CPMobileRU',
+    'CPApplicationMaskEN','CPApplicationMaskRU','CPApplicationMobileEN','CPApplicationMobileRU',
     'CPSessionMaskEN','CPSessionMaskRU','CPSessionMobileEN','CPSessionMobileRU','ClientProbe','ServerProbe','DualProbe',
     'ClientExport','ServerExport'})
 COMPILE_PHRASES = ('неизвестная инструкция препроцессора', 'неизвестный оператор',

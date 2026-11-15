@@ -82,9 +82,20 @@ class PacketTests(unittest.TestCase):
             self.assertIn('Function CPSession'+suffix+'()',session)
             self.assertNotIn('Function CP'+suffix+'()',session)
             self.assertIn('CPSession'+suffix+'()',fixture.SESSION_INSERT)
-            self.assertIn('Function CP'+suffix+'() Export',application)
+            self.assertIn('Function CPApplication'+suffix+'() Export',application)
         # Only names differ: retain every conditional and result in the probes.
         restored=session.replace('CPSession','CP')
         suffix='\nFunction CPStartupValue() Export Return CPStartup; EndFunction\n'
         self.assertTrue(application.endswith(suffix))
-        self.assertEqual(restored,application[:-len(suffix)].replace(' Export',''))
+        self.assertEqual(restored,application[:-len(suffix)].replace(' Export','').replace('CPApplication','CP'))
+
+    def test_application_helpers_have_distinct_namespace(self):
+        app=packet()['Extensions/Application.bsl'].decode()
+        launcher=route.module().decode()
+        for suffix in ('MaskEN','MaskRU','MobileEN','MobileRU'):
+            self.assertIn('Function CPApplication'+suffix+'() Export',app)
+            self.assertNotIn('Function CP'+suffix+'()',app)
+            self.assertIn('CPApplication'+suffix+'()',launcher)
+        self.assertIn('ClientProbe.CPMaskEN()',launcher)
+        self.assertIn('ServerProbe.CPMaskEN()',launcher)
+        self.assertIn('DualProbe.CPMaskEN()',launcher)

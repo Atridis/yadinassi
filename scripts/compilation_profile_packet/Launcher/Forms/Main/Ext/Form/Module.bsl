@@ -22,7 +22,7 @@ EndFunction
 
 &AtClient
 Function Observe(Number)
- If Number = 1 Then Return CPMaskEN()+":"+CPMaskRU();
+ If Number = 1 Then Return CPApplicationMaskEN()+":"+CPApplicationMaskRU();
  ElsIf Number = 2 Then Return ServerProbe.CPState();
  ElsIf Number = 3 Then Return ClientProbe.CPMaskEN()+":"+ClientProbe.CPMaskRU();
  ElsIf Number = 4 Then Return ServerProbe.CPMaskEN()+":"+ServerProbe.CPMaskRU();
@@ -34,8 +34,8 @@ Function Observe(Number)
   A="0"; Try Execute("A=DualProbe.ServerExport();"); Except A="99"; EndTry; Return A;
  ElsIf Number = 9 Then Return ServerProbe.DualExports();
  ElsIf Number = 10 Then Return DualProbe.CPMobileEN()+":"+DualProbe.CPMobileRU()+":"+ServerProbe.DualMobile();
- ElsIf Number = 11 Then Return CPMobileEN();
- ElsIf Number = 12 Then Return CPMobileRU();
+ ElsIf Number = 11 Then Return CPApplicationMobileEN();
+ ElsIf Number = 12 Then Return CPApplicationMobileRU();
  ElsIf Number = 13 Then Return ClientProbe.CPMobileEN()+":"+ClientProbe.CPMobileRU();
  ElsIf Number = 14 Then Return ServerProbe.CPMobileEN()+":"+ServerProbe.CPMobileRU();
  ElsIf Number = 15 Then Return CPStartupValue();
