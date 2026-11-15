@@ -194,8 +194,9 @@ class Interpreter:
                  compilation_profile: str = "standalone",
                  user_message_sink: Callable | None = None,
                  family_owner: "Interpreter | None" = None,
-                 execution_backend: str | None = None):
-        from .execution_policy import current_backend, BACKENDS
+                 execution_backend: str | None = None,
+                 compiled_ast_contract: str | None = None):
+        from .execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
                                  else current_backend())
@@ -205,6 +206,15 @@ class Interpreter:
                 and family_owner.execution_backend == 'compiled-strict'
                 and execution_backend != 'compiled-strict'):
             raise ValueError('strict interpreter family cannot silently change backend')
+        if compiled_ast_contract is None:
+            compiled_ast_contract = (family_owner.compiled_ast_contract
+                                     if isinstance(family_owner, Interpreter) else current_ast_contract())
+        if type(compiled_ast_contract) is not str or compiled_ast_contract not in AST_CONTRACTS:
+            raise ValueError('unsupported compiled AST contract')
+        if (isinstance(family_owner, Interpreter)
+                and family_owner.compiled_ast_contract != compiled_ast_contract):
+            raise ValueError('interpreter family cannot silently change AST contract')
+        self._compiled_ast_contract = compiled_ast_contract
         self._compiled_engine = None
         self._execution_backend = execution_backend
         self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
@@ -228,7 +238,7 @@ class Interpreter:
         if family_owner is None:
             self._schema_scopes = WeakValueDictionary()
         self._bind_schema_scope()
-        self._scheduler = (Scheduler(self._native_target, execution_backend=self.execution_backend) if family_owner is None
+        self._scheduler = (Scheduler(self._native_target, execution_backend=self.execution_backend, compiled_ast_contract=self.compiled_ast_contract) if family_owner is None
                            else family_owner._scheduler)
         self._diagnostic_owner = self
         self.variables: dict[str, object] = {}
@@ -781,6 +791,10 @@ class Interpreter:
             engine.prepare_node(node)
 
     @property
+    def compiled_ast_contract(self):
+        return self._compiled_ast_contract
+
+    @property
     def compiled_backend_stats(self):
         return {} if self._compiled_engine is None else dict(self._compiled_engine.stats)
 
@@ -814,8 +828,8 @@ class Interpreter:
                 self._scheduler.procedure_errors.clear()
 
     def _execute_program_boundary(self, program, outermost):
-        from .execution_policy import execution_backend_policy
-        with target_context(self.native_target), execution_backend_policy(self.execution_backend):
+        from .execution_policy import execution_backend_policy, compiled_ast_policy
+        with target_context(self.native_target), execution_backend_policy(self.execution_backend), compiled_ast_policy(self.compiled_ast_contract):
             if self._configuration_runtime is not None:
                 self._configuration_runtime.check_program(program)
             # A diagnostic source label need not name a readable filesystem path.

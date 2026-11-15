@@ -139,8 +139,11 @@ class SchedulerLimitError(RuntimeError):
 
 
 class Scheduler:
-    def __init__(self, native_target: str, *, execution_backend=None):
-        from .execution_policy import current_backend
+    def __init__(self, native_target: str, *, execution_backend=None, compiled_ast_contract=None):
+        from .execution_policy import current_backend, current_ast_contract, AST_CONTRACTS
+        self.compiled_ast_contract = current_ast_contract() if compiled_ast_contract is None else compiled_ast_contract
+        if type(self.compiled_ast_contract) is not str or self.compiled_ast_contract not in AST_CONTRACTS:
+            raise ValueError("unsupported compiled AST contract")
         self.execution_backend = current_backend() if execution_backend is None else execution_backend
         self._compilers = WeakSet()
         self.native_target = validate_native_target(native_target)
@@ -162,7 +165,7 @@ class Scheduler:
         if self.is_active or self._pumping or self._pending:
             return
         for engine in tuple(self._compilers):
-            engine.release()
+            engine.release(retain_routines=True)
 
     @property
     def is_active(self):
@@ -248,8 +251,8 @@ class Scheduler:
         if task is not None:
             self.active_context, self._active_task = task.context, task
         try:
-            from .execution_policy import execution_backend_policy
-            with target_context(self.native_target), execution_backend_policy(self.execution_backend), localcontext() as context:
+            from .execution_policy import execution_backend_policy, compiled_ast_policy
+            with target_context(self.native_target), execution_backend_policy(self.execution_backend), compiled_ast_policy(self.compiled_ast_contract), localcontext() as context:
                 context.prec = 38
                 yield
         finally:

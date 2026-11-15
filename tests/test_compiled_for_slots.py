@@ -1,3 +1,4 @@
+from compiled_contract_fixture import mutable_compiled_contract
 """Generic compiled For slot guards, not an arithmetic benchmark special case."""
 from decimal import Decimal
 import unittest
@@ -90,6 +91,7 @@ class CompiledForSlotTests(unittest.TestCase):
 if __name__ == '__main__': unittest.main()
 
 class MetadataContainerGuards(unittest.TestCase):
+    @mutable_compiled_contract
     def test_custom_scope_membership_is_opaque_in_all_fast_paths(self):
         from yadinassi.compiled_backend import CompiledUnsupported
         vm = Interpreter(execution_backend='compiled-strict')
