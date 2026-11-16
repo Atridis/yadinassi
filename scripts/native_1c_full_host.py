@@ -1685,6 +1685,8 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         expected_execution_backend=None) -> None:
     """Validate both raw evidence and separately named acceptance, never conflate them."""
     validate_comparison_options(native_target, comparison_mode)
+    if type(comparison) is not dict or type(comparison.get('schema')) is not int:
+        raise FullError('comparison_evidence_invalid')
     # Fresh callers bind the requested mode; historical schema-2 reports remain readable.
     if expected_execution_backend is not None:
         if expected_execution_backend not in ('interpreter', 'compiled-strict'):

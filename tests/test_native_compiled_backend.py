@@ -238,6 +238,14 @@ Interpreter.visit_Literal = observe_literal
             with self.assertRaises(full.FullError):
                 full.validate_comparison(downgraded, case.stage3, full.WINDOWS_TARGET, full.BYTE_EXACT,
                                          expected_execution_backend='compiled-strict')
+            for schema in (3.0, '3', True, None):
+                for expected in (None, 'compiled-strict', 'interpreter'):
+                    with self.subTest(schema=schema, expected=expected):
+                        malformed = copy.deepcopy(result)
+                        malformed['schema'] = schema
+                        with self.assertRaises(full.FullError):
+                            full.validate_comparison(malformed, case.stage3, full.WINDOWS_TARGET, full.BYTE_EXACT,
+                                                     expected_execution_backend=expected)
             self.assertEqual(result['schema'],3)
             self.assertEqual(result['acceptance_status'],'accepted')
             self.assertEqual(len(result['execution']['cases']),len(full.SCENARIOS))
