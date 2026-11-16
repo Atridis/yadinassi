@@ -7,14 +7,15 @@ def HybridInterpreter(**kwargs):
 class Differential(unittest.TestCase):
     def pair(self, source, compiled=None, initial=None):
         records=[]
-        for cls in (Interpreter, HybridInterpreter):
+        for cls in (lambda **kw: Interpreter(execution_backend="interpreter", **kw), Interpreter, HybridInterpreter):
             out=[];vm=cls(output=out.append)
             if initial: vm.variables.update(initial)
             error=None
             try: vm.execute(source)
             except Exception as e: error=(type(e),str(e))
             records.append((dict(vm.variables),out,error))
-        self.assertEqual(*records)
+        self.assertEqual(records[0],records[1])
+        self.assertEqual(records[0],records[2])
         if compiled is not None: self.assertEqual(vm.execution_backend_stats['compiled'],compiled)
         return vm
     def test_numeric(self):
@@ -91,9 +92,17 @@ class Differential(unittest.TestCase):
 
 
 class AdmissionTests(unittest.TestCase):
-    def test_default_is_unchanged_and_stats_are_copy(self):
+    def test_translated_default_explicit_oracle_and_stats_are_copy(self):
         vm=Interpreter();vm.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
-        self.assertEqual(vm.execution_backend,'interpreter')
+        self.assertEqual(vm.execution_backend,'compiled-strict')
+        self.assertGreater(vm.compiled_backend_stats.get('python_translated_blocks',0),0)
+        self.assertEqual(vm.compiled_backend_stats['interpreter_fallbacks'],0)
+        oracle=Interpreter(execution_backend='interpreter')
+        try:
+            oracle.execute('Для i=1 По 2 Цикл r=i;КонецЦикла;')
+            self.assertEqual(oracle.variables['r'],vm.variables['r'])
+            self.assertEqual(oracle.execution_backend,'interpreter')
+        finally:oracle.close()
         self.assertEqual(vm.execution_backend_stats['compiled'],0)
         copy=vm.execution_backend_stats;copy['compiled']=99
         self.assertEqual(vm.execution_backend_stats['compiled'],0)

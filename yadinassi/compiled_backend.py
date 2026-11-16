@@ -1055,12 +1055,20 @@ class Engine:
             self._verify_active_plans();self.verify_node(view)
             kinds=self.stats.setdefault('python_translated_node_kinds',{})
             kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
-            return leaf[1](self.vm,view)
+            self._active_frames += 1
+            try:
+                return leaf[1](self.vm,view)
+            finally:
+                self._active_frames -= 1
         resolved=self._python_expression_execution(view)
         if resolved is not None:
             execution,view=resolved
             execution.guard(view)
-            return (yield from execution.plan.functions[id(view)][1](execution))
+            self._active_frames += 1
+            try:
+                return (yield from execution.plan.functions[id(view)][1](execution))
+            finally:
+                self._active_frames -= 1
         saved=self._python_units.get((id(view),))
         if saved is not None:
             block,unit=saved

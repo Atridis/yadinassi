@@ -206,27 +206,11 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
     generated_templates = {}
     generated_bindings = {}
     binding_count = 0
-    import ast as python_ast
+    from .python_translation_template_bindings import bind_generated_source
     def shared_body(text, slot):
         """Canonicalize source-bound operands at admission, never at execution."""
         nonlocal binding_count
-        operands=[]
-        class BindOperands(python_ast.NodeTransformer):
-            def bind(self, value):
-                index=len(operands);operands.append(value)
-                return python_ast.Subscript(value=python_ast.Name(id='_p',ctx=python_ast.Load()),
-                    slice=python_ast.Constant(index),ctx=python_ast.Load())
-            def visit_Subscript(self, node):
-                if isinstance(node.value,python_ast.Name) and node.value.id=='_nodes':
-                    if not isinstance(node.slice,python_ast.Constant) or type(node.slice.value) is not int:
-                        raise UnsupportedExpression('nonliteral generated source handle')
-                    return self.bind(nodes[node.slice.value])
-                return self.generic_visit(node)
-            def visit_Constant(self, node):
-                return self.bind(node.value)
-        body=BindOperands().visit(python_ast.parse(text))
-        body=python_ast.fix_missing_locations(body)
-        canonical=python_ast.unparse(body)
+        canonical,operands=bind_generated_source(text,nodes)
         name=generated_templates.get(canonical)
         if name is None:
             name=f'_expression_template_{len(generated_templates)}'

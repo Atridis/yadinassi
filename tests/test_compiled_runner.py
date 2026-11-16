@@ -72,6 +72,8 @@ class Rejection(unittest.TestCase):
             self.assertFalse(waiting['compiled_execution_observed'])
             self.assertEqual(waiting['observed_execution_contracts'], [])
             self.assertTrue(executing['compiled_execution_observed'])
+            self.assertGreater(executing['python_translated_blocks']+executing['python_translated_nodes'],0)
+            self.assertEqual(waiting['python_translated_blocks']+waiting['python_translated_nodes'],0)
             self.assertEqual(executing['observed_execution_contracts'], [{
                 'owned_snapshot': True, 'origin_mutation_monitor': 'off',
                 'active_ast_contract': 'snapshot'}])
@@ -94,7 +96,13 @@ class Rejection(unittest.TestCase):
             (folder / 'metadata_fixture.py').write_text('''import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
+from unittest.mock import patch
+from yadinassi.compiled_backend import Engine
 class Metadata(unittest.TestCase):
+    def setUp(self):
+        # Explicit historical metadata-entry contract, not translated coverage.
+        selection=patch.object(Engine,'FORCE_PYTHON_TRANSLATION',False)
+        selection.start();self.addCleanup(selection.stop)
     def admitted(self):
         vm=Interpreter(execution_backend='compiled-strict')
         call=parse('Unused();')[0].expression

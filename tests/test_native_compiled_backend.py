@@ -24,7 +24,7 @@ class NativeCompiledBackendTests(unittest.TestCase):
             self.assertEqual(old.stdout,new.stdout)
             self.assertEqual(new.stderr,b'')
             observed=json.loads(stats.read_text(encoding='utf-8'))
-            self.assertIn(observed['lowering_variant'],('inline','node-scaffold'))
+            self.assertIn(observed['lowering_variant'],('inline','node-scaffold','python-translation'))
             evidence=full.execution_evidence([observed])
             self.assertEqual(evidence['execution_backend'],'compiled-strict')
             for key in ('interpreter_fallbacks','old_backend_executions','strict_rejections'):
@@ -48,6 +48,33 @@ class NativeCompiledBackendTests(unittest.TestCase):
         evidence=full.execution_evidence([stats])
         self.assertEqual(evidence['cases'][0]['node_coverage'],'unobserved')
         self.assertEqual(evidence['cases'][0]['emitted_executions'],0)
+
+    def test_translated_evidence_has_explicit_version_and_rejects_tampering(self):
+        stats={key:0 for key in ('emitted_executions','helper_executions','rejected_units',
+            'unsupported_executions','interpreter_fallbacks','old_backend_executions','strict_rejections',
+            'inline_blocks','inline_fragments','python_translated_blocks','python_translated_nodes','plain_adapter_blocks','block_executions','metadata_block_executions')}
+        stats.update(python_translated_blocks=1,node_coverage='unobserved',lowering_variant='python-translation',fast_inline_enabled=True)
+        evidence=full.execution_evidence([stats])
+        self.assertEqual(evidence['schema'],'compiled-native-execution-v2')
+        for key,value in [('python_translated_blocks',True),('python_translated_nodes',-1),
+                          ('python_translated_nodes',10**12+1),('plain_adapter_blocks',1),('unexpected',0)]:
+            bad=copy.deepcopy(evidence);bad['cases'][0][key]=value
+            with self.subTest(key=key,value=value),self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        for key in ('emitted_executions','helper_executions','inline_blocks','inline_fragments','block_executions','metadata_block_executions'):
+            bad=copy.deepcopy(evidence);bad['cases'][0][key]=1
+            with self.subTest(mixed_route=key),self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        for key in ('python_translated_blocks','python_translated_nodes','plain_adapter_blocks','block_executions','metadata_block_executions'):
+            bad=copy.deepcopy(evidence);del bad['cases'][0][key]
+            with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        bad=copy.deepcopy(evidence);bad['schema']='compiled-native-execution-v1'
+        with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        for variant in ('inline','node-scaffold'):
+            bad=copy.deepcopy(evidence);bad['cases'][0]['lowering_variant']=variant
+            with self.subTest(false_label=variant),self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+            bad['cases'][0]['emitted_executions']=1
+            with self.subTest(mixed_label=variant),self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        stats['python_translated_blocks']=0
+        with self.assertRaises(full.FullError):full.execution_evidence([stats])
 
     def test_direct_legacy_visitor_entry_is_detected_in_strict_child(self):
         script=full.EXECUTE_SCRIPT.replace('interpreter.execute(source_text, str(source))',
@@ -74,7 +101,7 @@ class NativeCompiledBackendTests(unittest.TestCase):
             self.assertEqual(process.returncode,0,process.stderr)
             observed=json.loads(stats.read_text(encoding='utf-8'))
             self.assertEqual(observed['old_backend_executions'],2)
-            self.assertGreater(sum(observed[k] for k in ('emitted_executions','helper_executions','inline_blocks','inline_fragments')),0)
+            self.assertGreater(sum(observed[k] for k in ('emitted_executions','helper_executions','inline_blocks','inline_fragments','python_translated_blocks','python_translated_nodes')),0)
             with self.assertRaises(full.FullError):full.execution_evidence([observed])
 
     def test_async_context_observer_detects_early_return_and_restores_visitors(self):

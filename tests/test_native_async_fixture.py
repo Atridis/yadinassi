@@ -427,7 +427,7 @@ def without_main_demo_assets_provenance(source):
 def without_compiled_backend_harness(source):
     """Exact source-only inverse of opt-in host execution; never rewrite native bytes."""
     base = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
-    candidate = '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'
+    candidate = '1ce961884a50c8e7e798f6df3322280802d91bed15484452d28a9d1b7c847dc8'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
     if digest != candidate:
         return source  # Older layers still enforce their own exact identities.
@@ -471,9 +471,9 @@ def historical_source_bytes(path, raw, expected_sha256):
     """
     pins = {
         'scripts/native_1c_full_host.py': ('19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb',
-                                         '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'),
+                                         '1ce961884a50c8e7e798f6df3322280802d91bed15484452d28a9d1b7c847dc8'),
         'scripts/native_1c_smoke.py': ('d41b75e56bbc66b26c7103116302007b8df3a5318995934aacd13fd9c55b3d1d', '5a13a74bc901192c0fa503171cacb4573797ab2fd8e3b75b471e0fd8ba3db5eb'),
-        'scripts/native_async_comparison.py': ('7eec7c2e95fa7ea6d59d50f4cf53bc37967e2afe6cf7b59eae82a6e585ce4941', 'b29f03d16e0a74ecaf93f7e7c1f6718fbc7e4a8b4158e8ee36418fe78f4b1a46'),
+        'scripts/native_async_comparison.py': ('7eec7c2e95fa7ea6d59d50f4cf53bc37967e2afe6cf7b59eae82a6e585ce4941', '70ff721d0daef9e55cda70f21179ec179d92bb374b8268fbdb6633a1f9c2e4bd'),
     }
     if path in pins and expected_sha256 == pins[path][0]:
         base, candidate = pins[path]

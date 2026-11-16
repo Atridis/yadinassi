@@ -90,8 +90,7 @@ class Execution:
 def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
-    import io, tokenize
-    import ast as python_ast
+    from .python_translation_template_bindings import bind_generated_source
     from types import FunctionType
     from . import python_translation_expression_fusion as PE
     # Every expression and block is generated before the admitted program runs.
@@ -112,7 +111,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
     def body(value):return f'(yield from _s.residual_block({tuple(id(n) for n in value)!r}))'
     while cursor<len(pending):
         key,block,is_operation=pending[cursor];cursor+=1
-        lines=['def translated(_s):',' if False: yield None',' v = _s.vm',' r = None']
+        lines=['def translated(_s):',' if False: yield None',' vm = _s.vm',' result = None']
         emitted=sum(len(line.encode())+1 for line in lines)
         serial=0
         def temp():
@@ -121,13 +120,6 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             return f't{serial}'
         def emit(d,text):
             nonlocal emitted
-            # Shorten compiler-private locals, never names inside BSL literals.
-            tokens=list(tokenize.generate_tokens(io.StringIO(text).readline))
-            replacements=[]
-            for index, token in enumerate(tokens):
-                if token.type==tokenize.NAME and token.string in ('vm','result') and (index==0 or tokens[index-1].string!='.'):
-                    replacements.append((token.start[1],token.end[1],{'vm':'v','result':'r'}[token.string]))
-            for start,stop,replacement in reversed(replacements):text=text[:start]+replacement+text[stop:]
             line=' '*d+text
             emitted+=len(line.encode())+1
             if emitted>max_function_bytes:
@@ -269,31 +261,8 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(2,'else:');emit(3,'pc += 1')
         emit(1,'return result')
         source='\n'.join(lines)+'\n'
-        operands=[];handles={};constants={}
-        class BindOperands(python_ast.NodeTransformer):
-            def bind(self,value,handle=False):
-                key=id(value) if handle else (type(value),value)
-                mapping=handles if handle else constants
-                index=mapping.get(key)
-                if index is None:
-                    index=len(operands);operands.append(value);mapping[key]=index
-                return python_ast.Subscript(value=python_ast.Name(id='_p',ctx=python_ast.Load()),
-                    slice=python_ast.Constant(index),ctx=python_ast.Load())
-            def visit_Subscript(self,node):
-                if isinstance(node.value,python_ast.Name) and node.value.id=='_nodes':
-                    if not isinstance(node.slice,python_ast.Constant) or type(node.slice.value) is not int:
-                        raise UnsupportedTranslation('nonliteral block source handle')
-                    return self.bind(nodes[node.slice.value],True)
-                return self.generic_visit(node)
-            def visit_Tuple(self,node):
-                if all(isinstance(item,python_ast.Constant) for item in node.elts):
-                    return self.bind(tuple(item.value for item in node.elts))
-                return self.generic_visit(node)
-            def visit_Constant(self,node):return self.bind(node.value)
-        module=BindOperands().visit(python_ast.parse(source))
-        module.body[0].args.args.append(python_ast.arg(arg='_p'))
-        canonical=python_ast.unparse(python_ast.fix_missing_locations(module))+'\n'
-        canonical='\n'.join(' '*((len(line)-len(line.lstrip()))//4)+line.lstrip() for line in canonical.splitlines())+'\n'
+        source=source.replace('def translated(_s):','def translated(_s, _p):',1)
+        canonical,operands=bind_generated_source(source,nodes)
         # Count only source actually compiled, once per shared control shape.
         # The raw emitter above remains independently bounded per function.
         if len(canonical.encode())>max_function_bytes:raise UnsupportedTranslation('generated function source budget')

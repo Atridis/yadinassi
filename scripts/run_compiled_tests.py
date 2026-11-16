@@ -121,21 +121,24 @@ def main(argv=None):
                       'strict_rejections': active['strict_rejections'],
                       'legacy_visitor_calls': active['legacy_visitor_calls'],
                       'emitted_executions': 0, 'helper_executions': 0,
+                      'python_translated_blocks': 0, 'python_translated_nodes': 0,
                       'inline_blocks': 0, 'inline_fragments': 0, 'metadata_block_executions': 0, 'node_coverage_modes': [],
                       'rejected_units': 0, 'unsupported_executions': 0,
                       'interpreter_fallbacks': 0, 'node_kinds': {}, 'observed_execution_contracts': []}
             for identity, stats in active['engines']:
                 before = active['before'].get(identity, {})
                 activity = any(stats.get(key, 0) - before.get(key, 0) for key in
-                    ('emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments', 'metadata_block_executions',
+                    ('emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments', 'metadata_block_executions', 'python_translated_blocks',
                      'rejected_units', 'unsupported_executions', 'interpreter_fallbacks'))
-                if activity:
+                translated_nodes=sum(stats.get('python_translated_node_kinds',{}).values())-sum(before.get('python_translated_node_kinds',{}).values())
+                record['python_translated_nodes'] += translated_nodes
+                if activity or translated_nodes:
                     contract = {'owned_snapshot': stats.get('owned_snapshot', False),
                                 'origin_mutation_monitor': stats.get('origin_mutation_monitor', 'full'),
                                 'active_ast_contract': stats.get('active_ast_contract', 'fail-closed')}
                     if contract not in record['observed_execution_contracts']:
                         record['observed_execution_contracts'].append(contract)
-                for key in ('emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments', 'metadata_block_executions', 'rejected_units',
+                for key in ('emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments', 'metadata_block_executions', 'python_translated_blocks', 'rejected_units',
                             'unsupported_executions', 'interpreter_fallbacks'):
                     record[key] += stats.get(key, 0) - before.get(key, 0)
                 coverage = stats.get('node_coverage', 'observed')
@@ -145,7 +148,7 @@ def main(argv=None):
                     delta = count - before.get('node_kinds', {}).get(kind, 0)
                     if delta:
                         record['node_kinds'][kind] = record['node_kinds'].get(kind, 0) + delta
-            record['compiled_execution_observed'] = bool(record['emitted_executions'] or record['helper_executions'] or record['inline_blocks'] or record['inline_fragments'] or record['metadata_block_executions'])
+            record['compiled_execution_observed'] = bool(record['emitted_executions'] or record['helper_executions'] or record['inline_blocks'] or record['inline_fragments'] or record['metadata_block_executions'] or record['python_translated_blocks'] or record['python_translated_nodes'])
             records.append(record)
             args.report.parent.mkdir(parents=True, exist_ok=True)
             with args.report.with_suffix('.cases.jsonl').open('a', encoding='utf-8') as stream:
