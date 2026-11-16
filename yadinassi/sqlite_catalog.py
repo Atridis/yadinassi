@@ -1271,7 +1271,15 @@ class SQLiteCatalogBackend:
         return imported, catalogs, info, manifest
 
     @_boundary
+    def read_catalog_editor_source(self, catalog_id, *, expected=None):
+        """Form and optional write policy from one freshly verified SQL snapshot."""
+        return self._read_form_source(catalog_id, expected=expected, include_policy=True)
+
+    @_boundary
     def read_form_source(self, catalog_id, *, expected=None):
+        return self._read_form_source(catalog_id, expected=expected)
+
+    def _read_form_source(self, catalog_id, *, expected=None, include_policy=False):
         """Read only the declared DefaultObjectForm from one verified snapshot.
 
         The returned bytes are not executable authority. No transaction survives
@@ -1305,10 +1313,20 @@ class SQLiteCatalogBackend:
                     self.configuration_generation, config.source_digest, catalog.identity, form.identity)
                 if expected is not None and expected != identity: raise BackendError('schema_changed')
                 files = dict(config.files)
-                return CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
+                record = CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
                     catalog.path, form.path, form.definition_path, form.module_path,
                     files['Configuration.xml'], files[catalog.path], files[form.path],
                     files[form.definition_path], files.get(form.module_path,b''), form.module_path in files)
+                if not include_policy:
+                    return record
+                grant = next((g for g in config.catalog_handlers if g[0] == catalog_id), None)
+                policy = None
+                if grant is not None:
+                    raw = files[grant[1]]
+                    if hashlib.sha256(raw).hexdigest() != grant[2]:
+                        raise BackendError('integrity')
+                    policy = raw.decode('utf-8-sig')
+                return record, policy
             imported, catalogs, info, manifest = (self._business_source_snapshot(connection) if business else
                 self._demo_source_snapshot(connection) if self.storage_version == 6 else self._inert_source_snapshot(connection))
             if self.storage_version == 6 and catalog_id not in {s.identity for s in imported.catalogs}: raise BackendError('unsupported')
@@ -1319,10 +1337,20 @@ class SQLiteCatalogBackend:
             identity = ConfigurationSourceIdentity(self.database_id, imported.config_uuid, info[2], manifest, catalog.identity, form.identity)
             if expected is not None and expected != identity: raise BackendError('schema_changed')
             files = {f.path: f.content for f in imported.files}
-            return CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
+            record = CatalogFormSource(identity, catalog.name, form.name, catalog.default_object_form,
                 catalog.path, form.path, form.definition_path, form.module_path,
                 files['Configuration.xml'], files[catalog.path], files[form.path],
                 files[form.definition_path], files.get(form.module_path, b''), form.module_path in files)
+            if not include_policy:
+                return record
+            profile = _source_profile_for_issues(self.activation_issues)
+            policy = None
+            if business or (self.storage_version == 6 and profile in (
+                    DEMO_PRODUCTS_PROFILE, CATALOG_FORMS_PROFILE, APPLICATION_PROFILE)):
+                if profile != DEMO_PRODUCTS_PROFILE or catalog.name == 'Номенклатура':
+                    path = 'Catalogs/' + catalog.name + '/Ext/ObjectModule.bsl'
+                    policy = files[path].decode('utf-8-sig') if path in files else None
+            return record, policy
         finally: connection.close()
 
     @_boundary

@@ -84,7 +84,7 @@ class ImportedKindEditorTests(unittest.TestCase):
         self.change(' valid ')
         before = self.editor.snapshot()['fields']
         backend = self.context.backend
-        with mock.patch.object(backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+        with mock.patch.object(backend, 'read_catalog_editor_source', side_effect=BackendError('schema_changed')):
             with self.assertRaises(BackendError): self.change('other')
         with self.assertRaises(BackendError): self.change('another')
         self.assertEqual(self.editor.snapshot()['fields'], before)

@@ -168,9 +168,8 @@ class CatalogEditController:
         self._source_stale = False
         self._source_messages = ()
         if imported_form:
-            self._source_record = manager._backend.read_form_source(schema.identity)
-            self._product_source = manager._backend.catalog_write_preparation(
-                schema.identity, expected=self._source_record.identity)
+            self._source_record, self._product_source = manager._backend.read_catalog_editor_source(
+                schema.identity)
             if self._product_source is None:
                 if schema.fields or schema.tabular_sections:
                     raise BackendError('unsupported')
@@ -233,12 +232,11 @@ class CatalogEditController:
         if self._source_stale:
             raise BackendError('schema_changed')
         try:
-            current = self.manager._backend.read_form_source(
+            current, policy = self.manager._backend.read_catalog_editor_source(
                 self.schema.identity, expected=self._source_record.identity)
             if current != self._source_record:
                 raise BackendError('schema_changed')
-            if self._product_source is not None and self.manager._backend.catalog_write_preparation(
-                    self.schema.identity, expected=current.identity) != self._product_source:
+            if policy != self._product_source:
                 raise BackendError('schema_changed')
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):

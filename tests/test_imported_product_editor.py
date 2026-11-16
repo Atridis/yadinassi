@@ -122,7 +122,7 @@ class ImportedProductEditorTests(unittest.TestCase):
 
     def test_source_drift_preserves_scalar_and_row_buffer(self):
         self.valid(); before = self.editor.snapshot()
-        with patch.object(self.app.backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+        with patch.object(self.app.backend, 'read_catalog_editor_source', side_effect=BackendError('schema_changed')):
             with self.assertRaises(BackendError): self.change('Description', 'Another')
         with self.assertRaises(BackendError): self.row()
         after = self.editor.snapshot()
@@ -135,7 +135,7 @@ class ImportedProductEditorTests(unittest.TestCase):
         with patch.object(_View, 'commit', uncertain): self.save()
         self.assertTrue(self.editor.pending_commit)
         with patch.object(self.editor, '_product_event', side_effect=AssertionError('form replay')), \
-             patch.object(self.app.backend, 'catalog_write_preparation', side_effect=AssertionError('source replay')), \
+             patch.object(self.app.backend, 'read_catalog_editor_source', side_effect=AssertionError('source replay')), \
              patch.object(_View, 'commit', side_effect=AssertionError('second commit')):
             self.save()
         self.assertEqual(self.editor.save_state, 'saved')
@@ -286,7 +286,7 @@ class ImportedProductEditorTests(unittest.TestCase):
 
     def test_mark_source_drift_preserves_draft_and_saved_record(self):
         self.valid(); self.save(); before = self.stored(); fields = self.editor.snapshot()['fields']
-        with patch.object(self.app.backend, 'read_form_source', side_effect=BackendError('schema_changed')):
+        with patch.object(self.app.backend, 'read_catalog_editor_source', side_effect=BackendError('schema_changed')):
             with self.assertRaises(BackendError): self.change('DeletionMark', True)
         self.assertEqual(self.editor.snapshot()['fields'], fields)
         self.assertEqual(self.stored(), before)

@@ -266,6 +266,10 @@ class CatalogWriteTransaction(CatalogReadView, Protocol):
 
 
 class CatalogBackend(Protocol):
+    def read_catalog_editor_source(self, catalog_id: UUID, *, expected=None):
+        """Optional coherent source-pair capability; never synthesize two reads."""
+        raise BackendError('unsupported')
+
     def catalog_write_preparation(self, catalog_id: UUID, *, expected=None) -> str | None:
         """Optional bounded host write policy; ordinary adapters have none."""
         return None
