@@ -531,7 +531,20 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
         # Deliberately drop object navigation/data identity from original records.
         records.append(FormEventMessage(record.text, record.field))
 
-    program = parse(form_source.decode('utf-8-sig'))
+    from .execution_policy import current_backend
+    if current_backend() == 'python-direct':
+        # Source/schema/target/current-row checks above remain live. Retain only
+        # privately parsed syntax, not receiver state, controls or closures.
+        manager = receiver._manager
+        key = (form_source, '<строка>', 'standalone')
+        previous = getattr(manager, '_direct_product_program', None)
+        if previous is None or previous[0] != key:
+            program = parse(form_source.decode('utf-8-sig'))
+            previous = (key, tuple(program))
+            manager._direct_product_program = previous
+        program = list(previous[1])
+    else:
+        program = parse(form_source.decode('utf-8-sig'))
     routine = next(node for node in program if node.name == handlers[event])
     vm = ProductInterpreter(receiver, sink, object_source)
     try:
