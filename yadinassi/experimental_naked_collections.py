@@ -574,9 +574,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     return '(_native_method_missing('+guarded+', '+repr(callee.name)+') if id(type(('+guarded+' := '+original_obj+'))) in _NATIVE_COLLECTION_IDS else '+host+')'
                 if method=='find' and 'typed_find' in repairs:return route('_typed_find('+obj+', '+', '.join(args)+')')
                 if method in ('add','clear','find'):
-                    if method=='add' and not args:args=['None']
+                    native_args=['None'] if method=='add' and not args else args
                     target={'add':'append','clear':'clear','find':'index'}[method]
-                    return route('('+obj+').'+target+'('+', '.join(args)+')')
+                    return route('('+obj+').'+target+'('+', '.join(native_args)+')')
                 if method in ('count','ubound') and not args:
                     count='(len('+obj+')'+(' - 1' if method=='ubound' else '')+')'
                     if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:count='Decimal('+count+')'

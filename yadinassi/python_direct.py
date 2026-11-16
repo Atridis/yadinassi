@@ -48,11 +48,15 @@ def admit(vm,program):
     from . import safe_mode, source_transactions, database_transactions
     if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None or database_transactions._execution.get() is not None:
         _reject('application safe-mode/transaction contexts are not integrated')
-    if (vm._configuration_runtime is not None or vm.database_context is not None
+    if (vm._configuration_runtime is not None
             or vm._family_owner is not vm or vm.locals is not None
             or not vm._has_module_context or vm.execution_context!='client'
             or vm.compilation_profile!='standalone'):
         _reject('configuration/database/server/NoContext contexts are not integrated')
+    if vm.database_context is not None:
+        from .database_context import SQLiteDBContext
+        if type(vm.database_context) is not SQLiteDBContext:
+            _reject("direct database requires host-selected SQLiteDBContext")
     if vm._scheduler.is_active or vm._scheduler.pending or getattr(vm,'_direct_active',False):
         _reject('nested or asynchronous execution is not integrated')
     if vm.imports or vm.routines or vm.server_routines or vm._invocation_bindings:
@@ -118,7 +122,8 @@ def _compile(vm,program,nodes,source_text,source_name):
         source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
     try:
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
-                     module_names=tuple(vm.module_names),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
+                     module_names=tuple(vm.module_names),
+                     external_names=("catalogs","справочники") if vm.database_context is not None else (),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
     return plan
@@ -181,12 +186,14 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from .native_targets import target_context
     from .execution_policy import execution_backend_policy
     plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
-    class DirectBoundary(BoundaryContext):
+    from .python_direct_database import CatalogBoundary
+    database = vm.database_context
+    class DirectBoundary(CatalogBoundary, BoundaryContext):
         def _check(self):
             super()._check()
             if vm._family_closed:
                 raise BoundaryViolation('python-direct interpreter was closed during execution')
-            if (vm._configuration_runtime is not None or vm.database_context is not None
+            if (vm._configuration_runtime is not None or vm.database_context is not database
                     or vm.locals is not None or not vm._has_module_context
                     or vm.execution_context!='client'
                     or safe_mode._CURRENT.get() is not None
@@ -194,10 +201,13 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                     or database_transactions._execution.get() is not None):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
     context=DirectBoundary(services=vm.functions)
+    context.vm=vm
     # Preserve live registry updates at subsequent host boundaries, not a copy.
     context._services=vm.functions
     vm.module_names.update(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
     vm._direct_routine_names=getattr(vm,'_direct_routine_names',set())|routines
+    previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
+    if database is not None:vm._transaction_activation_allowed=False
     vm._direct_active=True
     try:
         with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
@@ -209,3 +219,4 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
         return None if result is vm.variables else result
     finally:
         vm._direct_active=False
+        vm._transaction_activation_allowed=previous_transactions

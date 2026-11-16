@@ -295,7 +295,13 @@ class ConfigurationApplication:
             self.bind_interpreter(child)
             if side == 'server':
                 child._logical_side = 'server'
-            child.execute_program(program)  # declarations only; validated above
+            if child.execution_backend == 'python-direct':
+                from .python_direct_configuration import install
+                if self._definitions[name].return_values_reuse != 'DontUse':
+                    raise ValueError('direct common-module reuse is not connected')
+                install(self, child, program, sources[self._definitions[name].path].decode('utf-8-sig'))
+            else:
+                child.execute_program(program)  # declarations only; validated above
             self._modules[name, side] = child._self_module
             definition = self._definitions[name]
             if definition.return_values_reuse != 'DontUse':
@@ -325,6 +331,8 @@ class ConfigurationApplication:
             for routine in self._session_program:
                 self._common_routines[id(routine)]=routine
                 self._declared_routines[id(routine)]=routine
+            if child.execution_backend == 'python-direct':
+                raise ValueError('direct session initialization is not connected')
             child.execute_program(self._session_program)  # declarations only
             self._session_owner=child
         # Application exports are visible to the same logical client context.
@@ -380,6 +388,9 @@ class ConfigurationApplication:
     def _invoke_remote(self, owner, routine, values):
         if self.side != 'server' or self.state != 'running':
             raise ValueError('server application is not running')
+        if owner.execution_backend == 'python-direct':
+            from .python_direct_configuration import invoke_routine
+            return invoke_routine(self, owner, routine, values)
         arguments = [ast.Literal(routine.token, value) for value in values]
         with target_context(owner.native_target), localcontext():
             return owner._scheduler.run_inline(owner.call_routine(
@@ -531,6 +542,9 @@ class ConfigurationApplication:
         routine = self._events.get(event)
         if routine is None:
             return
+        if self.interpreter.execution_backend == 'python-direct':
+            from .python_direct_configuration import invoke_event
+            return invoke_event(self, routine, values)
         arguments = [ast.Attribute(routine.token, ast.Literal(routine.token, obj), name)
                      for obj, name in values]
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), arguments)
@@ -583,7 +597,11 @@ class ConfigurationApplication:
             if self.side == 'server':
                 self.state = 'running'
                 return True
-            self.interpreter.execute_program(self._program)
+            if self.interpreter.execution_backend == 'python-direct':
+                from .python_direct_configuration import install
+                install(self, self.interpreter, self._program)
+            else:
+                self.interpreter.execute_program(self._program)
             cancel = BSLStructure('Cancel', False)
             self._invoke('before_start', ((cancel, 'Cancel'),))
             if type(cancel.get_member('Cancel')) is not bool:

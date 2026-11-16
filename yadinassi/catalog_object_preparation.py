@@ -187,7 +187,8 @@ def validate_catalog_object_source(source, schema):
     """Pure conservative admission for the existing bounded preparation VM.
 
     Every branch is inspected; validation never runs a handler or writes data.
-    Runtime receiver/type/budget guards remain authoritative at each Write.
+    Runtime receiver/type and writer validation remain authoritative at each Write.
+    Legacy expression resource quotas are not part of the direct profile.
     """
     from dataclasses import fields
     if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
@@ -200,7 +201,8 @@ def validate_catalog_object_source(source, schema):
     if (len(entries) != 1 or entries[0].is_function or len(entries[0].parameters) != 1
             or entries[0].parameters[0].by_value or entries[0].parameters[0].default is not None):
         raise ValueError('catalog preparation: BeforeWrite reference parameter required')
-    members = _ALIASES | {f.name.casefold() for f in schema.fields}
+    members = _ALIASES | {f.name.casefold() for f in schema.fields} | {s.name.casefold() for s in schema.tabular_sections}
+    readable_members = members | {'linenumber','номерстроки'} | {f.name.casefold() for section in schema.tabular_sections for f in section.fields}
     functions = {'сокрлп', 'стрдлина', 'значениезаполнено', 'строка', 'формат'}
     routines = {n.name.casefold() for n in program}
     if len(routines) != len(program) or routines & (members | _SELF | functions):
@@ -216,7 +218,7 @@ def validate_catalog_object_source(source, schema):
                 raise ValueError('catalog preparation: unsupported node')
             if type(value) is ast.New and value.name.casefold() not in ('соответствие', 'сообщениепользователю'):
                 raise ValueError('catalog preparation: unsupported constructor')
-            if type(value) is ast.Attribute and value.name.casefold() not in members | _MESSAGE_FIELDS | _METHODS:
+            if type(value) is ast.Attribute and value.name.casefold() not in readable_members | _MESSAGE_FIELDS | _METHODS:
                 raise ValueError('catalog preparation: unavailable member')
             if type(value) is ast.Call:
                 callee = value.callee
@@ -269,10 +271,14 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None):
         if any(n.name.casefold() in vm.object_names | _SELF | set(vm.functions)
                for n in program):
             raise ValueError('catalog preparation: routine collision')
-        vm.execute_program(program)
-        vm.variables['отказ'] = cancel
-        vm.execute('ПередЗаписью(Отказ);')
-        result = vm.variables['отказ']
+        if vm.execution_backend == 'python-direct':
+            from .python_direct_catalog_preparation import run_catalog_preparation
+            result = run_catalog_preparation(source, program, vm, cancel)
+        else:
+            vm.execute_program(program)
+            vm.variables['отказ'] = cancel
+            vm.execute('ПередЗаписью(Отказ);')
+            result = vm.variables['отказ']
         if type(result) is not bool:
             raise ValueError('catalog preparation: Boolean cancellation required')
         return result, tuple(records)
