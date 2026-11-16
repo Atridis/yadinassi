@@ -1,7 +1,8 @@
 """Separate legacy oracle evidence and observed whole-program strict cases.
 
-Clean subprocess assertions are deliberately not compiled coverage. The original
-hybrid tests remain unchanged: observer-induced fallback is not relabelled green.
+Clean subprocess assertions are deliberately not compiled coverage. The legacy
+hybrid tests keep an explicit interpreter oracle: observer-induced fallback is
+not relabelled green.
 """
 import json
 from decimal import Decimal

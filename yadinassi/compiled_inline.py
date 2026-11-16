@@ -141,11 +141,15 @@ class Emitter:
         self.depth = 1
         self.bindings = {}
         self.serial = 0
+        self.local_names = []
         self.source_bytes = 0
 
     def temp(self, prefix='v'):
         self.serial += 1
-        return f'{prefix}{self.serial}'
+        name = f'{prefix}{self.serial}'
+        if prefix != 'b':
+            self.local_names.append(name)
+        return name
 
     def bind(self, value):
         name = self.temp('b'); self.bindings[name] = value
@@ -201,8 +205,19 @@ class Emitter:
         elif kind is ast.Assign and dict(data['target'].fields).get('name') is not None and data['target'].kind is ast.Name:
             name = self.bind(dict(data['target'].fields)['name'])
             self.line(f'if {ticket} is None:'); self.depth += 1
+            # Unlike a separate interpreter frame, an inline RHS leaves its
+            # Python locals alive until the whole block returns. Release only
+            # this RHS's compiler-owned temporaries after assignment, including
+            # exceptional exits; BSL variables/aliases retain their own values.
+            first_local = len(self.local_names)
+            self.line('try:'); self.depth += 1
             value = self.node(data['value'])
             self.line(f'engine.assign_value({name}, {value})'); self.depth -= 1
+            self.line('finally:'); self.depth += 1
+            rhs_locals = self.local_names[first_local:]
+            for offset in range(0, len(rhs_locals), 12):
+                self.line(' = '.join(rhs_locals[offset:offset + 12]) + ' = None')
+            self.depth -= 2
             self.line('else:'); self.depth += 1
             self.line(f'{result} = yield from vm.semantic_assign({handle})'); self.depth -= 1
         elif kind in _HELPERS:
@@ -343,8 +358,13 @@ class Emitter:
             error = self.temp('error'); self.line(f'except BaseException as {error}:'); self.depth += 1
             converted = self.temp('converted')
             self.line(f'{converted} = vm.compiled_exception({handle}, {error})')
+            # Exception traceback frames must not retain their own exception
+            # through this temporary (notably internal _Return with a resource).
+            self.line('try:'); self.depth += 1
             self.line(f'if {converted} is {error}: raise')
             self.line(f'raise {converted} from None'); self.depth -= 1
+            self.line('finally:'); self.depth += 1
+            self.line(f'{converted} = None'); self.depth -= 2
             self.line(f'if not engine._fast_ready: {result} = vm.compiled_after({handle}, {result})')
         self.depth -= 1
         self.line('finally:'); self.depth += 1

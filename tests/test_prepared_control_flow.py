@@ -1,4 +1,4 @@
-"""Prepared indexes retain mutable AST validation and task-local ownership."""
+"""Legacy mutable indexes and default snapshot control-flow versions."""
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
@@ -9,15 +9,17 @@ from yadinassi.syntax.parser import parse, prepare_control_flow, PreparedBlock
 
 
 class PreparedControlFlowTests(unittest.TestCase):
-    def vm(self, code=''):
+    # Tests inspecting _prepared_control_flow or live-origin invalidation select
+    # the legacy oracle explicitly. Generic async/server paths keep the default.
+    def vm(self, code='', *, backend=None):
         output=[]
-        vm=Interpreter(output.append)
+        vm=Interpreter(output.append, execution_backend=backend)
         self.addCleanup(vm.close)
         if code:vm.execute(code)
         return vm,output
 
     def test_thousand_calls_build_once_and_indexes_are_read_only(self):
-        vm,_=self.vm('Function P(Val X) Goto ~Done; Return 0; ~Done: Return X; EndFunction')
+        vm,_=self.vm('Function P(Val X) Goto ~Done; Return 0; ~Done: Return X; EndFunction', backend='interpreter')
         with patch('yadinassi.runtime.prepare_control_flow',wraps=prepare_control_flow) as build:
             self.assertEqual(vm.execute('For I=1 To 1000 Do R=P(I);EndDo;R'),Decimal(1000))
             self.assertEqual(build.call_count,1)
@@ -28,20 +30,20 @@ class PreparedControlFlowTests(unittest.TestCase):
 
     def test_label_and_goto_renames_revalidated_before_argument(self):
         for index in (0,1):
-            vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure')
+            vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure', backend='interpreter')
             vm.execute('P(0)')
             vm.routines['p'].body[index].name='Other'
             with self.subTest(index=index),self.assertRaises(BSLError):vm.execute('P(Message("bad"))')
             self.assertEqual(output,[])
 
-        vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure')
+        vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure', backend='interpreter')
         vm.execute('P(0)')
         vm.routines['p'].body[1].__class__=ast.Name
         with self.assertRaises(BSLError):vm.execute('P(Message("bad"))')
         self.assertEqual(output,[])
 
     def test_append_and_replace_and_reorder_invalidate_plan(self):
-        vm,_=self.vm('Function P() Return 1; EndFunction')
+        vm,_=self.vm('Function P() Return 1; EndFunction', backend='interpreter')
         self.assertEqual(vm.execute('P()'),Decimal(1));old=vm.routines['p']._prepared_control_flow
         vm.routines['p'].body[:]=parse('Function Q() Return 2; EndFunction')[0].body
         self.assertEqual(vm.execute('P()'),Decimal(2));self.assertIsNot(old,vm.routines['p']._prepared_control_flow)
@@ -54,7 +56,7 @@ class PreparedControlFlowTests(unittest.TestCase):
         self.assertEqual(vm.execute('P()'),Decimal(4))
 
     def test_nested_mutation_cannot_jump_into_inactive_block(self):
-        vm,output=self.vm('Procedure P(Val X) If True Then Goto ~Done; ~Done: EndIf; EndProcedure')
+        vm,output=self.vm('Procedure P(Val X) If True Then Goto ~Done; ~Done: EndIf; EndProcedure', backend='interpreter')
         vm.execute('P(0)')
         node=vm.routines['p'].body[0]
         node.otherwise.append(node.branches[0][1].pop())
@@ -62,7 +64,7 @@ class PreparedControlFlowTests(unittest.TestCase):
         self.assertEqual(output,[])
 
     def test_host_callback_mutation_between_calls_is_revalidated(self):
-        vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure')
+        vm,output=self.vm('Procedure P(Val X) Goto ~Done; ~Done: EndProcedure', backend='interpreter')
         def mutate():vm.routines['p'].body[0].name='Missing'
         vm.register_function('Mutate',mutate)
         with self.assertRaises(BSLError):vm.execute('P(0);Mutate();P(Message("bad"))')
@@ -70,7 +72,7 @@ class PreparedControlFlowTests(unittest.TestCase):
         self.assertNotIn(_CONTROL_FLOW_PLANS,vm._scheduler.active_context.state)
 
     def test_argument_mutation_also_checked_before_body(self):
-        vm,output=self.vm('Procedure P(Val X) Message("bad");Goto ~Done;~Done:EndProcedure')
+        vm,output=self.vm('Procedure P(Val X) Message("bad");Goto ~Done;~Done:EndProcedure', backend='interpreter')
         def mutate():vm.routines['p'].body[1].name='Missing'
         vm.register_function('Mutate',mutate)
         with self.assertRaises(BSLError):vm.execute('P(Mutate())')
@@ -81,20 +83,20 @@ class PreparedControlFlowTests(unittest.TestCase):
             def __eq__(self,other):raise AssertionError('equality')
             def __hash__(self):raise AssertionError('hash')
             def __deepcopy__(self,memo):raise AssertionError('copy')
-        vm,_=self.vm('Function P() Return Undefined; EndFunction')
+        vm,_=self.vm('Function P() Return Undefined; EndFunction', backend='interpreter')
         value=Payload();vm.routines['p'].body[0].value.value=value
         self.assertIs(vm.execute('P()'),value)
         self.assertIs(vm.execute('P()'),value)
 
     def test_redeclaration_owns_new_plan(self):
-        vm,_=self.vm('Function P() ~Done: Return 1; EndFunction')
+        vm,_=self.vm('Function P() ~Done: Return 1; EndFunction', backend='interpreter')
         vm.execute('P()');old=vm.routines['p']._prepared_control_flow
         vm.execute('Function P() ~Done: Return 2; EndFunction')
         self.assertEqual(vm.execute('P()'),Decimal(2))
         self.assertIsNot(vm.routines['p']._prepared_control_flow,old)
 
     def test_nested_loop_and_outward_jump_reuse_plan(self):
-        vm,_=self.vm('Function P() For I=1 To 10 Do If I=4 Then Goto ~Done;EndIf;EndDo;~Done: Return I;EndFunction')
+        vm,_=self.vm('Function P() For I=1 To 10 Do If I=4 Then Goto ~Done;EndIf;EndDo;~Done: Return I;EndFunction', backend='interpreter')
         with patch('yadinassi.runtime.prepare_control_flow',wraps=prepare_control_flow) as build:
             self.assertEqual(vm.execute('P()'),Decimal(4))
             self.assertEqual(build.call_count,1)
@@ -113,6 +115,31 @@ class PreparedControlFlowTests(unittest.TestCase):
         self.assertEqual(vm.execute('P()'),Decimal(7))
         self.assertEqual(vm.execute('P()'),Decimal(7))
         self.assertNotIn(_CONTROL_FLOW_PLANS,vm._scheduler.active_context.state)
+
+    def test_default_snapshot_freezes_control_flow_until_explicit_readmission(self):
+        vm, output = self.vm()
+        self.assertEqual(vm.execution_backend, 'compiled-strict')
+        self.assertEqual(vm.compiled_ast_contract, 'snapshot')
+        program = parse('Function P(Val X) Goto ~Done;Return 0;~Done:Return X;EndFunction')
+        vm.execute_program(program)
+        self.assertEqual(vm.execute('P(1)'), Decimal(1))
+        # Origin mutation must not change the retained code, even when performed
+        # by a host callback during argument evaluation.
+        def mutate():
+            program[0].body[0].name = 'Missing'
+            return Decimal(2)
+        vm.register_function('Mutate', mutate)
+        self.assertEqual(vm.execute('P(Mutate())'), Decimal(2))
+        self.assertEqual(output, [])
+        program[0].body[:] = parse('Function Q(Val X) Return X+10;EndFunction')[0].body
+        self.assertEqual(vm.execute('P(3)'), Decimal(3))
+        vm.execute_program(program)  # Explicit quiescent admission: new version.
+        self.assertEqual(vm.execute('P(3)'), Decimal(13))
+        stats = vm.compiled_backend_stats
+        self.assertEqual(stats['active_ast_contract'], 'snapshot')
+        self.assertEqual(stats['interpreter_fallbacks'], 0)
+        self.assertGreater(sum(stats[k] for k in
+            ('emitted_executions', 'inline_blocks', 'inline_fragments')), 0)
 
     def test_iterative_match_rejects_empty_child_replacement_and_new_branch(self):
         body = parse('If True Then Else EndIf;')

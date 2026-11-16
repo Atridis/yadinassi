@@ -424,8 +424,28 @@ def without_main_demo_assets_provenance(source):
     return source
 
 
+def without_explicit_oracle_backend(source):
+    """Exact test-only source inverse, never rewrite native capture or runtime."""
+    base = '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'
+    candidate = '4e909982a47aa0a34580e46d620f9e0d91f2b6d2cd8a17078910a89c489b4e12'
+    digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
+    if digest != candidate:
+        return source  # Historical layers reject unknown outer identities.
+    contract = json.loads((REPOSITORY / 'tests/native_default_backend_inverse.json').read_text(encoding='utf-8'))
+    if contract.get('base_sha256') != base or contract.get('candidate_sha256') != candidate:
+        raise AssertionError('explicit oracle inverse identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('explicit oracle inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != contract['base_sha256']:
+        raise AssertionError('explicit oracle inverse inner identity')
+    return source
+
+
 def without_compiled_backend_harness(source):
     """Exact source-only inverse of opt-in host execution; never rewrite native bytes."""
+    source = without_explicit_oracle_backend(source)
     base = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
     candidate = '958376c98dca682b77b5e8cc07e1e913a6d8b9118d2bde67652e039ff1505e5b'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()

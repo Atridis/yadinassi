@@ -16,8 +16,9 @@ class SQLiteHostInverseTests(unittest.TestCase):
         restored = history.without_sqlite_host_context(source)
         self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), contract['base_sha256'])
         self.assertEqual(history.without_sqlite_host_context(restored), restored)
+        oracle_source = history.without_explicit_oracle_backend(source)
         for edit in contract['edits']:
-            self.assertEqual(source.count(edit['new']), 1)
+            self.assertEqual(oracle_source.count(edit['new']), 1)
         self.assertEqual(history.without_collections_measurement_budget(source),
                          history.without_collections_measurement_budget(restored))
 
