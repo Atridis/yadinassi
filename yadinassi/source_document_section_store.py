@@ -8,6 +8,7 @@ from .source_constant_store import _json, _encode, _decode
 _MAX_ROWS=1000
 _MAX_SECTION_BYTES=262144
 _MAX_DOCUMENT_BYTES=1048576
+_MAX_STORAGE_BYTES=16777216
 _SECTION_DDL=(
  'CREATE TABLE source_document_section(document_identity TEXT NOT NULL, record_identity TEXT NOT NULL, section_identity TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(document_identity,record_identity,section_identity), FOREIGN KEY(document_identity,record_identity) REFERENCES source_document_record(document_identity,record_identity))',
 )
@@ -65,32 +66,97 @@ class SourceDocumentSectionStore(SourceDocumentStore):
         result.document_definitions,result.document_errors,result._document_rows=_definitions(source,enum_namespace,reference_scope)
     def verify_extra(self):
         super().verify_extra()
-        if self._connection.execute("SELECT count(*) FROM source_document_section WHERE typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(section_identity)!='text' OR length(CAST(section_identity AS BLOB))!=36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>262144").fetchone()[0]:raise ValueError('section storage bounds')
-        count,total=self._connection.execute('SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section').fetchone()
-        if count>160000 or total>16777216:raise ValueError('section aggregate storage bound')
+        # One scan supplies both malformed-row and aggregate bounds. Keep the
+        # malformed-row failure first, as before, and do not decode/cache here.
+        invalid,count,total=self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(section_identity)!='text' OR length(CAST(section_identity AS BLOB))!=36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>262144 THEN 1 ELSE 0 END),0),count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section").fetchone()
+        if invalid:raise ValueError('section storage bounds')
+        if count>160000 or total>_MAX_STORAGE_BYTES:raise ValueError('section aggregate storage bound')
     def _sections(self,definition,identity):
-        count,total=self._connection.execute('SELECT count(*),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_section WHERE document_identity=? AND record_identity=?',(str(definition.identity),str(identity))).fetchone()
-        if count!=len(definition.sections) or total>_MAX_DOCUMENT_BYTES:raise ValueError('document section inventory/byte bound')
-        rows=self._connection.execute('SELECT section_identity,payload FROM source_document_section WHERE document_identity=? AND record_identity=? ORDER BY section_identity',(str(definition.identity),str(identity))).fetchall()
+        # Fetch at most the declared inventory plus one: an extra row proves
+        # corruption without an aggregate pre-query or unbounded materialization.
+        rows=self._connection.execute('SELECT section_identity,payload FROM source_document_section WHERE document_identity=? AND record_identity=? ORDER BY section_identity LIMIT ?',(str(definition.identity),str(identity),len(definition.sections)+1)).fetchall()
         known={str(s.identity):s for s in definition.sections}
         if {r[0] for r in rows}!=set(known) or len(rows)!=len(known):raise ValueError('section inventory integrity')
         if sum(len(raw.encode()) for _,raw in rows)>_MAX_DOCUMENT_BYTES:raise ValueError('document section byte bound')
         result={known[sid].name.casefold():decode_section(known[sid],raw) for sid,raw in rows}
         if sum(map(len,result.values()))>_MAX_ROWS:raise ValueError('document section row bound')
         return result
+    def _validate_selection_sections(self,definition,identities,identity=None):
+        """One bounded ordered payload query, preserving every selected row check."""
+        sql='SELECT record_identity,section_identity,payload FROM source_document_section WHERE document_identity=?'
+        args=[str(definition.identity)]
+        if identity is not None:
+            sql+=' AND record_identity=?';args.append(str(identity))
+        sql+=' ORDER BY record_identity,section_identity LIMIT 160001'
+        payloads=self._connection.execute(sql,args)
+        try:self._validate_section_payloads(definition,identities,payloads)
+        finally:payloads.close()
+
+    def _validate_section_payloads(self,definition,identities,payloads):
+        from itertools import groupby
+        expected={str(value) for value in identities};seen=set()
+        known={str(section.identity):section for section in definition.sections}
+        total_count=0
+        for rid,rows in groupby(payloads,key=lambda row:row[0]):
+            if rid not in expected:raise ValueError('section foreign record integrity')
+            section_ids=set();size=0;row_count=0
+            for _,sid,raw in rows:
+                total_count+=1
+                if total_count>160000:raise ValueError('section aggregate storage bound')
+                if sid not in known or sid in section_ids:raise ValueError('section inventory integrity')
+                section_ids.add(sid)
+                if type(raw) is not str:raise ValueError('section payload integrity')
+                size+=len(raw.encode())
+                if size>_MAX_DOCUMENT_BYTES:raise ValueError('document section byte bound')
+                row_count+=len(decode_section(known[sid],raw))
+                if row_count>_MAX_ROWS:raise ValueError('document section row bound')
+            if section_ids!=set(known):raise ValueError('section inventory integrity')
+            seen.add(rid)
+        if known and seen!=expected:raise ValueError('document section inventory/byte bound')
+
     def validate_records(self):
         super().validate_records()
+        from .source_catalog_store import _MAX_RECORDS
         known={str(d.identity):d for d in self.document_definitions.values()}
-        for did,rid in self._connection.execute('SELECT document_identity,record_identity FROM source_document_record'):
-            self._sections(known[did],rid)
+        identities={};count=0
+        for did,rid in self._connection.execute('SELECT document_identity,record_identity FROM source_document_record LIMIT ?',(_MAX_RECORDS+1,)):
+            count+=1
+            if count>_MAX_RECORDS:raise ValueError('source document record bound')
+            if did not in known:raise ValueError('source document identity integrity')
+            identities.setdefault(did,[]).append(rid)
+        # One globally bounded ordered stream, even across many document families.
+        from itertools import groupby
+        payloads=self._connection.execute('SELECT document_identity,record_identity,section_identity,payload FROM source_document_section ORDER BY document_identity,record_identity,section_identity LIMIT 160001')
+        seen=set();total=0;total_bytes=0
+        def bounded():
+            nonlocal total,total_bytes
+            for row in payloads:
+                total+=1
+                if total>160000:raise ValueError('section aggregate storage bound')
+                if type(row[3]) is str:
+                    total_bytes+=len(row[3].encode())
+                    if total_bytes>_MAX_STORAGE_BYTES:raise ValueError('section aggregate storage bound')
+                yield row
+        try:
+            for did,rows in groupby(bounded(),key=lambda row:row[0]):
+                if did not in identities:raise ValueError('section foreign record integrity')
+                self._validate_section_payloads(known[did],identities[did],(row[1:] for row in rows))
+                seen.add(did)
+        finally:payloads.close()
+        for did in identities.keys()-seen:
+            self._validate_section_payloads(known[did],identities[did],())
         if self._connection.execute('PRAGMA foreign_key_check').fetchone() is not None:raise ValueError('section foreign key integrity')
     def read_documents(self,name,identity=None):
         owned=not self.transaction_active
         try:
-            if owned:self.begin_transaction()
+            if owned:
+                self._guard_transaction_restart()
+                self._open()
+                self._connection.execute('BEGIN')
+                self._explicit_transaction = True
             result=super().read_documents(name,identity)
             definition=self.document(name)
-            for rid,_,_ in result:self._sections(definition,rid)
+            self._validate_selection_sections(definition,(rid for rid,_,_ in result),identity)
             if owned:self.rollback_transaction()
             return result
         except BaseException:
@@ -98,7 +164,11 @@ class SourceDocumentSectionStore(SourceDocumentStore):
     def read_document_bundle(self,name,identity):
         owned=not self.transaction_active
         try:
-            if owned:self.begin_transaction()
+            if owned:
+                self._guard_transaction_restart()
+                self._open()
+                self._connection.execute('BEGIN')
+                self._explicit_transaction = True
             self._open()
             rid,revision,values=super().read_documents(name,identity)[0]
             sections=self._sections(self.document(name),rid)
@@ -119,8 +189,13 @@ class SourceDocumentSectionStore(SourceDocumentStore):
             if sum(len(raw.encode()) for _,raw in encoded)>_MAX_DOCUMENT_BYTES or sum(len(r) for r in sections.values())>_MAX_ROWS:raise ValueError('document section aggregate bound')
             if owned:self.begin_transaction()
             new_revision=super().write_document(name,identity,revision,values,_handled=_handled)
-            self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=?',(str(definition.identity),str(identity)))
-            self._connection.executemany('INSERT INTO source_document_section VALUES(?,?,?,?)',[(str(definition.identity),str(identity),sid,raw) for sid,raw in encoded])
+            owner=(str(definition.identity),str(identity))
+            if encoded:
+                placeholders=','.join('?' for _ in encoded)
+                self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=? AND section_identity NOT IN ('+placeholders+')',owner+tuple(sid for sid,_ in encoded))
+                self._connection.executemany('INSERT INTO source_document_section VALUES(?,?,?,?) ON CONFLICT(document_identity,record_identity,section_identity) DO UPDATE SET payload=excluded.payload WHERE source_document_section.payload!=excluded.payload',[owner+(sid,raw) for sid,raw in encoded])
+            else:
+                self._connection.execute('DELETE FROM source_document_section WHERE document_identity=? AND record_identity=?',owner)
             self._open();self._sections(definition,identity)
             if owned:self.commit_transaction()
             return new_revision

@@ -59,6 +59,9 @@ class _EnumBinding:
 
 
 def binding(scope, descriptor):
+    from .source_query_enums import SourceEnumScope
+    if type(scope) is SourceEnumScope:
+        return scope.domain(scope.require_descriptor(descriptor))
     descriptor = scope.require_descriptor(descriptor)
     typ = descriptor.value_type
     result = _EnumBinding(scope.catalogs, scope.binding, typ.metadata_uuid, typ,
@@ -69,6 +72,8 @@ def binding(scope, descriptor):
 
 def prepare_tables(tables, scope):
     """Reissue descriptors even for unused/empty columns before any statement."""
+    from .source_query_enums import SourceEnumScope
+    if type(scope) is SourceEnumScope:return scope.prepare_tables(tables)
     from .query_packages import _Table
     from .values import NULL
     result = {}

@@ -2,7 +2,7 @@
 import json
 import sqlite3
 from uuid import UUID
-from .source_catalog_store import SourceCatalogStore, _MAX_RECORDS, _MAX_RECORD_BYTES
+from .source_catalog_store import SourceCatalogStore, _MAX_RECORDS, _MAX_RECORD_BYTES, _record_identity
 from .source_constant_store import _json, _encode, _decode, _MAX_DATABASE_BYTES
 
 _HANDLED_DOCUMENT_WRITE = object()
@@ -73,25 +73,34 @@ class SourceDocumentStore(SourceCatalogStore):
         super().verify_extra()
         if self._connection.execute("SELECT count(*) FROM source_document_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>1024 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>65536").fetchone()[0]:
             raise ValueError('source document schema byte bound')
-        if self._connection.execute("SELECT count(*) FROM source_document_record WHERE typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992").fetchone()[0]:
+        # Collect both guards in one scan; retain the existing error order.
+        invalid, *counts = self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(document_identity)!='text' OR length(CAST(document_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(number)!='text' OR length(CAST(number AS BLOB))>36 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992 THEN 1 ELSE 0 END),0),count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_record").fetchone()
+        if invalid:
             raise ValueError('source document record storage bounds')
         if self._connection.execute('PRAGMA page_count').fetchone()[0]*self._connection.execute('PRAGMA page_size').fetchone()[0]>_MAX_DATABASE_BYTES:
             raise ValueError('source document database size bound')
         rows = tuple(self._connection.execute('SELECT identity,name,definition FROM source_document_schema ORDER BY identity LIMIT 4097'))
         if rows != self._document_rows:
             raise ValueError('source document schema binding integrity')
-        counts = self._connection.execute('SELECT count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_document_record').fetchone()
         if counts[0] > _MAX_RECORDS or counts[1] > 65536 or counts[2] > _MAX_RECORD_BYTES:
             raise ValueError('source document record bounds')
 
     def validate_records(self):
         super().validate_records()
         known = {str(d.identity):d for d in self.document_definitions.values()}
-        for cid, rid, rev, raw, number in self._connection.execute('SELECT document_identity,record_identity,revision,payload,number FROM source_document_record LIMIT ?', (_MAX_RECORDS+1,)):
-            if cid not in known or type(rid) is not str or str(UUID(rid)) != rid or UUID(rid).int == 0 or type(rev) is not int or not 1 <= rev <= 2**53:
-                raise ValueError('source document record identity/revision integrity')
-            if decode_record(known[cid], raw)['number'] != number:
-                raise ValueError('source document number integrity')
+        rows=self._connection.execute('SELECT document_identity,record_identity,revision,payload,number FROM source_document_record LIMIT ?', (_MAX_RECORDS+1,))
+        total_bytes=0
+        try:
+            for index,(cid,rid,rev,raw,number) in enumerate(rows):
+                if index>=_MAX_RECORDS:raise ValueError('source document record bound')
+                if cid not in known:raise ValueError('source document record identity/revision integrity')
+                _record_identity(rid,rev,'document')
+                if type(raw) is str:
+                    total_bytes+=len(raw.encode())
+                    if total_bytes>_MAX_RECORD_BYTES:raise ValueError('source document record bounds')
+                if decode_record(known[cid],raw)['number']!=number:
+                    raise ValueError('source document number integrity')
+        finally:rows.close()
 
     def document(self, name):
         if type(name) is not str:
@@ -102,11 +111,6 @@ class SourceDocumentStore(SourceCatalogStore):
             return self.document_definitions[name.casefold()]
         except KeyError:
             raise ValueError('unknown source document: '+name) from None
-
-    def _abort(self):
-        if self._connection.in_transaction:
-            self._connection.execute('ROLLBACK')
-        self._explicit_transaction = False
 
     def read_documents(self, name, identity=None):
         definition = self.document(name)
@@ -119,15 +123,17 @@ class SourceDocumentStore(SourceCatalogStore):
             if identity is not None:
                 sql += ' AND record_identity=?'; args.append(str(identity))
             sql += ' ORDER BY record_identity LIMIT ?';args.append(_MAX_RECORDS+1)
-            rows = self._connection.execute(sql, args).fetchall()
-            if len(rows)>_MAX_RECORDS:raise ValueError('source document record bound')
+            rows = self._connection.execute(sql, args)
             result=[]
-            for rid,rev,raw,number in rows:
-                if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
-                    raise ValueError('source document record identity/revision integrity')
-                values=decode_record(definition,raw)
-                if values['number']!=number:raise ValueError('source document number integrity')
-                result.append((UUID(rid),rev,values))
+            try:
+                for index,(rid,rev,raw,number) in enumerate(rows):
+                    if index>=_MAX_RECORDS:raise ValueError('source document record bound')
+                    parsed_identity=_record_identity(rid,rev,'document')
+                    values=decode_record(definition,raw)
+                    if values['number']!=number:raise ValueError('source document number integrity')
+                    result.append((parsed_identity,rev,values))
+            finally:
+                rows.close()
             if identity is not None and not result:raise ValueError('source document record not found')
             if owned:self._connection.execute('ROLLBACK')
             return result
@@ -138,7 +144,8 @@ class SourceDocumentStore(SourceCatalogStore):
         definition=self.document(name)
         owned=not self.transaction_active
         try:
-            if definition.write_blockers:raise ValueError('source document Write unsupported events: '+','.join(definition.write_blockers))
+            blockers=tuple(b for b in definition.write_blockers if b!='onread')
+            if blockers:raise ValueError('source document Write unsupported events: '+','.join(blockers))
             if definition.object_module is not None and _handled is not _HANDLED_DOCUMENT_WRITE:
                 raise ValueError('direct document ObjectModule write requires handler execution')
             raw=encode_record(definition,values)

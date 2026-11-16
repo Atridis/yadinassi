@@ -13,6 +13,16 @@ _HANDLED_CATALOG_WRITE = object()
 _MAX_RECORD_BYTES = 16 * 1024 * 1024
 
 
+def _record_identity(raw,revision,family):
+    """Decode once, retaining canonical/nonempty identity and exact revision rules."""
+    error='source '+family+' record identity/revision integrity'
+    if type(raw) is not str:raise ValueError(error)
+    identity=UUID(raw)
+    if str(identity)!=raw or identity.int==0 or type(revision) is not int or not 1<=revision<=2**53:
+        raise ValueError(error)
+    return identity
+
+
 def _definitions(source, enums=None, refs=None):
     from .source_catalog_definitions import source_catalog_definitions, catalog_definition_record
     definitions, errors = source_catalog_definitions(source, enums, refs)
@@ -54,11 +64,14 @@ def decode_record(definition, raw):
 class SourceCatalogStore(SourceConstantStore):
     PROFILE = 'source-catalog-records-v4'
 
-    def begin_transaction(self):
+    def _guard_transaction_restart(self):
         from .source_catalog_runtime import _active_write, _constructing
         from .source_document_runtime import _active_write as document_write, _constructing as document_construction
         if (_active_write.get() or _constructing.get() or document_write.get() or document_construction.get()) and not self.transaction_active:
             raise ValueError('catalog lifecycle transaction aborted; cannot restart')
+
+    def begin_transaction(self):
+        self._guard_transaction_restart()
         return super().begin_transaction()
 
     @staticmethod
@@ -95,14 +108,15 @@ class SourceCatalogStore(SourceConstantStore):
     def verify_extra(self):
         if self._connection.execute("SELECT count(*) FROM source_catalog_schema WHERE typeof(identity)!='text' OR length(CAST(identity AS BLOB))!=36 OR typeof(name)!='text' OR length(CAST(name AS BLOB))>1024 OR typeof(definition)!='text' OR length(CAST(definition AS BLOB))>65536").fetchone()[0]:
             raise ValueError('source catalog schema byte bound')
-        if self._connection.execute("SELECT count(*) FROM source_catalog_record WHERE typeof(catalog_identity)!='text' OR length(CAST(catalog_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(code)!='text' OR length(CAST(code AS BLOB))>256 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992").fetchone()[0]:
+        # Collect both guards in one scan; retain the existing error order.
+        invalid, *counts = self._connection.execute("SELECT coalesce(sum(CASE WHEN typeof(catalog_identity)!='text' OR length(CAST(catalog_identity AS BLOB))!=36 OR typeof(record_identity)!='text' OR length(CAST(record_identity AS BLOB))!=36 OR typeof(code)!='text' OR length(CAST(code AS BLOB))>256 OR typeof(payload)!='text' OR length(CAST(payload AS BLOB))>65536 OR typeof(revision)!='integer' OR revision<1 OR revision>9007199254740992 THEN 1 ELSE 0 END),0),count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_catalog_record").fetchone()
+        if invalid:
             raise ValueError('source catalog record storage bounds')
         if self._connection.execute('PRAGMA page_count').fetchone()[0]*self._connection.execute('PRAGMA page_size').fetchone()[0]>_MAX_DATABASE_BYTES:
             raise ValueError('source catalog database size bound')
         rows = tuple(self._connection.execute('SELECT identity,name,definition FROM source_catalog_schema ORDER BY identity LIMIT 4097'))
         if rows != self._catalog_rows:
             raise ValueError('source catalog schema binding integrity')
-        counts = self._connection.execute('SELECT count(*),coalesce(max(length(CAST(payload AS BLOB))),0),coalesce(sum(length(CAST(payload AS BLOB))),0) FROM source_catalog_record').fetchone()
         if counts[0] > _MAX_RECORDS or counts[1] > 65536 or counts[2] > _MAX_RECORD_BYTES:
             raise ValueError('source catalog record bounds')
 
@@ -122,11 +136,19 @@ class SourceCatalogStore(SourceConstantStore):
 
     def validate_records(self):
         known = {str(d.identity):d for d in self.catalog_definitions.values()}
-        for cid, rid, rev, raw, code in self._connection.execute('SELECT catalog_identity,record_identity,revision,payload,code FROM source_catalog_record LIMIT ?', (_MAX_RECORDS+1,)):
-            if cid not in known or type(rid) is not str or str(UUID(rid)) != rid or UUID(rid).int == 0 or type(rev) is not int or not 1 <= rev <= 2**53:
-                raise ValueError('source catalog record identity/revision integrity')
-            if decode_record(known[cid], raw)['code'] != code:
-                raise ValueError('source catalog code integrity')
+        rows=self._connection.execute('SELECT catalog_identity,record_identity,revision,payload,code FROM source_catalog_record LIMIT ?', (_MAX_RECORDS+1,))
+        total_bytes=0
+        try:
+            for index,(cid,rid,rev,raw,code) in enumerate(rows):
+                if index>=_MAX_RECORDS:raise ValueError('source catalog record bound')
+                if cid not in known:raise ValueError('source catalog record identity/revision integrity')
+                _record_identity(rid,rev,'catalog')
+                if type(raw) is str:
+                    total_bytes+=len(raw.encode())
+                    if total_bytes>_MAX_RECORD_BYTES:raise ValueError('source catalog record bounds')
+                if decode_record(known[cid],raw)['code']!=code:
+                    raise ValueError('source catalog code integrity')
+        finally:rows.close()
 
     def catalog(self, name):
         if type(name) is not str:
@@ -139,9 +161,7 @@ class SourceCatalogStore(SourceConstantStore):
             raise ValueError('unknown source catalog: '+name) from None
 
     def _abort(self):
-        if self._connection.in_transaction:
-            self._connection.execute('ROLLBACK')
-        self._explicit_transaction = False
+        self._abort_transaction()
 
     def read_records(self, name, identity=None):
         definition = self.catalog(name)
@@ -154,15 +174,17 @@ class SourceCatalogStore(SourceConstantStore):
             if identity is not None:
                 sql += ' AND record_identity=?'; args.append(str(identity))
             sql += ' ORDER BY record_identity LIMIT ?';args.append(_MAX_RECORDS+1)
-            rows = self._connection.execute(sql, args).fetchall()
-            if len(rows)>_MAX_RECORDS:raise ValueError('source catalog record bound')
+            rows = self._connection.execute(sql, args)
             result=[]
-            for rid,rev,raw,code in rows:
-                if type(rid) is not str or str(UUID(rid))!=rid or UUID(rid).int==0 or type(rev) is not int or not 1<=rev<=2**53:
-                    raise ValueError('source catalog record identity/revision integrity')
-                values=decode_record(definition,raw)
-                if values['code']!=code:raise ValueError('source catalog code integrity')
-                result.append((UUID(rid),rev,values))
+            try:
+                for index,(rid,rev,raw,code) in enumerate(rows):
+                    if index>=_MAX_RECORDS:raise ValueError('source catalog record bound')
+                    parsed_identity=_record_identity(rid,rev,'catalog')
+                    values=decode_record(definition,raw)
+                    if values['code']!=code:raise ValueError('source catalog code integrity')
+                    result.append((parsed_identity,rev,values))
+            finally:
+                rows.close()
             if identity is not None and not result:raise ValueError('source catalog record not found')
             if owned:self._connection.execute('ROLLBACK')
             return result

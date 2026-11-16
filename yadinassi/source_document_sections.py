@@ -4,7 +4,7 @@ from .values import BSLObject,HostFunction
 from .source_constant_store import _encode
 from .source_document_section_store import _MAX_ROWS,_MAX_DOCUMENT_BYTES
 
-_METHODS={'add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete'}
+_METHODS={'groupby':'groupby','свернуть':'groupby','sort':'sort','сортировать':'sort','total':'total','итог':'total','find':'find','найти':'find','findrows':'findrows','найтистроки':'findrows','insert':'insert','вставить':'insert','move':'move','сдвинуть':'move','indexof':'indexof','индекс':'indexof','add':'add','добавить':'add','get':'get','получить':'get','count':'count','количество':'count','clear':'clear','очистить':'clear','delete':'delete','удалить':'delete','unload':'unload','выгрузить':'unload','load':'load','загрузить':'load','unloadcolumn':'unloadcolumn','выгрузитьколонку':'unloadcolumn','loadcolumn':'loadcolumn','загрузитьколонку':'loadcolumn','fillvalues':'fillvalues','заполнитьзначения':'fillvalues'}
 
 def _index(value,length):
     if type(value) is not Decimal or not value.is_finite() or value!=value.to_integral_value() or not 0<=value<length:raise ValueError('section index requires bounded integer Number')
@@ -74,6 +74,50 @@ class SourceDocumentSectionCall:
     def __call__(self,*args):raise ValueError('section methods require interpreter invocation')
     def invoke(self,caller,values):
         section=self.section;section.authorize(caller);op=self.operation
+        if op=='groupby':
+            from .source_section_tables import group_rows
+            return group_rows(caller,section,values)
+        if op in ('sort','total'):
+            from .source_section_tables import order_or_total
+            return order_or_total(caller,section,op,values)
+        if op in ('find','findrows'):
+            from .source_section_tables import search
+            return search(caller,section,op,values)
+        if op in ('insert','move','indexof'):
+            expected=2 if op=='move' else 1
+            if len(values)!=expected:raise TypeError('section row operation arity')
+            if op=='insert':
+                index=_index(values[0],len(section.rows)+1)
+                row=SourceDocumentRow(section,{})
+                section.rows.insert(index,row)
+                try:section.buffer_bound()
+                except BaseException:section.rows.pop(index);row.live=False;raise
+                section.version+=1;return row
+            value=values[0]
+            if type(value) is SourceDocumentRow:
+                value.authorize(caller)
+                if value.section is not section:raise ValueError('row belongs to another section')
+                index=section.rows.index(value)
+            elif op=='move':index=_index(value,len(section.rows))
+            else:raise TypeError('section IndexOf requires owned live row')
+            if op=='indexof':return Decimal(index)
+            offset=values[1]
+            if type(offset) is not Decimal or not offset.is_finite() or offset!=offset.to_integral_value():raise ValueError('section offset requires integer Number')
+            target=_index(Decimal(index)+offset,len(section.rows))
+            if target!=index:
+                section.rows.insert(target,section.rows.pop(index));section.version+=1
+            return None
+        if op in ('unloadcolumn','loadcolumn','fillvalues'):
+            from .source_section_tables import column_operation
+            return column_operation(caller,section,op,values)
+        if op=='unload':
+            if values:raise TypeError('source section Unload takes no arguments')
+            from .source_section_tables import unload
+            return unload(caller,section)
+        if op=='load':
+            if len(values)!=1:raise TypeError('source section Load requires one complete ValueTable')
+            from .source_section_tables import load
+            return load(caller,section,values[0])
         if op in ('get','delete'):
             if len(values)!=1:raise TypeError('section method requires one argument')
         elif values:raise TypeError('section method takes no arguments')

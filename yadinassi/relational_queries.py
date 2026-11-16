@@ -136,7 +136,10 @@ class _Plan:
         self.information_registers = information_registers
         from .inventory_enum_runtime import query_binding
         self.enum_scope = enum_scope
-        self.enum_binding=query_binding(catalogs)
+        from .source_query_enums import SourceEnumScope
+        self._source_enum = type(enum_scope) is SourceEnumScope
+        if self._source_enum: enum_scope.require_query(query)
+        self.enum_binding = enum_scope.binding if self._source_enum else query_binding(catalogs)
         for value in parameters.values():
             if type(value) is BSLEnumReference:
                 if self.enum_binding is None:raise ValueError('Enum parameters require the explicit inventory enum profile')
@@ -466,7 +469,7 @@ class _Plan:
             if self.enum_scope is None:
                 raise ValueError('Enum membership is outside this profile')
             return self.enum_membership(node, left)
-        if self.enum_scope is not None:
+        if self.enum_scope is not None and not self._source_enum:
             raise ValueError('Direct enum reporting membership requires an enum operand')
         plan, constant = None, False
         if type(node.values) is syntax.Select or type(node.values) is syntax.Union:
@@ -474,7 +477,7 @@ class _Plan:
             options = {'allow_null': True} if plan_type is _Plan else {}
             plan = plan_type(node.values, self.catalogs, self.parameters, self.temporary_tables,
                              self.external_tables, documents=self.documents,
-                             information_registers=self.information_registers, condition_budget=self.condition_budget, **options)
+                             information_registers=self.information_registers, enum_scope=self.enum_scope if self._source_enum else None, condition_budget=self.condition_budget, **options)
             if len(plan.columns) != 1: raise ValueError('IN subquery requires exactly one column')
             values = ()
             right = plan.columns[0]
@@ -515,6 +518,8 @@ class _Plan:
         if type(node.values) in (syntax.Select, syntax.Union):
             plan_type = _UnionPlan if type(node.values) is syntax.Union else _Plan
             options = {'allow_null': True} if plan_type is _Plan else {}
+            if self._source_enum:
+                options.update(temporary_tables=self.temporary_tables,external_tables=self.external_tables)
             plan = plan_type(node.values, self.catalogs, self.parameters,
                 documents=self.documents, information_registers=self.information_registers,
                 enum_scope=scope, condition_budget=self.condition_budget, **options)
@@ -970,7 +975,8 @@ class _Plan:
             from contextlib import nullcontext
             from .inventory_enum_runtime import read_snapshot
             witness=(read_snapshot(self.catalogs._metadata._root,view)
-                     if self.enum_binding is not None else nullcontext())
+                     if self.enum_binding is not None and not self._source_enum else nullcontext())
+            if self._source_enum:self.enum_scope.require_current()
             with witness:
                 self.prepare_memberships(view, budget)
                 self.prepare_hierarchies(view, budget)

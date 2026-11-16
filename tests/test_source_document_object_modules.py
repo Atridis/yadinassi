@@ -90,7 +90,7 @@ class SourceDocumentModuleTests(unittest.TestCase):
     def test_moduleless_schema_unchanged(self):
         from yadinassi.source_document_definitions import document_definition_record
         defs,_=source_document_definitions(document.package());self.assertEqual(len(document_definition_record(defs['invoice'])),3)
-    def test_onread_never_silently_skipped(self):
+    def test_missing_object_never_fires_onread(self):
         module='Procedure OnRead() Message("bad"); EndProcedure'
-        _,out=self.run_body(module,'D=Documents.Invoice.CreateDocument(); Try D.Read(); Except Message("read-unsupported"); EndTry; Try Documents.Invoice.EmptyRef().GetObject(); Except Message("load-unsupported"); EndTry;')
-        self.assertEqual(out,['read-unsupported','load-unsupported'])
+        _,out=self.run_body(module,'D=Documents.Invoice.CreateDocument(); Try D.Read(); Except Message("read-missing"); EndTry; Try Documents.Invoice.EmptyRef().GetObject(); Except Message("load-missing"); EndTry;')
+        self.assertEqual(out,['read-missing','load-missing'])

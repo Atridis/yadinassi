@@ -224,6 +224,20 @@ class SourceConstantStore:
     def transaction_active(self):
         return not self._closed and self._explicit_transaction
 
+    def _abort_transaction(self):
+        """Retire the handle if SQLite cannot confirm rollback; never reuse it."""
+        try:
+            if not self._closed and (self._explicit_transaction or self._connection.in_transaction):
+                self._connection.execute('ROLLBACK')
+        except sqlite3.Error:
+            # Mark closed before close(), even if the driver itself cannot close.
+            # A failed rollback must not become an apparently usable new session.
+            try:self.close()
+            except sqlite3.Error:pass
+            raise ValueError('source transaction rollback failed; store closed') from None
+        finally:
+            self._explicit_transaction = False
+
     def begin_transaction(self):
         self._open()
         if self._explicit_transaction:
@@ -233,8 +247,7 @@ class SourceConstantStore:
             self._open()
             self._explicit_transaction = True
         except BaseException:
-            if self._connection.in_transaction:
-                self._connection.execute("ROLLBACK")
+            self._abort_transaction()
             raise
 
     def commit_transaction(self):
@@ -244,8 +257,7 @@ class SourceConstantStore:
             self._open()
             self._connection.execute("COMMIT")
         except BaseException:
-            if self._connection.in_transaction:
-                self._connection.execute("ROLLBACK")
+            self._abort_transaction()
             raise
         finally:
             self._explicit_transaction = False
@@ -253,10 +265,7 @@ class SourceConstantStore:
     def rollback_transaction(self):
         if not self.transaction_active:
             raise ValueError("no active source transaction")
-        try:
-            self._connection.execute("ROLLBACK")
-        finally:
-            self._explicit_transaction = False
+        self._abort_transaction()
 
     @classmethod
     def create(cls, path, source, *, enum_namespace=None, reference_scope=None):
@@ -570,8 +579,8 @@ class SourceConstantStore:
                 raise ValueError('source extension registry storage failure') from None
             raise
         finally:
-            if owned and self._connection.in_transaction:
-                self._connection.execute('ROLLBACK')
+            if owned:
+                self._abort_transaction()
 
     def has(self, name):
         self._open()
@@ -611,8 +620,8 @@ class SourceConstantStore:
                 raise ValueError('source constants storage failure') from None
             raise
         finally:
-            if owned and self._connection.in_transaction:
-                self._connection.execute('ROLLBACK')
+            if owned:
+                self._abort_transaction()
 
     def set(self, name, value):
         return self._set(name, value, handled=False)
@@ -637,9 +646,7 @@ class SourceConstantStore:
             if owned:
                 self._connection.execute('COMMIT')
         except BaseException as error:
-            if self._connection.in_transaction:
-                self._connection.execute('ROLLBACK')
-            self._explicit_transaction = False
+            self._abort_transaction()
             if isinstance(error, sqlite3.Error):
                 raise ValueError('source constants storage failure') from None
             raise
@@ -684,8 +691,8 @@ class SourceConstantStore:
                 raise ValueError('source constants storage failure') from None
             raise
         finally:
-            if owned and self._connection.in_transaction:
-                self._connection.execute('ROLLBACK')
+            if owned:
+                self._abort_transaction()
 
     def set_many(self, values):
         """Atomic batch; never commit an enclosing explicit transaction."""
@@ -703,6 +710,7 @@ class SourceConstantStore:
             raise
 
     def close(self):
+        self._explicit_transaction = False
         if not self._closed:
             self._closed = True
             self._connection.close()

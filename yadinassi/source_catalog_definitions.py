@@ -145,7 +145,7 @@ def source_catalog_definitions(source, enum_namespace=None, reference_scope=None
 
 
 _EVENT_NAMES = (('beforewrite','передзаписью'), ('onwrite','призаписи'))
-_UNSUPPORTED_EVENTS = {'fillcheckprocessing','обработкапроверкизаполнения','onread','причтении',
+_UNSUPPORTED_EVENTS = {'fillcheckprocessing','обработкапроверкизаполнения',
     'beforedelete','передудалением','oncopy','прикопировании','filling','fillingprocessing','обработказаполнения',
     'choiceprocessing','обработкавыбора','presentationgetprocessing','обработкаполученияпредставления'}
 
@@ -173,4 +173,8 @@ def catalog_module_program(raw,path,fields):
             r=matches[0]
             if r.is_function or len(r.parameters)!=1 or r.parameters[0].by_value or r.parameters[0].default is not None:
                 raise ValueError('unsupported catalog event signature')
+    matches=[r for r in routines if r.name.casefold() in ('onread','причтении')]
+    if len(matches)>1:raise ValueError('ambiguous catalog read event')
+    if matches and (matches[0].is_function or matches[0].parameters):
+        raise ValueError('unsupported catalog read event signature')
     return program
