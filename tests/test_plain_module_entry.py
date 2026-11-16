@@ -56,8 +56,16 @@ class PlainModuleEntryTests(unittest.TestCase):
   self.assertFalse(p.storage_eligible({Key('n'):Decimal(2)},{}));self.assertFalse(p.storage_eligible({'n':object()},{}));self.assertEqual(events,[])
   with self.assertRaises(Ineligible):self.plan('ThisObject=1;')
  def test_opaque_rejects_whole_body(self):
-  for s in ('x=1;Message(x);','x=1;Execute "x=2;";','x=1;Try x=2;Except EndTry;','x=1;Goto ~Done;~Done:x=2;','Function F() Return 1;EndFunction x=1;'):
+  for s in ('x=1;Message(x);','x=1;Execute "x=2;";','x=1;Goto ~Done;~Done:x=2;'):
    with self.subTest(source=s),self.assertRaises(Ineligible):self.plan(s)
+ def test_supported_try_and_prepublished_declaration_shape(self):
+  for source in ('x=1;Try x=2;Except x=3;EndTry;x;',
+                 'x=1;Try x=2;y=1/0;Except x=x+4;EndTry;x;',
+                 'Function F() Return 1;EndFunction x=1;x;'):
+   with self.subTest(source=source):
+    _,values,error,_=self.pair(source)
+    self.assertIsNone(error)
+    self.assertEqual(values['x'],Decimal(6) if '1/0' in source else Decimal(2) if 'Try' in source else Decimal(1))
  def test_owned_source_budget(self):
   with self.assertRaises(Ineligible):lower_module(parse('x=1;'))
   p=self.plan('x=1;');self.assertGreater(p.source_bytes,0)

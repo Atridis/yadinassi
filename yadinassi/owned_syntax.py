@@ -113,6 +113,13 @@ def is_owned(value):
     return entry is not None and entry() is value
 
 
+def owned_provenance(value):
+    """Return provenance after one current owned-identity check, never cache it."""
+    if not is_owned(value):
+        return None
+    return object.__getattribute__(value, '_owned_provenance')
+
+
 def origin_node(value):
     if not is_owned(value):
         return value

@@ -125,7 +125,12 @@ class FastInlineTests(InlineCodegenTests):
             stats = vm.compiled_backend_stats
             self.assertEqual(vm.variables['r'], 6)
             self.assertEqual(stats['node_coverage'], 'unobserved')
-            self.assertGreater(stats['inline_blocks'], 0)
+            if vm._compiled().FORCE_PYTHON_TRANSLATION:
+                observed = codegen.execution_kinds(self, vm)
+                self.assertGreater(observed.get('For', 0), 0)
+                self.assertGreater(observed.get('Binary', 0), 0)
+            else:
+                self.assertGreater(stats['inline_blocks'], 0)
             self.assertEqual(stats['node_kinds'], {})
             self.assertEqual(stats['emitted_executions'], 0)
             self.assertEqual(stats['helper_executions'], 0)

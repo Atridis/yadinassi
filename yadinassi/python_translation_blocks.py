@@ -151,6 +151,16 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(d,'result = None')
         def emit_statement(node,d):
             n=bind(node);kind=syntax_kind(node)
+            if kind in (ast.Literal, ast.Name, ast.Group, ast.Unary, ast.Binary,
+                        ast.Conditional, ast.Attribute, ast.Index, ast.Call,
+                        ast.New, ast.DynamicNew, ast.Await):
+                # Explicit expression-list block API: the existing generated
+                # expression owns the single hook/guard/error boundary.
+                previous_result=temp();emit(d,f'{previous_result} = result')
+                emit(d,'try:')
+                emit(d+1,f'result = yield from _s.expressions.evaluate({n})')
+                emit(d,'finally:');emit(d+1,f'{previous_result} = None')
+                return
             expression_roots_stack.append([])
             previous_result=temp();emit(d,f'{previous_result} = result')
             emit(d,'try:');d+=1

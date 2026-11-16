@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from .errors import BSLRuntimeError
 from .syntax import ast
-from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, origin_node as syntax_origin, creation_fingerprint
+from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, origin_node as syntax_origin, creation_fingerprint
 
 
 class CompiledUnsupported(BSLRuntimeError):
@@ -675,6 +675,26 @@ class Engine:
         plan = self._blocks.get(id(statements))
         return plan is not None and plan.statements is statements
 
+    def has_executable_block(self, statements):
+        """Distinguish admitted metadata from an explicitly compiled entry."""
+        if not self.FORCE_PYTHON_TRANSLATION:
+            return self.has_block(statements)
+        view = self._owned.existing(statements)
+        if view is None:
+            return False
+        plan = self._blocks.get(id(view))
+        if plan is None or plan.statements is not view:
+            return False
+        key = tuple(id(node) for node in view)
+        saved = self._python_units.get(key)
+        if saved is None:
+            return False
+        block, unit = saved
+        entry = unit.blocks.get(key)
+        return (entry is not None and entry[0] is block and entry[1] is not None
+                and len(block) == len(view)
+                and all(a is b for a, b in zip(block, view)))
+
     def prepare_node(self, node):
         """Explicit late-unit preflight, e.g. a materialized default/expression."""
         wrapper = [node]
@@ -701,16 +721,23 @@ class Engine:
 
     def verify_node(self, node):
         """Validate admitted metadata also consumed without a node visit."""
+        plan = None
         if self.OWNED_SNAPSHOT:
-            original = syntax_origin(node)
             if self.ORIGIN_MUTATION_MONITOR:
+                original = syntax_origin(node)
                 saved = self._origin_signatures.get(id(original))
                 if saved is None or saved[0] is not original:
                     raise CompiledUnsupported(None, 'owned node has no origin fingerprint')
                 _verify_node(original, saved[1])
-            view = self._owned.existing(node)
-            if view is not None: node = view
-        plan = self._nodes.get(id(node))
+            # An exact current plan already identifies the admitted view. Its
+            # owned origin and this VM's version are still checked below.
+            if not self.ORIGIN_MUTATION_MONITOR:
+                plan = self._nodes.get(id(node))
+            if plan is None or plan.node is not node:
+                view = self._owned.existing(node)
+                if view is not None: node = view
+                plan = None
+        if plan is None: plan = self._nodes.get(id(node))
         if plan is None or plan.node is not node:
             self.stats['unsupported_executions'] += 1
             raise CompiledUnsupported(node, 'node belongs to no prepared compilation unit')
@@ -727,9 +754,10 @@ class Engine:
         # Normal writes to owned nodes/lists reject. Do not recursively hash
         # their immutable shape; opaque Literal contents intentionally stay live.
         # Unrestricted object/list protocol bypass is not a Python sandbox.
-        if not is_owned(value):
+        provenance = owned_provenance(value)
+        if provenance is None:
             raise CompiledUnsupported(None, 'unregistered owned execution view')
-        original = syntax_origin(value)
+        original = provenance[0]
         entry = self._owned.versions.get(id(value))
         if entry is None or entry[0] is not original or entry[1] is not value:
             raise CompiledUnsupported(None, 'owned view belongs to no admitted unit')

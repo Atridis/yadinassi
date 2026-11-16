@@ -1,4 +1,8 @@
-"""Prepared indexes retain mutable AST validation and task-local ownership."""
+"""Explicit interpreter indexes: mutable AST validation and task-local ownership.
+
+These assertions inspect the interpreter control-flow cache, not translated
+snapshot semantics. New compiler route coverage lives in separate suites.
+"""
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
@@ -11,7 +15,7 @@ from yadinassi.syntax.parser import parse, prepare_control_flow, PreparedBlock
 class PreparedControlFlowTests(unittest.TestCase):
     def vm(self, code=''):
         output=[]
-        vm=Interpreter(output.append)
+        vm=Interpreter(output.append, execution_backend='interpreter')
         self.addCleanup(vm.close)
         if code:vm.execute(code)
         return vm,output

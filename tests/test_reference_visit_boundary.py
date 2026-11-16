@@ -116,5 +116,12 @@ class ReferenceVisitBoundaryTests(unittest.TestCase):
         with self.assertRaisesRegex(BSLRuntimeError,'Деление на ноль'):vm.execute('1/0;')
         self.assertIn('exception',seen)
         stats=vm.compiled_backend_stats
-        self.assertGreater(sum(stats.get(k,0) for k in ('emitted_executions','helper_executions','inline_blocks','inline_fragments')),0)
+        if vm._compiled().FORCE_PYTHON_TRANSLATION:
+            self.assertGreater(stats.get('python_translated_blocks', 0), 0)
+            self.assertGreater(stats.get('python_translated_node_kinds', {}).get('Binary', 0), 0)
+            for key in ('emitted_executions', 'helper_executions', 'inline_blocks',
+                        'inline_fragments', 'plain_adapter_blocks'):
+                self.assertEqual(stats.get(key, 0), 0, key)
+        else:
+            self.assertGreater(sum(stats.get(k,0) for k in ('emitted_executions','helper_executions','inline_blocks','inline_fragments')),0)
         self.assertEqual(stats['interpreter_fallbacks'],0)

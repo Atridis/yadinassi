@@ -49,8 +49,12 @@ class Expressions(unittest.TestCase):
     def test_routine_plain_actuals_no_visit(self):
         vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=True)
         vm.execute('Function Add(Val a,Val b) Return a+b;EndFunction')
+        before=vm.compiled_backend_stats.get('python_translated_node_kinds',{}).get('Return',0)
         self.assertEqual(self.expression('Add(СтрДлина("abc"),2)',vm)[0],5)
-        self.assertEqual(vm.compiled_backend_stats['plain_routine_calls'],1)
+        stats=vm.compiled_backend_stats
+        self.assertEqual(stats.get('python_translated_node_kinds',{}).get('Return',0)-before,1)
+        self.assertEqual(stats.get('plain_adapter_blocks',0),0)
+        self.assertEqual(stats.get('interpreter_fallbacks',0),0)
 
     def test_missing_prepared_node_and_budgets(self):
         node=parse('r=1;')[0].value

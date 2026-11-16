@@ -991,7 +991,7 @@ class Interpreter:
     def block(self, statements: list[ast.Node]) -> object:
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
-            if not engine.has_block(statements):
+            if not engine.has_executable_block(statements):
                 engine.prepare_block(statements)
             return (yield from engine.run_block(statements))
         result = None

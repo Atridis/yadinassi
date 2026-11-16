@@ -1,8 +1,8 @@
 """Whole-routine rollout matrix, not a claim of universal direct lowering.
 
-Compare the old interpreter, stock snapshot adapter and opt-in translator. Record
-language-visible values/effects/errors and cleanup; adapter execution is allowed,
-but never count it as direct translation or allow interpreter fallback.
+Compare the explicit interpreter oracle and translated execution with the legacy
+plain-routine option both disabled and enabled. That compatibility option no
+longer selects an adapter. Preserve values/effects/errors, cleanup and no fallback.
 """
 from decimal import Decimal, localcontext, getcontext
 import unittest
@@ -21,7 +21,7 @@ class WholeRoutineDifferentialTests(unittest.TestCase):
         effects = []
         vm = Interpreter(output=lambda value: effects.append(('output', str(value))),
                          execution_backend='interpreter' if mode == 'oracle' else 'compiled-strict',
-                         compiled_plain_routines=mode == 'translator')
+                         compiled_plain_routines=mode == 'translated-plain-option')
         try:
             vm.variables.update(inputs or {})
             if host:
@@ -59,6 +59,8 @@ class WholeRoutineDifferentialTests(unittest.TestCase):
             if mode != 'oracle':
                 self.assertEqual(stats.get('interpreter_fallbacks', 0), 0)
                 self.assertEqual(vm._compiled().active_frames, 0)
+                self.assertEqual(stats.get('plain_adapter_blocks',0),0)
+                self.assertGreater(stats.get('python_translated_blocks',0)+sum(stats.get('python_translated_node_kinds',{}).values()),0)
             flags = tuple(sorted(signal.__name__ for signal, set_flag in getcontext().flags.items() if set_flag))
             return (values, tuple(effects), error, flags), stats
         finally:
@@ -67,7 +69,7 @@ class WholeRoutineDifferentialTests(unittest.TestCase):
     def pair(self, source, names=('r',), **options):
         expected, _ = self.execute(source, names, mode='oracle', **options)
         self.assertIsNone(expected[2], expected)
-        for mode in ('adapter', 'translator'):
+        for mode in ('translated-default', 'translated-plain-option'):
             with self.subTest(mode=mode):
                 actual, stats = self.execute(source, names, mode=mode, **options)
                 self.assertEqual(actual, expected)
@@ -77,7 +79,7 @@ class WholeRoutineDifferentialTests(unittest.TestCase):
         stats = self.pair('''Function Sum(Val n)
 s=0;For i=0.5 To n Do s=s+i;EndDo;Return s;
 EndFunction r=Sum(3);''')
-        self.assertGreater(stats.get('plain_routine_calls', 0), 0)
+        self.assertGreater(stats.get('python_translated_node_kinds',{}).get('Return',0),0)
 
     def test_byref_alias_and_val_copy_do_not_change_call_order(self):
         self.pair('''Procedure Mutate(a,b,Val c)
@@ -121,7 +123,7 @@ n=3;r=Work(n,4);''', ('r','n'))
 x=Await n;Return x+1;EndFunction
 p=Work(4);''', ('p',))
 
-    def test_opaque_effect_occurs_once_before_adapter_result(self):
+    def test_opaque_effect_occurs_once_before_translated_result(self):
         self.pair('''Function Work(Val x)
 y=Tick(x);Message(y);Return y+1;
 EndFunction r=Work(4);''', host=True)
@@ -138,7 +140,7 @@ EndFunction r=Work(4);''', host=True)
                 context.prec = 7
                 baseline, _ = self.execute(source, ('r',), mode='oracle', inputs={'n': Decimal('sNaN')})
                 self.assertIsNotNone(baseline[2])
-                for mode in ('adapter', 'translator'):
+                for mode in ('translated-default', 'translated-plain-option'):
                     actual, _ = self.execute(source, ('r',), mode=mode, inputs={'n': Decimal('sNaN')})
                     self.assertEqual(actual, baseline)
 
@@ -161,8 +163,8 @@ EndFunction r=Work(4);''', host=True)
 
     def test_live_policy_hook_cannot_be_skipped_by_translation(self):
         source = 'Function F(Val x) Return x+1;EndFunction r=F(4);'
-        baseline, _ = self.execute(source, ('r',), mode='adapter', hook=True)
-        actual, stats = self.execute(source, ('r',), mode='translator', hook=True)
+        baseline, _ = self.execute(source, ('r',), mode='translated-default', hook=True)
+        actual, stats = self.execute(source, ('r',), mode='translated-plain-option', hook=True)
         self.assertIsNotNone(baseline[2])
         self.assertEqual(actual, baseline)
         self.assertEqual(stats.get('plain_routine_calls', 0), 0)
