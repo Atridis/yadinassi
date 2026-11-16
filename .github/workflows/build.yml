@@ -193,7 +193,8 @@ jobs:
       matrix: ${{ fromJSON(needs.admission.outputs.heavy_matrix) }}
     runs-on: ${{ matrix.os }}
     # Refreshed measured history assigns 4350 tests to heavy (formerly 1608).
-    # Two complete/disjoint shards per OS; bounded headroom for ~46min estimates.
+    # Four complete/disjoint shards on mac-x86, two on other platforms.
+    # Preserve the 60-minute bound without dropping tests on slower Intel Macs.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

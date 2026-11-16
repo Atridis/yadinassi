@@ -55,12 +55,13 @@ def reports(b):
     for p in gate.required_platforms(b):
         parts = [('light', 0, ['test_mod.A.test_light'])]
         if b['heavy']:
-            parts += [('heavy', 0, ['test_mod.B.test_heavy'])]
-            parts += [('heavy', 1, ['test_mod.C.test_heavy'])]
+            count = 4 if p == 'mac-x86' else 2
+            heavy_ids = [f'test_mod.H{i}.test_heavy' for i in range(4)]
+            parts += [('heavy', i, heavy_ids[i::count]) for i in range(count)]
         all_ids = [x for _, _, chosen in parts for x in chosen]
         for tier, index, chosen in parts:
             result[p,tier,index] = {'platform': p, 'tier': tier, 'shard_index': index,
-                'shard_count': 2 if tier == 'heavy' else 1,
+                'shard_count': (4 if p == 'mac-x86' else 2) if tier == 'heavy' else 1,
                 'binding': copy.deepcopy(b), 'selected_ids': chosen[:], 'executed_ids': chosen[:],
                 'skipped_fixture_ids': [], 'covered_ids': chosen[:], 'discovered_ids': all_ids[:],
                 'tests_run': len(chosen), 'success': True,
@@ -135,6 +136,26 @@ class CITestGateTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 gate.coverage(b, r, True)
 
+    def test_all_four_intel_shards_remain_source_bound_and_mandatory(self):
+        b = binding()
+        for index in range(4):
+            for mutation in ('missing', 'count', 'failed', 'source', 'overlap'):
+                r = reports(b); item = r['mac-x86', 'heavy', index]
+                if mutation == 'missing': del r['mac-x86', 'heavy', index]
+                if mutation == 'count': item['shard_count'] = 2
+                if mutation == 'failed': item['success'] = False
+                if mutation == 'source': item['binding']['head_sha'] = 'd'*40
+                if mutation == 'overlap':
+                    other = r['mac-x86', 'heavy', (index + 1) % 4]
+                    for field in ('selected_ids', 'executed_ids', 'covered_ids'):
+                        item[field] = other[field][:]
+                with self.subTest(index=index, mutation=mutation), self.assertRaises(ValueError):
+                    gate.coverage(b, r, True)
+        r = reports(b)
+        r['mac-x86', 'heavy', 4] = copy.deepcopy(r['mac-x86', 'heavy', 0])
+        with self.assertRaisesRegex(ValueError, 'missing/extra'):
+            gate.coverage(b, r, True)
+
     def test_closed_repository_events_and_bounded_json(self):
         for name in ('pull_request_target', 'workflow_run', 'issue_comment'):
             with self.assertRaises(ValueError): gate.admit(name, {}, C, gate.REPOSITORY, fetch, ref='refs/heads/main')
@@ -178,14 +199,15 @@ class CITestGateTests(unittest.TestCase):
                     for target, os_name, arch in runners:
                         if target not in gate.required_platforms(b):
                             continue
-                        count = 2 if heavy else 1
+                        count = (4 if target == 'mac-x86' else 2) if heavy else 1
                         for index in range(count):
                             row = {'target': target, 'os': os_name, 'architecture': arch}
                             if heavy:
                                 row.update(shard_count=count, shard_index=index)
                             expected.append(row)
                     self.assertEqual(gate.job_matrix(b, heavy=heavy), {'include': expected})
-                    self.assertEqual(len(expected), len(gate.required_platforms(b)) * (2 if heavy else 1))
+                    self.assertEqual(len(expected), sum((4 if p == 'mac-x86' else 2) if heavy else 1
+                                                             for p in gate.required_platforms(b)))
 
     def test_push_ref_cannot_be_forged_empty_deleted_or_unsupported(self):
         for ref in ('refs/heads/topic', 'refs/tags/', 'refs/tags//v1', 'refs/tags/../v1',
@@ -276,7 +298,8 @@ class CITestGateTests(unittest.TestCase):
                 binding_path, event_path = root/'binding.json', root/'event.json'
                 gate.write_json(binding_path, b); gate.write_json(event_path, payload)
                 partitions = root/'partitions'
-                capacity = len(gate.required_platforms(b)) * (3 if b['heavy'] else 1)
+                capacity = sum((5 if p == 'mac-x86' else 3) if b['heavy'] else 1
+                               for p in gate.required_platforms(b))
                 for index in range(capacity + 1):
                     path = partitions/str(index)/'partition.json'
                     path.parent.mkdir(parents=True)

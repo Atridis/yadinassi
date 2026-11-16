@@ -148,13 +148,19 @@ def required_platforms(binding):
     return tuple(p for p in PLATFORMS if not (paused and p == 'mac-arm'))
 
 
+def heavy_shard_count(platform):
+    # Intel macOS needs smaller fixture-preserving partitions within 60 minutes.
+    require(platform in PLATFORMS, 'unknown shard platform')
+    return 4 if platform == 'mac-x86' else 2
+
+
 def job_matrix(binding, *, heavy=False):
     platforms = required_platforms(binding)
     rows = []
     for target, os_name, architecture in RUNNERS:
         if target not in platforms:
             continue
-        count = 2 if heavy else 1
+        count = heavy_shard_count(target) if heavy else 1
         for index in range(count):
             row = {'target': target, 'os': os_name, 'architecture': architecture}
             if heavy:
@@ -195,7 +201,7 @@ def coverage(binding, reports, heavy):
     platforms = required_platforms(binding)
     expected = {(p, 'light', 0) for p in platforms}
     if heavy:
-        expected |= {(p, 'heavy', i) for p in platforms for i in range(2)}
+        expected |= {(p, 'heavy', i) for p in platforms for i in range(heavy_shard_count(p))}
     require(set(reports) == expected, 'missing/extra platform partition report')
     output = {}
     for platform in platforms:
@@ -206,7 +212,7 @@ def coverage(binding, reports, heavy):
             require(report['binding'] == binding, 'report source binding')
             require(report['platform'] == p and report['tier'] == tier and report['shard_index'] == index,
                     'partition identity')
-            count = 2 if tier == 'heavy' else 1
+            count = heavy_shard_count(p) if tier == 'heavy' else 1
             require(report['shard_count'] == count, 'partition count')
             require(report['success'] is True, 'failed partition')
             chosen = ids(report['selected_ids']); executed = ids(report['executed_ids']); all_ids = ids(report['discovered_ids'])
@@ -266,7 +272,8 @@ def main():
         else:
             reports = {}
             paths = list(Path(args.reports).glob('**/partition.json'))
-            require(len(paths) <= len(required_platforms(binding)) * (3 if binding['heavy'] else 1),
+            require(len(paths) <= sum(1 + (heavy_shard_count(p) if binding['heavy'] else 0)
+                                      for p in required_platforms(binding)),
                     'too many reports')
             for path in paths:
                 report = read_json(path)
