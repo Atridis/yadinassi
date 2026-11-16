@@ -322,7 +322,12 @@ class FormSession:
             self.interpreter.functions[key] = HostFunction(binding.name, make_callback(binding))
         self._busy = True
         try:
-            self.interpreter.execute_program(program)
+            self._direct_handlers = None
+            if self.interpreter.execution_backend == "python-direct":
+                from .python_direct_forms import prepare_form
+                self._direct_handlers = prepare_form(self, program, source, attributes, tables)
+            else:
+                self.interpreter.execute_program(program)
             for identity, schema in enumerate(tables, 1):
                 key = schema.name.casefold()
                 if key in self.reserved_names or key in self.form._tables:
@@ -375,6 +380,10 @@ class FormSession:
 
     def _invoke(self, handler, side, arguments):
         routine = self._bind(handler, side, len(arguments))
+        if self._direct_handlers is not None:
+            from .python_direct_forms import invoke_form
+            with target_context(self.interpreter.native_target), localcontext():
+                return invoke_form(self, handler, side, arguments)
         interpreter = (self.interpreter._new_server_activation() if side == 'server' else self.interpreter)
         # Host-created slots only, never renderer-selected name or generated AST.
         slots = list(arguments); bindings = {}

@@ -239,7 +239,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -262,6 +262,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         from . import experimental_naked_structure as structure_ops
     required_services=set()
     program=parse(source,source_name) if parsed_ast is None else parsed_ast
+    if _export_routines and any(type(node) not in (ast.Routine,ast.Var) for node in program):
+        raise UnsupportedNakedSyntax('routine export requires a declaration-only module')
     symbols={};constants=[];serial=0;lines=[];loops=[]
     from .experimental_naked_errors import SourceMap, source_mapping_supported
     if 'error_boundaries' in repairs and not source_mapping_supported():
@@ -269,10 +271,14 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     source_map=SourceMap() if 'error_boundaries' in repairs else None
     byref='byref_routines' in repairs
     live='live_module_state' in repairs
+    if type(external_names) is not tuple and type(external_names) is not list:raise TypeError('external names require a tuple or list')
+    if external_names and not (live and services):raise ValueError('external names require live module state and service boundaries')
+    if any(type(name) is not str for name in external_names):raise TypeError('external names require strings')
+    external_keys=frozenset(name.casefold() for name in external_names)
     from .python_direct_definite import definite_module_reads
-    definite_reads = definite_module_reads(program) if live and not authority else frozenset()
+    definite_reads = definite_module_reads(program) if live and not authority and not external_keys else frozenset()
     from .python_direct_arrays import array_facts
-    array_receivers,array_indexes = array_facts(program) if live and not authority and not constructors and 'array_index_contract' in repairs else (frozenset(),frozenset())
+    array_receivers,array_indexes = array_facts(program) if live and not authority and not constructors and not external_keys and 'array_index_contract' in repairs else (frozenset(),frozenset())
     # Raw diagnostic profiles return Python int from Count, which the existing
     # checked-index contract rejects. Do not silently repair that mismatch.
     if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
@@ -287,6 +293,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     function_symbols={name:'fn'+str(i) for i,name in enumerate(routines)}
     module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     scope_id=None
+    if external_keys & (module_variables|routines.keys()):raise UnsupportedNakedSyntax("external names collide with module declarations")
+    routine_externals={}
     source_ref_slots={}
     cells={None:set()};routine_globals={}
     def walk(value):
@@ -304,6 +312,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             parameters={parameter.name.casefold() for parameter in routine.parameters}
             declarations={name.casefold() for node in walk(routine.body) if type(node) is ast.Var for name in node.names}
             routine_globals[id(routine)]=module_variables-parameters-declarations
+            routine_externals[id(routine)]=external_keys-parameters-declarations
             cells[id(routine)]={parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}
         for current,body in [(None,[node for node in program if type(node) is not ast.Routine]),*((id(routine),routine.body) for routine in routines.values())]:
             for node in walk(body):
@@ -340,8 +349,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         for r in routines.values():
             direct_vars={id(n) for n in r.body if type(n) is ast.Var}
             for n in walk(r.body):
-                if type(n) is ast.Var and id(n) not in direct_vars and any(name.casefold() in module_variables|{'thisobject','этотобъект'} for name in n.names):
+                if type(n) is ast.Var and id(n) not in direct_vars and any(name.casefold() in module_variables|external_keys|{'thisobject','этотобъект'} for name in n.names):
                     raise UnsupportedNakedSyntax('conditional local Var shadowing module storage is unsupported')
+    def external_name(name):
+        return name.casefold() in (external_keys if scope_id is None else routine_externals.get(scope_id,()))
     def module_name(name):
         return live and (scope_id is None or name.casefold() in routine_globals.get(scope_id,()))
     def boxed(name):
@@ -360,15 +371,19 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def literal(value):
         constants.append(value);return '_constants['+str(len(constants)-1)+']'
     def variable(name):
+        if external_name(name):return '_context.external_get('+repr(name.casefold())+')'
         if module_name(name):return '_initial['+repr(name.casefold())+']'
         return sym(name)+('.value' if boxed(name) else '')
     def read_variable(name):
+        if external_name(name):return variable(name)
         if not module_name(name):return variable(name)
         value=temp()
         return '('+value+' if ('+value+' := _initial.get('+repr(name.casefold())+', _LIVE_UNSET)) is not _LIVE_UNSET else _live_missing('+repr(name)+'))'
     def reserved_target(name):
         return live and name.casefold() in ('thisobject','этотобъект') and (module_name(name) or name.casefold() not in routine_locals.get(scope_id,set()))
     def assign_name(name,value,depth):
+        if external_name(name):
+            emit(depth,'_context.external_set('+repr(name.casefold())+', '+value+')');return
         if reserved_target(name):
             saved=temp();emit(depth,saved+' = '+value)
             if module_name(name):emit(depth,'if '+repr(name.casefold())+' not in _initial: _live_readonly('+repr(name.casefold())+')')
@@ -378,6 +393,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def reference(node):
         node=ungroup(node)
         if type(node) is ast.Name:
+            if external_name(node.name):return '_context.external_reference('+repr(node.name.casefold())+')'
             if module_name(node.name):
                 key=node.name.casefold()
                 if key not in source_ref_slots:source_ref_slots[key]=temp()
@@ -399,6 +415,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         return '_Cell('+expression(node)+')'
     def lexical_helpers(current,depth):
         for name in sorted(lexical[current]):
+            if external_name(name):continue
             if live and current is None:continue
             slot=sym(name)
             is_box=name in cells[current]
@@ -411,6 +428,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def host_reference(node):
         node=ungroup(node)
         if type(node) is ast.Name:
+            if external_name(node.name):return '_context.external_reference('+repr(node.name.casefold())+')'
             if module_name(node.name):
                 text='_live_host_ref(_initial, '+repr(node.name)+')'
                 return source_map.expression(text,node) if source_map is not None else text
@@ -613,6 +631,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if type(callee) is ast.Name and callee.name.casefold() in routines:
                 return function_symbols[callee.name.casefold()]+'('+', '.join(expression(arg) for arg in node.arguments)+')'
             if services and type(callee) is ast.Name and callee.name.casefold() not in routines:
+                if external_name(callee.name):raise UnsupportedNakedSyntax('external namespace names are not callable: '+callee.name)
                 required_services.add(callee.name.casefold())
                 fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
                 if dynamic_refs and callee.name.casefold() not in service_references:
@@ -691,7 +710,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
                 emit(depth+1,f'if not ({condition} <= {last}): break')
             else:emit(depth,f'while {condition} <= {last}:')
-            increment=counter+' = '+(counter if proven_counter else read_variable(node.name))+' + 1' if module_name(node.name) else counter+' += 1'
+            if external_name(node.name):increment='_context.external_set('+repr(node.name.casefold())+', '+read_variable(node.name)+' + 1)'
+            else:increment=counter+' = '+(counter if proven_counter else read_variable(node.name))+' + 1' if module_name(node.name) else counter+' += 1'
             loops.append(increment);sequence(node.body,depth+1);loops.pop();emit(depth+1,increment)
         elif kind is ast.While:
             if authority:
@@ -700,7 +720,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             else:emit(depth,'while '+truth_expression(node.condition)+':')
             loops.append(None);sequence(node.body,depth+1);loops.pop()
         elif kind is ast.ForEach:
-            loop_target=temp() if reserved_target(node.name) else variable(node.name)
+            loop_target=temp() if reserved_target(node.name) or external_name(node.name) else variable(node.name)
             receiver=temp();emit(depth,receiver+' = '+expression(node.collection))
             entry='_MapEntry' if services else 'SimpleNamespace'
             iterable='(('+entry+'(key=k,value=v) for k,v in '+receiver+'.items()) if isinstance('+receiver+',dict) else '+receiver+')'
@@ -717,7 +737,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     emit(depth+2,'if id(type('+receiver+')) not in _MAP_TYPE_IDS: raise')
                     emit(depth+2,'raise ValueError("Изменение состава соответствия во время обхода пока не поддерживается") from None')
             else:emit(depth,'for '+loop_target+' in '+iterable+':')
-            if reserved_target(node.name):assign_name(node.name,loop_target,depth+1)
+            if reserved_target(node.name) or external_name(node.name):assign_name(node.name,loop_target,depth+1)
             loops.append(None);sequence(node.body,depth+1);loops.pop()
         elif kind is ast.Break:emit(depth,'break')
         elif kind is ast.Continue:
@@ -785,7 +805,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         condition=f'{slot!r} in _locals'
         if byref and name in cells[None]:condition+=f' and _locals[{slot!r}]._value is not _UNSET_REF'
         emit(2,f'if {condition}: _initial[{name!r}] = {output}')
-    emit(1,'return _initial')
+    if _export_routines:
+        emit(1,'return {'+', '.join(repr(name)+': '+symbol for name,symbol in function_symbols.items())+'}')
+    else:emit(1,'return _initial')
     generated='\n'.join(lines)+'\n'
     namespace={name:value for name,value in globals().items() if name.startswith('_')}
     if live:

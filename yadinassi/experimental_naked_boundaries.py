@@ -40,6 +40,20 @@ class BoundaryContext:
         self._admitted_epoch = None
         self._revoked = False
 
+    def external_get(self, name):
+        """Explicit product namespace seam; ordinary contexts grant none."""
+        self._check()
+        raise BoundaryViolation('unregistered external namespace: '+name)
+
+    def external_set(self, name, value):
+        self._check()
+        raise BoundaryViolation('unregistered external namespace: '+name)
+
+    def external_reference(self, name):
+        # Keep the managed-form bare-attribute byref limitation explicit.
+        self._check()
+        raise TypeError("Форма: передача реквизита без Знач пока не поддерживается")
+
     def _validate_host_function(self,value,require_value,allow_references=False):
         if type(value) is not HostFunction:raise TypeError('Значение не является функцией')
         if value.reference_parameters and not allow_references:
