@@ -322,8 +322,10 @@ class StrictNativeGateTests(unittest.TestCase):
         block = ('def check_saved_native_outputs('
                  + text.split('def check_saved_native_outputs(', 1)[1]
                  .split('def check_timezone_configuration(', 1)[0])
+        # Reviewed da40ac6c: only authenticated frozen collections gets 120s;
+        # other bounds, source/output binding and full comparison stay intact.
         self.assertEqual(hashlib.sha256(block.encode('utf-8')).hexdigest(),
-                         "d51c3ac7e2c354661626063cf927b7f80f15388ce87aefd3cf8d775a9013816c")
+                         "f5b17b2685b2d86291ca605650f445bd05041cc6826840b7670ec1434872e530")
 
     def test_frozen_full_modes_and_bounded_command_aliases(self):
         expected = (ROOT / 'tests/fixtures/native_windows/values.out').read_text(encoding='utf-8-sig')
