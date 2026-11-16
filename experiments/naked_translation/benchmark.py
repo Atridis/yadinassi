@@ -21,7 +21,8 @@ CASES = {
 def main():
     rows=[]
     for name,source in CASES.items():
-        program=prepare(source,repairs=REPAIRS)
+        # Trusted local execution does not opt into artificial allocation quotas.
+        program=prepare(source,repairs=REPAIRS - {'resource_bounds'})
         contexts={'legacy':BoundaryContext(), 'shared':SharedBoundaryContext()}
         expected=1000 if name=='array_operations' else 10000
         for ctx in contexts.values():
@@ -35,6 +36,6 @@ def main():
                 rows.append({'case':name,'variant':variant,'trial':trial,'ms':(time.perf_counter_ns()-started)/10/1e6,'result':str(result)})
     summary={name:{variant:statistics.median(row['ms'] for row in rows if row['case']==name and row['variant']==variant) for variant in ('legacy','shared')} for name in CASES}
     hashes={str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(Path('yadinassi').glob('experimental_naked*.py'))}
-    print(json.dumps({'python':platform.python_version(),'metric':'ms per run, preparation excluded','limits':'synthetic trusted fixtures; header budget is not AST budget; no global speedup claim','summary':summary,'samples':rows,'source_sha256':hashes},indent=2))
+    print(json.dumps({'python':platform.python_version(),'metric':'ms per run, preparation excluded','repairs':sorted(REPAIRS-{'resource_bounds'}),'limits':'synthetic trusted fixtures; header budget is not AST budget; no global speedup claim','summary':summary,'samples':rows,'source_sha256':hashes},indent=2))
 
 if __name__=='__main__':main()

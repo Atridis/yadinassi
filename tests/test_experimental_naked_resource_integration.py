@@ -48,3 +48,13 @@ class ResourceIntegrationTests(unittest.TestCase):
         with patch.object(module,'int',side_effect=AssertionError('integer expansion'),create=True):
             with self.assertRaises(IndexError):
                 module._checked_array_index([],Decimal('1e1000000'))
+
+    def test_trusted_local_constructor_does_not_adopt_artificial_cap(self):
+        with patch.object(values,'_MAX_ARRAY_CONSTRUCTION',4):
+            result=prepare('a=New Array(5);',repairs=('constructor_bounds',)).run()
+        self.assertEqual(result['a'],[None]*5)
+
+    def test_trusted_local_insert_does_not_adopt_artificial_growth_cap(self):
+        with patch.object(values,'_MAX_INSERT_GROWTH',4):
+            result=prepare('a=New Array;a.Insert(5,9);',repairs=('constructor_bounds','array_insert_shape')).run()
+        self.assertEqual(result['a'],[None]*5+[9])

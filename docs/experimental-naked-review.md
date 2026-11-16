@@ -40,6 +40,28 @@ correctness prototype made a synthetic module loop about 11x slower, so it is
 not being presented as an acceptable solution. Likewise no admission prototype
 is smuggled in as a finished security boundary.
 
+
+## Trusted local resource policy (clarification)
+
+Artificial collection allocation caps are **not a required repair for trusted
+local execution**. The current benchmark explicitly excludes `resource_bounds`.
+Native Python allocation failures/OOM remain possible; this is not a sandbox.
+Do not restore an element-count quota merely to satisfy a test of our own quota.
+
+The bounded helper remains an explicitly selected diagnostic/control variant,
+not the default trusted policy or proof of a globally minimal safety requirement.
+Its origin is local Yadinassi policy: Insert growth in commit `23a4d3617` and
+Array construction/dimension limits in `301cecc24` (2026-10-18). The source itself
+states these are not native-1C limits. In production they are constructor/growth
+limits, not a maximum collection size: ordinary Add still appends. They were not
+conditioned on shared hosting. Shared-host isolation is a separate contract to
+specify, not a reason to impose the same quota on every local program.
+
+Small tests prove that the trusted variant does not inherit a patched quota;
+they do not allocate dangerous sizes or attempt to provoke an actual OOM.
+Required BSL shape/index/type semantics remain a separate question from quota
+policy. Production #336 is unchanged by this research clarification.
+
 ## Reproduce locally
 
 Install the repository's normal pinned dependencies in an isolated environment.
@@ -51,7 +73,7 @@ PYTHONPATH=.:tests python -O -m unittest discover -s tests -p 'test_experimental
 PYTHONPATH=. python experiments/naked_translation/benchmark.py
 ```
 
-At publication the prepared source passes 150 focused tests both normally and
+At the current checkpoint the prepared source passes 152 focused tests both normally and
 under `-O`. Full/light/native CI is NOT claimed. The earlier frozen checkpoint's
 38-case differential corpus had 37 exact interpreter matches and one explicit
 native-string-order difference. These interpreter controls are not fresh real

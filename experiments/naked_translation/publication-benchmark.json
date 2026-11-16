@@ -1,19 +1,36 @@
 {
   "python": "3.12.14",
   "metric": "ms per run, preparation excluded",
+  "repairs": [
+    "array_index_contract",
+    "array_insert_shape",
+    "authority_checkpoints",
+    "bsl_presentation",
+    "bsl_truth",
+    "byref_routines",
+    "constructor_bounds",
+    "dynamic_host_refs",
+    "error_boundaries",
+    "method_values",
+    "native_order",
+    "service_boundaries",
+    "structure_fields",
+    "typed_find",
+    "typed_map_keys"
+  ],
   "limits": "synthetic trusted fixtures; header budget is not AST budget; no global speedup claim",
   "summary": {
     "module_loop": {
-      "legacy": 2.4736342000000002,
-      "shared": 4.1912605
+      "legacy": 2.7182387,
+      "shared": 4.9838782
     },
     "private_routine": {
-      "legacy": 2.6723073,
-      "shared": 4.80793
+      "legacy": 2.6994414,
+      "shared": 4.8212585
     },
     "array_operations": {
-      "legacy": 0.2561218,
-      "shared": 0.47394379999999997
+      "legacy": 0.2955713,
+      "shared": 0.49272109999999997
     }
   },
   "samples": [
@@ -21,294 +38,294 @@
       "case": "module_loop",
       "variant": "legacy",
       "trial": 0,
-      "ms": 2.4899548,
+      "ms": 3.1008445,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 0,
-      "ms": 4.2175461,
+      "ms": 4.9838782,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 1,
-      "ms": 4.1912605,
+      "ms": 4.465960900000001,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 1,
-      "ms": 2.4252551,
+      "ms": 2.6679499,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 2,
-      "ms": 2.4736342000000002,
+      "ms": 2.8212713,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 2,
-      "ms": 4.1654695,
+      "ms": 5.8271801,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 3,
-      "ms": 4.1657189,
+      "ms": 6.022824,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 3,
-      "ms": 2.5500896,
+      "ms": 2.8812168,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 4,
-      "ms": 2.5961923,
+      "ms": 2.5753671000000002,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 4,
-      "ms": 4.2562611,
+      "ms": 4.6754242999999995,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 5,
-      "ms": 4.1898444,
+      "ms": 4.5028737,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 5,
-      "ms": 2.4334435,
+      "ms": 2.6993383,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "legacy",
       "trial": 6,
-      "ms": 2.4663662000000004,
+      "ms": 2.7182387,
       "result": "10000"
     },
     {
       "case": "module_loop",
       "variant": "shared",
       "trial": 6,
-      "ms": 4.2319097999999995,
+      "ms": 5.0920255,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 0,
-      "ms": 2.695308,
+      "ms": 2.9436081,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 0,
-      "ms": 6.0509333,
+      "ms": 6.318774599999999,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 1,
-      "ms": 4.2461674,
+      "ms": 5.0539569,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 1,
-      "ms": 3.3640401,
+      "ms": 2.5915665,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 2,
-      "ms": 2.6723073,
+      "ms": 4.1120589,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 2,
-      "ms": 5.7298819000000005,
+      "ms": 6.7376065,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 3,
-      "ms": 4.6900059,
+      "ms": 4.8212585,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 3,
-      "ms": 2.6406063,
+      "ms": 2.6631075,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 4,
-      "ms": 2.8965468999999997,
+      "ms": 2.9764648,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 4,
-      "ms": 4.7235875,
+      "ms": 4.7040485,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 5,
-      "ms": 4.80793,
+      "ms": 4.7514451,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 5,
-      "ms": 2.658174,
+      "ms": 2.6522362000000004,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "legacy",
       "trial": 6,
-      "ms": 2.6562661000000003,
+      "ms": 2.6994414,
       "result": "10000"
     },
     {
       "case": "private_routine",
       "variant": "shared",
       "trial": 6,
-      "ms": 5.463231,
+      "ms": 4.6803577999999995,
       "result": "10000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 0,
-      "ms": 0.246264,
+      "ms": 0.2989735,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 0,
-      "ms": 0.481985,
+      "ms": 0.5355027,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 1,
-      "ms": 0.49898570000000003,
+      "ms": 0.4699136,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 1,
-      "ms": 0.26595959999999996,
+      "ms": 0.29141209999999995,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 2,
-      "ms": 0.2458804,
+      "ms": 0.2955713,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 2,
-      "ms": 0.47394379999999997,
+      "ms": 0.4769102,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 3,
-      "ms": 0.4914544,
+      "ms": 0.4950375,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 3,
-      "ms": 0.2732467,
+      "ms": 0.28963540000000004,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 4,
-      "ms": 0.2561218,
+      "ms": 0.29281820000000003,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 4,
-      "ms": 0.4637365,
+      "ms": 0.568849,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 5,
-      "ms": 0.4635902,
+      "ms": 0.49272109999999997,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 5,
-      "ms": 0.2566096,
+      "ms": 0.32489759999999995,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "legacy",
       "trial": 6,
-      "ms": 0.2507968,
+      "ms": 0.3090597,
       "result": "1000"
     },
     {
       "case": "array_operations",
       "variant": "shared",
       "trial": 6,
-      "ms": 0.4423982,
+      "ms": 0.4662872,
       "result": "1000"
     }
   ],

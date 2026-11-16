@@ -1,7 +1,7 @@
 > Chronological research ledger. Earlier sections describe earlier variants,
 > not current guarantees. [Current Draft review guide](experimental-naked-review.md)
 > is the entry point. Publication adds a safe huge-index diagnostic regression
-> (no Decimal-to-int expansion while formatting an error): 150 focused tests
+> (no Decimal-to-int expansion while formatting an error): 152 focused tests
 > pass normally and under `-O` on the publication tree.
 
 # Naked translator: semantic restoration ledger (isolated, unpublished)
@@ -192,3 +192,18 @@ is not claimed thread-safe for `last_state`/`output` telemetry. No complete VM
 scope/retained-unit ownership/admission caps or exact NoContext AST metering is
 provided by this checkpoint. Those are not replaced by the header budget. No
 security/compatibility completeness or production readiness is claimed.
+
+
+## Requirement correction: trusted local allocation is not quota-bound
+
+The owner explicitly does not require an artificial collection element cap for
+trusted local code and accepts Python-style allocation failure/OOM. Therefore
+`resource_bounds` is no longer part of the trusted benchmark repair set. Earlier
+phrases about a "resource bypass" mean divergence from Yadinassi's own historical
+policy, not demonstrated native-1C semantics or a universal security requirement.
+The optional bounded variant remains available for explicit comparison only.
+Its constructor/Insert thresholds originated in local commits 301cecc24 and
+23a4d3617, not a 1C measurement. This correction does not remove semantic index,
+type, shape, alias or argument-effect checks. Two small regressions verify that
+trusted construction and gap insertion ignore a patched quota without creating
+large objects. Shared-host isolation requires a separately specified contract.
