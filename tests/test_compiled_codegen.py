@@ -14,6 +14,28 @@ from yadinassi.syntax import ast
 from yadinassi.syntax.parser import parse
 
 
+
+def execution_kinds(test, vm):
+    """Keep actual Python translation evidence distinct from legacy tiers."""
+    stats = vm.compiled_backend_stats
+    if vm._compiled().FORCE_PYTHON_TRANSLATION:
+        test.assertGreater(stats.get('python_translated_blocks', 0), 0)
+        for name in ('emitted_executions', 'helper_executions', 'inline_blocks',
+                     'inline_fragments', 'plain_adapter_blocks', 'interpreter_fallbacks'):
+            test.assertEqual(stats.get(name, 0), 0, name)
+        return stats.get('python_translated_node_kinds', {})
+    return stats['node_kinds']
+
+
+def registry_identity(engine):
+    """Admission rollback must preserve every registry, not just node count."""
+    registries = (engine._owned.memo, engine._owned.versions,
+                  engine._origin_signatures, engine._origin_blocks,
+                  engine._nodes, engine._blocks, engine._inline_ir,
+                  engine._plain_routines, engine._plain_modules, engine._python_units)
+    return tuple({key: id(value) for key, value in registry.items()}
+                 for registry in registries)
+
 class StrictCodegenTests(unittest.TestCase):
     def setUp(self):
         super().setUp()
@@ -139,7 +161,7 @@ class StrictCodegenTests(unittest.TestCase):
                 Message(Step());helper.F();
             '''
             vm,_=self.run_strict(source,str(root/'main.bsl'))
-            executed=set(vm.compiled_backend_stats['node_kinds'])
+            executed={kind for kind, count in execution_kinds(self, vm).items() if count > 0}
             required={name for name,tier in Engine.lowering_inventory().items()
                       if tier!='syntax-only'}
             self.assertEqual(required-executed,set())
@@ -180,9 +202,13 @@ class StrictCodegenTests(unittest.TestCase):
         self.assertEqual(inventory['Call'],'semantic-helper')
         self.assertEqual(inventory['Parameter'],'syntax-only')
         vm,_=self.run_strict('r=1;r=r+2;')
-        self.assertNotIn('Await',vm.compiled_backend_stats['node_kinds'])
-        self.assertGreater(vm.compiled_backend_stats['emitted_executions'],0)
-        self.assertGreater(vm.compiled_backend_stats['helper_executions'],0)
+        observed = execution_kinds(self, vm)
+        self.assertNotIn('Await', observed)
+        self.assertGreater(observed.get('Assign', 0), 0)
+        self.assertGreater(observed.get('Binary', 0), 0)
+        if not vm._compiled().FORCE_PYTHON_TRANSLATION:
+            self.assertGreater(vm.compiled_backend_stats['emitted_executions'],0)
+            self.assertGreater(vm.compiled_backend_stats['helper_executions'],0)
 
     @mutable_compiled_contract
     def test_known_mutation_is_not_late_preflight(self):
@@ -336,18 +362,24 @@ class RegistryLifecycleTests(unittest.TestCase):
         engine.release()
 
     def test_aggregate_limit_is_explicit_and_transactional(self):
-        vm,engine=self.make();engine.MAX_REGISTRY_ENTRIES=3
-        engine.prepare_node(parse('r=1;')[0].value)
-        engine.prepare_node(parse('r=2;')[0].value)
-        before=set(engine._nodes)
-        with self.assertRaises(CompiledUnsupported) as failure:
-            engine.prepare_node(parse('r=3;')[0].value)
-        self.assertIn('aggregate',failure.exception.reason)
-        self.assertEqual(set(engine._nodes),before)
-        self.assertEqual(engine._blocks,{})
-        engine.release()
-        engine.prepare_node(parse('r=4;')[0].value)
-        self.assertEqual(len(engine._nodes),1)
+        # The same cap includes generated operand bindings in the Python path.
+        # Its earlier refusal is required, not a reason to raise the limit.
+        for force in (False, True):
+            with self.subTest(force=force), patch.object(Engine, 'FORCE_PYTHON_TRANSLATION', force):
+                vm,engine=self.make();engine.MAX_REGISTRY_ENTRIES=3
+                engine.prepare_node(parse('r=1;')[0].value)
+                if not force:
+                    engine.prepare_node(parse('r=2;')[0].value)
+                before=registry_identity(engine)
+                with self.assertRaises(CompiledUnsupported) as failure:
+                    engine.prepare_node(parse('r=3;')[0].value)
+                self.assertIn('generated operand binding budget' if force else 'aggregate',failure.exception.reason)
+                self.assertEqual(registry_identity(engine),before)
+                self.assertEqual(engine._blocks,{})
+                self.assertEqual(vm.variables,{})
+                engine.release()
+                engine.prepare_node(parse('r=4;')[0].value)
+                self.assertEqual(len(engine._nodes),1)
 
 if __name__=='__main__':unittest.main()
 
@@ -360,6 +392,7 @@ class BlockRoleCompilationTests(unittest.TestCase):
         self.assertIs(plan.statements, view)
         return plan
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_structural_lists_emit_but_argument_lists_share_entry(self):
         from yadinassi.compiled_backend import _METADATA_BLOCK_ENTRY
         vm=Interpreter(execution_backend='compiled-strict');engine=vm._compiled()
@@ -372,9 +405,17 @@ class BlockRoleCompilationTests(unittest.TestCase):
         self.assertEqual(self.admitted_block(engine,routine.body[0].otherwise).role,'structural')
         metadata=[plan for plan in engine._blocks.values() if plan.role=='metadata']
         self.assertGreaterEqual(len(metadata),3)
-        self.assertTrue(all(plan.function is _METADATA_BLOCK_ENTRY for plan in metadata))
-        structural=sum(plan.role=='structural' for plan in engine._blocks.values())
-        self.assertEqual(engine.stats['compiled_block_functions'],structural)
+        if engine.FORCE_PYTHON_TRANSLATION:
+            self.assertTrue(all(plan.function is None for plan in engine._blocks.values()))
+            self.assertEqual(engine.stats['compiled_block_functions'], 0)
+            self.assertGreater(len(engine._python_units), 0)
+            vm.execute_program(program)
+            self.assertEqual((vm.variables['r'], vm.variables['s']), (1, 2))
+            self.assertGreater(execution_kinds(self, vm).get('Return', 0), 0)
+        else:
+            self.assertTrue(all(plan.function is _METADATA_BLOCK_ENTRY for plan in metadata))
+            structural=sum(plan.role=='structural' for plan in engine._blocks.values())
+            self.assertEqual(engine.stats['compiled_block_functions'],structural)
 
     def test_metadata_expression_lists_keep_explicit_block_compatibility(self):
         from unittest.mock import patch
@@ -385,7 +426,11 @@ class BlockRoleCompilationTests(unittest.TestCase):
         with patch.object(Interpreter,'visit_Literal',side_effect=AssertionError('legacy visitor')):
             result=vm._scheduler.run_inline(vm.block(call.arguments))
         self.assertEqual(result,9)
-        self.assertEqual(engine.stats['metadata_block_executions'],1)
+        if engine.FORCE_PYTHON_TRANSLATION:
+            self.assertEqual(engine.stats['metadata_block_executions'], 0)
+            self.assertEqual(execution_kinds(self, vm).get('Binary'), 2)
+        else:
+            self.assertEqual(engine.stats['metadata_block_executions'],1)
         self.assertEqual(engine.stats['interpreter_fallbacks'],0)
 
     @mutable_compiled_contract
@@ -431,8 +476,16 @@ class BlockRoleCompilationTests(unittest.TestCase):
     def test_reused_metadata_entry_is_charged_in_each_admission(self):
         from unittest.mock import patch
         from yadinassi.compiled_backend import _METADATA_BLOCK_SOURCE
-        engine=Interpreter(execution_backend='compiled-strict')._compiled()
-        call=parse('Unused(1,2);')[0].expression;engine.prepare_node(call)
-        with patch.object(engine,'MAX_INLINE_FUNCTION_BYTES',len(_METADATA_BLOCK_SOURCE.encode())-1):
-            with self.assertRaisesRegex(CompiledUnsupported,'metadata entry function source budget'):
-                engine.prepare_node(call)
+        for force in (False, True):
+            with self.subTest(force=force), patch.object(Engine, 'FORCE_PYTHON_TRANSLATION', force):
+                engine=Interpreter(execution_backend='compiled-strict')._compiled()
+                call=parse('Unused(1,2);')[0].expression;engine.prepare_node(call)
+                before=registry_identity(engine)
+                # FORCE has no legacy metadata function to charge. Re-admission
+                # must instead enforce the actual generated function's cap.
+                cap=1 if force else len(_METADATA_BLOCK_SOURCE.encode())-1
+                reason='expression function source budget' if force else 'metadata entry function source budget'
+                with patch.object(engine,'MAX_INLINE_FUNCTION_BYTES',cap):
+                    with self.assertRaisesRegex(CompiledUnsupported,reason):
+                        engine.prepare_node(call)
+                self.assertEqual(registry_identity(engine),before)

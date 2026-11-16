@@ -72,6 +72,8 @@ class Rejection(unittest.TestCase):
             self.assertFalse(waiting['compiled_execution_observed'])
             self.assertEqual(waiting['observed_execution_contracts'], [])
             self.assertTrue(executing['compiled_execution_observed'])
+            self.assertGreater(executing['python_translated_blocks']+executing['python_translated_nodes'],0)
+            self.assertEqual(waiting['python_translated_blocks']+waiting['python_translated_nodes'],0)
             self.assertEqual(executing['observed_execution_contracts'], [{
                 'owned_snapshot': True, 'origin_mutation_monitor': 'off',
                 'active_ast_contract': 'snapshot'}])
@@ -94,7 +96,13 @@ class Rejection(unittest.TestCase):
             (folder / 'metadata_fixture.py').write_text('''import unittest
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
+from unittest.mock import patch
+from yadinassi.compiled_backend import Engine
 class Metadata(unittest.TestCase):
+    def setUp(self):
+        # Explicit historical metadata-entry contract, not translated coverage.
+        selection=patch.object(Engine,'FORCE_PYTHON_TRANSLATION',False)
+        selection.start();self.addCleanup(selection.stop)
     def admitted(self):
         vm=Interpreter(execution_backend='compiled-strict')
         call=parse('Unused();')[0].expression
@@ -149,6 +157,55 @@ class Metadata(unittest.TestCase):
             self.assertTrue(case['compiled_execution_observed'])
             self.assertEqual(case['legacy_visitor_calls'],2)
             self.assertEqual(case['strict_rejections'],0)
+
+    def test_sync_only_execution_is_observed_but_admission_counter_is_not(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / 'sync_fixture.py').write_text("""import unittest
+from decimal import Decimal
+from yadinassi import Interpreter
+from yadinassi.runtime import _Return
+from yadinassi.syntax import ast
+from yadinassi.owned_syntax import syntax_kind
+class Sync(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.vm=Interpreter(execution_backend='compiled-strict')
+        cls.vm.execute('Function F(Val n) For i=1 To 1 Do EndDo;Return n+1;EndFunction')
+        cls.engine=cls.vm._compiled()
+        cls.routine=next(p.node for p in cls.engine._nodes.values() if syntax_kind(p.node) is ast.Routine)
+    def test_admission_counter_only(self):
+        # Deliberately synthetic diagnostic activity tests report semantics only.
+        self.engine.stats['python_sync_admission_nodes']=1
+    def test_sync_only(self):
+        self.vm.locals={'n':Decimal(2)}
+        try:
+            with self.assertRaises(_Return) as result:
+                self.vm._scheduler.run_inline(self.engine.run_block(self.routine.body,plain_routine=self.routine))
+            self.assertEqual(result.exception.value,3)
+        finally:self.vm.locals=None
+""", encoding='utf-8')
+            report = folder / 'report.json'
+            env = dict(os.environ, PYTHONPATH=os.pathsep.join((directory, str(root))))
+            process = subprocess.run(
+                [sys.executable, str(root / 'scripts/run_compiled_tests.py'),
+                 '--module', 'sync_fixture', '--lowering', 'inline-fast', '--report', str(report)],
+                env=env, cwd=root, capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
+            result = json.loads(report.read_text(encoding='utf-8'))
+            self.assertEqual(result['strict_coverage_gaps'], [])
+            admission, executed = result['cases']
+            self.assertFalse(admission['compiled_execution_observed'])
+            self.assertEqual(admission['python_sync_routine_calls'], 0)
+            self.assertEqual(admission['observed_execution_contracts'], [])
+            self.assertTrue(executed['compiled_execution_observed'])
+            self.assertEqual(executed['python_sync_routine_calls'], 1)
+            self.assertEqual(executed['python_translated_blocks'], 0)
+            self.assertEqual(executed['python_translated_nodes'], 0)
+            self.assertEqual(executed['observed_execution_contracts'], [{
+                'owned_snapshot': True, 'origin_mutation_monitor': 'off',
+                'active_ast_contract': 'snapshot'}])
 
 
 if __name__ == '__main__':

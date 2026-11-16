@@ -1,4 +1,5 @@
 """Explicit v4 source catalog objects with actual-caller authorization."""
+from .runtime_dependencies import runtime_module as _runtime_module
 from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
@@ -166,9 +167,9 @@ _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','ун
 
 
 def is_source_reference(value):
-    from .catalog_types import BSLCatalogReference
-    from .configuration_source_metadata import SourceMetadataObject
-    from .source_references import _SourceReferenceSnapshot
+    BSLCatalogReference = _runtime_module('catalog_types').BSLCatalogReference
+    SourceMetadataObject = _runtime_module('configuration_source_metadata').SourceMetadataObject
+    _SourceReferenceSnapshot = _runtime_module('source_references')._SourceReferenceSnapshot
     return (type(value) is BSLCatalogReference and
             (type(value.value_type.snapshot) is _SourceReferenceSnapshot or type(value.metadata) is SourceMetadataObject))
 
@@ -274,7 +275,7 @@ class _ObjectInterpreter(_SourceInterpreter):
         if self.field(name):return self.object.property_write(self,name,value)
         return super().set_variable(name,value)
 
-    def argument(self,node):
+    def argument(self,node,*,_evaluation=None):
         node=self.ungroup(node)
         from .runtime import _Reference
         if syntax_kind(node) is ast.Name and node.name.casefold()=='__catalog_cancel':
@@ -284,7 +285,7 @@ class _ObjectInterpreter(_SourceInterpreter):
             self.object.property_read(self,node.name)
             return _Reference(lambda:self.object.property_read(self,node.name),
                               lambda value:self.object.property_write(self,node.name,value))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 def create_object(caller,manager,definition,identity=None,revision=0,values=None):

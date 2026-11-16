@@ -51,6 +51,46 @@ class PartitionTests(unittest.TestCase):
         self.assertEqual(set.union(*groups), set(history))
         self.assertEqual(p.select('heavy', 2, 0)[1], plan().select('heavy', 2, 0)[1])
 
+    def test_four_shards_preserve_fixture_groups_exact_union_and_balance(self):
+        tests = [case('module_%d' % i, 'Case') for i in range(9)]
+        # A second node from module_0 must stay with its fixture group.
+        tests.append(case('module_0', 'Other'))
+        history = {}
+        for test, seconds in zip(tests, (12, 11, 10, 9, 8, 7, 6, 5, 1, 4)):
+            history.update(weights([test], seconds))
+        p = partition.partition_suite(unittest.TestSuite(
+            unittest.TestSuite([test]) for test in tests), history)
+        light = p.select('light')[1]
+        heavy = [p.select('heavy', 4, index)[1] for index in range(4)]
+        groups = [set(report['selected_ids']) for report in [light] + heavy]
+        self.assertEqual(set.union(*groups), set(history))
+        self.assertEqual(sum(map(len, groups)), len(history))
+        self.assertEqual([r['estimated_intel_seconds'] for r in heavy], [21, 17, 17, 17])
+        owner_ids = {partition.identity(tests[i])[0] for i in (0, 9)}
+        self.assertEqual(sum(owner_ids <= group for group in groups), 1)
+        for index, report in enumerate(heavy):
+            self.assertEqual(report, p.select('heavy', 4, index)[1])
+
+    def test_eight_shards_preserve_fixture_groups_exact_union_and_balance(self):
+        tests = [case('module_%d' % i, 'Case') for i in range(9)]
+        # A second node from module_0 must stay with its fixture group.
+        tests.append(case('module_0', 'Other'))
+        history = {}
+        for test, seconds in zip(tests, (12, 11, 10, 9, 8, 7, 6, 5, 1, 4)):
+            history.update(weights([test], seconds))
+        p = partition.partition_suite(unittest.TestSuite(
+            unittest.TestSuite([test]) for test in tests), history)
+        light = p.select('light')[1]
+        heavy = [p.select('heavy', 8, index)[1] for index in range(8)]
+        groups = [set(report['selected_ids']) for report in [light] + heavy]
+        self.assertEqual(set.union(*groups), set(history))
+        self.assertEqual(sum(map(len, groups)), len(history))
+        self.assertEqual([r['estimated_intel_seconds'] for r in heavy], [16, 11, 10, 9, 8, 7, 6, 5])
+        owner_ids = {partition.identity(tests[i])[0] for i in (0, 9)}
+        self.assertEqual(sum(owner_ids <= group for group in groups), 1)
+        for index, report in enumerate(heavy):
+            self.assertEqual(report, p.select('heavy', 8, index)[1])
+
     def test_unknown_forces_whole_module_light_even_known_slow_test(self):
         known, new = case('same', 'Known'), case('same', 'New')
         p = partition.partition_suite(unittest.TestSuite([
@@ -104,7 +144,7 @@ class PartitionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             partition.partition_suite(unittest.TestSuite([test, test]), {})
         p = partition.partition_suite(unittest.TestSuite([test]), {})
-        for args in [('bad', 1, 0), ('all', 3, 0), ('all', 2, 2), ('all', 2, -1)]:
+        for args in [('bad', 1, 0), ('all', 3, 0), ('all', 2, 2), ('all', 2, -1), ('heavy', 4, 4), ('heavy', 5, 0), ('heavy', 8, 8), ('heavy', 16, 0), ('heavy', True, 0)]:
             with self.subTest(args=args), self.assertRaises(ValueError):
                 p.select(*args)
 

@@ -151,6 +151,7 @@ class BSLError(Exception):
 class Interpreter:
     def __init__(self, output, **options):
         self.output = output
+        self.execution_backend = options["execution_backend"]
         self.started = False
     def execute(self, source, label):
         if not self.started:

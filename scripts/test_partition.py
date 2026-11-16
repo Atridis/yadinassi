@@ -78,7 +78,7 @@ class Plan:
     ids: list
 
     def select(self, tier, shard_count=1, shard_index=0):
-        if tier not in ('light', 'heavy', 'all') or shard_count not in (1, 2):
+        if tier not in ('light', 'heavy', 'all') or type(shard_count) is not int or shard_count not in (1, 2, 4, 8):
             raise ValueError('invalid partition selection')
         if type(shard_index) is not int or not 0 <= shard_index < shard_count:
             raise ValueError('invalid shard index')
@@ -226,7 +226,7 @@ def write_summary(report, path):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--tier', choices=('light', 'heavy', 'all'), required=True)
-    parser.add_argument('--shard-count', type=int, choices=(1, 2), default=1)
+    parser.add_argument('--shard-count', type=int, choices=(1, 2, 4, 8), default=1)
     parser.add_argument('--shard-index', type=int, default=0)
     parser.add_argument('--history', default='scripts/test_durations.json')
     parser.add_argument('--report')

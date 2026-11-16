@@ -100,3 +100,29 @@ those results from the scalar loop. Database comparisons must retain equivalent
 transactions/receipts and effects, and async comparisons equivalent scheduling and
 completion obligations. Prior timings and native-1C timings from other machines
 are context only, not paired performance evidence.
+
+
+### Generated-source budget and bounded helper factoring
+
+The Python translator's AST-node threshold is only an initial inlining heuristic,
+not proof that a generated unit fits its source budget. The operations checkpoint
+in PR 336 has 8,428 nodes, below the 10,000-node compact-control threshold, but
+its inline template emission crossed the unchanged 1 MiB cap. Disabling optional
+sync segments did not make it fit. Reverting collection semantics or raising the
+cap therefore does not address the size of mandatory generated Python.
+
+Only exhaustion of generated block-template unit bytes now requests one further
+lowering attempt, factoring nested blocks into generated Python helpers at depth
+4 instead of 10. Ordinary units keep their existing lowering. Both attempts use
+the same function, unit and operand-binding limits; registry/ownership checks
+are unchanged. Unsupported semantics, integrity failures and other budgets do
+not trigger this retry. If the second attempt cannot fit, admission still fails
+before program effects and the engine journal restores prior registrations.
+Factoring does not invoke an AST interpreter or legacy code generator.
+
+This is a bounded engineering choice, not a claim of globally minimal factoring.
+For the failing fixture, diagnostic depths 6/4/2 yielded 1,048,179 / 1,005,911 /
+928,158 bytes. Depth 6 left only 397 bytes of headroom; depth 4 retained 28 prepared
+sync segments. Whole-unit compact lowering used 100,854 bytes but retained no
+sync segments, so it was not selected as the corrective retry. The current fix
+is deliberately one extra attempt, not an unbounded search across representations.

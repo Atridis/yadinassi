@@ -245,3 +245,10 @@ def fill_property_values(target: object, source: object,
         if key in source._items and key not in excluded:
             # Preserve target spelling and composition, and share value references.
             target._items[key] = name, source._items[key][1]
+
+# Captured before optional translated collection code is imported.
+_DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+    for cls in (_StructureBase, BSLStructure, BSLKeyAndValue))
+_DIRECT_COLLECTION_TRIM_CHARS = trim_all.__globals__['_WHITESPACE']
+_DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
+    '_key', 'BSLStructure', 'BSLKeyAndValue', 'trim_all', '_DIRECT_COLLECTION_TRIM_CHARS'))

@@ -93,7 +93,8 @@ print(json.dumps(rows))
                 actual=tagged_value([dict(vm.variables),output,error])
                 self.assertEqual(actual, expected)
                 stats=vm.compiled_backend_stats
-                self.assertGreater(sum(stats.get(key,0) for key in
-                    ('emitted_executions','helper_executions','inline_blocks','inline_fragments')),0)
+                self.assertGreater(stats.get('python_translated_blocks',0)+
+                    sum(stats.get('python_translated_node_kinds',{}).values()),0)
+                self.assertEqual(stats.get('plain_adapter_blocks',0),0)
                 for key in ('rejected_units','unsupported_executions','interpreter_fallbacks'):
                     self.assertEqual(stats[key],0)

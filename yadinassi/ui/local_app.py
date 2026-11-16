@@ -39,8 +39,7 @@ class RuntimeBridge:
         else:
             environment['PYTHONPATH'] = str(Path(__file__).resolve().parents[2])
             command = [sys.executable, '-m', 'yadinassi.ui.editor_stdio', database]
-        if backend != 'interpreter':
-            command += ['--execution-backend', backend]
+        command += ['--execution-backend', backend]
         if launch_binding is not None:
             command += ['--launch-binding', launch_binding]
         self._start(command, environment)

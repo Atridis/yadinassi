@@ -669,3 +669,12 @@ class HostFunction:
 
     def __call__(self, *arguments: object) -> object:
         return self.function(*arguments)
+
+# Definition-time identities for optional closed-region collection lowering.
+# Capture here, before the compiler's lazy import can encounter host patches.
+_DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+    for cls in (BSLObject, _ArrayBase, BSLArray, HostFunction))
+_DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
+    'integer', 'require_number', 'equal', 'BSLArray', 'HostFunction',
+    'BSLFixedCollection', '_MAX_INSERT_GROWTH', '_MAX_ARRAY_CONSTRUCTION',
+    '_MAX_ARRAY_DIMENSIONS'))

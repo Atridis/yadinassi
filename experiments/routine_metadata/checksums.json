@@ -1,0 +1,18 @@
+{
+  "environment.json": "750cb178ed3bb0917c3bcd2e9640375952b3ef4387197899ae439b3c169946b1",
+  "extra-routine-bench.py": "4d27b415a27aba7b8fe41acfb3e25ac9a250fe763eec1322eb039e9310f8546b",
+  "extra-routine-dates.py": "8ec66d9dde6885f14f1596983635c422c3954206e0af37602bc39f35d6ec1fd5",
+  "extra-routine-focused.py": "1edfa8734d4e4d235d39e210b4d05dfc28d9309ed7c2adc8f78154a683e9fe8d",
+  "paired-routine-bench.py": "e837fbbaf729783286a19599be3312eb7803cbffdae201bd14ca3771da60f24a",
+  "paired-routine-focused.py": "8501820fbb5f61624194d74be1036f933362f3b3a1c2166690369be20b7af9fc",
+  "routine-cold-branches.bsl": "adb587f27dc4c0c468cb6908db29afc42877b9e5371a6fb4e5001d51f44ca761",
+  "routine-focused-bench.py": "469b337000c04307c18fe5c7a27f329d220845426897dfd80c94831001734ad2",
+  "routine-focused-oracle.jsonl": "728e2307ccbb1ce253244c184118881bfa4a1c7b9de45fef873efc70069b808b",
+  "routine-focused-oracle.py": "9160d39b419cc15fe3ce0193187943d3d95155c177721dfdd72148aa8ef49686",
+  "routine-focused.jsonl": "4f90fef0b6db748494dfde4363e22bbf02f11fa506b3878d124f17c82fd54871",
+  "routine-gate.json": "24819a43f7c277b9e3e50094d4f3e0583a6416c2a9136abd560ff9b4474c0868",
+  "routine-gate.py": "8add04464bde60ee832590e4f294af6078035d14fe47e564c7b2808b64f91109",
+  "routine-paired.jsonl": "69b4f6da79238c0667060bd94ca31d54c0086a1c5b150fad3255abebf7dc1cc3",
+  "routine-validated.log": "8b79e2117cf3b7a6e84fc134db132467e4a579481732bb959feddda5db620e2f",
+  "runtime-bench.py": "2bcef7cb97cec9e067e892f122ae3d85db3671fb8007f8381be77fb83dd9fb10"
+}

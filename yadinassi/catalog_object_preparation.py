@@ -118,7 +118,7 @@ class _ObjectInterpreter(Interpreter):
             raise ValueError('catalog preparation: unavailable name')
         return super().visit_Name(node)
 
-    def call(self, node, *, require_value):
+    def call(self, node, *, require_value, _evaluation=None):
         callee = self.ungroup(node.callee)
         if syntax_kind(callee) is ast.Attribute and callee.name.casefold() not in _METHODS:
             raise ValueError('catalog preparation: unavailable method')
@@ -126,7 +126,7 @@ class _ObjectInterpreter(Interpreter):
                 and callee.name.casefold() in ('getobject', 'получитьобъект')):
             if node.arguments:
                 raise TypeError('catalog preparation: GetObject takes no arguments')
-            reference = yield from self.receiver(callee.object)
+            reference = yield from (_evaluation.receiver if _evaluation is not None else self.receiver)(callee.object)
             catalogs = self.receiver_object._manager._catalogs
             if (type(reference) is not BSLCatalogReference
                     or reference.value_type.snapshot is not catalogs._metadata):
@@ -139,7 +139,7 @@ class _ObjectInterpreter(Interpreter):
                 raise BackendError('schema_changed')
             card = view.read_catalog(manager._key(reference.reference_uuid))
             return None if card is None else BSLCatalogObject(manager, card)
-        return (yield from super().call(node, require_value=require_value))
+        return (yield from super().call(node, require_value=require_value, _evaluation=_evaluation))
 
     def semantic_attribute(self, node):
         if node.name.casefold() not in self.member_names | _METHODS:
@@ -159,12 +159,12 @@ class _ObjectInterpreter(Interpreter):
         else:
             super().set_variable(name, value)
 
-    def argument(self, node):
+    def argument(self, node, *, _evaluation=None):
         target = self.ungroup(node)
         if syntax_kind(target) is ast.Name and self._object_name(target.name.casefold()):
             return Reference(lambda: self.receiver_object.get_member(target.name),
                              lambda value: self.receiver_object.set_member(target.name, value))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
     def semantic_assign(self, node):
         if syntax_kind(node.target) is ast.Attribute and node.target.name.casefold() not in self.member_names:

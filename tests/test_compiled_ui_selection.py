@@ -26,22 +26,20 @@ class UIBackendSelectionTests(unittest.TestCase):
         with execution_backend_policy('compiled-strict'):
             self.assertEqual(entry(['file']), ('compiled-strict', ['file']))
 
-    def test_child_argv_is_explicit_only_for_nondefault(self):
+    def test_child_argv_preserves_explicit_backend_including_interpreter(self):
         for cls in (RuntimeBridge, FormProcess, ConfigurationProcess):
             for mode in ('interpreter', 'compiled-strict'):
                 with self.subTest(cls=cls.__name__, mode=mode), execution_backend_policy(mode), \
                         patch.object(cls, '_start') as start:
                     cls('owned-path')
                     command = start.call_args.args[0]
-                    if mode == 'compiled-strict':
-                        index = command.index('--execution-backend')
-                        self.assertEqual(command[index + 1], mode)
-                    else:
-                        self.assertNotIn('--execution-backend', command)
+                    index = command.index('--execution-backend')
+                    self.assertEqual(command[index + 1], mode)
 
     def test_fresh_stdio_children_select_and_restore_backend(self):
         for module in ('form_app', 'configuration_app', 'editor_stdio'):
-            with self.subTest(module=module):
+          for mode in ('interpreter', 'compiled-strict'):
+            with self.subTest(module=module, mode=mode):
                 code = '''import sys,json,io
 sys.path.insert(0,sys.argv[1])
 from unittest.mock import patch,Mock
@@ -51,16 +49,16 @@ seen=[]
 def runtime(*a,**kw): seen.append(current_backend()); return 0
 if 'MODULE' == 'editor_stdio':
  with patch.object(app,'SQLiteDBContext',side_effect=lambda *a: (seen.append(current_backend()),Mock())[1]), patch.object(app,'CatalogEditorApplication',return_value=Mock()),patch.object(app,'CatalogEditorSession',return_value=Mock()):
-  result=app.main(['owned-path','--execution-backend','compiled-strict'],source=io.BytesIO(),target=io.BytesIO())
+  result=app.main(['owned-path','--execution-backend','BACKEND'],source=io.BytesIO(),target=io.BytesIO())
 else:
  with patch.object(app,'serve_runtime',side_effect=runtime):
-  result=app.main(['owned-path','--runtime','--execution-backend','compiled-strict'])
+  result=app.main(['owned-path','--runtime','--execution-backend','BACKEND'])
 print(json.dumps({'result':result,'seen':seen,'after':current_backend()}))
-'''.replace('MODULE', module)
+'''.replace('MODULE', module).replace('BACKEND', mode)
                 completed = subprocess.run([sys.executable, '-I', '-B', '-c', code, str(ROOT)],
                     check=True, capture_output=True, text=True, timeout=20)
                 self.assertEqual(json.loads(completed.stdout),
-                    {'result': 0, 'seen': ['compiled-strict'], 'after': 'interpreter'})
+                    {'result': 0, 'seen': [mode], 'after': 'compiled-strict'})
 
     def test_legacy_hybrid_ui_is_rejected_before_body(self):
         seen = []

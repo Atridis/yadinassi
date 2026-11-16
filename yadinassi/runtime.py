@@ -1,6 +1,7 @@
+from .runtime_dependencies import runtime_module as _runtime_module
 from functools import lru_cache
 from weakref import WeakValueDictionary
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BYTE_ORDER_MARK_USE
@@ -195,7 +196,8 @@ class Interpreter:
                  user_message_sink: Callable | None = None,
                  family_owner: "Interpreter | None" = None,
                  execution_backend: str | None = None,
-                 compiled_ast_contract: str | None = None):
+                 compiled_ast_contract: str | None = None,
+                 compiled_plain_routines: bool | None = None):
         from .execution_policy import current_backend, BACKENDS, current_ast_contract, AST_CONTRACTS
         if execution_backend is None:
             execution_backend = (family_owner.execution_backend if isinstance(family_owner, Interpreter)
@@ -215,6 +217,12 @@ class Interpreter:
                 and family_owner.compiled_ast_contract != compiled_ast_contract):
             raise ValueError('interpreter family cannot silently change AST contract')
         self._compiled_ast_contract = compiled_ast_contract
+        if compiled_plain_routines is None:
+            compiled_plain_routines = (family_owner.compiled_plain_routines
+                                       if isinstance(family_owner, Interpreter) else False)
+        if type(compiled_plain_routines) is not bool:
+            raise ValueError('compiled_plain_routines must be bool')
+        self._compiled_plain_routines = compiled_plain_routines
         self._compiled_engine = None
         self._execution_backend = execution_backend
         self._hybrid_stats = {"compiled": 0, "fallback": 0, "compile_seconds": 0.0}
@@ -535,7 +543,11 @@ class Interpreter:
     def visit(self, node: ast.Node) -> object:
         """Synchronous embedding boundary; language evaluation uses _visit."""
         if self.execution_backend == 'compiled-strict':
-            self._admit_compiled_node(node)
+            engine = self._compiled()
+            if not engine.has_executable_node(node):
+                engine.prepare_node(node)
+            else:
+                engine.verify_node(node)
         return self._scheduler.run_inline(self._visit(node))
 
     @property
@@ -652,8 +664,9 @@ class Interpreter:
                                       line_number=error.line, initial_string=error.source_line)
         return error.info
 
-    def _evaluate(self, argument: ast.Node) -> object:
-        value = (yield from self._visit(argument))
+    def _evaluate(self, argument: ast.Node, *, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        value = (yield from evaluate(argument))
         # Native evidence covers a Number argument 12. Other non-string values
         # are deliberately rejected; do not call arbitrary Python __str__ hooks.
         if type(value) is str:
@@ -670,12 +683,17 @@ class Interpreter:
         # Native Eval does not inherit the enclosing ErrorInfo context. A handler
         # entered by evaluated code can still establish its own diagnostic frame.
         self._error_info_boundaries.append(len(self._handled_errors))
+        transient = None
         try:
             # Parse and consume the entire input before executing even its first call.
             try:
                 expression = parse_expression(text)
                 if self._execution_backend == "compiled-strict":
-                    self._admit_compiled_node(expression)
+                    engine = self._compiled()
+                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
+                        transient = engine.prepare_transient([expression], expression_entry=True)
+                    else:
+                        self._admit_compiled_node(expression)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
             from .safe_mode import routine_frame
@@ -684,11 +702,13 @@ class Interpreter:
         except RecursionError:
             raise ValueError("Вычислить: превышен предел глубины выражения Yadinassi") from None
         finally:
+            if transient is not None: transient.close()
             self._error_info_boundaries.pop()
             self._eval_depth[0] -= 1
 
-    def semantic_execute(self, node: ast.Execute) -> None:
-        value = (yield from self._visit(node.expression))
+    def semantic_execute(self, node: ast.Execute, *, _evaluation=None) -> None:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        value = (yield from evaluate(node.expression))
         # Native checkpoint accepts Undefined as an empty fragment, not Number.
         if value is None:
             value = ""
@@ -700,11 +720,16 @@ class Interpreter:
             raise ValueError("Выполнить: превышен предел вложенности Yadinassi (16)")
         self._execute_depth[0] += 1
         previous = self.locals
+        transient = None
         try:
             try:
                 program = parse_fragment(value)
                 if self._execution_backend == "compiled-strict":
-                    self._compiled().prepare(program, allow_reprepare=False)
+                    engine = self._compiled()
+                    if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
+                        transient = engine.prepare_transient(program)
+                    else:
+                        engine.prepare(program, allow_reprepare=False)
             except BSLError as error:
                 raise BSLRuntimeError(error.message, error.source, error.line, error.column) from None
             # Existing bindings are live references, including reference parameters.
@@ -724,6 +749,7 @@ class Interpreter:
         except RecursionError:
             raise ValueError("Выполнить: превышен предел глубины фрагмента Yadinassi") from None
         finally:
+            if transient is not None: transient.close()
             self.locals = previous
             self._execute_depth[0] -= 1
 
@@ -791,6 +817,10 @@ class Interpreter:
             engine.prepare_node(node)
 
     @property
+    def compiled_plain_routines(self):
+        return self._compiled_plain_routines
+
+    @property
     def compiled_ast_contract(self):
         return self._compiled_ast_contract
 
@@ -815,7 +845,8 @@ class Interpreter:
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
             engine.prepare(program, allow_reprepare=not (self._scheduler.is_active or
-                                                        engine.active_frames or self._scheduler.pending))
+                                                        engine.active_frames or self._scheduler.pending),
+                           module_entry=(engine.FORCE_PYTHON_TRANSLATION or not (self._scheduler.is_active or engine.active_frames or self._scheduler.pending)))
         outermost = not self._scheduler.is_active
         try:
             from .database_transactions import admission, execution
@@ -834,16 +865,16 @@ class Interpreter:
                 self._configuration_runtime.check_program(program)
             # A diagnostic source label need not name a readable filesystem path.
             if not any(isinstance(node, ast.Import) for node in program):
-                result = self._scheduler.run_inline(self._execute_program(program))
+                result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
             else:
                 source = program[0].token.source if program else "<строка>"
                 path = None if source.startswith("<") else Path(source).resolve()
                 if path is None:
-                    result = self._scheduler.run_inline(self._execute_program(program))
+                    result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
                 else:
                     self._loading.append(path)
                     try:
-                        result = self._scheduler.run_inline(self._execute_program(program))
+                        result = self._scheduler.run_inline(self._execute_program(program, module_entry=outermost))
                     finally:
                         self._loading.pop()
             # Native public fields and routines become available only after the
@@ -856,7 +887,7 @@ class Interpreter:
                 self.run_until_idle()
             return result
 
-    def _execute_program(self, program: list[ast.Node]) -> object:
+    def _execute_program(self, program: list[ast.Node], *, module_entry=False) -> object:
         # Also validate callers supplying an AST directly. No import or declaration
         # effects may precede label resolution.
         validate_labels(program)
@@ -922,9 +953,15 @@ class Interpreter:
         for node in program:
             if isinstance(node, ast.Import):
                 yield from self._visit(node)
-        return (yield from self.block([node for node in program
+        return (yield from self._planned_module_block([node for node in program
             if not isinstance(node, (ast.Import, ast.ServerInitializer))
-            and not (isinstance(node, ast.Var) and node.execution_context == "server")]))
+            and not (isinstance(node, ast.Var) and node.execution_context == "server")], enabled=module_entry))
+
+    def _planned_module_block(self, statements, *, enabled=False):
+        if (enabled and self._execution_backend=='compiled-strict' and type(self) is Interpreter
+                and type(self).block is _PLAIN_BLOCK_ABI and 'block' not in vars(self)):
+            return (yield from self._compiled().run_module(statements))
+        return (yield from self.block(statements))
 
     @staticmethod
     def _routine_plan(function):
@@ -938,7 +975,11 @@ class Interpreter:
 
     def _planned_routine_block(self, function):
         if self._execution_backend == 'compiled-strict':
-            return (yield from self.block(function.body))
+            if type(self) is not Interpreter or type(self).block is not _PLAIN_BLOCK_ABI or 'block' in vars(self):
+                return (yield from self.block(function.body))
+            engine = self._compiled()
+            if not engine.has_block(function.body): engine.prepare_block(function.body)
+            return (yield from engine.run_block(function.body, plain_routine=function))
         plan = self._routine_plan(function)
         state = self._scheduler.active_context.state
         entry = state.setdefault(_CONTROL_FLOW_PLANS, {'stack': []})
@@ -955,7 +996,7 @@ class Interpreter:
     def block(self, statements: list[ast.Node]) -> object:
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
-            if not engine.has_block(statements):
+            if not engine.has_executable_block(statements):
                 engine.prepare_block(statements)
             return (yield from engine.run_block(statements))
         result = None
@@ -1223,30 +1264,42 @@ class Interpreter:
 
     def semantic_attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
-        from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+        _dependency = _runtime_module('source_document_sections')
+        SourceDocumentSection = _dependency.SourceDocumentSection
+        SourceDocumentRow = _dependency.SourceDocumentRow
         if type(value) in (SourceDocumentSection, SourceDocumentRow):
             return value.property_read(self,node.name)
-        from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, SourceDocumentObject, SourceDocumentSelection
+        _dependency = _runtime_module('source_document_runtime')
+        is_document_reference = _dependency.is_source_reference
+        document_member = _dependency.reference_member
+        SourceDocumentObject = _dependency.SourceDocumentObject
+        SourceDocumentSelection = _dependency.SourceDocumentSelection
         if is_document_reference(value):
             return document_member(self,value,node.name)
         if type(value) in (SourceDocumentObject, SourceDocumentSelection):
             return value.property_read(self,node.name)
-        from .source_catalog_runtime import is_source_reference, reference_member
+        _dependency = _runtime_module('source_catalog_runtime')
+        is_source_reference = _dependency.is_source_reference
+        reference_member = _dependency.reference_member
         if is_source_reference(value):
             return reference_member(self,value,node.name)
-        from .source_manager_modules import SourceManagers
+        SourceManagers = _runtime_module('source_manager_modules').SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
-        from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+        _dependency = _runtime_module('source_catalog_runtime')
+        SourceCatalogObject = _dependency.SourceCatalogObject
+        SourceCatalogSelection = _dependency.SourceCatalogSelection
         if type(value) in (SourceCatalogObject, SourceCatalogSelection):
             return value.property_read(self, node.name)
-        from .source_references import SourceReferenceManager
+        SourceReferenceManager = _runtime_module('source_references').SourceReferenceManager
         if type(value) is SourceReferenceManager:
             return value.member(self, node.name)
-        from .source_constant_managers import SourceConstantValueManager
+        SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
         if type(value) is SourceConstantValueManager:
             return value.property_read(self, node.name)
-        from .source_constants_runtime import SourceConstants, SourceConstantSet
+        _dependency = _runtime_module('source_constants_runtime')
+        SourceConstants = _dependency.SourceConstants
+        SourceConstantSet = _dependency.SourceConstantSet
         if type(value) is SourceConstantSet:
             if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
                 return value.get_member(node.name)
@@ -1264,17 +1317,17 @@ class Interpreter:
 
     def semantic_index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        from .source_document_sections import SourceDocumentSection
+        SourceDocumentSection = _runtime_module('source_document_sections').SourceDocumentSection
         if type(value) is SourceDocumentSection:
             return value.get_index(self,(yield from self._visit(node.index)))
-        from .source_manager_modules import SourceManagers
+        SourceManagers = _runtime_module('source_manager_modules').SourceManagers
         if type(value) is SourceManagers:
             value.authorize(self)
             return value.member(self, (yield from self._visit(node.index)))
-        from .source_constants_runtime import SourceConstants
+        SourceConstants = _runtime_module('source_constants_runtime').SourceConstants
         if type(value) is SourceConstants:
             return value.member(self, (yield from self._visit(node.index)))
-        from .source_metadata_properties import SourcePropertyDomain
+        SourcePropertyDomain = _runtime_module('source_metadata_properties').SourcePropertyDomain
         if type(value) is SourcePropertyDomain:
             return value.get_index((yield from self._visit(node.index)))
         if type(value) is BSLSessionParameters:
@@ -1330,48 +1383,57 @@ class Interpreter:
             raise ValueError(f"Двухконтекстная подпрограмма недоступна на стороне {self.execution_context}: {name}")
         return candidates[0] or candidates[1]
 
-    def call(self, node: ast.Call, *, require_value: bool) -> object:
+    def call(self, node: ast.Call, *, require_value: bool, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        receiver = self.receiver if _evaluation is None else _evaluation.receiver
+        argument_value = self.argument if _evaluation is None else _evaluation.argument
         if self._execution_backend == "compiled-strict" and not self._compiled().has_node(node):
             self._admit_compiled_node(node)
-        callee = self.ungroup(node.callee)
-        routine = self._resolve_routine(callee.name) if isinstance(callee, ast.Name) else None
-        if (isinstance(callee, ast.Name) and routine is None
-                and callee.name.casefold() in self._client_routine_names):
+        site = None if _evaluation is None else _evaluation.call_site(node)
+        site_is_name = site is not None and site.callee_kind == 'name'
+        site_is_attribute = site is not None and site.callee_kind == 'attribute'
+        site_name = None if site is None else site.name
+        callee = self.ungroup(node.callee) if site is None else site.callee
+        bound_callee = () if _evaluation is None else _evaluation.bound_callee(node.callee)
+        routine = self._resolve_routine((callee.name if site is None else site_name)) if not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) else None
+        if (not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) and routine is None
+                and (callee.name if site is None else site_name).casefold() in self._client_routine_names):
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         owner = self
-        if routine is None and isinstance(callee, ast.Name) and self._configuration_runtime is not None:
-            configured = self._configuration_runtime.resolve_global(callee.name, self)
+        if not bound_callee and routine is None and (isinstance(callee, ast.Name) if site is None else site_is_name) and self._configuration_runtime is not None:
+            configured = self._configuration_runtime.resolve_global((callee.name if site is None else site_name), self)
             if configured is not None:
                 routine, owner = configured
-        has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
+        has_omissions = (any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
+                         if site is None else site.has_omissions)
         known_receiver = None
-        if isinstance(callee, ast.Attribute):
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
             module = self.import_receiver(callee.object)
             if module is not None:
                 if type(module) is not _Module:
                     raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
                 owner = module.interpreter
-                routine = module.routine(callee.name)
+                routine = module.routine((callee.name if site is None else site_name))
             elif has_omissions:
                 # Classify only stored receivers. Calling a factory to discover
                 # optional arguments would violate the host side-effect guard.
                 known_receiver = self.known_table_receiver(callee.object)
                 if type(known_receiver) is _Module:
                     owner = known_receiver.interpreter
-                    routine = known_receiver.routine(callee.name)
+                    routine = known_receiver.routine((callee.name if site is None else site_name))
         if routine is not None:
-            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=isinstance(callee, ast.Attribute)))
+            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=(isinstance(callee, ast.Attribute) if site is None else site_is_attribute), _evaluation=_evaluation))
         # Existing host calls reject omitted arguments before receiver effects.
         # Native table/list methods need optional holes; admit them only for a known
         # exact built-in receiver (a variable or its Columns property). We never
         # execute a factory merely to discover whether it allows omissions.
         table_receiver = None
         table_optional = None
-        if isinstance(callee, ast.Attribute) and has_omissions:
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute) and has_omissions:
             table_receiver = known_receiver
-            table_optional = self.table_optional_arguments(table_receiver, callee.name)
-        registered = (self.functions.get(callee.name.casefold())
-                      if isinstance(callee, ast.Name) else None)
+            table_optional = self.table_optional_arguments(table_receiver, (callee.name if site is None else site_name))
+        registered = bound_callee[0] if bound_callee else (self.functions.get((callee.name if site is None else site_name).casefold())
+                      if (isinstance(callee, ast.Name) if site is None else site_is_name) else None)
         if table_optional is None and (registered is None or
                 (registered.function is not run_callback_marker
                  and registered.function is not read_json
@@ -1382,39 +1444,51 @@ class Interpreter:
                  and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
                  and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
             self.reject_host_omissions(node.arguments)
-        if isinstance(callee, ast.Attribute):
-            receiver = table_receiver if table_optional is not None else (yield from self.receiver(callee.object))
-            from .source_constant_managers import SourceConstantValueManager, _STANDARD_METHODS
-            if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
-                routine = receiver.exported_routine(self, callee.name)
-                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True))
-            from .source_document_runtime import SourceDocumentObject, _OBJECT_METHODS as _DOCUMENT_OBJECT_METHODS
-            if type(receiver) is SourceDocumentObject and callee.name.casefold() not in _DOCUMENT_OBJECT_METHODS:
-                routine=receiver.exported_routine(self,callee.name)
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
-            from .source_catalog_runtime import SourceCatalogObject, _OBJECT_METHODS
-            if type(receiver) is SourceCatalogObject and callee.name.casefold() not in _OBJECT_METHODS:
-                routine=receiver.exported_routine(self,callee.name)
-                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True))
-            from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
-            from .source_catalog_runtime import _MANAGER_METHODS, reference_call
-            from .source_document_runtime import _MANAGER_METHODS as _DOCUMENT_METHODS, reference_call as document_call
-            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
+            receiver = table_receiver if table_optional is not None else (yield from receiver(callee.object))
+            _dependency = _runtime_module('source_constant_managers')
+            SourceConstantValueManager = _dependency.SourceConstantValueManager
+            _STANDARD_METHODS = _dependency._STANDARD_METHODS
+            if type(receiver) is SourceConstantValueManager and (callee.name if site is None else site_name).casefold() not in _STANDARD_METHODS:
+                routine = receiver.exported_routine(self, (callee.name if site is None else site_name))
+                return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
+            _dependency = _runtime_module('source_document_runtime')
+            SourceDocumentObject = _dependency.SourceDocumentObject
+            _DOCUMENT_OBJECT_METHODS = _dependency._OBJECT_METHODS
+            if type(receiver) is SourceDocumentObject and (callee.name if site is None else site_name).casefold() not in _DOCUMENT_OBJECT_METHODS:
+                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
+                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
+            _dependency = _runtime_module('source_catalog_runtime')
+            SourceCatalogObject = _dependency.SourceCatalogObject
+            _OBJECT_METHODS = _dependency._OBJECT_METHODS
+            if type(receiver) is SourceCatalogObject and (callee.name if site is None else site_name).casefold() not in _OBJECT_METHODS:
+                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
+                return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
+            _dependency = _runtime_module('source_references')
+            SourceReferenceManager = _dependency.SourceReferenceManager
+            _REF_METHODS = _dependency._METHODS
+            _dependency = _runtime_module('source_catalog_runtime')
+            _MANAGER_METHODS = _dependency._MANAGER_METHODS
+            reference_call = _dependency.reference_call
+            _dependency = _runtime_module('source_document_runtime')
+            _DOCUMENT_METHODS = _dependency._MANAGER_METHODS
+            document_call = _dependency.reference_call
+            if type(receiver) is SourceReferenceManager and (callee.name if site is None else site_name).casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
                 receiver = receiver.module(self)
             if type(receiver) is _Module:
-                return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
-                                         receiver.interpreter, require_value=require_value, qualified=True))
+                return (yield from self.call_routine(receiver.routine((callee.name if site is None else site_name)), node.arguments,
+                                         receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
-            function = document_call(self, receiver, callee.name) or reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
+            function = document_call(self, receiver, (callee.name if site is None else site_name)) or reference_call(self, receiver, (callee.name if site is None else site_name)) or receiver.get_method((callee.name if site is None else site_name))
         else:
-            function = (yield from self._visit(node.callee))
+            function = (yield from evaluate(node.callee))
         if not isinstance(function, HostFunction):
             raise TypeError("Значение не является функцией")
         interpreter_call = function.function if type(function.function) is InterpreterCall else None
         if interpreter_call is not None:
             interpreter_call.prepare(self, len(node.arguments))
-        from .reusable_values import refresh_reusable_marker
+        refresh_reusable_marker = _runtime_module('reusable_values').refresh_reusable_marker
         refresh_call = function.function is refresh_reusable_marker
         if refresh_call:
             if self._configuration_runtime is None:
@@ -1422,13 +1496,15 @@ class Interpreter:
             self._configuration_runtime.reusable_values.authorize(self)
             if node.arguments:
                 raise TypeError('RefreshReusableValues requires no arguments')
-        from .value_lists import _ChooseItemMarker
+        _ChooseItemMarker = _runtime_module('value_lists')._ChooseItemMarker
         choosing = type(function.function) is _ChooseItemMarker
         if choosing:
             if self._configuration_runtime is None:
                 raise ValueError('ShowChooseItem requires an application-owned client dispatch')
             self._configuration_runtime.require_value_selection(self)
-        from .common_templates import get_common_template_marker, SourceTemplateCall
+        _dependency = _runtime_module('common_templates')
+        get_common_template_marker = _dependency.get_common_template_marker
+        SourceTemplateCall = _dependency.SourceTemplateCall
         if type(function.function) is SourceTemplateCall:
             function.function.owner.authorize(self)
             if len(node.arguments) != 1:
@@ -1438,7 +1514,7 @@ class Interpreter:
             if self._configuration_runtime is None:raise ValueError('common templates require an application')
             self._configuration_runtime.common_templates.authorize(self)
             if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
-        from . import temporary_storage
+        temporary_storage = _runtime_module('temporary_storage')
         if type(function.function) is temporary_storage.SourceTemporaryCall:
             function.function.authorize_call(self, len(node.arguments))
         temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
@@ -1452,13 +1528,13 @@ class Interpreter:
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
-            from .database_transactions import forbid_transfer
+            forbid_transfer = _runtime_module('database_transactions').forbid_transfer
             forbid_transfer(self._transaction_backend())
-            return (yield from self._run_callback(node))
+            return (yield from self._run_callback(node, _evaluation=_evaluation))
         if function.function is read_json or function.function is write_json:
             if require_value and not function.returns_value:
                 raise TypeError(f"Процедура не возвращает значение: {function.name}")
-            return (yield from self._convert_json(node, writing=function.function is write_json))
+            return (yield from self._convert_json(node, writing=function.function is write_json, _evaluation=_evaluation))
         if any(function.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)):
             self.reject_host_omissions(node.arguments[:1])
         elif function.function is fill_property_values:
@@ -1489,16 +1565,16 @@ class Interpreter:
         if function.function is _eval_marker:
             if len(node.arguments) != 1:
                 raise TypeError("Вычислить ожидает 1 аргумент")
-            return (yield from self._evaluate(node.arguments[0]))
+            return (yield from self._evaluate(node.arguments[0], _evaluation=_evaluation))
         defaults = None
         if table_optional is not None:
             if type(table_receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
                 defaults = ("", None, "", Decimal(0))
-                if callee.name.casefold() in {"insert", "вставить"}:
+                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
             elif type(table_receiver) is BSLValueList:
                 defaults = (None, "", False)
-                if callee.name.casefold() in {"insert", "вставить"}:
+                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
         values = []
         for index, argument in enumerate(node.arguments):
@@ -1507,9 +1583,9 @@ class Interpreter:
                          any(function.function is fn for fn in regex_functions.FUNCTIONS)) else
                          defaults[index] if defaults is not None else None)
             elif index in function.reference_parameters:
-                value = (yield from self.argument(argument))
+                value = (yield from argument_value(argument))
             else:
-                value = (yield from self._visit(argument))
+                value = (yield from evaluate(argument))
             values.append(value)
         if refresh_call:
             return self._configuration_runtime.reusable_values.refresh(self)
@@ -1534,7 +1610,8 @@ class Interpreter:
             return function.function.invoke(self, values)
         return function(*values)
 
-    def _convert_json(self, node, *, writing):
+    def _convert_json(self, node, *, writing, _evaluation=None):
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         required, maximum, module_index = (2, 6, 4) if writing else (1, 9, 5)
         if not required <= len(node.arguments) <= maximum:
             raise TypeError(f"JSON: ожидается от {required} до {maximum} аргументов")
@@ -1545,9 +1622,9 @@ class Interpreter:
                 value = None
             elif index == module_index:
                 receiver = self.import_receiver(argument)
-                value = receiver if receiver is not None else (yield from self._visit(argument))
+                value = receiver if receiver is not None else (yield from evaluate(argument))
             else:
-                value = yield from self._visit(argument)
+                value = yield from evaluate(argument)
             values.append(value)
         values += [None] * (maximum - len(values))
         name, module, additional = values[module_index - 1:module_index + 2]
@@ -1698,15 +1775,16 @@ class Interpreter:
         arguments = [ast.Literal(token, value) for value in values]
         return (yield from self.call_routine(routine, arguments, owner, require_value=False))
 
-    def _run_callback(self, node):
+    def _run_callback(self, node, *, _evaluation=None):
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         self._require_callback_context()
         if not 1 <= len(node.arguments) <= 2:
             raise TypeError("ВыполнитьОбработкуОповещения ожидает от 1 до 2 аргументов")
         self.reject_host_omissions(node.arguments[:1])
-        description = yield from self._visit(node.arguments[0])
+        description = yield from evaluate(node.arguments[0])
         result = None
         if len(node.arguments) == 2 and not isinstance(node.arguments[1], ast.OmittedArgument):
-            result = yield from self._visit(node.arguments[1])
+            result = yield from evaluate(node.arguments[1])
         return (yield from self.dispatch_callback(description, result, node.token))
 
     def known_receiver(self, node: ast.Node) -> object:
@@ -1835,17 +1913,26 @@ class Interpreter:
             return child
         return None
 
-    def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
-                     owner: "Interpreter", *, require_value: bool, qualified: bool = False) -> object:
+    def _admit_routine_call(self, function: ast.Routine, arguments: list[ast.Node],
+                            owner: "Interpreter", *, require_value: bool):
+        """Live per-invocation checks, not a reusable permission/plan cache.
+
+        Keep check order before actual argument effects. This transient result
+        must be consumed immediately by the same invocation; no authority is
+        stored in an immutable compilation plan.
+        """
         self._require_family()
         owner._require_family()
         # Authority registries key the original declaration object. An optional
         # owned compilation view snapshots execution fields, never grants.
         authority_function = function
+        layout = None
         if owner._execution_backend == 'compiled-strict':
             owner._admit_compiled_node(function)
             authority_function = owner._compiled().origin_node(function)
             function = owner._compiled().execution_view(function)
+            if self._execution_backend == 'compiled-strict':
+                layout = owner._compiled().routine_call_metadata(function)
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
@@ -1871,26 +1958,44 @@ class Interpreter:
             raise ValueError("InvocationPort доступен только с логического клиента")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        required = max((index + 1 for index, parameter in enumerate(function.parameters)
-                        if parameter.default is None), default=0)
+        required = (layout.required if layout is not None else
+                    max((index + 1 for index, parameter in enumerate(function.parameters)
+                         if parameter.default is None), default=0))
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
+        return function, authority_function, caller_side, crossing, invocation, layout
+
+    def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
+                     owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        argument_value = self.argument if _evaluation is None else _evaluation.argument
+        (function, authority_function, caller_side, crossing, invocation, layout) = self._admit_routine_call(
+            function, arguments, owner, require_value=require_value)
+        parameters = function.parameters if layout is None else layout.parameters
         if self._execution_backend != 'compiled-strict':
             self._routine_plan(function)
         if self._execution_backend == 'compiled-strict':
-            validate_labels(function.body)
+            if layout is None:
+                validate_labels(function.body)
+            elif layout.label_error is not None:
+                raise BSLError(*layout.label_error)
             # Actuals may be host-materialized Literal plans, and defaults execute
             # in the caller even when the declaration is owned by another VM.
-            for expression in list(arguments) + [parameter.default for parameter in function.parameters
-                                                  if parameter.default is not None]:
+            defaults = (tuple(p.default for p in parameters if p.default is not None)
+                        if layout is None else layout.defaults)
+            for expression in arguments:
+                self._admit_compiled_node(expression)
+            for expression in defaults:
                 self._admit_compiled_node(expression)
         if crossing:
             # The measured copy-in/copy-out slice covers named variable actuals.
             # Reject properties, indexes, expressions and omitted non-Val slots
             # before evaluating even an earlier, otherwise supported argument.
-            for index, parameter in enumerate(function.parameters):
-                if not parameter.by_value and (index >= len(arguments) or
+            byref_indexes = (tuple(i for i, p in enumerate(parameters) if not p.by_value)
+                             if layout is None else layout.byref_indexes)
+            for index in byref_indexes:
+                if (index >= len(arguments) or
                         not isinstance(self.ungroup(arguments[index]), ast.Name)):
                     raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
         # Evaluate expression actuals once, left to right. At a measured crossing,
@@ -1899,18 +2004,18 @@ class Interpreter:
         bindings = {}
         copyback: list[tuple[str, _VariableReference]] = []
         late_inputs: dict[str, _VariableReference] = {}
-        for index, parameter in enumerate(function.parameters):
+        for index, parameter in enumerate(parameters):
             argument = arguments[index] if index < len(arguments) else None
             if argument is None or isinstance(argument, ast.OmittedArgument):
-                value = (yield from self._visit(parameter.default)) if parameter.default is not None else None
+                value = (yield from evaluate(parameter.default)) if parameter.default is not None else None
             else:
                 if crossing and isinstance(self.ungroup(argument), ast.Name):
-                    value = (yield from self._invocation_argument(argument)) if invocation is not None else (yield from self.argument(argument))
+                    value = (yield from (self._invocation_argument(argument) if _evaluation is None else self._invocation_argument(argument, _evaluation=_evaluation))) if invocation is not None else (yield from argument_value(argument))
                 else:
-                    value = (yield from self._visit(argument)) if parameter.by_value or function.is_async else (yield from self.argument(argument))
+                    value = (yield from evaluate(argument)) if parameter.by_value or function.is_async else (yield from argument_value(argument))
             if self.execution_backend == 'compiled-strict':
                 owner._compiled().verify_node(function)
-            name = parameter.name.casefold()
+            name = parameter.name.casefold() if layout is None else parameter.name
             if crossing and not parameter.by_value:
                 # A named caller formal may itself alias a property/index.
                 # Only dictionary variable storage has a safe copy-out setter;
@@ -1969,6 +2074,22 @@ class Interpreter:
                 return self._copy_context_packet([invocation(copied)])[0]
             owner = (owner._new_server_activation() if function.module_context else
                      owner._new_server_activation(module_context=False))
+        return (yield from self._invoke_bound_routine(function, owner, bindings,
+            caller_side=caller_side, crossing=crossing, copyback=copyback,
+            scalar_server_reuse=scalar_server_reuse, reuse=reuse,
+            reusable_runtime=reusable_runtime))
+
+    def _invoke_bound_routine(self, function, owner, bindings, *, caller_side,
+                              crossing, copyback, scalar_server_reuse, reuse,
+                              reusable_runtime):
+        """Execute one already-admitted, already-bound invocation.
+
+        Shared by calling paths, never an authorization cache or a public call
+        bypass. Preserve suspension, policy callbacks, cleanup and copyback;
+        callers must not repeat argument effects if optimized dispatch deopts.
+        """
+        if scalar_server_reuse:
+            from .invocation import _encode_scalar
         if function.is_async:
             promise = self._scheduler.start(owner._async_body(function, bindings),
                                             procedure=not function.is_function)
@@ -1977,9 +2098,38 @@ class Interpreter:
                       self._configuration_runtime.input_call(self, owner,
                           not crossing and caller_side == 'client' and function.execution_context == 'client'
                           and function.module_context))
+        with self._routine_activation(owner, function, bindings, crossing, input_call):
+            if crossing:
+                for initializer in owner.server_initializers:
+                    yield from owner.block(initializer.body)
+                owner.locals = bindings
+            result = None
+            try:
+                (yield from owner._planned_routine_block(function))
+            except _Return as returned:
+                result = returned.value
+            if scalar_server_reuse: _encode_scalar(result)
+            if crossing:
+                # Validate the entire outgoing packet before touching caller
+                # storage. Escaping errors never reach this normal-return path.
+                packet = self._copy_context_packet(
+                    [result] + [bindings[name] for name, _ in copyback])
+                result = packet[0]
+                # Every output/result gets an independent per-occurrence copy.
+                # Publish only after the whole packet validates and allocates.
+                for (_, reference), value in zip(copyback, packet[1:]):
+                    reference.set(value)
+            if reuse is not None:
+                reusable_runtime.reusable_values.authorize(self)
+                cache, reservation = reuse
+                cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
+            return result
+
+    @contextmanager
+    def _routine_activation(self, owner, function, bindings, crossing, input_call):
+        """Shared live activation/cleanup boundary, never a stored grant."""
         previous = owner.locals
         # Fresh server module initialization precedes formal parameter storage.
-        # One cleanup boundary encloses BOTH initializer and routine execution.
         owner.locals = None if crossing else bindings
         owner._context_stack.append(function.execution_context)
         owner._module_context_stack.append(function.module_context)
@@ -1988,31 +2138,7 @@ class Interpreter:
             try:
                 from .safe_mode import routine_frame
                 with input_call, routine_frame(self, owner):
-                    if crossing:
-                        for initializer in owner.server_initializers:
-                            yield from owner.block(initializer.body)
-                        owner.locals = bindings
-                    result = None
-                    try:
-                        (yield from owner._planned_routine_block(function))
-                    except _Return as returned:
-                        result = returned.value
-                    if scalar_server_reuse: _encode_scalar(result)
-                    if crossing:
-                        # Validate the entire outgoing packet before touching caller
-                        # storage. Escaping errors never reach this normal-return path.
-                        packet = self._copy_context_packet(
-                            [result] + [bindings[name] for name, _ in copyback])
-                        result = packet[0]
-                        # Every output/result gets an independent per-occurrence copy.
-                        # Publish only after the whole packet validates and allocates.
-                        for (_, reference), value in zip(copyback, packet[1:]):
-                            reference.set(value)
-                    if reuse is not None:
-                        reusable_runtime.reusable_values.authorize(self)
-                        cache, reservation = reuse
-                        cache.publish(reservation, result, reusable_runtime.reusable_values.measure(result))
-                    return result
+                    yield
             finally:
                 owner._module_context_stack.pop()
                 owner._context_stack.pop()
@@ -2131,10 +2257,12 @@ class Interpreter:
             raise TypeError("Пропуск аргументов встроенных функций, методов и конструкторов "
                             "пока не поддерживается")
 
-    def _invocation_argument(self, node):
-        return (yield from self.argument(node))
+    def _invocation_argument(self, node, *, _evaluation=None):
+        return (yield from self.argument(node) if _evaluation is None else _evaluation.argument(node))
 
-    def argument(self, node: ast.Node) -> object:
+    def argument(self, node: ast.Node, *, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        receiver = self.receiver if _evaluation is None else _evaluation.receiver
         node = self.ungroup(node)
         if isinstance(node, ast.Name):
             name = node.name.casefold()
@@ -2143,33 +2271,45 @@ class Interpreter:
             elif self._has_module_context and name in self.variables and (self.locals is None or name in self.module_names):
                 scope = self.variables
             else:
-                return (yield from self._visit(node))
+                return (yield from evaluate(node))
             if isinstance(scope[name], _Reference):
                 return scope[name]
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
-            owner = (yield from self.receiver(node.object))
-            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            owner = (yield from receiver(node.object))
+            _dependency = _runtime_module('source_document_sections')
+            SourceDocumentSection = _dependency.SourceDocumentSection
+            SourceDocumentRow = _dependency.SourceDocumentRow
             if type(owner) in (SourceDocumentSection, SourceDocumentRow):
                 owner.property_read(self,node.name)
                 return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
-            from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, readonly_reference as readonly_document, SourceDocumentObject, SourceDocumentSelection
+            _dependency = _runtime_module('source_document_runtime')
+            is_document_reference = _dependency.is_source_reference
+            document_member = _dependency.reference_member
+            readonly_document = _dependency.readonly_reference
+            SourceDocumentObject = _dependency.SourceDocumentObject
+            SourceDocumentSelection = _dependency.SourceDocumentSelection
             if is_document_reference(owner):
                 captured=document_member(self,owner,node.name)
                 return _Reference(lambda:captured, lambda value:readonly_document(self,owner,node.name,value))
             if type(owner) in (SourceDocumentObject,SourceDocumentSelection):
                 owner.property_read(self,node.name)
                 return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
-            from .source_catalog_runtime import is_source_reference, reference_member, readonly_reference
+            _dependency = _runtime_module('source_catalog_runtime')
+            is_source_reference = _dependency.is_source_reference
+            reference_member = _dependency.reference_member
+            readonly_reference = _dependency.readonly_reference
             if is_source_reference(owner):
                 captured=reference_member(self,owner,node.name)
                 return _Reference(lambda:captured, lambda value:readonly_reference(self,owner,node.name,value))
-            from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+            _dependency = _runtime_module('source_catalog_runtime')
+            SourceCatalogObject = _dependency.SourceCatalogObject
+            SourceCatalogSelection = _dependency.SourceCatalogSelection
             if type(owner) in (SourceCatalogObject, SourceCatalogSelection):
                 owner.property_read(self, node.name)
                 return _Reference(lambda: owner.property_read(self, node.name),
                                   lambda value: owner.property_write(self, node.name, value))
-            from .source_constant_managers import SourceConstantValueManager
+            SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
             if type(owner) is SourceConstantValueManager:
                 owner.property_read(self, node.name)
                 return _Reference(lambda: owner.property_read(self, node.name),
@@ -2200,8 +2340,8 @@ class Interpreter:
                 owner.reference_get_member(node.name)
                 return _Reference(lambda: owner.reference_get_member(node.name),
                                   lambda value: owner.reference_set_member(node.name, value))
-            from .queries import BSLQueryResultSelection
-            from .accumulation_posting_values import BSLAccumulationRow
+            BSLQueryResultSelection = _runtime_module('queries').BSLQueryResultSelection
+            BSLAccumulationRow = _runtime_module('accumulation_posting_values').BSLAccumulationRow
             key = node.name.casefold()
             observed_readonly = (
                 type(owner) is BSLQueryResultSelection and any(
@@ -2226,15 +2366,15 @@ class Interpreter:
             return _Reference(lambda: owner.get_member(node.name),
                               lambda value: owner.set_member(node.name, value))
         if isinstance(node, ast.Index):
-            owner = (yield from self._visit(node.object))
+            owner = (yield from evaluate(node.object))
             if is_metadata_collection(owner) or type(owner) in (BSLCatalogs, BSLDocuments, BSLEnumerations, BSLEnumManager):
-                index = (yield from self._visit(node.index))
+                index = (yield from evaluate(node.index))
                 owner.get_index(index)
                 return _Reference(lambda: owner.get_index(index),
                                   lambda value: owner.set_index(index, value))
             if not isinstance(owner, _COLLECTIONS):
                 raise TypeError("Индексирование поддерживается только для коллекций")
-            index = (yield from self._visit(node.index))
+            index = (yield from evaluate(node.index))
             getter = owner.get_index if isinstance(owner, (BSLFixedMap, *_TABLE_COLLECTIONS)) else owner.get
             # Native PR47: bad array indices / absent structure properties fail
             # before entry; a mutable map's missing key is a valid output slot.
@@ -2242,7 +2382,7 @@ class Interpreter:
             setter = owner.set_index if isinstance(owner, _TABLE_COLLECTIONS) else owner.set
             return _Reference(lambda: getter(index), lambda value: setter(index, value))
         # Literals and computed expressions have no caller storage to rebind.
-        return (yield from self._visit(node))
+        return (yield from evaluate(node))
 
     @staticmethod
     def ungroup(node: ast.Node) -> ast.Node:
@@ -2250,7 +2390,9 @@ class Interpreter:
             node = node.expression
         return node
 
-    def semantic_new(self, node: ast.New) -> object:
+    def semantic_new(self, node: ast.New, *, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
+        receiver = self.receiver if _evaluation is None else _evaluation.receiver
         factory = self.types.get(node.name.casefold())
         if factory is not None and factory.function is callback_description_marker:
             self._require_callback_context()
@@ -2261,9 +2403,9 @@ class Interpreter:
                 if isinstance(argument, ast.OmittedArgument):
                     value = None
                 elif index in (1, 4):
-                    value = yield from self.receiver(argument)
+                    value = yield from receiver(argument)
                 else:
-                    value = yield from self._visit(argument)
+                    value = yield from evaluate(argument)
                 values.append(value)
             return self._new_callback(values)
         if factory is not None and (factory.function is BSLTypeDescription
@@ -2289,7 +2431,7 @@ class Interpreter:
             # Other host constructors retain their explicit omission rejection.
             values = []
             for argument in node.arguments:
-                values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+                values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from evaluate(argument)))
             if factory.function is BSLTypeDescription:
                 return self._new_type_description(*values)
             return factory(*values)
@@ -2298,14 +2440,15 @@ class Interpreter:
             raise ValueError(f"Тип не определен: {node.name}")
         values = []
         for argument in node.arguments:
-            values.append((yield from self._visit(argument)))
+            values.append((yield from evaluate(argument)))
         return factory(*values)
 
-    def semantic_dynamic_new(self, node: ast.DynamicNew) -> object:
+    def semantic_dynamic_new(self, node: ast.DynamicNew, *, _evaluation=None) -> object:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         # Expressions follow the same left-to-right evaluation as host calls.
         # EDT root_New explicitly says to ignore a non-array second value.
-        value_type = (yield from self._visit(node.type_expression))
-        parameters = (yield from self._visit(node.parameters)) if node.parameters is not None else None
+        value_type = (yield from evaluate(node.type_expression))
+        parameters = (yield from evaluate(node.parameters)) if node.parameters is not None else None
         if (type(value_type) is BSLCatalogType or type(value_type) is BSLDocumentType or (type(value_type) is BSLDocumentLinesType or type(value_type) is BSLDocumentSectionType) or type(value_type) is BSLInformationRegisterType):
             raise ValueError("catalog reference type construction is unsupported")
         if type(value_type) is BSLType:
@@ -2330,13 +2473,17 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
-            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            _dependency = _runtime_module('source_document_sections')
+            SourceDocumentSection = _dependency.SourceDocumentSection
+            SourceDocumentRow = _dependency.SourceDocumentRow
             if type(value) in (SourceDocumentSection, SourceDocumentRow):
                 if not isinstance(node.target,ast.Attribute):
                     raise ValueError("source document section replacement unsupported")
                 value.property_write(self,node.target.name,(yield from self._visit(node.value)))
                 return
-            from .source_document_runtime import is_source_reference as is_document_reference, SourceDocumentObject
+            _dependency = _runtime_module('source_document_runtime')
+            is_document_reference = _dependency.is_source_reference
+            SourceDocumentObject = _dependency.SourceDocumentObject
             if is_document_reference(value):
                 raise ValueError('source document reference fields are readonly; use GetObject().Write()')
             if type(value) is SourceDocumentObject:
@@ -2344,22 +2491,24 @@ class Interpreter:
                     raise ValueError('source document object indexing unsupported')
                 value.property_write(self,node.target.name,(yield from self._visit(node.value)))
                 return
-            from .source_catalog_runtime import is_source_reference, readonly_reference
+            _dependency = _runtime_module('source_catalog_runtime')
+            is_source_reference = _dependency.is_source_reference
+            readonly_reference = _dependency.readonly_reference
             if is_source_reference(value):
                 raise ValueError('source reference fields are readonly; use GetObject().Write()')
-            from .source_catalog_runtime import SourceCatalogObject
+            SourceCatalogObject = _runtime_module('source_catalog_runtime').SourceCatalogObject
             if type(value) is SourceCatalogObject:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError("source catalog object indexing unsupported")
                 value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
-            from .source_constant_managers import SourceConstantValueManager
+            SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
             if type(value) is SourceConstantValueManager:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError('unsupported value manager indexing')
                 value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
-            from .source_constants_runtime import SourceConstantSet
+            SourceConstantSet = _runtime_module('source_constants_runtime').SourceConstantSet
             if type(value) is SourceConstantSet:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError('constant set indexing unsupported')
@@ -2528,7 +2677,8 @@ class Interpreter:
             finally:
                 self._handled_errors.pop()
 
-    def semantic_raise(self, node: ast.Raise) -> None:
+    def semantic_raise(self, node: ast.Raise, *, _evaluation=None) -> None:
+        evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         if node.value is None:
             if not self._handled_errors:
                 # Protect callers constructing ASTs directly, as well as the parser.
@@ -2538,13 +2688,13 @@ class Interpreter:
                 raise ValueError("Повторный вызов исключения после вложенного обработчика "
                                  "пока не поддерживается; используйте явное сообщение")
             raise error
-        message = to_string((yield from self._visit(node.value)))
+        message = to_string((yield from evaluate(node.value)))
         arguments = node.optional_arguments or []
         if len(arguments) > 4:
             raise TypeError("ВызватьИсключение ожидает не более 5 аргументов")
         values = []
         for argument in arguments:
-            values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from self._visit(argument)))
+            values.append(None if isinstance(argument, ast.OmittedArgument) else (yield from evaluate(argument)))
         values.extend([None] * (4 - len(values)))
         category, code, additional, cause = values
         if category is not None:
@@ -2771,3 +2921,11 @@ def _source_call_dispatch_types():
             SourceReferenceCall, ConstantCall, ConstantSetCall, SourceQueryCall,
             ExtensionCall, SourceSessionCall, SourceTransactionCall,
             ValueManagerCall, write_values)
+
+_PLAIN_BLOCK_ABI = Interpreter.block
+
+_PLAIN_SCOPE_ABI = (Interpreter.locals, Interpreter._context_stack, Interpreter._module_context_stack)
+
+from .async_runtime import ExecutionContext as _PlainExecutionContext
+_PLAIN_STORAGE_ABI = tuple((cls, vars(cls).get('__dict__'), cls.__mro__)
+                           for cls in (Interpreter, Scheduler, _PlainExecutionContext))

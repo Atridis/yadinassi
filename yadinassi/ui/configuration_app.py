@@ -771,8 +771,7 @@ class ConfigurationProcess(FormProcess):
             command += ['--launch-binding', launch_binding]
         from ..execution_policy import ui_backend
         self.execution_backend = ui_backend()
-        if self.execution_backend != 'interpreter':
-            command += ['--execution-backend', self.execution_backend]
+        command += ['--execution-backend', self.execution_backend]
         self._start(command, environment)
 
 

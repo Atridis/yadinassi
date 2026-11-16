@@ -76,8 +76,9 @@ class CompiledHostThreadTests(unittest.TestCase):
             self.assertTrue(created)
             self.assertTrue(all(tid!=current_thread().ident and mode=='compiled-strict' for tid,_,mode in created),created)
             self.assertTrue(any(name=='_FormInterpreter' for _,name,_ in created))
-            self.assertGreater(sum(row.get('emitted_executions',0)+row.get('helper_executions',0)+row.get('inline_blocks',0)+row.get('inline_fragments',0) for row in stats),0)
+            self.assertGreater(sum(row.get('emitted_executions',0)+row.get('helper_executions',0)+row.get('inline_blocks',0)+row.get('inline_fragments',0)+row.get('python_translated_blocks',0)+sum(row.get('python_translated_node_kinds',{}).values()) for row in stats),0)
             self.assertEqual(sum(row.get('interpreter_fallbacks',0) for row in stats),0)
+            self.assertEqual(sum(row.get('plain_adapter_blocks',0) for row in stats),0)
             self.assertEqual(current_backend(),entry_backend)
         finally:
             if server is not None:
@@ -116,8 +117,9 @@ class CompiledHostThreadTests(unittest.TestCase):
             self.assertIsNotNone(workspace.form)
             self.assertGreaterEqual(sum(name=='_SourceFormInterpreter' for _,name,_ in created),2)
             self.assertTrue(all(tid!=current_thread().ident and mode=='compiled-strict' for tid,_,mode in created),created)
-            self.assertGreater(sum(row.get('emitted_executions',0)+row.get('helper_executions',0)+row.get('inline_blocks',0)+row.get('inline_fragments',0) for row in stats),0)
+            self.assertGreater(sum(row.get('emitted_executions',0)+row.get('helper_executions',0)+row.get('inline_blocks',0)+row.get('inline_fragments',0)+row.get('python_translated_blocks',0)+sum(row.get('python_translated_node_kinds',{}).values()) for row in stats),0)
             self.assertEqual(sum(row.get('interpreter_fallbacks',0) for row in stats),0)
+            self.assertEqual(sum(row.get('plain_adapter_blocks',0) for row in stats),0)
         finally:
             server.shutdown();server.server_close();thread.join(3);application.close()
 

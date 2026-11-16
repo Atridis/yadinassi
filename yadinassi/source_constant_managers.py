@@ -36,7 +36,7 @@ class _ValueInterpreter(_SourceInterpreter):
             return self.manager
         return super().visit_Name(node)
 
-    def argument(self, node):
+    def argument(self, node, *, _evaluation=None):
         node = self.ungroup(node)
         if syntax_kind(node) is ast.Name and node.name.casefold() == '__constant_cancel':
             from .runtime import _Reference
@@ -47,7 +47,7 @@ class _ValueInterpreter(_SourceInterpreter):
             self.manager.value_read(self)
             return _Reference(lambda: self.manager.value_read(self),
                               lambda value: self.manager.value_write(self, value))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
     def set_variable(self, name, value):
         if name.casefold() in ('value', 'значение'):

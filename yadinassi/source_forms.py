@@ -106,15 +106,15 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         if navigation is not None:
             self.register_function('OpenForm', self._open_source_form, 'ОткрытьФорму', returns_value=False)
 
-    def _invocation_argument(self, node):
+    def _invocation_argument(self, node, *, _evaluation=None):
         # Only sealed Val InvocationPort calls use this hook. Source form scalar
         # attributes are snapshots, never dictionary references/copy-out sinks.
         from .syntax import ast
         actual = self.ungroup(node)
         if (isinstance(actual, ast.Name) and actual.name.casefold() in self._form_session.form._static
                 and not (self.locals is not None and actual.name.casefold() in self.locals)):
-            return (yield from self._visit(node))
-        return (yield from super()._invocation_argument(node))
+            return (yield from (self._visit(node) if _evaluation is None else _evaluation.evaluate(node)))
+        return (yield from (super()._invocation_argument(node) if _evaluation is None else super()._invocation_argument(node, _evaluation=_evaluation)))
 
     def _open_source_form(self, name, parameters=None):
         if (not self._form_session._busy or not self._context_stack

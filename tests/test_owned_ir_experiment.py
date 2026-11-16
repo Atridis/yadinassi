@@ -26,6 +26,10 @@ Engine.OWNED_SNAPSHOT = True
 Engine.ORIGIN_MUTATION_MONITOR = True
 Engine.INLINE = True
 Engine.FAST_INLINE = True
+# This constructor-patched FULL/OFF historical IR matrix is not evidence of
+# ordinary translated-default coverage. Production probes without this prelude
+# continue to use the current default unchanged.
+Engine.FORCE_PYTHON_TRANSLATION = False
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.syntax import ast

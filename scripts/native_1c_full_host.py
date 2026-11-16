@@ -95,10 +95,14 @@ source = Path(sys.argv[2])
 source_text = source.read_text(encoding="utf-8-sig")
 post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-if len(sys.argv) > 4:
-    if len(sys.argv) != 6 or sys.argv[4] != 'compiled-strict':
-        raise ValueError('invalid execution backend')
-    options['execution_backend'] = sys.argv[4]
+# Legacy invocations still select the oracle explicitly, independent of UI/API defaults.
+backend = sys.argv[4] if len(sys.argv) > 4 else 'interpreter'
+if (backend not in ('interpreter', 'compiled-strict')
+        or (backend == 'compiled-strict' and len(sys.argv) != 6)
+        or (backend == 'interpreter' and len(sys.argv) not in (3, 4, 5))):
+    raise ValueError('invalid execution backend')
+options['execution_backend'] = backend
+if backend == 'compiled-strict':
     from yadinassi.compiled_backend import Engine, CompiledUnsupported
     counters = []
     original_engine_init = Engine.__init__
@@ -134,6 +138,8 @@ if len(sys.argv) > 4:
         original_rejection(error, node, reason)
     CompiledUnsupported.__init__ = observe_rejection
 interpreter = Interpreter(output=emit, **options)
+if interpreter.execution_backend != backend:
+    raise ValueError('execution backend mismatch')
 interpreter.execute(source_text, str(source))
 if post_create:
     emit("export-phase.post-create: [begin]")
@@ -149,13 +155,22 @@ if post_create:
         sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
     else:
         emit("export-phase.post-create: [ok]")
-if len(sys.argv) > 4:
+# Never publish output acceptance/evidence for a silently changed backend.
+if interpreter.execution_backend != backend:
+    raise ValueError('execution backend mismatch')
+if backend == 'compiled-strict':
     import json
     keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
     observed = {key: sum(stats.get(key, 0) for stats in counters) for key in keys}
     observed["node_coverage"] = "unobserved" if any(stats.get("node_coverage") == "unobserved" for stats in counters) else "observed"
+    observed["python_sync_routine_calls"] = sum(stats.get("python_sync_routine_calls", 0) for stats in counters)
+    observed["python_translated_blocks"] = sum(stats.get("python_translated_blocks", 0) for stats in counters)
+    observed["python_translated_nodes"] = sum(sum(stats.get("python_translated_node_kinds", {}).values()) for stats in counters)
+    observed["block_executions"] = sum(stats.get("block_executions", 0) for stats in counters)
+    observed["metadata_block_executions"] = sum(stats.get("metadata_block_executions", 0) for stats in counters)
+    observed["plain_adapter_blocks"] = sum(stats.get("plain_adapter_blocks", 0) for stats in counters)
     observed.update(violations)
-    observed["lowering_variant"] = "inline" if Engine.INLINE else "node-scaffold"
+    observed["lowering_variant"] = "python-translation" if Engine.FORCE_PYTHON_TRANSLATION else "inline" if Engine.INLINE else "node-scaffold"
     observed["fast_inline_enabled"] = bool(Engine.FAST_INLINE)
     Path(sys.argv[5]).write_text(json.dumps(observed), encoding='utf-8')
 '''
@@ -1667,9 +1682,19 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
         raise FullError("semantic_result_invalid")
 
 
-def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str) -> None:
+def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str, *,
+                        expected_execution_backend=None) -> None:
     """Validate both raw evidence and separately named acceptance, never conflate them."""
     validate_comparison_options(native_target, comparison_mode)
+    if type(comparison) is not dict or type(comparison.get('schema')) is not int:
+        raise FullError('comparison_evidence_invalid')
+    # Fresh callers bind the requested mode; historical schema-2 reports remain readable.
+    if expected_execution_backend is not None:
+        if expected_execution_backend not in ('interpreter', 'compiled-strict'):
+            raise FullError('execution_backend_invalid')
+        expected_schema = 3 if expected_execution_backend == 'compiled-strict' else 2
+        if type(comparison) is not dict or comparison.get('schema') != expected_schema:
+            raise FullError('comparison_evidence_invalid')
     if type(comparison) is dict and comparison.get('schema') == 3:
         validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
         comparison = {k: v for k, v in comparison.items() if k != 'execution'}
@@ -1748,14 +1773,17 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
 
 def validate_execution_evidence(value, count):
     if (type(value) is not dict or set(value) != {'schema', 'execution_backend', 'cases'}
-            or value['schema'] != 'compiled-native-execution-v1'
+            or value['schema'] not in ('compiled-native-execution-v1', 'compiled-native-execution-v2', 'compiled-native-execution-v3')
             or value['execution_backend'] != 'compiled-strict'
             or type(value['cases']) is not list or len(value['cases']) != count):
         raise FullError('compiled_execution_unverified')
+    translated_keys = {'python_translated_blocks', 'python_translated_nodes'} if value['schema'] in ('compiled-native-execution-v2', 'compiled-native-execution-v3') else set()
+    if value['schema'] == 'compiled-native-execution-v3':
+        translated_keys.add('python_sync_routine_calls')
     for stats in value['cases']:
-        if type(stats) is not dict or set(stats) != {'emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'lowering_variant', 'fast_inline_enabled', 'node_coverage', 'inline_blocks', 'inline_fragments'}:
+        if type(stats) is not dict or set(stats) != translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()) | {'emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'lowering_variant', 'fast_inline_enabled', 'node_coverage', 'inline_blocks', 'inline_fragments'}:
             raise FullError('compiled_execution_unverified')
-        if stats.get('lowering_variant') not in ('inline', 'node-scaffold') or type(stats.get('fast_inline_enabled')) is not bool:
+        if stats.get('lowering_variant') not in (('inline', 'node-scaffold', 'python-translation') if translated_keys else ('inline', 'node-scaffold')) or type(stats.get('fast_inline_enabled')) is not bool:
             raise FullError('compiled_execution_unverified')
         if stats.get('node_coverage') not in ('observed', 'unobserved'):
             raise FullError('compiled_execution_unverified')
@@ -1763,14 +1791,30 @@ def validate_execution_evidence(value, count):
                     'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'inline_blocks', 'inline_fragments'):
             if type(stats.get(key)) is not int or not 0 <= stats[key] <= 10**12:
                 raise FullError('compiled_execution_unverified')
-        if (not (stats['emitted_executions'] + stats['helper_executions'] + stats['inline_blocks'] + stats['inline_fragments'])
+        for key in translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()):
+            if type(stats[key]) is not int or not 0 <= stats[key] <= 10**12:
+                raise FullError('compiled_execution_unverified')
+        if stats.get('python_sync_routine_calls', 0) and stats['node_coverage'] != 'unobserved':
+            raise FullError('compiled_execution_unverified')
+        if stats['lowering_variant'] == 'python-translation':
+            if not sum(stats[key] for key in translated_keys) or any(stats[key] for key in (
+                    'emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments',
+                    'block_executions', 'metadata_block_executions')):
+                raise FullError('compiled_execution_unverified')
+        elif translated_keys and sum(stats[key] for key in translated_keys):
+            raise FullError('compiled_execution_unverified')
+        if (not (sum(stats[key] for key in translated_keys) + stats['emitted_executions'] + stats['helper_executions'] + stats['inline_blocks'] + stats['inline_fragments'])
+                or stats.get('plain_adapter_blocks',0)
                 or any(stats[k] for k in ('rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections'))):
             raise FullError('compiled_execution_unverified')
     return value
 
 
 def execution_evidence(cases):
-    return validate_execution_evidence({'schema': 'compiled-native-execution-v1',
+    if type(cases) is not list or any(type(case) is not dict for case in cases):
+        raise FullError('compiled_execution_unverified')
+    schema = 'compiled-native-execution-v3' if any('python_sync_routine_calls' in case for case in cases) else 'compiled-native-execution-v2' if any('python_translated_blocks' in case or 'python_translated_nodes' in case for case in cases) else 'compiled-native-execution-v1'
+    return validate_execution_evidence({'schema': schema,
         'execution_backend': 'compiled-strict', 'cases': cases}, len(cases))
 
 
@@ -1815,7 +1859,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                                               "-c", EXECUTE_SCRIPT, str(root), str(source), native_target,
-                                              *([execution_backend, str(Path(cache) / 'execution.json')]
+                                              execution_backend,
+                                              *([str(Path(cache) / 'execution.json')]
                                                 if execution_backend == 'compiled-strict' else [])], root, **limits)
                 if execution_backend == 'compiled-strict':
                     compiled_cases.append(strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536))
@@ -1867,7 +1912,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
     if execution_backend == 'compiled-strict':
         result['schema'] = 3
         result['execution'] = execution_evidence(compiled_cases)
-    validate_comparison(result, stage3, native_target, comparison_mode)
+    validate_comparison(result, stage3, native_target, comparison_mode,
+                        expected_execution_backend=execution_backend)
     return result
 
 

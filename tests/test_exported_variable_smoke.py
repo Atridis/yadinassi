@@ -32,7 +32,7 @@ class ExportedVariableSmokeTests(unittest.TestCase):
             self.assertEqual(command[0], 'real-python-cli')
             self.assertEqual(kwargs['env'], self.env)
             self.assertEqual(kwargs['cwd'], directory)
-            self.assertEqual(kwargs['timeout'], 30)
+            self.assertEqual(kwargs['timeout'], smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS)
             self.assertEqual(kwargs['encoding'], 'utf-8')
             index = len(calls)
             calls.append(command)

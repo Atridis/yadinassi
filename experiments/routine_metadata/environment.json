@@ -1,0 +1,7 @@
+{
+  "cpu": "AMD EPYC 9V74 80-Core Processor",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.41",
+  "cpu_pinned": false,
+  "affinity_count": 5,
+  "note": "same venv/host for all sources; no concurrent tests/profiling during benchmark"
+}

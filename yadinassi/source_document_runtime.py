@@ -1,4 +1,5 @@
 """Explicit nonposting document objects with bounded modules and real stored data."""
+from .runtime_dependencies import runtime_module as _runtime_module
 from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
@@ -173,9 +174,9 @@ _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','ун
 
 
 def is_source_reference(value):
-    from .document_types import BSLDocumentReference
-    from .configuration_source_metadata import SourceMetadataObject
-    from .source_references import _SourceReferenceSnapshot
+    BSLDocumentReference = _runtime_module('document_types').BSLDocumentReference
+    SourceMetadataObject = _runtime_module('configuration_source_metadata').SourceMetadataObject
+    _SourceReferenceSnapshot = _runtime_module('source_references')._SourceReferenceSnapshot
     return (type(value) is BSLDocumentReference and
             (type(value.value_type.snapshot) is _SourceReferenceSnapshot or type(value.metadata) is SourceMetadataObject))
 
@@ -247,14 +248,17 @@ class _ObjectInterpreter(_SourceInterpreter):
         if self.field(node.name):return self.object.property_read(self,node.name)
         return super().visit_Name(node)
 
-    def call(self,node,*,require_value):
+    def call(self,node,*,require_value, _evaluation=None):
         callee=self.ungroup(node.callee)
         # A field expression remains the value; a builtin call uses its callable.
         if (syntax_kind(callee) is ast.Name and self.field(callee.name)
                 and callee.name.casefold() in self.functions
                 and self._resolve_routine(callee.name) is None):
-            node=ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
-        return (yield from super().call(node,require_value=require_value))
+            if _evaluation is not None:
+                _evaluation = _evaluation.with_bound_callee(node.callee, self.functions[callee.name.casefold()])
+            else:
+                node=ast.Call(node.token,ast.Literal(node.token,self.functions[callee.name.casefold()]),node.arguments)
+        return (yield from super().call(node,require_value=require_value, _evaluation=_evaluation))
 
     def set_variable(self,name,value):
         if name.casefold() in ('thisobject','этотобъект'):
@@ -262,7 +266,7 @@ class _ObjectInterpreter(_SourceInterpreter):
         if self.field(name):return self.object.property_write(self,name,value)
         return super().set_variable(name,value)
 
-    def argument(self,node):
+    def argument(self,node, *, _evaluation=None):
         node=self.ungroup(node)
         from .runtime import _Reference
         if syntax_kind(node) is ast.Name and node.name.casefold()=='__document_cancel':
@@ -272,7 +276,7 @@ class _ObjectInterpreter(_SourceInterpreter):
             self.object.property_read(self,node.name)
             return _Reference(lambda:self.object.property_read(self,node.name),
                               lambda value:self.object.property_write(self,node.name,value))
-        return (yield from super().argument(node))
+        return (yield from super().argument(node, _evaluation=_evaluation))
 
 
 

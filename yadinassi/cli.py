@@ -148,8 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--module-runtime", choices=("managed-client-server-v1",),
                         help="явный runtime общих модулей и приложения; импорт не исполняет код")
     parser.add_argument("--inactive", action="store_true", help="сохранить конфигурацию без активации исполнения")
-    parser.add_argument("--execution-backend", choices=("interpreter", "hybrid", "compiled-strict"), default="interpreter",
-                        help="standalone execution: interpreter (default) or opt-in Decimal-loop hybrid")
+    parser.add_argument("--execution-backend", choices=("interpreter", "hybrid", "compiled-strict"), default="compiled-strict",
+                        help="standalone execution: Python-translated compiled-strict (default); explicit interpreter oracle or hybrid")
     parser.add_argument("--encoding", default="utf-8-sig", help="кодировка файла (по умолчанию UTF-8)")
     parser.add_argument("--preprocessor-profile", choices=COMPILATION_PROFILES, default="standalone",
                         help="профиль условной компиляции (по умолчанию standalone)")

@@ -203,6 +203,18 @@ class TreeHostTests(unittest.TestCase):
                 self.assertEqual(HOST.failure_diagnostic({'stage': stage}, HOST.TreeError(reason)),
                                  {'stage': stage, 'reason': reason})
 
+    def test_comparison_child_failures_keep_closed_diagnostic_reason(self):
+        for reason in ('interpreter_timeout', 'interpreter_output_limit',
+                       'interpreter_unavailable'):
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    HOST.failure_diagnostic({'stage': 'comparison'}, HOST.FULL.FullError(reason)),
+                    {'stage': 'comparison', 'reason': reason})
+                self.assertEqual(
+                    HOST.failure_diagnostic({'stage': 'comparison'},
+                                            HOST.FULL.FullError(reason + ' /private/token.txt')),
+                    {'stage': 'comparison', 'reason': 'unexpected_failure'})
+
     def test_lifecycle_failures_never_export(self):
         import contextlib
         import os

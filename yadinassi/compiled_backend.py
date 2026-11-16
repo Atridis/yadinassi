@@ -13,7 +13,8 @@ from decimal import Decimal
 
 from .errors import BSLRuntimeError
 from .syntax import ast
-from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, origin_node as syntax_origin, creation_fingerprint
+from .compiled_roles import validate_node_roles
+from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, origin_node as syntax_origin, creation_fingerprint
 
 
 class CompiledUnsupported(BSLRuntimeError):
@@ -92,12 +93,71 @@ def _verify_block(statements, expected):
                                   'block changed after compilation-unit admission')
 
 
+_ABSENT_ADMISSION = object()
+
+class _TransientAdmission:
+    """A dynamic admission lease, retaining dependencies of later live units."""
+    def __init__(self, engine):
+        self.engine = engine
+        self.entries = []
+        self.dependencies = {}
+        self.introduced = set()
+        self.origins = {}
+        self.owned_registry = engine._owned.versions
+        self.owned_key_registries = (engine._owned.versions, engine._nodes, engine._blocks,
+                                    engine._inline_ir, engine._plain_routines, engine._plain_modules)
+        self.origin_key_registries = (engine._owned.memo, engine._origin_signatures, engine._origin_blocks)
+        self.unit_registry = engine._python_units
+
+    def activate(self):
+        for registry, key, previous, admitted in self.entries:
+            if registry is self.owned_registry and previous is _ABSENT_ADMISSION:
+                self.introduced.add(key)
+                self.origins[key] = id(admitted[0])
+        self.engine._transient_leases.append(self)
+
+    def observe(self, owned_ids, anchors):
+        shared = self.introduced.intersection(owned_ids)
+        if not shared:return
+        # Prune ended/replaced transient dependents; retain only live anchors.
+        self.dependencies = {key:entry for key,entry in self.dependencies.items()
+                             if entry[0].get(entry[1], _ABSENT_ADMISSION) is entry[2]}
+        shared=frozenset(shared)
+        for registry,key,value in anchors:
+            self.dependencies[(id(registry),key)] = (registry,key,value,shared)
+
+    def close(self):
+        self.engine._transient_leases[:] = [lease for lease in self.engine._transient_leases if lease is not self]
+        if not self.entries:return
+        protected=set()
+        for registry,key,value,shared in self.dependencies.values():
+            if registry.get(key, _ABSENT_ADMISSION) is value:protected.update(shared)
+        protected_origins={self.origins[key] for key in protected}
+        entries, self.entries = self.entries, []
+        self.dependencies.clear()
+        for registry, key, previous, admitted in reversed(entries):
+            if registry.get(key, _ABSENT_ADMISSION) is not admitted:
+                continue
+            if any(registry is candidate for candidate in self.owned_key_registries) and key in protected:
+                continue
+            if any(registry is candidate for candidate in self.origin_key_registries) and key in protected_origins:
+                continue
+            if registry is self.unit_registry and id(admitted[0]) in protected:
+                continue
+            if previous is _ABSENT_ADMISSION:
+                registry.pop(key, None)
+            else:
+                registry[key] = previous
+        self.introduced.clear();self.origins.clear()
+
+
 @dataclass(frozen=True)
 class _NodePlan:
     node: ast.Node
     signature: tuple
     function: object | None
     tier: str
+    routine: object = None
 
 
 @dataclass(frozen=True)
@@ -138,7 +198,28 @@ def _make_metadata_block_entry():
 _METADATA_BLOCK_ENTRY = _make_metadata_block_entry()
 
 
+def _translated_literal_value(vm,node):
+    return node.value
+
+
+def _translated_name_value(vm,node):
+    return vm.semantic_name(node)
+
+
 class Engine:
+    # Broad integration branch: ordinary strict execution uses Python translation.
+    FORCE_PYTHON_TRANSLATION = True
+    MIN_SYNC_ROUTINE_NODES = 32
+
+    def _force_translation_gap(self, node, route):
+        if not self.FORCE_PYTHON_TRANSLATION:
+            return
+        kind = syntax_kind(node).__name__ if node is not None else "EmptyBlock"
+        gaps = self.stats.setdefault("force_translation_gaps", {})
+        key = route + ":" + kind
+        gaps[key] = gaps.get(key, 0) + 1
+        raise CompiledUnsupported(node, "force Python translation unsupported " + key)
+
     """One VM's strict compiler registry; no user bindings live in code caches.
 
     ``prepare`` is transactional and must be called for each newly materialized
@@ -156,6 +237,7 @@ class Engine:
     MAX_REGISTRY_ENTRIES = 100_000
     MAX_INLINE_FUNCTION_BYTES = 4 * 1024 * 1024
     MAX_INLINE_UNIT_BYTES = 64 * 1024 * 1024
+    MAX_PLAIN_SOURCE_BYTES = 1024 * 1024
 
     def __init__(self, vm):
         from .runtime import _Reference
@@ -170,7 +252,12 @@ class Engine:
         self._owned = OwnedStore(_signature, self._block_signature)
         self._origin_signatures = {}
         self._origin_blocks = {}
+        self._routine_metadata_slots = 0
         self._inline_ir = {}
+        self._plain_routines = {}
+        self._plain_modules = {}
+        self._python_units = {}
+        self._transient_leases = []
         self.vm = vm
         self._nodes = {}
         self._blocks = {}
@@ -298,26 +385,100 @@ class Engine:
         except (TypeError, RuntimeError) as failure:
             raise CompiledUnsupported(None, str(failure)) from None
 
-    def prepare(self, program, *, allow_reprepare=True):
+    def prepare(self, program, *, allow_reprepare=True, module_entry=False, _transient=None, _expression_entry=False):
         if not self.OWNED_SNAPSHOT:
-            return self._prepare(program, allow_reprepare=allow_reprepare)
+            return self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry, expression_entry=_expression_entry)
         # Journal only this admission's writes, not the entire active registry.
         # Nested admission writes into these overlays; any outer failure discards
         # all of them. No AST/host code runs while publishing builtin-map writes.
         bases = (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-                 self._nodes, self._blocks, self._inline_ir)
+                 self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units)
         journals = tuple(AdmissionMap(base) for base in bases)
+        previous_routine_slots = self._routine_metadata_slots
         (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-         self._nodes, self._blocks, self._inline_ir) = journals
+         self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = journals
         try:
-            result = self._prepare(program, allow_reprepare=allow_reprepare)
+            result = self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry, expression_entry=_expression_entry)
+            captured = []
+            if _transient is not None:
+                for base, journal in zip(bases, journals):
+                    if journal.cleared or any(value is AdmissionMap._DELETED for value in journal.changes.values()):
+                        raise CompiledUnsupported(None, 'transient admission cannot clear registries')
+                    captured.extend((base, key, base.get(key, _ABSENT_ADMISSION), value)
+                                    for key, value in journal.changes.items())
+            # Record owned dependency edges before publication, using the
+            # already-validated graph and only this admission's journal writes.
+            owned_ids=set()
+            anchors=[]
+            if self._transient_leases:
+                dependency_seen=set()
+                def dependencies(value):
+                    if id(value) in dependency_seen:return
+                    dependency_seen.add(id(value))
+                    if type(value) is tuple:
+                        for child in value:dependencies(child)
+                        return
+                    if not is_owned(value):return
+                    owned_ids.add(id(value))
+                    kind=syntax_kind(value)
+                    if kind in _SUPPORTED:
+                        for field in fields(value):
+                            if field.name != 'token' and not (kind is ast.Literal and field.name == 'value'):
+                                dependencies(getattr(value,field.name))
+                    elif type(value) is OwnedList:
+                        for child in value:dependencies(child)
+                dependencies(self._owned.existing(program))
+                for index in (4,5,9):
+                    anchors.extend((bases[index], key, value)
+                                   for key,value in journals[index].changes.items()
+                                   if value is not AdmissionMap._DELETED
+                                   and bases[index].get(key, _ABSENT_ADMISSION) is not value)
             for journal in journals: journal.commit()
+            for lease in self._transient_leases:
+                lease.observe(owned_ids, anchors)
+            if _transient is not None:
+                _transient.entries.extend(captured)
             return result
+        except BaseException:
+            self._routine_metadata_slots = previous_routine_slots
+            raise
         finally:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
-             self._nodes, self._blocks, self._inline_ir) = bases
+             self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = bases
 
-    def _prepare(self, program, *, allow_reprepare=True):
+    def prepare_transient(self, program, *, expression_entry=False):
+        """Admit declaration-free dynamic code with unchanged live-unit limits."""
+        if not self.FORCE_PYTHON_TRANSLATION or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR:
+            raise CompiledUnsupported(None, 'transient unit requires force owned translation')
+        # The caller supplies a fresh parse_expression/parse_fragment result.
+        # No declaration/import unit may acquire this shorter lifetime.
+        seen=set()
+        def validate(value):
+            if id(value) in seen:return
+            seen.add(id(value))
+            kind=syntax_kind(value)
+            if kind in (ast.Routine, ast.Import, ast.ServerInitializer):
+                raise CompiledUnsupported(value, 'transient unit cannot declare or import')
+            if kind in _SUPPORTED:
+                for field in fields(value):
+                    if field.name != 'token' and not (kind is ast.Literal and field.name == 'value'):
+                        validate(getattr(value, field.name))
+            elif type(value) in (list, tuple, OwnedList):
+                for child in value:validate(child)
+        if expression_entry:
+            if (type(program) is not list and type(program) is not OwnedList) or len(program)!=1:
+                raise CompiledUnsupported(None,'expression admission requires one expression')
+            root_kind=syntax_kind(program[0])
+            if not any(root_kind is kind for kind in (ast.Literal,ast.Name,ast.Group,ast.Unary,ast.Binary,
+                    ast.Conditional,ast.Attribute,ast.Index,ast.Call,ast.New,ast.DynamicNew,ast.Await)):
+                raise CompiledUnsupported(None,'expression admission requires one expression')
+        validate(program)
+        lease=_TransientAdmission(self)
+        self.prepare(program, allow_reprepare=False, _transient=lease, _expression_entry=expression_entry)
+        lease.activate()
+        return lease
+
+    def _prepare(self, program, *, allow_reprepare=True, module_entry=False, expression_entry=False):
         self._inline_unit_bytes = 0
         if self.OWNED_SNAPSHOT:
             try:
@@ -337,7 +498,8 @@ class Engine:
             registry = self._nodes if kind == 'node' else self._blocks
             if identity not in registry:
                 reserved.add((kind, identity))
-            if len(self._nodes) + len(self._blocks) + len(reserved) > self.MAX_REGISTRY_ENTRIES:
+            if (len(self._nodes) + len(self._blocks) + len(reserved)
+                    + self._routine_metadata_slots > self.MAX_REGISTRY_ENTRIES):
                 raise CompiledUnsupported(node, 'aggregate compiled registry limit')
 
         def charge_metadata_source():
@@ -371,6 +533,8 @@ class Engine:
                 count += 1
                 if count > self.MAX_NODES:
                     raise CompiledUnsupported(value, 'compilation unit node limit')
+                if self.FORCE_PYTHON_TRANSLATION:
+                    validate_node_roles(value, kind, self._reject_node_role)
                 active.add(identity)
                 for name in ('body', 'handler', 'otherwise'):
                     child = getattr(value, name, None)
@@ -385,8 +549,13 @@ class Engine:
                     nodes[identity] = self._nodes[identity]
                     prepared_counts['reused_node_plans'] += 1
                 else:
-                    function, tier = self._lower_node(value)
-                    prepared_counts['compiled_node_functions'] += function is not None
+                    if self.FORCE_PYTHON_TRANSLATION:
+                        function, tier = None, self._node_tier(value)
+                        if kind is ast.Literal:function,tier=_translated_literal_value,'shared-leaf'
+                        elif kind is ast.Name:function,tier=_translated_name_value,'shared-leaf'
+                    else:
+                        function, tier = self._lower_node(value)
+                    prepared_counts['compiled_node_functions'] += function is not None and tier != 'shared-leaf'
                     nodes[identity] = _NodePlan(value, _signature(value), function, tier)
             elif type(value) in (list, tuple, OwnedList):
                 identity = id(value)
@@ -406,25 +575,58 @@ class Engine:
                             and existing.statements is value
                             and (existing.role == 'structural' or role == 'metadata')):
                         _verify_block(value, existing.signature)
-                        if existing.role == 'metadata': charge_metadata_source()
+                        if existing.role == 'metadata' and not self.FORCE_PYTHON_TRANSLATION: charge_metadata_source()
                         blocks[identity] = existing
                         prepared_counts['reused_block_plans'] += 1
                     elif role == 'metadata':
-                        charge_metadata_source()
+                        if not self.FORCE_PYTHON_TRANSLATION: charge_metadata_source()
                         entries = tuple(value)
                         labels = {node.name.casefold(): i for i,node in enumerate(entries)
                                   if syntax_kind(node) is ast.Label}
                         blocks[identity] = _BlockPlan(value, self._block_signature(value),
-                                                     _METADATA_BLOCK_ENTRY, role, entries, labels)
+                                                     None if self.FORCE_PYTHON_TRANSLATION else _METADATA_BLOCK_ENTRY, role, entries, labels)
                         self.stats['metadata_block_plans'] += 1
                     else:
                         blocks[identity] = _BlockPlan(value, self._block_signature(value),
-                                                      self._lower_block(value))
-                        prepared_counts['compiled_block_functions'] += 1
+                                                      None if self.FORCE_PYTHON_TRANSLATION else self._lower_block(value))
+                        prepared_counts['compiled_block_functions'] += not self.FORCE_PYTHON_TRANSLATION
         try:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
             walk(program)
+            routine_slots = 0
+            if self.FORCE_PYTHON_TRANSLATION and self.OWNED_SNAPSHOT and not self.ORIGIN_MUTATION_MONITOR:
+                from .routine_metadata import layout_slots, prepare_layout
+                for identity, plan in nodes.items():
+                    if syntax_kind(plan.node) is not ast.Routine or plan.routine is not None:
+                        continue
+                    previous = self._nodes.get(identity)
+                    old_slots = previous.routine.slots if previous is not None and previous.routine is not None else 0
+                    charge = layout_slots(plan.node) - old_slots
+                    if (len(self._nodes) + len(self._blocks) + len(reserved)
+                            + self._routine_metadata_slots + routine_slots + charge > self.MAX_REGISTRY_ENTRIES):
+                        raise CompiledUnsupported(plan.node, 'routine metadata registry budget')
+                    layout = prepare_layout(plan.node)
+                    nodes[identity] = _NodePlan(plan.node, plan.signature, plan.function, plan.tier, layout)
+                    routine_slots += charge
+            # The forced whole-program path never dispatches optional scalar
+            # plans. Do not generate or charge a second unused implementation.
+            if not self.FORCE_PYTHON_TRANSLATION:self._prepare_plain_routines(nodes)
+            if self.FORCE_PYTHON_TRANSLATION:
+                self._prepare_python_unit(program, nodes, blocks, module_entry, expression_entry=expression_entry)
+            elif module_entry:self._prepare_plain_module(program)
+            # Nested admission can publish the same owned plan into the outer
+            # journal while lowering runs. Charge the final replacement delta,
+            # not the earlier allocation estimate, before committing either map.
+            routine_slots = 0
+            for identity, plan in nodes.items():
+                previous = self._nodes.get(identity)
+                routine_slots += (plan.routine.slots if plan.routine is not None else 0)
+                routine_slots -= (previous.routine.slots if previous is not None and previous.routine is not None else 0)
+            node_count = len(self._nodes) + sum(key not in self._nodes for key in nodes)
+            block_count = len(self._blocks) + sum(key not in self._blocks for key in blocks)
+            if node_count + block_count + self._routine_metadata_slots + routine_slots > self.MAX_REGISTRY_ENTRIES:
+                raise CompiledUnsupported(None, 'aggregate compiled registry limit')
         except CompiledUnsupported:
             self.stats['rejected_units'] += 1
             raise
@@ -434,6 +636,7 @@ class Engine:
                                       'compiler recursion limit') from None
         self._nodes.update(nodes)
         self._blocks.update(blocks)
+        self._routine_metadata_slots += routine_slots
         for key, value in prepared_counts.items(): self.stats[key] += value
         self.stats['prepared_units'] += 1
         self.stats['prepared_nodes'] += len(nodes)
@@ -487,6 +690,8 @@ class Engine:
                             retain(entry[1])
         owned_ids = set(retained_versions)
         self._nodes = {key: plan for key, plan in self._nodes.items() if key in owned_ids}
+        self._routine_metadata_slots = sum(plan.routine.slots for plan in self._nodes.values()
+                                          if plan.routine is not None)
         self._blocks = {key: plan for key, plan in self._blocks.items() if key in owned_ids}
         self._owned.clear()
         self._owned.memo.update(retained)
@@ -494,6 +699,14 @@ class Engine:
         self._origin_signatures.clear()
         self._origin_blocks.clear()
         self._inline_ir = {key: value for key, value in self._inline_ir.items() if key in owned_ids}
+        self._plain_modules.clear()
+        retained_units={}
+        for block,unit in self._python_units.values():
+            if id(block) in owned_ids and id(unit) not in retained_units:
+                retained_units[id(unit)]=unit.retained(owned_ids)
+        self._python_units={key:(block,unit) for unit in retained_units.values()
+                            for key,(block,_) in unit.blocks.items()}
+        self._plain_routines = {key: value for key, value in self._plain_routines.items() if key in owned_ids}
         self._fast_ready = None
 
     def has_node(self, node):
@@ -503,12 +716,75 @@ class Engine:
         plan = self._nodes.get(id(node))
         return plan is not None and plan.node is node
 
+    def routine_call_metadata(self, node):
+        """Read static layout after live admission; this result is not authority.
+
+        The caller has just verified the owner plan. Rights/context selection and
+        post-argument version checks remain mandatory and are not cached here.
+        """
+        plan = self._nodes.get(id(node))
+        if plan is None or plan.node is not node:
+            raise CompiledUnsupported(node, 'routine has no current source-bound plan')
+        return plan.routine
+
     def has_block(self, statements):
         if self.OWNED_SNAPSHOT:
             view = self._owned.existing(statements)
             if view is not None: statements = view
         plan = self._blocks.get(id(statements))
         return plan is not None and plan.statements is statements
+
+    @staticmethod
+    def _reject_node_role(node, reason):
+        raise CompiledUnsupported(node, reason)
+
+    def has_executable_node(self, node):
+        """Query entry capability, not permission to execute a metadata plan.
+
+        Explicit embedding admission may prepare missing entries. Internal
+        execution still fails closed and never compiles a missing route.
+        """
+        if not self.FORCE_PYTHON_TRANSLATION:
+            return self.has_node(node)
+        view = self._owned.existing(node)
+        if view is None:
+            return False
+        plan = self._nodes.get(id(view))
+        if plan is None or plan.node is not view:
+            return False
+        if plan.tier == 'shared-leaf':
+            return True
+        for _, unit in self._python_units.values():
+            entry = unit.expressions.functions.get(id(view))
+            if entry is not None and entry[0] is view:
+                return True
+        saved = self._python_units.get((id(view),))
+        if saved is None:
+            return False
+        block, unit = saved
+        entry = unit.blocks.get((id(view),))
+        return (entry is not None and entry[0] is block and entry[1] is not None
+                and len(block) == 1 and block[0] is view)
+
+    def has_executable_block(self, statements):
+        """Distinguish admitted metadata from an explicitly compiled entry."""
+        if not self.FORCE_PYTHON_TRANSLATION:
+            return self.has_block(statements)
+        view = self._owned.existing(statements)
+        if view is None:
+            return False
+        plan = self._blocks.get(id(view))
+        if plan is None or plan.statements is not view:
+            return False
+        key = tuple(id(node) for node in view)
+        saved = self._python_units.get(key)
+        if saved is None:
+            return False
+        block, unit = saved
+        entry = unit.blocks.get(key)
+        return (entry is not None and entry[0] is block and entry[1] is not None
+                and len(block) == len(view)
+                and all(a is b for a, b in zip(block, view)))
 
     def prepare_node(self, node):
         """Explicit late-unit preflight, e.g. a materialized default/expression."""
@@ -536,16 +812,23 @@ class Engine:
 
     def verify_node(self, node):
         """Validate admitted metadata also consumed without a node visit."""
+        plan = None
         if self.OWNED_SNAPSHOT:
-            original = syntax_origin(node)
             if self.ORIGIN_MUTATION_MONITOR:
+                original = syntax_origin(node)
                 saved = self._origin_signatures.get(id(original))
                 if saved is None or saved[0] is not original:
                     raise CompiledUnsupported(None, 'owned node has no origin fingerprint')
                 _verify_node(original, saved[1])
-            view = self._owned.existing(node)
-            if view is not None: node = view
-        plan = self._nodes.get(id(node))
+            # An exact current plan already identifies the admitted view. Its
+            # owned origin and this VM's version are still checked below.
+            if not self.ORIGIN_MUTATION_MONITOR:
+                plan = self._nodes.get(id(node))
+            if plan is None or plan.node is not node:
+                view = self._owned.existing(node)
+                if view is not None: node = view
+                plan = None
+        if plan is None: plan = self._nodes.get(id(node))
         if plan is None or plan.node is not node:
             self.stats['unsupported_executions'] += 1
             raise CompiledUnsupported(node, 'node belongs to no prepared compilation unit')
@@ -562,9 +845,10 @@ class Engine:
         # Normal writes to owned nodes/lists reject. Do not recursively hash
         # their immutable shape; opaque Literal contents intentionally stay live.
         # Unrestricted object/list protocol bypass is not a Python sandbox.
-        if not is_owned(value):
+        provenance = owned_provenance(value)
+        if provenance is None:
             raise CompiledUnsupported(None, 'unregistered owned execution view')
-        original = syntax_origin(value)
+        original = provenance[0]
         entry = self._owned.versions.get(id(value))
         if entry is None or entry[0] is not original or entry[1] is not value:
             raise CompiledUnsupported(None, 'owned view belongs to no admitted unit')
@@ -733,6 +1017,8 @@ class Engine:
             self._active_frames -= 1
 
     def run_node(self, node):
+        if self.FORCE_PYTHON_TRANSLATION:
+            return (yield from self._run_python_node(node))
         if self.OWNED_SNAPSHOT: node = self.execution_view(node)
         if self.INLINE and self.FAST_INLINE and not self._active_frames:
             self.verify_all()
@@ -773,7 +1059,13 @@ class Engine:
                     break
             self._active_frames -= 1
 
-    def run_block(self, statements):
+    def run_block(self, statements, *, plain_routine=None):
+        if self.FORCE_PYTHON_TRANSLATION:
+            if (plain_routine is not None and type(self) is Engine
+                    and vars(Engine).get('_run_python_block') is _SYNC_RUN_BLOCK_ABI
+                    and '_run_python_block' not in vars(self)):
+                return (yield from self._run_python_block(statements,routine=plain_routine))
+            return (yield from self._run_python_block(statements))
         if self.OWNED_SNAPSHOT:
             view = self._owned.existing(statements)
             if view is None:
@@ -788,11 +1080,25 @@ class Engine:
             raise CompiledUnsupported(statements[0] if statements else None,
                                       'block belongs to no prepared compilation unit')
         self._check_block_plan(plan)
+        if plan.function is None:
+            raise CompiledUnsupported(statements[0] if statements else None, 'legacy block executable was not prepared')
         self.stats['block_executions'] += 1
         if plan.role == 'metadata': self.stats['metadata_block_executions'] += 1
         elif self.INLINE: self.stats['inline_blocks'] += 1
         self._active_frames += 1
         try:
+            plain = self._plain_routine_plan(plan, plain_routine)
+            if plain is not None:
+                function, values, is_generator, prefix_only = plain
+                result = function(self.vm, *values)
+                if is_generator:
+                    result = yield from result
+                counter = 'plain_prefix_calls' if prefix_only else 'plain_routine_calls'
+                self.stats[counter] = self.stats.get(counter, 0) + 1
+                from .runtime import _Return
+                raise _Return(result)
+            self._force_translation_gap(statements[0] if statements else None, 'block-adapter')
+            self.stats['plain_adapter_blocks'] = self.stats.get('plain_adapter_blocks', 0) + 1
             if plan.role == 'metadata':
                 return (yield from plan.function(self.vm, self, plan))
             return (yield from plan.function(self.vm))
@@ -801,6 +1107,354 @@ class Engine:
             raise
         finally:
             self._active_frames -= 1
+
+    def _prepare_python_unit(self, program, nodes, blocks, module_entry, *, expression_entry=False):
+        from .python_translation_blocks import prepare_blocks, UnsupportedTranslation
+        from .python_translation_expressions import UnsupportedExpression
+        if not self.OWNED_SNAPSHOT:
+            raise CompiledUnsupported(None, 'force translator requires owned snapshot')
+        selected_blocks=[plan.statements for plan in blocks.values() if plan.role=='structural']
+        # Eval enters an expression function, not its synthetic wrapper block.
+        # Retain the root metadata/registry anchor for source lookup and leases;
+        # an explicit vm.block request still prepares its executable separately.
+        # Module admission includes declaration-only ServerInitializer metadata.
+        # Its body and the filtered module body have separate executable routes;
+        # the unfiltered source inventory is not itself an executable block.
+        entry_keys=set() if expression_entry or module_entry else {tuple(id(node) for node in program)}
+        for plan in nodes.values():
+            if syntax_kind(plan.node) in (ast.Routine,ast.ServerInitializer):
+                entry_keys.add(tuple(id(node) for node in plan.node.body))
+        if not any(block is program for block in selected_blocks):selected_blocks.append(program)
+        if module_entry:
+            selected=[node for node in program if syntax_kind(node) is not ast.Import
+                      and syntax_kind(node) is not ast.ServerInitializer
+                      and not (syntax_kind(node) is ast.Var and node.execution_context=='server')]
+            entry_keys.add(tuple(id(node) for node in selected))
+            cached=self._python_units.get(tuple(id(node) for node in selected))
+            if cached is not None and len(cached[0])==len(selected) and all(a is b for a,b in zip(cached[0],selected)):
+                self._verify_owned_identity(cached[0]);selected_blocks.append(cached[0])
+            else:selected_blocks.append(self._owned.freeze(selected))
+        for plan in nodes.values():
+            if syntax_kind(plan.node) in (ast.Import,ast.Execute):
+                if len(self._owned.versions)>=self.MAX_REGISTRY_ENTRIES:
+                    raise CompiledUnsupported(plan.node,'force singleton registry budget')
+                entry_keys.add((id(plan.node),))
+                cached=self._python_units.get((id(plan.node),))
+                if cached is not None and len(cached[0])==1 and cached[0][0] is plan.node:
+                    self._verify_owned_identity(cached[0]);selected_blocks.append(cached[0])
+                else:selected_blocks.append(self._owned.freeze([plan.node]))
+        expression_kinds=(ast.Literal,ast.Name,ast.Group,ast.Unary,ast.Binary,ast.Conditional,
+                          ast.Attribute,ast.Index,ast.Call,ast.New,ast.DynamicNew,ast.Await)
+        roots=[plan.node for plan in nodes.values() if any(syntax_kind(plan.node) is kind for kind in expression_kinds)]
+        retained={id(unit):unit for _,unit in self._python_units.values()}
+        available=min(self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
+                      self.MAX_PLAIN_SOURCE_BYTES-self._plain_source_bytes()-sum(unit.source_bytes for unit in retained.values()))
+        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys,owned_leaves=True,compact_control=len(nodes)>10_000,max_bindings=self.MAX_REGISTRY_ENTRIES-sum(u.binding_count for u in retained.values()),routines=[plan.node for plan in nodes.values() if syntax_kind(plan.node) is ast.Routine],min_sync_routine_nodes=self.MIN_SYNC_ROUTINE_NODES)
+        except (UnsupportedTranslation,UnsupportedExpression) as error:
+            gaps=self.stats.setdefault('force_translation_gaps',{})
+            reason='admission:'+str(error);gaps[reason]=gaps.get(reason,0)+1
+            raise CompiledUnsupported(program[0] if program else None,str(error)) from None
+        if (len(self._python_units)+len(unit.blocks)+len(unit.statements or {})
+                +sum(len(u.statements or {}) for u in retained.values())>self.MAX_REGISTRY_ENTRIES):
+            raise CompiledUnsupported(None,'force translator registry budget')
+        self._inline_unit_bytes+=unit.source_bytes
+        for key,(block,_) in unit.blocks.items():self._python_units[key]=(block,unit)
+
+    def _python_leaf_operation(self, node):
+        identity=node if type(node) is int else id(node)
+        plan=self._nodes.get(identity)
+        if plan is None or plan.tier!='shared-leaf':return None
+        if type(node) is not int and plan.node is not node:return None
+        return plan.node,plan.function
+
+    def _python_expression_execution(self, node):
+        # Resolve only source-bound code already admitted in this caller VM.
+        view=self._owned.existing(node)
+        if view is None:return None
+        for _,unit in self._python_units.values():
+            item=unit.expressions.functions.get(id(view))
+            if item is not None and item[0] is view:
+                return unit.bind(self).expressions,view
+        return None
+
+    def _run_python_node(self,node):
+        view=self.execution_view(node)
+        leaf=self._python_leaf_operation(view)
+        if leaf is not None:
+            self._verify_active_plans();self.verify_node(view)
+            kinds=self.stats.setdefault('python_translated_node_kinds',{})
+            kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
+            self._active_frames += 1
+            try:
+                return leaf[1](self.vm,view)
+            finally:
+                self._active_frames -= 1
+        resolved=self._python_expression_execution(view)
+        if resolved is not None:
+            execution,view=resolved
+            execution.guard(view)
+            self._active_frames += 1
+            try:
+                return (yield from execution.plan.functions[id(view)][1](execution))
+            finally:
+                self._active_frames -= 1
+        saved=self._python_units.get((id(view),))
+        if saved is not None:
+            block,unit=saved
+            self.verify_all();self._verify_owned_identity(block)
+            execution=unit.bind(self);execution.outer_node=view
+            self._active_frames+=1
+            try:return (yield from execution.block((id(view),)))
+            finally:self._active_frames-=1
+        self._force_translation_gap(view,'node-adapter')
+
+    def _run_python_block(self, statements, *, routine=None):
+        owned=tuple(self._owned.existing(node) for node in statements)
+        key=tuple(id(node) for node in owned)
+        saved=self._python_units.get(key)
+        if saved is None:
+            self._force_translation_gap(statements[0] if statements else None,'unprepared-block')
+        block,unit=saved
+        if len(block)!=len(owned) or any(a is not b for a,b in zip(block,owned)):
+            raise CompiledUnsupported(None,'force translated block provenance mismatch')
+        self.verify_all();self._verify_owned_identity(block)
+        self._active_frames+=1
+        try:
+            execution=unit.bind(self)
+            if routine is not None and not self.DETAILED_INLINE_STATS:
+                view=self._owned.existing(routine)
+                entry=(unit.sync_routines or {}).get(id(view))
+                if entry is not None and entry[0] is view and view.body is block:
+                    from .python_translation_scalar_regions import scope,closed_gc_lease,ClosedLease
+                    plan=entry[1]
+                    with closed_gc_lease():
+                        local=scope(execution,plan.names,plan.names,record=False,collections=plan.uses_collections)
+                        if local is not None and all(name in local for name in plan.parameters):
+                            # Current immutable provenance and state are validated
+                            # at entry, loop backedges, and before commit/exit.
+                            lease=ClosedLease(execution,plan,local);lease.check()
+                            self.stats['python_sync_routine_calls']=self.stats.get('python_sync_routine_calls',0)+1
+                            self.stats['python_sync_admission_nodes']=self.stats.get('python_sync_admission_nodes',0)+len(plan.nodes)
+                            result=plan.function(self.vm,local,lease)
+                            from .runtime import _Return
+                            raise _Return(result)
+            return (yield from execution.block(key))
+        except Exception as error:
+            from .python_translation_expressions import UnsupportedExpression
+            if isinstance(error,UnsupportedExpression):
+                gaps=self.stats.setdefault('force_translation_gaps',{})
+                reason='expression:'+str(error)
+                gaps[reason]=gaps.get(reason,0)+1
+                raise CompiledUnsupported(block[0] if block else None,reason) from None
+            raise
+        finally:self._active_frames-=1
+
+    def _plain_source_bytes(self):
+        return (sum(len(entry[1].source.encode()) for entry in self._plain_routines.values() if entry[1] is not None)
+                + sum(plan.source_bytes for plan in self._plain_modules.values()))
+
+    def _prepare_plain_module(self, program):
+        if not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR:return
+        if len(self._plain_modules)>=self.MAX_REGISTRY_ENTRIES or len(self._owned.versions)>=self.MAX_REGISTRY_ENTRIES:return
+        from .plain_modules import lower_module
+        from .plain_routines import Ineligible
+        selected=[node for node in program if syntax_kind(node) is not ast.Import
+                  and syntax_kind(node) is not ast.ServerInitializer
+                  and not (syntax_kind(node) is ast.Var and node.execution_context=='server')]
+        used=self._plain_source_bytes()
+        available=min(self.MAX_INLINE_FUNCTION_BYTES,self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
+                      self.MAX_PLAIN_SOURCE_BYTES-used)
+        if available<=0:return
+        bases=(self._owned.memo,self._owned.versions)
+        journals=tuple(AdmissionMap(base) for base in bases)
+        self._owned.memo,self._owned.versions=journals
+        try:
+            block=self._owned.freeze(selected)
+            try:plan=lower_module(block,max_source_bytes=available)
+            except Ineligible:return
+            for journal in journals:journal.commit()
+        finally:self._owned.memo,self._owned.versions=bases
+        self._inline_unit_bytes+=plan.source_bytes
+        self._plain_modules[tuple(id(node) for node in block)]=plan
+
+    def run_module(self, statements):
+        """Only runtime's post-preflight module entry calls this optional path."""
+        if self.FORCE_PYTHON_TRANSLATION:
+            return (yield from self._run_python_block(statements))
+        import sys
+        vm=self.vm
+        snapshot=self._plain_scope_snapshot()
+        if (self._active_frames or not self.INLINE or not self.FAST_INLINE or self.DETAILED_INLINE_STATS
+                or snapshot is None or snapshot[0] is not None
+                or sys.gettrace() is not None or sys.getprofile() is not None
+                or not vm.compiled_plain_routines or not self.fast_available(refresh=True)):
+            return (yield from vm.block(statements))
+        owned=tuple(self._owned.existing(node) for node in statements)
+        plan=self._plain_modules.get(tuple(id(node) for node in owned))
+        if plan is None or len(plan.block)!=len(owned) or any(a is not b for a,b in zip(plan.block,owned)):
+            return (yield from vm.block(statements))
+        if not plan.storage_eligible(vm.variables,vm.imports):return (yield from vm.block(statements))
+        self.verify_all();self._verify_owned_identity(plan.block)
+        if any(not self.has_node(node) for node in plan.block):return (yield from vm.block(statements))
+        self._active_frames+=1
+        self.stats['plain_module_entries']=self.stats.get('plain_module_entries',0)+1
+        try:
+            result=plan.function(vm,vm.variables)
+            self.stats['plain_module_completions']=self.stats.get('plain_module_completions',0)+1
+            return result
+        except BaseException:
+            self.stats['plain_module_errors']=self.stats.get('plain_module_errors',0)+1
+            raise
+        finally:self._active_frames-=1
+
+    def _prepare_plain_routines(self, nodes):
+        """Optional lowering is part of transactional admission, not execution.
+
+        Source generation is charged to the same unit-byte counter. Exhausting
+        optional room retains the already admitted compiled adapter instead.
+        """
+        if not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR: return
+        from .plain_routines import lower, Ineligible
+        used = self._plain_source_bytes()
+        for plan in nodes.values():
+            routine = plan.node
+            if syntax_kind(routine) is not ast.Routine: continue
+            cached = self._plain_routines.get(id(routine))
+            if cached is not None and cached[0] is routine:
+                if cached[1] is not None:
+                    size = len(cached[1].source.encode())
+                    if (size > self.MAX_INLINE_FUNCTION_BYTES
+                            or size > self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes
+                            or used > self.MAX_PLAIN_SOURCE_BYTES):
+                        self._plain_routines[id(routine)] = (routine, None)
+                        used -= size
+                    else:
+                        self._inline_unit_bytes += size
+                continue
+            available = min(self.MAX_INLINE_FUNCTION_BYTES, self.MAX_PLAIN_SOURCE_BYTES - used,
+                            self.MAX_INLINE_UNIT_BYTES - self._inline_unit_bytes)
+            try: lowered = lower(routine, max_source_bytes=max(0, available))
+            except Ineligible: lowered = None
+            if lowered is not None:
+                size = len(lowered.source.encode())
+                used += size
+                self._inline_unit_bytes += size
+            self._plain_routines[id(routine)] = (routine, lowered)
+
+    def _plain_routine_plan(self, block, routine):
+        # Host tracing/profiling may observe or mutate the live VM scope on
+        # Python calls/lines. Do not capture detached local slots in that mode.
+        import sys
+        if sys.gettrace() is not None or sys.getprofile() is not None:
+            return None
+        if (not self.vm.compiled_plain_routines or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR
+                or not self._fast_ready or self.DETAILED_INLINE_STATS
+                or routine is None or not is_owned(routine)
+                or syntax_kind(routine) is not ast.Routine
+                or routine.body is not block.statements or block.role == 'metadata'):
+            return None
+        # Cross-context activation may carry the parent engine's declaration
+        # while this child has separately admitted the body. That is not an
+        # eligible local plain plan; retain the existing compiled body adapter.
+        provenance = self._owned.versions.get(id(routine))
+        if provenance is None or provenance[1] is not routine:
+            return None
+        if self._plain_scope_snapshot() is None:return None
+        self._verify_owned_identity(routine)
+        cached = self._plain_routines.get(id(routine))
+        if cached is None or cached[0] is not routine: return None
+        lowered = cached[1]
+        if lowered is None: return None
+        # Structural code is reusable; live storage and policy eligibility are not.
+        local = self.vm.locals
+        if type(local) is not dict: return None
+        if any(name in self.vm.module_names or name in self.vm.imports for name in lowered.names): return None
+        values = tuple(local.get(name) for name in lowered.parameters)
+        if any(not any(type(value) is scalar for scalar in (Decimal, bool, str, type(None)))
+               for value in values): return None
+        return lowered.function, values, lowered.generator, lowered.prefix_only
+
+    def _plain_scope_snapshot(self):
+        """Side-effect-free guard before touching replaceable scope accessors."""
+        from . import runtime as R
+        from .async_runtime import Scheduler, ExecutionContext
+        vm=self.vm
+        if type(vm) is not R.Interpreter:return None
+        for cls,_,_ in R._PLAIN_STORAGE_ABI:
+            if any(type(key) is not str for key in vars(cls)):return None
+        class_fields=vars(R.Interpreter)
+        if (class_fields.get('__hash__',object.__hash__) is not object.__hash__
+                or class_fields.get('__eq__',object.__eq__) is not object.__eq__):return None
+        def storage(value,cls):
+            if type(value) is not cls:return None
+            namespace=vars(cls)
+            if (namespace.get('__getattribute__',object.__getattribute__) is not object.__getattribute__
+                    or '__getattr__' in namespace):return None
+            for registered,descriptor,mro in R._PLAIN_STORAGE_ABI:
+                if cls is registered:
+                    current=type.__getattribute__(cls,'__mro__')
+                    if (len(current)!=len(mro) or any(a is not b for a,b in zip(current,mro))
+                            or namespace.get('__dict__') is not descriptor):return None
+                    fields=object.__getattribute__(value,'__dict__')
+                    if type(fields) is not dict or any(type(key) is not str for key in fields):return None
+                    return fields
+            return None
+        vm_fields=storage(vm,R.Interpreter)
+        if vm_fields is None:return None
+        for name,original in zip(('locals','_context_stack','_module_context_stack'),R._PLAIN_SCOPE_ABI):
+            if vars(R.Interpreter).get(name) is not original:return None
+        scheduler=vm_fields.get('_scheduler')
+        if type(scheduler) is not Scheduler or 'active_context' in vars(Scheduler):return None
+        if any(name in vars(ExecutionContext) for name in ('locals','context_stack','module_context_stack')):
+            return None
+        scheduler_fields=storage(scheduler,Scheduler)
+        if scheduler_fields is None:return None
+        context=scheduler_fields.get('active_context')
+        if type(context) is not ExecutionContext:return None
+        fields=storage(context,ExecutionContext)
+        if fields is None:return None
+        scopes=fields.get('locals');sides=fields.get('context_stack');modules=fields.get('module_context_stack')
+        if type(scopes) is not dict or type(sides) is not list or type(modules) is not list:return None
+        # Exact dict lookup can still hash the VM or compare colliding hostile
+        # keys. Scan identities, and reject keys unsafe for subsequent trusted
+        # runtime accessors which use normal dictionary lookup.
+        scope=None
+        for key,value in scopes.items():
+            if type(key) is not R.Interpreter:return None
+            if key is vm:scope=value
+        return scope,context,tuple(sides),tuple(modules)
+
+    def _resume_plain_segment(self, routine, segment, saved_frame):
+        """Fresh live eligibility after an opaque statement, never replay it."""
+        import sys
+        def denied(reason):
+            key='plain_resume_denied_'+reason
+            self.stats[key]=self.stats.get(key,0)+1
+            return None
+        vm=self.vm
+        if sys.gettrace() is not None or sys.getprofile() is not None:return denied('instrumentation')
+        current=self._plain_scope_snapshot()
+        if current is None or saved_frame is None:return denied('context')
+        scope,context,sides,modules=current
+        old_scope,old_context,old_sides,old_modules=saved_frame
+        if (scope is not old_scope or context is not old_context
+                or len(sides)!=len(old_sides) or len(modules)!=len(old_modules)
+                or any(a is not b for a,b in zip(sides,old_sides))
+                or any(a is not b for a,b in zip(modules,old_modules))):return denied('context')
+        if vars(vm).get('_compiled_plain_routines') is not True or not self.fast_available(refresh=True):
+            return denied('policy')
+        root=self._plain_routines.get(id(routine))
+        if root is None or root[0] is not routine or root[1] is None:return denied('provenance')
+        if not any(segment is item for item in root[1].segments):return denied('provenance')
+        self.verify_all();self._verify_owned_identity(routine)
+        if type(scope) is not dict or any(type(key) is not str for key in scope):return denied('scope')
+        if any(name in vm.module_names or name in vm.imports for name in segment.names):return denied('collision')
+        if any(name not in scope for name in segment.parameters):return denied('missing')
+        values=tuple(scope[name] for name in segment.parameters)
+        if any(not any(type(value) is scalar for scalar in (Decimal,bool,str,type(None))) for value in values):
+            return denied('type')
+        self.stats['plain_segment_entries']=self.stats.get('plain_segment_entries',0)+1
+        return segment.function,values,segment.generator
 
     def _check_block_plan(self, plan):
         if self.OWNED_SNAPSHOT:
@@ -842,6 +1496,21 @@ class Engine:
         module = python_ast.parse(source, filename='<bsl-compiled>')
         exec(compile(module, '<bsl-compiled>', 'exec'), namespace)
         return namespace['generated']
+
+    def _node_tier(self, node):
+        """Validate shared semantic dependencies without generating unused code."""
+        kind = syntax_kind(node)
+        if kind in _SYNTAX_ONLY:
+            return 'syntax-only'
+        if kind in _HELPERS and not callable(getattr(self.vm, _HELPERS[kind], None)):
+            raise CompiledUnsupported(node, f'missing semantic adapter {_HELPERS[kind]}')
+        tier = 'semantic-helper' if kind in _HELPERS or kind is ast.Call else 'emitted'
+        if kind is ast.ExpressionStatement:
+            expression = node.expression
+            while syntax_kind(expression) is ast.Group:
+                expression = expression.expression
+            if syntax_kind(expression) is ast.Call: tier = 'semantic-helper'
+        return tier
 
     def _lower_node(self, node):
         kind = syntax_kind(node)
@@ -1010,3 +1679,11 @@ class Engine:
 # This checks ABI compatibility; it is not protection against malicious Python.
 from .runtime import (_COMPILED_BASE_ABI_NAMES as _TRUSTED_ABI_NAMES,
                       _COMPILED_BASE_ABI as _TRUSTED_ABI)
+
+# Definition-time admission ABI for write-through translated scalar slots.
+_SCALAR_GUARD_NAMES = ('verify_node', '_verify_owned_identity', '_verify_active_plans',
+                       'fast_available', '_plain_scope_snapshot')
+_SCALAR_GUARD_ABI = tuple(getattr(Engine, name) for name in _SCALAR_GUARD_NAMES)
+
+# Preserve legacy-signature instrumentation by declining sync dispatch when wrapped.
+_SYNC_RUN_BLOCK_ABI = Engine._run_python_block

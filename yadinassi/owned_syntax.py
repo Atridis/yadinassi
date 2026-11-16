@@ -99,8 +99,12 @@ def _record(value, origin, fingerprint_kind, fingerprint):
 def syntax_kind(value):
     kind = type(value)
     entry = _PRIVATE_KINDS.get(id(kind))
-    if entry is not None and entry[0] is kind and is_owned(value):
-        return entry[1]
+    if entry is not None and entry[0] is kind:
+        # The exact private kind is already checked above. Still verify the live
+        # weak registration; unrecorded/fabricated private instances stay foreign.
+        origin = _ORIGINS.get(id(value))
+        if origin is not None and origin() is value:
+            return entry[1]
     return kind
 
 
@@ -111,6 +115,13 @@ def is_owned(value):
         return False
     entry = _ORIGINS.get(id(value))
     return entry is not None and entry() is value
+
+
+def owned_provenance(value):
+    """Return provenance after one current owned-identity check, never cache it."""
+    if not is_owned(value):
+        return None
+    return object.__getattribute__(value, '_owned_provenance')
 
 
 def origin_node(value):

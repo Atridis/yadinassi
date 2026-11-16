@@ -1713,7 +1713,7 @@ workflows remain unchanged. The binary must be rebuilt for this runtime change.
 
 The saved-output test runner keeps a finite 10-second child-process timeout for
 ordinary and synthetic scenarios. Only the repository's exact authenticated
-historical `collections.bsl` replay receives 30 seconds. Reconstruction verifies
+historical `collections.bsl` replay receives 120 seconds. Reconstruction verifies
 both the source and saved native output first; the timeout selector additionally
 checks the historical replay blob identity. Other paths, names, or replay bytes
 do not acquire the larger budget.
@@ -1725,12 +1725,41 @@ child timeout. Corresponding Windows, Linux, and macOS ARM checkpoint tests took
 approximately 4.16, 3.15, and 3.33 seconds. Unchanged main and PR runtime sources
 replayed locally in approximately 2.4–2.9 seconds with identical output. These
 measurements support increasing timeout headroom, not proven runner CPU load
-or a performance guarantee. The finite 30-second budget provides roughly three
-times the observed Intel wall time; the CI job deadline remains an outer bound.
+or a performance guarantee. They originally justified a 30-second bound.
+
+After the Python-translation default switch, full run `43846484931`, Intel job
+`133238289927`, exceeded that 30-second child bound (all other comparisons in
+that shard completed). The same authenticated replay on the development Linux
+host took 4.20 seconds with the compatibility interpreter and 10.95 seconds with
+compiled-strict; both returned all 200,954 expected stdout bytes with empty
+stderr. This establishes a local slowdown, not a measured Intel completion time
+or proof that every CI delay has the same cause. The finite 120-second allowance
+provides headroom for this known semantic fixture while performance work remains
+separate; it is not a speedup or a claim that Intel CI has passed. The CI job
+still has its independent deadline.
 There are no automatic retries. `subprocess.run` still kills and waits for the
 child on timeout, and return code, empty stderr, and exact output assertions are
 unchanged. This is test-only policy: production execution/report limits,
 including the 8192/32768 caps, are unchanged.
+
+
+The independent Intel heavy job `133238289988` in the same run exhausted the
+60-minute job deadline: its log recorded 949 completed tests, approximately
+3,520.93 seconds in total, without a test failure before cancellation. The
+completed part of `test_inventory_statement_controller` accounted for 577.63
+seconds, `test_value_list_checkpoint` for 404.57, and the unfinished
+`test_value_list_copy_checkpoint` group for at least 361.32. Four history-balanced
+shards were therefore insufficient for the translated backend.
+
+Intel heavy execution now uses eight fixture-preserving shards, with all eight
+source-bound reports mandatory and the same 60-minute job limit. Other platforms
+retain two shards. On the revised discovery plan, all 14,447 tests are covered
+exactly once across light and heavy; heavy has 4,264 tests. Historical estimates
+are about 683 seconds per Intel shard, but these weights predate the current
+translated runtime and are not completion guarantees. Redistributing the measured
+completed portion of the failed Intel shard gives at most 1,016.38 seconds in any
+one new shard; this is partial evidence, not a full timing profile. No comparison,
+fixture group, or coverage requirement is dropped to obtain this headroom.
 
 
 ### Source-bound live collections comparison wall budget
