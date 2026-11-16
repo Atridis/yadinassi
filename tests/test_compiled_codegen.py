@@ -417,6 +417,7 @@ class BlockRoleCompilationTests(unittest.TestCase):
             structural=sum(plan.role=='structural' for plan in engine._blocks.values())
             self.assertEqual(engine.stats['compiled_block_functions'],structural)
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_metadata_expression_lists_keep_explicit_block_compatibility(self):
         from unittest.mock import patch
         vm=Interpreter(execution_backend='compiled-strict');engine=vm._compiled()

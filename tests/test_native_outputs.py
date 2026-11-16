@@ -121,6 +121,14 @@ class NativeOutputTests(unittest.TestCase):
                          + result.stderr.decode("utf-8", errors="replace"))
         self.assertEqual(result.stderr, b"", f"Неожиданный stderr при исполнении {script}")
         actual = result.stdout.decode("utf-8")
+        if (self.native_root == ROOT and script.name == "collections.bsl"):
+            from scripts.native_associative_order import compare_historical_collections
+            semantic = compare_historical_collections(
+                expected.encode('utf-8'), actual.encode('utf-8'), replay_source)
+            # Raw mismatch remains explicit; never rewrite either captured output.
+            if semantic['status'] == 'equivalent':
+                self.assertEqual(semantic['raw_equal'], expected == actual)
+                return
         self.assertMultiLineEqual(
             expected, actual,
             f"{script.name}: вывод отличается (- 1С: {expected_path}; + Yadinassi). "

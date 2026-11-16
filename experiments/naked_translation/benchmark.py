@@ -21,17 +21,19 @@ CASES = {
 def main():
     rows=[]
     for name,source in CASES.items():
-        # Trusted local execution does not opt into artificial allocation quotas.
+        # This particular diagnostic compares legacy/shared checkpoint accounting.
+        # The business benchmark uses the trusted profile without checkpoints.
+        # Neither profile opts into artificial allocation quotas.
         program=prepare(source,repairs=REPAIRS - {'resource_bounds'})
         contexts={'legacy':BoundaryContext(), 'shared':SharedBoundaryContext()}
         expected=1000 if name=='array_operations' else 10000
         for ctx in contexts.values():
-            assert program.run(context=ctx)['r']==expected
+            assert program.run({},context=ctx)['r']==expected
         for trial in range(7):
             for variant in (('legacy','shared') if trial%2==0 else ('shared','legacy')):
                 started=time.perf_counter_ns()
                 for _ in range(10):
-                    result=program.run(context=contexts[variant])['r']
+                    result=program.run({},context=contexts[variant])['r']
                     assert result==expected
                 rows.append({'case':name,'variant':variant,'trial':trial,'ms':(time.perf_counter_ns()-started)/10/1e6,'result':str(result)})
     summary={name:{variant:statistics.median(row['ms'] for row in rows if row['case']==name and row['variant']==variant) for variant in ('legacy','shared')} for name in CASES}

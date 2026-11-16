@@ -72,7 +72,7 @@ _ALIASES={'добавить':'add','вставить':'insert','получить
 # Named, independently selectable repairs. These are experiment variants, NOT a
 # restoration of the production admission/runtime pipeline. Each repair has a
 # specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds'))
+REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -213,7 +213,10 @@ class Program:
 
     def run(self,initial=None,*,context=None):
         _enabled()
-        state={} if initial is None else {key.casefold():value for key,value in initial.items()}
+        if 'live_module_state' in self.repairs:
+            from .experimental_naked_live_state import validate_state
+            state=validate_state(initial)
+        else:state={} if initial is None else {key.casefold():value for key,value in initial.items()}
         self.last_state=state;self.output=[]
         bounded=bool(self.repairs & {'service_boundaries','authority_checkpoints'})
         if bounded:
@@ -235,7 +238,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=()):
     _enabled()
     if isinstance(repairs,str):repairs=tuple(name for name in repairs.split(',') if name)
     repairs=frozenset(repairs)
@@ -262,11 +265,17 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         raise UnsupportedNakedSyntax('error_boundaries requires Python code position metadata (3.11+)')
     source_map=SourceMap() if 'error_boundaries' in repairs else None
     byref='byref_routines' in repairs
+    live='live_module_state' in repairs
+    source_checks=authority or (services and not live)
+    if live and not byref:raise ValueError('live_module_state requires byref_routines')
+    if module_names and not live:raise ValueError('module_names requires live_module_state')
+    if any(type(name) is not str for name in module_names):raise TypeError('module names require strings')
+    predeclared={name.casefold() for name in module_names}
     dynamic_refs='dynamic_host_refs' in repairs
     if dynamic_refs and not (byref and services):raise ValueError('dynamic_host_refs requires byref_routines and service_boundaries')
     routines={node.name.casefold():node for node in program if type(node) is ast.Routine}
     function_symbols={name:'fn'+str(i) for i,name in enumerate(routines)}
-    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names}
+    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     scope_id=None
     cells={None:set()};routine_globals={}
     def walk(value):
@@ -315,6 +324,15 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     if type(arg) is ast.Name:
                         destination=None if arg.name.casefold() in routine_globals.get(current,()) else current
                         lexical[destination].add(arg.name.casefold())
+    routine_locals={id(r):{p.name.casefold() for p in r.parameters}|{name.casefold() for n in r.body if type(n) is ast.Var for name in n.names} for r in routines.values()}
+    if live:
+        for r in routines.values():
+            direct_vars={id(n) for n in r.body if type(n) is ast.Var}
+            for n in walk(r.body):
+                if type(n) is ast.Var and id(n) not in direct_vars and any(name.casefold() in module_variables|{'thisobject','этотобъект'} for name in n.names):
+                    raise UnsupportedNakedSyntax('conditional local Var shadowing module storage is unsupported')
+    def module_name(name):
+        return live and (scope_id is None or name.casefold() in routine_globals.get(scope_id,()))
     def boxed(name):
         key=name.casefold()
         return byref and (key in cells[scope_id] or (key in routine_globals.get(scope_id,()) and key in cells[None]))
@@ -330,10 +348,29 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         lines.append('    '*depth+text)
     def literal(value):
         constants.append(value);return '_constants['+str(len(constants)-1)+']'
-    def variable(name):return sym(name)+('.value' if boxed(name) else '')
+    def variable(name):
+        if module_name(name):return '_initial['+repr(name.casefold())+']'
+        return sym(name)+('.value' if boxed(name) else '')
+    def read_variable(name):
+        if not module_name(name):return variable(name)
+        value=temp()
+        return '('+value+' if ('+value+' := _initial.get('+repr(name.casefold())+', _LIVE_UNSET)) is not _LIVE_UNSET else _live_missing('+repr(name)+'))'
+    def reserved_target(name):
+        return live and name.casefold() in ('thisobject','этотобъект') and (module_name(name) or name.casefold() not in routine_locals.get(scope_id,set()))
+    def assign_name(name,value,depth):
+        if reserved_target(name):
+            saved=temp();emit(depth,saved+' = '+value)
+            if module_name(name):emit(depth,'if '+repr(name.casefold())+' not in _initial: _live_readonly('+repr(name.casefold())+')')
+            else:emit(depth,'_live_readonly('+repr(name.casefold())+')')
+            value=saved
+        emit(depth,variable(name)+' = '+value)
     def reference(node):
         node=ungroup(node)
-        if type(node) is ast.Name:return '_bound_ref('+sym(node.name)+')'
+        if type(node) is ast.Name:
+            if module_name(node.name):
+                text='_live_source_ref(_initial, '+repr(node.name)+')'
+                return source_map.expression(text,node) if source_map is not None else text
+            return '_bound_ref('+sym(node.name)+')'
         if type(node) is ast.Index:
             obj=expression(node.object);index=expression(node.index)
             if services:
@@ -349,6 +386,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         return '_Cell('+expression(node)+')'
     def lexical_helpers(current,depth):
         for name in sorted(lexical[current]):
+            if live and current is None:continue
             slot=sym(name)
             is_box=name in cells[current]
             target=slot+('.value' if is_box else '')
@@ -360,6 +398,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def host_reference(node):
         node=ungroup(node)
         if type(node) is ast.Name:
+            if module_name(node.name):
+                text='_live_host_ref(_initial, '+repr(node.name)+')'
+                return source_map.expression(text,node) if source_map is not None else text
             slot=sym(node.name)
             text='_host_name_reference(get_'+slot+', set_'+slot+', '+repr(node.name)+')'
             return source_map.expression(text,node) if source_map is not None else text
@@ -384,9 +425,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         kind=type(node)
         if kind is ast.Literal:return literal(node.value)
         if kind is ast.Name:
-            value=variable(node.name)
+            value=read_variable(node.name)
             if node.name.casefold() in routines:
-                return '('+value+' if '+repr(sym(node.name))+' in locals() else _routine_value_error('+repr(node.name)+'))'
+                presence=(repr(node.name.casefold())+' in _initial' if module_name(node.name) else repr(sym(node.name))+' in locals()')
+                return '('+value+' if '+presence+' else _routine_value_error('+repr(node.name)+'))'
             return value
         if kind is ast.Group:return '('+expression(node.expression,require_value)+')'
         if kind is ast.Unary:
@@ -529,15 +571,15 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     elif index<len(routine.parameters) and not routine.parameters[index].by_value:args.append(reference(arg))
                     else:args.append(expression(arg))
                 function=function_symbols[callee.name.casefold()]
-                if services:function='(_context._check(), '+function+')[-1]'
+                if source_checks:function='(_context._check(), '+function+')[-1]'
                 return function+'('+', '.join(args)+')'
-            if services and type(callee) is ast.Name and callee.name.casefold() in routines:
+            if source_checks and type(callee) is ast.Name and callee.name.casefold() in routines:
                 return '(_context._check(), '+function_symbols[callee.name.casefold()]+')[-1]('+', '.join(expression(arg) for arg in node.arguments)+')'
             if type(callee) is ast.Name and callee.name.casefold() in routines:
                 return function_symbols[callee.name.casefold()]+'('+', '.join(expression(arg) for arg in node.arguments)+')'
             if services and type(callee) is ast.Name and callee.name.casefold() not in routines:
                 required_services.add(callee.name.casefold())
-                fallback='('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)'
+                fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
                 if dynamic_refs and callee.name.casefold() not in service_references:
                     return dynamic_call('_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True)',node)
                 return '_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
@@ -557,13 +599,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def sequence(block,depth):
         if not block:emit(depth,'pass')
         for node in block:statement(node,depth)
-    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names}
+    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     def _statement(node,depth):
         nonlocal scope_id
         kind=type(node)
         if kind is ast.Assign:
             value=expression(node.value);target=node.target
-            if type(target) is ast.Name:emit(depth,variable(target.name)+' = '+value)
+            if type(target) is ast.Name:assign_name(target.name,value,depth)
             elif type(target) is ast.Index:
                 receiver=temp();index=temp();stored=temp()
                 emit(depth,receiver+' = '+expression(target.object))
@@ -592,7 +634,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         elif kind is ast.Var:
             for name in node.names:
                 slot=sym(name)
-                if boxed(name):emit(depth,f'if {slot}._value is _UNSET_REF: {slot}.value = None')
+                if module_name(name):emit(depth,'_initial.setdefault('+repr(name.casefold())+', None)')
+                elif boxed(name):emit(depth,f'if {slot}._value is _UNSET_REF: {slot}.value = None')
                 else:emit(depth,f'if {slot!r} not in locals(): {slot} = None')
         elif kind is ast.ExpressionStatement:emit(depth,expression(node.expression,False))
         elif kind is ast.Return:emit(depth,'return '+(expression(node.value) if node.value is not None else 'None'))
@@ -602,12 +645,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if node.otherwise:emit(depth,'else:');sequence(node.otherwise,depth+1)
         elif kind is ast.For:
             counter=variable(node.name);last=temp()
-            emit(depth,counter+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end))
+            if live:
+                first=temp();emit(depth,first+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end));assign_name(node.name,first,depth)
+            else:emit(depth,counter+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end))
+            condition=read_variable(node.name) if live else counter
             if authority:
                 emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
-                emit(depth+1,f'if not ({counter} <= {last}): break')
-            else:emit(depth,f'while {counter} <= {last}:')
-            loops.append(counter);sequence(node.body,depth+1);loops.pop();emit(depth+1,counter+' += 1')
+                emit(depth+1,f'if not ({condition} <= {last}): break')
+            else:emit(depth,f'while {condition} <= {last}:')
+            increment=counter+' = '+read_variable(node.name)+' + 1' if module_name(node.name) else counter+' += 1'
+            loops.append(increment);sequence(node.body,depth+1);loops.pop();emit(depth+1,increment)
         elif kind is ast.While:
             if authority:
                 emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
@@ -615,6 +662,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             else:emit(depth,'while '+truth_expression(node.condition)+':')
             loops.append(None);sequence(node.body,depth+1);loops.pop()
         elif kind is ast.ForEach:
+            loop_target=temp() if reserved_target(node.name) else variable(node.name)
             receiver=temp();emit(depth,receiver+' = '+expression(node.collection))
             entry='_MapEntry' if services else 'SimpleNamespace'
             iterable='(('+entry+'(key=k,value=v) for k,v in '+receiver+'.items()) if isinstance('+receiver+',dict) else '+receiver+')'
@@ -624,17 +672,18 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 iterator=temp();emit(depth,iterator+' = iter('+iterable+')')
                 emit(depth,'while True:')
                 if authority:emit(depth+1,'_context.checkpoint()')
-                emit(depth+1,'try: '+variable(node.name)+' = next('+iterator+')')
+                emit(depth+1,'try: '+loop_target+' = next('+iterator+')')
                 emit(depth+1,'except StopIteration: break')
                 if source_map is not None:
                     emit(depth+1,'except RuntimeError:')
                     emit(depth+2,'if id(type('+receiver+')) not in _MAP_TYPE_IDS: raise')
                     emit(depth+2,'raise ValueError("Изменение состава соответствия во время обхода пока не поддерживается") from None')
-            else:emit(depth,'for '+variable(node.name)+' in '+iterable+':')
+            else:emit(depth,'for '+loop_target+' in '+iterable+':')
+            if reserved_target(node.name):assign_name(node.name,loop_target,depth+1)
             loops.append(None);sequence(node.body,depth+1);loops.pop()
         elif kind is ast.Break:emit(depth,'break')
         elif kind is ast.Continue:
-            if loops and loops[-1] is not None:emit(depth,loops[-1]+' += 1')
+            if loops and loops[-1] is not None:emit(depth,loops[-1])
             emit(depth,'continue')
         elif kind is ast.Try:
             emit(depth,'try:');sequence(node.body,depth+1)
@@ -649,10 +698,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             else:parameters=[sym(parameter.name)+('='+expression(parameter.default) if parameter.default is not None else '') for parameter in node.parameters]
             emit(depth,'def '+function_symbols[node.name.casefold()]+'('+', '.join(parameters)+'):')
             nonlocals=(routine_globals[id(node)] if byref else module_variables-{p.name.casefold() for p in node.parameters})
-            if nonlocals:emit(depth+1,'nonlocal '+', '.join(sym(name) for name in sorted(nonlocals)))
-            if services:
+            if nonlocals and not live:emit(depth+1,'nonlocal '+', '.join(sym(name) for name in sorted(nonlocals)))
+            if source_checks:
                 emit(depth+1,'_context._check()');emit(depth+1,'try:')
-            body_depth=depth+2 if services else depth+1
+            body_depth=depth+2 if source_checks else depth+1
             previous_scope=scope_id
             if byref:
                 scope_id=id(node)
@@ -666,26 +715,33 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     emit(body_depth,sym(key)+' = _Cell()')
             if dynamic_refs:lexical_helpers(id(node),body_depth)
             saved=loops[:];loops.clear();sequence(node.body,body_depth);loops[:]=saved;scope_id=previous_scope
-            if services:
+            if source_checks:
                 emit(depth+1,'finally:');emit(depth+2,'_context._check()')
         else:raise UnsupportedNakedSyntax('statement '+kind.__name__)
-    if dynamic_refs:lexical_helpers(None,2)
+    root_depth=1 if live else 2
+    if dynamic_refs:lexical_helpers(None,root_depth)
     # Emit declarations first: BSL routines are available before textual calls.
-    sequence([node for node in program if type(node) is ast.Routine],2)
-    sequence([node for node in program if type(node) is not ast.Routine],2)
+    sequence([node for node in program if type(node) is ast.Routine],root_depth)
+    sequence([node for node in program if type(node) is not ast.Routine],root_depth)
     body=lines;lines=[]
     builtin_names={'message':'_outputs.append','сообщить':'_outputs.append','string':'str','строка':'str',
                    'number':'Decimal','число':'Decimal','typeof':'type','типзнч':'type',
                    'boolean':'bool','булево':'bool'}
     emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+'):')
+    if live:
+        for name in sorted(module_variables):emit(1,'_initial.setdefault('+repr(name)+', None)')
     for name,slot in symbols.items():
+        if live:continue
         if name in builtin_names:emit(1,slot+' = '+builtin_names[name])
         if byref and name in cells[None]:emit(1,f'{slot} = _Cell(_initial.get({name!r}, _UNSET_REF))')
         else:emit(1,f'if {name!r} in _initial: {slot} = _initial[{name!r}]')
-    emit(1,'try:');body_offset=len(lines);lines.extend(body)
-    emit(1,'finally:')
-    emit(2,'_locals = locals()')
+    if not live:emit(1,'try:')
+    body_offset=len(lines);lines.extend(body)
+    if not live:
+        emit(1,'finally:')
+        emit(2,'_locals = locals()')
     for name,slot in symbols.items():
+        if live:continue
         output=f'_locals[{slot!r}]'+('.value' if byref and name in cells[None] else '')
         condition=f'{slot!r} in _locals'
         if byref and name in cells[None]:condition+=f' and _locals[{slot!r}]._value is not _UNSET_REF'
@@ -693,6 +749,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     emit(1,'return _initial')
     generated='\n'.join(lines)+'\n'
     namespace={name:value for name,value in globals().items() if name.startswith('_')}
+    if live:
+        from . import experimental_naked_live_state as live_ops
+        namespace.update(_LIVE_UNSET=live_ops.UNSET,_live_missing=live_ops.missing,_live_readonly=live_ops.readonly,_live_source_ref=live_ops.source_reference,_live_host_ref=live_ops.host_reference)
     if 'resource_bounds' in repairs:
         from .experimental_naked_resources import bounded_array, bounded_insert
         namespace.update(_array_constructor_bounds=bounded_array,_array_insert_shape=bounded_insert)

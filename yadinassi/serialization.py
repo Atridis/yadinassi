@@ -355,12 +355,8 @@ class _Writer:
                             self.emit(',\n')
                             self.value(item, depth + 1)
                     else:
-                        # Observed in both forward/reverse insertion probes and
-                        # their readbacks. No general map order guarantee.
-                        # A fixed snapshot's native payload follows its source
-                        # insertion order, unlike the mutable-map payload.
-                        entries = (reversed(value._items.values()) if kind is BSLType.MAP
-                                   else value._items.values())
+                        # Associative payload order is not a compatibility contract.
+                        entries = value._items.values()
                         for key, item in entries:
                             self.emit(',\n')
                             self.pair(key, item, depth)
@@ -919,9 +915,6 @@ class _Reader:
         if kind is BSLType.FIXED_STRUCTURE:
             return BSLFixedStructure(result)
         if kind is BSLType.FIXED_MAP:
-            # Readback of the observed fixed snapshot reverses stream order.
-            # Keep this codec-local; collection iteration has no order promise.
-            result._items = dict(reversed(tuple(result._items.items())))
             return BSLFixedMap(result)
         return result
 

@@ -311,11 +311,13 @@ class SupplementalTypesGateTests(unittest.TestCase):
 class StrictNativeGateTests(unittest.TestCase):
     def test_comparator_has_reviewed_source_bound_historical_replay(self):
         actual = (ROOT / 'tests/test_native_outputs.py').read_bytes().replace(b'\r\n', b'\n')
-        # Reviewed migration preserves every captured output byte and binds the
-        # complete historical source; live Docker compares all current cases.
-        # Reviewed 9b91a5eb: only the authenticated replay timeout and runner
-        # tests changed; selector, comparator, replay sources and goldens did not.
-        self.assertEqual(hashlib.sha256(actual).hexdigest(), '0c15d12b3ae06ef123fdf4bd1a0e52321a3458d2d2005f7aa4fe38614b838937')
+        # Reviewed associative-order layer: only root historical collections,
+        # authenticated source AND original native fixture, twelve named codec
+        # fields. Rejection falls through to the unchanged raw comparison.
+        # Pin the entire reviewed runner, including the layer's exact position.
+        # Native output fixtures and their historical provenance are unchanged.
+        self.assertEqual(hashlib.sha256(actual).hexdigest(),
+                         '544b2ac220c18e00e247c1caa92c3eb5bc378efaa9685a0f65c2d93d7f56df40')
 
     def test_frozen_full_native_comparator_has_reviewed_historical_replay(self):
         text = (ROOT / 'scripts/smoke_test.py').read_text(encoding='utf-8')

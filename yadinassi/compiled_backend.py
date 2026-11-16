@@ -1182,8 +1182,9 @@ class Engine:
         leaf=self._python_leaf_operation(view)
         if leaf is not None:
             self._verify_active_plans();self.verify_node(view)
-            kinds=self.stats.setdefault('python_translated_node_kinds',{})
-            kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
+            if self.DETAILED_INLINE_STATS:
+                kinds=self.stats.setdefault('python_translated_node_kinds',{})
+                kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
             self._active_frames += 1
             try:
                 return leaf[1](self.vm,view)

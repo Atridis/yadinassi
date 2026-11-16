@@ -6,6 +6,7 @@ supported switching API; a suspended frame keeps the path selected on entry.
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
+from yadinassi.compiled_backend import Engine
 from yadinassi.errors import BSLError, BSLRuntimeError
 from yadinassi.syntax.parser import parse
 
@@ -103,6 +104,7 @@ class ReferenceVisitBoundaryTests(unittest.TestCase):
         with patch.object(vm,'compiled_exception',side_effect=AssertionError('switched frame')):
             with self.assertRaisesRegex(BSLRuntimeError,'legacy frame'):next(generator)
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_strict_hooks_exception_conversion_and_execution_remain_observed(self):
         vm,node=self.setup_case('compiled-strict')
         seen=[]

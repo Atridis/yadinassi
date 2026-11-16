@@ -59,3 +59,84 @@ class SharedBoundaryContext(BoundaryContext):
     def revoke(self):
         with self._frame_lock:
             super().revoke()
+
+
+class SingleOwnerBoundaryContext(BoundaryContext):
+    """Permanent constructing-thread ownership; foreign execution is unsupported.
+
+    Same-owner nested entries share the outer budget. Sequential outer entries
+    reset it. Unlike SharedBoundaryContext, another thread cannot execute on
+    this context, even after the owner becomes idle. Thread-object identity
+    avoids recycled thread-ident admission. Any thread may revoke permanently.
+
+    Checkpoints never acquire a lock. Cancellation is observed at the next
+    checkpoint/service boundary; it cannot roll back preceding effects or make
+    an entire translated statement atomic with concurrent cancellation.
+
+    By default unbudgeted checkpoints still increment loop_backedges. Setting
+    count_unbudgeted=False explicitly disables that diagnostic counter ONLY
+    without a budget; cancellation checks remain and budgeted counts stay exact.
+    This is an opt-in host contract, not automatic single-thread detection.
+    """
+
+    def __init__(self, *, count_unbudgeted=True, **kwargs):
+        from threading import current_thread, Event
+        if type(count_unbudgeted) is not bool:
+            raise TypeError('count_unbudgeted requires Boolean')
+        super().__init__(**kwargs)
+        self._owner_thread = current_thread()
+        self._current_thread = current_thread
+        self._cancelled = Event()
+        self._depth = 0
+        self._count_unbudgeted = count_unbudgeted
+
+    def _require_owner(self):
+        if self._current_thread() is not self._owner_thread:
+            raise BoundaryViolation('single-owner execution belongs to another thread')
+
+    def _check(self):
+        # Inline the fixed owner contract rather than stacking guard adapters.
+        if self._current_thread() is not self._owner_thread:
+            raise BoundaryViolation('single-owner execution belongs to another thread')
+        if self._admitted_epoch is None:
+            raise BoundaryViolation('execution boundary not started')
+        if self._cancelled.is_set() or self._revoked or self._epoch != self._admitted_epoch:
+            raise BoundaryViolation('execution authority revoked')
+
+    def enter(self):
+        self._require_owner()
+        if self._depth:
+            self._check()
+        else:
+            super().start()
+        self._depth += 1
+
+    def leave(self):
+        self._require_owner()
+        if not self._depth:
+            raise BoundaryViolation('execution frame exited without entry')
+        self._depth -= 1
+
+    def start(self):
+        self._require_owner()
+        if self._depth:
+            self._check()
+        else:
+            super().start()
+
+    def checkpoint(self):
+        self._check()
+        budget = self.loop_budget
+        if budget is not None:
+            if self.loop_backedges >= budget:
+                raise BoundaryViolation('generated loop backedge budget exhausted')
+            self.loop_backedges += 1
+        elif self._count_unbudgeted:
+            self.loop_backedges += 1
+
+    def revoke(self):
+        # Revocation is the only cross-thread mutation owned by this contract.
+        # Event owns publication. Repeated revocation is monotonic/idempotent;
+        # there is no recovery or exact revocation-count contract in this mode.
+        self._cancelled.set()
+        self._revoked = True

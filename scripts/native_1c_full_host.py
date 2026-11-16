@@ -37,6 +37,7 @@ WINDOWS_TARGET = "windows-8.3.27.2342"
 LINUX_TARGET = "linux-8.3.27.1508"
 BYTE_EXACT = "byte_exact"
 MAP_MODE = "typed-map-order-v1"
+ASSOCIATIVE_MODE = "associative-order-v2"
 APPROVED_IMAGE = "ghcr.io/atridis/onec-ubuntu22@sha256:54e709c7f8eae8c92c5550a0378cef8b97236cc876f6c09591087f6abe9e7728"
 COLLECTIONS_SOURCE_SHA256 = "55bf37f0ac53a5ae2e1a519a190847ddece4df0abcf387179e0fd7ae22bdca5c"
 CASE_SECONDS = 10
@@ -1375,8 +1376,8 @@ def mismatch_metadata(expected: bytes, actual: bytes) -> dict:
 
 def validate_comparison_options(native_target: str, comparison_mode: str) -> None:
     if (type(native_target) is not str or native_target not in {WINDOWS_TARGET, LINUX_TARGET}
-            or type(comparison_mode) is not str or comparison_mode not in {BYTE_EXACT, MAP_MODE}
-            or (comparison_mode == MAP_MODE and native_target != LINUX_TARGET)):
+            or type(comparison_mode) is not str or comparison_mode not in {BYTE_EXACT, MAP_MODE, ASSOCIATIVE_MODE}
+            or (comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE) and native_target != LINUX_TARGET)):
         raise FullError("comparison_configuration_invalid")
 
 
@@ -1385,7 +1386,7 @@ def validate_semantic_context(report: dict, image: str) -> None:
     try:
         stage2, stage3 = report["stage2"], report["stage3"]
         if (image != APPROVED_IMAGE or report["image"] != image or report["platform"] != "linux/amd64"
-                or report["native_target"] != LINUX_TARGET or report["comparison_mode"] != MAP_MODE
+                or report["native_target"] != LINUX_TARGET or report["comparison_mode"] not in (MAP_MODE, ASSOCIATIVE_MODE)
                 or report["configured_timezone"] != "Etc/UTC" or report["configured_native_locale"] != "ru_RU"
                 or report["status"] != "ok" or report["container_exit_code"] != 0
                 or report["runtime_version"] != "8.3.27.1508"
@@ -1553,6 +1554,23 @@ def map_contract():
     return module
 
 
+def associative_contract():
+    # Bind both checked sources before evaluating v2 constants or functions.
+    path = Path(__file__).with_name("native_associative_order.py")
+    module = importlib.util.module_from_spec(importlib.util.spec_from_file_location("native_associative_order", path))
+    module.__dict__["grammar"] = map_contract()
+    exec(compile(read_regular(path, 4 * MAX_FILE, nonempty=True), str(path), "exec"), module.__dict__)
+    return module
+
+
+def semantic_contract(comparison_mode):
+    if comparison_mode == MAP_MODE:
+        return map_contract()
+    if comparison_mode == ASSOCIATIVE_MODE:
+        return associative_contract()
+    raise FullError("semantic_result_invalid")
+
+
 
 ASYNC_ACTUAL_LIMIT = 8192
 ASYNC_EXECUTE_SCRIPT = r"""
@@ -1658,22 +1676,22 @@ def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes:
         raise FullError("execution_provenance_changed")
     return validate_async_comparison(result)
 
-def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
-    contract = map_contract()
+def validate_semantic_result(result: dict, *, raw_matched: bool, comparison_mode=MAP_MODE) -> None:
+    contract = semantic_contract(comparison_mode)
     if type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}:
         raise FullError("semantic_result_invalid")
     if (type(result) is not dict or set(result) != {"status", "profile", "records", "byte_equal_records", "accepted_labels", "reason"}
-            or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != MAP_MODE
+            or type(result["status"]) is not str or result["status"] not in {"equivalent", "rejected"} or result["profile"] != comparison_mode
             or type(result["reason"]) is not str or result["reason"] not in contract.REASONS
-            or not is_int(result["records"], 1023) or not is_int(result["byte_equal_records"], result["records"])
+            or not is_int(result["records"], contract.RECORD_COUNT) or not is_int(result["byte_equal_records"], result["records"])
             or type(result["accepted_labels"]) is not list
             or any(type(label) is not str or label not in contract.ELIGIBLE_LABELS for label in result["accepted_labels"])
             or len(set(result["accepted_labels"])) != len(result["accepted_labels"])):
         raise FullError("semantic_result_invalid")
     if result["status"] == "equivalent":
-        if (result["reason"] != "none" or result["records"] != 1023
-                or result["byte_equal_records"] + len(result["accepted_labels"]) != 1023
-                or raw_matched != (result["byte_equal_records"] == 1023)):
+        if (result["reason"] != "none" or result["records"] != contract.RECORD_COUNT
+                or result["byte_equal_records"] + len(result["accepted_labels"]) != contract.RECORD_COUNT
+                or raw_matched != (result["byte_equal_records"] == contract.RECORD_COUNT)):
             raise FullError("semantic_result_invalid")
     elif (result["reason"] == "none" or result["records"] != 0
             or result["byte_equal_records"] != 0 or result["accepted_labels"]):
@@ -1753,10 +1771,10 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
                         or not 1 <= mismatch["first_mismatch_native_line"] <= mismatch["native_line_count"] + 1):
                     raise ValueError("mismatch")
             semantic = case["semantic"]
-            if comparison_mode == MAP_MODE and name == "collections":
+            if comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE) and name == "collections":
                 if native["source_sha256"] != COLLECTIONS_SOURCE_SHA256:
                     raise ValueError("source")
-                validate_semantic_result(semantic, raw_matched=matched)
+                validate_semantic_result(semantic, raw_matched=matched, comparison_mode=comparison_mode)
                 accepted = semantic["status"] == "equivalent"
             else:
                 if semantic is not None:
@@ -1824,9 +1842,10 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
         raise FullError('execution_backend_invalid')
     compiled_cases = []
     validate_comparison_options(native_target, comparison_mode)
-    if comparison_mode == MAP_MODE:
+    if comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE):
         validate_semantic_context(runtime_evidence, APPROVED_IMAGE)
-        if runtime_evidence["stage3"] != stage3 or runtime_evidence["trusted_input_sha256"] != input_hashes:
+        if (runtime_evidence["comparison_mode"] != comparison_mode
+                or runtime_evidence["stage3"] != stage3 or runtime_evidence["trusted_input_sha256"] != input_hashes):
             raise FullError("semantic_context_invalid")
     if (stage3.get("status") != "ok" or len(stage3.get("cases", [])) != len(SCENARIOS)
             or [case.get("name") for case in stage3["cases"]] != list(SCENARIOS)
@@ -1890,9 +1909,9 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             record["status"] = "matched" if actual == expected else "mismatched"
             if actual != expected:
                 record["mismatch"] = mismatch_metadata(expected, actual)
-            if name == "collections" and comparison_mode == MAP_MODE:
-                result = map_contract().compare_collections(expected, actual, case["source_sha256"])
-                validate_semantic_result(result, raw_matched=actual == expected)
+            if name == "collections" and comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE):
+                result = semantic_contract(comparison_mode).compare_collections(expected, actual, case["source_sha256"])
+                validate_semantic_result(result, raw_matched=actual == expected, comparison_mode=comparison_mode)
                 record["semantic"] = result
                 accepted = result["status"] == "equivalent"
             else:
@@ -1972,7 +1991,7 @@ def interpreter_provenance(root: Path) -> dict:
             for path in files)):
         raise FullError("unexpected_interpreter_source")
     files += [root / "pyproject.toml", root / "scripts/native_1c_full_host.py", root / "scripts/native_1c_smoke.py",
-              root / "scripts/native_1c_map_contract.py", root / "scripts/native_1c_tree_load_contract.py", root / "scripts/native_1c_tree_move_contract.py", root / "scripts/native_1c_tree_total_contract.py",
+              root / "scripts/native_1c_map_contract.py", root / "scripts/native_associative_order.py", root / "scripts/native_1c_tree_load_contract.py", root / "scripts/native_1c_tree_move_contract.py", root / "scripts/native_1c_tree_total_contract.py",
               root / "scripts/native_async_comparison.py",
               root / "scripts/native_infobase_fixture.py"]
     if not files or len(files) > 512:
@@ -2055,7 +2074,7 @@ def output_artifact_files(payloads: dict[str, bytes], report: dict, image: str) 
         comparison = report["comparison"]
         native_target, comparison_mode = report["native_target"], report["comparison_mode"]
         validate_comparison(comparison, stage3, native_target, comparison_mode)
-        if comparison_mode == MAP_MODE:
+        if comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE):
             validate_semantic_context(report, image)
         if (stage3["status"] != "ok" or stage3["nonce"] != report["invocation_nonce"]
                 or [case["name"] for case in stage3["cases"]] != list(SCENARIOS)

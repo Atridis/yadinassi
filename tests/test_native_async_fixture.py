@@ -424,8 +424,29 @@ def without_main_demo_assets_provenance(source):
     return source
 
 
+def without_associative_order_harness(source, path='scripts/native_1c_full_host.py'):
+    """Exact test-only source inverse; never normalize native output bytes."""
+    pins = {'scripts/native_1c_full_host.py': ('d40289525ee7128f8416f4b61e8626ae635b85a905462d6f0b2920e1c0dd67a5', '77555ab592977002bcbb33e3dd1a5fbf9f1d9c0ccca0e4002734d944bc689fd1'), 'scripts/native_1c_smoke.py': ('5a13a74bc901192c0fa503171cacb4573797ab2fd8e3b75b471e0fd8ba3db5eb', '85f14c2dc966d698f720de74e925a8b7e113f8cee2a9b326e668a5b0f6e30924')}
+    if path not in pins:
+        return source
+    base, candidate = pins[path]
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != candidate:
+        return source  # Historical layers still enforce their exact source pins.
+    contract = json.loads((REPOSITORY / 'tests/native_associative_source_inverse.json').read_text(encoding='utf-8'))[path]
+    if (contract['base_sha256'], contract['candidate_sha256']) != (base, candidate):
+        raise AssertionError('associative harness inverse identity')
+    for edit in reversed(contract['edits']):
+        if source.count(edit['new']) != 1:
+            raise AssertionError('associative harness inverse unique hunk')
+        source = source.replace(edit['new'], edit['old'], 1)
+    if hashlib.sha256(source.encode('utf-8')).hexdigest() != base:
+        raise AssertionError('associative harness inverse inner identity')
+    return source
+
+
 def without_compiled_backend_harness(source):
     """Exact source-only inverse of opt-in host execution; never rewrite native bytes."""
+    source = without_associative_order_harness(source)
     base = '19e5d982441891acf78dfa612d3cc1a943c0e8a26eb802d5dd1513c259bd7ceb'
     candidate = 'd40289525ee7128f8416f4b61e8626ae635b85a905462d6f0b2920e1c0dd67a5'
     digest = hashlib.sha256(source.encode('utf-8')).hexdigest()
@@ -476,6 +497,7 @@ def historical_source_bytes(path, raw, expected_sha256):
         'scripts/native_async_comparison.py': ('7eec7c2e95fa7ea6d59d50f4cf53bc37967e2afe6cf7b59eae82a6e585ce4941', '2243774fb9535779c6badf88054575e5283b9a4cfb160480585fff62e8deeb21'),
     }
     if path in pins and expected_sha256 == pins[path][0]:
+        raw = without_associative_order_harness(raw.decode('utf-8'), path).encode('utf-8')
         base, candidate = pins[path]
         actual = hashlib.sha256(raw).hexdigest()
         if actual == base:

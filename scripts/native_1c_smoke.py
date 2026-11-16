@@ -690,8 +690,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Explicitly retain six genuine outputs plus provenance at native-smoke/native-outputs")
     parser.add_argument("--native-target", choices=(FULL.WINDOWS_TARGET, FULL.LINUX_TARGET),
                         default=FULL.WINDOWS_TARGET, help="Explicit host interpreter native checkpoint, never auto-detected")
-    parser.add_argument("--comparison-mode", choices=(FULL.BYTE_EXACT, FULL.MAP_MODE),
-                        default=FULL.BYTE_EXACT, help="Raw-byte comparison or the reviewed, source-bound typed Map contract")
+    parser.add_argument("--comparison-mode", choices=(FULL.BYTE_EXACT, FULL.MAP_MODE, FULL.ASSOCIATIVE_MODE),
+                        default=FULL.BYTE_EXACT, help="Raw-byte comparison or a reviewed, source-bound associative order contract")
     parser.add_argument('--execution-backend', choices=('interpreter', 'compiled-strict'), default='interpreter')
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
@@ -716,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         FULL.validate_comparison_options(args.native_target, args.comparison_mode)
     except FULL.FullError:
-        parser.error("typed-map-order-v1 requires --native-target linux-8.3.27.1508")
+        parser.error("semantic order profiles require --native-target linux-8.3.27.1508")
     if not args.full_suite and (args.native_target != FULL.WINDOWS_TARGET or args.comparison_mode != FULL.BYTE_EXACT):
         parser.error("comparison options require --full-suite")
     report: dict[str, object] = {
@@ -741,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise FULL.FullError("comparison_configuration_invalid")
             if probe["comparison"]["status"] != "not_run":
                 FULL.validate_comparison(probe["comparison"], probe["stage3"], args.native_target, args.comparison_mode)
-                if args.comparison_mode == FULL.MAP_MODE:
+                if args.comparison_mode in (FULL.MAP_MODE, FULL.ASSOCIATIVE_MODE):
                     FULL.validate_semantic_context(probe, IMAGE)
                 artifact_evidence_validated = bool(probe["status"] == "ok" and all(
                     probe.get(key) is True for key in ("native_evidence_accepted", "native_transport_validated",

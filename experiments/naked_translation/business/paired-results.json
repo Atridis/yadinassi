@@ -1,0 +1,466 @@
+{
+  "scope": "synthetic business fixtures, not real1C; three rotating fresh-process trials/backend, three warm runs; cold includes creation/parse/prepare/execute, excludes Python import/startup",
+  "summary": {
+    "invoice_batch": {
+      "interpreter": {
+        "cold_ms": 146.786834,
+        "warm_ms": 109.864815
+      },
+      "compiled-strict": {
+        "cold_ms": 480.155841,
+        "warm_ms": 256.922562
+      },
+      "experimental": {
+        "cold_ms": 51.269463,
+        "warm_ms": 7.707701
+      }
+    },
+    "graph_batch": {
+      "interpreter": {
+        "cold_ms": 201.961499,
+        "warm_ms": 185.490492
+      },
+      "compiled-strict": {
+        "cold_ms": 424.893821,
+        "warm_ms": 350.512901
+      },
+      "experimental": {
+        "cold_ms": 72.948503,
+        "warm_ms": 12.00168
+      }
+    }
+  },
+  "rows": [
+    {
+      "trial": 0,
+      "name": "invoice_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 164.642153,
+      "warm_ms": [
+        98.865631,
+        99.119299,
+        105.168006
+      ]
+    },
+    {
+      "trial": 0,
+      "name": "invoice_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 457.283683,
+      "warm_ms": [
+        292.111039,
+        276.420949,
+        223.460636
+      ]
+    },
+    {
+      "trial": 0,
+      "name": "invoice_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 59.946646,
+      "warm_ms": [
+        10.525728,
+        7.684888,
+        7.612037
+      ]
+    },
+    {
+      "trial": 0,
+      "name": "graph_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 207.566974,
+      "warm_ms": [
+        184.069812,
+        193.184214,
+        253.580525
+      ]
+    },
+    {
+      "trial": 0,
+      "name": "graph_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 500.363673,
+      "warm_ms": [
+        348.816269,
+        429.442716,
+        350.512901
+      ]
+    },
+    {
+      "trial": 0,
+      "name": "graph_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 87.426927,
+      "warm_ms": [
+        10.310622,
+        12.528221,
+        13.012948
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "invoice_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 146.786834,
+      "warm_ms": [
+        129.667769,
+        123.319941,
+        117.175866
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "invoice_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 51.269463,
+      "warm_ms": [
+        8.73352,
+        7.820321,
+        7.750415
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "invoice_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 513.586154,
+      "warm_ms": [
+        256.922562,
+        263.795192,
+        241.638459
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "graph_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 201.961499,
+      "warm_ms": [
+        185.490492,
+        183.116172,
+        205.068872
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "graph_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 68.779939,
+      "warm_ms": [
+        10.334267,
+        9.068817,
+        10.739159
+      ]
+    },
+    {
+      "trial": 1,
+      "name": "graph_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 424.893821,
+      "warm_ms": [
+        372.868121,
+        410.138125,
+        414.409115
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "invoice_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 50.477656,
+      "warm_ms": [
+        8.87204,
+        7.707701,
+        7.562001
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "invoice_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 142.159685,
+      "warm_ms": [
+        109.864815,
+        110.521251,
+        104.078575
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "invoice_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "338838500",
+        "eventotal": "169672000",
+        "oddtotal": "169166500",
+        "aliasquantity": "11",
+        "rowcount": "1000",
+        "trace": "112086"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "0694dbf8a2b2218c7de7c2afbe19ff297bf22e127bfabbb35a343a9197ac3c80"
+      },
+      "cold_ms": 480.155841,
+      "warm_ms": [
+        275.40751,
+        238.969544,
+        238.8388
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "graph_batch",
+      "backend": "experimental",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 72.948503,
+      "warm_ms": [
+        9.415865,
+        12.00168,
+        13.817581
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "graph_batch",
+      "backend": "interpreter",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 186.176398,
+      "warm_ms": [
+        180.666373,
+        189.628259,
+        185.412835
+      ]
+    },
+    {
+      "trial": 2,
+      "name": "graph_batch",
+      "backend": "compiled-strict",
+      "controls": {
+        "result": "1000",
+        "trace": "378275",
+        "edges": "1998",
+        "aliasfound": true,
+        "cloneabsent": true,
+        "queuecount": "1000"
+      },
+      "events": {
+        "count": 1000,
+        "sha256": "3e9b70538fa4a5217ad7e18a1b4e5bcc562a38402a5f0cd9effbad597c054af5"
+      },
+      "cold_ms": 411.377883,
+      "warm_ms": [
+        313.242494,
+        336.289198,
+        299.449895
+      ]
+    }
+  ],
+  "runtime_hashes": {
+    "yadinassi/experimental_naked_live_state.py": "262056ae475fecb59c9cc6b91ffe6406d8bd9e6f282be959a8678d2038e18237",
+    "yadinassi/experimental_naked_structure.py": "cdfc08c00e5353c5c445b12cc29728d8c70d56b7d1bab5349982ed7d2c77f816",
+    "yadinassi/experimental_naked_scalar_semantics.py": "569426d3891e6d642cce7c53dc9c4296174e720d72fe1e82eb2859e6c1e838bd",
+    "yadinassi/experimental_naked_resources.py": "c73db920756f7205e3da4aaf88f876fa4f6181572b9b2c5273c6720083af2eff",
+    "yadinassi/experimental_naked_errors.py": "c05b75f629076547dd04b0f553d897346301591bb8d045e192c943dec0aab6a2",
+    "yadinassi/experimental_naked_control.py": "4953fce90d3913d9d9a846dd37bf647842c9e85d1a0fa99a5c87db374151a28d",
+    "yadinassi/experimental_naked_collections.py": "02a7accbc85c073919118cae29599eeeee94879c15463d810ea0f649e372b0db",
+    "yadinassi/experimental_naked_boundaries.py": "dbf11cb307b57bfa2041329a6b18e86951424b8a8a17e8784664cd7e96be609d",
+    "yadinassi/experimental_naked_array_methods.py": "50b30cb2ac0442fca68fd7aae5dc59b1a0e2ca412beaf9d1e44d0c67d645e411"
+  },
+  "fixture_hashes": {
+    "graph_batch.bsl": "4f9a6f0ec970a298a0c4de7140d60825d3debc4e91f4d26f6061a8916c3fc941",
+    "graph_bfs.bsl": "561e783f47df9de4050a6c2fd08cf24008a36629e98a360fe042671e24a34e0d",
+    "invoice_batch.bsl": "024d79210071da79761b3d2e197496f5b1ec53a9dd101b15a554e6bc111d5308",
+    "invoice.bsl": "225d339c35bd4b0c82e6db845ac03f43db524ae8f881019fc40b39d5ce4d88c8"
+  }
+}

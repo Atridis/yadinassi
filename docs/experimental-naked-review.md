@@ -1,3 +1,8 @@
+> Historical review surface for snapshot 5c9157ed. The next broad direct-state
+> slice and associative serialization integration are described in
+> [the current audit report](direct-python-audit.md). Earlier test counts and
+> benchmark files below refer to their own recorded source, not the new tree.
+
 # UNSAFE research branch: direct BSL to Python, NOT FOR MERGE
 
 This Draft is a review surface for Codex, not the next production backend.
