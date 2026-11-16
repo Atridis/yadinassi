@@ -305,8 +305,8 @@ class OrchestrationTests(SyntheticFilesystemCase):
                 path=capture/"collections.out"; path.chmod(0o600); path.write_bytes(b"changed")
             if post_create is not None:
                 return original_compare(root,capture,stage3,inputs,runner=lambda args,cwd,**limits:
-                    post_create[1] if Path(args[-2]).stem == "functions" else
-                    (0,collections_payload if Path(args[-2]).stem == "collections" and collections_payload is not None
+                    post_create[1] if Path(args[-3]).stem == "functions" else
+                    (0,collections_payload if Path(args[-3]).stem == "collections" and collections_payload is not None
                      else PAYLOAD,b""),**kwargs)
             return good["comparison"]
         def retain(capture,stage3): retained.append(capture); return original_retain(capture,stage3)

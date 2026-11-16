@@ -33,6 +33,75 @@ class NativeCompiledBackendTests(unittest.TestCase):
             for bad in ({}, {'execution_backend':'interpreter'}, {'schema':2}):
                 with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
 
+    def test_child_actual_backend_and_execution_routes(self):
+        # Observe actual runtime state/visitor entries, not just equal BSL output.
+        probe = """
+import json
+from yadinassi.runtime import Interpreter
+original_literal = Interpreter.visit_Literal
+literal_entries = []
+def observe_literal(vm, node):
+    literal_entries.append(1)
+    return original_literal(vm, node)
+Interpreter.visit_Literal = observe_literal
+"""
+        script = full.EXECUTE_SCRIPT.replace('Interpreter = module.Interpreter',
+                                            'Interpreter = module.Interpreter' + probe)
+        script += "\nprint(json.dumps([interpreter.execution_backend, len(literal_entries), interpreter.compiled_backend_stats.get('python_translated_blocks', 0)]), file=sys.stderr)\n"
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'case.bsl'
+            source.write_text('Message(42);', encoding='utf-8')
+            command = [sys.executable, '-I', '-B', '-c', script, str(ROOT), str(source), full.LINUX_TARGET]
+            for requested in (None, 'interpreter', 'compiled-strict'):
+                with self.subTest(requested=requested):
+                    stats = Path(directory) / 'execution.json'
+                    args = [] if requested is None else [requested]
+                    if requested == 'compiled-strict': args.append(str(stats))
+                    result = subprocess.run(command + args, capture_output=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout, b'42\n')
+                    actual, visits, blocks = json.loads(result.stderr)
+                    self.assertEqual(actual, requested or 'interpreter')
+                    self.assertEqual(visits > 0, actual == 'interpreter')
+                    self.assertEqual(blocks > 0, actual == 'compiled-strict')
+                    if actual == 'compiled-strict':
+                        full.execution_evidence([json.loads(stats.read_text())])
+                    else:
+                        self.assertFalse(stats.exists())
+
+    def test_child_backend_drift_cannot_publish_strict_evidence(self):
+        for requested in ('interpreter', 'compiled-strict'):
+            for boundary in ('before', 'after'):
+                with self.subTest(requested=requested, boundary=boundary), tempfile.TemporaryDirectory() as directory:
+                    source = Path(directory) / 'case.bsl'; stats = Path(directory) / 'execution.json'
+                    source.write_text('Message(42);', encoding='utf-8')
+                    other = 'compiled-strict' if requested == 'interpreter' else 'interpreter'
+                    if boundary == 'before':
+                        script = full.EXECUTE_SCRIPT.replace('interpreter = Interpreter(output=emit, **options)',
+                            "options['execution_backend'] = " + repr(other) + "\ninterpreter = Interpreter(output=emit, **options)")
+                    else:
+                        script = full.EXECUTE_SCRIPT.replace('interpreter.execute(source_text, str(source))',
+                            'interpreter.execute(source_text, str(source))\ninterpreter._execution_backend = ' + repr(other))
+                    args = [sys.executable, '-I', '-B', '-c', script, str(ROOT), str(source), full.LINUX_TARGET, requested]
+                    if requested == 'compiled-strict': args.append(str(stats))
+                    result = subprocess.run(args, capture_output=True, timeout=10)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(b'execution backend mismatch', result.stderr)
+                    self.assertFalse(stats.exists())
+                    if boundary == 'before': self.assertEqual(result.stdout, b'')
+
+    def test_child_rejects_invalid_backend_protocol_before_effects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'case.bsl'; stats = Path(directory) / 'execution.json'
+            source.write_text('Message(42);', encoding='utf-8')
+            command = [sys.executable, '-I', '-B', '-c', full.EXECUTE_SCRIPT, str(ROOT), str(source), full.LINUX_TARGET]
+            for args in (['hybrid'], ['garbage'], ['compiled-strict'], ['interpreter', str(stats)], ['compiled-strict', str(stats), 'extra']):
+                with self.subTest(args=args):
+                    result = subprocess.run(command + args, capture_output=True, timeout=10)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertFalse(stats.exists())
+
     def test_unobserved_stats_cannot_be_called_compiled(self):
         stats={key:0 for key in ('emitted_executions','helper_executions','rejected_units',
             'unsupported_executions','interpreter_fallbacks','old_backend_executions','strict_rejections','inline_blocks','inline_fragments')}
@@ -159,6 +228,16 @@ class NativeCompiledBackendTests(unittest.TestCase):
             with patch.object(full,'validate_tree_load_observations'), patch.object(full,'validate_tree_move_observations'), patch.object(full,'validate_tree_total_observations'):
                 result=full.compare_outputs(case.root,case.capture,case.stage3,case.inputs,
                     runner=runner,execution_backend='compiled-strict')
+            full.validate_comparison(result, case.stage3, full.WINDOWS_TARGET, full.BYTE_EXACT,
+                                     expected_execution_backend='compiled-strict')
+            with self.assertRaises(full.FullError):
+                full.validate_comparison(result, case.stage3, full.WINDOWS_TARGET, full.BYTE_EXACT,
+                                         expected_execution_backend='interpreter')
+            downgraded = {k: v for k, v in result.items() if k != 'execution'}
+            downgraded['schema'] = 2
+            with self.assertRaises(full.FullError):
+                full.validate_comparison(downgraded, case.stage3, full.WINDOWS_TARGET, full.BYTE_EXACT,
+                                         expected_execution_backend='compiled-strict')
             self.assertEqual(result['schema'],3)
             self.assertEqual(result['acceptance_status'],'accepted')
             self.assertEqual(len(result['execution']['cases']),len(full.SCENARIOS))

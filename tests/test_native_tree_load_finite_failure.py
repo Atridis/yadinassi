@@ -183,7 +183,7 @@ class FiniteFailureTests(artifact.SyntheticFilesystemCase):
                     output_size=len(payload), output_sha256=full.digest(payload),
                     message_count=1023 if name == 'collections' else 1))
             def runner(args, cwd, **limits):
-                return 0, calibration.diagnostic_output('A') if Path(args[-2]).stem == 'collections' else b'ok\n', b''
+                return 0, calibration.diagnostic_output('A') if Path(args[-3]).stem == 'collections' else b'ok\n', b''
             compared = full.compare_outputs(root, capture, dict(status='ok', cases=cases, input_sha256=inputs),
                                             inputs, runner=runner)
             self.assertEqual(compared['cases'][0]['failure_kind'], 'tree_load_observation_invalid')

@@ -445,8 +445,8 @@ class ComparisonTests(SyntheticFilesystemCase):
     def test_fresh_real_source_path_complete_bytes_and_no_normalization(self):
         calls = []
         def runner(args, cwd, **limits):
-            calls.append(args[-2])
-            self.assertEqual(args[-1], full.WINDOWS_TARGET)
+            calls.append(args[-3])
+            self.assertEqual(args[-2:], [full.WINDOWS_TARGET, 'interpreter'])
             self.assertIn("-I", args)
             self.assertIn("-B", args)
             self.assertTrue(any(value.startswith("pycache_prefix=") for value in args))
@@ -522,7 +522,7 @@ class ChildTests(unittest.TestCase):
             package = root / "yadinassi"
             package.mkdir()
             module = package / "__init__.py"
-            template = 'class Interpreter:\n def __init__(self, output, **options): self.output = output\n def execute(self, *args): self.output("%s")\n'
+            template = 'class Interpreter:\n def __init__(self, output, **options): self.output = output; self.execution_backend = options["execution_backend"]\n def execute(self, *args): self.output("%s")\n'
             module.write_text(template % "POISON")
             before = module.stat()
             py_compile.compile(str(module), doraise=True, optimize=0)
@@ -548,7 +548,7 @@ class ChildTests(unittest.TestCase):
             root = Path(temporary).resolve()
             package = root / "yadinassi"
             package.mkdir()
-            (package / "__init__.py").write_text('class Interpreter:\n def __init__(self, output, **options): self.output = output\n def execute(self, *args):\n  import decimal\n  self.output(getattr(decimal, "CHECK", "SOURCE"))\n')
+            (package / "__init__.py").write_text('class Interpreter:\n def __init__(self, output, **options): self.output = output; self.execution_backend = options["execution_backend"]\n def execute(self, *args):\n  import decimal\n  self.output(getattr(decimal, "CHECK", "SOURCE"))\n')
             shadow = root / "shadow-source.py"
             shadow.write_text('CHECK = "POISON"\n')
             py_compile.compile(str(shadow), cfile=str(root / "decimal.pyc"), doraise=True)
@@ -807,7 +807,7 @@ class SemanticComparisonTests(ComparisonTests):
     def measurement_limits(self):
         calls = {}
         def runner(args, cwd, **limits):
-            calls[Path(args[-2]).stem] = limits
+            calls[Path(args[-3]).stem] = limits
             return 0, self.payload, b""
         result = self.compare(runner)
         return calls, result
@@ -878,8 +878,8 @@ class SemanticComparisonTests(ComparisonTests):
     def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
         calls = []
         def runner(args, cwd, **limits):
-            self.assertEqual(args[-1], full.LINUX_TARGET)
-            calls.append(Path(args[-2]).stem)
+            self.assertEqual(args[-2:], [full.LINUX_TARGET, 'interpreter'])
+            calls.append(Path(args[-3]).stem)
             different = (calls[-1] == "collections" and not equal) or (calls[-1] == "dates" and other_diff)
             return 0, self.payload + b"x" if different else self.payload, b""
         verifier = mock.Mock(return_value=self.verdict(equal=equal) if verdict is None else verdict)
@@ -904,7 +904,7 @@ class SemanticComparisonTests(ComparisonTests):
             path.chmod(0o600); path.write_bytes(native)
             self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1023)
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
-                runner=lambda args,cwd,**limits: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
+                runner=lambda args,cwd,**limits: (0, actual if Path(args[-3]).stem=='collections' else self.payload,b''),
                 native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context)
             self.assertEqual(result['cases'][0]['failure_kind'],'tree_load_observation_invalid')
@@ -920,7 +920,7 @@ class SemanticComparisonTests(ComparisonTests):
             path.chmod(0o600); path.write_bytes(native)
             self.stage3['cases'][0].update(output_size=len(native), output_sha256=full.digest(native), message_count=1023)
             result = full.compare_outputs(self.root, self.capture, self.stage3, self.inputs,
-                runner=lambda args,cwd,**limits: (0, actual if Path(args[-2]).stem=='collections' else self.payload,b''),
+                runner=lambda args,cwd,**limits: (0, actual if Path(args[-3]).stem=='collections' else self.payload,b''),
                 native_target=full.LINUX_TARGET, comparison_mode=full.MAP_MODE,
                 runtime_evidence=self.context)
             self.assertEqual(result['cases'][0]['failure_kind'],'tree_move_observation_invalid')

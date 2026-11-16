@@ -92,12 +92,12 @@ class PostCreateCaptureTests(SyntheticFilesystemCase):
 
     def compare(self, response=None, *, real=False):
         def runner(args, cwd):
-            if Path(args[-2]).stem != 'functions':
+            if Path(args[-3]).stem != 'functions':
                 return 0, PAYLOAD, b''
             if real:
                 # Execute the exact missing-export test fixture against the real package.
                 args = list(args)
-                args[-3] = str(ROOT)
+                args[-4] = str(ROOT)
                 result = subprocess.run(args, cwd=cwd, env=full.child_environment(), capture_output=True,
                                         timeout=full.CASE_SECONDS, check=False)
                 return result.returncode, result.stdout, result.stderr

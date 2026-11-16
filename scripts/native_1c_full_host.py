@@ -95,10 +95,14 @@ source = Path(sys.argv[2])
 source_text = source.read_text(encoding="utf-8-sig")
 post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-if len(sys.argv) > 4:
-    if len(sys.argv) != 6 or sys.argv[4] != 'compiled-strict':
-        raise ValueError('invalid execution backend')
-    options['execution_backend'] = sys.argv[4]
+# Legacy invocations still select the oracle explicitly, independent of UI/API defaults.
+backend = sys.argv[4] if len(sys.argv) > 4 else 'interpreter'
+if (backend not in ('interpreter', 'compiled-strict')
+        or (backend == 'compiled-strict' and len(sys.argv) != 6)
+        or (backend == 'interpreter' and len(sys.argv) not in (3, 4, 5))):
+    raise ValueError('invalid execution backend')
+options['execution_backend'] = backend
+if backend == 'compiled-strict':
     from yadinassi.compiled_backend import Engine, CompiledUnsupported
     counters = []
     original_engine_init = Engine.__init__
@@ -134,6 +138,8 @@ if len(sys.argv) > 4:
         original_rejection(error, node, reason)
     CompiledUnsupported.__init__ = observe_rejection
 interpreter = Interpreter(output=emit, **options)
+if interpreter.execution_backend != backend:
+    raise ValueError('execution backend mismatch')
 interpreter.execute(source_text, str(source))
 if post_create:
     emit("export-phase.post-create: [begin]")
@@ -149,7 +155,10 @@ if post_create:
         sys.exit(3)  # An unavailable entrypoint must never yield a green comparison.
     else:
         emit("export-phase.post-create: [ok]")
-if len(sys.argv) > 4:
+# Never publish output acceptance/evidence for a silently changed backend.
+if interpreter.execution_backend != backend:
+    raise ValueError('execution backend mismatch')
+if backend == 'compiled-strict':
     import json
     keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
     observed = {key: sum(stats.get(key, 0) for stats in counters) for key in keys}
@@ -1672,9 +1681,17 @@ def validate_semantic_result(result: dict, *, raw_matched: bool) -> None:
         raise FullError("semantic_result_invalid")
 
 
-def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str) -> None:
+def validate_comparison(comparison: dict, stage3: dict, native_target: str, comparison_mode: str, *,
+                        expected_execution_backend=None) -> None:
     """Validate both raw evidence and separately named acceptance, never conflate them."""
     validate_comparison_options(native_target, comparison_mode)
+    # Fresh callers bind the requested mode; historical schema-2 reports remain readable.
+    if expected_execution_backend is not None:
+        if expected_execution_backend not in ('interpreter', 'compiled-strict'):
+            raise FullError('execution_backend_invalid')
+        expected_schema = 3 if expected_execution_backend == 'compiled-strict' else 2
+        if type(comparison) is not dict or comparison.get('schema') != expected_schema:
+            raise FullError('comparison_evidence_invalid')
     if type(comparison) is dict and comparison.get('schema') == 3:
         validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
         comparison = {k: v for k, v in comparison.items() if k != 'execution'}
@@ -1835,7 +1852,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                                               "-c", EXECUTE_SCRIPT, str(root), str(source), native_target,
-                                              *([execution_backend, str(Path(cache) / 'execution.json')]
+                                              execution_backend,
+                                              *([str(Path(cache) / 'execution.json')]
                                                 if execution_backend == 'compiled-strict' else [])], root, **limits)
                 if execution_backend == 'compiled-strict':
                     compiled_cases.append(strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536))
@@ -1887,7 +1905,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
     if execution_backend == 'compiled-strict':
         result['schema'] = 3
         result['execution'] = execution_evidence(compiled_cases)
-    validate_comparison(result, stage3, native_target, comparison_mode)
+    validate_comparison(result, stage3, native_target, comparison_mode,
+                        expected_execution_backend=execution_backend)
     return result
 
 
