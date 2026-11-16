@@ -3,15 +3,15 @@ from decimal import Decimal
 from unittest.mock import patch
 import sqlite3
 import unittest
-from test_main_demo_runtime import MainDemoRuntimeTests, SEED
+import test_main_demo_runtime as runtime_fixture
 from yadinassi.document_posting_values import DocumentWriteMode
 from yadinassi.document_posting import _PostingInterpreter
 
 class DirectPostingTests(unittest.TestCase):
     def setUp(self):
-        self.fixture=MainDemoRuntimeTests();self.fixture.setUp()
+        self.fixture=runtime_fixture.MainDemoRuntimeTests();self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
-        self.vm=self.fixture.vm;self.vm.execute(SEED)
+        self.vm=self.fixture.vm;self.vm.execute(runtime_fixture.SEED)
     def document(self,mode=0):
         d=self.vm._documents.get_member('Receipt').create_document()
         d.set_member('Number','r1');d.set_member('Date',self.vm.functions['date'](Decimal(2024),Decimal(1),Decimal(1)))
@@ -116,3 +116,14 @@ class DirectPostingTests(unittest.TestCase):
         d.set_member('Number','3');d.set_member('Date',vm.functions['date'](Decimal(2024),Decimal(1),Decimal(1)))
         before=current_native_target();d.write(DocumentWriteMode.POSTING)
         self.assertEqual(seen,[LINUX_8_3_27_1508]);self.assertEqual(current_native_target(),before)
+
+
+class PostingDiscoveryTests(unittest.TestCase):
+    def test_fixture_import_does_not_rediscover_foreign_tests(self):
+        import sys
+        from scripts.test_partition import leaves
+        suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
+        ids = [test.id() for test in leaves(suite)]
+        self.assertTrue(ids)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertTrue(all(name.startswith(__name__ + '.') for name in ids))

@@ -78,6 +78,33 @@ class FormBoundary(ConfigurationBoundary):
         self.session.form.set_member(name, value)
 
     def resolve_service(self,*args,**kwargs):
+        if args and args[0].casefold() in self.owner._invocation_bindings:
+            self._check()
+            key=args[0].casefold()
+            binding=self.owner._invocation_bindings[key]
+            routine,invoke=binding
+            signature=(routine.is_function,tuple((p.name,p.by_value,p.default) for p in routine.parameters))
+            def check():
+                self._check()
+                if (self.owner.execution_context!='client'
+                        or self.owner._invocation_bindings.get(key) is not binding
+                        or self.owner.server_routines.get(key) is not routine
+                        or routine.execution_context!='server' or not routine.module_context
+                        or (routine.is_function,tuple((p.name,p.by_value,p.default) for p in routine.parameters))!=signature
+                        or any(not p.by_value or p.default is not None for p in routine.parameters)):
+                    raise BoundaryViolation('form invocation binding changed')
+                if self.app is not None:self.app.check_call(routine,self.owner)
+            check()
+            if kwargs.get('require_value',False) and not routine.is_function:
+                raise TypeError('Процедура не возвращает значение: '+routine.name)
+            def call(*values):
+                check()
+                if len(values)!=len(routine.parameters):
+                    raise TypeError('form invocation argument count')
+                try:return invoke(list(values))
+                finally:self._check()
+            if kwargs.get('allow_references',False):call.requires_reference=lambda index:False
+            return call
         if args and args[0] in tuple('new:'+name for name in CALLBACK_CONSTRUCTORS):
             self._check()
             if self.owner.execution_context!='client' or self.session._owned_form_enrollment is None:

@@ -73,7 +73,7 @@ def _source_facts(program):
     nodes=tuple(_nodes(program))
     routines=frozenset(node.name.casefold() for node in program if type(node) is ast.Routine)
     constructors=set();calls=set()
-    native_names={'array','массив','map','соответствие','structure','структура'}
+    native_names={'array','массив','map','соответствие','structure','структура','uuid','уникальныйидентификатор'}
     for node in nodes:
         if node.token is None:
             _reject('execute_program requires source tokens on every node')
@@ -96,7 +96,8 @@ def _admit_bindings(vm,routines,constructors,calls):
     from .values import BSLArray
     from .maps import BSLMap
     from .structures import BSLStructure
-    native_types={'array':BSLArray,'массив':BSLArray,'map':BSLMap,'соответствие':BSLMap,'structure':BSLStructure,'структура':BSLStructure}
+    from .unique_identifiers import BSLUUID
+    native_types={'array':BSLArray,'массив':BSLArray,'map':BSLMap,'соответствие':BSLMap,'structure':BSLStructure,'структура':BSLStructure,'uuid':BSLUUID,'уникальныйидентификатор':BSLUUID}
     for name in constructors:
         constructor=vm.types.get(name)
         if type(constructor) is not HostFunction or constructor.function is not native_types[name]:
@@ -145,7 +146,7 @@ def _compile(vm,program,nodes,source_text,source_name):
     try:
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
-                     constructors=("query","запрос") if vm.database_context is not None else (),
+                     constructors=("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
                      external_names=DATABASE_NAMES if vm.database_context is not None else (),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
@@ -222,6 +223,15 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from .python_direct_database import CatalogBoundary
     database = vm.database_context
     class DirectBoundary(CatalogBoundary, BoundaryContext):
+        def resolve_service(self,name,*args,**kwargs):
+            if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
+                from .unique_identifiers import BSLUUID
+                self._check()
+                factory=vm.types.get(name.split(':',1)[1].casefold())
+                if type(factory) is not HostFunction or factory.function is not BSLUUID:
+                    raise BoundaryViolation('UUID constructor requires canonical registration')
+                return super().resolve_callable(factory)
+            return super().resolve_service(name,*args,**kwargs)
         def _check(self):
             super()._check()
             if vm._family_closed:
