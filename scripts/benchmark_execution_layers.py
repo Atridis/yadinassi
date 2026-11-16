@@ -117,13 +117,13 @@ def workload(name, n):
 
 
 def prepare_bsl(source, route):
-    if route == 'compiled-strict':
+    if route in ('default', 'compiled-strict'):
         program = parse(source, '<execution-layer-benchmark>')
-        vm = Interpreter(execution_backend='compiled-strict')
+        vm = Interpreter() if route == 'default' else Interpreter(execution_backend='compiled-strict')
         def run():
             vm.execute_program(program)
             return vm.variables['r']
-        return run, {'backend': route, 'api': 'execute_program(preparsed_ast)'}
+        return run, {'backend': vm.execution_backend, 'requested_route': route, 'api': 'execute_program(preparsed_ast)'}
     if route == 'experimental':
         from yadinassi.experimental_naked_collections import prepare, REPAIRS
         from yadinassi.experimental_naked_boundaries import BoundaryContext
@@ -142,7 +142,7 @@ def validate(result, expected):
         raise AssertionError(f'wrong result: {result!r} ({type(result).__name__}), expected Decimal({expected})')
 
 
-def measure(case, n, rounds=9, route='compiled-strict'):
+def measure(case, n, rounds=9, route='default'):
     if type(rounds) is not int or rounds < 3:
         raise ValueError('at least three rounds required')
     t = time.perf_counter_ns()
@@ -212,7 +212,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--iterations', type=int, default=1000)
     parser.add_argument('--rounds', type=int, default=9)
-    parser.add_argument('--bsl-route', choices=('compiled-strict', 'experimental'), default='compiled-strict')
+    parser.add_argument('--bsl-route', choices=('default', 'compiled-strict', 'experimental'), default='default')
     parser.add_argument('--case', choices=CASES, action='append')
     args = parser.parse_args(argv)
     if not 1 <= args.iterations <= 100000 or args.rounds < 3:

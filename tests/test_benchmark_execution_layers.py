@@ -14,12 +14,25 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             with self.subTest(case=name):
                 job = bench.workload(name, 13)
                 self.assertEqual(job.expected, result)
-                for route in ('compiled-strict', 'experimental'):
+                for route in ('default', 'compiled-strict', 'experimental'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
                         bsl, _ = bench.prepare_bsl(job.source, route)
                         for run in (job.native, job.classes, bsl):
                             # Reusing prepared callable must not accumulate state.
                             for _ in range(2): bench.validate(run(), result)
+
+    def test_default_route_uses_public_constructor_without_override(self):
+        with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
+            run, info = bench.prepare_bsl('r=1;', 'default')
+            constructor.assert_called_once_with()
+            bench.validate(run(), Decimal(1))
+            self.assertEqual(info['requested_route'], 'default')
+            self.assertEqual(info['backend'], 'python-direct')
+        with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
+            run, info = bench.prepare_bsl('r=1;', 'compiled-strict')
+            constructor.assert_called_once_with(execution_backend='compiled-strict')
+            bench.validate(run(), Decimal(1))
+            self.assertEqual(info['backend'], 'compiled-strict')
 
     def test_edge_workload_size(self):
         for name in bench.CASES:
@@ -45,7 +58,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             self.assertTrue(all(row['result'] == '3' for row in rows))
         self.assertEqual(set(report['first_execution_seconds']), set(bench.LAYERS))
         self.assertEqual(report['ratios_to_python']['python'], 1)
-        self.assertEqual(report['route']['backend'], 'compiled-strict')
+        self.assertEqual(report['route']['backend'], 'python-direct')
         self.assertIn('bsl_parse_prepare', report['preparation_seconds'])
         self.assertEqual(set(report['summary']), set(bench.LAYERS))
 

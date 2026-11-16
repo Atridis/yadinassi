@@ -4,13 +4,15 @@ Run from the repository root with its supported Python environment:
 
 ```sh
 python -m unittest tests.test_benchmark_execution_layers
-python scripts/benchmark_execution_layers.py --iterations 1000 --rounds 9 > layers-compiled.json
+python scripts/benchmark_execution_layers.py --iterations 1000 --rounds 9 > layers-default.json
 YADINASSI_UNSAFE_COLLECTION_ABLATION=1 python scripts/benchmark_execution_layers.py \
   --bsl-route experimental --iterations 1000 --rounds 9 > layers-experimental.json
 ```
 
-The second command measures this harness’s default: the production
-`compiled-strict` BSL route (not a change to Interpreter defaults).
+The second command measures the public `Interpreter()` default, currently
+`python-direct`, without an explicit backend override. To compare the legacy
+backend, add `--bsl-route compiled-strict` and save a separate report. The JSON
+records both the requested route and the actual backend.
 The third explicitly measures the **trusted, standalone research translator**,
 not the production VM or a configuration application. It retains the research
 semantic repairs but excludes optional `resource_bounds` and
@@ -57,14 +59,14 @@ and differences cannot all be attributed to class allocation alone.
 * Factory construction and BSL parse/prepare are reported separately. The small
   Python workload factory creates both Python closures, so its time is shared,
   not falsely allocated to individual layers.
-* The first invocation is recorded separately for **every** layer. Production
-  BSL uses public `execute_program(preparsed_ast)`: lazy compile/registration on
+* The first invocation is recorded separately for **every** layer. Default and legacy
+  BSL use public `execute_program(preparsed_ast)`: lazy compile/registration on
   first entry belongs to `first_execution_seconds`, not reported parse time.
 * One additional warmup is excluded. Steady execution still includes public
   module-entry validation, source-routine registration, backend cache checks and
   scheduler work. It is deliberately **not** an internal guard-bypassing runner.
   Research BSL uses the separately prepared program's `run({}, context=...)` API with a fresh module dict each time.
-  Production reuses one VM and its scope/cache; source statements overwrite all
+  Default and legacy reuse one VM and its scope/cache; source statements overwrite all
   measured variables and allocate fresh collections. This retained-scope vs fresh
   dictionary difference is part of the routes, not hidden setup equivalence.
 * Every invocation resets its own workload state. Collection construction,
@@ -85,6 +87,6 @@ and differences cannot all be attributed to class allocation alone.
   sources plus this harness. Very short cases are timer-sensitive: increase
   iterations instead of interpreting noise as a speedup.
 
-The unit suite checks both BSL routes, independent expected answers, repeated-run
+The unit suite checks all three BSL routes, independent expected answers, repeated-run
 state reset, type-sensitive mismatch rejection, report structure and experimental
 opt-in. Unit runs are correctness checks, **not** published performance evidence.
