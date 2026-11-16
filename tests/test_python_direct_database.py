@@ -55,3 +55,24 @@ class DirectDatabaseTests(unittest.TestCase):
         other.variables['foreign']=self.vm.variables['q']
         with self.assertRaises(BoundaryViolation):other.execute('foreign.Execute();')
         with self.assertRaises(Exception):self.vm.execute('secret=Q._catalogs;')
+
+    def test_document_and_enum_buffer_protocol_without_persistence(self):
+        self.vm.execute('D=Documents.Receipt.CreateDocument(); D.Number="draft"; L=D.Lines.Add(); L.Unit=Enums.Units.Piece; L.Quantity=3; Mode=DocumentWriteMode.Posting; N=D.Lines.Count();')
+        self.assertEqual(self.vm.variables['d'].get_member('Number'),'draft')
+        self.assertEqual(self.vm.variables['l'].get_member('Quantity'),3)
+        self.assertEqual(self.vm.variables['n'],1)
+        from yadinassi.document_posting_values import DocumentWriteMode
+        self.assertIs(self.vm.variables['mode'],DocumentWriteMode.POSTING)
+        self.assertTrue(self.vm.variables['d'].is_new())
+
+    def test_foreign_document_receiver_denied(self):
+        self.vm.execute('D=Documents.Receipt.CreateDocument();')
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.variables['foreign']=self.vm.variables['d']
+        with self.assertRaises(BoundaryViolation):other.execute('foreign.Number="bad";')
+        self.assertEqual(self.vm.variables['d'].get_member('Number'),'')
+
+    def test_document_additional_properties_output_reference(self):
+        self.vm.execute('D=Documents.Receipt.CreateDocument(); D.AdditionalProperties.Insert("Mode",2); Mode=0; Found=D.AdditionalProperties.Property("Mode",Mode);')
+        self.assertTrue(self.vm.variables['found'])
+        self.assertEqual(self.vm.variables['mode'],2)

@@ -16,8 +16,10 @@ Registered Query construction, Execute, Select, Next and result field reads now
 use the existing public query protocol. Query receivers must belong to the same
 catalog root. Detached result/selection values are pure data; they cannot query
 or write. Reference-valued cells still require current-root ownership on use.
-This is not universal database execution: document/register protocols, query
-Unload ValueTable operations and database iteration are not connected. Explicit transaction services are refused
+Owned document buffers, configuration enums and source-bound document posting
+now use the same public protocol (see python-direct-document-posting.md). This
+is not universal database execution: arbitrary register protocols, query Unload
+ValueTable operations and database iteration are not connected. Explicit transaction services are refused
 before effects in this first direct database slice; the prior activation flag is
 restored. Catalog writes still use their existing atomic writer. The original
 product BeforeWrite module remains mandatory and now has a separate direct

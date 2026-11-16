@@ -98,6 +98,17 @@ class _PostingInterpreter(Interpreter):
 
     def invoke(self, routine, values):
         if routine is None: return
+        if self.execution_backend == 'python-direct':
+            from .python_direct_posting import invoke_posting
+            self._context_stack.append('server')
+            self._module_context_stack.append(True)
+            try:invoke_posting(self,routine,values)
+            finally:
+                self._module_context_stack.pop();self._context_stack.pop()
+            cancel=values.get_member('Cancel')
+            if type(cancel) is not bool:raise TypeError('document cancellation requires Boolean')
+            if cancel:raise ValueError('document write cancelled')
+            return
         arguments = [ast.Attribute(routine.token,ast.Literal(routine.token,values),name)
                      for name in ('Cancel','WriteMode','PostingMode')[:len(routine.parameters)]]
         # Posting has Cancel, PostingMode rather than BeforeWrite's three slots.

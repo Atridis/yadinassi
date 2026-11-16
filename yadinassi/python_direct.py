@@ -116,6 +116,7 @@ def _contract(vm):
 
 def _compile(vm,program,nodes,source_text,source_name):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
+    from .python_direct_database import NAMES as DATABASE_NAMES
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
         lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
@@ -124,7 +125,7 @@ def _compile(vm,program,nodes,source_text,source_name):
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
                      constructors=("query","запрос") if vm.database_context is not None else (),
-                     external_names=("catalogs","справочники") if vm.database_context is not None else (),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
+                     external_names=DATABASE_NAMES if vm.database_context is not None else (),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
     return plan

@@ -15,8 +15,9 @@ An additional real-process regression also covers AcceptDraft â†’ ConfirmDraft â
 Yes: AppliedCount becomes 1, repeating the same Yes response is rejected without
 applying twice, and database bytes remain unchanged. This does not establish
 posting, arbitrary callbacks, every button or document editing.
-The full catalog runtime suite currently has 11 passes and one error at the
-unsupported Documents namespace in the posting scenario.
+The original main-demo runtime suite now has 12 passes, including source-bound
+Receipt posting and a query of the resulting accumulation movements. Arbitrary
+document modules and every transaction scenario are not thereby certified.
 
 ## Mechanisms
 
@@ -38,5 +39,5 @@ Legacy decoding and execution remain explicitly selectable.
 
 Registered Query construction and public Execute/Select/Next/field reads also
 work directly. Existing query execution and backend integrity checks are reused,
-not interpreted by a VM. Document/register write and query Unload ValueTable
-protocols remain outside this slice.
+not interpreted by a VM. Source-bound document posting is covered by the subsequent posting slice;
+arbitrary register and query Unload ValueTable protocols remain unsupported.

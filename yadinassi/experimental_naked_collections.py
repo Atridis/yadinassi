@@ -556,7 +556,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 allowed={'add':(list,), 'get':(list,_TypedMap,_NakedMap),'set':(list,), 'find':(list,), 'ubound':(list,), 'property':((structure_ops._DirectStructure,) if structure_ops is not None else (dict,))}.get(method)
                 def route(direct):
                     if guarded is None:return direct
-                    host=('_context.resolve_member('+guarded+', '+repr(callee.name)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(args)+')'
+                    host_args=list(args)
+                    if services and method=='property' and len(args)>1 and byref:host_args[1]='_canonical_reference('+reference(node.arguments[1])+')'
+                    host=('_context.resolve_member('+guarded+', '+repr(callee.name)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')'
                     if allowed is not None:
                         failure='_native_method_missing('+guarded+', '+repr(callee.name)+')'
                         return '('+direct+' if id(type(('+guarded+' := '+original_obj+'))) in '+literal(tuple(map(id,allowed)))+' else ('+failure+' if id(type('+guarded+')) in _NATIVE_COLLECTION_IDS else '+host+'))'
