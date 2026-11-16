@@ -7,7 +7,8 @@ from decimal import Decimal
 from .syntax import ast
 
 
-def definite_module_reads(program):
+def definite_module_reads(program, *, opaque_names=()):
+    opaque=frozenset(name.casefold() for name in opaque_names)
     safe = set()
 
     def scalar(node, known, record):
@@ -15,7 +16,7 @@ def definite_module_reads(program):
         if kind is ast.Literal:
             return type(node.value) in (type(None), bool, Decimal, str, int, float)
         if kind is ast.Name:
-            found = node.name.casefold() in known
+            found = node.name.casefold() not in opaque and node.name.casefold() in known
             if found and record:
                 safe.add(id(node))
             return found
@@ -44,7 +45,7 @@ def definite_module_reads(program):
                 continue
             if kind is ast.Assign and type(node.target) is ast.Name:
                 ok = scalar(node.value, known, record)
-                if not ok:
+                if not ok or node.target.name.casefold() in opaque:
                     known.clear()
                     pure = False
                 else:
@@ -71,7 +72,8 @@ def definite_module_reads(program):
                 seed = set(known)
                 if kind is ast.For:
                     loop_pure = scalar(node.start, seed, False) and scalar(node.end, seed, False)
-                    seed.add(node.name.casefold())
+                    loop_pure &= node.name.casefold() not in opaque
+                    if node.name.casefold() not in opaque:seed.add(node.name.casefold())
                 else:
                     loop_pure = scalar(node.condition, seed, False)
                 _, body_pure = block(node.body, seed, False)

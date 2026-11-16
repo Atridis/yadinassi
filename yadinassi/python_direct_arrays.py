@@ -9,7 +9,8 @@ from decimal import Decimal
 from .syntax import ast
 
 
-def array_facts(program):
+def array_facts(program, *, opaque_names=()):
+    opaque=frozenset(name.casefold() for name in opaque_names)
     receivers=set();indexes=set()
     scalar={'nn','bounded','int','scalar'}
     arrays={'array','scalar_array'}
@@ -30,7 +31,8 @@ def array_facts(program):
             if type(v) is Decimal and v.is_finite() and v==v.to_integral_value():
                 return ('nn' if 0<=v<=sys.maxsize else 'bounded' if -sys.maxsize<=v<=sys.maxsize else 'int'),True
             return ('scalar',True) if type(v) in (type(None),bool,str,Decimal) else (None,False)
-        if kind is ast.Name:return known.get(node.name.casefold()),True
+        if kind is ast.Name:
+            return (None,False) if node.name.casefold() in opaque else (known.get(node.name.casefold()),True)
         if kind is ast.New:
             args=arguments(node.arguments,known,record)
             pure=all(p and t in scalar for t,p in args)
@@ -102,8 +104,9 @@ def array_facts(program):
             if kind is ast.Routine:continue
             if kind is ast.Assign and type(node.target) is ast.Name:
                 value,ok=expr(node.value,known,record)
-                if not ok:known.clear();pure=False
                 key=node.target.name.casefold()
+                if not ok or key in opaque:known.clear();pure=False
+                if key in opaque:continue
                 if value is None:known.pop(key,None)
                 else:known[key]=value
             elif kind is ast.ExpressionStatement:
@@ -120,7 +123,7 @@ def array_facts(program):
                     if seed.get(name) in scalar:seed[name]='scalar'
                 output,bp=block(node.body,seed,False)
                 invariant=all(output.get(name)==value or output.get(name) in scalar and value in scalar for name,value in seed.items() if name!=counter)
-                if sp and ep and start in ('nn','bounded','int') and end in scalar and bp and invariant and counter not in assigned(node.body):
+                if counter not in opaque and sp and ep and start in ('nn','bounded','int') and end in scalar and bp and invariant and counter not in assigned(node.body):
                     expr(node.start,known,record);expr(node.end,known,record)
                     block(node.body,seed,record);known[counter]='int'
                     for name in writes-{counter}:

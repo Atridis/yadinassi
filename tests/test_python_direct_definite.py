@@ -16,7 +16,7 @@ class DefiniteReadsTests(unittest.TestCase):
             if install: install(vm)
             error=None
             with patch('yadinassi.python_direct_definite.definite_module_reads',
-                       definite_module_reads if optimize else lambda _: frozenset()):
+                       definite_module_reads if optimize else lambda _,**kwargs: frozenset()):
                 try: vm.execute(source)
                 except Exception as exc: error=(type(exc).__name__,str(exc))
             results.append((vm.variables,error))
@@ -69,7 +69,7 @@ class DefiniteReadsTests(unittest.TestCase):
         # Compare effects/errors, not the per-run host object identity.
         for optimize in (False,True):
             vm=Interpreter();install(vm)
-            with patch('yadinassi.python_direct_definite.definite_module_reads',definite_module_reads if optimize else lambda _:frozenset()):
+            with patch('yadinassi.python_direct_definite.definite_module_reads',definite_module_reads if optimize else lambda _,**kwargs:frozenset()):
                 with self.assertRaisesRegex(Exception,'не определена'):vm.execute('x=1;y=host+1;z=x;')
             self.assertNotIn('x',vm.variables);self.assertNotIn('z',vm.variables)
 

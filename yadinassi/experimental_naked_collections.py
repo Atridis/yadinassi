@@ -276,9 +276,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if any(type(name) is not str for name in external_names):raise TypeError('external names require strings')
     external_keys=frozenset(name.casefold() for name in external_names)
     from .python_direct_definite import definite_module_reads
-    definite_reads = definite_module_reads(program) if live and not authority and not external_keys else frozenset()
+    definite_reads = definite_module_reads(program,opaque_names=external_keys) if live and not authority else frozenset()
     from .python_direct_arrays import array_facts
-    array_receivers,array_indexes = array_facts(program) if live and not authority and not constructors and not external_keys and 'array_index_contract' in repairs else (frozenset(),frozenset())
+    array_receivers,array_indexes = array_facts(program,opaque_names=external_keys) if live and not authority and not constructors.intersection(('array','массив')) and 'array_index_contract' in repairs else (frozenset(),frozenset())
     # Raw diagnostic profiles return Python int from Count, which the existing
     # checked-index contract rejects. Do not silently repair that mismatch.
     if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
