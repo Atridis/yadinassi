@@ -1,0 +1,12 @@
+{
+  "entry-baseline-repro.json": "bc3f5f82740b1833f242c8009598c0a56383ca18b8730bb4cdfb711bc89e7c9a",
+  "entry-candidate-repro.json": "baa2123e129f9f034499a1360691d5fcb760bc56586e67b22752cc0d54bbd241",
+  "entry-gate.json": "faba1ce8f69a2ef6e813b3f9fc07661d5c2977b4d828b2dacb9968a28f38ce69",
+  "entry-gate.py": "dde3586768f67547912bb8ee7ad6aa85743a05955143df438c6c8c83ebe47b80",
+  "entry-paired.jsonl": "54de12e425a6245c65dac297fed0b6cdf19535b8830026da66a8901d4fc4c593",
+  "entry-repro.py": "b7f286f514abc600ce6ec05ce2f19bade9eece079ffe106911a1044e468a8e6a",
+  "entry-validated.log": "81cd9d173712b0d4c90a9bb8eec5b75cbd1541a6189f0ac20971f6ebb51bf4b3",
+  "paired-entry-bench.py": "a827d5af97ecd8273d264716b6ef30190efaa002392e3c2fcb829b0e5fd461d1",
+  "runtime-bench.py": "2bcef7cb97cec9e067e892f122ae3d85db3671fb8007f8381be77fb83dd9fb10",
+  "runtime-environment.json": "ed26a680880910bc55570e1bc785a52f7fe43d53fa52322807c75e085d030fab"
+}
