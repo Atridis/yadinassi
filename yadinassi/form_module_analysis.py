@@ -426,17 +426,11 @@ def _body(routine, server):
     return message
 
 
-def analyze_form_module(source, binding, *, catalog_xml, form_xml, definition_xml,
+def _input_key(source, binding, *, catalog_xml, form_xml, definition_xml,
                         catalog_path, form_path, definition_path, module_path):
-    """Describe a fully checked bounded module; do not execute the result/source.
-
-    XML inputs are bounded metadata projections, not imported configuration schemas.
-    Caller supplies and authenticates provenance. Matching hashes/UUIDs are identity
-    commitments only. No activation issues or runtime capabilities are changed.
-    """
     if type(binding) is not FormModuleBinding: _fail('binding type')
     identities = (binding.database_id, binding.configuration_id, binding.catalog_id, binding.form_id)
-    if any(type(i) is not UUID or not i.int for i in identities) or len(set(identities)) != 4:
+    if any(type(i) is not UUID or type(i.int) is not int or not i.int for i in identities) or len({i.int for i in identities}) != 4:
         _fail('identity')
     if type(binding.configuration_generation) is not int or not 1 <= binding.configuration_generation < 2**63:
         _fail('generation')
@@ -451,6 +445,18 @@ def analyze_form_module(source, binding, *, catalog_xml, form_xml, definition_xm
             (form_xml, binding.form_sha256, MAX_XML_BYTES),
             (definition_xml, binding.definition_sha256, MAX_XML_BYTES)):
         _bytes(raw, digest, limit)
+    identities=tuple(i.int for i in identities)
+    # Snapshot primitive values, not aliases to a caller-owned frozen dataclass.
+    binding_values=(identities,binding.configuration_generation,binding.catalog_name,binding.form_name,
+                    binding.source_sha256,binding.catalog_sha256,binding.form_sha256,binding.definition_sha256)
+    return (binding_values,source,catalog_xml,form_xml,definition_xml,paths,
+            PROFILE,MAX_SOURCE_BYTES,MAX_XML_BYTES,MAX_TOKENS,MAX_AST_NODES,MAX_DEPTH,MAX_XML_NODES,MAX_TEXT)
+
+
+def _analyze_form_module(source, binding, *, catalog_xml, form_xml, definition_xml,
+                        catalog_path, form_path, definition_path, module_path):
+    _input_key(source,binding,catalog_xml=catalog_xml,form_xml=form_xml,definition_xml=definition_xml,
+               catalog_path=catalog_path,form_path=form_path,definition_path=definition_path,module_path=module_path)
     scalar_fields, client_handler, server_handler = _metadata(binding, catalog_xml, form_xml, definition_xml)
     program, count = _parse(source)
     if len(program) != 2 or any(type(r) is not ast.Routine for r in program): _fail('routine count')
@@ -466,4 +472,11 @@ def analyze_form_module(source, binding, *, catalog_xml, form_xml, definition_xm
             _fail('event signature')
         message = _body(routine, context == 'server')
         descriptions.append(FormEventDescription(event, handler, context, parameters, message, 'Объект.Наименование'))
-    return FormModuleAnalysis(binding, source, *paths, scalar_fields, tuple(descriptions), count)
+    return FormModuleAnalysis(binding, source, catalog_path, form_path, definition_path, module_path, scalar_fields, tuple(descriptions), count), program
+
+
+def analyze_form_module(source, binding, *, catalog_xml, form_xml, definition_xml,
+                        catalog_path, form_path, definition_path, module_path):
+    """Describe fully checked source; public result never exposes executable AST."""
+    return _analyze_form_module(source,binding,catalog_xml=catalog_xml,form_xml=form_xml,definition_xml=definition_xml,
+                               catalog_path=catalog_path,form_path=form_path,definition_path=definition_path,module_path=module_path)[0]

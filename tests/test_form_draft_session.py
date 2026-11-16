@@ -216,19 +216,20 @@ class FormDraftSessionTests(unittest.TestCase):
         source = b'\xef\xbb\xbf' + SOURCE.replace(b'\n', b'\r\n')
         bound = binding(source)
         before_hash = sha256(source).hexdigest()
-        with patch.object(sim, 'analyze_form_module', wraps=sim.analyze_form_module) as analyze, \
-             patch.object(sim, '_parse', wraps=sim._parse) as parse:
+        from yadinassi import form_module_analysis as analysis
+        with patch.object(analysis, '_input_key', wraps=analysis._input_key) as analyze, \
+             patch.object(analysis, '_parse', wraps=analysis._parse) as parse:
             session = self.make(source=source, binding=bound)
-            self.assertEqual(analyze.call_count, 1)
-            self.assertEqual(parse.call_count, 0)  # No execution parse during construction.
+            self.assertEqual(analyze.call_count, 2)
+            self.assertEqual(parse.call_count, 1)  # Pure preparation parses once, never executes.
             session.change_description(' x ', revision=0)
             session.prepare_save(revision=1)
             session.prepare_save(revision=1)
-        self.assertEqual(analyze.call_count, 4)
-        self.assertEqual(parse.call_count, 3)
+        self.assertEqual(analyze.call_count, 5)
+        self.assertEqual(parse.call_count, 1)
         for call in analyze.call_args_list:
             self.assertIs(call.args[0], source)
-            self.assertIs(call.args[1], bound)
+            self.assertEqual(call.args[1], bound)
             self.assertIs(call.kwargs['catalog_xml'], CATALOG)
             self.assertIs(call.kwargs['form_xml'], FORM)
             self.assertIs(call.kwargs['definition_xml'], DEFINITION)

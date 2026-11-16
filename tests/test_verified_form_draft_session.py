@@ -73,11 +73,12 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         backend = SQLiteCatalogBackend(self.path)
         self.addCleanup(backend.close)
         record = backend.read_form_source(CATALOG_ID)
-        with patch.object(sim, 'analyze_form_module', wraps=sim.analyze_form_module) as analyze:
+        from yadinassi import form_module_analysis as analysis
+        with patch.object(analysis, '_input_key', wraps=analysis._input_key) as analyze:
             session = self.make(backend=backend)
             session.change_description(' abc ', revision=0)
             session.prepare_save(revision=1)
-        self.assertEqual(analyze.call_count, 3)
+        self.assertEqual(analyze.call_count, 4)
         for call in analyze.call_args_list:
             source, binding = call.args
             self.assertEqual(source, raw)

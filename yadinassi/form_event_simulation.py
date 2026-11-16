@@ -109,6 +109,11 @@ def _admit(source, binding, catalog_xml, form_xml, definition_xml):
         form_xml=form_xml, definition_xml=definition_xml,
         catalog_path=f'Catalogs/{binding.catalog_name}.xml', form_path=base + '.xml',
         definition_path=base + '/Ext/Form.xml', module_path=base + '/Ext/Form/Module.bsl')
+    _check_handler_names(admitted)
+    return admitted
+
+
+def _check_handler_names(admitted):
     # No registered routines, but reject ambiguous symbols as an explicit extra
     # execution admission rule instead of relying on static-description approval.
     reserved = {'объект', 'текущийобъект', 'элемент', 'отказ', 'параметрызаписи',
@@ -117,6 +122,40 @@ def _admit(source, binding, catalog_xml, form_xml, definition_xml):
     if len(set(names)) != 2 or any(n in reserved for n in names):
         raise ValueError('form event: handler name collision')
     return admitted
+
+
+@dataclass(frozen=True,slots=True)
+class _PreparedScalarSource:
+    key: tuple
+    analysis: object
+    program: tuple
+
+
+def _scalar_source(source,binding,catalog_xml,form_xml,definition_xml,owner):
+    from .form_module_analysis import _input_key,_analyze_form_module,_name
+    from .python_direct import _snapshot
+    if type(binding) is not FormModuleBinding:raise ValueError('form event: binding required')
+    _name(binding.catalog_name);_name(binding.form_name)
+    base=f'Catalogs/{binding.catalog_name}/Forms/{binding.form_name}'
+    options=dict(catalog_xml=catalog_xml,form_xml=form_xml,definition_xml=definition_xml,
+                 catalog_path=f'Catalogs/{binding.catalog_name}.xml',form_path=base+'.xml',
+                 definition_path=base+'/Ext/Form.xml',module_path=base+'/Ext/Form/Module.bsl')
+    key=_input_key(source,binding,**options)
+    previous=getattr(owner,'_direct_scalar_source',None) if owner is not None else None
+    if type(previous) is _PreparedScalarSource and previous.key==key:return previous
+    # Copy binding identities as primitive UUID values before retaining metadata.
+    identities,generation,catalog_name,form_name,*digests=key[0]
+    detached=FormModuleBinding(UUID(int=identities[0]),UUID(int=identities[1]),generation,
+        UUID(int=identities[2]),catalog_name,UUID(int=identities[3]),form_name,*digests)
+    analysis,program=_analyze_form_module(source,detached,**options)
+    _check_handler_names(analysis)
+    result=_PreparedScalarSource(key,analysis,tuple(_snapshot(program)))
+    if owner is not None:owner._direct_scalar_source=result
+    return result
+
+
+def _source_owner(session):
+    return session._direct_cache_owner if session._direct_cache_owner is not None else session
 
 
 def _receiver(admitted, code, description, deletion_mark):
@@ -139,7 +178,11 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
     Returns a detached candidate even on cancellation; never adopts or writes it.
     Any failure raises, returning neither candidate nor partial messages. No retry.
     """
-    admitted = _admit(source, binding, catalog_xml, form_xml, definition_xml)
+    from .execution_policy import current_backend
+    unit=(_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,
+                        _source_owner(_prepared_owner) if _prepared_owner is not None else None)
+          if current_backend()=='python-direct' else None)
+    admitted = unit.analysis if unit is not None else _admit(source, binding, catalog_xml, form_xml, definition_xml)
     if type(event) is not str or event not in ('OnChange', 'BeforeWriteAtServer'):
         raise ValueError('form event: unsupported event')
     if type(cancel) is not bool or type(deletion_mark) is not bool:
@@ -147,8 +190,8 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
     if event == 'OnChange' and cancel:
         raise ValueError('form event: cancellation belongs to server event')
     receiver = _receiver(admitted, code, description, deletion_mark)
-    # Reparse the same immutable bytes privately; never take an AST from callers.
-    program, _ = _parse(source)
+    # Direct execution reuses its owned source unit; legacy reparses private bytes.
+    program = list(unit.program) if unit is not None else _parse(source)[0]
     routine = program[0 if event == 'OnChange' else 1]
     messages = []
     def sink(record):
@@ -190,18 +233,21 @@ class FormDraftSession:
     external callback or native managed-form integration. Python hosts are trusted.
     """
     __slots__ = ('_source', '_binding', '_catalog_xml', '_form_xml',
-                 '_definition_xml', '_state', '_direct_event_plan', '_direct_cache_owner')
+                 '_definition_xml', '_state', '_direct_event_plan', '_direct_cache_owner', '_direct_scalar_source')
 
     def __init__(self, source, binding, *, catalog_xml, form_xml, definition_xml,
-                 code, description, deletion_mark=False):
-        admitted = _admit(source, binding, catalog_xml, form_xml, definition_xml)
+                 code, description, deletion_mark=False, _cache_owner=None):
+        self._direct_scalar_source=None
+        self._direct_cache_owner=_cache_owner
+        from .execution_policy import current_backend
+        admitted=(_scalar_source(source,binding,catalog_xml,form_xml,definition_xml,_source_owner(self)).analysis
+                  if current_backend()=='python-direct' else _admit(source,binding,catalog_xml,form_xml,definition_xml))
         values = _receiver(admitted, code, description, deletion_mark).snapshot().values
         self._source, self._binding = source, binding
         self._catalog_xml, self._form_xml = catalog_xml, form_xml
         self._definition_xml = definition_xml
         self._state = FormDraftSnapshot(0, values, values, ())
         self._direct_event_plan = None
-        self._direct_cache_owner = None
 
     @property
     def binding(self):
@@ -302,8 +348,7 @@ class VerifiedFormDraftSession:
         session = FormDraftSession(record.module_source, binding,
             catalog_xml=record.catalog_xml, form_xml=record.form_xml,
             definition_xml=record.definition_xml, code=code, description=description,
-            deletion_mark=deletion_mark)
-        session._direct_cache_owner = backend
+            deletion_mark=deletion_mark, _cache_owner=backend)
         self._backend, self._catalog_id, self._record = backend, catalog_id, record
         self._session, self._stale = session, False
 
