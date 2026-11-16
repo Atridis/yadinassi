@@ -23,6 +23,11 @@ arguments ROOT BACKEND SCENARIO using that command. Total is import/init + parse
 execute_program (including initial preparation), not subprocess launch time.
 Timeouts were 55s strict/35s oracle solely for observations, not acceptance limits.
 The original production 20s collections gate was separately retained and tested.
+The original outer orchestration scripts and gate-run.py are preserved alongside
+the measurements, including their machine-local paths. gate.json has no embedded
+source metadata: attribution of that separate gate result to implementation442135e5
+relies on the operator execution log (clean tree before the evidence commit), not
+on a self-contained gate attestation. Samples carry their own source hashes.
 
 | Strict workload | Baseline median, s | Candidate median, s | Change |
 | --- | ---: | ---: | ---: |
