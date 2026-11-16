@@ -236,14 +236,14 @@ def _parsed_source_witness(files):
     """Private pure parse memo, never a database/owner/write admission.
 
     The key contains exact immutable source bytes, not a config object or a
-    data_version. Nothing from this cached object is returned to a caller.
+    data_version. Public APIs never expose this cached object.
     Failures are not cached. Database readers still independently verify their
     actual bytes, marker, database identity and DDL in the current snapshot.
     """
     return import_main_demo_configuration(dict(files), profile=PROFILE)
 
 
-def canonical(configuration):
+def _canonical_witness(configuration):
     if (type(configuration) is not MainDemoConfiguration
             or type(configuration.profile) is not str or configuration.profile != PROFILE
             or type(configuration.files) is not tuple
@@ -260,9 +260,19 @@ def canonical(configuration):
         raise ValueError('main demo source mismatch')
     witness = _parsed_source_witness(tuple(sorted(configuration.files)))
     # A caller may forge even frozen dataclasses via object.__setattr__. Compare
-    # every schema/handler/profile field, then return a detached copy so such a
-    # caller cannot poison the private positive parse witness for another owner.
-    fresh = deepcopy(witness)
-    if not _same(fresh,configuration):
+    # every schema/handler/profile field without copying a validation-only result.
+    # The public canonical() API copies after this check; validate_canonical()
+    # returns nothing, so neither exposes the private witness to an owner.
+    if not _same(witness,configuration):
         raise ValueError('main demo source/schema divergence')
-    return fresh
+    return witness
+
+
+def validate_canonical(configuration):
+    """Check current source/schema without allocating or exposing a copy."""
+    _canonical_witness(configuration)
+
+
+def canonical(configuration):
+    """Return an independently owned canonical configuration after validation."""
+    return deepcopy(_canonical_witness(configuration))

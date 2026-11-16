@@ -93,19 +93,49 @@ class PostingBoundary(BoundaryContext):
         return invoke
 
 
+from dataclasses import dataclass
+from types import MappingProxyType
+
+_POSTING_CONSTRUCTORS=('query','запрос')
+_POSTING_NAMES=frozenset(SELF)|frozenset(SYSTEM)|frozenset({
+    'number','date','posted','ref','deletionmark',
+    'additionalproperties','дополнительныесвойства','registerrecords','движения',
+    'номер','дата','проведен','проведён','ссылка','пометкаудаления'})
+
+@dataclass(frozen=True,slots=True)
+class PreparedPosting:
+    # Source-bound code and immutable signature metadata, never activation state.
+    _key: tuple
+    _plan: object
+    _signatures: object
+
+
+def prepared_posting(runtime,document,parent):
+    identity=document._key.document_id
+    schema=document._manager._schema
+    key=(runtime._direct_sources[identity],schema,parent.native_target,tuple(REPAIRS),_POSTING_CONSTRUCTORS)
+    cached=runtime._direct_plans.get(identity)
+    if type(cached) is PreparedPosting and cached._key==key:return cached
+    program=runtime._programs[identity]
+    names=_POSTING_NAMES|{field.name.casefold() for field in schema.fields}|{section.name.casefold() for section in schema.tabular_sections}
+    with target_context(parent.native_target):
+        plan=prepare('',source_name='<document-posting>',repairs=REPAIRS,parsed_ast=program,
+                     external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
+                     _trusted_entry=True,_export_routines=True)
+    result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))
+    runtime._direct_plans[identity]=result
+    return result
+
+
 def invoke_posting(vm,routine,values):
     from .database_transactions import admission
-    program=list(vm.routines.values())
-    doc=vm._document
-    names=set(doc._values)|set(doc._sections)|set(SELF)|set(SYSTEM)|{
-        'additionalproperties','дополнительныесвойства','registerrecords','движения',
-        'номер','дата','проведен','проведён','ссылка','пометкаудаления'}
-    plan=prepare('',source_name='<document-posting>',repairs=REPAIRS,parsed_ast=program,
-                 external_names=tuple(names),constructors=('query','запрос'),
-                 _trusted_entry=True,_export_routines=True)
+    prepared=vm._direct_posting_plan
+    plan=prepared._plan
+    name=routine.name.casefold()
+    by_value=prepared._signatures[name]
     names=('Cancel','PostingMode') if len(routine.parameters)==2 else ('Cancel','WriteMode','PostingMode')[:len(routine.parameters)]
-    slots=[values.get_member(name) if parameter.by_value else _Cell(values.get_member(name))
-           for parameter,name in zip(routine.parameters,names)]
+    slots=[values.get_member(name) if byval else _Cell(values.get_member(name))
+           for byval,name in zip(by_value,names)]
     context=PostingBoundary(vm)
     with admission(False),target_context(vm.native_target),localcontext() as decimal_context:
         decimal_context.prec=38
@@ -113,8 +143,8 @@ def invoke_posting(vm,routine,values):
         try:
             exports=plan.function({},plan.constants,[],context)
             exports[routine.name.casefold()](*slots)
-            for name,parameter,slot in zip(names,routine.parameters,slots):
-                if not parameter.by_value:values.set_member(name,slot.value)
+            for name,byval,slot in zip(names,by_value,slots):
+                if not byval:values.set_member(name,slot.value)
         except Exception as error:
             converted=convert_error(error,'<document-posting>','')
             if converted is error:raise

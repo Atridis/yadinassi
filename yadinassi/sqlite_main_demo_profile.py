@@ -14,12 +14,12 @@ def _storage():
 
 
 def _require_config(config):
-    from .configuration_main_demo import MainDemoConfiguration, canonical
+    from .configuration_main_demo import MainDemoConfiguration, validate_canonical
     if (type(config) is not MainDemoConfiguration or type(config.profile) is not str
             or config.profile != 'main-demo-v1'):
         raise BackendError('unsupported')
     try:
-        canonical(config)
+        validate_canonical(config)
     except (ValueError, TypeError, KeyError):
         raise BackendError('unsupported') from None
 

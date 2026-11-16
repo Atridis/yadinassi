@@ -1,0 +1,10 @@
+{
+  "baseline_public": "33fa4961",
+  "baseline_local": "7c38cb68",
+  "python": "3.12.14",
+  "host": "shared Linux host; no CPU isolation",
+  "runtime_sha256": {
+    "yadinassi/configuration_main_demo.py": "da71fddc95b0429576269503272908a237466bdb4e80f03dd04f4fa7043cd3a4",
+    "yadinassi/sqlite_main_demo_profile.py": "0cfa34195ad6ce714ccf4f71cfb1845aec7030e794260227f13b4de665e6ef50"
+  }
+}

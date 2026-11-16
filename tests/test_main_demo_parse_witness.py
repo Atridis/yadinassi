@@ -73,3 +73,18 @@ class MainDemoParseWitnessTests(unittest.TestCase):
             def __eq__(self, other):raise AssertionError('foreign equality')
         main.canonical(self.config)
         with self.assertRaises(ValueError):main.canonical(replace(self.config, catalogs=(Foreign(),)))
+
+    def test_validation_only_has_no_copy_or_exposed_witness(self):
+        main.canonical(self.config)
+        with patch.object(main,'deepcopy',side_effect=AssertionError('discarded copy')):
+            self.assertIsNone(main.validate_canonical(self.config))
+            from yadinassi.sqlite_main_demo_profile import _require_config
+            self.assertIsNone(_require_config(self.config))
+            for bad in (replace(self.config,name='forged'),replace(self.config,catalogs=()),
+                        replace(self.config,files=self.config.files[:-1])):
+                with self.assertRaises(ValueError):main.validate_canonical(bad)
+        owned=main.canonical(self.config)
+        self.assertIsNot(owned,self.config)
+        object.__setattr__(owned.catalogs[0],'name','poison')
+        self.assertIsNone(main.validate_canonical(self.config))
+        with self.assertRaises(ValueError):main.validate_canonical(owned)

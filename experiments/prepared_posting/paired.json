@@ -1,0 +1,72 @@
+[
+  {
+    "cold_write_ms": 32.9208449984435,
+    "ten_reposts_ms": 307.8666110013728,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 0,
+    "variant": "base"
+  },
+  {
+    "cold_write_ms": 30.74528800061671,
+    "ten_reposts_ms": 158.062839997001,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 0,
+    "variant": "candidate"
+  },
+  {
+    "cold_write_ms": 33.31049099506345,
+    "ten_reposts_ms": 169.9391439979081,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 1,
+    "variant": "candidate"
+  },
+  {
+    "cold_write_ms": 37.28320500522386,
+    "ten_reposts_ms": 340.2301200039801,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 1,
+    "variant": "base"
+  },
+  {
+    "cold_write_ms": 29.122152001946233,
+    "ten_reposts_ms": 357.3543900056393,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 2,
+    "variant": "base"
+  },
+  {
+    "cold_write_ms": 33.14715300075477,
+    "ten_reposts_ms": 162.46521099674283,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 2,
+    "variant": "candidate"
+  },
+  {
+    "cold_write_ms": 33.72262199991383,
+    "ten_reposts_ms": 163.2105649987352,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 3,
+    "variant": "candidate"
+  },
+  {
+    "cold_write_ms": 34.51700300502125,
+    "ten_reposts_ms": 312.28763200488174,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 3,
+    "variant": "base"
+  },
+  {
+    "cold_write_ms": 44.71577500225976,
+    "ten_reposts_ms": 343.41204699740047,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 4,
+    "variant": "base"
+  },
+  {
+    "cold_write_ms": 31.050994999532122,
+    "ten_reposts_ms": 152.17488799680723,
+    "control": "1 document/postedstate/movement; quantity5; no active tx",
+    "pair": 4,
+    "variant": "candidate"
+  }
+]

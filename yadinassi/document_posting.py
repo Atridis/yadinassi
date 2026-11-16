@@ -145,6 +145,10 @@ class PostingRuntime:
                               accumulation_canonical(configuration) if self.accumulation
                               else canonical(configuration))
         self._programs, self._events = compile_handlers(self.configuration)
+        # These exact bytes already passed compile_handlers source binding.
+        files=dict(self.configuration.files)
+        self._direct_sources={identity:(path,digest,files[path]) for identity,path,digest in self.configuration.handlers}
+        self._direct_plans = {}
     def movements(self, document):
         if document._movements is None:
             schemas = tuple(schema for schema in self.configuration.registers
@@ -166,8 +170,14 @@ class PostingRuntime:
         parent._require_family()
         if parent._scheduler._active_task is not None or parent._scheduler.pending: raise BackendError('unsupported')
         backend = document._manager._backend
-        vm = _PostingInterpreter(document,parent,self._programs[document._key.document_id])
         events = self._events[document._key.document_id]
+        selected=(events['before'],events['after'],events['posting'] if mode is DocumentWriteMode.POSTING else events['undo'] if mode is DocumentWriteMode.UNDO_POSTING else None)
+        prepared=None
+        if parent.execution_backend == 'python-direct' and any(event is not None for event in selected):
+            from .python_direct_posting import prepared_posting
+            prepared=prepared_posting(self,document,parent)
+        vm = _PostingInterpreter(document,parent,self._programs[document._key.document_id])
+        vm._direct_posting_plan=prepared
         values = BSLStructure('Cancel,WriteMode,PostingMode',False,mode,_PostingMode.NON_REALTIME)
         movements = self.movements(document)
         with execution(backend):
