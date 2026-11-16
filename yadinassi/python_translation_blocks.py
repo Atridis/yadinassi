@@ -40,7 +40,8 @@ class BlockUnit:
         expressions=ExpressionPlan(
             {key:(node,clone(fn)) for key,(node,fn) in self.expressions.functions.items() if id(node) in owned_ids},
             tuple(node for node in self.expressions.nodes if id(node) in owned_ids),self.expressions.source,
-            {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids},self.expressions.binding_count)
+            {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids},self.expressions.binding_count,
+            {key:site for key,site in (self.expressions.call_sites or {}).items() if id(site.node) in owned_ids})
         # Conservatively retain the full admitted source charge, not only keys.
         return BlockUnit(blocks,expressions,self.source_bytes,{key:(node,clone(fn)) for key,(node,fn) in (self.statements or {}).items() if id(node) in owned_ids},self.binding_count)
 

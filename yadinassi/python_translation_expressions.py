@@ -84,12 +84,23 @@ def binary(operator, left, right):
     raise ValueError(f"Неизвестный оператор: {operator}")
 
 @dataclass(frozen=True)
+class CallSite:
+    # Immutable syntax only. Never store a resolved callable, receiver or grant.
+    node: object
+    callee: object
+    callee_kind: str
+    name: object
+    has_omissions: bool
+
+
+@dataclass(frozen=True)
 class ExpressionPlan:
     functions: dict
     nodes: tuple
     source: str
     sync_functions: object = None
     binding_count: int = 0
+    call_sites: object = None
 
     def bind(self, vm, *, guard, access, resolve=None, leaf_resolve=None):
         """guard(node) must perform current admission/budget/security accounting."""
@@ -128,15 +139,19 @@ class ExpressionExecution:
         return item[0]
 
     def leaf_id(self, identity):
-        return self.leaf(self.leaf_node(identity))
+        item=self._external_leaf(identity)
+        if item is None:raise UnsupportedExpression('owned leaf identity not admitted')
+        return self.leaf(item[0],_resolved_external=item)
 
-    def leaf(self, node):
+    def leaf(self, node, *, _resolved_external=None):
         """Invoke a source-admitted synchronous leaf; never dispatch AST kinds."""
         item=(self.plan.sync_functions or {}).get(id(node))
-        external=self._external_leaf(node) if item is None else None
+        external=(_resolved_external if _resolved_external is not None else self._external_leaf(node)) if item is None else None
         if external is not None:item=external
         if item is None or item[0] is not node:
             raise UnsupportedExpression('synchronous leaf not admitted')
+        # A resolved item is used only within this synchronous invocation, never
+        # cached across a hook, suspension, or another evaluation.
         value=converted=None
         self.vm.compiled_before(node)
         try:
@@ -154,8 +169,9 @@ class ExpressionExecution:
             value=converted=None
 
     def evaluate(self, node):
-        if self._external_leaf(node) is not None:
-            return self.leaf(node)
+        external=self._external_leaf(node)
+        if external is not None:
+            return self.leaf(node,_resolved_external=external)
         if self.resolve is not None:
             stats=self.vm._compiled().stats
             stats['python_expression_registry_entries']=stats.get('python_expression_registry_entries',0)+1
@@ -188,6 +204,10 @@ class ExpressionExecution:
     def argument(self, node):
         return (yield from self.vm.argument(node, _evaluation=self))
 
+    def call_site(self, node):
+        site=(self.plan.call_sites or {}).get(id(node))
+        return site if site is not None and site.node is node else None
+
     def call(self, node, require_value=True):
         return (yield from self.vm.call(node, require_value=require_value, _evaluation=self))
 
@@ -206,6 +226,7 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
     generated_templates = {}
     generated_bindings = {}
     binding_count = 0
+    call_sites = {}
     from .python_translation_template_bindings import bind_generated_source
     def shared_body(text, slot):
         """Canonicalize source-bound operands at admission, never at execution."""
@@ -300,6 +321,20 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
     if any(len(body.encode())>max_function_bytes for body in bodies):raise UnsupportedExpression('expression function source budget')
     source='\n'.join(bodies)
     if len(source.encode())>max_source_bytes: raise UnsupportedExpression('expression source budget')
+    from .owned_syntax import is_owned
+    for node in nodes:
+        if syntax_kind(node) is ast.Call and is_owned(node):
+            callee=node.callee
+            while syntax_kind(callee) is ast.Group:
+                callee=callee.expression
+            kind=syntax_kind(callee)
+            shape='name' if kind is ast.Name else 'attribute' if kind is ast.Attribute else 'other'
+            # Five descriptor operands plus its registry key are charged.
+            binding_count+=6
+            if binding_count>max_bindings:raise UnsupportedExpression('expression binding budget')
+            call_sites[id(node)]=CallSite(node,callee,shape,
+                callee.name if shape != 'other' else None,
+                any(syntax_kind(arg) is ast.OmittedArgument for arg in node.arguments))
     namespace={'_nodes':tuple(nodes),'_unary':unary,'_binary':binary,'_boolean':boolean,'_unsupported':UnsupportedExpression,
                '_require_transfer':require_transfer,'_forbid_transfer':forbid_transfer,
                '_await_request':AwaitRequest}
@@ -320,4 +355,4 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
             template=namespace[name]
             function=FunctionType(template.__code__,namespace,template.__name__,(operands,))
         functions[id(node)]=(node,function)
-    return ExpressionPlan(functions,tuple(nodes),source,sync_functions,binding_count)
+    return ExpressionPlan(functions,tuple(nodes),source,sync_functions,binding_count,call_sites)

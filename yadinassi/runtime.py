@@ -1372,46 +1372,51 @@ class Interpreter:
         argument_value = self.argument if _evaluation is None else _evaluation.argument
         if self._execution_backend == "compiled-strict" and not self._compiled().has_node(node):
             self._admit_compiled_node(node)
-        callee = self.ungroup(node.callee)
+        site = None if _evaluation is None else _evaluation.call_site(node)
+        site_is_name = site is not None and site.callee_kind == 'name'
+        site_is_attribute = site is not None and site.callee_kind == 'attribute'
+        site_name = None if site is None else site.name
+        callee = self.ungroup(node.callee) if site is None else site.callee
         bound_callee = () if _evaluation is None else _evaluation.bound_callee(node.callee)
-        routine = self._resolve_routine(callee.name) if not bound_callee and isinstance(callee, ast.Name) else None
-        if (not bound_callee and isinstance(callee, ast.Name) and routine is None
-                and callee.name.casefold() in self._client_routine_names):
+        routine = self._resolve_routine((callee.name if site is None else site_name)) if not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) else None
+        if (not bound_callee and (isinstance(callee, ast.Name) if site is None else site_is_name) and routine is None
+                and (callee.name if site is None else site_name).casefold() in self._client_routine_names):
             raise ValueError("Вызов клиентской подпрограммы с сервера недопустим")
         owner = self
-        if not bound_callee and routine is None and isinstance(callee, ast.Name) and self._configuration_runtime is not None:
-            configured = self._configuration_runtime.resolve_global(callee.name, self)
+        if not bound_callee and routine is None and (isinstance(callee, ast.Name) if site is None else site_is_name) and self._configuration_runtime is not None:
+            configured = self._configuration_runtime.resolve_global((callee.name if site is None else site_name), self)
             if configured is not None:
                 routine, owner = configured
-        has_omissions = any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
+        has_omissions = (any(isinstance(a, ast.OmittedArgument) for a in node.arguments)
+                         if site is None else site.has_omissions)
         known_receiver = None
-        if isinstance(callee, ast.Attribute):
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
             module = self.import_receiver(callee.object)
             if module is not None:
                 if type(module) is not _Module:
                     raise TypeError("Пространство каталога не содержит вызываемых подпрограмм")
                 owner = module.interpreter
-                routine = module.routine(callee.name)
+                routine = module.routine((callee.name if site is None else site_name))
             elif has_omissions:
                 # Classify only stored receivers. Calling a factory to discover
                 # optional arguments would violate the host side-effect guard.
                 known_receiver = self.known_table_receiver(callee.object)
                 if type(known_receiver) is _Module:
                     owner = known_receiver.interpreter
-                    routine = known_receiver.routine(callee.name)
+                    routine = known_receiver.routine((callee.name if site is None else site_name))
         if routine is not None:
-            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=isinstance(callee, ast.Attribute), _evaluation=_evaluation))
+            return (yield from self.call_routine(routine, node.arguments, owner, require_value=require_value, qualified=(isinstance(callee, ast.Attribute) if site is None else site_is_attribute), _evaluation=_evaluation))
         # Existing host calls reject omitted arguments before receiver effects.
         # Native table/list methods need optional holes; admit them only for a known
         # exact built-in receiver (a variable or its Columns property). We never
         # execute a factory merely to discover whether it allows omissions.
         table_receiver = None
         table_optional = None
-        if isinstance(callee, ast.Attribute) and has_omissions:
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute) and has_omissions:
             table_receiver = known_receiver
-            table_optional = self.table_optional_arguments(table_receiver, callee.name)
-        registered = bound_callee[0] if bound_callee else (self.functions.get(callee.name.casefold())
-                      if isinstance(callee, ast.Name) else None)
+            table_optional = self.table_optional_arguments(table_receiver, (callee.name if site is None else site_name))
+        registered = bound_callee[0] if bound_callee else (self.functions.get((callee.name if site is None else site_name).casefold())
+                      if (isinstance(callee, ast.Name) if site is None else site_is_name) else None)
         if table_optional is None and (registered is None or
                 (registered.function is not run_callback_marker
                  and registered.function is not read_json
@@ -1422,31 +1427,31 @@ class Interpreter:
                  and not any(registered.function is fn for fn in regex_functions.FUNCTIONS)
                  and not any(registered.function is fn for fn in (file_io.binary_from_string, file_io.string_from_binary, file_io.find_files)))):
             self.reject_host_omissions(node.arguments)
-        if isinstance(callee, ast.Attribute):
+        if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
             receiver = table_receiver if table_optional is not None else (yield from receiver(callee.object))
             from .source_constant_managers import SourceConstantValueManager, _STANDARD_METHODS
-            if type(receiver) is SourceConstantValueManager and callee.name.casefold() not in _STANDARD_METHODS:
-                routine = receiver.exported_routine(self, callee.name)
+            if type(receiver) is SourceConstantValueManager and (callee.name if site is None else site_name).casefold() not in _STANDARD_METHODS:
+                routine = receiver.exported_routine(self, (callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
             from .source_document_runtime import SourceDocumentObject, _OBJECT_METHODS as _DOCUMENT_OBJECT_METHODS
-            if type(receiver) is SourceDocumentObject and callee.name.casefold() not in _DOCUMENT_OBJECT_METHODS:
-                routine=receiver.exported_routine(self,callee.name)
+            if type(receiver) is SourceDocumentObject and (callee.name if site is None else site_name).casefold() not in _DOCUMENT_OBJECT_METHODS:
+                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
             from .source_catalog_runtime import SourceCatalogObject, _OBJECT_METHODS
-            if type(receiver) is SourceCatalogObject and callee.name.casefold() not in _OBJECT_METHODS:
-                routine=receiver.exported_routine(self,callee.name)
+            if type(receiver) is SourceCatalogObject and (callee.name if site is None else site_name).casefold() not in _OBJECT_METHODS:
+                routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
             from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
             from .source_catalog_runtime import _MANAGER_METHODS, reference_call
             from .source_document_runtime import _MANAGER_METHODS as _DOCUMENT_METHODS, reference_call as document_call
-            if type(receiver) is SourceReferenceManager and callee.name.casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
+            if type(receiver) is SourceReferenceManager and (callee.name if site is None else site_name).casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
                 receiver = receiver.module(self)
             if type(receiver) is _Module:
-                return (yield from self.call_routine(receiver.routine(callee.name), node.arguments,
+                return (yield from self.call_routine(receiver.routine((callee.name if site is None else site_name)), node.arguments,
                                          receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
             if not isinstance(receiver, BSLObject):
                 raise TypeError("Значение не имеет методов или свойств")
-            function = document_call(self, receiver, callee.name) or reference_call(self, receiver, callee.name) or receiver.get_method(callee.name)
+            function = document_call(self, receiver, (callee.name if site is None else site_name)) or reference_call(self, receiver, (callee.name if site is None else site_name)) or receiver.get_method((callee.name if site is None else site_name))
         else:
             function = (yield from evaluate(node.callee))
         if not isinstance(function, HostFunction):
@@ -1534,11 +1539,11 @@ class Interpreter:
         if table_optional is not None:
             if type(table_receiver) in (BSLValueTableColumnCollection, BSLValueTreeColumnCollection):
                 defaults = ("", None, "", Decimal(0))
-                if callee.name.casefold() in {"insert", "вставить"}:
+                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
             elif type(table_receiver) is BSLValueList:
                 defaults = (None, "", False)
-                if callee.name.casefold() in {"insert", "вставить"}:
+                if (callee.name if site is None else site_name).casefold() in {"insert", "вставить"}:
                     defaults = (None,) + defaults
         values = []
         for index, argument in enumerate(node.arguments):
