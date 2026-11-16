@@ -34,11 +34,15 @@ class FusionTests(unittest.TestCase):
         node=parse('r='+source+';')[0].value
         for fused in (False,True):
             trace=[]
-            class VM(Interpreter):
-                def compiled_before(self,node):trace.append(('before',type(node).__name__))
-                def compiled_after(self,node,value):trace.append(('after',type(node).__name__));return value
-                def compiled_exception(self,node,error):trace.append(('error',type(node).__name__));return super().compiled_exception(node,error)
-            vm=VM();setup(vm)
+            # Keep a registered production VM identity. Recording policy hooks
+            # do not authorize an unknown context subclass for strict execution.
+            vm=Interpreter(execution_backend='compiled-strict')
+            original_exception=vm.compiled_exception
+            def before(node):trace.append(('before',type(node).__name__))
+            def after(node,value):trace.append(('after',type(node).__name__));return value
+            def exception(node,error):trace.append(('error',type(node).__name__));return original_exception(node,error)
+            vm.compiled_before=before;vm.compiled_after=after;vm.compiled_exception=exception
+            setup(vm)
             execution=prepare_expressions([node]).bind(vm,guard=lambda n:trace.append(('guard',type(n).__name__)),access=translated_access)
             vm._visit=lambda *a: (_ for _ in ()).throw(AssertionError('AST execution'))
             try:
@@ -54,7 +58,9 @@ class FusionTests(unittest.TestCase):
         for source in ('1+2*3','(1+2)*3','-3','Not False','False And Boom()',
                        'True Or Boom()','?(False,Boom(),7)','True=1','"abc"+2',
                        'StrLen("abc")+StrLen("de")','1/0','New Array(3)'):
-            with self.subTest(source=source):self.run_pair(source)
+            with self.subTest(source=source):
+                outcome=self.run_pair(source)
+                self.assertEqual(outcome[0],'error' if source=='1/0' else 'value')
 
     def test_attributes_indexes_and_reference_calls(self):
         def setup(vm):vm.execute('a=New Array;a.Add(4);s=New Structure("n",3);')
@@ -71,7 +77,7 @@ class FusionTests(unittest.TestCase):
     def test_call_order_once(self):
         events=[]
         def setup(vm):vm.register_function('Tick',lambda n:events.append(n) or n)
-        self.run_pair('Tick(1)+Tick(2)*Tick(3)',setup)
+        self.assertEqual(self.run_pair('Tick(1)+Tick(2)*Tick(3)',setup),('value',7))
         self.assertEqual(events,[1,2,3,1,2,3])
 
     def test_await_preserves_yield_and_resume_guard(self):

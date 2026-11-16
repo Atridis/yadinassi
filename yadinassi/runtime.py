@@ -686,7 +686,7 @@ class Interpreter:
                 if self._execution_backend == "compiled-strict":
                     engine = self._compiled()
                     if engine.FORCE_PYTHON_TRANSLATION and engine.OWNED_SNAPSHOT and not engine.ORIGIN_MUTATION_MONITOR:
-                        transient = engine.prepare_transient([expression])
+                        transient = engine.prepare_transient([expression], expression_entry=True)
                     else:
                         self._admit_compiled_node(expression)
             except BSLError as error:

@@ -381,9 +381,9 @@ class Engine:
         except (TypeError, RuntimeError) as failure:
             raise CompiledUnsupported(None, str(failure)) from None
 
-    def prepare(self, program, *, allow_reprepare=True, module_entry=False, _transient=None):
+    def prepare(self, program, *, allow_reprepare=True, module_entry=False, _transient=None, _expression_entry=False):
         if not self.OWNED_SNAPSHOT:
-            return self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry)
+            return self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry, expression_entry=_expression_entry)
         # Journal only this admission's writes, not the entire active registry.
         # Nested admission writes into these overlays; any outer failure discards
         # all of them. No AST/host code runs while publishing builtin-map writes.
@@ -393,7 +393,7 @@ class Engine:
         (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
          self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = journals
         try:
-            result = self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry)
+            result = self._prepare(program, allow_reprepare=allow_reprepare, module_entry=module_entry, expression_entry=_expression_entry)
             captured = []
             if _transient is not None:
                 for base, journal in zip(bases, journals):
@@ -438,7 +438,7 @@ class Engine:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
              self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = bases
 
-    def prepare_transient(self, program):
+    def prepare_transient(self, program, *, expression_entry=False):
         """Admit declaration-free dynamic code with unchanged live-unit limits."""
         if not self.FORCE_PYTHON_TRANSLATION or not self.OWNED_SNAPSHOT or self.ORIGIN_MUTATION_MONITOR:
             raise CompiledUnsupported(None, 'transient unit requires force owned translation')
@@ -457,13 +457,20 @@ class Engine:
                         validate(getattr(value, field.name))
             elif type(value) in (list, tuple, OwnedList):
                 for child in value:validate(child)
+        if expression_entry:
+            if (type(program) is not list and type(program) is not OwnedList) or len(program)!=1:
+                raise CompiledUnsupported(None,'expression admission requires one expression')
+            root_kind=syntax_kind(program[0])
+            if not any(root_kind is kind for kind in (ast.Literal,ast.Name,ast.Group,ast.Unary,ast.Binary,
+                    ast.Conditional,ast.Attribute,ast.Index,ast.Call,ast.New,ast.DynamicNew,ast.Await)):
+                raise CompiledUnsupported(None,'expression admission requires one expression')
         validate(program)
         lease=_TransientAdmission(self)
-        self.prepare(program, allow_reprepare=False, _transient=lease)
+        self.prepare(program, allow_reprepare=False, _transient=lease, _expression_entry=expression_entry)
         lease.activate()
         return lease
 
-    def _prepare(self, program, *, allow_reprepare=True, module_entry=False):
+    def _prepare(self, program, *, allow_reprepare=True, module_entry=False, expression_entry=False):
         self._inline_unit_bytes = 0
         if self.OWNED_SNAPSHOT:
             try:
@@ -580,7 +587,7 @@ class Engine:
             # plans. Do not generate or charge a second unused implementation.
             if not self.FORCE_PYTHON_TRANSLATION:self._prepare_plain_routines(nodes)
             if self.FORCE_PYTHON_TRANSLATION:
-                self._prepare_python_unit(program, nodes, blocks, module_entry)
+                self._prepare_python_unit(program, nodes, blocks, module_entry, expression_entry=expression_entry)
             elif module_entry:self._prepare_plain_module(program)
         except CompiledUnsupported:
             self.stats['rejected_units'] += 1
@@ -1013,13 +1020,16 @@ class Engine:
         finally:
             self._active_frames -= 1
 
-    def _prepare_python_unit(self, program, nodes, blocks, module_entry):
+    def _prepare_python_unit(self, program, nodes, blocks, module_entry, *, expression_entry=False):
         from .python_translation_blocks import prepare_blocks, UnsupportedTranslation
         from .python_translation_expressions import UnsupportedExpression
         if not self.OWNED_SNAPSHOT:
             raise CompiledUnsupported(None, 'force translator requires owned snapshot')
         selected_blocks=[plan.statements for plan in blocks.values() if plan.role=='structural']
-        entry_keys={tuple(id(node) for node in program)}
+        # Eval enters an expression function, not its synthetic wrapper block.
+        # Retain the root metadata/registry anchor for source lookup and leases;
+        # an explicit vm.block request still prepares its executable separately.
+        entry_keys=set() if expression_entry else {tuple(id(node) for node in program)}
         for plan in nodes.values():
             if syntax_kind(plan.node) in (ast.Routine,ast.ServerInitializer):
                 entry_keys.add(tuple(id(node) for node in plan.node.body))

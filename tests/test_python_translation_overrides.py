@@ -8,16 +8,17 @@ from tests.test_python_translation_expressions import finish
 
 class OverrideTests(unittest.TestCase):
     def test_builtin_field_collision_keeps_builtin_over_routine(self):
-        class Posting(_PostingInterpreter):
-            def __init__(self):
-                Interpreter.__init__(self)
-                self._steps=0
-            def _member(self,name):return name.casefold()=='number'
-            def semantic_name(self,node):
-                if self._member(node.name):return Decimal(100)
-                return Interpreter.semantic_name(self,node)
-            def compiled_before(self,node):return None
-        vm=Posting()
+        # Exercise the admitted production override, not an unregistered test
+        # subclass. Minimal field stubs leave its real call dispatch unchanged.
+        vm=object.__new__(_PostingInterpreter)
+        Interpreter.__init__(vm,execution_backend='compiled-strict')
+        vm._steps=0
+        vm._member=lambda name:name.casefold()=='number'
+        def semantic_name(node):
+            if vm._member(node.name):return Decimal(100)
+            return Interpreter.semantic_name(vm,node)
+        vm.semantic_name=semantic_name
+        vm.compiled_before=lambda node:None
         vm.execute('Function Number(Val x) Return 999;EndFunction')
         node=parse('r=Number("12");')[0].value
         execution=prepare_expressions([node]).bind(vm,guard=lambda node:None,access=None)
@@ -25,6 +26,15 @@ class OverrideTests(unittest.TestCase):
         self.assertEqual(finish(execution.evaluate(node)),12)
         # The original expression service did not gain a persistent override.
         self.assertEqual(finish(execution.evaluate(node.callee)),100)
+
+    def test_unknown_context_subclass_is_still_rejected_before_effect(self):
+        from yadinassi.compiled_backend import CompiledUnsupported
+        class Unknown(_PostingInterpreter):pass
+        vm=object.__new__(Unknown)
+        Interpreter.__init__(vm,execution_backend='compiled-strict')
+        seen=[];vm.register_function('Tick',lambda:seen.append(1))
+        with self.assertRaises(CompiledUnsupported):vm.execute('Tick();')
+        self.assertEqual(seen,[])
 
     def test_override_signatures_accept_evaluation(self):
         import inspect
