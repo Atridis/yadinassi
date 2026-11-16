@@ -151,7 +151,7 @@ def required_platforms(binding):
 def heavy_shard_count(platform):
     # Intel macOS needs smaller fixture-preserving partitions within 60 minutes.
     require(platform in PLATFORMS, 'unknown shard platform')
-    return 4 if platform == 'mac-x86' else 2
+    return 8 if platform == 'mac-x86' else 2
 
 
 def job_matrix(binding, *, heavy=False):

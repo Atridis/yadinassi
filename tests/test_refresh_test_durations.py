@@ -18,7 +18,7 @@ class RefreshTestDurationsTests(unittest.TestCase):
                 path.write_text(json.dumps(report))
             result=refresh(directory,C,1)
             self.assertEqual(result['source'], {'commit':C,'run':1})
-            self.assertEqual(set(result['tests']), {'test_mod.A.test_light', *(f'test_mod.H{i}.test_heavy' for i in range(4))})
+            self.assertEqual(set(result['tests']), {'test_mod.A.test_light', *(f'test_mod.H{i}.test_heavy' for i in range(8))})
             with self.assertRaises(ValueError):refresh(directory,'d'*40,1)
             with self.assertRaises(ValueError):refresh(directory,C,2)
             sample=Path(directory)/'0'/'partition.json';data=json.loads(sample.read_text())
@@ -58,7 +58,7 @@ class ScopedRefreshTests(unittest.TestCase):
                 p,a=refresh_with_audit(d,C,1,scope='required-platforms')
                 self.assertTrue(a['coverage']['required_coverage']);self.assertFalse(a['coverage']['full_coverage'])
                 self.assertEqual(a['coverage']['excluded_platforms'],['mac-arm'])
-                self.assertEqual(len(a['reports']),11);self.assertEqual(len(p['tests']),5)
+                self.assertEqual(len(a['reports']),15);self.assertEqual(len(p['tests']),9)
                 self.assertTrue(all(v['seconds']==(0 if skipped else 1) for v in p['tests'].values()))
                 with self.assertRaises(ValueError):refresh(d,C,1)
 

@@ -44,7 +44,9 @@ from scripts.native_historical_replay import (
 
 
 DEFAULT_SCRIPT_TIMEOUT_SECONDS = 10
-HISTORICAL_COLLECTIONS_TIMEOUT_SECONDS = 30
+# This authenticated replay is a semantic comparison, not a speed gate.
+# Translated execution exceeded 30s on macOS Intel CI; retain a finite bound.
+HISTORICAL_COLLECTIONS_TIMEOUT_SECONDS = 120
 
 
 def script_timeout_seconds(script: Path, replay: bytes | None = None) -> int:
@@ -274,7 +276,7 @@ class NativeOutputRunnerTests(unittest.TestCase):
         script = ROOT / "tests/collections.bsl"
         replay = historical_collections_source(
             script.read_bytes(), (ROOT.parent / "tests/fixtures/native_windows/collections.out").read_bytes())
-        self.assertEqual(script_timeout_seconds(script, replay), 30)
+        self.assertEqual(script_timeout_seconds(script, replay), 120)
         for other_script, other_replay in (
             (script, None), (script, replay + b"// mutation"),
             (ROOT / "tests/dates.bsl", replay),
@@ -290,10 +292,24 @@ class NativeOutputRunnerTests(unittest.TestCase):
         completed = subprocess.CompletedProcess([], 0, normalize_newlines(expected.decode()).encode(), b"")
         with patch.object(subprocess, "run", return_value=completed) as run:
             case.compare_script(script)
-        self.assertEqual(run.call_args.kwargs["timeout"], 30)
-        with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("test", 30)):
-            with self.assertRaisesRegex(AssertionError, "истек таймаут 30 с"):
+        self.assertEqual(run.call_args.kwargs["timeout"], 120)
+        with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("test", 120)):
+            with self.assertRaisesRegex(AssertionError, "истек таймаут 120 с"):
                 case.compare_script(script)
+
+    def test_longer_authenticated_timeout_does_not_accept_incorrect_results(self):
+        case = NativeOutputTests()
+        script = ROOT / "tests/collections.bsl"
+        expected = normalize_newlines((case.fixture_root / "collections.out").read_text(encoding="utf-8")).encode()
+        for result, message in (
+            (subprocess.CompletedProcess([], 1, expected, b""), "Yadinassi не выполнил"),
+            (subprocess.CompletedProcess([], 0, expected, b"error"), "Неожиданный stderr"),
+            (subprocess.CompletedProcess([], 0, expected + b"extra\n", b""), "вывод отличается"),
+        ):
+            with self.subTest(message=message), patch.object(subprocess, "run", return_value=result) as run:
+                with self.assertRaisesRegex(AssertionError, message):
+                    case.compare_script(script)
+                self.assertEqual(run.call_args.kwargs["timeout"], 120)
 
     def test_synthetic_collections_keeps_default_subprocess_timeout(self):
         self.add_case(name="collections.bsl")
