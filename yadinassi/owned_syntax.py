@@ -124,23 +124,6 @@ def owned_provenance(value):
     return object.__getattribute__(value, '_owned_provenance')
 
 
-def owned_identity(value):
-    """Read kind and provenance in one live check; not a reusable authority token.
-
-    Callers must consume this result synchronously, before any user hook/yield.
-    Keep exact type and weak registration checks even for previously seen nodes.
-    """
-    kind = type(value)
-    private = _PRIVATE_KINDS.get(id(kind))
-    if kind is not OwnedList and (private is None or private[0] is not kind):
-        return None
-    entry = _ORIGINS.get(id(value))
-    if entry is None or entry() is not value:
-        return None
-    return (kind if kind is OwnedList else private[1],
-            object.__getattribute__(value, '_owned_provenance'))
-
-
 def origin_node(value):
     if not is_owned(value):
         return value

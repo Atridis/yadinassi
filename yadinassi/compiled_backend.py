@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from .errors import BSLRuntimeError
 from .syntax import ast
-from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, owned_identity, origin_node as syntax_origin, creation_fingerprint
+from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, origin_node as syntax_origin, creation_fingerprint
 
 
 class CompiledUnsupported(BSLRuntimeError):
@@ -726,7 +726,7 @@ class Engine:
     def _block_signature(statements):
         return tuple((id(type(node)), id(node)) for node in statements)
 
-    def verify_node(self, node, *, _return_kind=False):
+    def verify_node(self, node):
         """Validate admitted metadata also consumed without a node visit."""
         plan = None
         if self.OWNED_SNAPSHOT:
@@ -750,32 +750,25 @@ class Engine:
             raise CompiledUnsupported(node, 'node belongs to no prepared compilation unit')
         try:
             if self.OWNED_SNAPSHOT:
-                kind = self._verify_owned_identity(node, _return_kind=_return_kind)
+                self._verify_owned_identity(node)
             else:
                 _verify_node(node, plan.signature)
-                kind = syntax_kind(node) if _return_kind else None
         except CompiledUnsupported:
             self.stats['unsupported_executions'] += 1
             raise
 
-        return kind if _return_kind else None
-
-    def _verify_owned_identity(self, value, *, _return_kind=False):
+    def _verify_owned_identity(self, value):
         # Normal writes to owned nodes/lists reject. Do not recursively hash
         # their immutable shape; opaque Literal contents intentionally stay live.
         # Unrestricted object/list protocol bypass is not a Python sandbox.
-        if _return_kind:
-            identity = owned_identity(value)
-            kind, provenance = identity if identity is not None else (None, None)
-        else:
-            provenance = owned_provenance(value)
+        provenance = owned_provenance(value)
         if provenance is None:
             raise CompiledUnsupported(None, 'unregistered owned execution view')
         original = provenance[0]
         entry = self._owned.versions.get(id(value))
         if entry is None or entry[0] is not original or entry[1] is not value:
             raise CompiledUnsupported(None, 'owned view belongs to no admitted unit')
-        return kind if _return_kind else original
+        return original
 
     def _verify_active_plans(self):
         # OFF snapshots have already-admitted, sealed ancestors retained by
@@ -1104,9 +1097,9 @@ class Engine:
         view=self.execution_view(node)
         leaf=self._python_leaf_operation(view)
         if leaf is not None:
-            self._verify_active_plans();kind=self.verify_node(view,_return_kind=True).__name__
+            self._verify_active_plans();self.verify_node(view)
             kinds=self.stats.setdefault('python_translated_node_kinds',{})
-            kinds[kind]=kinds.get(kind,0)+1
+            kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
             self._active_frames += 1
             try:
                 return leaf[1](self.vm,view)
