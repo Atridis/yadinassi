@@ -1,4 +1,5 @@
 """Explicit nonposting document objects with bounded modules and real stored data."""
+from .runtime_dependencies import runtime_module as _runtime_module
 from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
@@ -173,9 +174,9 @@ _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','ун
 
 
 def is_source_reference(value):
-    from .document_types import BSLDocumentReference
-    from .configuration_source_metadata import SourceMetadataObject
-    from .source_references import _SourceReferenceSnapshot
+    BSLDocumentReference = _runtime_module('document_types').BSLDocumentReference
+    SourceMetadataObject = _runtime_module('configuration_source_metadata').SourceMetadataObject
+    _SourceReferenceSnapshot = _runtime_module('source_references')._SourceReferenceSnapshot
     return (type(value) is BSLDocumentReference and
             (type(value.value_type.snapshot) is _SourceReferenceSnapshot or type(value.metadata) is SourceMetadataObject))
 

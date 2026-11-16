@@ -1,3 +1,4 @@
+from .runtime_dependencies import runtime_module as _runtime_module
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
 from .query_packages import BSLTempTablesManager
@@ -242,6 +243,13 @@ _VALUE_TYPES = (
     (BSLValueList, BSLType.VALUE_LIST, "ValueList"),
     (BSLValueListItem, BSLType.VALUE_LIST_ITEM, "ValueListItem"),
 )
+# Integer keys avoid arbitrary metaclass hash/equality callbacks. Strong type
+# references in the closed table prevent identity reuse; keep the first entry.
+_STATIC_VALUE_TYPES = {}
+for _python_type, _value_type, _alias in _VALUE_TYPES:
+    _STATIC_VALUE_TYPES.setdefault(id(_python_type), (_python_type, _value_type))
+del _python_type, _value_type, _alias
+
 _BY_NAME = {name.casefold(): value_type
             for _, value_type, alias in _VALUE_TYPES
             if alias is not None
@@ -264,11 +272,13 @@ def type_by_name(name: object) -> BSLType:
 def type_of(value: object) -> BSLType | BSLCatalogType:
     # Only explicitly admitted metadata modules carry this identity. Standalone
     # file modules and arbitrary host objects do not become common modules.
-    from .runtime import _Module
+    _Module = _runtime_module('runtime')._Module
     if type(value) is _Module and value._platform_type is BSLType.COMMON_MODULE:
         return BSLType.COMMON_MODULE
-    from .enum_types import BSLEnumType, BSLEnumReference
-    from .enumerations import BSLEnumManager
+    _dependency = _runtime_module('enum_types')
+    BSLEnumType = _dependency.BSLEnumType
+    BSLEnumReference = _dependency.BSLEnumReference
+    BSLEnumManager = _runtime_module('enumerations').BSLEnumManager
     if type(value) is BSLEnumType: return BSLType.TYPE
     if type(value) is BSLEnumReference: return value.value_type
     if type(value) is BSLEnumManager: return value._manager_type
@@ -296,7 +306,11 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
     if (type(value) is BSLCatalogType or type(value) is BSLDocumentType):
         return BSLType.TYPE
     # Lazy import avoids the catalog adapter/type registry import cycle.
-    from .catalogs import BSLCatalogManager, BSLCatalogSelection, BSLCatalogs, BSLCatalogObject
+    _dependency = _runtime_module('catalogs')
+    BSLCatalogManager = _dependency.BSLCatalogManager
+    BSLCatalogSelection = _dependency.BSLCatalogSelection
+    BSLCatalogs = _dependency.BSLCatalogs
+    BSLCatalogObject = _dependency.BSLCatalogObject
     if type(value) is BSLCatalogs:
         return BSLType.CATALOGS_MANAGER
     if type(value) is BSLCatalogObject:
@@ -305,7 +319,10 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return value._manager_type
     if type(value) is BSLCatalogSelection:
         return value._selection_type
-    from .documents import BSLDocumentManager, BSLDocumentSelection, BSLDocumentObject
+    _dependency = _runtime_module('documents')
+    BSLDocumentManager = _dependency.BSLDocumentManager
+    BSLDocumentSelection = _dependency.BSLDocumentSelection
+    BSLDocumentObject = _dependency.BSLDocumentObject
     if type(value) is BSLDocumentObject:
         return value._object_type
     if type(value) is BSLDocumentManager:
@@ -314,7 +331,8 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
         return value._selection_type
     # Exact identity keeps bool distinct from numbers and rejects arbitrary host
     # objects/subclasses without invoking their metaclass equality or hash hooks.
-    for python_type, value_type, _ in _VALUE_TYPES:
-        if type(value) is python_type:
-            return value_type
+    kind = type(value)
+    entry = _STATIC_VALUE_TYPES.get(id(kind))
+    if entry is not None and entry[0] is kind:
+        return entry[1]
     raise TypeError("ТипЗнч для этого значения пока не поддерживается")

@@ -1,3 +1,4 @@
+from .runtime_dependencies import runtime_module as _runtime_module
 from functools import lru_cache
 from weakref import WeakValueDictionary
 from contextlib import nullcontext, contextmanager
@@ -1259,30 +1260,42 @@ class Interpreter:
 
     def semantic_attribute(self, node: ast.Attribute) -> object:
         value = (yield from self.receiver(node.object))
-        from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+        _dependency = _runtime_module('source_document_sections')
+        SourceDocumentSection = _dependency.SourceDocumentSection
+        SourceDocumentRow = _dependency.SourceDocumentRow
         if type(value) in (SourceDocumentSection, SourceDocumentRow):
             return value.property_read(self,node.name)
-        from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, SourceDocumentObject, SourceDocumentSelection
+        _dependency = _runtime_module('source_document_runtime')
+        is_document_reference = _dependency.is_source_reference
+        document_member = _dependency.reference_member
+        SourceDocumentObject = _dependency.SourceDocumentObject
+        SourceDocumentSelection = _dependency.SourceDocumentSelection
         if is_document_reference(value):
             return document_member(self,value,node.name)
         if type(value) in (SourceDocumentObject, SourceDocumentSelection):
             return value.property_read(self,node.name)
-        from .source_catalog_runtime import is_source_reference, reference_member
+        _dependency = _runtime_module('source_catalog_runtime')
+        is_source_reference = _dependency.is_source_reference
+        reference_member = _dependency.reference_member
         if is_source_reference(value):
             return reference_member(self,value,node.name)
-        from .source_manager_modules import SourceManagers
+        SourceManagers = _runtime_module('source_manager_modules').SourceManagers
         if type(value) is SourceManagers:
             return value.member(self, node.name)
-        from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+        _dependency = _runtime_module('source_catalog_runtime')
+        SourceCatalogObject = _dependency.SourceCatalogObject
+        SourceCatalogSelection = _dependency.SourceCatalogSelection
         if type(value) in (SourceCatalogObject, SourceCatalogSelection):
             return value.property_read(self, node.name)
-        from .source_references import SourceReferenceManager
+        SourceReferenceManager = _runtime_module('source_references').SourceReferenceManager
         if type(value) is SourceReferenceManager:
             return value.member(self, node.name)
-        from .source_constant_managers import SourceConstantValueManager
+        SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
         if type(value) is SourceConstantValueManager:
             return value.property_read(self, node.name)
-        from .source_constants_runtime import SourceConstants, SourceConstantSet
+        _dependency = _runtime_module('source_constants_runtime')
+        SourceConstants = _dependency.SourceConstants
+        SourceConstantSet = _dependency.SourceConstantSet
         if type(value) is SourceConstantSet:
             if node.name.casefold() in ('read', 'прочитать', 'write', 'записать'):
                 return value.get_member(node.name)
@@ -1300,17 +1313,17 @@ class Interpreter:
 
     def semantic_index(self, node: ast.Index) -> object:
         value = (yield from self._visit(node.object))
-        from .source_document_sections import SourceDocumentSection
+        SourceDocumentSection = _runtime_module('source_document_sections').SourceDocumentSection
         if type(value) is SourceDocumentSection:
             return value.get_index(self,(yield from self._visit(node.index)))
-        from .source_manager_modules import SourceManagers
+        SourceManagers = _runtime_module('source_manager_modules').SourceManagers
         if type(value) is SourceManagers:
             value.authorize(self)
             return value.member(self, (yield from self._visit(node.index)))
-        from .source_constants_runtime import SourceConstants
+        SourceConstants = _runtime_module('source_constants_runtime').SourceConstants
         if type(value) is SourceConstants:
             return value.member(self, (yield from self._visit(node.index)))
-        from .source_metadata_properties import SourcePropertyDomain
+        SourcePropertyDomain = _runtime_module('source_metadata_properties').SourcePropertyDomain
         if type(value) is SourcePropertyDomain:
             return value.get_index((yield from self._visit(node.index)))
         if type(value) is BSLSessionParameters:
@@ -1429,21 +1442,33 @@ class Interpreter:
             self.reject_host_omissions(node.arguments)
         if (isinstance(callee, ast.Attribute) if site is None else site_is_attribute):
             receiver = table_receiver if table_optional is not None else (yield from receiver(callee.object))
-            from .source_constant_managers import SourceConstantValueManager, _STANDARD_METHODS
+            _dependency = _runtime_module('source_constant_managers')
+            SourceConstantValueManager = _dependency.SourceConstantValueManager
+            _STANDARD_METHODS = _dependency._STANDARD_METHODS
             if type(receiver) is SourceConstantValueManager and (callee.name if site is None else site_name).casefold() not in _STANDARD_METHODS:
                 routine = receiver.exported_routine(self, (callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine, node.arguments, receiver.interpreter, require_value=require_value, qualified=True, _evaluation=_evaluation))
-            from .source_document_runtime import SourceDocumentObject, _OBJECT_METHODS as _DOCUMENT_OBJECT_METHODS
+            _dependency = _runtime_module('source_document_runtime')
+            SourceDocumentObject = _dependency.SourceDocumentObject
+            _DOCUMENT_OBJECT_METHODS = _dependency._OBJECT_METHODS
             if type(receiver) is SourceDocumentObject and (callee.name if site is None else site_name).casefold() not in _DOCUMENT_OBJECT_METHODS:
                 routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            from .source_catalog_runtime import SourceCatalogObject, _OBJECT_METHODS
+            _dependency = _runtime_module('source_catalog_runtime')
+            SourceCatalogObject = _dependency.SourceCatalogObject
+            _OBJECT_METHODS = _dependency._OBJECT_METHODS
             if type(receiver) is SourceCatalogObject and (callee.name if site is None else site_name).casefold() not in _OBJECT_METHODS:
                 routine=receiver.exported_routine(self,(callee.name if site is None else site_name))
                 return (yield from self.call_routine(routine,node.arguments,receiver.interpreter,require_value=require_value,qualified=True, _evaluation=_evaluation))
-            from .source_references import SourceReferenceManager, _METHODS as _REF_METHODS
-            from .source_catalog_runtime import _MANAGER_METHODS, reference_call
-            from .source_document_runtime import _MANAGER_METHODS as _DOCUMENT_METHODS, reference_call as document_call
+            _dependency = _runtime_module('source_references')
+            SourceReferenceManager = _dependency.SourceReferenceManager
+            _REF_METHODS = _dependency._METHODS
+            _dependency = _runtime_module('source_catalog_runtime')
+            _MANAGER_METHODS = _dependency._MANAGER_METHODS
+            reference_call = _dependency.reference_call
+            _dependency = _runtime_module('source_document_runtime')
+            _DOCUMENT_METHODS = _dependency._MANAGER_METHODS
+            document_call = _dependency.reference_call
             if type(receiver) is SourceReferenceManager and (callee.name if site is None else site_name).casefold() not in (_REF_METHODS.keys() | (_MANAGER_METHODS.keys() if receiver.family == 'Catalog' else _DOCUMENT_METHODS.keys() if receiver.family == 'Document' else set())):
                 receiver = receiver.module(self)
             if type(receiver) is _Module:
@@ -1459,7 +1484,7 @@ class Interpreter:
         interpreter_call = function.function if type(function.function) is InterpreterCall else None
         if interpreter_call is not None:
             interpreter_call.prepare(self, len(node.arguments))
-        from .reusable_values import refresh_reusable_marker
+        refresh_reusable_marker = _runtime_module('reusable_values').refresh_reusable_marker
         refresh_call = function.function is refresh_reusable_marker
         if refresh_call:
             if self._configuration_runtime is None:
@@ -1467,13 +1492,15 @@ class Interpreter:
             self._configuration_runtime.reusable_values.authorize(self)
             if node.arguments:
                 raise TypeError('RefreshReusableValues requires no arguments')
-        from .value_lists import _ChooseItemMarker
+        _ChooseItemMarker = _runtime_module('value_lists')._ChooseItemMarker
         choosing = type(function.function) is _ChooseItemMarker
         if choosing:
             if self._configuration_runtime is None:
                 raise ValueError('ShowChooseItem requires an application-owned client dispatch')
             self._configuration_runtime.require_value_selection(self)
-        from .common_templates import get_common_template_marker, SourceTemplateCall
+        _dependency = _runtime_module('common_templates')
+        get_common_template_marker = _dependency.get_common_template_marker
+        SourceTemplateCall = _dependency.SourceTemplateCall
         if type(function.function) is SourceTemplateCall:
             function.function.owner.authorize(self)
             if len(node.arguments) != 1:
@@ -1483,7 +1510,7 @@ class Interpreter:
             if self._configuration_runtime is None:raise ValueError('common templates require an application')
             self._configuration_runtime.common_templates.authorize(self)
             if len(node.arguments)!=1:raise TypeError('GetCommonTemplate arity')
-        from . import temporary_storage
+        temporary_storage = _runtime_module('temporary_storage')
         if type(function.function) is temporary_storage.SourceTemporaryCall:
             function.function.authorize_call(self, len(node.arguments))
         temporary_call=any(function.function is marker for marker in temporary_storage.MARKERS)
@@ -1497,7 +1524,7 @@ class Interpreter:
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_host_service(function, self)
         if function.function is run_callback_marker:
-            from .database_transactions import forbid_transfer
+            forbid_transfer = _runtime_module('database_transactions').forbid_transfer
             forbid_transfer(self._transaction_backend())
             return (yield from self._run_callback(node, _evaluation=_evaluation))
         if function.function is read_json or function.function is write_json:
@@ -2233,27 +2260,39 @@ class Interpreter:
             return _VariableReference(lambda: scope[name], lambda value: scope.__setitem__(name, value))
         if isinstance(node, ast.Attribute):
             owner = (yield from receiver(node.object))
-            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            _dependency = _runtime_module('source_document_sections')
+            SourceDocumentSection = _dependency.SourceDocumentSection
+            SourceDocumentRow = _dependency.SourceDocumentRow
             if type(owner) in (SourceDocumentSection, SourceDocumentRow):
                 owner.property_read(self,node.name)
                 return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
-            from .source_document_runtime import is_source_reference as is_document_reference, reference_member as document_member, readonly_reference as readonly_document, SourceDocumentObject, SourceDocumentSelection
+            _dependency = _runtime_module('source_document_runtime')
+            is_document_reference = _dependency.is_source_reference
+            document_member = _dependency.reference_member
+            readonly_document = _dependency.readonly_reference
+            SourceDocumentObject = _dependency.SourceDocumentObject
+            SourceDocumentSelection = _dependency.SourceDocumentSelection
             if is_document_reference(owner):
                 captured=document_member(self,owner,node.name)
                 return _Reference(lambda:captured, lambda value:readonly_document(self,owner,node.name,value))
             if type(owner) in (SourceDocumentObject,SourceDocumentSelection):
                 owner.property_read(self,node.name)
                 return _Reference(lambda:owner.property_read(self,node.name), lambda value:owner.property_write(self,node.name,value))
-            from .source_catalog_runtime import is_source_reference, reference_member, readonly_reference
+            _dependency = _runtime_module('source_catalog_runtime')
+            is_source_reference = _dependency.is_source_reference
+            reference_member = _dependency.reference_member
+            readonly_reference = _dependency.readonly_reference
             if is_source_reference(owner):
                 captured=reference_member(self,owner,node.name)
                 return _Reference(lambda:captured, lambda value:readonly_reference(self,owner,node.name,value))
-            from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection
+            _dependency = _runtime_module('source_catalog_runtime')
+            SourceCatalogObject = _dependency.SourceCatalogObject
+            SourceCatalogSelection = _dependency.SourceCatalogSelection
             if type(owner) in (SourceCatalogObject, SourceCatalogSelection):
                 owner.property_read(self, node.name)
                 return _Reference(lambda: owner.property_read(self, node.name),
                                   lambda value: owner.property_write(self, node.name, value))
-            from .source_constant_managers import SourceConstantValueManager
+            SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
             if type(owner) is SourceConstantValueManager:
                 owner.property_read(self, node.name)
                 return _Reference(lambda: owner.property_read(self, node.name),
@@ -2284,8 +2323,8 @@ class Interpreter:
                 owner.reference_get_member(node.name)
                 return _Reference(lambda: owner.reference_get_member(node.name),
                                   lambda value: owner.reference_set_member(node.name, value))
-            from .queries import BSLQueryResultSelection
-            from .accumulation_posting_values import BSLAccumulationRow
+            BSLQueryResultSelection = _runtime_module('queries').BSLQueryResultSelection
+            BSLAccumulationRow = _runtime_module('accumulation_posting_values').BSLAccumulationRow
             key = node.name.casefold()
             observed_readonly = (
                 type(owner) is BSLQueryResultSelection and any(
@@ -2417,13 +2456,17 @@ class Interpreter:
             self.set_variable(node.target.name, (yield from self._visit(node.value)))
         else:
             value = (yield from self.receiver(node.target.object))
-            from .source_document_sections import SourceDocumentSection, SourceDocumentRow
+            _dependency = _runtime_module('source_document_sections')
+            SourceDocumentSection = _dependency.SourceDocumentSection
+            SourceDocumentRow = _dependency.SourceDocumentRow
             if type(value) in (SourceDocumentSection, SourceDocumentRow):
                 if not isinstance(node.target,ast.Attribute):
                     raise ValueError("source document section replacement unsupported")
                 value.property_write(self,node.target.name,(yield from self._visit(node.value)))
                 return
-            from .source_document_runtime import is_source_reference as is_document_reference, SourceDocumentObject
+            _dependency = _runtime_module('source_document_runtime')
+            is_document_reference = _dependency.is_source_reference
+            SourceDocumentObject = _dependency.SourceDocumentObject
             if is_document_reference(value):
                 raise ValueError('source document reference fields are readonly; use GetObject().Write()')
             if type(value) is SourceDocumentObject:
@@ -2431,22 +2474,24 @@ class Interpreter:
                     raise ValueError('source document object indexing unsupported')
                 value.property_write(self,node.target.name,(yield from self._visit(node.value)))
                 return
-            from .source_catalog_runtime import is_source_reference, readonly_reference
+            _dependency = _runtime_module('source_catalog_runtime')
+            is_source_reference = _dependency.is_source_reference
+            readonly_reference = _dependency.readonly_reference
             if is_source_reference(value):
                 raise ValueError('source reference fields are readonly; use GetObject().Write()')
-            from .source_catalog_runtime import SourceCatalogObject
+            SourceCatalogObject = _runtime_module('source_catalog_runtime').SourceCatalogObject
             if type(value) is SourceCatalogObject:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError("source catalog object indexing unsupported")
                 value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
-            from .source_constant_managers import SourceConstantValueManager
+            SourceConstantValueManager = _runtime_module('source_constant_managers').SourceConstantValueManager
             if type(value) is SourceConstantValueManager:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError('unsupported value manager indexing')
                 value.property_write(self, node.target.name, (yield from self._visit(node.value)))
                 return
-            from .source_constants_runtime import SourceConstantSet
+            SourceConstantSet = _runtime_module('source_constants_runtime').SourceConstantSet
             if type(value) is SourceConstantSet:
                 if not isinstance(node.target, ast.Attribute):
                     raise ValueError('constant set indexing unsupported')

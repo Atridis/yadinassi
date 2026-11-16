@@ -1,4 +1,5 @@
 """Explicit v4 source catalog objects with actual-caller authorization."""
+from .runtime_dependencies import runtime_module as _runtime_module
 from .owned_syntax import syntax_kind
 from uuid import UUID, uuid4
 from contextvars import ContextVar
@@ -166,9 +167,9 @@ _NEUTRAL_REF_MEMBERS={'ref','ссылка','isempty','пустая','uuid','ун
 
 
 def is_source_reference(value):
-    from .catalog_types import BSLCatalogReference
-    from .configuration_source_metadata import SourceMetadataObject
-    from .source_references import _SourceReferenceSnapshot
+    BSLCatalogReference = _runtime_module('catalog_types').BSLCatalogReference
+    SourceMetadataObject = _runtime_module('configuration_source_metadata').SourceMetadataObject
+    _SourceReferenceSnapshot = _runtime_module('source_references')._SourceReferenceSnapshot
     return (type(value) is BSLCatalogReference and
             (type(value.value_type.snapshot) is _SourceReferenceSnapshot or type(value.metadata) is SourceMetadataObject))
 
