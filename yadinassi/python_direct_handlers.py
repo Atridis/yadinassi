@@ -29,22 +29,33 @@ class PreparedHandlers:
     source_text: str
     source_name: str
 
-    def bind(self,name,side,arity):
+    def bind(self,name,side,arity,*,allow_functions=False):
         if type(name) is not str or side not in ('client','server'):
             raise ValueError('unsupported direct handler identity')
         descriptor=self.descriptors.get((side,name.casefold()))
-        if descriptor is None or descriptor.is_function or len(descriptor.by_value)!=arity:
+        if descriptor is None or (descriptor.is_function and not allow_functions) or len(descriptor.by_value)!=arity:
             raise ValueError('Форма: обработчик отсутствует или имеет неподдерживаемую сигнатуру')
         return descriptor
 
     def invoke(self,name,side,arguments,*,state,context_factory,execution_scope=nullcontext):
         descriptor=self.bind(name,side,len(arguments))
+        _,updated=self._execute(descriptor,arguments,state=state,context_factory=context_factory,execution_scope=execution_scope)
+        return updated
+
+    def invoke_export(self,name,side,arguments,*,is_function,state,context_factory,execution_scope=nullcontext):
+        descriptor=self.bind(name,side,len(arguments),allow_functions=True)
+        if descriptor.is_function is not is_function or not all(descriptor.by_value):
+            raise ValueError('direct RPC requires matching required Val signature')
+        result,_=self._execute(descriptor,arguments,state=state,context_factory=context_factory,execution_scope=execution_scope)
+        return result
+
+    def _execute(self,descriptor,arguments,*,state,context_factory,execution_scope):
         # A new context and closure family belong to this invocation only. The
         # caller's scope performs lifecycle/side/budget setup before any factory
         # initialization or source handler effects.
         slots=[value if by_value else _Cell(value)
                for value,by_value in zip(arguments,descriptor.by_value)]
-        plan=self._plans[side]
+        plan=self._plans[descriptor.side]
         with execution_scope():
             validate_state(state)
             context=context_factory()
@@ -54,14 +65,14 @@ class PreparedHandlers:
                     # Do not use Program.run: it would leave the boundary before
                     # the returned generated function has actually executed.
                     exports=plan.function(state,plan.constants,[],context)
-                    exports[descriptor.name](*slots)
+                    result=exports[descriptor.name](*slots)
                 finally:context._check()
             except Exception as error:
                 converted=convert_error(error,self.source_name,self.source_text)
                 if converted is error:raise
                 raise converted from None
             finally:context.leave()
-        return [slot if by_value else slot.value
+        return result,[slot if by_value else slot.value
                 for slot,by_value in zip(slots,descriptor.by_value)]
 
 

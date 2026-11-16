@@ -113,7 +113,7 @@ class _EnumReportScope:
         from .catalogs import BSLCatalogManager
         from .document_types import BSLDocumentReference
         self.require_current()
-        if type(frozen) is not dict or any(type(v) in (BSLArray, BSLFixedArray) for v in frozen.values()):
+        if type(frozen) is not dict or any(type(v) in (BSLArray, BSLFixedArray, list) for v in frozen.values()):
             raise TypeError('Enum validation requires already frozen parameters')
         for value in frozen.values():
             if type(value) is _ParameterList and len(value.values) > 256:

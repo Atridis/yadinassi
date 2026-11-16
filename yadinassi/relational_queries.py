@@ -66,8 +66,8 @@ def snapshot_parameters(parameters):
     from .queries import _parameter_value, _MAX_CELLS, _MAX_RESULT_TEXT
     result, cells, text = dict(parameters), 0, 0
     for name, value in parameters.items():
-        if type(value) is not BSLArray and type(value) is not BSLFixedArray: continue
-        items = value.items
+        if type(value) not in (BSLArray, BSLFixedArray, list): continue
+        items = value if type(value) is list else value.items
         if (type(items) is not list and type(items) is not tuple) or len(items) > syntax.MAX_ROWS:
             raise ValueError('Query parameter list limit exceeded')
         frozen = tuple(items)

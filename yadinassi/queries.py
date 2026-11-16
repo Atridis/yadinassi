@@ -275,7 +275,7 @@ class BSLQuery(BSLObject):
                 raise TypeError('NULL query parameters require the explicit inventory enum profile')
             self._parameters[key] = value
             return
-        self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray) else _parameter_value(value)
+        self._parameters[key] = value if (type(value) is BSLValueTable or type(value) is BSLArray or type(value) is BSLFixedArray or type(value) is list) else _parameter_value(value)
 
     def execute_batch(self):
         from .inventory_enum_runtime import query_owner

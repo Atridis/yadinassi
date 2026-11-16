@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi.form_runtime import FormSession, FormLimitError
 from yadinassi.python_direct_forms import FormBoundary
+from yadinassi.python_direct_configuration import check_owner
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi import safe_mode, source_transactions, database_transactions
 
@@ -23,7 +24,7 @@ class DirectFormImportTests(unittest.TestCase):
         return session,boundary
 
     def test_hot_methods_have_no_import_bytecode(self):
-        for method in (FormBoundary._check,FormBoundary.checkpoint):
+        for method in (FormBoundary._check,FormBoundary.checkpoint,check_owner):
             self.assertFalse(any(op.opname.startswith('IMPORT_') for op in dis.get_instructions(method)))
 
     def test_current_module_context_attributes_are_observed(self):

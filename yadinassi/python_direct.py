@@ -111,7 +111,7 @@ class PreparedDirectModule:
 
 def _contract(vm):
     return (vm.execution_backend, vm.native_target, vm.compilation_profile,
-            vm.compiled_ast_contract)
+            vm.compiled_ast_contract, vm.database_context is not None)
 
 
 def _compile(vm,program,nodes,source_text,source_name):

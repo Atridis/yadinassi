@@ -539,9 +539,13 @@ class ReplicatedFormServer:
                 elif operation == 'call':
                     arguments = [ast.Literal(routine.token, value) for value in values]
                     with target_context(session.interpreter.native_target), localcontext():
-                        result = session.interpreter._scheduler.run_inline(
-                            session.interpreter.call_routine(routine, arguments,
-                                session.interpreter, require_value=routine.is_function))
+                        if session.interpreter.execution_backend == 'python-direct':
+                            from .python_direct_forms import invoke_export
+                            result = invoke_export(session,routine,values)
+                        else:
+                            result = session.interpreter._scheduler.run_inline(
+                                session.interpreter.call_routine(routine, arguments,
+                                    session.interpreter, require_value=routine.is_function))
             except Exception:
                 reason = 'server_error'
                 if operation == 'open':

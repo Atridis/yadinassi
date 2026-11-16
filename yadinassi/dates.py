@@ -44,6 +44,20 @@ class BSLDate:
         other.require_known()
         return self.ticks == other.ticks
 
+    def __add__(self, other):
+        # Direct generated Python uses the same pure tick arithmetic as the
+        # reference backend, without routing ordinary numeric operations here.
+        if type(other) is not Decimal:
+            raise TypeError("Арифметика даты: ожидается число секунд")
+        return shift_date(self, other)
+
+    def __sub__(self, other):
+        if type(other) is BSLDate:
+            return date_difference(self, other)
+        if type(other) is not Decimal:
+            raise TypeError("Арифметика даты: ожидается число секунд")
+        return shift_date(self, other.copy_negate())
+
     def __hash__(self):
         self.require_known()
         return hash(self.ticks)

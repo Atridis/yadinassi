@@ -169,7 +169,11 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
                         'текущийобъект': receiver, 'параметрызаписи': None}
         vm.module_names = set(vm.variables)
         arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
-        vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
+        if vm.execution_backend=='python-direct':
+            from .python_direct_form_events import run_event
+            run_event(vm,program,routine,source.decode('utf-8-sig'))
+        else:
+            vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
         if type(vm.variables['отказ']) is not bool:
             raise ValueError('form event: invalid cancellation')
         return FormEventResult(receiver.snapshot(), vm.variables['отказ'], tuple(messages))
@@ -484,7 +488,7 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
     vm = ProductInterpreter(receiver, sink, object_source)
     try:
         # Register original routines only; invoke selected routine on its own side.
-        vm.execute_program(program)
+        if vm.execution_backend!='python-direct':vm.execute_program(program)
         vm._logical_side = routine.execution_context
         vm._context_stack = [routine.execution_context]
         vm.variables.update({'объект': receiver, 'элемент': None, 'отказ': cancel,
@@ -492,7 +496,13 @@ def simulate_product_form_event(form_source, object_source, receiver, *, event,
             'элементы': Members({'склады': Members({'текущиеданные': current})})})
         vm.module_names.update(vm.variables)
         arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
-        vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
+        if vm.execution_backend=='python-direct':
+            from .python_direct_form_events import run_event
+            controls=vm.variables['элементы']
+            run_event(vm,program,routine,form_source.decode('utf-8-sig'),product=True,
+                      controls=(controls,controls.members['склады']))
+        else:
+            vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
         if type(vm.variables['отказ']) is not bool:
             raise ValueError('product form: invalid cancellation')
         return ProductFormEventResult(vm.variables['отказ'], tuple(records))

@@ -87,14 +87,19 @@ def check_product_list(manager, reference, view, list_source, object_source):
     vm = ListInterpreter(receiver, sink, view, manager, message, object_source)
     try:
         program = parse(list_source.decode('utf-8-sig'))
-        vm.execute_program(program)
+        if vm.execution_backend!='python-direct':vm.execute_program(program)
         routine = next(n for n in program if n.name == 'ПроверитьКарточкуНаСервере')
         vm._logical_side = 'server'
         vm._context_stack = ['server']
         vm.variables['выбор'] = reference
         vm.module_names.update(vm.variables)
-        vm._scheduler.run_inline(vm.call_routine(routine,
-            [ast.Name(routine.parameters[0].token, 'выбор')], vm, require_value=False))
+        if vm.execution_backend=='python-direct':
+            from .python_direct_form_events import run_event
+            vm.variables[routine.parameters[0].name.casefold()]=reference
+            run_event(vm,program,routine,list_source.decode('utf-8-sig'),product=True)
+        else:
+            vm._scheduler.run_inline(vm.call_routine(routine,
+                [ast.Name(routine.parameters[0].token, 'выбор')], vm, require_value=False))
         return tuple(records)
     finally:
         vm.close()

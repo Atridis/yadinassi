@@ -51,8 +51,9 @@ class MainDemoInventoryScenarios(unittest.TestCase):
         self.vm.execute('''I=Documents.Issue.CreateDocument();I.Number="i1";I.Date=Date(2024,1,2);
 I.Warehouse=Склад.Ссылка;I.State=Enums.States.Approved;R=I.Lines.Add();
 R.Product=Карточка.Ссылка;R.Unit=Enums.Units.Piece;R.Quantity=6;R.Amount=12;''')
-        with self.assertRaises(BSLRuntimeError):
+        with self.assertRaises(BSLRuntimeError) as refused:
             self.vm.execute('I.Write(DocumentWriteMode.Posting);')
+        self.assertIn('document write cancelled',str(refused.exception))
         self.assertEqual(self.reports().read('StockMovements').rows,before.rows)
         self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Document.Issue");S=Q.Execute().Select();S.Next();Message(S.N);')
         self.assertEqual(self.output,['0'])

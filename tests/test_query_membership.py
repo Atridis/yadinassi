@@ -56,7 +56,7 @@ class MembershipTests(unittest.TestCase):
         with self.assertRaises(TypeError): self.rows('SELECT Code FROM Catalog.Products WHERE Active IN (0)')
 
     def test_array_and_fixed_array_parameters(self):
-        for value in (array(Decimal(10), Decimal(30)), BSLFixedArray(array(Decimal(10), Decimal(30)))):
+        for value in (array(Decimal(10), Decimal(30)), BSLFixedArray(array(Decimal(10), Decimal(30))), [Decimal(10),Decimal(30)]):
             with self.subTest(type=type(value).__name__):
                 self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN &Values', [('Values', value)]), (('1',),('3',)))
 
@@ -72,6 +72,19 @@ class MembershipTests(unittest.TestCase):
         with patch.object(_View, 'scan_catalog_values', scan):
             self.assertEqual(query.execute()._rows, (('1',),('2',)))
         self.assertEqual(query.execute()._rows, (('3',),))
+
+    def test_native_list_snapshot_observes_pre_execute_not_mid_scan_changes(self):
+        values=[Decimal(10)]
+        query=self.query('SELECT Code FROM Catalog.Products WHERE Amount IN &Values',[('Values',values)])
+        values.append(Decimal(20))
+        from yadinassi.sqlite_catalog import _View
+        original=_View.scan_catalog_values
+        def scan(view,*args,**kwargs):
+            values[:]=[Decimal(30)]
+            return original(view,*args,**kwargs)
+        with patch.object(_View,'scan_catalog_values',scan):
+            self.assertEqual(query.execute()._rows,(('1',),('2',)))
+        self.assertEqual(query.execute()._rows,(('3',),))
 
     def test_empty_and_null_list_truth(self):
         self.assertEqual(self.rows('SELECT Code FROM Catalog.Products WHERE Amount IN &V', [('V', array())]), ())

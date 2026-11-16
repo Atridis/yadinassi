@@ -4,6 +4,7 @@ Metadata owners and existing module/transport gates remain authoritative. No AST
 execution, scheduler dispatcher, arbitrary host reflection or implicit fallback.
 """
 from decimal import localcontext
+from . import safe_mode, source_transactions, database_transactions
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .experimental_naked_collections import prepare, _Cell
 from .experimental_naked_errors import convert_error
@@ -13,19 +14,18 @@ from .syntax import ast
 from .values import HostFunction
 
 
-def check_owner(app, owner):
+def check_owner(app, owner, *, allow_database=False):
     app.require_open()
     root=app.interpreter
     if (owner._family_owner is not root or owner._configuration_runtime is not app
             or owner._scheduler is not root._scheduler or root._family_closed
             or owner._family_released or owner._family_generation != root._family_generation):
         raise BoundaryViolation('direct configuration owner is no longer active')
-    from . import safe_mode, source_transactions, database_transactions
     if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
             or database_transactions._execution.get() is not None
             or root._scheduler.pending or root._scheduler._active_task is not None):
         raise BoundaryViolation('direct configuration restricted execution is not connected')
-    if owner.database_context is not None:
+    if owner.database_context is not None and not allow_database:
         raise BoundaryViolation('direct configuration database execution is not connected')
 
 

@@ -76,3 +76,24 @@ class DirectDatabaseTests(unittest.TestCase):
         self.vm.execute('D=Documents.Receipt.CreateDocument(); D.AdditionalProperties.Insert("Mode",2); Mode=0; Found=D.AdditionalProperties.Property("Mode",Mode);')
         self.assertTrue(self.vm.variables['found'])
         self.assertEqual(self.vm.variables['mode'],2)
+
+    def test_prepared_namespace_profile_rejects_transfer_before_effects(self):
+        plain=Interpreter();self.addCleanup(plain.close)
+        plain_plan=plain.prepare('Touched=1; Catalogs=1;')
+        with self.assertRaisesRegex(Exception, 'contract changed'):
+            self.vm.execute_prepared(plain_plan)
+        self.assertNotIn('touched',self.vm.variables)
+        self.assertNotIn('catalogs',self.vm.variables)
+        db_plan=self.vm.prepare('Touched=1; N=Catalogs.Склады.Count();')
+        with self.assertRaisesRegex(Exception, 'contract changed'):
+            plain.execute_prepared(db_plan)
+        self.assertNotIn('touched',plain.variables)
+
+    def test_prepared_database_profile_rebinds_to_current_vm(self):
+        plan=self.vm.prepare('A=Catalogs.Склады.CreateItem(); A.Description="fresh";')
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.execute_prepared(plan)
+        self.assertNotIn('a',self.vm.variables)
+        self.assertEqual(other.variables['a'].get_member('Description'),'fresh')
+        other.execute('A.Description="current";')
+        self.assertEqual(other.variables['a'].get_member('Description'),'current')

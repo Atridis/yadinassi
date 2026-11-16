@@ -1,11 +1,13 @@
 """Exact main-demo startup, not general configured-runtime parity."""
+import dis
+from contextvars import ContextVar
 import unittest
 from unittest.mock import patch
 from yadinassi.runtime import Interpreter
 from yadinassi.invocation import InvocationServer
 from yadinassi.configuration_main_demo import import_main_demo_configuration, PROFILE
 from yadinassi.ui.main_demo import form_family
-from yadinassi.python_direct_configuration import ConfigurationBoundary, invoke_routine
+from yadinassi.python_direct_configuration import ConfigurationBoundary, invoke_routine, check_owner
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from test_main_demo_configuration import source
 
@@ -84,3 +86,17 @@ class DirectConfigurationTests(unittest.TestCase):
         owner.functions['shutdown']=HostFunction('Shutdown',lambda:setattr(app,'state','exiting'))
         ctx=ConfigurationBoundary(app,owner,routine);ctx.enter()
         with self.assertRaisesRegex(ValueError,'shutdown'):ctx.resolve_service('Shutdown')()
+
+    def test_owner_hot_path_has_no_import_bytecode(self):
+        self.assertFalse(any(op.opname.startswith('IMPORT_') for op in dis.get_instructions(check_owner)))
+
+    def test_owner_observes_live_restricted_context_attributes(self):
+        from yadinassi import safe_mode, source_transactions, database_transactions
+        app=self.family('server');app.start()
+        owner=app.interpreter
+        check_owner(app,owner)
+        for module,name in ((safe_mode,'_CURRENT'),(source_transactions,'_current'),(database_transactions,'_execution')):
+            with self.subTest(module=module.__name__),patch.object(module,name,ContextVar('denied',default=object())):
+                with self.assertRaisesRegex(BoundaryViolation,'restricted execution'):
+                    check_owner(app,owner)
+            check_owner(app,owner)
