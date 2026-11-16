@@ -1228,7 +1228,7 @@ class Engine:
                     from .python_translation_scalar_regions import scope,closed_gc_lease,ClosedLease
                     plan=entry[1]
                     with closed_gc_lease():
-                        local=scope(execution,plan.names,plan.names,record=False)
+                        local=scope(execution,plan.names,plan.names,record=False,collections=plan.uses_collections)
                         if local is not None and all(name in local for name in plan.parameters):
                             # Current immutable provenance and state are validated
                             # at entry, loop backedges, and before commit/exit.

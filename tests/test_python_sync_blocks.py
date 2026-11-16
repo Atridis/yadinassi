@@ -62,7 +62,7 @@ class SyncBlockEmitterTests(unittest.TestCase):
         self.assertEqual(len(errors),2);self.assertEqual(*errors)
         self.assertEqual(scope,old.variables)
     def test_opaque_expression_ineligible(self):
-        for source in ('s=Clock();','s=New Array;','s=x[0];'):
+        for source in ('s=Clock();','s=New Query;','s=Eval("1");'):
             with self.assertRaises(Ineligible):self.prepare(source)
     def test_inputs_only_before_definite_write(self):
         vm,_,plan=self.prepare('s=0;s=s+n;result=s;')

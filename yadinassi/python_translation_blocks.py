@@ -69,7 +69,7 @@ class Execution:
         if not any(type(previous_result) is scalar for scalar in (Decimal,bool,str,type(None))):return None
         from .python_translation_scalar_regions import scope,closed_gc_lease,ClosedLease
         with closed_gc_lease():
-            local=scope(self,plan.names,plan.names-set(plan.parameters),record=False,allow_module=True)
+            local=scope(self,plan.names,plan.names-set(plan.parameters),record=False,allow_module=True,collections=plan.uses_collections)
             if local is None:return None
             lease=ClosedLease(self,plan,local,allow_module=True);lease.check()
             self.engine.stats['python_sync_segment_calls']=self.engine.stats.get('python_sync_segment_calls',0)+1
@@ -276,8 +276,11 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             from dataclasses import fields
             kind=syntax_kind(node)
             if kind is ast.Literal:return any(type(node.value) is scalar for scalar in (Decimal,bool,str,type(None)))
-            if kind not in (ast.Name,ast.Group,ast.Unary,ast.Binary,ast.Conditional,ast.Assign,ast.Var,ast.Return,ast.If,ast.For,ast.While,ast.Break,ast.Continue):return False
-            if kind is ast.Assign and syntax_kind(node.target) is not ast.Name:return False
+            from .python_translation_collections import COLLECTION_TYPES, COLLECTION_METHODS
+            if kind is ast.New and node.name.casefold() not in COLLECTION_TYPES:return False
+            if kind is ast.Call and (syntax_kind(node.callee) is not ast.Attribute or node.callee.name.casefold() not in COLLECTION_METHODS):return False
+            if kind not in (ast.New,ast.Call,ast.Attribute,ast.Index,ast.ExpressionStatement,ast.ForEach,ast.Name,ast.Group,ast.Unary,ast.Binary,ast.Conditional,ast.Assign,ast.Var,ast.Return,ast.If,ast.For,ast.While,ast.Break,ast.Continue):return False
+            if kind is ast.Assign and syntax_kind(node.target) not in (ast.Name,ast.Attribute,ast.Index):return False
             def children(value):
                 if isinstance(value,ast.Node):return closed(value)
                 if isinstance(value,(tuple,list)):return all(children(item) for item in value)
@@ -297,7 +300,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                         stop=start+1
                         while stop<len(sequence) and closed(sequence[stop]):stop+=1
                         selected=sequence[start:stop]
-                        profitable=(len(selected)>=4 or any(syntax_kind(node) in (ast.For,ast.While) for node in selected))
+                        profitable=(len(selected)>=4 or any(syntax_kind(node) in (ast.For,ast.While,ast.ForEach) for node in selected))
                         cache_key=(id(sequence),start,stop)
                         if profitable and cache_key not in segment_cache:
                             try:plan=lower_block(sequence,start=start,stop=stop,max_source_bytes=max_source_bytes-used-segment_reserved_bytes,
@@ -382,7 +385,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                 seen_cost.add(id(value))
                 if isinstance(value,ast.Node):
                     cost+=1;kind=syntax_kind(value)
-                    if kind in (ast.For,ast.While):has_loop=True
+                    if kind in (ast.For,ast.While,ast.ForEach):has_loop=True
                     for field in fields(value):
                         if field.name!='token' and not (kind is ast.Literal and field.name=='value'):
                             pending_cost.append(getattr(value,field.name))
@@ -395,7 +398,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
         # Do not add a full lease to tiny calls after generic activation. Their
         # existing translated call boundary is cheaper; loops amortize admission.
         if (len(plan.nodes)<min_sync_routine_nodes
-                and not any(syntax_kind(node) in (ast.For,ast.While) for node in plan.nodes)):continue
+                and not any(syntax_kind(node) in (ast.For,ast.While,ast.ForEach) for node in plan.nodes)):continue
         used+=plan.source_bytes;binding_count+=plan.binding_count+1
         sync_routines[id(routine)]=(routine,plan)
     admitted_segments={}

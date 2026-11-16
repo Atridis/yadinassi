@@ -139,3 +139,10 @@ class BSLFixedMap(_MapBase, BSLFixedCollection):
 
     def __str__(self) -> str:
         return "ФиксированноеСоответствие"
+
+# Captured before optional translated collection code is imported.
+_DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
+    for cls in (_MapBase, BSLMap))
+_DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
+    '_key', 'BSLMap', 'BSLCatalogReference', 'BSLUUID', 'BSLTypeDescription',
+    'BSLDate', 'BSLType', 'BSLNull'))

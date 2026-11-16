@@ -24,10 +24,13 @@ def closed_process_context():
             return False
     return True
 
-def scope(execution,names,optional,*,record=True,allow_module=False):
+def scope(execution,names,optional,*,record=True,allow_module=False,owned_values=(),collections=False):
     from .compiled_backend import Engine, _SCALAR_GUARD_NAMES, _SCALAR_GUARD_ABI
     from .python_translation_blocks import Execution, _SCALAR_EXECUTION_NAMES, _SCALAR_EXECUTION_ABI
     from .python_translation_expressions import ExpressionExecution, _SCALAR_EXPRESSION_NAMES, _SCALAR_EXPRESSION_ABI
+    if collections:
+        from .python_translation_collections import trusted
+        if not trusted(execution.vm):return None
     if not closed_process_context():return None
     engine=execution.engine;vm=execution.vm
     if (type(engine) is not Engine or type(execution) is not Execution
@@ -63,7 +66,7 @@ def scope(execution,names,optional,*,record=True,allow_module=False):
     if any(type(key) is not str for key in local):return None
     if any((not module and name in vm.module_names) or name in vm.imports or name in ('thisobject','этотобъект') for name in names):return None
     if any(name not in local and name not in optional for name in names):return None
-    if any(name in local and not any(type(local[name]) is scalar for scalar in _SCALARS) for name in names):return None
+    if any(name in local and not any(type(local[name]) is scalar for scalar in _SCALARS) and not any(local[name] is value() for value in owned_values) for name in names):return None
     if record:engine.stats['python_scalar_regions']=engine.stats.get('python_scalar_regions',0)+1
     return local
 
@@ -86,14 +89,15 @@ class ClosedLease:
     """
     def __init__(self,execution,plan,local,*,allow_module=False):
         self.execution=execution;self.plan=plan;self.local=local
-        self.allow_module=allow_module;self.valid=True;self.ticks=0
+        self.allow_module=allow_module;self.valid=True;self.ticks=0;self.owned_values=[]
         self.initial=tuple((name,name in local,local.get(name)) for name in plan.names)
     def check(self):
         from .compiled_backend import CompiledUnsupported
         try:
             if not self.valid:raise CompiledUnsupported(None,'synchronous region lease invalidated')
+            self.owned_values[:]=[value for value in self.owned_values if value() is not None]
             local=scope(self.execution,self.plan.names,self.plan.names-set(self.plan.parameters),
-                        record=False,allow_module=self.allow_module)
+                        record=False,allow_module=self.allow_module,owned_values=self.owned_values,collections=self.plan.uses_collections)
             unchanged=(local is self.local and not gc.isenabled()
                 and all((name in local) is present and (not present or local[name] is value)
                         for name,present,value in self.initial))

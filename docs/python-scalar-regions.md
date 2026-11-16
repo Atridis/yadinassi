@@ -69,3 +69,31 @@ covered; matching scalar controls alone is not full application or native parity
 pinned environment and no concurrent test/profile load. Keep raw data and report
 cold preparation, small-call and collection tradeoffs separately. Exploratory
 measurements before the final invalidation checks are not final performance claims.
+
+## Direct fresh collection regions
+
+Closed functions now also translate creation of Array, Map and Structure, their
+built-in collection operations, index access, Structure fields and ForEach.
+Canonical BSL wrapper identity is preserved, but hot operations manipulate its
+Python list/dict directly. They do not call `runtime.call`, construct HostFunction
+objects or run per-node VM hooks. Small value-semantic helpers preserve typed map
+keys (True and Decimal(1) differ), structure key normalization, bounds, insertion
+limits and iterator mutation diagnostics.
+
+The entire newly created graph stays unpublished during the closed region.
+Aliases and nested acyclic collections share real storage, not copy-on-write
+snapshots. A conservative preparation-time alias/write graph rejects potentially
+cyclic stores before any effects. Those programs keep ordinary translated
+execution and normal GC; some provably acyclic programs may also decline because
+the analysis deliberately does not forget aliases after rebinding. Exact scalar inputs may enter; pre-existing mutable collection inputs,
+by-reference Property outputs and first-class extracted methods remain explicit
+translated boundaries. This is a broad fresh-graph slice, not a claim that all
+collection programs have been converted. Existing foreign objects are never
+adopted speculatively and a failed region is never replayed.
+
+Ordinary errors publish the same partial graph and convert at the original source
+location. Authority invalidation suppresses unpublished graph results. A weak
+identity registry avoids keeping abandoned collections alive; a lease accepts only
+its own produced identities during successive output publication. Collection and
+constructor registry ABI is audited with the existing scope/authority checks.
+External publication still uses ordinary storage authority, not an atomic commit.
