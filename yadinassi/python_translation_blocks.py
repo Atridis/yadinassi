@@ -12,6 +12,10 @@ from .compiled_inline import _CODE_CACHE
 
 class UnsupportedTranslation(Exception): pass
 
+class _GeneratedUnitBudget(UnsupportedTranslation):
+    """Only generated block-template bytes may request bounded refactoring."""
+
+
 @dataclass(frozen=True)
 class BlockUnit:
     blocks: dict
@@ -109,6 +113,24 @@ class Execution:
         raise CompiledUnsupported(node,'force Python translation unsupported '+kind)
 
 def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000, routines=(), min_sync_routine_nodes=32):
+    # Normal units retain their existing inlining. An oversized template unit
+    # gets one bounded attempt with earlier generated-Python helper factoring.
+    # No BSL executes here, no unit is published on failure, and every attempt
+    # has the same source/function/operand limits. Semantic/integrity failures
+    # and other budgets must not trigger an alternate execution route.
+    blocks=tuple(blocks);expression_roots=tuple(expression_roots);routines=tuple(routines)
+    entry_keys=None if entry_keys is None else frozenset(entry_keys)
+    options=dict(max_source_bytes=max_source_bytes,max_function_bytes=max_function_bytes,
+                 entry_keys=entry_keys,owned_leaves=owned_leaves,compact_control=compact_control,
+                 max_bindings=max_bindings,routines=routines,min_sync_routine_nodes=min_sync_routine_nodes)
+    try:
+        return _prepare_blocks(blocks,expression_roots,**options)
+    except _GeneratedUnitBudget:
+        if compact_control:raise
+    return _prepare_blocks(blocks,expression_roots,**options,_inline_depth=4)
+
+
+def _prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000, routines=(), min_sync_routine_nodes=32, _inline_depth=10):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
     from .python_translation_template_bindings import bind_generated_source
@@ -163,7 +185,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             return checked
         def nested(child,d):
             # A label dispatcher is a generated function, never an AST adapter.
-            if compact_control or d > 10 or any(syntax_kind(n) is ast.Label for n in child):
+            if compact_control or d > _inline_depth or any(syntax_kind(n) is ast.Label for n in child):
                 child_key=tuple(id(node) for node in child)
                 if child_key not in queued:
                     queued.add(child_key);pending.append((child_key,originals[child_key],False))
@@ -353,7 +375,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
         if template is None:
             template=len(sources);source_templates[canonical]=template
             used+=len(canonical.encode())
-            if used>max_source_bytes:raise UnsupportedTranslation('generated unit source budget')
+            if used>max_source_bytes:raise _GeneratedUnitBudget('generated unit source budget')
             sources.append(canonical)
         binding_count+=len(operands)
         if binding_count>max_bindings:raise UnsupportedTranslation('generated operand binding budget')
