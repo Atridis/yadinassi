@@ -1,0 +1,13 @@
+{
+  "baseline": "a50c2de9",
+  "candidate_base": "a50c2de9",
+  "candidate_runtime_sha256": {
+    "yadinassi/catalog_object_preparation.py": "e36d463ca5d2e51bea33dd952a803d17e76219aa9bbd1ce0627f776a68413eef",
+    "yadinassi/catalogs.py": "5b1c10b3d55bec7141dd42fcdac5a61eb1eb344b9907f01c9617c1e162ad6a83",
+    "yadinassi/python_direct_catalog_preparation.py": "a4229bc45dc3080471d266f10396d9529276ba1437d94dae34ce9e5fba80058c"
+  },
+  "python": "Python 3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "host": "shared Linux execution host; no CPU isolation",
+  "pairs": 5,
+  "warm_updates_per_process": 10
+}

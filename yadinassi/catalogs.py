@@ -369,6 +369,12 @@ class BSLCatalogObject(BSLObject):
             transaction.stage(self, 'catalog_create' if expected is None else 'catalog_update',
                               draft, expected, (draft,expected,operation))
             return ()
+        prepared_validator=None
+        if preparation is not None:
+            from .execution_policy import current_backend
+            if current_backend() == 'python-direct':
+                from .python_direct_catalog_preparation import prepared_validator as prepare_validator
+                prepared_validator=prepare_validator(m,preparation[0])
         tx=m._backend.begin_write(operation)
         committing=False
         messages=()
@@ -386,7 +392,7 @@ class BSLCatalogObject(BSLObject):
                 else:
                     candidate=self
                 cancel,messages=_prepare_catalog_object(preparation[0],candidate,
-                    cancel=preparation[1],write_view=tx)
+                    cancel=preparation[1],write_view=tx,prepared=prepared_validator)
                 if cancel:raise CatalogWriteRefused(messages)
                 prepared=candidate._write_draft(complete_sections=True)
                 if retry and prepared!=draft:

@@ -184,6 +184,10 @@ class _ObjectInterpreter(Interpreter):
 
 
 def validate_catalog_object_source(source, schema):
+    _admit_catalog_object_source(source,schema)
+
+
+def _admit_catalog_object_source(source, schema):
     """Pure conservative admission for the existing bounded preparation VM.
 
     Every branch is inspected; validation never runs a handler or writes data.
@@ -231,7 +235,7 @@ def validate_catalog_object_source(source, schema):
             for field in fields(value):
                 if field.name != 'token': inspect(getattr(value, field.name))
     inspect(program)
-    return None
+    return program
 
 
 def prepare_catalog_object(source, receiver, *, cancel=False):
@@ -244,23 +248,29 @@ def prepare_catalog_object(source, receiver, *, cancel=False):
     return _prepare_catalog_object(source, receiver, cancel=cancel)
 
 
-def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None):
+def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, prepared=None):
     if type(receiver) is not BSLCatalogObject or type(cancel) is not bool:
         raise TypeError('catalog preparation: exact object and Boolean required')
     if receiver._pending_write is not None:
         raise BackendError('uncertain_commit')
     if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
         raise ValueError('catalog preparation: source limit')
-    program = parse(source)
-    if not program or any(type(n) is not ast.Routine or n.is_async or n.is_dual
-                          or n.execution_context != 'client' or not n.module_context
-                          for n in program):
-        raise ValueError('catalog preparation: plain routines required')
-    entries = [n for n in program if n.name.casefold() == 'передзаписью']
-    if (len(entries) != 1 or entries[0].is_function
-            or len(entries[0].parameters) != 1 or entries[0].parameters[0].by_value
-            or entries[0].parameters[0].default is not None):
-        raise ValueError('catalog preparation: BeforeWrite reference parameter required')
+    from .execution_policy import current_backend
+    if current_backend() == 'python-direct':
+        from .python_direct_catalog_preparation import prepared_validator
+        prepared=prepared_validator(receiver._manager,source,prepared=prepared)
+        program=prepared._program
+    else:
+        program = parse(source)
+        if not program or any(type(n) is not ast.Routine or n.is_async or n.is_dual
+                              or n.execution_context != 'client' or not n.module_context
+                              for n in program):
+            raise ValueError('catalog preparation: plain routines required')
+        entries = [n for n in program if n.name.casefold() == 'передзаписью']
+        if (len(entries) != 1 or entries[0].is_function
+                or len(entries[0].parameters) != 1 or entries[0].parameters[0].by_value
+                or entries[0].parameters[0].default is not None):
+            raise ValueError('catalog preparation: BeforeWrite reference parameter required')
     records = []
     def sink(record):
         if len(records) >= 128:
@@ -273,7 +283,7 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None):
             raise ValueError('catalog preparation: routine collision')
         if vm.execution_backend == 'python-direct':
             from .python_direct_catalog_preparation import run_catalog_preparation
-            result = run_catalog_preparation(source, program, vm, cancel)
+            result = run_catalog_preparation(source, program, vm, cancel, prepared=prepared)
         else:
             vm.execute_program(program)
             vm.variables['отказ'] = cancel

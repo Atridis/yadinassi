@@ -45,3 +45,13 @@ membership suite: two unsupported `ValueTable` constructors and two missing
 `InformationRegisters` namespace cases. The included main-demo host, document
 UI, query examples, RPC, prepared-profile and provenance suites passed. These
 four unsupported scenarios are recorded, not converted into skips or fallback.
+
+Subsequent interaction/lifecycle/report/recorder/application run: 40 tests,
+39 passed; one negative authority test reported six subtest errors because the
+new rejection type is `PythonDirectUnsupported`, not its expected
+`BSLRuntimeError`. BeginTransaction, Query and Catalog.Write on that specialized
+form VM remain rejected before execution. All positive OperationDraft and
+application-process scenarios in that run passed. Five additional focused
+DB-form admission regressions verify exact context types, rejection of a context
+swap after service binding, restricted contexts and closed owners (normal/-O).
+The retained database identity is per invocation, not a permanent session pin.

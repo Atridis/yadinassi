@@ -138,13 +138,52 @@ class CatalogPreparationBoundary(BoundaryContext):
         return invoke
 
 
-def run_catalog_preparation(source,program,vm,cancel):
-    """Invoke generated source functions, never Interpreter.execute/block/call."""
-    from .catalog_object_preparation import validate_catalog_object_source, _SELF
-    validate_catalog_object_source(source,vm.receiver_object._manager._schema)
+from dataclasses import dataclass
+
+# This fixed constructor set matches _ObjectInterpreter's closed allowlist.
+# Changing that profile requires changing these compiler options together.
+_VALIDATOR_CONSTRUCTORS=('соответствие','сообщениепользователю')
+
+@dataclass(frozen=True,slots=True)
+class PreparedCatalogValidator:
+    # Code only: no receiver, interpreter, write view or event closure.
+    _key: tuple
+    _program: tuple
+    _plan: object
+
+
+def _validator_key(manager,source):
+    from .native_targets import current_native_target
+    from .execution_policy import current_backend
+    return (source,manager._schema,current_native_target(),current_backend(),tuple(REPAIRS),_VALIDATOR_CONSTRUCTORS)
+
+
+def prepared_validator(manager,source,*,prepared=None):
+    """One explicit last-plan slot per schema-bound manager, never authority."""
+    key=_validator_key(manager,source)
+    if prepared is not None:
+        if type(prepared) is not PreparedCatalogValidator or prepared._key != key:
+            raise ValueError('catalog preparation: prepared source/schema/options changed')
+        return prepared
+    previous=getattr(manager,'_direct_validator_plan',None)
+    if type(previous) is PreparedCatalogValidator and previous._key == key:return previous
+    from .catalog_object_preparation import _admit_catalog_object_source,_ALIASES,_SELF
+    program=_admit_catalog_object_source(source,manager._schema)
+    names=_ALIASES|{field.name.casefold() for field in manager._schema.fields}|{section.name.casefold() for section in manager._schema.tabular_sections}
+    if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
     plan=prepare(source,source_name='<catalog-preparation>',repairs=REPAIRS,
-                 constructors=tuple(vm.types),external_names=tuple(vm.object_names|_SELF),
-                 parsed_ast=program,_trusted_entry=True,_export_routines=True)
+                 constructors=_VALIDATOR_CONSTRUCTORS,
+                 external_names=tuple(names|_SELF),parsed_ast=program,
+                 _trusted_entry=True,_export_routines=True)
+    result=PreparedCatalogValidator(key,tuple(program),plan)
+    manager._direct_validator_plan=result
+    return result
+
+
+def run_catalog_preparation(source,program,vm,cancel,*,prepared=None):
+    """Invoke generated source functions, never Interpreter.execute/block/call."""
+    prepared=prepared_validator(vm.receiver_object._manager,source,prepared=prepared)
+    plan=prepared._plan
     context=CatalogPreparationBoundary(vm)
     argument=_Cell(cancel)
     context.enter()
