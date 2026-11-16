@@ -73,12 +73,12 @@ class AATests(unittest.TestCase):
         self.assertTrue(result['acquisition_complete']);self.assertFalse(result['enterprise_executed'])
         self.assertEqual(result['semantic_acceptance'],'NOT PROVEN');self.assertNotIn('TEST_SECRET',json.dumps(result))
         self.assertEqual(result['cases']['aa1']['source'],result['cases']['aa2']['source'])
-    def test_workflow_is_only_scoped_aa(self):
+    def test_current_workflow_scope_and_aa_command(self):
         w=(ROOT/'.github/workflows/native-1c-xml-order.yml').read_text()
-        self.assertIn('native_1c_xml_order_aa.py --execute-approved-image',w)
+        self.assertIn('native_1c_xml_order_detail.py --execute-approved-image',w)
         self.assertNotIn('native_1c_xml_order.py --execute-approved-image',w)
         self.assertIn('branches: [codex/xml-order-native-reviewed]',w)
-        self.assertIn('timeout-minutes: 45',w)
+        self.assertIn('timeout-minutes: 65',w)
         self.assertIn('cancel-in-progress: false',w)
         cmd=aa.command(Path('/tmp/staged'),'a'*32,'aa1')
         self.assertIn('/smoke/scripts/native_1c_xml_order_aa.sh',cmd)

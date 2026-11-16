@@ -1,4 +1,4 @@
-name: Native isolated XML order AA diagnostics
+name: Native XML paths and compatible handler diagnostics
 on:
   push:
     branches: [codex/xml-order-native-reviewed]
@@ -102,7 +102,7 @@ jobs:
       contents: read
       packages: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -116,20 +116,20 @@ jobs:
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}
         run: python3 -I -B scripts/native_1c_xml_order_ci_policy.py
-      - name: Run two isolated AA databases with two consecutive dumps each
+      - name: Observe public XML paths and compatible handler effects
         env:
           NATIVE_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           NATIVE_DISPATCH_INPUTS: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs) || '{}' }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ github.token }}
         run: |
-          report="${RUNNER_TEMP}/xml-order-aa-report.json"
-          python3 -B scripts/native_1c_xml_order_aa.py --execute-approved-image > "$report"
+          report="${RUNNER_TEMP}/xml-order-detail-report.json"
+          python3 -B scripts/native_1c_xml_order_detail.py --execute-approved-image > "$report"
       - name: Upload finite report only
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: xml-order-aa-summary
-          path: ${{ runner.temp }}/xml-order-aa-report.json
+          name: xml-order-detail-summary
+          path: ${{ runner.temp }}/xml-order-detail-report.json
           if-no-files-found: error
           retention-days: 7
