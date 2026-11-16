@@ -18,6 +18,16 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertIn('No speed threshold',text)
         self.assertIn('execute_program(preparsed_ast)',text)
 
+    def test_prepared_label_and_setup_are_distinct(self):
+        data=report();case=data['cases'][0]
+        case['route'].update(requested_route='prepared',api='execute_prepared(plan)')
+        case['preparation_seconds']={'bsl_parse_prepare':.03}
+        case['first_execution_seconds']={'bsl':.004}
+        text=render(data)
+        self.assertIn('Prepared execution (preparation excluded)',text)
+        self.assertIn('| array | 30.000 | 4.000 |',text)
+        self.assertIn('execute_prepared(plan)',text)
+
     def test_slowness_is_not_failure(self):
         data=report();data['cases'][0]['summary']['bsl']['median_seconds']=1e6
         self.assertIn('1000000000.00×',render(data))

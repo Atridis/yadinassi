@@ -14,7 +14,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             with self.subTest(case=name):
                 job = bench.workload(name, 13)
                 self.assertEqual(job.expected, result)
-                for route in ('default', 'compiled-strict', 'experimental'):
+                for route in ('default', 'prepared', 'compiled-strict', 'experimental'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
                         bsl, _ = bench.prepare_bsl(job.source, route)
                         for run in (job.native, job.classes, bsl):
@@ -33,6 +33,14 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             constructor.assert_called_once_with(execution_backend='compiled-strict')
             bench.validate(run(), Decimal(1))
             self.assertEqual(info['backend'], 'compiled-strict')
+
+    def test_prepared_route_compiles_once_before_invocations(self):
+        with patch.object(bench, 'Interpreter', wraps=bench.Interpreter) as constructor:
+            run, info = bench.prepare_bsl('r=1;', 'prepared')
+            constructor.assert_called_once_with()
+        self.assertEqual(info['api'], 'execute_prepared(plan)')
+        with patch('yadinassi.experimental_naked_collections.prepare', side_effect=AssertionError('recompiled')):
+            for _ in range(3):bench.validate(run(), Decimal(1))
 
     def test_edge_workload_size(self):
         for name in bench.CASES:

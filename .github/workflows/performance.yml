@@ -40,6 +40,11 @@ jobs:
         run: |
           python scripts/benchmark_summary.py performance-results/execution-layers.json > performance-results/summary.md
           cat performance-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Measure prepared execution separately
+        run: |
+          python scripts/benchmark_execution_layers.py --bsl-route prepared --iterations 100000 --rounds 9 > performance-results/execution-layers-prepared.json
+          python scripts/benchmark_summary.py performance-results/execution-layers-prepared.json > performance-results/summary-prepared.md
+          cat performance-results/summary-prepared.md >> "$GITHUB_STEP_SUMMARY"
       - name: Explain incomplete results
         if: failure()
         run: echo 'Performance reference did not finish. See the failing step and raw artifact. No speed threshold is enforced; setup, correctness, and measurement errors still fail this job.' >> "$GITHUB_STEP_SUMMARY"

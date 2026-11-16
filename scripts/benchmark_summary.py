@@ -9,7 +9,9 @@ def render(report):
     if report['schema'] != 'execution-layers-v1':
         raise ValueError('unsupported benchmark report')
     environment = report['environment']
-    lines = ['## Execution-layer performance reference', '',
+    routes = {case['route'].get('requested_route', 'default') for case in report['cases']}
+    title = 'Prepared execution (preparation excluded)' if routes == {'prepared'} else 'Public default API (includes internal preparation)'
+    lines = ['## Execution-layer performance reference: ' + title, '',
              f"Commit: `{environment['git_head']}`", '',
              '| Workload | Native Python, ms | Python classes, ms | BSL direct, ms | Classes / Python | BSL / Python | BSL / classes |',
              '|---|---:|---:|---:|---:|---:|---:|']
@@ -29,6 +31,11 @@ def render(report):
               'Setup and first execution are recorded separately in the raw JSON. '
               'The BSL API is listed below: execute_program includes any preparation it performs internally. '
               'These microbenchmarks are not whole-application or full semantic equivalence; shared CI runners are noisy.', '']
+    lines += ['| Preparation / first call | BSL parse + prepare, ms | BSL first execution, ms |', '|---|---:|---:|']
+    for case in report['cases']:
+        if 'preparation_seconds' in case:
+            lines.append(f"| {case['case']} | {case['preparation_seconds']['bsl_parse_prepare']*1000:.3f} | {case['first_execution_seconds']['bsl']*1000:.3f} |")
+    lines.append('')
     for case in report['cases']:
         lines.append(f"- {case['case']}: {case['iterations']} iterations, {len(case['samples'])//3} measured rounds; `{case['route'].get('api', 'unknown')}`.")
     lines += ['', f"Python: `{environment['python'].splitlines()[0]}`", f"CPU: `{environment['processor']}`", '',

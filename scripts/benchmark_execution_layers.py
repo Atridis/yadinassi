@@ -124,6 +124,15 @@ def prepare_bsl(source, route):
             vm.execute_program(program)
             return vm.variables['r']
         return run, {'backend': vm.execution_backend, 'requested_route': route, 'api': 'execute_program(preparsed_ast)'}
+    if route == 'prepared':
+        program = parse(source, '<execution-layer-benchmark>')
+        vm = Interpreter()
+        plan = vm.prepare_program(program)
+        def run():
+            vm.execute_prepared(plan)
+            return vm.variables['r']
+        return run, {'backend': vm.execution_backend, 'requested_route': route,
+                     'api': 'execute_prepared(plan)', 'preparation_api': 'prepare_program(preparsed_ast)'}
     if route == 'experimental':
         from yadinassi.experimental_naked_collections import prepare, REPAIRS
         from yadinassi.experimental_naked_boundaries import BoundaryContext
@@ -212,7 +221,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--iterations', type=int, default=1000)
     parser.add_argument('--rounds', type=int, default=9)
-    parser.add_argument('--bsl-route', choices=('default', 'compiled-strict', 'experimental'), default='default')
+    parser.add_argument('--bsl-route', choices=('default', 'prepared', 'compiled-strict', 'experimental'), default='default')
     parser.add_argument('--case', choices=CASES, action='append')
     args = parser.parse_args(argv)
     if not 1 <= args.iterations <= 100000 or args.rounds < 3:

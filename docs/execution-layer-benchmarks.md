@@ -108,3 +108,18 @@ still fails the job rather than displaying an apparently successful timing.
 The third column uses the public default API. On a backend that recompiles inside
 `execute_program`, that cost belongs to its measured call; it is not represented
 as prepared-code execution. The exact API appears below the table.
+
+### Prepared execution is a separate reference
+
+`--bsl-route prepared` calls `Interpreter().prepare_program(parsed_ast)` once in
+setup, then measures public `execute_prepared(plan)` against the same live VM.
+Parsing, lowering and source-map construction are outside its timed execution.
+The first invocation and the complete preparation cost remain explicit fields.
+No hidden cache is introduced; the benchmark owns and reuses its prepared plan.
+
+CI now appends a **second table** for prepared execution, retaining the original
+public-default table and separate JSON/Markdown artifacts. Both compare native
+Python / Python with yadinassi classes / BSL, and both validate every result.
+They must not be conflated: the default `execute_program` table includes internal
+preparation; the prepared table does not. First-call and preparation milliseconds
+are also visible below each timing table.
