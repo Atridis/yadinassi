@@ -6,7 +6,7 @@ from unittest import mock
 
 from yadinassi import Interpreter
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection
-from yadinassi import runtime
+from yadinassi import runtime, python_translation_expressions
 from scripts import native_historical_replay as replay
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,8 +31,8 @@ def calls():
 
 
 class RowsDiagnosticTests(unittest.TestCase):
-    def vm(self, helper=None):
-        output = []; vm = Interpreter(output.append)
+    def vm(self, helper=None, *, backend=None):
+        output = []; vm = Interpreter(output.append, execution_backend=backend)
         vm.execute('Procedure Показать(Label, Value) Message(Label + ": [" + Value + "]"); EndProcedure;'
                    + (helpers() if helper is None else helper))
         return vm, output
@@ -66,17 +66,25 @@ class RowsDiagnosticTests(unittest.TestCase):
         self.assertEqual(int(existing.rows.items[0].get_member('Marker')), 91)
 
     def test_comparison_false_true_and_exception_are_distinct(self):
-        real = runtime.equal
-        for value, expected in ((False, 'T'), (True, 'F'), (None, 'E')):
-            def equality(a, b):
-                if isinstance(a, BSLValueTreeRowCollection) and isinstance(b, BSLValueTreeRowCollection):
-                    if value is None: raise ValueError('synthetic comparison error')
-                    return value
-                return real(a, b)
-            vm, _ = self.vm()
-            with mock.patch.object(runtime, 'equal', equality):
-                self.assertEqual(vm.execute('TreeRowsDiagnosticPart(1)'), expected)
-                self.assertEqual(vm.execute('TreeRowsDiagnosticPart(2)'), expected)
+        # Each backend binds its own value service. Patch the live consumer,
+        # not the legacy visitor's unused imported name in translated execution.
+        for backend, service in (('interpreter', runtime),
+                                 ('compiled-strict', python_translation_expressions)):
+            real = service.equal
+            for value, expected in ((False, 'T'), (True, 'F'), (None, 'E')):
+                comparisons = []
+                def equality(a, b):
+                    if isinstance(a, BSLValueTreeRowCollection) and isinstance(b, BSLValueTreeRowCollection):
+                        comparisons.append((a, b))
+                        if value is None: raise ValueError('synthetic comparison error')
+                        return value
+                    return real(a, b)
+                with self.subTest(backend=backend, value=value):
+                    vm, _ = self.vm(backend=backend)
+                    with mock.patch.object(service, 'equal', equality):
+                        self.assertEqual(vm.execute('TreeRowsDiagnosticPart(1)'), expected)
+                        self.assertEqual(vm.execute('TreeRowsDiagnosticPart(2)'), expected)
+                    self.assertEqual(len(comparisons), 2)
 
     def test_fresh_wrappers_and_copied_containers_are_not_conflated(self):
         original = BSLValueTree.get_member

@@ -291,13 +291,11 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
 
     def test_generation_change_during_bsl_cannot_adopt_detached_change(self):
         session = self.make(); before = session.snapshot()
-        real_vm = sim._EventInterpreter
-        owner = self
-        class Race(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink)
-                owner.mutate('UPDATE database_info SET generation=2')
-        with patch.object(sim, '_EventInterpreter', Race):
+        original = sim._EventInterpreter.__init__
+        def initialize(vm, sink):
+            original(vm, sink)
+            self.mutate('UPDATE database_info SET generation=2')
+        with patch.object(sim._EventInterpreter, '__init__', initialize):
             with self.assertRaisesRegex(BackendError, 'schema_changed'):
                 session.change_description(' x ', revision=0)
         self.assertIs(session.snapshot(), before)
@@ -372,26 +370,34 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         self.assertFalse(session.stale)
 
     def test_execution_failure_after_private_change_does_not_retry_or_adopt(self):
-        real_vm = sim._EventInterpreter; created = []; closed = []
-        class Failure(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink); created.append(self)
-            def visit_ExpressionStatement(self, node):
-                yield from super().visit_ExpressionStatement(node)
+        original = sim._EventInterpreter.__init__
+        created, closed, observed = [], [], []
+        # Instrument the registered context and an actual runtime effect. A
+        # visitor override is not an execution hook for translated Python.
+        def initialize(vm, sink):
+            def fail_after_message(record):
+                observed.append(record)
+                sink(record)
                 raise ValueError('failure after private mutation and message')
-            def close(self):
-                closed.append(self); return super().close()
+            original(vm, fail_after_message)
+            created.append(vm)
+            close = vm.close
+            def record_close():
+                closed.append(vm)
+                return close()
+            vm.close = record_close
         for action in ('change', 'prepare'):
             session = self.make(description=' x '); before = session.snapshot()
-            with patch.object(sim, '_EventInterpreter', Failure), \
+            with patch.object(sim._EventInterpreter, '__init__', initialize), \
                  patch.object(self.backend, 'read_form_source', wraps=self.backend.read_form_source) as read:
-                with self.subTest(action=action), self.assertRaises((ValueError, BSLError)):
+                with self.subTest(action=action), self.assertRaisesRegex((ValueError, BSLError), 'failure after private mutation and message'):
                     if action == 'change': session.change_description(' y ', revision=0)
                     else: session.prepare_save(revision=0)
             self.assertEqual(read.call_count, 1)
             self.assertIs(session.snapshot(), before)
             self.assertFalse(session.stale)
         self.assertEqual(len(created), 2)
+        self.assertEqual(len(observed), 2)
         self.assertEqual(created, closed)
         self.assertEqual([vm.variables['объект'].get_member('Description') for vm in created], ['y', 'x'])
 
@@ -455,19 +461,18 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
 
     def test_no_transaction_survives_reads_or_spans_bsl(self):
         real_connect = self.backend._connect; handles = []; instances = []
-        real_vm = sim._EventInterpreter; owner = self
+        original = sim._EventInterpreter.__init__
         def capture():
             handle = real_connect(); handles.append(handle); return handle
-        class Spy(real_vm):
-            def __init__(self, sink):
-                for handle in handles:
-                    with owner.assertRaises(sqlite3.ProgrammingError): handle.execute('SELECT 1')
-                owner.assertIsNone(owner.backend._active)
-                # A real independent writer commits during the BSL interval.
-                owner.mutate('UPDATE database_info SET name=name')
-                super().__init__(sink); instances.append(self)
+        def initialize(vm, sink):
+            for handle in handles:
+                with self.assertRaises(sqlite3.ProgrammingError): handle.execute('SELECT 1')
+            self.assertIsNone(self.backend._active)
+            # A real independent writer commits during the BSL interval.
+            self.mutate('UPDATE database_info SET name=name')
+            original(vm, sink); instances.append(vm)
         with patch.object(self.backend, '_connect', side_effect=capture), \
-             patch.object(sim, '_EventInterpreter', Spy):
+             patch.object(sim._EventInterpreter, '__init__', initialize):
             session = self.make()
             session.change_description('new', revision=0)
             session.prepare_save(revision=1)
@@ -478,11 +483,10 @@ class VerifiedFormDraftSessionTests(unittest.TestCase):
         self.assertIsNone(self.backend._active)
 
     def test_no_activation_marshalling_module_registration_or_database_write(self):
-        real_vm = sim._EventInterpreter; instances = []
-        class Spy(real_vm):
-            def __init__(self, sink):
-                super().__init__(sink); instances.append(self)
-        with patch.object(sim, '_EventInterpreter', Spy), \
+        original = sim._EventInterpreter.__init__; instances = []
+        def initialize(vm, sink):
+            original(vm, sink); instances.append(vm)
+        with patch.object(sim._EventInterpreter, '__init__', initialize), \
              patch.object(sim.Interpreter, 'execute', side_effect=AssertionError('execute')), \
              patch.object(sim.Interpreter, 'execute_program', side_effect=AssertionError('module')), \
              patch.object(sim.Interpreter, '_new_server_activation', side_effect=AssertionError('marshalling')), \

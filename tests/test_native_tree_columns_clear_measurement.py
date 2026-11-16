@@ -4,7 +4,7 @@ from decimal import Decimal as D
 from pathlib import Path
 import unittest
 from unittest.mock import patch
-from yadinassi import Interpreter, runtime
+from yadinassi import Interpreter, runtime, python_translation_expressions
 from yadinassi.value_trees import (BSLValueTree, BSLValueTreeColumn as Column,
     BSLValueTreeColumnCollection as Columns, BSLValueTreeRow as Row,
     BSLValueTreeRowCollection as Rows)
@@ -16,14 +16,14 @@ SOURCE = (ROOT / 'integrational_tests/measurements/tree_columns_clear.bsl').read
 HELPERS = SOURCE[:SOURCE.index('Сообщить("CC-C1:')]
 
 
-def emit():
+def emit(*, backend=None):
     output = []
-    Interpreter(output.append).execute(SOURCE)
+    Interpreter(output.append, execution_backend=backend).execute(SOURCE)
     return ('\n'.join(output) + '\n').encode('ascii')
 
 
-def probe(case=1):
-    vm = Interpreter(); vm.execute(HELPERS)
+def probe(case=1, *, backend=None):
+    vm = Interpreter(execution_backend=backend); vm.execute(HELPERS)
     return vm.execute(f'CCProbe({case})').encode('ascii')
 
 
@@ -140,31 +140,46 @@ class ClearObserverTests(unittest.TestCase):
         self.assertEqual(value['status'], 'S')
 
     def test_collection_wrapper_inequality_does_not_change_capture(self):
-        original = runtime.equal
-        def unequal(a, b):
-            if type(a) in (Columns, Rows) or type(b) in (Columns, Rows): return False
-            return original(a, b)
-        with model():
-            expected = emit()
-            with patch.object(runtime, 'equal', unequal): actual = emit()
-        self.assertEqual(actual, expected)
+        for backend, service in (('interpreter', runtime),
+                                 ('compiled-strict', python_translation_expressions)):
+            original = service.equal
+            comparisons = []
+            def unequal(a, b):
+                if type(a) in (Columns, Rows) or type(b) in (Columns, Rows):
+                    comparisons.append((a, b))
+                    return False
+                return original(a, b)
+            with self.subTest(backend=backend), model():
+                expected = emit(backend=backend)
+                with patch.object(service, 'equal', unequal): actual = emit(backend=backend)
+                self.assertEqual(actual, expected)
+                # Capture compares row/column identities, never collection
+                # wrappers: their synthetic equality must remain irrelevant.
+                self.assertEqual(comparisons, [])
 
     def test_deleted_identity_comparison_failure_is_independent_query_outcome(self):
-        poisoned = []; original = runtime.equal
-        def clear(receiver):
-            poisoned.extend(receiver.table._all_rows); poisoned.extend(receiver.items)
-            receiver.items.clear(); receiver.table.rows.items.clear()
-        def equal(a, b):
-            if any(a is value or b is value for value in poisoned):
-                raise ValueError('private deleted equality')
-            return original(a, b)
-        with patch.object(Columns, 'clear', clear), patch.object(runtime, 'equal', equal):
-            raw = probe(); value = wire.validate_payload(raw, 1)
-        queries = value['snapshots'][1]['queries']
-        self.assertEqual(value['status'], 'S')
-        self.assertEqual(queries[wire.QUERY_NAMES.index('root.id')], ('E', None))
-        self.assertEqual(queries[wire.QUERY_NAMES.index('root.owner')], ('I', 0))
-        self.assertNotIn(b'private deleted equality', raw)
+        for backend, service in (('interpreter', runtime),
+                                 ('compiled-strict', python_translation_expressions)):
+            poisoned = []; comparisons = []; original = service.equal
+            def clear(receiver):
+                poisoned.extend(receiver.table._all_rows); poisoned.extend(receiver.items)
+                receiver.items.clear(); receiver.table.rows.items.clear()
+            def equal(a, b):
+                if any(a is value or b is value for value in poisoned):
+                    comparisons.append((a, b))
+                    raise ValueError('private deleted equality')
+                return original(a, b)
+            # Exercise the actual operator service in each backend. The guard
+            # outcome and private-error redaction must remain identical.
+            with self.subTest(backend=backend):
+                with patch.object(Columns, 'clear', clear), patch.object(service, 'equal', equal):
+                    raw = probe(backend=backend); value = wire.validate_payload(raw, 1)
+                queries = value['snapshots'][1]['queries']
+                self.assertEqual(value['status'], 'S')
+                self.assertEqual(queries[wire.QUERY_NAMES.index('root.id')], ('E', None))
+                self.assertEqual(queries[wire.QUERY_NAMES.index('root.owner')], ('I', 0))
+                self.assertNotIn(b'private deleted equality', raw)
+                self.assertTrue(comparisons)
 
     def test_reported_owner_parent_and_level_are_not_forced_to_active_position(self):
         changed = [False]; other = BSLValueTree(); foreign_parent = other.rows.add()
