@@ -42,11 +42,12 @@ class _ForwardReference(_Reference):
     def value(self,value):self.reference.set(value)
 
 
-def source_reference(state,name):
-    key=name.casefold()
+def source_reference(state,name,cached=None):
+    # Cache only the address, never the value or the binding decision.
+    key=name.casefold() if cached is None else cached.key
     value=state.get(key,UNSET)
     if value is UNSET:missing(name)
-    return _ForwardReference(value) if type(value) is Reference else _SlotReference(state,key)
+    return _ForwardReference(value) if type(value) is Reference else (cached if cached is not None else _SlotReference(state,key))
 
 
 def host_reference(state,name):

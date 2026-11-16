@@ -271,6 +271,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     live='live_module_state' in repairs
     from .python_direct_definite import definite_module_reads
     definite_reads = definite_module_reads(program) if live and not authority else frozenset()
+    from .python_direct_arrays import array_facts
+    array_receivers,array_indexes = array_facts(program) if live and not authority and not constructors and 'array_index_contract' in repairs else (frozenset(),frozenset())
+    # Raw diagnostic profiles return Python int from Count, which the existing
+    # checked-index contract rejects. Do not silently repair that mismatch.
+    if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
     source_checks=authority or (services and not live)
     if live and not byref:raise ValueError('live_module_state requires byref_routines')
     if module_names and not live:raise ValueError('module_names requires live_module_state')
@@ -282,6 +287,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     function_symbols={name:'fn'+str(i) for i,name in enumerate(routines)}
     module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     scope_id=None
+    source_ref_slots={}
     cells={None:set()};routine_globals={}
     def walk(value):
         if isinstance(value,ast.Node):
@@ -373,7 +379,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         node=ungroup(node)
         if type(node) is ast.Name:
             if module_name(node.name):
-                text='_live_source_ref(_initial, '+repr(node.name)+')'
+                key=node.name.casefold()
+                if key not in source_ref_slots:source_ref_slots[key]=temp()
+                text='_live_source_ref(_initial, '+repr(node.name)+', '+source_ref_slots[key]+')'
                 return source_map.expression(text,node) if source_map is not None else text
             return '_bound_ref('+sym(node.name)+')'
         if type(node) is ast.Index:
@@ -485,6 +493,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 return '(('+values+' := ('+', '.join(args)+',)), {key: '+values+'[idx+1] if idx+1<len('+values+') else None for idx,key in enumerate('+values+'[0].split(","))})[1]'
             raise UnsupportedNakedSyntax('constructor '+node.name)
         if kind is ast.Index:
+            if id(node) in array_receivers:
+                obj=expression(node.object);index=expression(node.index)
+                if id(node) in array_indexes:return '('+obj+')[int('+index+')]'
+                receiver=temp()
+                return '(('+receiver+' := '+obj+'), '+receiver+'[_checked_array_index('+receiver+', '+index+')])[1]'
             receiver=temp();index=expression(node.index)
             list_read=receiver+'['+('_checked_array_index('+receiver+', '+index+')' if 'array_index_contract' in repairs else 'int('+index+')')+']'
             other='('+receiver+'.get('+index+') if id(type('+receiver+')) in _MAP_TYPE_IDS else '+receiver+'['+index+'])'
@@ -510,6 +523,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if type(callee) is ast.Attribute:
                 obj=expression(callee.object);method=_ALIASES.get(callee.name.casefold(),callee.name.casefold())
                 args=[expression(arg) for arg in node.arguments]
+                if id(node) in array_receivers:
+                    if method=='add':return '('+obj+').append('+(', '.join(args) if args else 'None')+')'
+                    if method=='clear':return '('+obj+').clear()'
+                    if method in ('count','ubound'):
+                        value='len('+obj+')'+(' - 1' if method=='ubound' else '')
+                        return 'Decimal('+value+')' if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'} else '('+value+')'
+                    if method=='get':
+                        if id(node) in array_indexes:return '('+obj+')[int('+args[0]+')]'
+                        receiver=temp()
+                        return '(('+receiver+' := '+obj+'), '+receiver+'[_checked_array_index('+receiver+', '+args[0]+')])[1]'
                 original_obj=obj;guarded=temp() if services or structure_ops is not None else None
                 if guarded is not None:obj=guarded
                 allowed={'add':(list,), 'get':(list,_TypedMap,_NakedMap),'set':(list,), 'find':(list,), 'ubound':(list,), 'property':((structure_ops._DirectStructure,) if structure_ops is not None else (dict,))}.get(method)
@@ -744,6 +767,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                    'boolean':'bool','булево':'bool'}
     emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+'):')
     if live:
+        for key,slot in source_ref_slots.items():emit(1,slot+' = _live_slot_ref(_initial, '+repr(key)+')')
         for name in sorted(module_variables):emit(1,'_initial.setdefault('+repr(name)+', None)')
     for name,slot in symbols.items():
         if live:continue
@@ -766,7 +790,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     namespace={name:value for name,value in globals().items() if name.startswith('_')}
     if live:
         from . import experimental_naked_live_state as live_ops
-        namespace.update(_LIVE_UNSET=live_ops.UNSET,_live_missing=live_ops.missing,_live_readonly=live_ops.readonly,_live_source_ref=live_ops.source_reference,_live_host_ref=live_ops.host_reference)
+        namespace.update(_live_slot_ref=live_ops._SlotReference,_LIVE_UNSET=live_ops.UNSET,_live_missing=live_ops.missing,_live_readonly=live_ops.readonly,_live_source_ref=live_ops.source_reference,_live_host_ref=live_ops.host_reference)
     if 'resource_bounds' in repairs:
         from .experimental_naked_resources import bounded_array, bounded_insert
         namespace.update(_array_constructor_bounds=bounded_array,_array_insert_shape=bounded_insert)

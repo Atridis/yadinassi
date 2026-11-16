@@ -1,0 +1,312 @@
+{
+  "summary": {
+    "byref": {
+      "before": 7.197432001703419,
+      "after": 5.90340000053402
+    },
+    "byvalue": {
+      "before": 3.1299390029744245,
+      "after": 3.343301999848336
+    },
+    "arithmetic": {
+      "before": 2.3814140004105866,
+      "after": 2.4642990028951317
+    }
+  },
+  "rows": [
+    {
+      "trial": 0,
+      "mode": "before",
+      "case": "byref",
+      "ms": 7.197432001703419,
+      "control": "10000"
+    },
+    {
+      "trial": 0,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 2.877774000808131,
+      "control": "10000"
+    },
+    {
+      "trial": 0,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 2.3814140004105866,
+      "control": "10000"
+    },
+    {
+      "trial": 0,
+      "mode": "after",
+      "case": "byref",
+      "ms": 7.446597999660298,
+      "control": "10000"
+    },
+    {
+      "trial": 0,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 4.182148004474584,
+      "control": "10000"
+    },
+    {
+      "trial": 0,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 2.4642990028951317,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "after",
+      "case": "byref",
+      "ms": 5.622978998871986,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 2.765134006040171,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 2.623250002216082,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "before",
+      "case": "byref",
+      "ms": 7.414690000587143,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 3.5381140041863546,
+      "control": "10000"
+    },
+    {
+      "trial": 1,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 2.5350409996462986,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "before",
+      "case": "byref",
+      "ms": 10.091620999446604,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 5.393621999246534,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 4.087856003025081,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "after",
+      "case": "byref",
+      "ms": 6.739139003911987,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 4.2681090053520165,
+      "control": "10000"
+    },
+    {
+      "trial": 2,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 6.4782479967107065,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "after",
+      "case": "byref",
+      "ms": 5.90340000053402,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 3.343301999848336,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 2.225571995950304,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "before",
+      "case": "byref",
+      "ms": 8.709850997547619,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 3.3581239986233413,
+      "control": "10000"
+    },
+    {
+      "trial": 3,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 3.5007699989364482,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "before",
+      "case": "byref",
+      "ms": 6.760994998330716,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 3.1225989951053634,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 2.2552470036316663,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "after",
+      "case": "byref",
+      "ms": 6.135962001280859,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 4.152109002461657,
+      "control": "10000"
+    },
+    {
+      "trial": 4,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 6.820216003688984,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "after",
+      "case": "byref",
+      "ms": 5.638909999106545,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 3.169579002133105,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 1.9188499936717562,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "before",
+      "case": "byref",
+      "ms": 6.42632000381127,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 2.782755000225734,
+      "control": "10000"
+    },
+    {
+      "trial": 5,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 2.0299370007705875,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "before",
+      "case": "byref",
+      "ms": 6.99544000235619,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "before",
+      "case": "byvalue",
+      "ms": 3.1299390029744245,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "before",
+      "case": "arithmetic",
+      "ms": 2.0184799941489473,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "after",
+      "case": "byref",
+      "ms": 5.014376998587977,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "after",
+      "case": "byvalue",
+      "ms": 2.765789002296515,
+      "control": "10000"
+    },
+    {
+      "trial": 6,
+      "mode": "after",
+      "case": "arithmetic",
+      "ms": 1.8592790002003312,
+      "control": "10000"
+    }
+  ]
+}
