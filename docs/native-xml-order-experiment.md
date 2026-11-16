@@ -1,3 +1,17 @@
+# Current scoped entrypoint: A/A diagnostics
+
+The workflow now invokes `native_1c_xml_order_aa.py`, not the eight-case runtime experiment described below. This follows inconclusive run 43914299292 (c0034929): positive runtime witnesses completed, independent redump hashes differed, handler case timed out. There is no repeat of that invalid cross-context handler binding.
+
+A/A creates two independently owned containers/infobases from identical instrumented baseline source hashes. Each performs create/load/check/update/dump1/dump2. No ENTERPRISE or edits/reload/update occur between the two dumps. Four comparisons report within-aa1, within-aa2, cross-dump1 and cross-dump2 raw/strict/permitted equality. Fingerprints include ConfigDumpInfo.xml; legacy_excluded marks that the older aggregate digest omitted it. Known-slot indexes map to sorted packet.baseline input filenames; -1 means a native-added file. Unknown native paths and XML values are not exported.
+
+Output is bounded to 64 files, 1 MiB/file, 8 MiB/tree, depth 64, 8192 XML nodes/file; wire reports to 196608 bytes/container and 524288 bytes/host. Per-file structural component hashes expose differing shape/attributes/text/namespaces; UUID-masked hashes are diagnostics only, never equality or acceptance. External fingerprints receive strict schema/value/hash/slot validation before comparison. Full exact comparisons remain visible even for UUID-only differences. `acquisition_complete` means both six-phase acquisitions completed, even if repeatability fails; it does NOT mean equality or semantic acceptance. semantic_acceptance=NOT PROVEN, visual_ui=NOT RUN, enterprise_executed=false remain explicit.
+
+Only the same owner-bound separate push workflow is changed; main/#336/fixtures and other workflows stay untouched. The outer 45-minute budget covers two 850-second lifecycle deadlines plus bounded image acquisition and cleanup. Artifact: xml-order-aa-summary, containing xml-order-aa-report.json. Native partial-trace helper remains offline; handler follow-up is deferred. A later clean behavioral negative must have compatible context/signature and a distinct effect, with identical authored modules across its baseline/variant.
+
+Local tests: `python3 -B -m unittest discover -s tests -p test_native_xml_order_aa.py -v`, plus test_xml_order_measurement.py and test_native_xml_order.py. Shell syntax: `bash -n scripts/native_1c_xml_order_aa.sh`. This is scoped diagnostics, not the full suite.
+
+---
+
 # Isolated XML order acquisition
 
 Review candidate based on `993190926a0d3adc24f8663b8e404c0c312d7a8c`.

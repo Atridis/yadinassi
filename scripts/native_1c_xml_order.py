@@ -123,7 +123,8 @@ def assessment(reports):
     ready=baseline['status']=='collected' and baseline['redump'] is not None
     for case,r in reports.items():
         if not ready:result[case]='inconclusive_baseline'
-        elif r['failure']=='timeout':result[case]='infrastructure_failed'
+        elif case=='baseline':result[case]='baseline_reference_only'
+        elif r['failure']=='timeout':result[case]='timeout_cause_unknown'
         elif case in ('duplicate_property','duplicate_event'):
             result[case]='rejected' if r['phase'] in ('load','check') and r['failure']=='native_rejected' else 'accepted_or_inconclusive_duplicate_never_equivalent'
         elif case=='handler_changed':
@@ -137,7 +138,8 @@ def assessment(reports):
 def acquisition_complete(reports):
     if set(reports)!=set(packet.CASES):return False
     results=assessment(reports)
-    if any(results[c]!='runtime_and_redump_match_visual_pending' for c in packet.POSITIVE):return False
+    if results['baseline']!='baseline_reference_only':return False
+    if any(results[c]!='runtime_and_redump_match_visual_pending' for c in packet.POSITIVE[1:]):return False
     if results['ui_childitems']!='runtime_order_distinguished':return False
     for c in ('handler_changed','duplicate_property','duplicate_event'):
         r=reports[c]
