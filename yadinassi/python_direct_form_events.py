@@ -1,5 +1,6 @@
 """Generated execution of already-admitted detached catalog form events."""
 from decimal import localcontext
+from dataclasses import dataclass
 from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 from .experimental_naked_collections import prepare,_Cell
 from .experimental_naked_errors import convert_error
@@ -64,14 +65,13 @@ class ProductEventBoundary(CatalogPreparationBoundary):
                 raise ValueError('product list: saved bounded product required')
         if (not checking and receiver is not self.receiver) or type(cancel) is not Reference or type(cancel.get()) is not bool:
             raise ValueError('product form preparation requires owned receiver and Boolean reference')
-        from .catalog_object_preparation import _ObjectInterpreter,validate_catalog_object_source,_SELF
-        from .syntax.parser import parse
+        from .catalog_object_preparation import _ObjectInterpreter
+        from .python_direct_catalog_preparation import prepared_validator
         source=(self.vm._list_object_source if checking else self.vm._product_object_source).decode('utf-8-sig')
-        validate_catalog_object_source(source,receiver._manager._schema)
+        prepared=prepared_validator(receiver._manager,source)
         child=_ObjectInterpreter(receiver,self.vm._list_sink if checking else self.vm._product_sink,self.vm.write_view)
         try:
-            plan=prepare(source,parsed_ast=parse(source),repairs=REPAIRS,constructors=tuple(child.types),
-                         external_names=tuple(child.object_names|_SELF),_trusted_entry=True,_export_routines=True)
+            plan=prepared._plan
             context=CatalogPreparationBoundary(child);context.enter();slot=_Cell(cancel.get())
             try:
                 plan.function({},plan.constants,[],context)['проверитьданные' if checking else 'подготовитьданныекзаписи'](slot)
@@ -83,11 +83,26 @@ class ProductEventBoundary(CatalogPreparationBoundary):
         finally:child.close()
 
 
-def run_event(vm,program,routine,source,*,product=False,controls=()):
+@dataclass(frozen=True,slots=True)
+class PreparedEvent:
+    # Code and profile only: never a VM, receiver, controls or authorization.
+    key: tuple
+    plan: object
+
+
+def _event_plan(vm,program,source,product,owner):
+    from .native_targets import current_native_target
+    from .execution_policy import current_backend
+    schema=(getattr(owner,'_schema',None) if product else getattr(owner,'_binding',None))
+    key=(source,product,schema,tuple(sorted(vm.types)),tuple(sorted(vm.variables)),
+         current_native_target(),current_backend(),tuple(REPAIRS))
+    cache_owner=getattr(owner,'_direct_cache_owner',None)
+    if cache_owner is None:cache_owner=owner
+    previous=getattr(cache_owner,'_direct_event_plan',None) if cache_owner is not None else None
+    if type(previous) is PreparedEvent and previous.key==key:return previous.plan
     owned=_snapshot(program)
     if product:
-        # Only this source-hash-admitted method has an object-module reference
-        # parameter. Preserve receiver evaluation as the first actual argument.
+        # Transform only the already source-admitted object reference methods.
         for node in _nodes(owned):
             if type(node) is ast.Call and type(node.callee) is ast.Attribute and node.callee.name.casefold() in ('подготовитьданныекзаписи','проверитьданные'):
                 receiver=node.callee.object
@@ -95,6 +110,14 @@ def run_event(vm,program,routine,source,*,product=False,controls=()):
                 node.arguments=[receiver,*node.arguments]
     plan=prepare(source,parsed_ast=owned,repairs=REPAIRS,constructors=tuple(vm.types),
                  module_names=tuple(vm.variables),_trusted_entry=True,_export_routines=True)
+    if cache_owner is not None:cache_owner._direct_event_plan=PreparedEvent(key,plan)
+    return plan
+
+
+def run_event(vm,program,routine,source,*,product=False,controls=(),prepared_owner=None):
+    owner=prepared_owner
+    if product:owner=vm.receiver_object._manager
+    plan=_event_plan(vm,program,source,product,owner)
     context=ProductEventBoundary(vm,controls) if product else ScalarEventBoundary(vm)
     slots=[vm.variables[p.name.casefold()] if p.by_value else _Cell(vm.variables[p.name.casefold()]) for p in routine.parameters]
     from .database_transactions import admission

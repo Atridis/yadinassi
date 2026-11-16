@@ -1,0 +1,2042 @@
+{
+  "samples": [
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 47.819972,
+      "save_ms": 71.511243
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 44.197862,
+      "save_ms": 72.864246
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 42.789827,
+      "save_ms": 74.321496
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 44.737678,
+      "save_ms": 74.649371
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 46.56622,
+      "save_ms": 72.722512
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 42.863448,
+      "save_ms": 84.306873
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 58.803195,
+      "save_ms": 199.387159
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 55.774812,
+      "save_ms": 192.499739
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 61.967913,
+      "save_ms": 164.165398
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 64.552897,
+      "save_ms": 171.696269
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 59.886391,
+      "save_ms": 190.754584
+    },
+    {
+      "pair": 0,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 73.793239,
+      "save_ms": 177.271617
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 51.468339,
+      "save_ms": 67.117221
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 35.0092,
+      "save_ms": 63.970479
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 31.653914,
+      "save_ms": 63.759069
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 35.162423,
+      "save_ms": 63.531867
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 35.704852,
+      "save_ms": 70.892573
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 33.991675,
+      "save_ms": 71.046486
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 30.409886,
+      "save_ms": 155.534491
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 25.835307,
+      "save_ms": 76.814757
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 26.558379,
+      "save_ms": 79.481033
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 24.55978,
+      "save_ms": 78.563428
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 24.024672,
+      "save_ms": 74.688265
+    },
+    {
+      "pair": 0,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 22.988257,
+      "save_ms": 78.626072
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 44.765235,
+      "save_ms": 59.508921
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 33.272829,
+      "save_ms": 68.441481
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 35.354809,
+      "save_ms": 112.999999
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 34.343516,
+      "save_ms": 61.261087
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 31.125946,
+      "save_ms": 60.635934
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 31.903662,
+      "save_ms": 68.413354
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 22.176181,
+      "save_ms": 151.053942
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 23.935924,
+      "save_ms": 76.344693
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 23.15844,
+      "save_ms": 89.022557
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 24.236918,
+      "save_ms": 88.264662
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 28.029125,
+      "save_ms": 85.876235
+    },
+    {
+      "pair": 1,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 22.742441,
+      "save_ms": 77.361727
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 42.399444,
+      "save_ms": 75.476842
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 42.806087,
+      "save_ms": 75.952701
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 43.173283,
+      "save_ms": 70.005981
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 42.078009,
+      "save_ms": 70.471342
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 41.986731,
+      "save_ms": 87.492025
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 45.141084,
+      "save_ms": 72.197429
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 73.267957,
+      "save_ms": 245.99877
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 92.951357,
+      "save_ms": 155.433198
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 55.140164,
+      "save_ms": 153.803074
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 55.075874,
+      "save_ms": 165.546163
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 54.538563,
+      "save_ms": 163.134673
+    },
+    {
+      "pair": 1,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 55.93385,
+      "save_ms": 157.198068
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 43.4522,
+      "save_ms": 69.984919
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 43.393783,
+      "save_ms": 70.566959
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 47.835369,
+      "save_ms": 70.36193
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 41.475546,
+      "save_ms": 77.908089
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 46.481837,
+      "save_ms": 116.840735
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 50.614476,
+      "save_ms": 86.438654
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 64.093473,
+      "save_ms": 208.464819
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 76.979902,
+      "save_ms": 155.779836
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 70.356891,
+      "save_ms": 156.384058
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 55.901482,
+      "save_ms": 155.489226
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 58.104357,
+      "save_ms": 171.353995
+    },
+    {
+      "pair": 2,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 56.206432,
+      "save_ms": 150.059073
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 88.136595,
+      "save_ms": 64.588278
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 30.723167,
+      "save_ms": 70.970967
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 32.401772,
+      "save_ms": 65.900861
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 32.481532,
+      "save_ms": 65.990224
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 32.124083,
+      "save_ms": 61.580897
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 31.264063,
+      "save_ms": 63.608309
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 22.452087,
+      "save_ms": 142.101214
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 24.02375,
+      "save_ms": 72.002224
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 21.799,
+      "save_ms": 71.324071
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 21.912841,
+      "save_ms": 73.582121
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 22.680571,
+      "save_ms": 69.134954
+    },
+    {
+      "pair": 2,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 22.700512,
+      "save_ms": 69.720278
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 45.607164,
+      "save_ms": 59.182986
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 29.42078,
+      "save_ms": 58.33213
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 29.157222,
+      "save_ms": 60.093509
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 30.203443,
+      "save_ms": 59.684052
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 30.410655,
+      "save_ms": 61.017296
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 29.629055,
+      "save_ms": 57.99379
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 22.830728,
+      "save_ms": 131.985428
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 23.959572,
+      "save_ms": 69.466716
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 22.401409,
+      "save_ms": 70.088424
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 21.992753,
+      "save_ms": 71.361026
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 23.099944,
+      "save_ms": 68.430952
+    },
+    {
+      "pair": 3,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 23.430083,
+      "save_ms": 71.151711
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 52.415145,
+      "save_ms": 75.783384
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 49.642748,
+      "save_ms": 77.776825
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 51.034661,
+      "save_ms": 80.585998
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 50.131276,
+      "save_ms": 86.999082
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 57.912046,
+      "save_ms": 101.389851
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 51.308539,
+      "save_ms": 74.377932
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 54.915281,
+      "save_ms": 192.48147
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 85.381851,
+      "save_ms": 161.091601
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 56.589721,
+      "save_ms": 163.126759
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 59.419783,
+      "save_ms": 159.868763
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 55.063235,
+      "save_ms": 174.046249
+    },
+    {
+      "pair": 3,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 55.040841,
+      "save_ms": 183.631435
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 45.627094,
+      "save_ms": 72.658126
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 44.224226,
+      "save_ms": 73.972581
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 44.410468,
+      "save_ms": 73.599067
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 44.252337,
+      "save_ms": 75.238803
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 44.912717,
+      "save_ms": 88.299097
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 63.615621,
+      "save_ms": 89.900825
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 54.848921,
+      "save_ms": 183.71428
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 74.50207,
+      "save_ms": 144.928777
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 53.941381,
+      "save_ms": 153.159622
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 52.904575,
+      "save_ms": 143.18852
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 52.45742,
+      "save_ms": 155.925875
+    },
+    {
+      "pair": 4,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 51.6232,
+      "save_ms": 142.824679
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 53.752166,
+      "save_ms": 137.828604
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 46.259475,
+      "save_ms": 79.352957
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 36.83329,
+      "save_ms": 72.252473
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 31.918231,
+      "save_ms": 61.854211
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 34.25447,
+      "save_ms": 61.24508
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 31.79783,
+      "save_ms": 58.449217
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 21.002397,
+      "save_ms": 141.704518
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 22.542523,
+      "save_ms": 67.927041
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 23.793882,
+      "save_ms": 72.338404
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 21.687262,
+      "save_ms": 78.227678
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 25.358095,
+      "save_ms": 75.555852
+    },
+    {
+      "pair": 4,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 27.835707,
+      "save_ms": 74.824007
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 45.313504,
+      "save_ms": 59.268187
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 32.825424,
+      "save_ms": 64.931611
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 33.573968,
+      "save_ms": 59.862005
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 30.585251,
+      "save_ms": 59.581751
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 30.875409,
+      "save_ms": 59.492627
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 30.637589,
+      "save_ms": 61.754132
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 21.915057,
+      "save_ms": 134.521907
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 22.38743,
+      "save_ms": 71.885923
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 21.910519,
+      "save_ms": 75.176112
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 24.048298,
+      "save_ms": 86.991536
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 23.14909,
+      "save_ms": 70.01676
+    },
+    {
+      "pair": 5,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 22.789246,
+      "save_ms": 68.096631
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 47.652846,
+      "save_ms": 75.809299
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 45.68867,
+      "save_ms": 75.797581
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 47.856824,
+      "save_ms": 76.85024
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 43.453965,
+      "save_ms": 86.537371
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 45.621198,
+      "save_ms": 123.559462
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 45.807429,
+      "save_ms": 84.164146
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 92.328631,
+      "save_ms": 278.663081
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 82.996462,
+      "save_ms": 163.056841
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 59.755934,
+      "save_ms": 155.428651
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 59.886411,
+      "save_ms": 157.697988
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 61.956498,
+      "save_ms": 173.032708
+    },
+    {
+      "pair": 5,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 81.933993,
+      "save_ms": 179.653866
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 43.236878,
+      "save_ms": 78.95307
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 47.108595,
+      "save_ms": 77.67215
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 54.033244,
+      "save_ms": 82.838744
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 45.19812,
+      "save_ms": 74.622393
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 85.86295,
+      "save_ms": 100.313939
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 45.764415,
+      "save_ms": 79.84664
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 60.612171,
+      "save_ms": 222.38127
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 84.613734,
+      "save_ms": 169.099847
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 58.561825,
+      "save_ms": 155.96682
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 55.616245,
+      "save_ms": 152.747287
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 59.879215,
+      "save_ms": 173.557259
+    },
+    {
+      "pair": 6,
+      "variant": "base",
+      "hashes": {
+        "python_direct_form_events.py": "cb3f6b99f141380fb0f87f3a0c1e78c9eb216d9cee31c816ac0ab3618b829c7e",
+        "form_event_simulation.py": "2e5d8f2ed207374579a3b250c4cf2353e046743f9e62abf5e1441a83d8d9a210"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 55.914236,
+      "save_ms": 164.275178
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 0,
+      "description_ms": 44.459264,
+      "save_ms": 57.256492
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 1,
+      "description_ms": 28.712289,
+      "save_ms": 58.233588
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 2,
+      "description_ms": 30.065234,
+      "save_ms": 64.210029
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 3,
+      "description_ms": 32.34048,
+      "save_ms": 61.208446
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 4,
+      "description_ms": 31.497197,
+      "save_ms": 59.816794
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "kind",
+      "iteration": 5,
+      "description_ms": 30.554953,
+      "save_ms": 63.278602
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 0,
+      "description_ms": 23.634953,
+      "save_ms": 136.934116
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 1,
+      "description_ms": 20.910018,
+      "save_ms": 65.648992
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 2,
+      "description_ms": 21.082628,
+      "save_ms": 68.379616
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 3,
+      "description_ms": 21.126925,
+      "save_ms": 67.140455
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 4,
+      "description_ms": 21.782085,
+      "save_ms": 68.285739
+    },
+    {
+      "pair": 6,
+      "variant": "repo",
+      "hashes": {
+        "python_direct_form_events.py": "1c198c8de7047ba799899a0fc2cf07aa4038766e3d4528a2a6ed215910f6dcd8",
+        "form_event_simulation.py": "1e273cbf50e805442d19e0823a43a8b9f85ba6916695d46d071c34f567f0f1f9"
+      },
+      "profile": "product",
+      "iteration": 5,
+      "description_ms": 21.504486,
+      "save_ms": 71.248918
+    }
+  ],
+  "warm_medians_ms": {
+    "kind": {
+      "description_ms": {
+        "base": 45.621198,
+        "repo": 31.903662
+      },
+      "save_ms": {
+        "base": 77.67215,
+        "repo": 61.854211
+      }
+    },
+    "product": {
+      "description_ms": {
+        "base": 58.561825,
+        "repo": 22.988257
+      },
+      "save_ms": {
+        "base": 161.091601,
+        "repo": 72.002224
+      }
+    }
+  }
+}

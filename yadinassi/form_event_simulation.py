@@ -132,7 +132,7 @@ def _receiver(admitted, code, description, deletion_mark):
 
 
 def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xml,
-                        event, code, description, deletion_mark=False, cancel=False):
+                        event, code, description, deletion_mark=False, cancel=False, _prepared_owner=None):
     """Fresh admission and private execution of one original handler per call.
 
     Caller authenticates storage/provenance. Hash commitments are not authentication.
@@ -171,7 +171,7 @@ def simulate_form_event(source, binding, *, catalog_xml, form_xml, definition_xm
         arguments = [ast.Name(p.token, p.name) for p in routine.parameters]
         if vm.execution_backend=='python-direct':
             from .python_direct_form_events import run_event
-            run_event(vm,program,routine,source.decode('utf-8-sig'))
+            run_event(vm,program,routine,source.decode('utf-8-sig'),prepared_owner=_prepared_owner)
         else:
             vm._scheduler.run_inline(vm.call_routine(routine, arguments, vm, require_value=False))
         if type(vm.variables['отказ']) is not bool:
@@ -190,7 +190,7 @@ class FormDraftSession:
     external callback or native managed-form integration. Python hosts are trusted.
     """
     __slots__ = ('_source', '_binding', '_catalog_xml', '_form_xml',
-                 '_definition_xml', '_state')
+                 '_definition_xml', '_state', '_direct_event_plan', '_direct_cache_owner')
 
     def __init__(self, source, binding, *, catalog_xml, form_xml, definition_xml,
                  code, description, deletion_mark=False):
@@ -200,6 +200,8 @@ class FormDraftSession:
         self._catalog_xml, self._form_xml = catalog_xml, form_xml
         self._definition_xml = definition_xml
         self._state = FormDraftSnapshot(0, values, values, ())
+        self._direct_event_plan = None
+        self._direct_cache_owner = None
 
     @property
     def binding(self):
@@ -219,7 +221,7 @@ class FormDraftSession:
             catalog_xml=self._catalog_xml, form_xml=self._form_xml,
             definition_xml=self._definition_xml, event=event,
             code=values['Code'], description=description,
-            deletion_mark=values['DeletionMark'], cancel=cancel)
+            deletion_mark=values['DeletionMark'], cancel=cancel, _prepared_owner=self)
 
     def _change_candidate(self, value, *, revision):
         self._require_revision(revision)
@@ -301,6 +303,7 @@ class VerifiedFormDraftSession:
             catalog_xml=record.catalog_xml, form_xml=record.form_xml,
             definition_xml=record.definition_xml, code=code, description=description,
             deletion_mark=deletion_mark)
+        session._direct_cache_owner = backend
         self._backend, self._catalog_id, self._record = backend, catalog_id, record
         self._session, self._stale = session, False
 
