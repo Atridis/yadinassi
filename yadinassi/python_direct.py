@@ -36,7 +36,7 @@ def _reject(message):
     raise PythonDirectUnsupported('python-direct: '+message+'; select --legacy or execution_backend="compiled-strict"')
 
 
-def admit(vm,program):
+def _admit_vm(vm):
     from .runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _HYBRID_RUNTIME_HOOKS
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
@@ -65,24 +65,22 @@ def admit(vm,program):
         _reject('custom namespace mappings are not supported')
     if any(type(key) is not str or type(value) is not HostFunction for key,value in vm.functions.items()):
         _reject('host registry requires canonical HostFunction entries')
+
+
+def _source_facts(program):
     if type(program) is not list:
         _reject('execute_program requires a parsed AST list')
     nodes=tuple(_nodes(program))
-    current={node.name.casefold() for node in program if type(node) is ast.Routine}
-    previous=getattr(vm,'_direct_routine_names',set())
-    from .values import BSLArray
-    from .maps import BSLMap
-    from .structures import BSLStructure
-    native_types={'array':BSLArray,'массив':BSLArray,'map':BSLMap,'соответствие':BSLMap,'structure':BSLStructure,'структура':BSLStructure}
+    routines=frozenset(node.name.casefold() for node in program if type(node) is ast.Routine)
+    constructors=set();calls=set()
+    native_names={'array','массив','map','соответствие','structure','структура'}
     for node in nodes:
         if node.token is None:
             _reject('execute_program requires source tokens on every node')
         if type(node) is ast.Var and node.execution_context!='client':
             _reject('server declarations are not integrated')
-        if type(node) is ast.New and node.name.casefold() in native_types:
-            constructor=vm.types.get(node.name.casefold())
-            if type(constructor) is not HostFunction or constructor.function is not native_types[node.name.casefold()]:
-                _reject('overridden direct collection constructors are not integrated')
+        if type(node) is ast.New and node.name.casefold() in native_names:
+            constructors.add(node.name.casefold())
         if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context!='client'):
             _reject('async/server/NoContext source routines are not integrated')
         if type(node) is ast.Import or type(node) is ast.ServerInitializer:
@@ -90,9 +88,28 @@ def admit(vm,program):
         if type(node) is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
-            if type(callee) is ast.Name and callee.name.casefold() in previous-current:
-                _reject('routines do not persist across execute calls; redeclare the routine in this source')
-    return nodes,current
+            if type(callee) is ast.Name:calls.add(callee.name.casefold())
+    return nodes,routines,frozenset(constructors),frozenset(calls)
+
+
+def _admit_bindings(vm,routines,constructors,calls):
+    from .values import BSLArray
+    from .maps import BSLMap
+    from .structures import BSLStructure
+    native_types={'array':BSLArray,'массив':BSLArray,'map':BSLMap,'соответствие':BSLMap,'structure':BSLStructure,'структура':BSLStructure}
+    for name in constructors:
+        constructor=vm.types.get(name)
+        if type(constructor) is not HostFunction or constructor.function is not native_types[name]:
+            _reject('overridden direct collection constructors are not integrated')
+    if calls & (getattr(vm,'_direct_routine_names',set())-routines):
+        _reject('routines do not persist across execute calls; redeclare the routine in this source')
+
+
+def admit(vm,program):
+    _admit_vm(vm)
+    nodes,routines,constructors,calls=_source_facts(program)
+    _admit_bindings(vm,routines,constructors,calls)
+    return nodes,routines
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +124,10 @@ class PreparedDirectModule:
     _layout: frozenset
     _declared: frozenset
     _contract: tuple
+    _routines: frozenset
+    _constructors: frozenset
+    _calls: frozenset
+    _returns_expression: bool
 
 
 def _contract(vm):
@@ -159,21 +180,31 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     Interpreter._require_family(vm)
     # The caller may edit/reuse its AST after this call. Never retain that AST.
     owned=_snapshot(program)
-    nodes=tuple(_nodes(owned))
+    nodes,routines,constructors,calls=_source_facts(owned)
     plan=_compile(vm,owned,nodes,source_text,source_name)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var for name in node.names)
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
-                                declared,_contract(vm))
+                                declared,_contract(vm),routines,constructors,calls,
+                                bool(owned and type(owned[-1]) is ast.ExpressionStatement))
 
 
 def execute_prepared(vm,prepared):
     if type(prepared) is not PreparedDirectModule:
         raise TypeError('execute_prepared requires a PreparedDirectModule')
-    return execute(vm,list(prepared._snapshot),_prepared=prepared)
+    return execute(vm,None,_prepared=prepared)
 
 
 def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
-    nodes,routines=admit(vm,program)
+    if _prepared is None:
+        nodes,routines=admit(vm,program)
+        declared=frozenset(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
+        returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
+    else:
+        _admit_vm(vm)
+        _admit_bindings(vm,_prepared._routines,_prepared._constructors,_prepared._calls)
+        routines=_prepared._routines
+        declared=_prepared._declared
+        returns_expression=_prepared._returns_expression
     if _prepared is not None:
         if vm._family_closed:
             _reject('prepared modules require an open interpreter')
@@ -206,7 +237,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     context.vm=vm
     # Preserve live registry updates at subsequent host boundaries, not a copy.
     context._services=vm.functions
-    vm.module_names.update(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
+    vm.module_names.update(declared)
     vm._direct_routine_names=getattr(vm,'_direct_routine_names',set())|routines
     previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
     if database is not None:vm._transaction_activation_allowed=False
@@ -217,7 +248,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             result=plan.run(vm.variables,context=context)
         vm._self_module.ready=True
         vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
-        if program and type(program[-1]) is ast.ExpressionStatement:return result
+        if returns_expression:return result
         return None if result is vm.variables else result
     finally:
         vm._direct_active=False
