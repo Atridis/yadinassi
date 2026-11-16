@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" version="2.20"><CommonModule uuid="06fa01de-0b43-5e57-b016-dd70606b4af1"><Properties><Name>ClientProbe</Name><Synonym/><Comment/><Global>false</Global><ClientManagedApplication>true</ClientManagedApplication><Server>false</Server><ServerCall>false</ServerCall><ExternalConnection>false</ExternalConnection><ClientOrdinaryApplication>false</ClientOrdinaryApplication><Privileged>false</Privileged><ReturnValuesReuse>DontUse</ReturnValuesReuse></Properties></CommonModule></MetaDataObject>
