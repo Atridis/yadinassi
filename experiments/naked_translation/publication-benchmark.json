@@ -1,0 +1,325 @@
+{
+  "python": "3.12.14",
+  "metric": "ms per run, preparation excluded",
+  "limits": "synthetic trusted fixtures; header budget is not AST budget; no global speedup claim",
+  "summary": {
+    "module_loop": {
+      "legacy": 2.4736342000000002,
+      "shared": 4.1912605
+    },
+    "private_routine": {
+      "legacy": 2.6723073,
+      "shared": 4.80793
+    },
+    "array_operations": {
+      "legacy": 0.2561218,
+      "shared": 0.47394379999999997
+    }
+  },
+  "samples": [
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 0,
+      "ms": 2.4899548,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 0,
+      "ms": 4.2175461,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 1,
+      "ms": 4.1912605,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 1,
+      "ms": 2.4252551,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 2,
+      "ms": 2.4736342000000002,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 2,
+      "ms": 4.1654695,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 3,
+      "ms": 4.1657189,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 3,
+      "ms": 2.5500896,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 4,
+      "ms": 2.5961923,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 4,
+      "ms": 4.2562611,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 5,
+      "ms": 4.1898444,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 5,
+      "ms": 2.4334435,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "legacy",
+      "trial": 6,
+      "ms": 2.4663662000000004,
+      "result": "10000"
+    },
+    {
+      "case": "module_loop",
+      "variant": "shared",
+      "trial": 6,
+      "ms": 4.2319097999999995,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 0,
+      "ms": 2.695308,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 0,
+      "ms": 6.0509333,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 1,
+      "ms": 4.2461674,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 1,
+      "ms": 3.3640401,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 2,
+      "ms": 2.6723073,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 2,
+      "ms": 5.7298819000000005,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 3,
+      "ms": 4.6900059,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 3,
+      "ms": 2.6406063,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 4,
+      "ms": 2.8965468999999997,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 4,
+      "ms": 4.7235875,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 5,
+      "ms": 4.80793,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 5,
+      "ms": 2.658174,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "legacy",
+      "trial": 6,
+      "ms": 2.6562661000000003,
+      "result": "10000"
+    },
+    {
+      "case": "private_routine",
+      "variant": "shared",
+      "trial": 6,
+      "ms": 5.463231,
+      "result": "10000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 0,
+      "ms": 0.246264,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 0,
+      "ms": 0.481985,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 1,
+      "ms": 0.49898570000000003,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 1,
+      "ms": 0.26595959999999996,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 2,
+      "ms": 0.2458804,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 2,
+      "ms": 0.47394379999999997,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 3,
+      "ms": 0.4914544,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 3,
+      "ms": 0.2732467,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 4,
+      "ms": 0.2561218,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 4,
+      "ms": 0.4637365,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 5,
+      "ms": 0.4635902,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 5,
+      "ms": 0.2566096,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "legacy",
+      "trial": 6,
+      "ms": 0.2507968,
+      "result": "1000"
+    },
+    {
+      "case": "array_operations",
+      "variant": "shared",
+      "trial": 6,
+      "ms": 0.4423982,
+      "result": "1000"
+    }
+  ],
+  "source_sha256": {
+    "yadinassi/experimental_naked_array_methods.py": "50b30cb2ac0442fca68fd7aae5dc59b1a0e2ca412beaf9d1e44d0c67d645e411",
+    "yadinassi/experimental_naked_boundaries.py": "dbf11cb307b57bfa2041329a6b18e86951424b8a8a17e8784664cd7e96be609d",
+    "yadinassi/experimental_naked_collections.py": "0f152fdbedec5cad568c6477df8ad609399f7077755213c4e77ae5c2294e62e8",
+    "yadinassi/experimental_naked_control.py": "4c555dc6742b95eee207c78a034b5f63d76c370b32737bfc06b66a7786af3e6f",
+    "yadinassi/experimental_naked_errors.py": "c05b75f629076547dd04b0f553d897346301591bb8d045e192c943dec0aab6a2",
+    "yadinassi/experimental_naked_resources.py": "c73db920756f7205e3da4aaf88f876fa4f6181572b9b2c5273c6720083af2eff",
+    "yadinassi/experimental_naked_scalar_semantics.py": "569426d3891e6d642cce7c53dc9c4296174e720d72fe1e82eb2859e6c1e838bd",
+    "yadinassi/experimental_naked_structure.py": "cdfc08c00e5353c5c445b12cc29728d8c70d56b7d1bab5349982ed7d2c77f816"
+  }
+}

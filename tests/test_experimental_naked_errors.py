@@ -1,0 +1,54 @@
+"""Experiment source mapping restores diagnostics without hot node wrappers."""
+import unittest
+import os
+from unittest.mock import patch
+from decimal import Decimal
+from yadinassi.syntax.parser import parse
+from yadinassi.errors import BSLRuntimeError
+from yadinassi.experimental_naked_errors import SourceMap,convert_error
+
+class NakedErrorMappingTests(unittest.TestCase):
+    def test_python_instruction_maps_to_original_binary_token(self):
+        source='result=1/0;';node=parse(source,'original.bsl')[0]
+        mapping=SourceMap();mapping.enter(node)
+        mapping.expression('_constants[0]',node.value.left)
+        mapping.expression('_constants[1]',node.value.right)
+        mapping.expression('(_constants[0] / _constants[1])',node.value)
+        mapping.line(1);mapping.leave()
+        code=mapping.compile('def run(_constants):\n    result=(_constants[0] / _constants[1])\n','original.bsl',1)
+        namespace={};exec(code,namespace)
+        try:namespace['run']((Decimal(1),Decimal(0)))
+        except Exception as error:converted=convert_error(error,'original.bsl',source)
+        self.assertIsInstance(converted,BSLRuntimeError)
+        self.assertEqual(converted.message,'Деление на ноль')
+        self.assertEqual((converted.line,converted.column),(node.value.token.line,node.value.token.column))
+        self.assertEqual(converted.source_line,source)
+    def test_authority_and_control_failures_remain_outside_conversion(self):
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        for error in (BoundaryViolation('denied'),KeyboardInterrupt(),SystemExit(),PermissionError('denied')):
+            self.assertIs(convert_error(error,'original.bsl',''),error)
+    def test_existing_bsl_error_identity_preserved(self):
+        error=BSLRuntimeError('original','x',2,3)
+        self.assertIs(convert_error(error,'original.bsl',''),error)
+
+class NakedErrorIntegrationTests(unittest.TestCase):
+    def test_exact_source_errors_and_partial_effects(self):
+        from yadinassi import Interpreter
+        from yadinassi.experimental_naked_collections import prepare
+        for source in ('result=1/0;','a=New Array;a.Add(1);result=a[2];',
+                       'Function F() Return 1/0;EndFunction result=F();'):
+            outcomes=[]
+            for naked in (False,True):
+                with patch.dict(os.environ,{'YADINASSI_UNSAFE_COLLECTION_ABLATION':'1'}):
+                    try:
+                        if naked:prepare(source,source_name='errors.bsl',repairs=('error_boundaries','array_index_contract')).run()
+                        else:Interpreter().execute(source,'errors.bsl')
+                    except Exception as error:outcomes.append((type(error),str(error)))
+            self.assertEqual(len(outcomes),2);self.assertEqual(*outcomes)
+    def test_permission_error_is_not_swallowed_by_bsl_try(self):
+        from yadinassi.experimental_naked_collections import prepare
+        def denied():raise PermissionError('denied')
+        with patch.dict(os.environ,{'YADINASSI_UNSAFE_COLLECTION_ABLATION':'1'}):
+            program=prepare('caught=False;Try Host();Except caught=True;EndTry;',repairs=('error_boundaries',))
+            with self.assertRaises(PermissionError):program.run({'host':denied})
+            self.assertIs(program.last_state['caught'],False)
