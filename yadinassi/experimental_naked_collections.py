@@ -269,6 +269,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     source_map=SourceMap() if 'error_boundaries' in repairs else None
     byref='byref_routines' in repairs
     live='live_module_state' in repairs
+    from .python_direct_definite import definite_module_reads
+    definite_reads = definite_module_reads(program) if live and not authority else frozenset()
     source_checks=authority or (services and not live)
     if live and not byref:raise ValueError('live_module_state requires byref_routines')
     if module_names and not live:raise ValueError('module_names requires live_module_state')
@@ -428,7 +430,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         kind=type(node)
         if kind is ast.Literal:return literal(node.value)
         if kind is ast.Name:
-            value=read_variable(node.name)
+            value=(variable(node.name) if scope_id is None and id(node) in definite_reads else read_variable(node.name))
             if node.name.casefold() in routines:
                 presence=(repr(node.name.casefold())+' in _initial' if module_name(node.name) else repr(sym(node.name))+' in locals()')
                 return '('+value+' if '+presence+' else _routine_value_error('+repr(node.name)+'))'
@@ -470,7 +472,14 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 return '(('+dims+' := ('+', '.join(args)+')), '+shape+')[1]'
             if kindname in ('map','соответствие'):return ('_TypedMap' if 'typed_map_keys' in repairs else '_NakedMap' if byref or 'bsl_presentation' in repairs else 'dict')+'('+', '.join(args)+')'
             if kindname in ('structure','структура'):
-                if structure_ops is not None:return '_new_structure('+', '.join(args)+')'
+                if structure_ops is not None:
+                    keys=ungroup(node.arguments[0]) if args else None
+                    if keys is None or type(keys) is ast.Literal and type(keys.value) is str:
+                        try:schema=structure_ops.prepare_structure_schema('' if keys is None else keys.value)
+                        except ValueError:pass  # Invalid fields must fail after argument effects.
+                        else:
+                            return '_structure_from_schema('+literal(schema)+('' if not args[1:] else ', '+', '.join(args[1:]))+')'
+                    return '_new_structure('+', '.join(args)+')'
                 if not args:return '{}'
                 values=temp()
                 return '(('+values+' := ('+', '.join(args)+',)), {key: '+values+'[idx+1] if idx+1<len('+values+') else None for idx,key in enumerate('+values+'[0].split(","))})[1]'
@@ -653,12 +662,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if live:
                 first=temp();emit(depth,first+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end));assign_name(node.name,first,depth)
             else:emit(depth,counter+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end))
-            condition=read_variable(node.name) if live else counter
+            proven_counter = scope_id is None and id(node) in definite_reads
+            condition=read_variable(node.name) if live and not proven_counter else counter
             if authority:
                 emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
                 emit(depth+1,f'if not ({condition} <= {last}): break')
             else:emit(depth,f'while {condition} <= {last}:')
-            increment=counter+' = '+read_variable(node.name)+' + 1' if module_name(node.name) else counter+' += 1'
+            increment=counter+' = '+(counter if proven_counter else read_variable(node.name))+' + 1' if module_name(node.name) else counter+' += 1'
             loops.append(increment);sequence(node.body,depth+1);loops.pop();emit(depth+1,increment)
         elif kind is ast.While:
             if authority:
@@ -764,7 +774,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     native_dicts=(dict,_TypedMap,_NakedMap)
     if structure_ops is not None:
         native_dicts+= (structure_ops._DirectStructure,)
-        namespace.update(_DirectStructure=structure_ops._DirectStructure,_new_structure=structure_ops.new_structure,_structure_get_known=structure_ops.structure_get_known,_structure_insert=structure_ops.structure_insert,_structure_property=structure_ops.structure_property)
+        namespace.update(_DirectStructure=structure_ops._DirectStructure,_new_structure=structure_ops.new_structure,_structure_from_schema=structure_ops.structure_from_schema,_structure_get_known=structure_ops.structure_get_known,_structure_insert=structure_ops.structure_insert,_structure_property=structure_ops.structure_property)
     if 'method_values' in repairs:
         from .experimental_naked_array_methods import array_method_value
         index=_checked_array_index if 'array_index_contract' in repairs else lambda obj,key:int(key)

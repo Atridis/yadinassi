@@ -86,7 +86,9 @@ class LiveModuleStateTests(unittest.TestCase):
   with self.assertRaises(UnsupportedNakedSyntax):prepare('Var x;Function F() If False Then Var x;EndIf;Return x;EndFunction',repairs=FLAGS)
  def test_inline_read_and_no_final_copy(self):
   p=prepare('x=1;r=x;',repairs=FLAGS)
-  self.assertIn('_initial.get(',p.generated_source)
+  self.assertIn("_initial['r'] = _initial['x']",p.generated_source)
+  state={};self.assertIs(p.run(state,context=BoundaryContext()),state)
+  self.assertEqual(state,{'x':Decimal(1),'r':Decimal(1)})
   self.assertNotIn('_scope',p.generated_source);self.assertNotIn('_locals = locals()',p.generated_source)
   self.assertNotIn('_Cell(',p.generated_source)
  def test_baseline_module_globals_and_loop_results(self):

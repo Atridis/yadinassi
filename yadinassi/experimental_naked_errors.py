@@ -44,11 +44,17 @@ class SourceMap:
     def line(self,number):
         if self.current is not None:self.rows[number]=(self.current.token,tuple(self.expressions))
     def compile(self,generated,filename,body_offset):
-        tree=ast.parse(generated,filename=filename);by_line={}
+        tree=ast.parse(generated,filename=filename);by_line={};normalized={}
+        # Repeated generated text needs normalization only once in this compile.
+        # Nothing is retained between programs or added to the execution path.
         for line,(token,expressions) in self.rows.items():
             groups={}
-            for text,where in expressions:groups.setdefault(_normalized(text),[]).append(where)
-            by_line[line+body_offset]=(token,groups)
+            for text,where in expressions:
+                if text not in normalized:normalized[text]=_normalized(text)
+                groups.setdefault(normalized[text],[]).append(where)
+            # An AST dump starts with its node class. Impossible root classes
+            # cannot match; avoid recursively dumping their entire subtrees.
+            by_line[line+body_offset]=(token,groups,{key.partition('(')[0] for key in groups})
         consumed={}
         def visit(node,inherited=None,parent_line=None):
             original=getattr(node,'lineno',None)
@@ -56,7 +62,7 @@ class SourceMap:
             row=by_line.get(original)
             if row:
                 token=token or row[0]
-                if isinstance(node,ast.expr):
+                if isinstance(node,ast.expr) and type(node).__name__ in row[2]:
                     key=ast.dump(node,include_attributes=False)
                     # Attribute/source location fields do not enter the key.
                     matches=row[1].get(key)

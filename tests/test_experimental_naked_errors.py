@@ -23,6 +23,40 @@ class NakedErrorMappingTests(unittest.TestCase):
         self.assertEqual(converted.message,'Деление на ноль')
         self.assertEqual((converted.line,converted.column),(node.value.token.line,node.value.token.column))
         self.assertEqual(converted.source_line,source)
+    def test_normalization_is_once_per_text_and_compile(self):
+        import yadinassi.experimental_naked_errors as errors
+        node=parse('x=1+2;','repeat.bsl')[0]
+        mapping=SourceMap();mapping.enter(node)
+        for _ in range(4):mapping.expression('(1 + 2)',node.value)
+        mapping.line(1);mapping.line(2);mapping.leave()
+        for _ in range(2):
+            with patch.object(errors,'_normalized',wraps=errors._normalized) as normalize:
+                mapping.compile('x=1+2\ny=1+2\n','repeat.bsl',0)
+                normalize.assert_called_once_with('(1 + 2)')
+
+    def test_impossible_root_class_is_not_dumped(self):
+        import ast
+        import yadinassi.experimental_naked_errors as errors
+        node=parse('x=1+2;','filter.bsl')[0]
+        mapping=SourceMap();mapping.enter(node)
+        mapping.expression('(1 + 2)',node.value);mapping.line(1);mapping.leave()
+        with patch.object(errors.ast,'dump',wraps=ast.dump) as dump:
+            mapping.compile('x=1+2\n','filter.bsl',0)
+            self.assertTrue(dump.call_args_list)
+            self.assertTrue(all(isinstance(call.args[0],ast.BinOp) for call in dump.call_args_list))
+
+    def test_duplicate_expressions_retain_distinct_source_locations(self):
+        source='x=1/0; y=1/0;'
+        first,second=parse(source,'duplicate.bsl')
+        mapping=SourceMap()
+        for row,node in enumerate((first,second),1):
+            mapping.enter(node);mapping.expression('(1 / 0)',node.value)
+            mapping.line(row);mapping.leave()
+        code=mapping.compile('x=1/0\ny=1/0\n','duplicate.bsl',0)
+        positions=set(code.co_positions())
+        for node in (first,second):
+            self.assertIn((1,1,node.value.token.column-1,node.value.token.column),positions)
+
     def test_authority_and_control_failures_remain_outside_conversion(self):
         from yadinassi.experimental_naked_boundaries import BoundaryViolation
         for error in (BoundaryViolation('denied'),KeyboardInterrupt(),SystemExit(),PermissionError('denied')):
