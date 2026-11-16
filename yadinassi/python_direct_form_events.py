@@ -69,18 +69,26 @@ class ProductEventBoundary(CatalogPreparationBoundary):
         from .python_direct_catalog_preparation import prepared_validator
         source=(self.vm._list_object_source if checking else self.vm._product_object_source).decode('utf-8-sig')
         prepared=prepared_validator(receiver._manager,source)
-        child=_ObjectInterpreter(receiver,self.vm._list_sink if checking else self.vm._product_sink,self.vm.write_view)
+        # Borrow a caller's transaction/snapshot; otherwise own one read snapshot
+        # for this preparation only. GetObject still checks each target schema.
+        view=self.vm.write_view
+        owned_view=view is None
+        if owned_view:view=receiver._manager._view()
         try:
-            plan=prepared._plan
-            context=CatalogPreparationBoundary(child);context.enter();slot=_Cell(cancel.get())
+            child=_ObjectInterpreter(receiver,self.vm._list_sink if checking else self.vm._product_sink,view)
             try:
-                plan.function({},plan.constants,[],context)['проверитьданные' if checking else 'подготовитьданныекзаписи'](slot)
-                if type(slot.value) is not bool:raise TypeError('product form cancellation requires Boolean')
-                cancel.set(slot.value)
-            finally:
-                try:context._check()
-                finally:context.leave()
-        finally:child.close()
+                plan=prepared._plan
+                context=CatalogPreparationBoundary(child);context.enter();slot=_Cell(cancel.get())
+                try:
+                    plan.function({},plan.constants,[],context)['проверитьданные' if checking else 'подготовитьданныекзаписи'](slot)
+                    if type(slot.value) is not bool:raise TypeError('product form cancellation requires Boolean')
+                    cancel.set(slot.value)
+                finally:
+                    try:context._check()
+                    finally:context.leave()
+            finally:child.close()
+        finally:
+            if owned_view:view.close()
 
 
 @dataclass(frozen=True,slots=True)
@@ -98,7 +106,9 @@ def _event_plan(vm,program,source,product,owner):
          current_native_target(),current_backend(),tuple(REPAIRS))
     cache_owner=getattr(owner,'_direct_cache_owner',None)
     if cache_owner is None:cache_owner=owner
-    previous=getattr(cache_owner,'_direct_event_plan',None) if cache_owner is not None else None
+    # Two bounded purposes share a catalog manager, not one evicting slot.
+    slot='_direct_list_event_plan' if product and hasattr(vm,'_list_object_source') else '_direct_event_plan'
+    previous=getattr(cache_owner,slot,None) if cache_owner is not None else None
     if type(previous) is PreparedEvent and previous.key==key:return previous.plan
     owned=_snapshot(program)
     if product:
@@ -110,7 +120,7 @@ def _event_plan(vm,program,source,product,owner):
                 node.arguments=[receiver,*node.arguments]
     plan=prepare(source,parsed_ast=owned,repairs=REPAIRS,constructors=tuple(vm.types),
                  module_names=tuple(vm.variables),_trusted_entry=True,_export_routines=True)
-    if cache_owner is not None:cache_owner._direct_event_plan=PreparedEvent(key,plan)
+    if cache_owner is not None:setattr(cache_owner,slot,PreparedEvent(key,plan))
     return plan
 
 

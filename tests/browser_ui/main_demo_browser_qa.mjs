@@ -747,7 +747,8 @@ finally{
     try{const file=path.join(output,name),stat=await lstat(file);assert.ok(stat.isFile()&&!stat.isSymbolicLink()&&stat.size<=4*1024*1024);const bytes=await readFile(file);assert.equal(bytes.length,stat.size);images[name]={bytes:bytes.length,sha256:sha256(bytes)};}
     catch{await rm(path.join(output,name),{force:true});report.status='FAIL';report.artifacts='missing_or_invalid_screenshot';}
   }
-  const raw=JSON.stringify(report,null,2)+'\n';
+  // Keep all evidence fields within the existing byte cap; indentation is not evidence.
+  const raw=JSON.stringify(report)+'\n';
   assert.ok(Buffer.byteLength(raw)<=65536,'report_budget');
   assert.ok(!tokens.some(token=>raw.includes(token)),'capability_leak');
   await writeFile(path.join(output,'result.json'),raw);

@@ -76,3 +76,19 @@ class PreparedFormEventsTests(TestCase):
             with self.assertRaises(Exception):session.change_description(' Changed ',revision=1)
         self.assertEqual(effects,['Changed']);self.assertIs(session.snapshot(),before)
         self.assertEqual(dict(session.change_description(' Later ',revision=1).values)['Description'],'Later')
+
+    def test_product_list_check_does_not_evict_editor_code(self):
+        import test_product_list_check as fixture
+        f=fixture.ProductListCheckTests();f.setUp();self.addCleanup(f.doCleanups)
+        reference=f.saved();manager=f.editor.object._manager
+        editor_plan=manager._direct_event_plan
+        with patch.object(direct,'prepare',wraps=direct.prepare) as compile:
+            for _ in range(3):
+                f.check(reference)
+                f.app.event('openCard',reference=reference)
+                control=next(x['control'] for x in f.app.editor.snapshot()['fields'] if x['name']=='Description')
+                f.app.editor.change(control,'  Cable updated  ')
+                f.app.event('command',control='CancelButton')
+        self.assertEqual(compile.call_count,1)
+        self.assertIs(manager._direct_event_plan,editor_plan)
+        self.assertIsNot(manager._direct_list_event_plan,editor_plan)
