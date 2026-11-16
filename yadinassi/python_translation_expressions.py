@@ -145,7 +145,8 @@ class ExpressionExecution:
 
     def leaf(self, node, *, _resolved_external=None):
         """Invoke a source-admitted synchronous leaf; never dispatch AST kinds."""
-        item=(self.plan.sync_functions or {}).get(id(node))
+        functions=self.plan.sync_functions
+        item=functions.get(id(node)) if functions is not None else None
         external=(_resolved_external if _resolved_external is not None else self._external_leaf(node)) if item is None else None
         if external is not None:item=external
         if item is None or item[0] is not node:

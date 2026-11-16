@@ -60,9 +60,10 @@ class Execution:
     def after(self,node,result):
         return result if self.outer_node is node else self.vm.compiled_after(node,result)
     def guard(self,node):
-        self.engine._verify_active_plans();self.engine.verify_node(node)
+        self.engine._verify_active_plans()
+        kind=self.engine.verify_node(node,_return_kind=True).__name__
         kinds=self.engine.stats.setdefault('python_translated_node_kinds',{})
-        kind=syntax_kind(node).__name__;kinds[kind]=kinds.get(kind,0)+1
+        kinds[kind]=kinds.get(kind,0)+1
     def statement(self,key):
         node,function=self.unit.statements[key]
         self.engine.stats['python_compact_statement_calls']=self.engine.stats.get('python_compact_statement_calls',0)+1

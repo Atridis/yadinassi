@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from .errors import BSLRuntimeError
 from .syntax import ast
-from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, origin_node as syntax_origin, creation_fingerprint
+from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, owned_identity, origin_node as syntax_origin, creation_fingerprint
 
 
 class CompiledUnsupported(BSLRuntimeError):
@@ -726,7 +726,7 @@ class Engine:
     def _block_signature(statements):
         return tuple((id(type(node)), id(node)) for node in statements)
 
-    def verify_node(self, node):
+    def verify_node(self, node, *, _return_kind=False):
         """Validate admitted metadata also consumed without a node visit."""
         plan = None
         if self.OWNED_SNAPSHOT:
@@ -750,25 +750,32 @@ class Engine:
             raise CompiledUnsupported(node, 'node belongs to no prepared compilation unit')
         try:
             if self.OWNED_SNAPSHOT:
-                self._verify_owned_identity(node)
+                kind = self._verify_owned_identity(node, _return_kind=_return_kind)
             else:
                 _verify_node(node, plan.signature)
+                kind = syntax_kind(node) if _return_kind else None
         except CompiledUnsupported:
             self.stats['unsupported_executions'] += 1
             raise
 
-    def _verify_owned_identity(self, value):
+        return kind if _return_kind else None
+
+    def _verify_owned_identity(self, value, *, _return_kind=False):
         # Normal writes to owned nodes/lists reject. Do not recursively hash
         # their immutable shape; opaque Literal contents intentionally stay live.
         # Unrestricted object/list protocol bypass is not a Python sandbox.
-        provenance = owned_provenance(value)
+        if _return_kind:
+            identity = owned_identity(value)
+            kind, provenance = identity if identity is not None else (None, None)
+        else:
+            provenance = owned_provenance(value)
         if provenance is None:
             raise CompiledUnsupported(None, 'unregistered owned execution view')
         original = provenance[0]
         entry = self._owned.versions.get(id(value))
         if entry is None or entry[0] is not original or entry[1] is not value:
             raise CompiledUnsupported(None, 'owned view belongs to no admitted unit')
-        return original
+        return kind if _return_kind else original
 
     def _verify_active_plans(self):
         # OFF snapshots have already-admitted, sealed ancestors retained by
@@ -1035,9 +1042,12 @@ class Engine:
                 entry_keys.add(tuple(id(node) for node in plan.node.body))
         if not any(block is program for block in selected_blocks):selected_blocks.append(program)
         if module_entry:
-            selected=[node for node in program if syntax_kind(node) is not ast.Import
-                      and syntax_kind(node) is not ast.ServerInitializer
-                      and not (syntax_kind(node) is ast.Var and node.execution_context=='server')]
+            selected=[]
+            for node in program:
+                kind=syntax_kind(node)
+                if (kind is not ast.Import and kind is not ast.ServerInitializer
+                        and not (kind is ast.Var and node.execution_context=='server')):
+                    selected.append(node)
             entry_keys.add(tuple(id(node) for node in selected))
             cached=self._python_units.get(tuple(id(node) for node in selected))
             if cached is not None and len(cached[0])==len(selected) and all(a is b for a,b in zip(cached[0],selected)):
@@ -1054,7 +1064,10 @@ class Engine:
                 else:selected_blocks.append(self._owned.freeze([plan.node]))
         expression_kinds=(ast.Literal,ast.Name,ast.Group,ast.Unary,ast.Binary,ast.Conditional,
                           ast.Attribute,ast.Index,ast.Call,ast.New,ast.DynamicNew,ast.Await)
-        roots=[plan.node for plan in nodes.values() if any(syntax_kind(plan.node) is kind for kind in expression_kinds)]
+        roots=[]
+        for plan in nodes.values():
+            kind=syntax_kind(plan.node)
+            if any(kind is candidate for candidate in expression_kinds):roots.append(plan.node)
         retained={id(unit):unit for _,unit in self._python_units.values()}
         available=min(self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
                       self.MAX_PLAIN_SOURCE_BYTES-self._plain_source_bytes()-sum(unit.source_bytes for unit in retained.values()))
@@ -1070,10 +1083,11 @@ class Engine:
         for key,(block,_) in unit.blocks.items():self._python_units[key]=(block,unit)
 
     def _python_leaf_operation(self, node):
-        identity=node if type(node) is int else id(node)
+        by_identity=type(node) is int
+        identity=node if by_identity else id(node)
         plan=self._nodes.get(identity)
         if plan is None or plan.tier!='shared-leaf':return None
-        if type(node) is not int and plan.node is not node:return None
+        if not by_identity and plan.node is not node:return None
         return plan.node,plan.function
 
     def _python_expression_execution(self, node):
@@ -1090,9 +1104,9 @@ class Engine:
         view=self.execution_view(node)
         leaf=self._python_leaf_operation(view)
         if leaf is not None:
-            self._verify_active_plans();self.verify_node(view)
+            self._verify_active_plans();kind=self.verify_node(view,_return_kind=True).__name__
             kinds=self.stats.setdefault('python_translated_node_kinds',{})
-            kind=syntax_kind(view).__name__;kinds[kind]=kinds.get(kind,0)+1
+            kinds[kind]=kinds.get(kind,0)+1
             self._active_frames += 1
             try:
                 return leaf[1](self.vm,view)
@@ -1148,9 +1162,12 @@ class Engine:
         if len(self._plain_modules)>=self.MAX_REGISTRY_ENTRIES or len(self._owned.versions)>=self.MAX_REGISTRY_ENTRIES:return
         from .plain_modules import lower_module
         from .plain_routines import Ineligible
-        selected=[node for node in program if syntax_kind(node) is not ast.Import
-                  and syntax_kind(node) is not ast.ServerInitializer
-                  and not (syntax_kind(node) is ast.Var and node.execution_context=='server')]
+        selected=[]
+        for node in program:
+            kind=syntax_kind(node)
+            if (kind is not ast.Import and kind is not ast.ServerInitializer
+                    and not (kind is ast.Var and node.execution_context=='server')):
+                selected.append(node)
         used=self._plain_source_bytes()
         available=min(self.MAX_INLINE_FUNCTION_BYTES,self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
                       self.MAX_PLAIN_SOURCE_BYTES-used)
