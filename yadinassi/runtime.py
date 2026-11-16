@@ -839,6 +839,24 @@ class Interpreter:
     def execution_backend_stats(self):
         return dict(self._hybrid_stats)
 
+    def prepare(self, text: str, source: str = "<строка>"):
+        """Compile a reusable owned module snapshot for python-direct only."""
+        from .python_direct import prepare_module, _reject
+        if type(self) is not Interpreter:
+            _reject('specialized Interpreter contexts are not integrated')
+        return prepare_module(self, parse(text, source, compilation_profile=self.compilation_profile),
+                              source_text=text, source_name=source)
+
+    def prepare_program(self, program: list[ast.Node]):
+        """Snapshot and compile an AST; later caller edits do not affect it."""
+        from .python_direct import prepare_module
+        return prepare_module(self, program)
+
+    def execute_prepared(self, prepared):
+        """Run an explicit prepared snapshot with current namespace/services."""
+        from .python_direct import execute_prepared
+        return execute_prepared(self, prepared)
+
     def execute(self, text: str, source: str = "<строка>") -> object:
         if self._execution_backend == "python-direct":
             from .python_direct import execute

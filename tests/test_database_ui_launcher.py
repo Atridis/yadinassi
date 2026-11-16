@@ -35,6 +35,32 @@ class Snapshot:
 
 
 class UnifiedDispatchTests(unittest.TestCase):
+    def test_plain_cli_does_not_import_ui_families(self):
+        import subprocess
+        for flags in ([], ['--legacy']):
+            source = (
+                'import sys; from yadinassi.launcher import main; '
+                f'code=main({flags!r}+[' + repr('-c') + ',' + repr('r=1;') + ']); '
+                'assert code==0; '
+                'assert not any(name.startswith("yadinassi.ui") for name in sys.modules)'
+            )
+            result = subprocess.run([sys.executable, '-c', source], cwd=ROOT,
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_private_modes_dispatch_selected_family(self):
+        from yadinassi.ui import form_app
+        for mode, module, arguments in (
+            ('--catalog-ui-runtime', editor_stdio, ['x']),
+            ('--form-ui', form_app, ['x']),
+            ('--form-ui-runtime', form_app, ['--runtime', 'x']),
+            ('--configuration-ui', configuration_app, ['x']),
+            ('--configuration-ui-runtime', configuration_app, ['--runtime', 'x']),
+        ):
+            with self.subTest(mode=mode), mock.patch.object(module, 'main', return_value=8) as run:
+                self.assertEqual(launcher.main([mode, 'x']), 8)
+                run.assert_called_once_with(arguments)
+
     def test_ui_first_argument(self):
         with mock.patch.object(ui, 'main', return_value=7) as launch:
             self.assertEqual(launcher.main(['--ui', '--f', 'owned']), 7)

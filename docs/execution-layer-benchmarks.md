@@ -90,3 +90,21 @@ and differences cannot all be attributed to class allocation alone.
 The unit suite checks all three BSL routes, independent expected answers, repeated-run
 state reset, type-sensitive mismatch rejection, report structure and experimental
 opt-in. Unit runs are correctness checks, **not** published performance evidence.
+
+## GitHub Actions timing reference
+
+`Performance reference` is a separate workflow/job, independent of the build,
+heavy tests, native-1C and PR-base admission gates. It runs for draft/stacked PRs,
+main pushes and manual dispatch. The checkout is the exact PR head (or dispatch
+SHA), not a synthetic merge commit. It uses read-only permissions and no secrets.
+
+Open its **Summary** for the native Python / Python classes / BSL direct median
+milliseconds and time ratios (native = 1×). The raw artifact retains every sample,
+source hashes, environment and setup/first-call timings. Nine rounds at 100000
+iterations are references, not a performance SLA; noisy runners affect numbers.
+There are **no speed thresholds**. A wrong result, setup failure or invalid report
+still fails the job rather than displaying an apparently successful timing.
+
+The third column uses the public default API. On a backend that recompiles inside
+`execute_program`, that cost belongs to its measured call; it is not represented
+as prepared-code execution. The exact API appears below the table.

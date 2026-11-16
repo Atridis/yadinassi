@@ -5,8 +5,9 @@ async, server or NoContext execution. Select compiled-strict explicitly for
 those not-yet-integrated contracts. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
-from dataclasses import fields
-from decimal import localcontext
+from dataclasses import dataclass, fields
+from copy import copy
+from decimal import Decimal, localcontext
 from .syntax import ast
 from .values import HostFunction
 
@@ -90,15 +91,27 @@ def admit(vm,program):
     return nodes,current
 
 
-def execute(vm,program,*,source_text=None,source_name=None):
-    nodes,routines=admit(vm,program)
-    from .runtime import Interpreter
-    Interpreter._require_family(vm)
+@dataclass(frozen=True, slots=True)
+class PreparedDirectModule:
+    """Owned source snapshot; no VM, authorization or execution-state cache.
+
+    Private fields are implementation details and must not be modified. Use
+    Interpreter.execute_prepared to run against current state and permissions.
+    """
+    _snapshot: tuple
+    _plan: object
+    _layout: frozenset
+    _declared: frozenset
+    _contract: tuple
+
+
+def _contract(vm):
+    return (vm.execution_backend, vm.native_target, vm.compilation_profile,
+            vm.compiled_ast_contract)
+
+
+def _compile(vm,program,nodes,source_text,source_name):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
-    from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-    from . import safe_mode,source_transactions,database_transactions
-    from .native_targets import target_context
-    from .execution_policy import execution_backend_policy
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
         lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
@@ -108,6 +121,66 @@ def execute(vm,program,*,source_text=None,source_name=None):
                      module_names=tuple(vm.module_names),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
+    return plan
+
+
+def _snapshot(value):
+    """Copy parser-owned structure without invoking host deepcopy hooks."""
+    from .syntax.lexer import Token
+    from .dates import BSLDate
+    from .values import NULL
+    kind=type(value)
+    if value is NULL or any(kind is cls for cls in (str,int,float,bool,Decimal,type(None),BSLDate)):
+        return value
+    if kind is list:return [_snapshot(item) for item in value]
+    if kind is tuple:return tuple(_snapshot(item) for item in value)
+    node_types=tuple(cls for cls in vars(ast).values() if isinstance(cls,type) and issubclass(cls,ast.Node))
+    if kind is Token or any(kind is cls for cls in node_types):
+        if kind is ast.Literal and not (value.value is NULL or any(type(value.value) is cls for cls in (str,int,float,bool,Decimal,type(None),BSLDate))):
+            _reject('prepared AST literals require immutable parser values')
+        return kind(**{field.name:_snapshot(getattr(value,field.name)) for field in fields(value)})
+    _reject('prepared AST contains unsupported host payloads')
+
+
+def prepare_module(vm,program,*,source_text=None,source_name=None):
+    admit(vm,program)
+    if vm._family_closed:
+        _reject('prepared modules require an open interpreter')
+    if vm.execution_backend != 'python-direct':
+        _reject('prepared modules require the python-direct backend')
+    from .runtime import Interpreter
+    Interpreter._require_family(vm)
+    # The caller may edit/reuse its AST after this call. Never retain that AST.
+    owned=_snapshot(program)
+    nodes=tuple(_nodes(owned))
+    plan=_compile(vm,owned,nodes,source_text,source_name)
+    declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var for name in node.names)
+    return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
+                                declared,_contract(vm))
+
+
+def execute_prepared(vm,prepared):
+    if type(prepared) is not PreparedDirectModule:
+        raise TypeError('execute_prepared requires a PreparedDirectModule')
+    return execute(vm,list(prepared._snapshot),_prepared=prepared)
+
+
+def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
+    nodes,routines=admit(vm,program)
+    if _prepared is not None:
+        if vm._family_closed:
+            _reject('prepared modules require an open interpreter')
+        if _contract(vm) != _prepared._contract:
+            _reject('prepared backend/target/profile contract changed; prepare again')
+        if frozenset(vm.module_names)|_prepared._declared != _prepared._layout:
+            _reject('prepared module-name layout changed; prepare again')
+    from .runtime import Interpreter
+    Interpreter._require_family(vm)
+    from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+    from . import safe_mode,source_transactions,database_transactions
+    from .native_targets import target_context
+    from .execution_policy import execution_backend_policy
+    plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
     class DirectBoundary(BoundaryContext):
         def _check(self):
             super()._check()
