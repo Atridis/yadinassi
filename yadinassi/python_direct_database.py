@@ -7,6 +7,7 @@ from .catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject
 from .catalog_types import BSLCatalogReference
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .values import HostFunction
+from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 
 NAMES=('catalogs','справочники')
 
@@ -15,7 +16,12 @@ class CatalogBoundary:
         self._check()
         root=self.vm._catalogs
         kind=type(value)
-        if kind is BSLCatalogs: owner=value
+        if kind is BSLQuery: owner=value._catalogs
+        elif kind in (BSLQueryResult, BSLQueryResultSelection):
+            # Detached result data: these public methods cannot execute queries
+            # or write. Returned references still require the current root.
+            return
+        elif kind is BSLCatalogs: owner=value
         elif kind is BSLCatalogManager: owner=value._catalogs
         elif kind is BSLCatalogObject: owner=value._manager._catalogs
         elif kind is BSLCatalogSection: owner=value._owner._manager._catalogs
@@ -26,6 +32,15 @@ class CatalogBoundary:
         else: owner=None
         if owner is not root:
             raise BoundaryViolation('unregistered or foreign database receiver')
+
+    def resolve_service(self,name,*args,**kwargs):
+        if name.casefold() in ('new:query','new:запрос'):
+            self._check()
+            function=self.vm.types.get(name.split(':',1)[1].casefold())
+            if type(function) is not HostFunction:
+                raise BoundaryViolation('query constructor requires canonical registration')
+            return super().resolve_callable(function)
+        return super().resolve_service(name,*args,**kwargs)
 
     def external_get(self,name):
         self._check()

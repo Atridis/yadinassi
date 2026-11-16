@@ -43,8 +43,10 @@ def _parameters(values):
     """Snapshot a small scalar map; never admit a form/object/reference handle."""
     if values is None:
         values = {}
-    if type(values) in (BSLStructure, BSLFixedStructure):
-        values = {pair.key: pair.value for pair in values}
+    from ..direct_form_parameters import structure_items
+    pairs = structure_items(values)
+    if pairs is not None:
+        values = dict(pairs)
     if type(values) is not dict or len(values) > MAX_PARAMETERS:
         raise ValueError('scalar form parameters required')
     seen = set(); result = {}
@@ -1626,7 +1628,7 @@ class ConfigurationController:
         self._current_form_sid = owned.owner
         failed = False
         try:
-            value = owned.result if dialog or typed else result_value(owned.result)
+            value = owned.result if dialog or typed else result_value(owned.result, direct=session.interpreter.execution_backend == 'python-direct')
             with self.application.event_messages(session._record_message):
                 session.synchronize_owned()
                 try:

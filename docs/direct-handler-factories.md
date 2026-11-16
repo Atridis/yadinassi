@@ -35,3 +35,35 @@ issues the expected OpenForm request. Opening OperationDraft itself is still
 blocked during preparation by unsupported `ОписаниеОповещения` constructor in
 its callback-bearing module. This slice does not emulate that callback with VM
 execution or claim the entire process workflow passes.
+
+## Owned direct completions
+
+CallbackDescription constructors now capture only the enrolled current client
+self-form using the existing canonical descriptor and generation/enrollment
+capability. Metadata validation is reused, not VM callback execution. Trusted
+completion delivery retains revision/arity/export/lifetime admission and invokes
+the generated handler directly; error cleanup and partial effects remain explicit.
+ThisObject.Close is the sole newly exposed self-form method and delegates to the
+existing owned-command close admission. Other host members stay denied.
+
+Replicated client schemas arrive after initial declaration preparation. A change
+in validated static/table names recompiles the owned declaration snapshot only;
+value changes do not compile again. No renderer source is admitted. This resolves
+OperationDraft's previously unbound client fields. Native Structure parameter/
+result codecs are a separate integration dependency before the full owned-child
+workflow can pass.
+
+## Dialog enum namespace and accepted completion
+
+QuestionDialogMode / РежимДиалогаВопрос and DialogReturnCode /
+КодВозвратаДиалога are explicit read-only external names. Only the two existing
+singleton namespaces receive public `get_member` reads. This does not enable
+Python getattr, enum-class reflection, namespace assignment or arbitrary host
+members. Existing typed dialog values, queue admission and one-shot tickets are
+unchanged.
+
+The actual main-demo child-process test now covers AcceptDraft → ConfirmDraft →
+Yes, asserts AppliedCount=1 and the accepted outcome, then rejects a repeated Yes
+without applying twice. Both forms close, the application closes, and the SQLite
+file remains byte-identical. These tests and alias/private-access controls pass
+under normal Python and `-O`; no legacy fallback was introduced.

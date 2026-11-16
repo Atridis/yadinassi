@@ -471,9 +471,13 @@ class FormSession:
         self._completion_active = True
         try:
             with target_context(self.interpreter.native_target), localcontext():
-                self.interpreter._scheduler.run_inline(
-                    self.interpreter.dispatch_callback(description, result, routine.token,
-                                                       result_argument=result_argument))
+                if self._direct_handlers is not None:
+                    values=([result] if result_argument else [])+[description.additional_parameters]
+                    self._invoke(routine.name, 'client', values)
+                else:
+                    self.interpreter._scheduler.run_inline(
+                        self.interpreter.dispatch_callback(description, result, routine.token,
+                                                           result_argument=result_argument))
         finally:
             self._completion_active = False
             self.revision += 1; self._busy = False; self._gate.release()

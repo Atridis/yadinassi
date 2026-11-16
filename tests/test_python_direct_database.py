@@ -39,3 +39,19 @@ class DirectDatabaseTests(unittest.TestCase):
             with self.assertRaises(Exception):self.vm.execute('BeginTransaction();')
             begin.assert_not_called()
         self.assertTrue(self.vm._transaction_activation_allowed)
+
+    def test_query_selection_on_real_sqlite_without_vm_dispatch(self):
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура"); S=Q.Execute().Select(); Found=S.Next(); N=S.N;')
+        self.assertTrue(self.vm.variables['found'])
+        self.assertEqual(self.vm.variables['n'],0)
+        self.vm.execute('Again=S.Next(); Last=S.N;')
+        self.assertFalse(self.vm.variables['again'])
+        self.assertEqual(self.vm.variables['last'],0)
+
+    def test_foreign_query_and_query_private_fields_rejected(self):
+        self.vm.execute('Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Номенклатура");')
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.variables['foreign']=self.vm.variables['q']
+        with self.assertRaises(BoundaryViolation):other.execute('foreign.Execute();')
+        with self.assertRaises(Exception):self.vm.execute('secret=Q._catalogs;')

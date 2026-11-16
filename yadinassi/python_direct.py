@@ -1,8 +1,8 @@
 """Default trusted-standalone AST -> Python execution. No legacy fallback.
 
-This route deliberately does not impersonate configuration, form, database,
-async, server or NoContext execution. Select compiled-strict explicitly for
-those not-yet-integrated contracts. Registered host services remain trusted
+Standalone execution and an explicit host-selected catalog/query bridge live
+here. Configuration and forms use separate direct entry points; unsupported
+async/server/NoContext contracts still require explicit compiled-strict. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
 from dataclasses import dataclass, fields
@@ -123,6 +123,7 @@ def _compile(vm,program,nodes,source_text,source_name):
     try:
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
+                     constructors=("query","запрос") if vm.database_context is not None else (),
                      external_names=("catalogs","справочники") if vm.database_context is not None else (),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))

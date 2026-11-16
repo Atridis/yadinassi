@@ -65,7 +65,7 @@ class PreparedHandlers:
                 for slot,by_value in zip(slots,descriptor.by_value)]
 
 
-def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),repairs=REPAIRS):
+def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),repairs=REPAIRS):
     """Prepare an already-admitted form module; never infer host capabilities.
 
     Only same-side routines share a generated closure family. A cross-side call
@@ -88,6 +88,6 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
         selected=[node for node in owned if node.execution_context==side]
         namespace_options={'external_names':external_names} if external_names else {}
         plans[side]=prepare(source_text,source_name=source_name,repairs=repairs,
-                            module_names=module_names,parsed_ast=selected,
+                            module_names=module_names,constructors=constructors,parsed_ast=selected,
                             _trusted_entry=True,_export_routines=True,**namespace_options)
     return PreparedHandlers(MappingProxyType(plans),MappingProxyType(descriptors),source_text,source_name)

@@ -1,13 +1,17 @@
 """Small direct managed-form event bridge; no AST execution fallback."""
 from contextlib import contextmanager
+from . import safe_mode, source_transactions, database_transactions, form_runtime
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from .python_direct import REPAIRS
+from .python_direct import REPAIRS, _snapshot
 from .python_direct_handlers import prepare_handlers
 from .syntax import ast
 from .python_direct_configuration import ConfigurationBoundary, check_owner
 
+CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
+
 SYSTEM_NAMES = ('thisobject','этотобъект','items','элементы','commands','команды',
-                'parameters','параметры','formfieldtype','видполяформы')
+                'parameters','параметры','formfieldtype','видполяформы',
+                'questiondialogmode','режимдиалогавопрос','dialogreturncode','кодвозвратадиалога')
 
 class FormBoundary(ConfigurationBoundary):
     def __init__(self, session, routine):
@@ -21,7 +25,6 @@ class FormBoundary(ConfigurationBoundary):
 
     def _check(self):
         BoundaryContext._check(self)
-        from . import safe_mode, source_transactions, database_transactions
         if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
             raise BoundaryViolation("direct restricted form execution is not connected")
@@ -41,10 +44,9 @@ class FormBoundary(ConfigurationBoundary):
 
     def checkpoint(self):
         self._check()
-        from .form_runtime import MAX_STEPS, FormLimitError
         self.session._steps += 1
-        if self.session._steps > MAX_STEPS:
-            raise FormLimitError('Форма: превышен предел исполнения события')
+        if self.session._steps > form_runtime.MAX_STEPS:
+            raise form_runtime.FormLimitError('Форма: превышен предел исполнения события')
 
     def external_get(self, name):
         self._check()
@@ -53,6 +55,12 @@ class FormBoundary(ConfigurationBoundary):
         if name in ('items','элементы'): return form.items
         if name in ('commands','команды'): return form.commands
         if name in ('parameters','параметры'): return self.session._parameters
+        if name in ('questiondialogmode','режимдиалогавопрос'):
+            from .form_dialogs import QUESTION_DIALOG_MODES
+            return QUESTION_DIALOG_MODES
+        if name in ('dialogreturncode','кодвозвратадиалога'):
+            from .form_dialogs import DIALOG_RETURN_CODES
+            return DIALOG_RETURN_CODES
         if name in ('formfieldtype','видполяформы'):
             from .form_model import FORM_FIELD_VIEWS
             return FORM_FIELD_VIEWS
@@ -66,12 +74,66 @@ class FormBoundary(ConfigurationBoundary):
         self.session.form.set_member(name, value)
 
     def resolve_service(self,*args,**kwargs):
+        if args and args[0] in tuple('new:'+name for name in CALLBACK_CONSTRUCTORS):
+            self._check()
+            if self.owner.execution_context!='client' or self.session._owned_form_enrollment is None:
+                raise BoundaryViolation('callback constructor requires an enrolled client form')
+            def create(*values):
+                self._check()
+                if len(values)<2 or values[1] is not self.session.form:
+                    raise ValueError('direct callback requires the owning self-form')
+                result=self.owner._new_callback(values)
+                self._check()
+                return result
+            return create
         if self.app is not None:return ConfigurationBoundary.resolve_service(self,*args,**kwargs)
         return BoundaryContext.resolve_service(self,*args,**kwargs)
 
+    def get_member(self,value,name):
+        from .form_dialogs import QUESTION_DIALOG_MODES,DIALOG_RETURN_CODES
+        if value is QUESTION_DIALOG_MODES or value is DIALOG_RETURN_CODES:
+            self._check()
+            return value.get_member(name)
+        from .direct_form_parameters import is_parameters,get_parameter
+        if is_parameters(self.session,value):
+            self._check()
+            return get_parameter(self.session,value,name)
+        if value is self.session.form and name.casefold() in ('close','закрыть'):
+            from .values import HostFunction
+            return HostFunction(name,self.resolve_member(value,name),returns_value=False)
+        return BoundaryContext.get_member(self,value,name)
+
     def resolve_member(self,value,name):
+        from .direct_form_parameters import is_parameters,bind_parameter_method
+        if is_parameters(self.session,value):
+            self._check()
+            method=bind_parameter_method(self.session,value,name)
+            def invoke(*args):
+                self._check()
+                try:return method(*args)
+                finally:self._check()
+            return invoke
+        if value is self.session.form and name.casefold() in ('close','закрыть'):
+            self._check()
+            def close(result=None):
+                self._check()
+                try:return self.session.request_close(result)
+                finally:self._check()
+            return close
         if self.app is not None:return ConfigurationBoundary.resolve_member(self,value,name)
         return BoundaryContext.resolve_member(self,value,name)
+
+    def resolve_set_member(self,value,name):
+        from .direct_form_parameters import is_parameters,bind_parameter_write
+        if is_parameters(self.session,value):
+            self._check()
+            write=bind_parameter_write(self.session,value,name)
+            def invoke(new_value):
+                self._check()
+                try:return write(new_value)
+                finally:self._check()
+            return invoke
+        return BoundaryContext.resolve_set_member(self,value,name)
 
 
 def prepare_form(session, program, source, attributes, tables):
@@ -84,6 +146,9 @@ def prepare_form(session, program, source, attributes, tables):
         raise BoundaryViolation("direct restricted form execution is not connected")
     app=session.interpreter._configuration_runtime
     if app is not None:check_owner(app,session.interpreter)
+    if not hasattr(session,'_direct_form_source'):
+        session._direct_form_source=(_snapshot(program),source)
+    session._direct_form_schema=frozenset(a.name.casefold() for a in attributes)|frozenset(t.name.casefold() for t in tables)
     # These AST tables are signature metadata only; execution never reads bodies.
     for node in program:
         if type(node) is ast.Routine:
@@ -91,10 +156,19 @@ def prepare_form(session, program, source, attributes, tables):
             registry[node.name.casefold()] = node
     names = tuple(attr.name.casefold() for attr in attributes) + tuple(t.name.casefold() for t in tables) + SYSTEM_NAMES + (() if app is None else tuple(app._definitions))
     return prepare_handlers(program, source_text=source if type(source) is str else '',
-                            external_names=names, repairs=REPAIRS+('authority_checkpoints',))
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS, repairs=REPAIRS+('authority_checkpoints',))
 
 
 def invoke_form(session, handler, side, arguments):
+    # Replica schemas are validated before installation; names may arrive after
+    # the client's declaration-only factory was first prepared. Recompile only
+    # the owned declarations, never renderer-supplied source or a module body.
+    schema=frozenset(session.form._static)|frozenset(session.form._tables)
+    if schema != session._direct_form_schema:
+        program,source=session._direct_form_source
+        attributes=tuple(session.form._attributes[name] for name in session.form._static)
+        tables=tuple(table.schema for table in session.form._tables.values())
+        session._direct_handlers=prepare_form(session,program,source,attributes,tables)
     routine=session._bind(handler,side,len(arguments))
     @contextmanager
     def scope():

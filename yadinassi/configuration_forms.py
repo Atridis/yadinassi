@@ -91,8 +91,10 @@ def bind_parameters(session, parameters=None):
         raise ValueError('parameters must precede form open')
     if parameters is None:
         parameters = {}
-    if type(parameters) in (BSLStructure, BSLFixedStructure):
-        parameters = {key: value for key, value in parameters._items.values()}
+    from .direct_form_parameters import structure_items
+    pairs = structure_items(parameters)
+    if pairs is not None:
+        parameters = dict(pairs)
     if type(parameters) is not dict or len(parameters) > 64:
         raise ValueError('bounded scalar parameter structure required')
     result = BSLStructure(); seen = set(); size = 0
