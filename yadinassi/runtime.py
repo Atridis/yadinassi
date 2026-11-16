@@ -542,6 +542,9 @@ class Interpreter:
 
     def visit(self, node: ast.Node) -> object:
         """Synchronous embedding boundary; language evaluation uses _visit."""
+        if self._execution_backend == "python-direct":
+            from .python_direct import _reject
+            _reject("single-node visit is not a direct module entry")
         if self.execution_backend == 'compiled-strict':
             engine = self._compiled()
             if not engine.has_executable_node(node):
@@ -837,10 +840,16 @@ class Interpreter:
         return dict(self._hybrid_stats)
 
     def execute(self, text: str, source: str = "<строка>") -> object:
+        if self._execution_backend == "python-direct":
+            from .python_direct import execute
+            return execute(self,parse(text,source,compilation_profile=self.compilation_profile),source_text=text,source_name=source)
         return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
 
     def execute_program(self, program: list[ast.Node]) -> object:
         """Execute already-compiled AST; this does not select source branches."""
+        if self._execution_backend == "python-direct":
+            from .python_direct import execute
+            return execute(self,program)
         self._require_family()
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
@@ -994,6 +1003,9 @@ class Interpreter:
                 state.pop(_CONTROL_FLOW_PLANS, None)
 
     def block(self, statements: list[ast.Node]) -> object:
+        if self._execution_backend == "python-direct":
+            from .python_direct import _reject
+            _reject("block is a legacy generator entrypoint")
         if self._execution_backend == 'compiled-strict':
             engine = self._compiled()
             if not engine.has_executable_block(statements):
@@ -1384,6 +1396,9 @@ class Interpreter:
         return candidates[0] or candidates[1]
 
     def call(self, node: ast.Call, *, require_value: bool, _evaluation=None) -> object:
+        if self._execution_backend == "python-direct":
+            from .python_direct import _reject
+            _reject("call is a legacy generator entrypoint")
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         receiver = self.receiver if _evaluation is None else _evaluation.receiver
         argument_value = self.argument if _evaluation is None else _evaluation.argument
@@ -1968,6 +1983,9 @@ class Interpreter:
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
+        if self._execution_backend == "python-direct":
+            from .python_direct import _reject
+            _reject("call_routine is a legacy generator entrypoint")
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         argument_value = self.argument if _evaluation is None else _evaluation.argument
         (function, authority_function, caller_side, crossing, invocation, layout) = self._admit_routine_call(

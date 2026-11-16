@@ -1,5 +1,12 @@
 # yadinassi
 
+> **Breaking default:** standalone execution now uses `python-direct` (direct
+> Python lowering, no silent legacy fallback). Use `--legacy` or
+> `Interpreter(execution_backend="compiled-strict")` for the previous route.
+> Configuration/UI/async integration is not complete and can explicitly refuse
+> execution. See [the direct-default contract and gaps](docs/python-direct-default.md).
+
+
 ![yadinassi logo](.github/large.png)
 
 **Yet Another oDIN ASS Interpreter**  
@@ -346,6 +353,6 @@ generic Invocation, миграции и права транзакций не р�
 ### Opt-in hybrid execution
 
 Standalone numeric loops can be tried with
-`yadinassi --execution-backend hybrid file.bsl`; the default remains the ordinary
-interpreter. Unsupported contexts fall back before loop effects. See
+`yadinassi --execution-backend hybrid file.bsl`; the default is now
+`python-direct`. Unsupported contexts fall back before loop effects. See
 [the bounded hybrid backend contract and benchmark](docs/hybrid-backend.md).

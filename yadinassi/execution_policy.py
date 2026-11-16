@@ -2,8 +2,8 @@
 from contextvars import ContextVar
 from contextlib import contextmanager
 
-BACKENDS = ('interpreter', 'hybrid', 'compiled-strict')
-_POLICY = ContextVar('yadinassi_execution_backend', default='compiled-strict')
+BACKENDS = ('python-direct', 'interpreter', 'hybrid', 'compiled-strict')
+_POLICY = ContextVar('yadinassi_execution_backend', default='python-direct')
 
 def current_backend():
     return _POLICY.get()
@@ -18,12 +18,12 @@ def execution_backend_policy(backend):
     finally:
         _POLICY.reset(token)
 
-UI_BACKENDS = ('interpreter', 'compiled-strict')
+UI_BACKENDS = ('python-direct', 'interpreter', 'compiled-strict')
 
 def ui_backend(backend=None):
     mode = current_backend() if backend is None else backend
     if type(mode) is not str or mode not in UI_BACKENDS:
-        raise ValueError('UI execution backend must be interpreter or compiled-strict')
+        raise ValueError('UI execution backend must be python-direct, interpreter or compiled-strict')
     return mode
 
 
@@ -41,7 +41,9 @@ def backend_entrypoint(function):
         arguments = list(sys.argv[1:] if argv is None else argv)
         boundary = arguments.index('--') if '--' in arguments else len(arguments)
         parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-        parser.add_argument('--execution-backend', choices=UI_BACKENDS)
+        selection_group=parser.add_mutually_exclusive_group()
+        selection_group.add_argument('--execution-backend', choices=UI_BACKENDS)
+        selection_group.add_argument('--legacy', dest='execution_backend', action='store_const', const='compiled-strict')
         for argument in arguments[:boundary]:
             name = argument.split('=', 1)[0]
             if name.startswith('--') and name != '--execution-backend' and '--execution-backend'.startswith(name):

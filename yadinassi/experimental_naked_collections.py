@@ -210,9 +210,10 @@ class Program:
     source_name: str="<naked-collection-experiment>"
     source_text: str=""
     required_services: tuple=()
+    trusted_entry: bool=False
 
     def run(self,initial=None,*,context=None):
-        _enabled()
+        if not self.trusted_entry:_enabled()
         if 'live_module_state' in self.repairs:
             from .experimental_naked_live_state import validate_state
             state=validate_state(initial)
@@ -238,8 +239,10 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=()):
-    _enabled()
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False):
+    # Internal trusted backend entry, not an environment mutation or sandbox grant.
+    if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
+    if not _trusted_entry:_enabled()
     if isinstance(repairs,str):repairs=tuple(name for name in repairs.split(',') if name)
     repairs=frozenset(repairs)
     if 'resource_bounds' in repairs:
@@ -258,7 +261,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if 'structure_fields' in repairs:
         from . import experimental_naked_structure as structure_ops
     required_services=set()
-    program=parse(source,source_name)
+    program=parse(source,source_name) if parsed_ast is None else parsed_ast
     symbols={};constants=[];serial=0;lines=[];loops=[]
     from .experimental_naked_errors import SourceMap, source_mapping_supported
     if 'error_boundaries' in repairs and not source_mapping_supported():
@@ -637,7 +640,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 if module_name(name):emit(depth,'_initial.setdefault('+repr(name.casefold())+', None)')
                 elif boxed(name):emit(depth,f'if {slot}._value is _UNSET_REF: {slot}.value = None')
                 else:emit(depth,f'if {slot!r} not in locals(): {slot} = None')
-        elif kind is ast.ExpressionStatement:emit(depth,expression(node.expression,False))
+        elif kind is ast.ExpressionStatement:
+            prefix='return ' if _return_last_expression and scope_id is None and node is program[-1] else ''
+            emit(depth,prefix+expression(node.expression,False))
         elif kind is ast.Return:emit(depth,'return '+(expression(node.value) if node.value is not None else 'None'))
         elif kind is ast.If:
             for index,(condition,block) in enumerate(node.branches):
@@ -771,7 +776,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     namespace['_BSLRuntimeError']=BSLRuntimeError
     code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
     exec(code,namespace)
-    return Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)))
+    return Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)
 
 compile_source=prepare
 
