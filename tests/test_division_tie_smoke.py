@@ -26,7 +26,7 @@ class DivisionTieSmokeTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0], ['synthetic-executable', '-'])
         source = (smoke_test.ROOT / 'integrational_tests/tests/numbers.bsl').read_text(encoding='utf-8')
         self.assertEqual(run.call_args.kwargs['input'], source)
-        self.assertEqual(run.call_args.kwargs['timeout'], 30)
+        self.assertEqual(run.call_args.kwargs['timeout'], smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS)
 
     def output(self, records=None):
         return self.prefix + '\n'.join(self.records if records is None else records) + '\n'

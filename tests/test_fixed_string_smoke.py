@@ -95,7 +95,7 @@ class FixedStringSmokeTests(unittest.TestCase):
         for call in run.call_args_list[-2:]:
             self.assertEqual(call.args[0], [self.executable, '-'])
             self.assertEqual(call.kwargs['encoding'], 'utf-8')
-            self.assertEqual(call.kwargs['timeout'], 30)
+            self.assertEqual(call.kwargs['timeout'], smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS)
             self.assertEqual(call.kwargs['env'], self.env)
 
     def test_wrong_historical_fixture_hash_rejected_before_checkpoint_execution(self):

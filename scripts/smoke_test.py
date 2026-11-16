@@ -27,6 +27,13 @@ else:
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Frozen subprocesses include bundle startup and source compilation. Intel macOS
+# CI exceeded 30s in both native replay and table checkpoints. These are semantic
+# smoke tests, not performance gates: keep one finite per-launch bound for the
+# whole suite, with no retries or output/coverage changes. The package CI job also
+# retains its independent 40-minute total deadline.
+FROZEN_PROCESS_TIMEOUT_SECONDS = 120
+
 
 # Date values below come from the owner's native dates.out checkpoint. In
 # particular, arithmetic retains ticks while the internal Date stream loses them.
@@ -216,7 +223,7 @@ def check_dates(executable: str, *, directory: Path, env: dict) -> None:
               for path in (importer, importer.relative_to(directory.parent))]
     for arguments, stdin, expected in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed Date checkpoint {arguments!r}: {result!r}')
     for expression, message in DATE_FAILURES:
@@ -229,14 +236,14 @@ def check_dates(executable: str, *, directory: Path, env: dict) -> None:
                     '{"D",20240229000000}\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed Date diagnostic {arguments!r}: {result!r}')
     importer.write_text('// #Импорт Даты.bsl\nДаты.Failure();\n', encoding='utf-8-sig')
     for path in (importer, importer.relative_to(directory.parent)):
         result = subprocess.run([executable, str(path)], capture_output=True, encoding='utf-8',
-                                cwd=directory.parent, env=env, timeout=30)
+                                cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1 or result.stdout or str(module.resolve()) + ':8:' not in result.stderr
                 or 'Ожидается дата' not in result.stderr or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed imported Date diagnostic {path!r}: {result!r}')
@@ -249,7 +256,7 @@ def check_dates(executable: str, *, directory: Path, env: dict) -> None:
                    (['-'], code, '<stdin>:2:')]
         for arguments, stdin, location in errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed Date literal diagnostic {arguments!r}: {result!r}')
@@ -257,7 +264,7 @@ def check_dates(executable: str, *, directory: Path, env: dict) -> None:
             'ValueToStringInternal(savedDate)\nsavedDate = Date(\n2024, 2, 29, 12, 34, 56);\n'
             'ValueToStringInternal(savedDate)\n/exit\n')
     result = subprocess.run([executable], input=code, capture_output=True,
-                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode != 1 or result.stdout != '{"D",20240229000000}\n{"D",20240229123456}\n'
             or '<консоль>:1:' not in result.stderr or 'Traceback' in result.stderr
             or 'Перенос строки в литерале даты не поддерживается' not in result.stderr):
@@ -359,7 +366,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
               ([], DIVISION_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, DIVISION_OUTPUT, ''):
             raise AssertionError(f'Failed division {arguments!r}: {result!r}')
 
@@ -381,7 +388,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
                      '0,142857142857142857142857143\n0,125\n')
     for path in (importer, importer.relative_to(directory.parent)):
         result = subprocess.run([executable, str(path)], capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, import_output, ''):
             raise AssertionError(f'Failed imported division {path!r}: {result!r}')
 
@@ -402,7 +409,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
             errors.append(([str(path)], None, '', str(module.resolve()) + ':2:'))
         for arguments, stdin, stdout, location in errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed division diagnostics {arguments!r}: {result!r}')
@@ -412,7 +419,7 @@ def check_division(executable: str, *, directory: Path, env: dict) -> None:
         code = ('value = 1 / 7;\n' + expression + '\n'
                 'value\nTypeOf(value)\n1 / 8\n/exit\n')
         result = subprocess.run([executable], input=code, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1
                 or result.stdout != '0,142857142857142857142857143\nЧисло\n0,125\n'
                 or '<консоль>:1:' not in result.stderr or message not in result.stderr
@@ -518,7 +525,7 @@ def check_eval(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], EVAL_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, EVAL_OUTPUT, ''):
             raise AssertionError(f'Failed Eval {arguments!r}: {result!r}')
     print('Binary Eval passed: context, reference, parse/arity/depth errors, '
@@ -922,7 +929,7 @@ def check_string_parity(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], STRING_PARITY_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_PARITY_OUTPUT, ''):
             raise AssertionError(f'Failed native string parity {arguments!r}: {result!r}')
     print('Binary string checks passed: native parity, extended StrFind/SearchDirection, lexical XML conversion, '
@@ -940,7 +947,7 @@ def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], ARRAY_GAP_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, ARRAY_GAP_OUTPUT, ''):
             raise AssertionError(f'Failed array gap insertion {arguments!r}: {result!r}')
     code = 'a = New Array; a.Add("old");\na.Insert(100000000000000000000);\n'
@@ -951,7 +958,7 @@ def check_array_gap(executable: str, *, directory: Path, env: dict) -> None:
               ([], code + 'a.Count()\na[0]\n/exit\n', '1\nold\n', '<консоль>:1:')]
     for arguments, stdin, stdout, location in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                 or 'предел роста массива Yadinassi' not in result.stderr or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed array gap diagnostic {arguments!r}: {result!r}')
@@ -970,7 +977,7 @@ def check_array_defaults(executable: str, *, directory: Path, env: dict) -> None
     cases = [([str(source)], None), ([], ARRAY_DEFAULT_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, ARRAY_DEFAULT_OUTPUT, ''):
             raise AssertionError(f'Failed array defaults {arguments!r}: {result!r}')
     print('Binary array defaults passed: aliases, mutation, fixed snapshot, serialization, '
@@ -988,7 +995,7 @@ def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], VALUE_FILLED_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, VALUE_FILLED_OUTPUT, ''):
             raise AssertionError(f'Failed value filled {arguments!r}: {result!r}')
     for expression, message in VALUE_FILLED_FAILURES:
@@ -1002,7 +1009,7 @@ def check_value_filled(executable: str, *, directory: Path, env: dict) -> None:
                    'old\nДа\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed value filled recovery {arguments!r}: {result!r}')
@@ -1021,7 +1028,7 @@ def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], STRING_LINES_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_LINES_OUTPUT, ''):
             raise AssertionError(f'Failed string lines {arguments!r}: {result!r}')
     for expression, message in STRING_LINES_FAILURES:
@@ -1035,7 +1042,7 @@ def check_string_lines(executable: str, *, directory: Path, env: dict) -> None:
                    'old\nnew\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string line recovery {arguments!r}: {result!r}')
@@ -1054,7 +1061,7 @@ def check_string_template(executable: str, *, directory: Path, env: dict) -> Non
     cases = [([str(source)], None), ([], STRING_TEMPLATE_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_TEMPLATE_OUTPUT, ''):
             raise AssertionError(f'Failed string templates {arguments!r}: {result!r}')
     for expression, message in STRING_TEMPLATE_FAILURES:
@@ -1068,7 +1075,7 @@ def check_string_template(executable: str, *, directory: Path, env: dict) -> Non
                    'old\nnew\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string template recovery {arguments!r}: {result!r}')
@@ -1087,7 +1094,7 @@ def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> N
     cases = [([str(source)], None), ([], STRING_BOUNDARY_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, STRING_BOUNDARY_OUTPUT, ''):
             raise AssertionError(f'Failed string boundaries {arguments!r}: {result!r}')
     for expression, message in STRING_BOUNDARY_FAILURES:
@@ -1101,7 +1108,7 @@ def check_string_boundaries(executable: str, *, directory: Path, env: dict) -> N
                    'Да\nДа\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed string boundary recovery {arguments!r}: {result!r}')
@@ -1136,12 +1143,12 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed Chars namespace {arguments!r}: {result!r}')
     result = subprocess.run([executable], input='Chars\nMessage(42);\n/exit\n',
                             capture_output=True, encoding='utf-8', cwd=directory.parent,
-                            env=env, timeout=30)
+                            env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode != 1 or result.stdout != '42\n'
             or 'пока не поддерживается' not in result.stderr or 'Traceback' in result.stderr):
         raise AssertionError(f'Failed unsupported namespace REPL recovery: {result!r}')
@@ -1154,7 +1161,7 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     if hashlib.sha256(previous.encode()).hexdigest() != fixture['source_sha256']:
         raise AssertionError('Chars checkpoint source identity changed')
     result = subprocess.run([executable, '-'], input=previous, capture_output=True,
-                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     boundary = 'types-extra.checkpoint.complete: [ok]\n'
     expected_suffix = '\n'.join(fixture['records']) + '\n'
     if (result.returncode != 0 or result.stderr or result.stdout.count(boundary) != 1
@@ -1166,7 +1173,7 @@ def check_chars_namespace(executable: str, *, directory: Path, env: dict) -> Non
     # Execute the entire current source too, preserving all previous bytes and
     # every added record against the independently measured PR82 fixture.
     current = subprocess.run([executable, '-'], input=complete, capture_output=True,
-                             encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                             encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     suffix = current.stdout[len(result.stdout):]
     records = suffix.splitlines()
     labels = [f'types-extra.fixed-default.{case}.{argument}:'
@@ -1194,7 +1201,7 @@ def check_service_filled_checkpoint(executable: str, *, directory: Path, env: di
     captures = []
     for source in (previous, complete):
         result = subprocess.run([executable, '-'], input=source, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if result.returncode != 0 or result.stderr:
             raise AssertionError('Failed service filled checkpoint execution')
         captures.append(result.stdout)
@@ -1233,7 +1240,7 @@ def check_characters(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], CHARACTER_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, CHARACTER_OUTPUT, ''):
             raise AssertionError(f'Failed character functions {arguments!r}: {result!r}')
     for expression, message in CHARACTER_FAILURES:
@@ -1247,7 +1254,7 @@ def check_characters(executable: str, *, directory: Path, env: dict) -> None:
                    'A\n65\n', '<консоль>:1:')]
         for arguments, stdin, stdout, location in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                    encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed character recovery {arguments!r}: {result!r}')
@@ -1265,7 +1272,7 @@ def check_numeric_helpers(executable: str, *, directory: Path, env: dict) -> Non
     cases = [([str(source)], None), ([], NUMERIC_HELPERS_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, NUMERIC_HELPERS_OUTPUT, ''):
             raise AssertionError(f'Failed integer part {arguments!r}: {result!r}')
     print('Binary numeric helpers passed: aliases, signs, long coefficient, coercion, winning types, ties, '
@@ -1300,7 +1307,7 @@ def check_numeric_boolean_comparisons(executable: str, *, directory: Path, env: 
     cases = [([str(source)], None), ([], COMPARISON_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, COMPARISON_OUTPUT, ''):
             raise AssertionError(f'Failed Number/Boolean comparison {arguments!r}: {result!r}')
     print('Binary Number/Boolean comparisons passed: six operators, exact values, typed keys, CLI and recovery')
@@ -1358,12 +1365,12 @@ def check_goto(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], GOTO_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, GOTO_OUTPUT, ''):
             raise AssertionError(f'Failed Goto {arguments!r}: {result!r}')
     for program, message in GOTO_ERRORS:
         result = subprocess.run([executable, '-c', program], capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1 or result.stdout or message not in result.stderr
                 or '<команда>:1:' not in result.stderr or 'Traceback' in result.stderr):
             raise AssertionError(f'Failed Goto diagnostic: {result!r}')
@@ -1464,14 +1471,14 @@ def check_rounding(executable: str, *, directory: Path, env: dict) -> None:
     cases = [([str(source)], None), ([], ROUNDING_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, ROUNDING_OUTPUT, ''):
             raise AssertionError(f'Failed rounding {arguments!r}: {result!r}')
     for expression, message in ROUNDING_FAILURES:
         code = f'value = Round(12.345, 2);\nvalue = {expression};\n'
         result = subprocess.run([executable], input=code + 'value\nОкр(-1.5)\n/exit\n',
                                 capture_output=True, encoding='utf-8', cwd=directory.parent,
-                                env=env, timeout=30)
+                                env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1 or result.stdout != '12,35\n-2\n'
                 or '<консоль>:1:' not in result.stderr or message not in result.stderr
                 or 'Traceback' in result.stderr):
@@ -1520,7 +1527,7 @@ def check_internal_serialization(executable: str, *, directory: Path, env: dict)
     cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed internal serialization {arguments!r}: {result!r}')
     print('Binary internal serialization passed: all12types, UTF16, graph copying, cycles, external presentation, '
@@ -1590,7 +1597,7 @@ Message(String("1234.5000"));
         cases.append(([str(path)], None, import_expected))
     for arguments, stdin, stdout in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, stdout, ''):
             raise AssertionError(f'Failed numeric presentation {arguments!r}: {result!r}')
     error_code = 'value = Number("1\u00a0234,5");\nvalue = Number("12\u00a034,5");\n'
@@ -1608,7 +1615,7 @@ Message(String("1234.5000"));
         errors.append(([str(path)], None, '', str(module.resolve()) + ':5:'))
     for arguments, stdin, stdout, location in errors:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                 or 'Невозможно преобразовать значение в число' not in result.stderr
                 or 'Traceback' in result.stderr):
@@ -1650,7 +1657,7 @@ def check_clocks(executable: str, *, directory: Path, env: dict) -> None:
     for arguments, stdin in cases:
         before = time.time_ns()
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         after = time.time_ns()
         lines = result.stdout.splitlines()
         if (result.returncode != 0 or result.stderr or len(lines) != 15
@@ -1682,7 +1689,7 @@ def check_clocks(executable: str, *, directory: Path, env: dict) -> None:
                         'Message(TypeOf(value.MS) = Type("Number"));\n', encoding='utf-8-sig')
     for path in (importer, importer.relative_to(directory.parent)):
         result = subprocess.run([executable, str(path)], capture_output=True, encoding='utf-8',
-                                cwd=directory.parent, env=env, timeout=30)
+                                cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, 'Да\n' * 3, ''):
             raise AssertionError(f'Failed imported clocks: {result!r}')
     print('Binary clocks passed: live UTC interval, year-1 milliseconds, aliases, codecs, '
@@ -1730,7 +1737,7 @@ def check_null(executable: str, *, directory: Path, env: dict) -> None:
     cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed native Null checkpoint {arguments!r}: {result!r}')
     module = directory / 'Особые.bsl'
@@ -1752,7 +1759,7 @@ def check_null(executable: str, *, directory: Path, env: dict) -> None:
     ]) + '\n'
     source.write_text(recovery, encoding='utf-8-sig')
     result = subprocess.run([executable, str(source)], capture_output=True,
-                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     wanted = ('{"L"}\nnull-number-caught\n{"L"}\n'
               '{"T",af40a278-63bc-478e-91a8-19e0d16b10b5}\n'
               '{"B",0}\n{"B",1}\n{"N",1}\n{"L"}\n')
@@ -1879,27 +1886,19 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
         if output.with_suffix('.err').exists():
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
-        timeout = 30
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
         if name in ('collections', 'dates', 'numbers', 'functions'):
             reconstruct = {'functions': historical_functions_source, 'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
-            if name == 'collections':
-                # Reconstruction authenticated both complete source and owner
-                # output. This parity replay is not a performance acceptance gate;
-                # Intel macOS frozen execution exceeded 30s in CI. Match the
-                # existing bounded source-replay allowance, without widening any
-                # other smoke or changing the full-output comparison below.
-                timeout = 120
         if name == 'values':
             replay = directory / 'values-historical.bsl'
             replay.write_bytes(historical_values_source(script.read_bytes(), output.read_bytes()))
             script = replay
         result = subprocess.run([executable, str(script)],
                                 cwd=directory, env=environment, capture_output=True,
-                                encoding='utf-8', timeout=timeout)
+                                encoding='utf-8', timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if result.returncode or result.stderr or result.stdout != expected:
             raise AssertionError(f'Frozen native output mismatch: {name}: {result!r}')
     print('Binary native parity passed: all six complete owner outputs')
@@ -1920,7 +1919,7 @@ def check_timezone_configuration(executable: str, *, directory: Path, env: dict)
         code = f'Message(ValueToStringInternal(XMLValue(Type("Date"), "{lexical}")));'
         result = subprocess.run([executable, '-c', code], cwd=directory,
                                 env=dict(env, YADINASSI_TIMEZONE=zone),
-                                capture_output=True, encoding='utf-8', timeout=30)
+                                capture_output=True, encoding='utf-8', timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if result.returncode or result.stderr or result.stdout != '{"D",' + expected + '}\n':
             raise AssertionError(f'Frozen timezone configuration failed: {zone}: {result!r}')
     # Explicit UTC also applies to the local wall clock, but not UTC clocks.
@@ -1928,7 +1927,7 @@ def check_timezone_configuration(executable: str, *, directory: Path, env: dict)
             'Message(delta >= -2 And delta <= 2);')
     result = subprocess.run([executable, '-c', code], cwd=directory,
                             env=dict(env, YADINASSI_TIMEZONE='UTC'),
-                            capture_output=True, encoding='utf-8', timeout=30)
+                            capture_output=True, encoding='utf-8', timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if result.returncode or result.stderr or result.stdout != 'Да\n':
         raise AssertionError(f'Frozen configured local clock failed: {result!r}')
     code = ('Try value = XMLValue(Type("Date"), "2024-02-29T12:34:56Z"); '
@@ -1936,7 +1935,7 @@ def check_timezone_configuration(executable: str, *, directory: Path, env: dict)
             'Message(XMLString(XMLValue(Type("Date"), "2024-02-29T12:34:56")));')
     result = subprocess.run([executable, '-c', code], cwd=directory,
                             env=dict(env, YADINASSI_TIMEZONE='../UTC'),
-                            capture_output=True, encoding='utf-8', timeout=30)
+                            capture_output=True, encoding='utf-8', timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode or result.stderr
             or result.stdout != 'invalid-zone\n2024-02-29T12:34:56\n'):
         raise AssertionError(f'Frozen invalid timezone/recovery failed: {result!r}')
@@ -1960,7 +1959,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
     for arguments, stdin in [([str(source)], None), (['-'], program),
                              ([], program + '/exit\n')]:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Full native values checkpoint mismatch {arguments[0:1]!r}: {result!r}')
     print('Binary native values parity passed: complete committed owner output, including main '
@@ -1977,7 +1976,7 @@ def check_xml_checkpoint(executable: str, *, directory: Path, env: dict) -> None
         if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
             raise AssertionError('Native command sample exceeds Windows UTF-16 argv limit')
         result = subprocess.run(arguments, capture_output=True, encoding='utf-8',
-                                cwd=directory.parent, env=env, timeout=30)
+                                cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
             raise AssertionError(f'Native type command sample mismatch {flag}: {result!r}')
     print('Binary command aliases passed: exact 23-probe owner TypeDescription/qualifier/codec '
@@ -2033,7 +2032,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
     source.write_text(program, encoding='utf-8-sig')
     for arguments, stdin in [([str(source)], None), (['-'], program)]:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Full native collections checkpoint mismatch {arguments[0:1]!r}: {result!r}')
     command_program, command_expected = table_command_checkpoint(program, expected)
@@ -2042,7 +2041,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
     # without a third complete semantic replay through incremental input.
     result = subprocess.run([executable], input=command_program + '/exit\n',
                             capture_output=True, encoding='utf-8',
-                            cwd=directory.parent, env=env, timeout=30)
+                            cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
         raise AssertionError(f'Native table console sample mismatch: {result!r}')
     for flag in ('-c', '-с', '--command'):
@@ -2050,7 +2049,7 @@ def check_table_checkpoint(executable: str, *, directory: Path, env: dict) -> No
         if len(subprocess.list2cmdline(arguments).encode('utf-16-le')) // 2 + 1 >= 32767:
             raise AssertionError('Native table command sample exceeds Windows UTF-16 argv limit')
         result = subprocess.run(arguments, capture_output=True, encoding='utf-8',
-                                cwd=directory.parent, env=env, timeout=30)
+                                cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, command_expected, ''):
             raise AssertionError(f'Native table command sample mismatch {flag}: {result!r}')
     print('Binary native collections parity passed: complete owner output including 142 table '
@@ -2093,7 +2092,7 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
     cases += [([str(source)], None), (['-'], program), ([], program + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed fixed-GMT conversion {arguments!r}: {result!r}')
     module = directory / 'Пояс.bsl'
@@ -2105,7 +2104,7 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
                         encoding='utf-8-sig')
     for path in (importer, importer.relative_to(directory.parent)):
         result = subprocess.run([executable, str(path)], capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, '{"D",20250101033000}\n', ''):
             raise AssertionError(f'Failed imported fixed-GMT conversion {path!r}: {result!r}')
 
@@ -2123,7 +2122,7 @@ def check_fixed_offset_conversions(executable: str, *, directory: Path, env: dic
     current = directory / 'ПолныеДаты.bsl'
     current.write_bytes(source_bytes)
     result = subprocess.run([executable, str(current)], capture_output=True,
-                            encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode, result.stdout, result.stderr) != (0, expected_dates, ''):
         raise AssertionError(f'Failed native-backed fractional dates replay: {result!r}')
     print('Binary fixed-GMT fractions passed: native 185 messages, four fractions, both directions and aliases, CLI and recovery')
@@ -2143,7 +2142,7 @@ def check_division_tie_checkpoint(executable, *, directory, env):
         raise AssertionError('Division tie source labels changed')
     # Stdin avoids Windows command-line limits and exercises every current probe.
     result = subprocess.run([executable, '-'], input=text, capture_output=True,
-                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if result.returncode or result.stderr or not result.stdout.startswith(expected):
         raise AssertionError(f'Failed current division tie checkpoint prefix: {result!r}')
     fixture = json.loads((ROOT / 'tests/fixtures/division_half_ties_linux.json').read_text(encoding='utf-8'))
@@ -2184,7 +2183,7 @@ def check_value_list_references(executable, *, directory, env):
     cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory.parent, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory.parent, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed ValueList references {arguments!r}: {result!r}')
     print('Binary ValueList field references passed: live aliases, Val, duplicate/nested '
@@ -2283,7 +2282,7 @@ def check_exported_module_variables(executable, *, directory, env):
     for arguments, stdin in ((['-c', EXPORT_VARIABLE_DECLARATIONS], None),
                              ([str(source)], None), (['-'], EXPORT_VARIABLE_DECLARATIONS)):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_DECLARATION_OUTPUT, ''):
             raise AssertionError(f'Exported-variable declarations/readiness failed {arguments!r}: {result!r}')
     (directory / 'mod.bsl').write_text(EXPORT_VARIABLE_MODULE, encoding='utf-8-sig')
@@ -2291,7 +2290,7 @@ def check_exported_module_variables(executable, *, directory, env):
     imported.write_text(EXPORT_VARIABLE_IMPORT_PROGRAM, encoding='utf-8-sig')
     # Imports remain file-only; do not imply support for imports via -c or stdin.
     result = subprocess.run([executable, str(imported)], capture_output=True,
-                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode, result.stdout, result.stderr) != (0, EXPORT_VARIABLE_IMPORT_OUTPUT, ''):
         raise AssertionError(f'Exported-module variable runtime failed: {result!r}')
     print('Binary exported-module variables passed: bilingual declarations, initialization '
@@ -2322,7 +2321,7 @@ def check_side_local_module_variables(executable, *, directory, env):
     for arguments, stdin in (([str(source)], None), (['-c', code], None),
                              (['-'], code), ([], code + '/exit\n')):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Side-local module variables failed {arguments!r}: {result!r}')
     print('Binary side-local module variables passed: all nine native observations, '
@@ -2354,7 +2353,7 @@ def check_server_nocontext(executable, *, directory, env):
     for arguments, stdin in (([str(source)], None), (['-c', code], None),
                              (['-'], code), ([], code + '/exit\n')):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Server NoContext failed {arguments!r}: {result!r}')
     print('Binary server NoContext passed: fourteen measured/projection values, normal and '
@@ -2382,7 +2381,7 @@ def check_dual_nocontext(executable, *, directory, env):
     for arguments, stdin in (([str(source)], None), (['-c', code], None),
                              (['-'], code), ([], code + '/exit\n')):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Dual NoContext failed {arguments!r}: {result!r}')
     print('Binary dual NoContext passed: nine measured/projection observations, '
@@ -2406,7 +2405,7 @@ def check_date_null_transfer(executable, *, directory, env):
     for arguments, stdin in (([str(source)], None), (['-c', code], None),
                              (['-'], code), ([], code + '/exit\n')):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Date/Null transfer failed {arguments!r}: {result!r}')
     print('Binary Date/Null transfer passed: eight captured predicates, BOM file, -c, stdin and console')
@@ -2423,7 +2422,7 @@ def check_extended_exceptions(executable, *, directory, env):
               ([], EXTENDED_EXCEPTION_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, EXTENDED_EXCEPTION_OUTPUT, ''):
             raise AssertionError(f'Failed extended exceptions {arguments!r}: {result!r}')
     fixture = json.loads((ROOT / 'tests/fixtures/extended_exceptions_linux.json').read_text(encoding='utf-8'))
@@ -2440,14 +2439,14 @@ def check_extended_exceptions(executable, *, directory, env):
     native_file.write_text(native_source.decode('utf-8'), encoding='utf-8-sig')
     for arguments, stdin in (([str(native_file)], None), (['-'], native_source.decode('utf-8'))):
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, native_expected.decode('utf-8'), ''):
             raise AssertionError(f'Failed all 116 native exception records {arguments!r}: {result!r}')
     recovery = ('Try Raise "x"; Except saved=ErrorInfo(); EndTry;\n'
                 'saved\nErrorCategory.ConfigurationError\nErrorCategory\n'
                 'Message("still alive");\n/exit\n')
     result = subprocess.run([executable], input=recovery, capture_output=True,
-                            encoding='utf-8', cwd=directory, env=env, timeout=30)
+                            encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if ((result.returncode, result.stdout) != (1, 'still alive\n')
             or result.stderr.count('пока не поддерживается') != 3
             or 'Traceback' in result.stderr):
@@ -2493,13 +2492,13 @@ def check_async_language(executable, *, directory, env):
     cases += [([str(source)], None), (['-'], ASYNC_PROGRAM), ([], ASYNC_PROGRAM + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, ASYNC_OUTPUT, ''):
             raise AssertionError(f'Failed async language {arguments!r}: {result!r}')
     cycle = ('Var a,b; Async Function A1() x=Await 0; Return Await b; EndFunction '
              'Async Function B1() x=Await 0; Return Await a; EndFunction a=A1();b=B1();')
     result = subprocess.run([executable, '-c', cycle], capture_output=True, encoding='utf-8',
-                            cwd=directory, env=env, timeout=30)
+                            cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
     if (result.returncode != 1 or result.stdout or 'незавершенные' not in result.stderr
             or 'Traceback' in result.stderr):
         raise AssertionError(f'Failed async pending lifecycle: {result!r}')
@@ -2536,7 +2535,7 @@ def check_trailing_omitted_arguments(executable, *, directory, env):
     cases += [([str(source)], None), (['-'], code), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed trailing omitted arguments {arguments!r}: {result!r}')
     print('Binary trailing omitted arguments passed: nine measured Execute cases, '
@@ -2585,7 +2584,7 @@ def check_text_document(executable, *, directory, env):
     cases = [([str(source)], None), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed bounded TextDocument {arguments!r}: {result!r}')
     if (directory / 'must-not-write').exists():
@@ -2632,7 +2631,7 @@ def check_tree_findrows(executable, *, directory, env):
     cases = [([str(source)], None), ([], code + '/exit\n')]
     for arguments, stdin in cases:
         result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                encoding='utf-8', cwd=directory, env=env, timeout=30)
+                                encoding='utf-8', cwd=directory, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
         if (result.returncode, result.stdout, result.stderr) != (0, expected, ''):
             raise AssertionError(f'Failed bounded tree FindRows {arguments!r}: {result!r}')
     print('Binary tree FindRows passed: hierarchy DFS, local default, shared rows, '
@@ -3082,7 +3081,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
         ]
         for arguments, stdin, stdout, code in cases:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding="utf-8", cwd=temporary, env=env, timeout=30)
+                                    encoding="utf-8", cwd=temporary, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if result.returncode != code or result.stdout != stdout:
                 raise AssertionError(f"Failed {arguments!r}: {result!r}")
             if code == 0 and result.stderr:
@@ -3121,7 +3120,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
         ]
         for arguments, stdin, stdout, location, message in fixed_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=temporary, env=env, timeout=30)
+                                    encoding='utf-8', cwd=temporary, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed fixed-collection diagnostics {arguments!r}: {result!r}')
@@ -3141,7 +3140,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
         ]
         for arguments, stdin, stdout, location, message in type_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=temporary, env=env, timeout=30)
+                                    encoding='utf-8', cwd=temporary, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout != stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed type diagnostics {arguments!r}: {result!r}')
@@ -3160,7 +3159,7 @@ Message(StrConcat(fixedWords, ";")); Message(СтрСоединить(fixedWords
         ]
         for arguments, stdin, location, message in region_errors:
             result = subprocess.run([executable, *arguments], input=stdin, capture_output=True,
-                                    encoding='utf-8', cwd=temporary, env=env, timeout=30)
+                                    encoding='utf-8', cwd=temporary, env=env, timeout=FROZEN_PROCESS_TIMEOUT_SECONDS)
             if (result.returncode != 1 or result.stdout or location not in result.stderr
                     or message not in result.stderr or 'Traceback' in result.stderr):
                 raise AssertionError(f'Failed region diagnostics {arguments!r}: {result!r}')

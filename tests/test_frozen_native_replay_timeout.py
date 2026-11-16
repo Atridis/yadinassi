@@ -1,4 +1,6 @@
-"""Keep the larger frozen replay allowance scoped to authenticated collections."""
+"""Keep every frozen launch bounded without weakening native replay checks."""
+import ast
+import inspect
 from pathlib import Path
 import subprocess
 import tempfile
@@ -18,15 +20,14 @@ class FrozenNativeReplayTimeoutTests(unittest.TestCase):
         expected = (smoke_test.ROOT/'tests/fixtures/native_windows'/f'{name}.out').read_text(encoding='utf-8')
         return subprocess.CompletedProcess(argv, 0, expected, '')
 
-    def test_only_authenticated_collections_receives_larger_bound(self):
+    def test_all_authenticated_replays_receive_common_bound(self):
         calls = []
         def run(argv, **kwargs):
             calls.append((Path(argv[1]).stem, kwargs['timeout']))
             return self.output(argv, **kwargs)
         self.invoke(run)
         self.assertEqual(len(calls), 6)
-        self.assertEqual([name for name, timeout in calls if timeout == 120], ['collections-historical'])
-        self.assertTrue(all(timeout == (120 if name == 'collections-historical' else 30) for name, timeout in calls))
+        self.assertTrue(all(timeout == 120 for name, timeout in calls))
 
     def test_reconstruction_rejection_prevents_collection_launch(self):
         calls = []
@@ -53,3 +54,18 @@ class FrozenNativeReplayTimeoutTests(unittest.TestCase):
                 raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
             return self.output(argv, **kwargs)
         with self.assertRaises(subprocess.TimeoutExpired): self.invoke(run)
+
+    def test_every_frozen_subprocess_has_the_same_finite_bound(self):
+        self.assertEqual(smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS, 120)
+        tree = ast.parse(inspect.getsource(smoke_test))
+        calls = [node for node in ast.walk(tree)
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute)
+                 and isinstance(node.func.value, ast.Name)
+                 and node.func.value.id == 'subprocess' and node.func.attr == 'run']
+        self.assertGreater(len(calls), 70)
+        for call in calls:
+            with self.subTest(line=call.lineno):
+                timeout = next((arg.value for arg in call.keywords if arg.arg == 'timeout'), None)
+                self.assertIsInstance(timeout, ast.Name)
+                self.assertEqual(timeout.id, 'FROZEN_PROCESS_TIMEOUT_SECONDS')

@@ -76,7 +76,7 @@ class ValueTableSmokeTests(unittest.TestCase):
             self.assertEqual(call.kwargs['cwd'], self.directory.parent)
             self.assertEqual(call.kwargs['encoding'], 'utf-8')
             self.assertTrue(call.kwargs['capture_output'])
-            self.assertEqual(call.kwargs['timeout'], 30)
+            self.assertEqual(call.kwargs['timeout'], smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS)
             self.assertEqual(call.kwargs['env'], dict(self.env, YADINASSI_TIMEZONE='Europe/Warsaw',
                                                      PYTHONTZPATH='', TZ='UTC0'))
         self.assertEqual(self.env, {'PATH': 'preserved', 'YADINASSI_TIMEZONE': 'UTC'})
@@ -101,7 +101,7 @@ class ValueTableSmokeTests(unittest.TestCase):
         for index in range(6):
             with self.subTest(transport=index):
                 self.directory = self.root / 'outside-source' / f'timeout-{index}'
-                timeout = subprocess.TimeoutExpired(self.executable, 30)
+                timeout = subprocess.TimeoutExpired(self.executable, smoke_test.FROZEN_PROCESS_TIMEOUT_SECONDS)
                 results = self.success_results()[:index] + [timeout]
                 with patch.object(smoke_test.subprocess, 'run', side_effect=results) as run:
                     with self.assertRaises(subprocess.TimeoutExpired) as caught:
