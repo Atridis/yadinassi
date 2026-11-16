@@ -185,7 +185,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                     emit(d,f'{receiver} = yield from _s.expressions.receiver({bind(node.target.object)})')
                     emit(d,f'{binder} = _s.access.prepare_index_write(vm, {receiver})')
                     emit(d,f'{writer} = {binder}({ev(node.target.index,d)})');emit(d,f'{writer}({ev(node.value,d)})')
-                else:emit(d,f'_s.unsupported({n})')
+                else:raise UnsupportedTranslation('assignment target has invalid AST role')
             elif kind is ast.Var:
                 names=tuple(node.names)
                 emit(d,f'if vm.locals is None and any(name.casefold() in vm.imports for name in {names!r}):')
@@ -228,7 +228,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             elif kind is ast.Goto:emit(d,f'raise R._Goto({n})')
             elif kind is ast.Break:emit(d,f'raise R._Break')
             elif kind is ast.Continue:emit(d,f'raise R._Continue')
-            else:emit(d,f'_s.unsupported({n})')
+            else:raise UnsupportedTranslation('unsupported executable statement: '+kind.__name__)
             d-=1
             error,converted=temp(),temp()
             emit(d,f'except BaseException as {error}:')

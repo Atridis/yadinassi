@@ -543,7 +543,11 @@ class Interpreter:
     def visit(self, node: ast.Node) -> object:
         """Synchronous embedding boundary; language evaluation uses _visit."""
         if self.execution_backend == 'compiled-strict':
-            self._admit_compiled_node(node)
+            engine = self._compiled()
+            if not engine.has_executable_node(node):
+                engine.prepare_node(node)
+            else:
+                engine.verify_node(node)
         return self._scheduler.run_inline(self._visit(node))
 
     @property

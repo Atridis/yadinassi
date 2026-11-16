@@ -35,20 +35,22 @@ is not a sandbox against unrestricted Python using object/list protocol bypasses
 
 ## Explicit compatibility contract
 
-Python callers that need the earlier fail-closed mutable-AST detection contract
-can create `Interpreter(execution_backend='compiled-strict',
-compiled_ast_contract='mutable')`. This is not interpreter mutation parity: that
-mode rejects detected changes. A family captures one contract and cannot silently
-switch it in a child. Scoped policy and scheduler callbacks propagate the captured
-contract. Production interpreters do not read experimental Engine class flags.
+In this FORCE-translation branch, executable compiled units require the snapshot
+contract. The constructor still accepts `compiled_ast_contract='mutable'`, but
+execution rejects it with `force translator requires owned snapshot`; it does not
+switch to the interpreter. Historical mutable-AST detection tests explicitly
+disable FORCE and do not establish support for that production combination.
+A family captures one contract and cannot silently switch it in a child. Scoped
+policy and scheduler callbacks propagate the captured contract.
 
 The historical owned FULL/OFF experiment matrix remains separately instrumented
 in isolated tests; it is not the production selection interface.
 
 ## Validation status
 
-Snapshot and mutable compatibility have separate explicit tests. Passing tests
-that assert a mutable AST rejection does not establish snapshot behavior. Likewise,
+Snapshot and historical mutable compatibility have separate explicit tests.
+Production FORCE additionally tests explicit rejection of the mutable combination.
+Passing tests that assert a mutable AST rejection does not establish snapshot behavior. Likewise,
 expected snapshot mutation differences must not conceal changes to values, error
 locations, authority, budgets or by-reference effects. Source-bound broad gates,
 context regressions, independent review and artifact checks remain required before
@@ -61,3 +63,25 @@ code objects. Passing an older owned view from another VM back through
 provenance/admission checks. Use source or an original source AST for explicit
 admission in another VM; do not treat this limitation as permission to bypass
 ownership validation.
+
+## Explicit entry admission
+
+An admitted syntax node is not necessarily a generated executable entry: nested
+statements and metadata may belong to a prepared unit without a singleton entry.
+The public `visit(node)` boundary explicitly prepares a missing entry before its
+first effect. Internal generated node/block lookup does not compile on demand and
+still rejects missing routes. Quiescent release may discard an entry; a later
+public visit admits it again under the same limits.
+
+Whole-unit FORCE admission checks expression, assignment-target and routine
+parameter roles for ASTs supplied by embedders. Invalid roles reject before any
+earlier statement can affect the host. Metadata-only nodes do not become executable
+statements. Server initializers remain module metadata with separately prepared
+bodies. These checks execute during admission, not in the generated hot path.
+Standalone expression research helpers retain their separate delayed-error
+contract; they are not evidence of whole-unit admission completeness.
+
+This does not extend native language coverage or lift context restrictions.
+Cross-context non-Val actuals still require named variable storage; property/index
+copy-back and jumps into inactive blocks retain their explicit unsupported bounds.
+The original 20-second collections performance gate is a separate remaining goal.

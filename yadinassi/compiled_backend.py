@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from .errors import BSLRuntimeError
 from .syntax import ast
+from .compiled_roles import validate_node_roles
 from .owned_syntax import AdmissionMap, OwnedStore, OwnedList, syntax_kind, is_owned, owned_provenance, origin_node as syntax_origin, creation_fingerprint
 
 
@@ -524,6 +525,8 @@ class Engine:
                 count += 1
                 if count > self.MAX_NODES:
                     raise CompiledUnsupported(value, 'compilation unit node limit')
+                if self.FORCE_PYTHON_TRANSLATION:
+                    validate_node_roles(value, kind, self._reject_node_role)
                 active.add(identity)
                 for name in ('body', 'handler', 'otherwise'):
                     child = getattr(value, name, None)
@@ -681,6 +684,38 @@ class Engine:
             if view is not None: statements = view
         plan = self._blocks.get(id(statements))
         return plan is not None and plan.statements is statements
+
+    @staticmethod
+    def _reject_node_role(node, reason):
+        raise CompiledUnsupported(node, reason)
+
+    def has_executable_node(self, node):
+        """Query entry capability, not permission to execute a metadata plan.
+
+        Explicit embedding admission may prepare missing entries. Internal
+        execution still fails closed and never compiles a missing route.
+        """
+        if not self.FORCE_PYTHON_TRANSLATION:
+            return self.has_node(node)
+        view = self._owned.existing(node)
+        if view is None:
+            return False
+        plan = self._nodes.get(id(view))
+        if plan is None or plan.node is not view:
+            return False
+        if plan.tier == 'shared-leaf':
+            return True
+        for _, unit in self._python_units.values():
+            entry = unit.expressions.functions.get(id(view))
+            if entry is not None and entry[0] is view:
+                return True
+        saved = self._python_units.get((id(view),))
+        if saved is None:
+            return False
+        block, unit = saved
+        entry = unit.blocks.get((id(view),))
+        return (entry is not None and entry[0] is block and entry[1] is not None
+                and len(block) == 1 and block[0] is view)
 
     def has_executable_block(self, statements):
         """Distinguish admitted metadata from an explicitly compiled entry."""
@@ -1029,7 +1064,10 @@ class Engine:
         # Eval enters an expression function, not its synthetic wrapper block.
         # Retain the root metadata/registry anchor for source lookup and leases;
         # an explicit vm.block request still prepares its executable separately.
-        entry_keys=set() if expression_entry else {tuple(id(node) for node in program)}
+        # Module admission includes declaration-only ServerInitializer metadata.
+        # Its body and the filtered module body have separate executable routes;
+        # the unfiltered source inventory is not itself an executable block.
+        entry_keys=set() if expression_entry or module_entry else {tuple(id(node) for node in program)}
         for plan in nodes.values():
             if syntax_kind(plan.node) in (ast.Routine,ast.ServerInitializer):
                 entry_keys.add(tuple(id(node) for node in plan.node.body))
