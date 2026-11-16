@@ -1,9 +1,9 @@
-"""UNSAFE experiment: naked BSL AST -> Python list/dict functions.
+"""BSL AST to Python compiler for direct-default and diagnostic repair profiles.
 
-Not imported by production dispatch. Requires explicit environment opt-in on
-both preparation and execution. No VM/policy/provenance/lease/type contract is
-claimed. Raw Python mismatches are intentional measurement results, not repaired
-implicitly. Use only disposable trusted fixtures in an isolated subprocess.
+Production callers use an explicit trusted internal entry; standalone diagnostic
+use requires environment opt-in. Host/context admission belongs to the caller.
+Optional profiles include deliberately raw Python behavior; compatibility is
+incomplete and this compiler alone is not an authority or sandbox boundary.
 """
 import os
 from dataclasses import dataclass, fields
@@ -277,11 +277,6 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     external_keys=frozenset(name.casefold() for name in external_names)
     from .python_direct_definite import definite_module_reads
     definite_reads = definite_module_reads(program,opaque_names=external_keys) if live and not authority else frozenset()
-    from .python_direct_arrays import array_facts
-    array_receivers,array_indexes = array_facts(program,opaque_names=external_keys) if live and not authority and not constructors.intersection(('array','массив')) and 'array_index_contract' in repairs else (frozenset(),frozenset())
-    # Raw diagnostic profiles return Python int from Count, which the existing
-    # checked-index contract rejects. Do not silently repair that mismatch.
-    if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
     source_checks=authority or (services and not live)
     if live and not byref:raise ValueError('live_module_state requires byref_routines')
     if module_names and not live:raise ValueError('module_names requires live_module_state')
@@ -344,6 +339,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     if type(arg) is ast.Name:
                         destination=None if arg.name.casefold() in routine_globals.get(current,()) else current
                         lexical[destination].add(arg.name.casefold())
+    from .python_direct_arrays import array_facts
+    array_receivers,array_indexes=frozenset(),frozenset()
+    if live and not authority and not constructors.intersection(('array','массив')) and 'array_index_contract' in repairs:
+        routine_array_opaque={id(r):routine_globals.get(id(r),set())|routine_externals.get(id(r),set())|
+                             {p.name.casefold() for p in r.parameters if not p.by_value}
+                             for r in routines.values()}
+        array_receivers,array_indexes=array_facts(program,opaque_names=external_keys,routine_opaque=routine_array_opaque)
+    # Raw diagnostic profiles return Python int from Count, which the existing
+    # checked-index contract rejects. Do not silently repair that mismatch.
+    if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
     routine_locals={id(r):{p.name.casefold() for p in r.parameters}|{name.casefold() for n in r.body if type(n) is ast.Var for name in n.names} for r in routines.values()}
     if live:
         for r in routines.values():

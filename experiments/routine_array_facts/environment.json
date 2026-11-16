@@ -1,0 +1,10 @@
+{
+  "baseline": "b38dee3d",
+  "baseline_public_equivalent": "3afcec50",
+  "python": "Python 3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "host": "shared Linux, no CPU isolation",
+  "candidate_sha256": {
+    "yadinassi/experimental_naked_collections.py": "5412b3bd8ae1658d52bb2c31216d25f4a28fa44e228cd9067e5df172a51e0a5f",
+    "yadinassi/python_direct_arrays.py": "92ca656de2054824899bf5d7c7edcf4de91828c7b7e7d7bb55f2218dccca2ae1"
+  }
+}

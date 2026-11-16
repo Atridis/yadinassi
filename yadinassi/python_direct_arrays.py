@@ -9,7 +9,7 @@ from decimal import Decimal
 from .syntax import ast
 
 
-def array_facts(program, *, opaque_names=()):
+def array_facts(program, *, opaque_names=(), routine_opaque=None):
     opaque=frozenset(name.casefold() for name in opaque_names)
     receivers=set();indexes=set()
     scalar={'nn','bounded','int','scalar'}
@@ -135,4 +135,11 @@ def array_facts(program, *, opaque_names=()):
         return known,pure
 
     block(program,{},True)
+    if routine_opaque is not None:
+        for routine in program:
+            if type(routine) is ast.Routine and id(routine) in routine_opaque:
+                # No parameter or caller facts cross a function boundary. Only
+                # assignments in this body can establish native local values.
+                opaque=frozenset(routine_opaque[id(routine)])
+                block(routine.body,{},True)
     return frozenset(receivers),frozenset(indexes)
