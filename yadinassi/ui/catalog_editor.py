@@ -21,7 +21,7 @@ from ..unique_identifiers import BSLUUID
 from ..dates import BSLDate, _date_from_datetime, _parts, TICKS_PER_SECOND
 from ..form_model import BSLFormAttribute
 from ..form_runtime import FormApplicationAction, FormActionResult, FormSession
-from ..form_event_simulation import VerifiedFormDraftSession, simulate_product_form_event
+from ..form_event_simulation import _draft_from_checked_record, simulate_product_form_event
 from ..catalog_object_preparation import CatalogWriteRefused
 from ..type_descriptions import BSLTypeDescription
 from ..type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLAllowedSign
@@ -248,11 +248,10 @@ class CatalogEditController:
         # mutable draft. The pinned source is checked around detached execution.
         self._verify_source()
         try:
-            draft = VerifiedFormDraftSession(self._source_backend, self.schema.identity,
+            draft = _draft_from_checked_record(self._source_record, self._source_backend, self.schema.identity,
                 code=code, description=description,
                 deletion_mark=(self.object.get_member('DeletionMark')
                                if deletion_mark is None else deletion_mark))
-            self._verify_source()
             return draft
         except BackendError as error:
             if error.code in ('schema_changed', 'integrity'):

@@ -325,6 +325,27 @@ def _stored_binding(record, database_id, catalog_id):
         identity.form_id, record.form_name, *(sha256(value).hexdigest() for value in raw))
 
 
+def _draft_from_checked_record(record, backend, catalog_id, *, code, description,
+                               deletion_mark=False):
+    """Detached draft only; caller checks live source before run and adoption.
+
+    Private UI composition avoids nesting standalone verified consumers. This
+    creates no authority or write capability and never skips binding checks.
+    """
+    from .sqlite_catalog import SQLiteCatalogBackend
+    if type(backend) is not SQLiteCatalogBackend:
+        raise TypeError('verified form draft: exact backend required')
+    if type(catalog_id) is not UUID or not catalog_id.int:
+        raise BackendError('invalid_input')
+    if type(code) is not str or type(description) is not str or type(deletion_mark) is not bool:
+        raise TypeError('verified form draft: exact scalar types required')
+    binding = _stored_binding(record, backend.database_id, catalog_id)
+    return FormDraftSession(record.module_source, binding,
+        catalog_xml=record.catalog_xml, form_xml=record.form_xml,
+        definition_xml=record.definition_xml, code=code, description=description,
+        deletion_mark=deletion_mark, _cache_owner=backend)
+
+
 class VerifiedFormDraftSession:
     """Host-only source-bound draft; no renderer, write or persistence authority.
 
@@ -344,11 +365,8 @@ class VerifiedFormDraftSession:
         if type(code) is not str or type(description) is not str or type(deletion_mark) is not bool:
             raise TypeError('verified form draft: exact scalar types required')
         record = backend.read_form_source(catalog_id)
-        binding = _stored_binding(record, backend.database_id, catalog_id)
-        session = FormDraftSession(record.module_source, binding,
-            catalog_xml=record.catalog_xml, form_xml=record.form_xml,
-            definition_xml=record.definition_xml, code=code, description=description,
-            deletion_mark=deletion_mark, _cache_owner=backend)
+        session = _draft_from_checked_record(record, backend, catalog_id,
+            code=code, description=description, deletion_mark=deletion_mark)
         self._backend, self._catalog_id, self._record = backend, catalog_id, record
         self._session, self._stale = session, False
 
