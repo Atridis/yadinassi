@@ -1879,19 +1879,27 @@ def check_saved_native_outputs(executable: str, *, directory: Path, env: dict) -
         if output.with_suffix('.err').exists():
             raise AssertionError(f'Native error file exists: {name}')
         expected = output.read_bytes().decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+        timeout = 30
         script = ROOT / 'integrational_tests/tests' / (name + '.bsl')
         if name in ('collections', 'dates', 'numbers', 'functions'):
             reconstruct = {'functions': historical_functions_source, 'dates': historical_dates_source, 'numbers': historical_numbers_source, 'collections': historical_collections_source}[name]
             replay = directory / (name + '-historical.bsl')
             replay.write_bytes(reconstruct(script.read_bytes(), output.read_bytes()))
             script = replay
+            if name == 'collections':
+                # Reconstruction authenticated both complete source and owner
+                # output. This parity replay is not a performance acceptance gate;
+                # Intel macOS frozen execution exceeded 30s in CI. Match the
+                # existing bounded source-replay allowance, without widening any
+                # other smoke or changing the full-output comparison below.
+                timeout = 120
         if name == 'values':
             replay = directory / 'values-historical.bsl'
             replay.write_bytes(historical_values_source(script.read_bytes(), output.read_bytes()))
             script = replay
         result = subprocess.run([executable, str(script)],
                                 cwd=directory, env=environment, capture_output=True,
-                                encoding='utf-8', timeout=30)
+                                encoding='utf-8', timeout=timeout)
         if result.returncode or result.stderr or result.stdout != expected:
             raise AssertionError(f'Frozen native output mismatch: {name}: {result!r}')
     print('Binary native parity passed: all six complete owner outputs')
