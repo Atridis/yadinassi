@@ -1926,10 +1926,13 @@ class Interpreter:
         # Authority registries key the original declaration object. An optional
         # owned compilation view snapshots execution fields, never grants.
         authority_function = function
+        layout = None
         if owner._execution_backend == 'compiled-strict':
             owner._admit_compiled_node(function)
             authority_function = owner._compiled().origin_node(function)
             function = owner._compiled().execution_view(function)
+            if self._execution_backend == 'compiled-strict':
+                layout = owner._compiled().routine_call_metadata(function)
         if self._configuration_runtime is not None:
             self._configuration_runtime.check_call(function, self)
         if function.is_async and function.execution_context != "client":
@@ -1955,34 +1958,44 @@ class Interpreter:
             raise ValueError("InvocationPort доступен только с логического клиента")
         if require_value and not function.is_function:
             raise TypeError(f"Процедура не возвращает значение: {function.name}")
-        required = max((index + 1 for index, parameter in enumerate(function.parameters)
-                        if parameter.default is None), default=0)
+        required = (layout.required if layout is not None else
+                    max((index + 1 for index, parameter in enumerate(function.parameters)
+                         if parameter.default is None), default=0))
         if not required <= len(arguments) <= len(function.parameters):
             raise TypeError(f"{function.name} ожидает {len(function.parameters)} аргументов, "
                             f"получено {len(arguments)}")
-        return function, authority_function, caller_side, crossing, invocation
+        return function, authority_function, caller_side, crossing, invocation, layout
 
     def call_routine(self, function: ast.Routine, arguments: list[ast.Node],
                      owner: "Interpreter", *, require_value: bool, qualified: bool = False, _evaluation=None) -> object:
         evaluate = self._visit if _evaluation is None else _evaluation.evaluate
         argument_value = self.argument if _evaluation is None else _evaluation.argument
-        (function, authority_function, caller_side, crossing, invocation) = self._admit_routine_call(
+        (function, authority_function, caller_side, crossing, invocation, layout) = self._admit_routine_call(
             function, arguments, owner, require_value=require_value)
+        parameters = function.parameters if layout is None else layout.parameters
         if self._execution_backend != 'compiled-strict':
             self._routine_plan(function)
         if self._execution_backend == 'compiled-strict':
-            validate_labels(function.body)
+            if layout is None:
+                validate_labels(function.body)
+            elif layout.label_error is not None:
+                raise BSLError(*layout.label_error)
             # Actuals may be host-materialized Literal plans, and defaults execute
             # in the caller even when the declaration is owned by another VM.
-            for expression in list(arguments) + [parameter.default for parameter in function.parameters
-                                                  if parameter.default is not None]:
+            defaults = (tuple(p.default for p in parameters if p.default is not None)
+                        if layout is None else layout.defaults)
+            for expression in arguments:
+                self._admit_compiled_node(expression)
+            for expression in defaults:
                 self._admit_compiled_node(expression)
         if crossing:
             # The measured copy-in/copy-out slice covers named variable actuals.
             # Reject properties, indexes, expressions and omitted non-Val slots
             # before evaluating even an earlier, otherwise supported argument.
-            for index, parameter in enumerate(function.parameters):
-                if not parameter.by_value and (index >= len(arguments) or
+            byref_indexes = (tuple(i for i, p in enumerate(parameters) if not p.by_value)
+                             if layout is None else layout.byref_indexes)
+            for index in byref_indexes:
+                if (index >= len(arguments) or
                         not isinstance(self.ungroup(arguments[index]), ast.Name)):
                     raise TypeError("Межконтекстные параметры без Знач пока требуют имя переменной")
         # Evaluate expression actuals once, left to right. At a measured crossing,
@@ -1991,7 +2004,7 @@ class Interpreter:
         bindings = {}
         copyback: list[tuple[str, _VariableReference]] = []
         late_inputs: dict[str, _VariableReference] = {}
-        for index, parameter in enumerate(function.parameters):
+        for index, parameter in enumerate(parameters):
             argument = arguments[index] if index < len(arguments) else None
             if argument is None or isinstance(argument, ast.OmittedArgument):
                 value = (yield from evaluate(parameter.default)) if parameter.default is not None else None
@@ -2002,7 +2015,7 @@ class Interpreter:
                     value = (yield from evaluate(argument)) if parameter.by_value or function.is_async else (yield from argument_value(argument))
             if self.execution_backend == 'compiled-strict':
                 owner._compiled().verify_node(function)
-            name = parameter.name.casefold()
+            name = parameter.name.casefold() if layout is None else parameter.name
             if crossing and not parameter.by_value:
                 # A named caller formal may itself alias a property/index.
                 # Only dictionary variable storage has a safe copy-out setter;

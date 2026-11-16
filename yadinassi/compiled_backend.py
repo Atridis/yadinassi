@@ -157,6 +157,7 @@ class _NodePlan:
     signature: tuple
     function: object | None
     tier: str
+    routine: object = None
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,7 @@ class Engine:
         self._owned = OwnedStore(_signature, self._block_signature)
         self._origin_signatures = {}
         self._origin_blocks = {}
+        self._routine_metadata_slots = 0
         self._inline_ir = {}
         self._plain_routines = {}
         self._plain_modules = {}
@@ -391,6 +393,7 @@ class Engine:
         bases = (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
                  self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units)
         journals = tuple(AdmissionMap(base) for base in bases)
+        previous_routine_slots = self._routine_metadata_slots
         (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
          self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = journals
         try:
@@ -435,6 +438,9 @@ class Engine:
             if _transient is not None:
                 _transient.entries.extend(captured)
             return result
+        except BaseException:
+            self._routine_metadata_slots = previous_routine_slots
+            raise
         finally:
             (self._owned.memo, self._owned.versions, self._origin_signatures, self._origin_blocks,
              self._nodes, self._blocks, self._inline_ir, self._plain_routines, self._plain_modules, self._python_units) = bases
@@ -491,7 +497,8 @@ class Engine:
             registry = self._nodes if kind == 'node' else self._blocks
             if identity not in registry:
                 reserved.add((kind, identity))
-            if len(self._nodes) + len(self._blocks) + len(reserved) > self.MAX_REGISTRY_ENTRIES:
+            if (len(self._nodes) + len(self._blocks) + len(reserved)
+                    + self._routine_metadata_slots > self.MAX_REGISTRY_ENTRIES):
                 raise CompiledUnsupported(node, 'aggregate compiled registry limit')
 
         def charge_metadata_source():
@@ -586,12 +593,39 @@ class Engine:
             if type(program) not in (list, OwnedList):
                 raise CompiledUnsupported(None, 'compilation unit must be a statement list')
             walk(program)
+            routine_slots = 0
+            if self.FORCE_PYTHON_TRANSLATION and self.OWNED_SNAPSHOT and not self.ORIGIN_MUTATION_MONITOR:
+                from .routine_metadata import layout_slots, prepare_layout
+                for identity, plan in nodes.items():
+                    if syntax_kind(plan.node) is not ast.Routine or plan.routine is not None:
+                        continue
+                    previous = self._nodes.get(identity)
+                    old_slots = previous.routine.slots if previous is not None and previous.routine is not None else 0
+                    charge = layout_slots(plan.node) - old_slots
+                    if (len(self._nodes) + len(self._blocks) + len(reserved)
+                            + self._routine_metadata_slots + routine_slots + charge > self.MAX_REGISTRY_ENTRIES):
+                        raise CompiledUnsupported(plan.node, 'routine metadata registry budget')
+                    layout = prepare_layout(plan.node)
+                    nodes[identity] = _NodePlan(plan.node, plan.signature, plan.function, plan.tier, layout)
+                    routine_slots += charge
             # The forced whole-program path never dispatches optional scalar
             # plans. Do not generate or charge a second unused implementation.
             if not self.FORCE_PYTHON_TRANSLATION:self._prepare_plain_routines(nodes)
             if self.FORCE_PYTHON_TRANSLATION:
                 self._prepare_python_unit(program, nodes, blocks, module_entry, expression_entry=expression_entry)
             elif module_entry:self._prepare_plain_module(program)
+            # Nested admission can publish the same owned plan into the outer
+            # journal while lowering runs. Charge the final replacement delta,
+            # not the earlier allocation estimate, before committing either map.
+            routine_slots = 0
+            for identity, plan in nodes.items():
+                previous = self._nodes.get(identity)
+                routine_slots += (plan.routine.slots if plan.routine is not None else 0)
+                routine_slots -= (previous.routine.slots if previous is not None and previous.routine is not None else 0)
+            node_count = len(self._nodes) + sum(key not in self._nodes for key in nodes)
+            block_count = len(self._blocks) + sum(key not in self._blocks for key in blocks)
+            if node_count + block_count + self._routine_metadata_slots + routine_slots > self.MAX_REGISTRY_ENTRIES:
+                raise CompiledUnsupported(None, 'aggregate compiled registry limit')
         except CompiledUnsupported:
             self.stats['rejected_units'] += 1
             raise
@@ -601,6 +635,7 @@ class Engine:
                                       'compiler recursion limit') from None
         self._nodes.update(nodes)
         self._blocks.update(blocks)
+        self._routine_metadata_slots += routine_slots
         for key, value in prepared_counts.items(): self.stats[key] += value
         self.stats['prepared_units'] += 1
         self.stats['prepared_nodes'] += len(nodes)
@@ -654,6 +689,8 @@ class Engine:
                             retain(entry[1])
         owned_ids = set(retained_versions)
         self._nodes = {key: plan for key, plan in self._nodes.items() if key in owned_ids}
+        self._routine_metadata_slots = sum(plan.routine.slots for plan in self._nodes.values()
+                                          if plan.routine is not None)
         self._blocks = {key: plan for key, plan in self._blocks.items() if key in owned_ids}
         self._owned.clear()
         self._owned.memo.update(retained)
@@ -677,6 +714,17 @@ class Engine:
             if view is not None: node = view
         plan = self._nodes.get(id(node))
         return plan is not None and plan.node is node
+
+    def routine_call_metadata(self, node):
+        """Read static layout after live admission; this result is not authority.
+
+        The caller has just verified the owner plan. Rights/context selection and
+        post-argument version checks remain mandatory and are not cached here.
+        """
+        plan = self._nodes.get(id(node))
+        if plan is None or plan.node is not node:
+            raise CompiledUnsupported(node, 'routine has no current source-bound plan')
+        return plan.routine
 
     def has_block(self, statements):
         if self.OWNED_SNAPSHOT:
