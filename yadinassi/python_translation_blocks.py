@@ -19,6 +19,8 @@ class BlockUnit:
     source_bytes: int
     statements: object = None
     binding_count: int = 0
+    sync_routines: object = None
+    sync_segments: object = None
 
     def retained(self, owned_ids):
         """Retain code without pinning unrelated unit literals or compiling again."""
@@ -43,7 +45,11 @@ class BlockUnit:
             {key:(node,clone(fn)) for key,(node,fn) in (self.expressions.sync_functions or {}).items() if id(node) in owned_ids},self.expressions.binding_count,
             {key:site for key,site in (self.expressions.call_sites or {}).items() if id(site.node) in owned_ids})
         # Conservatively retain the full admitted source charge, not only keys.
-        return BlockUnit(blocks,expressions,self.source_bytes,{key:(node,clone(fn)) for key,(node,fn) in (self.statements or {}).items() if id(node) in owned_ids},self.binding_count)
+        return BlockUnit(blocks,expressions,self.source_bytes,{key:(node,clone(fn)) for key,(node,fn) in (self.statements or {}).items() if id(node) in owned_ids},self.binding_count,
+            {key:(routine,plan) for key,(routine,plan) in (self.sync_routines or {}).items()
+             if id(routine) in owned_ids and all(id(node) in owned_ids for node in (*plan.nodes,*plan.containers))},
+            {key:plan for key,plan in (self.sync_segments or {}).items()
+             if all(id(node) in owned_ids for node in (*plan.nodes,*plan.containers))})
 
     def bind(self, engine):
         return Execution(self,engine)
@@ -55,6 +61,20 @@ class Execution:
         self.access=translated_access
         self.outer_node=None
         self.expressions=unit.expressions.bind(self.vm,guard=self.guard,access=translated_access,resolve=engine._python_expression_execution,leaf_resolve=engine._python_leaf_operation)
+    def sync_segment(self,key,previous_result):
+        if self.engine.DETAILED_INLINE_STATS:return None
+        plan=(self.unit.sync_segments or {}).get(key)
+        if plan is None:return None
+        # Dropping a previous host result can itself call back through __del__.
+        if not any(type(previous_result) is scalar for scalar in (Decimal,bool,str,type(None))):return None
+        from .python_translation_scalar_regions import scope,closed_gc_lease,ClosedLease
+        with closed_gc_lease():
+            local=scope(self,plan.names,plan.names-set(plan.parameters),record=False,allow_module=True)
+            if local is None:return None
+            lease=ClosedLease(self,plan,local,allow_module=True);lease.check()
+            self.engine.stats['python_sync_segment_calls']=self.engine.stats.get('python_sync_segment_calls',0)+1
+            self.engine.stats['python_translated_blocks']=self.engine.stats.get('python_translated_blocks',0)+1
+            return plan.function(self.vm,local,lease)
     def before(self,node):
         if self.outer_node is not node:self.vm.compiled_before(node)
     def after(self,node,result):
@@ -88,7 +108,7 @@ class Execution:
         gaps[kind]=gaps.get(kind,0)+1
         raise CompiledUnsupported(node,'force Python translation unsupported '+kind)
 
-def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000):
+def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes,entry_keys=None, owned_leaves=False, compact_control=False, max_bindings=100_000, routines=(), min_sync_routine_nodes=32):
     from .python_translation_expressions import prepare_expressions
     from . import runtime as R
     from .python_translation_template_bindings import bind_generated_source
@@ -106,6 +126,8 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
     queued=set(originals if entry_keys is None else entry_keys)
     pending=[(key,originals[key],False) for key in originals if key in queued]
     operation_nodes={}
+    segment_plans={};segment_cache={}
+    segment_reserved_bytes=0;segment_reserved_bindings=0
     cursor=0
     def bind(node):
         nodes.append(node);return f'_nodes[{len(nodes)-1}]'
@@ -150,6 +172,8 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                 emit(d,f'_s.enter_inline_block({tuple(id(n) for n in child)!r})')
                 emit_sequence(child,d)
             emit(d,'result = None')
+        def store(name,value,d):emit(d,f'vm.set_variable({name!r}, {value})')
+        def counter_read(name,handle):return f'vm.semantic_name({handle})'
         def emit_statement(node,d):
             n=bind(node);kind=syntax_kind(node)
             if kind in (ast.Literal, ast.Name, ast.Group, ast.Unary, ast.Binary,
@@ -176,7 +200,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                 else:emit(d,f'result = {ev(node.expression,d)}')
             elif kind is ast.Assign:
                 target=syntax_kind(node.target)
-                if target is ast.Name:emit(d,f'vm.set_variable({node.target.name!r}, {ev(node.value,d)})')
+                if target is ast.Name:store(node.target.name,ev(node.value,d),d)
                 elif target is ast.Attribute:
                     emit(d,f'{receiver} = yield from _s.expressions.receiver({bind(node.target.object)})')
                     emit(d,f'{writer} = _s.access.prepare_attribute_write(vm, {receiver}, {node.target.name!r})')
@@ -202,9 +226,9 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             elif kind in (ast.For,ast.While,ast.ForEach):
                 if kind is ast.For:
                     emit(d,f'{first} = R.require_number({ev(node.start,d)})');emit(d,f'{last} = R.require_number({ev(node.end,d)})')
-                    emit(d,f'vm.set_variable({node.name!r},{first})')
+                    store(node.name,first,d)
                     counter=ast.Name(node.token,node.name.casefold());counter_name=bind(counter)
-                    emit(d,f'while R.require_number(vm.semantic_name({counter_name})) <= {last}:')
+                    emit(d,f'while R.require_number({counter_read(node.name,counter_name)}) <= {last}:')
                 elif kind is ast.While:
                     emit(d,'while True:')
                     check=condition(node.condition,d+1);emit(d+1,f'if not {check}: break')
@@ -214,7 +238,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
                 emit(d+1,f'try:');nested(node.body,d+2)
                 emit(d+1,f'except R._Continue:');emit(d+2,f'pass')
                 emit(d+1,f'except R._Break:');emit(d+2,f'break')
-                if kind is ast.For:emit(d+1,f'vm.set_variable({node.name!r}, R.require_number(vm.semantic_name({counter_name})) + Decimal(1))')
+                if kind is ast.For:store(node.name,f'R.require_number({counter_read(node.name,counter_name)}) + Decimal(1)',d+1)
             elif kind is ast.Try:
                 emit(d,f'try:');nested(node.body,d+1)
                 emit(d,f'except R.BSLRuntimeError as {handled_error}:')
@@ -248,8 +272,52 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(d+1,' = '.join(temporaries)+' = None')
             emit(d,f'result = _s.after({n}, result)')
             d-=1;emit(d,'finally:');emit(d+1,f'{previous_result} = None')
-        def emit_sequence(sequence,d):
-            if not sequence:emit(d,'pass')
+        def closed(node):
+            from dataclasses import fields
+            kind=syntax_kind(node)
+            if kind is ast.Literal:return any(type(node.value) is scalar for scalar in (Decimal,bool,str,type(None)))
+            if kind not in (ast.Name,ast.Group,ast.Unary,ast.Binary,ast.Conditional,ast.Assign,ast.Var,ast.Return,ast.If,ast.For,ast.While,ast.Break,ast.Continue):return False
+            if kind is ast.Assign and syntax_kind(node.target) is not ast.Name:return False
+            def children(value):
+                if isinstance(value,ast.Node):return closed(value)
+                if isinstance(value,(tuple,list)):return all(children(item) for item in value)
+                return True
+            return all(children(getattr(node,field.name)) for field in fields(node) if field.name!='token')
+        def emit_sequence(sequence,d,*,segments=True):
+            nonlocal segment_reserved_bytes,segment_reserved_bindings
+            if not sequence:emit(d,'pass');return
+            if segments and not compact_control and not is_operation:
+                from .owned_syntax import is_owned
+                from .python_translation_sync_routines import lower_block,Ineligible
+                if is_owned(sequence):
+                    start=0
+                    while start<len(sequence):
+                        if not closed(sequence[start]):
+                            emit_statement(sequence[start],d);start+=1;continue
+                        stop=start+1
+                        while stop<len(sequence) and closed(sequence[stop]):stop+=1
+                        selected=sequence[start:stop]
+                        profitable=(len(selected)>=4 or any(syntax_kind(node) in (ast.For,ast.While) for node in selected))
+                        cache_key=(id(sequence),start,stop)
+                        if profitable and cache_key not in segment_cache:
+                            try:plan=lower_block(sequence,start=start,stop=stop,max_source_bytes=max_source_bytes-used-segment_reserved_bytes,
+                                                max_function_bytes=max_function_bytes,max_bindings=max_bindings-binding_count-segment_reserved_bindings-1)
+                            except Ineligible:segment_cache[cache_key]=None
+                            else:
+                                index=len(segment_cache);segment_cache[cache_key]=index;segment_plans[index]=plan
+                                segment_reserved_bytes+=plan.source_bytes;segment_reserved_bindings+=plan.binding_count+1
+                        index=segment_cache.get(cache_key)
+                        if index is None:
+                            for node in selected:emit_statement(node,d)
+                        else:
+                            outcome=temp();emit(d,f'{outcome} = _s.sync_segment({index}, result)')
+                            emit(d,'try:');emit(d+1,f'if {outcome} is None:')
+                            emit_sequence(selected,d+2,segments=False)
+                            emit(d+1,f'elif {outcome}[0]:');emit(d+2,f'raise R._Return({outcome}[1])')
+                            emit(d+1,'else:');emit(d+2,'result = None')
+                            emit(d,'finally:');emit(d+1,f'{outcome} = None')
+                        start=stop
+                    return
             for node in sequence:
                 if compact_control and not is_operation:
                     operation_key=('statement',id(node))
@@ -271,6 +339,7 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
             emit(3,'if jump.name not in labels: raise');emit(3,'pc = labels[jump.name]')
             emit(2,'else:');emit(3,'pc += 1')
         emit(1,'return result')
+        lines[4:4] = [' '*depth+text for depth,text in fusion.helper_lines]
         source='\n'.join(lines)+'\n'
         source=source.replace('def translated(_s):','def translated(_s, _p):',1)
         canonical,operands=bind_generated_source(source,nodes)
@@ -298,4 +367,44 @@ def prepare_blocks(blocks,expression_roots,*,max_source_bytes,max_function_bytes
         bound=FunctionType(function.__code__,namespace,function.__name__,(operands,))
         if key and key[0]=='statement':statements[key[1]]=(operation_nodes[key[1]],bound)
         else:functions[key]=(originals[key],bound)
-    return BlockUnit(functions,expressions,used,statements,binding_count)
+    # An optional whole-routine specialization is admitted with this unit, not
+    # compiled on call. It shares the same source/binding accounting and lifetime.
+    from .python_translation_sync_routines import lower, Ineligible
+    sync_routines={}
+    for routine in routines:
+        if min_sync_routine_nodes:
+            # Cheap static profitability before generating a second function.
+            from dataclasses import fields
+            pending_cost=[routine];seen_cost=set();cost=0;has_loop=False
+            while pending_cost and cost<min_sync_routine_nodes and not has_loop:
+                value=pending_cost.pop()
+                if id(value) in seen_cost:continue
+                seen_cost.add(id(value))
+                if isinstance(value,ast.Node):
+                    cost+=1;kind=syntax_kind(value)
+                    if kind in (ast.For,ast.While):has_loop=True
+                    for field in fields(value):
+                        if field.name!='token' and not (kind is ast.Literal and field.name=='value'):
+                            pending_cost.append(getattr(value,field.name))
+                elif isinstance(value,(tuple,list)):pending_cost.extend(value)
+            if cost<min_sync_routine_nodes and not has_loop:continue
+        try:
+            plan=lower(routine,max_source_bytes=max_source_bytes-used,
+                       max_function_bytes=max_function_bytes,max_bindings=max_bindings-binding_count-1)
+        except Ineligible:continue
+        # Do not add a full lease to tiny calls after generic activation. Their
+        # existing translated call boundary is cheaper; loops amortize admission.
+        if (len(plan.nodes)<min_sync_routine_nodes
+                and not any(syntax_kind(node) in (ast.For,ast.While) for node in plan.nodes)):continue
+        used+=plan.source_bytes;binding_count+=plan.binding_count+1
+        sync_routines[id(routine)]=(routine,plan)
+    admitted_segments={}
+    for key,plan in segment_plans.items():
+        if used+plan.source_bytes>max_source_bytes or binding_count+plan.binding_count+1>max_bindings:continue
+        used+=plan.source_bytes;binding_count+=plan.binding_count+1
+        admitted_segments[key]=plan
+    return BlockUnit(functions,expressions,used,statements,binding_count,sync_routines,admitted_segments)
+
+# Slots must not capture state across instrumented execution callbacks.
+_SCALAR_EXECUTION_NAMES = ('before', 'after', 'guard', 'enter_inline_block', 'residual_block', 'block', 'sync_segment')
+_SCALAR_EXECUTION_ABI = tuple(getattr(Execution, name) for name in _SCALAR_EXECUTION_NAMES)

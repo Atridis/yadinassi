@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+from yadinassi.compiled_backend import Engine
 from decimal import Decimal
 from types import SimpleNamespace
 from yadinassi import Interpreter
@@ -46,6 +48,7 @@ class Expressions(unittest.TestCase):
         vm=Interpreter(); vm.variables['a']=self.expression('Новый Массив(3)',vm)[0]
         self.assertEqual(self.expression('a.Количество()',vm)[0],3)
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_routine_plain_actuals_no_visit(self):
         vm=Interpreter(execution_backend='compiled-strict',compiled_plain_routines=True)
         vm.execute('Function Add(Val a,Val b) Return a+b;EndFunction')

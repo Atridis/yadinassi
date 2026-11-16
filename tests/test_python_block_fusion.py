@@ -21,6 +21,7 @@ class BlockFusionTests(unittest.TestCase):
                     self.last=vm
         self.assertEqual(outputs[0],outputs[1])
         return outputs[1]
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_nested_loops_bounds_continue_break(self):
         result,_=self.pair('s=0; For i=1 To 3 Do For j=1 To 5 Do If j=2 Then Continue; EndIf; If j=4 Then Break; EndIf; s=s+i*j; EndDo; EndDo;')
         self.assertEqual(result['s'],24)

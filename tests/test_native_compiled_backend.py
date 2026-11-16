@@ -14,24 +14,33 @@ full=smoke.FULL
 
 class NativeCompiledBackendTests(unittest.TestCase):
     def test_isolated_child_explicit_strict_and_default_output_identical(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path=Path(directory);source=path/'case.bsl';stats=path/'stats.json'
-            source.write_text('Function F() Return 42; EndFunction Message(F());',encoding='utf-8')
-            command=[sys.executable,'-I','-B','-c',full.EXECUTE_SCRIPT,str(ROOT),str(source),full.LINUX_TARGET]
-            old=subprocess.run(command,capture_output=True,timeout=30)
-            new=subprocess.run([*command,'compiled-strict',str(stats)],capture_output=True,timeout=30)
-            self.assertEqual((old.returncode,new.returncode),(0,0),(old.stderr,new.stderr))
-            self.assertEqual(old.stdout,new.stdout)
-            self.assertEqual(new.stderr,b'')
-            observed=json.loads(stats.read_text(encoding='utf-8'))
-            self.assertIn(observed['lowering_variant'],('inline','node-scaffold','python-translation'))
-            evidence=full.execution_evidence([observed])
-            self.assertEqual(evidence['execution_backend'],'compiled-strict')
-            for key in ('interpreter_fallbacks','old_backend_executions','strict_rejections'):
-                bad=copy.deepcopy(evidence);bad['cases'][0][key]=1
-                with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
-            for bad in ({}, {'execution_backend':'interpreter'}, {'schema':2}):
-                with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        # Preserve the original tiny-call case and prove actual sync evidence
+        # separately with a profitable closed routine. Admission is not execution.
+        cases = (
+            ('Function F() Return 42; EndFunction Message(F());', False),
+            ('Function F() s=0;For i=1 To 2 Do s=s+21;EndDo;Return s;EndFunction Message(F());', True),
+        )
+        for body, expect_sync in cases:
+            with tempfile.TemporaryDirectory() as directory:
+                path=Path(directory);source=path/'case.bsl';stats=path/'stats.json'
+                source.write_text(body,encoding='utf-8')
+                command=[sys.executable,'-I','-B','-c',full.EXECUTE_SCRIPT,str(ROOT),str(source),full.LINUX_TARGET]
+                old=subprocess.run(command,capture_output=True,timeout=30)
+                new=subprocess.run([*command,'compiled-strict',str(stats)],capture_output=True,timeout=30)
+                self.assertEqual((old.returncode,new.returncode),(0,0),(old.stderr,new.stderr))
+                self.assertEqual(old.stdout,new.stdout)
+                self.assertEqual(new.stderr,b'')
+                observed=json.loads(stats.read_text(encoding='utf-8'))
+                self.assertIn(observed['lowering_variant'],('inline','node-scaffold','python-translation'))
+                evidence=full.execution_evidence([observed])
+                self.assertEqual(evidence['execution_backend'],'compiled-strict')
+                self.assertEqual(evidence['schema'],'compiled-native-execution-v3')
+                self.assertEqual(observed['python_sync_routine_calls'] > 0, expect_sync)
+                for key in ('interpreter_fallbacks','old_backend_executions','strict_rejections'):
+                    bad=copy.deepcopy(evidence);bad['cases'][0][key]=1
+                    with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+                for bad in ({}, {'execution_backend':'interpreter'}, {'schema':2}):
+                    with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
 
     def test_child_actual_backend_and_execution_routes(self):
         # Observe actual runtime state/visitor entries, not just equal BSL output.
@@ -144,6 +153,33 @@ Interpreter.visit_Literal = observe_literal
             with self.subTest(mixed_label=variant),self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
         stats['python_translated_blocks']=0
         with self.assertRaises(full.FullError):full.execution_evidence([stats])
+
+    def test_sync_only_evidence_v3_and_malformed_counts(self):
+        stats={key:0 for key in ('emitted_executions','helper_executions','rejected_units',
+            'unsupported_executions','interpreter_fallbacks','old_backend_executions','strict_rejections',
+            'inline_blocks','inline_fragments','python_translated_blocks','python_translated_nodes',
+            'plain_adapter_blocks','block_executions','metadata_block_executions','python_sync_routine_calls')}
+        stats.update(python_sync_routine_calls=1,node_coverage='unobserved',
+                     lowering_variant='python-translation',fast_inline_enabled=True)
+        evidence=full.execution_evidence([stats])
+        self.assertEqual(evidence['schema'],'compiled-native-execution-v3')
+        self.assertEqual(evidence['cases'][0]['python_translated_nodes'],0)
+        for value in (True,False,-1,10**12+1,1.0,'1',None,0):
+            bad=copy.deepcopy(evidence);bad['cases'][0]['python_sync_routine_calls']=value
+            with self.subTest(value=value),self.assertRaises(full.FullError):
+                full.validate_execution_evidence(bad,1)
+        for key,value in (('plain_adapter_blocks',1),('inline_blocks',1),
+                          ('interpreter_fallbacks',1),('old_backend_executions',1),
+                          ('lowering_variant','inline'),('python_sync_admission_nodes',10),
+                          ('node_coverage','observed')):
+            bad=copy.deepcopy(evidence);bad['cases'][0][key]=value
+            with self.subTest(key=key),self.assertRaises(full.FullError):
+                full.validate_execution_evidence(bad,1)
+        bad=copy.deepcopy(evidence);del bad['cases'][0]['python_sync_routine_calls']
+        with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
+        for version in ('compiled-native-execution-v1','compiled-native-execution-v2'):
+            bad=copy.deepcopy(evidence);bad['schema']=version
+            with self.assertRaises(full.FullError):full.validate_execution_evidence(bad,1)
 
     def test_direct_legacy_visitor_entry_is_detected_in_strict_child(self):
         script=full.EXECUTE_SCRIPT.replace('interpreter.execute(source_text, str(source))',

@@ -209,6 +209,7 @@ def _translated_name_value(vm,node):
 class Engine:
     # Broad integration branch: ordinary strict execution uses Python translation.
     FORCE_PYTHON_TRANSLATION = True
+    MIN_SYNC_ROUTINE_NODES = 32
 
     def _force_translation_gap(self, node, route):
         if not self.FORCE_PYTHON_TRANSLATION:
@@ -1060,6 +1061,10 @@ class Engine:
 
     def run_block(self, statements, *, plain_routine=None):
         if self.FORCE_PYTHON_TRANSLATION:
+            if (plain_routine is not None and type(self) is Engine
+                    and vars(Engine).get('_run_python_block') is _SYNC_RUN_BLOCK_ABI
+                    and '_run_python_block' not in vars(self)):
+                return (yield from self._run_python_block(statements,routine=plain_routine))
             return (yield from self._run_python_block(statements))
         if self.OWNED_SNAPSHOT:
             view = self._owned.existing(statements)
@@ -1144,7 +1149,7 @@ class Engine:
         retained={id(unit):unit for _,unit in self._python_units.values()}
         available=min(self.MAX_INLINE_UNIT_BYTES-self._inline_unit_bytes,
                       self.MAX_PLAIN_SOURCE_BYTES-self._plain_source_bytes()-sum(unit.source_bytes for unit in retained.values()))
-        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys,owned_leaves=True,compact_control=len(nodes)>10_000,max_bindings=self.MAX_REGISTRY_ENTRIES-sum(u.binding_count for u in retained.values()))
+        try:unit=prepare_blocks(selected_blocks,roots,max_source_bytes=available,max_function_bytes=self.MAX_INLINE_FUNCTION_BYTES,entry_keys=entry_keys,owned_leaves=True,compact_control=len(nodes)>10_000,max_bindings=self.MAX_REGISTRY_ENTRIES-sum(u.binding_count for u in retained.values()),routines=[plan.node for plan in nodes.values() if syntax_kind(plan.node) is ast.Routine],min_sync_routine_nodes=self.MIN_SYNC_ROUTINE_NODES)
         except (UnsupportedTranslation,UnsupportedExpression) as error:
             gaps=self.stats.setdefault('force_translation_gaps',{})
             reason='admission:'+str(error);gaps[reason]=gaps.get(reason,0)+1
@@ -1203,7 +1208,7 @@ class Engine:
             finally:self._active_frames-=1
         self._force_translation_gap(view,'node-adapter')
 
-    def _run_python_block(self, statements):
+    def _run_python_block(self, statements, *, routine=None):
         owned=tuple(self._owned.existing(node) for node in statements)
         key=tuple(id(node) for node in owned)
         saved=self._python_units.get(key)
@@ -1214,7 +1219,26 @@ class Engine:
             raise CompiledUnsupported(None,'force translated block provenance mismatch')
         self.verify_all();self._verify_owned_identity(block)
         self._active_frames+=1
-        try:return (yield from unit.bind(self).block(key))
+        try:
+            execution=unit.bind(self)
+            if routine is not None and not self.DETAILED_INLINE_STATS:
+                view=self._owned.existing(routine)
+                entry=(unit.sync_routines or {}).get(id(view))
+                if entry is not None and entry[0] is view and view.body is block:
+                    from .python_translation_scalar_regions import scope,closed_gc_lease,ClosedLease
+                    plan=entry[1]
+                    with closed_gc_lease():
+                        local=scope(execution,plan.names,plan.names,record=False)
+                        if local is not None and all(name in local for name in plan.parameters):
+                            # Current immutable provenance and state are validated
+                            # at entry, loop backedges, and before commit/exit.
+                            lease=ClosedLease(execution,plan,local);lease.check()
+                            self.stats['python_sync_routine_calls']=self.stats.get('python_sync_routine_calls',0)+1
+                            self.stats['python_sync_admission_nodes']=self.stats.get('python_sync_admission_nodes',0)+len(plan.nodes)
+                            result=plan.function(self.vm,local,lease)
+                            from .runtime import _Return
+                            raise _Return(result)
+            return (yield from execution.block(key))
         except Exception as error:
             from .python_translation_expressions import UnsupportedExpression
             if isinstance(error,UnsupportedExpression):
@@ -1655,3 +1679,11 @@ class Engine:
 # This checks ABI compatibility; it is not protection against malicious Python.
 from .runtime import (_COMPILED_BASE_ABI_NAMES as _TRUSTED_ABI_NAMES,
                       _COMPILED_BASE_ABI as _TRUSTED_ABI)
+
+# Definition-time admission ABI for write-through translated scalar slots.
+_SCALAR_GUARD_NAMES = ('verify_node', '_verify_owned_identity', '_verify_active_plans',
+                       'fast_available', '_plain_scope_snapshot')
+_SCALAR_GUARD_ABI = tuple(getattr(Engine, name) for name in _SCALAR_GUARD_NAMES)
+
+# Preserve legacy-signature instrumentation by declining sync dispatch when wrapped.
+_SYNC_RUN_BLOCK_ABI = Engine._run_python_block

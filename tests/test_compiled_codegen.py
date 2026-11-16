@@ -392,6 +392,7 @@ class BlockRoleCompilationTests(unittest.TestCase):
         self.assertIs(plan.statements, view)
         return plan
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_structural_lists_emit_but_argument_lists_share_entry(self):
         from yadinassi.compiled_backend import _METADATA_BLOCK_ENTRY
         vm=Interpreter(execution_backend='compiled-strict');engine=vm._compiled()

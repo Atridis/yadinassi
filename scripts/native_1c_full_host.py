@@ -163,6 +163,7 @@ if backend == 'compiled-strict':
     keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
     observed = {key: sum(stats.get(key, 0) for stats in counters) for key in keys}
     observed["node_coverage"] = "unobserved" if any(stats.get("node_coverage") == "unobserved" for stats in counters) else "observed"
+    observed["python_sync_routine_calls"] = sum(stats.get("python_sync_routine_calls", 0) for stats in counters)
     observed["python_translated_blocks"] = sum(stats.get("python_translated_blocks", 0) for stats in counters)
     observed["python_translated_nodes"] = sum(sum(stats.get("python_translated_node_kinds", {}).values()) for stats in counters)
     observed["block_executions"] = sum(stats.get("block_executions", 0) for stats in counters)
@@ -1772,11 +1773,13 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
 
 def validate_execution_evidence(value, count):
     if (type(value) is not dict or set(value) != {'schema', 'execution_backend', 'cases'}
-            or value['schema'] not in ('compiled-native-execution-v1', 'compiled-native-execution-v2')
+            or value['schema'] not in ('compiled-native-execution-v1', 'compiled-native-execution-v2', 'compiled-native-execution-v3')
             or value['execution_backend'] != 'compiled-strict'
             or type(value['cases']) is not list or len(value['cases']) != count):
         raise FullError('compiled_execution_unverified')
-    translated_keys = {'python_translated_blocks', 'python_translated_nodes'} if value['schema'] == 'compiled-native-execution-v2' else set()
+    translated_keys = {'python_translated_blocks', 'python_translated_nodes'} if value['schema'] in ('compiled-native-execution-v2', 'compiled-native-execution-v3') else set()
+    if value['schema'] == 'compiled-native-execution-v3':
+        translated_keys.add('python_sync_routine_calls')
     for stats in value['cases']:
         if type(stats) is not dict or set(stats) != translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()) | {'emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'old_backend_executions', 'strict_rejections', 'lowering_variant', 'fast_inline_enabled', 'node_coverage', 'inline_blocks', 'inline_fragments'}:
             raise FullError('compiled_execution_unverified')
@@ -1791,6 +1794,8 @@ def validate_execution_evidence(value, count):
         for key in translated_keys | ({'plain_adapter_blocks', 'block_executions', 'metadata_block_executions'} if translated_keys else set()):
             if type(stats[key]) is not int or not 0 <= stats[key] <= 10**12:
                 raise FullError('compiled_execution_unverified')
+        if stats.get('python_sync_routine_calls', 0) and stats['node_coverage'] != 'unobserved':
+            raise FullError('compiled_execution_unverified')
         if stats['lowering_variant'] == 'python-translation':
             if not sum(stats[key] for key in translated_keys) or any(stats[key] for key in (
                     'emitted_executions', 'helper_executions', 'inline_blocks', 'inline_fragments',
@@ -1808,7 +1813,7 @@ def validate_execution_evidence(value, count):
 def execution_evidence(cases):
     if type(cases) is not list or any(type(case) is not dict for case in cases):
         raise FullError('compiled_execution_unverified')
-    schema = 'compiled-native-execution-v2' if any('python_translated_blocks' in case or 'python_translated_nodes' in case for case in cases) else 'compiled-native-execution-v1'
+    schema = 'compiled-native-execution-v3' if any('python_sync_routine_calls' in case for case in cases) else 'compiled-native-execution-v2' if any('python_translated_blocks' in case or 'python_translated_nodes' in case for case in cases) else 'compiled-native-execution-v1'
     return validate_execution_evidence({'schema': schema,
         'execution_backend': 'compiled-strict', 'cases': cases}, len(cases))
 

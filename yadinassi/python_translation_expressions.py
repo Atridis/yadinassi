@@ -356,3 +356,6 @@ def prepare_expressions(roots, *, max_source_bytes=100000, max_nodes=10000, max_
             function=FunctionType(template.__code__,namespace,template.__name__,(operands,))
         functions[id(node)]=(node,function)
     return ExpressionPlan(functions,tuple(nodes),source,sync_functions,binding_count,call_sites)
+
+_SCALAR_EXPRESSION_NAMES = ('leaf', 'evaluate', '_external_leaf', 'leaf_node', 'leaf_id')
+_SCALAR_EXPRESSION_ABI = tuple(getattr(ExpressionExecution, name) for name in _SCALAR_EXPRESSION_NAMES)

@@ -27,6 +27,59 @@ class ExpressionEmitter:
         # Static emission inventory, not a claim about reached runtime coverage.
         self.emitted_kinds = {}
         self.service_boundaries = 0
+        # Definitions are inserted at the enclosing translated function's entry,
+        # not at the loop site. They capture its admitted operand tuple, never
+        # a VM value, and are discarded with that activation.
+        self.helper_lines = []
+        self._sync_shapes = {}
+        self._outlined = {}
+
+    def _synchronous(self, node, active=None):
+        """Only syntax with no suspension/service boundary can be outlined."""
+        key = id(node)
+        if key in self._sync_shapes:
+            return self._sync_shapes[key]
+        active = set() if active is None else active
+        if key in active:
+            raise UnsupportedExpression('cyclic fused expression')
+        if len(active) >= 100:
+            # Leave pathological depth to the already-admitted expression plan.
+            return False
+        active.add(key)
+        kind = syntax_kind(node)
+        if kind in (ast.Literal, ast.Name): children = ()
+        elif kind is ast.Group: children = (node.expression,)
+        elif kind is ast.Unary: children = (node.operand,)
+        elif kind is ast.Binary: children = (node.left, node.right)
+        elif kind is ast.Conditional:
+            children = (node.condition, node.when_true, node.when_false)
+        else:
+            active.remove(key)
+            self._sync_shapes[key] = False
+            return False
+        result = all(self._synchronous(child, active) for child in children)
+        active.remove(key)
+        self._sync_shapes[key] = result
+        return result
+
+    def _outline(self, node, depth):
+        key = id(node)
+        name = self._outlined.get(key)
+        if name is None:
+            name = '_fused_sync_' + self.temp()
+            self._outlined[key] = name
+            lines = [(1, f'def {name}(_s):'), (2, f'{self.vm} = _s.vm')]
+            outer_emit = self.emit
+            self.emit = lambda d, text: lines.append((d, text))
+            try:
+                result = self.emit_expression(node, 2)
+                self.emit(2, 'return ' + result)
+            finally:
+                self.emit = outer_emit
+            self.helper_lines.extend(lines)
+        result = self.temp()
+        self.emit(depth, f'{result} = {name}(_s)')
+        return result
 
     def release(self, result, depth):
         self.emit(depth, f'{result} = None')
@@ -36,6 +89,8 @@ class ExpressionEmitter:
             result=self.temp()
             self.emit(depth,f'{result} = {self.services}.leaf({self.bind(node)})')
             return result
+        if depth >= 8 and self._synchronous(node):
+            return self._outline(node, depth)
         if depth >= 8:
             # Keep deeply nested code in its already admitted generated function,
             # not an AST adapter or a runtime compiler. Avoid CPython's static

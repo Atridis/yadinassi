@@ -126,9 +126,10 @@ class FastInlineTests(InlineCodegenTests):
             self.assertEqual(vm.variables['r'], 6)
             self.assertEqual(stats['node_coverage'], 'unobserved')
             if vm._compiled().FORCE_PYTHON_TRANSLATION:
-                observed = codegen.execution_kinds(self, vm)
-                self.assertGreater(observed.get('For', 0), 0)
-                self.assertGreater(observed.get('Binary', 0), 0)
+                self.assertGreater(stats.get('python_sync_segment_calls', 0), 0)
+                self.assertGreater(stats.get('python_translated_blocks', 0), 0)
+                # Coalesced entry is execution evidence, not observed node coverage.
+                self.assertEqual(stats.get('python_translated_node_kinds', {}).get('For', 0), 0)
             else:
                 self.assertGreater(stats['inline_blocks'], 0)
             self.assertEqual(stats['node_kinds'], {})

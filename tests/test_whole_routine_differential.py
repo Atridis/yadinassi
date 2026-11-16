@@ -6,6 +6,8 @@ longer selects an adapter. Preserve values/effects/errors, cleanup and no fallba
 """
 from decimal import Decimal, localcontext, getcontext
 import unittest
+from unittest.mock import patch
+from yadinassi.compiled_backend import Engine
 from yadinassi import Interpreter
 
 
@@ -75,6 +77,7 @@ class WholeRoutineDifferentialTests(unittest.TestCase):
                 self.assertEqual(actual, expected)
         return stats
 
+    @patch.object(Engine, "DETAILED_INLINE_STATS", True)
     def test_val_decimal_direct_witness_and_fractional_loop(self):
         stats = self.pair('''Function Sum(Val n)
 s=0;For i=0.5 To n Do s=s+i;EndDo;Return s;
