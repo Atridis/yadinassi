@@ -9,7 +9,7 @@ from decimal import Decimal
 from .syntax import ast
 
 
-def array_facts(program, *, opaque_names=(), routine_opaque=None):
+def array_facts(program, *, opaque_names=(), routine_opaque=None, definite_reads=None):
     opaque=frozenset(name.casefold() for name in opaque_names)
     receivers=set();indexes=set()
     scalar={'nn','bounded','int','scalar'}
@@ -32,6 +32,8 @@ def array_facts(program, *, opaque_names=(), routine_opaque=None):
                 return ('nn' if 0<=v<=sys.maxsize else 'bounded' if -sys.maxsize<=v<=sys.maxsize else 'int'),True
             return ('scalar',True) if type(v) in (type(None),bool,str,Decimal) else (None,False)
         if kind is ast.Name:
+            if record and definite_reads is not None and node.name.casefold() not in opaque and node.name.casefold() in known:
+                definite_reads.add(id(node))
             return (None,False) if node.name.casefold() in opaque else (known.get(node.name.casefold()),True)
         if kind is ast.New:
             args=arguments(node.arguments,known,record)
@@ -124,6 +126,7 @@ def array_facts(program, *, opaque_names=(), routine_opaque=None):
                 output,bp=block(node.body,seed,False)
                 invariant=all(output.get(name)==value or output.get(name) in scalar and value in scalar for name,value in seed.items() if name!=counter)
                 if counter not in opaque and sp and ep and start in ('nn','bounded','int') and end in scalar and bp and invariant and counter not in assigned(node.body):
+                    if record and definite_reads is not None:definite_reads.add(id(node))
                     expr(node.start,known,record);expr(node.end,known,record)
                     block(node.body,seed,record);known[counter]='int'
                     for name in writes-{counter}:

@@ -434,3 +434,19 @@ Seven alternating actual host pairs: Kind Save 31.255 -> 27.493ms, Product Save
 42.692 -> 36.484ms. Six of seven pair medians improve; noise and all raw samples
 are retained. [Reproducer, results and scope](../experiments/current_catalog_shape/README.md).
 No general speedup/full CI/native parity claim.
+
+### Array presence proofs; Map candidate rejected (audit8, 2026-11-17)
+
+On baseline `f52b1bfa`, existing Array analysis proved callback-free native loops
+but module reads still repeated missing-value branches. The same facts now feed
+module definite reads and counters, using the live dictionary without snapshots,
+flushes or runtime guards. Unknown effects/opaque names retain the checked path.
+
+88 normal + 88 optimized tests pass; independent review: 80 optimized, no blockers.
+Seven paired representative 10k-entry aggregations improve in every pair:
+prepared sum 9.151 -> 7.369ms, alias 11.125 -> 8.426ms; public execute also improves.
+Private routine control has no gain. A separate 20k-event Map token prototype
+showed no stable meaningful prepared gain and was removed from production.
+[Sources, all samples, rejected candidate and limitations](../experiments/array_map_audit8/README.md).
+Canonical BSLMap semantics, source/schema/transaction gates and VM dispatch are
+unchanged. Full compatibility/CI/native parity remain outside this evidence.

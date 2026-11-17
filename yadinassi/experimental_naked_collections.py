@@ -345,7 +345,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         routine_array_opaque={id(r):routine_globals.get(id(r),set())|routine_externals.get(id(r),set())|
                              {p.name.casefold() for p in r.parameters if not p.by_value}
                              for r in routines.values()}
-        array_receivers,array_indexes=array_facts(program,opaque_names=external_keys,routine_opaque=routine_array_opaque)
+        array_definite_reads=set()
+        array_receivers,array_indexes=array_facts(program,opaque_names=external_keys,routine_opaque=routine_array_opaque,
+                                                  definite_reads=array_definite_reads)
+        definite_reads=definite_reads|array_definite_reads
     # Raw diagnostic profiles return Python int from Count, which the existing
     # checked-index contract rejects. Do not silently repair that mismatch.
     if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
