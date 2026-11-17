@@ -162,6 +162,7 @@ def _contract(vm):
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
     from .python_direct_database import NAMES as DATABASE_NAMES
+    from .python_direct_services import CONSTRUCTORS
     from .python_direct_names import NAMES as SYSTEM_NAMES
     program=[node for node in program if type(node) is not ast.ServerInitializer
              and (type(node) not in (ast.Var,ast.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))]
@@ -172,7 +173,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     try:
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
-                     constructors=("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
+                     constructors=tuple(CONSTRUCTORS) + ("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
                      external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
                      _export_routines=_exports,_initialize_module=not _exports,_persistent_routines=not _exports and any(type(node) is ast.Routine for node in program))
     except UnsupportedNakedSyntax as error:
@@ -266,7 +267,8 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     from .python_direct_database import CatalogBoundary
     database = vm.database_context
-    class DirectBoundary(CatalogBoundary, BoundaryContext):
+    from .python_direct_services import ServicesBoundary
+    class DirectBoundary(ServicesBoundary, CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             if modules is not None and name.casefold() in modules:

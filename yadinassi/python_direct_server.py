@@ -6,6 +6,7 @@ Dual declarations select a side-local NoContext plan.
 from decimal import Decimal
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .python_direct_database import CatalogBoundary
+from .python_direct_services import ServicesBoundary
 from .values import HostFunction, Reference, NULL
 from .experimental_naked_collections import _Cell
 from .experimental_naked_live_state import _ForwardReference
@@ -44,7 +45,7 @@ def transfer(value):
     return copy(value,0)
 
 
-class ServerBoundary(CatalogBoundary,BoundaryContext):
+class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
     _server_side=True
     def __init__(self,parent,*,module_context=True,side="server"):
         self._server_side=side=="server"

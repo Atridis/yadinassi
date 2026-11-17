@@ -15,6 +15,7 @@ from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure
 from .values import HostFunction, BSLArray, BSLFixedArray
 from .regex_functions import BSLRegexResult, BSLRegexGroup
+from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -49,6 +50,10 @@ class CatalogBoundary:
                       BSLArray, BSLFixedArray, BSLRegexResult, BSLRegexGroup):
             # Detached result data: these public methods cannot execute queries
             # or write. Returned references still require the current root.
+            return
+        elif kind in (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings):
+            # Canonical JSON protocols retain their own file/resource guards.
+            # Expose get_member/get_method only, never Python attributes.
             return
         elif kind is BSLMetadata:
             if value is self.vm._metadata:return

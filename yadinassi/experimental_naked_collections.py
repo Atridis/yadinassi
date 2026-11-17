@@ -31,6 +31,11 @@ def _host_name_reference(getter,setter,name,storage=None):
 def _host_omission_error():
     raise TypeError('Пропуск аргументов встроенных функций, методов и конструкторов пока не поддерживается')
 
+def _host_omission_values(function, positions, count):
+    prepare=getattr(function,'prepare_omissions',None)
+    if prepare is None:_host_omission_error()
+    return prepare(function,positions,count)
+
 ENV='YADINASSI_UNSAFE_COLLECTION_ABLATION'
 
 def _enabled():
@@ -453,12 +458,17 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         return expression(node)
     def dynamic_call(bound,node):
         token=temp()
-        if any(type(arg) is ast.OmittedArgument for arg in node.arguments):
-            return '(('+token+' := '+bound+'), _host_omission_error())[-1]'
+        omitted=tuple(index for index,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
+        setup=['('+token+' := '+bound+')']
+        if omitted:
+            prepared=temp();defaults=temp()
+            setup.append('('+prepared+' := _host_omission_values('+token+', '+repr(omitted)+', '+str(len(node.arguments))+'))')
+            setup.extend(['('+token+' := '+prepared+'[0])','('+defaults+' := '+prepared+'[1])'])
         arguments=[]
         for index,arg in enumerate(node.arguments):
-            arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+expression(arg)+')')
-        return '(('+token+' := '+bound+'), '+token+'('+', '.join(arguments)+'))[-1]'
+            if index in omitted:arguments.append(defaults+'['+str(index)+']')
+            else:arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+expression(arg)+')')
+        return '('+', '.join(setup)+', '+token+'('+', '.join(arguments)+'))[-1]'
     def truth_expression(node):
         value=expression(node)
         if 'bsl_truth' not in repairs:return value

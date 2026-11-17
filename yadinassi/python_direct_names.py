@@ -7,6 +7,7 @@ from .sort_directions import SORT_DIRECTIONS
 from .numeric.round_modes import ROUND_MODES
 from .type_qualifiers import ALLOWED_SIGNS, ALLOWED_LENGTHS, DATE_FRACTIONS
 from .error_info import ERROR_CATEGORIES
+from .json_processing import JSON_LINE_BREAKS, JSON_VALUE_TYPES
 
 NAMES = MappingProxyType({
     alias: value
@@ -19,6 +20,8 @@ NAMES = MappingProxyType({
         (("allowedlength", "допустимаядлина"), ALLOWED_LENGTHS),
         (("datefractions", "частидаты"), DATE_FRACTIONS),
         (("errorcategory", "категорияошибки"), ERROR_CATEGORIES),
+        (("jsonlinebreak", "переносстрокjson"), JSON_LINE_BREAKS),
+        (("jsonvaluetype", "типзначенияjson"), JSON_VALUE_TYPES),
     )
     for alias in aliases
 })

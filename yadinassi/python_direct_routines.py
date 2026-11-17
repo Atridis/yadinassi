@@ -52,28 +52,29 @@ def prepare(vm, program, plan):
     if server_names or initializer_body:
         from .experimental_naked_collections import prepare as compile_server
         from .python_direct import REPAIRS
+        from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
     if server_names-nocontext_names:
         server_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=server,
-            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
     nocontext_plan=None
     if nocontext:
         nocontext_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=nocontext,
-            repairs=REPAIRS,external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            repairs=REPAIRS,external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
     dual=[node for node in declarations if type(node) is ast.Routine and node.is_dual and node.execution_context=='client']
     dual_names=frozenset(node.name.casefold() for node in dual)
     dual_plan=None
     if dual:
         dual_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=dual,
-            repairs=REPAIRS,external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            repairs=REPAIRS,external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
         initializer_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=initializer_body,
-            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_initialize_module=False)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
