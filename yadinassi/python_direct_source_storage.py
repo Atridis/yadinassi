@@ -8,9 +8,13 @@ from .source_manager_modules import SourceManagers, MANAGER_NAMES
 from .source_references import SourceReferenceManager, SourceReferenceCall
 from .source_catalog_runtime import SourceCatalogObject, SourceCatalogSelection, SourceCatalogCall
 from .catalog_types import BSLCatalogReference
+from .document_types import BSLDocumentReference
+from .source_document_runtime import SourceDocumentObject, SourceDocumentSelection, SourceDocumentCall
+from .source_document_sections import SourceDocumentSection, SourceDocumentRow, SourceDocumentSectionCall
 
 TYPES=(SourceConstants,SourceConstant,SourceConstantSet,SourceConstantValueManager,
-       SourceManagers,SourceReferenceManager,SourceCatalogObject,SourceCatalogSelection,BSLCatalogReference)
+       SourceManagers,SourceReferenceManager,SourceCatalogObject,SourceCatalogSelection,BSLCatalogReference,
+       SourceDocumentObject,SourceDocumentSelection,BSLDocumentReference,SourceDocumentSection,SourceDocumentRow)
 
 
 def finish(operation):
@@ -50,17 +54,31 @@ def check(boundary,value):
     if kind is SourceReferenceManager:
         if value._app() is not boundary.app:raise BoundaryViolation('foreign source manager')
         value.authorize(caller);return
-    if kind in (SourceCatalogObject,SourceCatalogSelection):
+    if kind is SourceDocumentRow:
+        if type(value.section) is not SourceDocumentSection:raise BoundaryViolation('foreign source document row')
+        check(boundary,value.section);value.authorize(caller);return
+    if kind is SourceDocumentSection:
+        if type(value.owner) is not SourceDocumentObject:raise BoundaryViolation('foreign source document section')
+        check(boundary,value.owner);value.authorize(caller);return
+    if kind in (SourceCatalogObject,SourceCatalogSelection,SourceDocumentObject,SourceDocumentSelection):
         check(boundary,value.manager)
-        if kind is SourceCatalogObject:
-            if value.interpreter is not None:raise BoundaryViolation('direct source catalog handlers are not integrated')
+        if kind in (SourceCatalogObject,SourceDocumentObject):
+            if value.interpreter is not None:
+                label='document' if kind is SourceDocumentObject else 'catalog'
+                raise BoundaryViolation('direct source '+label+' handlers are not integrated')
             value.authorize(caller)
         else:
-            from .source_catalog_runtime import store_for
+            if kind is SourceDocumentSelection:
+                from .source_document_runtime import store_for
+            else:
+                from .source_catalog_runtime import store_for
             store_for(value.manager,caller)
         return
-    if kind is BSLCatalogReference:
-        from .source_catalog_runtime import _reference_manager
+    if kind in (BSLCatalogReference,BSLDocumentReference):
+        if kind is BSLDocumentReference:
+            from .source_document_runtime import _reference_manager
+        else:
+            from .source_catalog_runtime import _reference_manager
         _reference_manager(caller,value);return
     raise BoundaryViolation('source storage receiver is not integrated')
 
@@ -74,9 +92,12 @@ def get(boundary,value,name):
         if kind is SourceConstantSet:
             if name.casefold() in ('read','прочитать','write','записать'):return value.get_member(name)
             return value.read_property(caller,name)
-        if kind in (SourceConstantValueManager,SourceCatalogObject,SourceCatalogSelection):return value.property_read(caller,name)
-        if kind is BSLCatalogReference:
-            from .source_catalog_runtime import reference_member
+        if kind in (SourceConstantValueManager,SourceCatalogObject,SourceCatalogSelection,SourceDocumentObject,SourceDocumentSelection,SourceDocumentSection,SourceDocumentRow):return value.property_read(caller,name)
+        if kind in (BSLCatalogReference,BSLDocumentReference):
+            if kind is BSLDocumentReference:
+                from .source_document_runtime import reference_member
+            else:
+                from .source_catalog_runtime import reference_member
             return reference_member(caller,value,name)
         return value.get_member(name)
     finally:check(boundary,value)
@@ -86,14 +107,17 @@ def set_member(boundary,value,name):
     check(boundary,value)
     if name.startswith('_'):raise BoundaryViolation('private source storage member')
     kind=type(value)
-    if kind is BSLCatalogReference:
-        from .source_catalog_runtime import readonly_reference
+    if kind in (BSLCatalogReference,BSLDocumentReference):
+        if kind is BSLDocumentReference:
+            from .source_document_runtime import readonly_reference
+        else:
+            from .source_catalog_runtime import readonly_reference
         def reject(new_value):
             check(boundary,value)
             return readonly_reference(boundary.vm,value,name,new_value)
         return reject
     if kind is SourceConstantSet:method=value.write_property
-    elif kind in (SourceConstantValueManager,SourceCatalogObject,SourceCatalogSelection):method=value.property_write
+    elif kind in (SourceConstantValueManager,SourceCatalogObject,SourceCatalogSelection,SourceDocumentObject,SourceDocumentSelection,SourceDocumentSection,SourceDocumentRow):method=value.property_write
     else:raise ValueError('source storage namespace is read-only')
     def assign(new_value):
         check(boundary,value)
@@ -103,6 +127,13 @@ def set_member(boundary,value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,allow_references=False,argument_count=None):
+    if name=='__getitem__' and type(value) is SourceDocumentSection:
+        def row(index):
+            check(boundary,value)
+            try:return value.get_index(boundary.vm,index)
+            finally:check(boundary,value)
+        return row
+    if name=='__iter__' and type(value) is SourceDocumentSection:return lambda:iterate(boundary,value)
     if name=='__getitem__' and type(value) in (SourceConstants,SourceManagers):
         def item(key):
             check(boundary,value)
@@ -139,7 +170,18 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
         store_for(manager,boundary.vm)
         expected=2 if impl.operation in ('findattribute','finddescription') else 1 if impl.operation=='findcode' else 0
         if argument_count is not None and argument_count!=expected:raise TypeError('invalid source catalog argument count')
-    elif type(value) is not BSLCatalogReference:
+    elif type(impl) is SourceDocumentCall:
+        check(boundary,impl.receiver)
+        from .source_document_runtime import store_for
+        manager=impl.receiver if type(impl.receiver) is SourceReferenceManager else impl.receiver.manager
+        store_for(manager,boundary.vm)
+        if argument_count is not None and argument_count!=0:
+            raise TypeError('source document methods accept no arguments; posting unsupported')
+    elif type(impl) is SourceDocumentSectionCall:
+        check(boundary,impl.section)
+        expected=1 if impl.operation in ('get','delete') else 0
+        if argument_count is not None and argument_count!=expected:raise TypeError('invalid document section argument count')
+    elif type(value) not in (BSLCatalogReference,BSLDocumentReference):
         raise BoundaryViolation('source storage callable is not integrated')
     # Descriptors are frozen but their canonical operation markers are mutable.
     # An argument callback must not retarget a previously admitted capability.
@@ -147,7 +189,8 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
     fields=(('owner','name','writing') if type(marker) is ConstantCall else
             ('receiver','operation') if type(marker) in (ConstantSetCall,ValueManagerCall) else
             ('manager','operation') if type(marker) is SourceReferenceCall else
-            ('receiver','operation','identity') if type(marker) is SourceCatalogCall else ())
+            ('receiver','operation','identity') if type(marker) in (SourceCatalogCall,SourceDocumentCall) else
+            ('section','operation') if type(marker) is SourceDocumentSectionCall else ())
     state=tuple(getattr(marker,field) for field in fields)
     def invoke(*values):
         check(boundary,value)
@@ -155,8 +198,8 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
             raise BoundaryViolation('source storage operation changed')
         try:
             if type(impl) is InterpreterCall:return finish(impl.invoke(boundary.vm,list(values)))
-            if type(impl) is SourceCatalogCall:return finish(impl.invoke(boundary.vm,list(values)))
-            if type(impl) is SourceReferenceCall:return impl.invoke(boundary.vm,list(values))
+            if type(impl) in (SourceCatalogCall,SourceDocumentCall):return finish(impl.invoke(boundary.vm,list(values)))
+            if type(impl) in (SourceReferenceCall,SourceDocumentSectionCall):return impl.invoke(boundary.vm,list(values))
             return function(*values)
         finally:check(boundary,value)
     return boundary.resolve_callable(HostFunction(name,invoke,returns_value=function.returns_value),
@@ -165,6 +208,10 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
 
 def iterate(boundary,value):
     check(boundary,value)
+    if type(value) is SourceDocumentSection:
+        for item in value.iterate(boundary.vm):
+            check(boundary,value);yield item
+        check(boundary,value);return
     if type(value) is not SourceConstants:raise ValueError('source storage iteration is not integrated')
     for item in value.members(boundary.vm):
         check(boundary,value);yield item
@@ -174,8 +221,8 @@ def iterate(boundary,value):
 def captured(boundary,function,**contract):
     if type(function) is not HostFunction:return None
     impl=function.function
-    if type(impl) in (SourceCatalogCall,SourceReferenceCall):
-        value=impl.receiver if type(impl) is SourceCatalogCall else impl.manager
+    if type(impl) in (SourceCatalogCall,SourceReferenceCall,SourceDocumentCall,SourceDocumentSectionCall):
+        value=impl.section if type(impl) is SourceDocumentSectionCall else impl.manager if type(impl) is SourceReferenceCall else impl.receiver
         check(boundary,value)
         return bind(boundary,value,function,function.name,**contract)
     if type(impl) is not InterpreterCall:return None
