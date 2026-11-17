@@ -81,12 +81,36 @@ def _signature(node):
         node.module_context,node.exported,tuple((p.name,p.by_value,p.default is None) for p in node.parameters))
 
 
+
+def _signature_matches(node, saved):
+    """Revalidate every mutable declaration field without allocating a signature."""
+    if type(node) is not ast.Routine or type(node.parameters) is not list:
+        raise BoundaryViolation('source routine signature is not canonical')
+    if (type(node.name) is not str or type(node.execution_context) is not str
+            or type(node.is_function) is not bool or type(node.is_async) is not bool
+            or type(node.is_dual) is not bool or type(node.module_context) is not bool
+            or type(node.exported) is not bool):
+        raise BoundaryViolation('source routine parameters are not canonical')
+    parameters=saved[7]
+    matches=(node.name==saved[0] and node.execution_context==saved[1]
+        and node.is_function is saved[2] and node.is_async is saved[3]
+        and node.is_dual is saved[4] and node.module_context is saved[5]
+        and node.exported is saved[6] and len(node.parameters)==len(parameters))
+    for index,p in enumerate(node.parameters):
+        if type(p) is not ast.Parameter or type(p.name) is not str or type(p.by_value) is not bool:
+            raise BoundaryViolation('source routine parameters are not canonical')
+        if matches:
+            old=parameters[index]
+            matches=(p.name==old[0] and p.by_value is old[1] and (p.default is None) is old[2])
+    return matches
+
+
 def _check_plan(owner,plan):
     if frozenset(owner.module_names)!=plan._source_layout:
         raise BoundaryViolation("source module layout changed; redeclare")
     for node,signature in plan._source_routines:
         registry=owner.server_routines if signature[1]=='server' else owner.routines
-        if registry.get(signature[0].casefold()) is not node or _signature(node)!=signature:
+        if registry.get(signature[0].casefold()) is not node or not _signature_matches(node,signature):
             raise BoundaryViolation('source declaration binding changed')
 
 
