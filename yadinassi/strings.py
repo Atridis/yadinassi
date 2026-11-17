@@ -266,10 +266,18 @@ def split(value: object, separators: object, include_empty: object = True) -> BS
 
 
 def join(values: object, separator: object = "") -> str:
-    if not isinstance(values, (BSLArray, BSLFixedArray)):
+    if type(values) is not list and not isinstance(values, (BSLArray, BSLFixedArray)):
         raise TypeError("СтрСоединить ожидает массив или фиксированный массив")
-    delimiter = to_string(separator)
-    return _text(delimiter.join(to_string(value) for value in values))
+    from .experimental_naked_collections import _TypedMap
+    from .experimental_naked_structure import _DirectStructure
+    def convert(value):
+        kind = type(value)
+        if kind is list: return "Массив"
+        if kind is _TypedMap: return "Соответствие"
+        if kind is _DirectStructure: return "Структура"
+        return to_string(value)
+    delimiter = convert(separator)
+    return _text(delimiter.join(convert(value) for value in values))
 
 
 def occurrence_count(value: object, substring: object) -> Decimal:
