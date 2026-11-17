@@ -12,6 +12,20 @@ from .experimental_naked_boundaries import BoundaryViolation
 
 _MODULES=(source,io,values,xdto_packages,xdto_schema,xml_io,configuration_xml,configuration_source)
 _ABI=tuple((module,module._DIRECT_SOURCE_XDTO_BINDINGS,module._DIRECT_SOURCE_XDTO_CLASSES,module._DIRECT_SOURCE_XDTO_LIMITS) for module in _MODULES)
+def _unique_class_requirements(abi):
+    # Only identical immutable requirements are merged. Keep module bindings,
+    # limits and conflicting snapshots; successful checks are never cached.
+    seen=set();result=[]
+    for module,bindings,classes,limits in abi:
+        unique=[]
+        for cls,mro,fields in classes:
+            key=(id(cls),id(mro),tuple((name,id(value)) for name,value in fields))
+            if key not in seen:
+                seen.add(key);unique.append((cls,mro,fields))
+        result.append((module,bindings,tuple(unique),limits))
+    return tuple(result)
+
+_HOOK_ABI=_unique_class_requirements(_ABI)
 _FACTORY=io.BSLXDTOFactory;_TYPE=values.BSLXDTOValueType;_VALUE=values.BSLXDTODataValue
 _LOADER=source.SourceXDTOPackages;_LOAD=_LOADER.load
 _TYPE_CALL=_FACTORY.type;_CREATE_CALL=_FACTORY.create
@@ -50,7 +64,7 @@ def _hooks():
             or configuration_xml.ET.iterparse is not configuration_xml._DIRECT_SOURCE_XDTO_XML_INPUT[0]
             or configuration_xml.io.StringIO is not configuration_xml._DIRECT_SOURCE_XDTO_XML_INPUT[1]):
         raise BoundaryViolation('source XDTO XML parser hook changed')
-    for module,bindings,classes,limits in _ABI:
+    for module,bindings,classes,limits in _HOOK_ABI:
         for name,expected in bindings:
             if vars(module).get(name) is not expected:raise BoundaryViolation('source XDTO codec binding changed')
         for cls,mro,fields in classes:
