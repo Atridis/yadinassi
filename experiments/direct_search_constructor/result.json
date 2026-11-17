@@ -1,0 +1,9 @@
+{
+  "source_sha256": "cacbcc6dfef4352485f65badfaed8839e9363e9a4cfab814ee6c59e29abadeeb",
+  "records": 385,
+  "output_bytes": 13115,
+  "output_sha256": "a693bc2cf277b46de9be58d772afca30f1648c86d1b1ddbe3f76d550302673dd",
+  "completed": true,
+  "remaining_blocker": null,
+  "native_reference_records": 385
+}

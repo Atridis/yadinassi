@@ -17,6 +17,7 @@ CONSTRUCTORS = {
         (('jsonreader','чтениеjson'),BSLJSONReader),
         (('jsonwriter','записьjson'),BSLJSONWriter),
         (('jsonwritersettings','параметрызаписиjson'),BSLJSONWriterSettings),
+        (('searchdirection','направлениепоиска'),None),
         (('resultofsearchbyregularexpression','результатпоискапорегулярномувыражению'),None),
         (('resultofsearchbyregularexpressiongroup','группарезультатапоискапорегулярномувыражению'),None),
     ) for alias in aliases

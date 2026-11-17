@@ -55,11 +55,9 @@ class DirectStringJoinTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):vm.execute('R=StrConcat(A,Close());')
         self.assertNotIn('r',vm.variables)
 
-    def test_original_strings_advances_to_separate_execute_gap(self):
-        from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+    def test_original_strings_completes(self):
         source=Path(__file__).resolve().parents[1]/'integrational_tests/tests/strings.bsl'
         rows=[];vm=Interpreter(rows.append,compilation_profile='managed-thick-file',native_target='linux-8.3.27.1508')
-        with self.assertRaisesRegex(UnsupportedNakedSyntax,'constructor SearchDirection'):
-            vm.execute(source.read_text(encoding='utf-8-sig'))
-        self.assertEqual(len(rows),372)
+        vm.execute(source.read_text(encoding='utf-8-sig'))
+        self.assertEqual(len(rows),385)
         self.assertTrue(rows[0].startswith('pipeline.names:'))
