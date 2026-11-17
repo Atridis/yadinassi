@@ -80,8 +80,8 @@ class ApplicationTemporaryStorage:
             raise ValueError('temporary storage requires an explicit UUID owner or owned existing address')
         # Native same-server-context storage retains collection identity. The
         # snapshot is validation/accounting only; never substitute its copy.
-        costs=self._measure(excluding=address if previous is not None else None)
-        units,nodes=_cost(capture(value))
+        costs=self._measure(excluding=address if previous is not None else None, caller=caller)
+        units,nodes=_cost(self._capture(value, caller))
         next_units=sum(c[0] for c in costs.values())+units
         next_nodes=sum(c[1] for c in costs.values())+nodes
         if next_units>MAX_RETAINED_UNITS or next_nodes>MAX_SNAPSHOT_NODES:
@@ -91,11 +91,14 @@ class ApplicationTemporaryStorage:
         self._units=next_units;self._nodes=next_nodes
         return address
 
-    def _measure(self,excluding=None):
+    def _capture(self, value, caller):
+        return capture(value)
+
+    def _measure(self,excluding=None, *, caller=None):
         costs={};units=0;nodes=0
         for address,entry in self._entries.items():
             if address==excluding:continue
-            cost=_cost(capture(entry[0]));units+=cost[0];nodes+=cost[1]
+            cost=_cost(self._capture(entry[0], caller));units+=cost[0];nodes+=cost[1]
             if units>MAX_RETAINED_UNITS or nodes>MAX_SNAPSHOT_NODES:
                 raise ValueError('temporary storage aggregate quota exceeded')
             costs[address]=cost
@@ -113,7 +116,7 @@ class ApplicationTemporaryStorage:
         if not self.is_address(address):raise ValueError('invalid temporary storage address')
         entry=self._entries.get(address)
         if entry is None:return None
-        self._apply_costs(self._measure())
+        self._apply_costs(self._measure(caller=caller))
         return entry[0]
 
     def delete(self,caller,address):
@@ -146,6 +149,11 @@ class SourceTemporaryStorage(ApplicationTemporaryStorage):
     This does not turn source admission into a strict configuration/storage
     grant. Only the server family may use these synchronous in-memory operations.
     """
+    def _capture(self, value, caller):
+        if caller is not None and caller.execution_backend == 'python-direct':
+            return capture(value, _source_direct=True)
+        return capture(value)
+
     def authorize(self, caller):
         app = self._application()
         if (self._closed or app is None
@@ -174,3 +182,13 @@ class SourceTemporaryCall:
 
     def invoke(self, caller, arguments):
         return self.owner.invoke(caller, self.operation, arguments)
+
+
+_DIRECT_TEMPORARY_ABI = tuple(
+    (cls, name, getattr(cls, name))
+    for cls, names in (
+        (SourceTemporaryCall, ('authorize_call', 'invoke')),
+        (SourceTemporaryStorage, ('authorize', '_capture')),
+        (ApplicationTemporaryStorage, ('put', 'get', 'delete', 'recognize', 'invoke', 'is_address',
+                                       '_measure', '_apply_costs', '_capture')),
+    ) for name in names)

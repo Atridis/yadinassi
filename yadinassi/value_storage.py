@@ -71,7 +71,12 @@ class Snapshot:
 
 
 class _Capture:
-    def __init__(self, root, degree=0):
+    def __init__(self, root, degree=0, *, source_direct=False):
+        self.source_direct = source_direct
+        self.direct_structure = None
+        if source_direct:
+            from .experimental_naked_structure import _DirectStructure
+            self.direct_structure = _DirectStructure
         self.nodes = 0
         self.text_units = 0
         self.binary_bytes = 0
@@ -120,7 +125,8 @@ class _Capture:
                             or kind is BSLStructure or kind is BSLFixedStructure
                             or kind is BSLMap or kind is BSLFixedMap
                             or kind is BSLBinaryData or kind is BSLValueStorage
-                            or kind is BSLValueTable)
+                            or kind is BSLValueTable
+                            or self.source_direct and (kind is list or kind is self.direct_structure))
         if identity_bearing:
             self.remember(value, depth)
         try:
@@ -180,6 +186,24 @@ class _Capture:
                                   charge_text=self.charge_text, reserve=self.reserve)
             except TableSnapshotError:
                 raise SnapshotError("unsupported or invalid table snapshot") from None
+        if self.source_direct:
+            if kind is list:
+                if len(value) > MAX_NODES - self.nodes:
+                    raise SnapshotError("invalid or oversized array")
+                return ("array", tuple(self.take(item, depth + 1) for item in value))
+            if kind is self.direct_structure:
+                if dict.__len__(value) > MAX_NODES - self.nodes:
+                    raise SnapshotError("invalid or oversized structure")
+                captured = []
+                for key, pair in dict.items(value):
+                    if type(key) is not str or type(pair) is not tuple or len(pair) != 2:
+                        raise SnapshotError("invalid structure entry")
+                    name, item = pair
+                    self.charge_text(name)
+                    if key != structure_key(name):
+                        raise SnapshotError("inconsistent structure key")
+                    captured.append((name, self.take(item, depth + 1)))
+                return ("structure", tuple(captured))
         if kind is BSLArray or kind is BSLFixedArray:
             items = _required_field(value, "items")
             expected = list if kind is BSLArray else tuple
@@ -230,9 +254,9 @@ class _Capture:
         raise SnapshotError("unsupported snapshot type")
 
 
-def capture(value, *, compression=None):
+def capture(value, *, compression=None, _source_direct=False):
     """Build a bounded immutable snapshot, or fail without publishing one."""
-    return Snapshot(_Capture(value, compression_degree(compression)).take(value))
+    return Snapshot(_Capture(value, compression_degree(compression), source_direct=_source_direct is True).take(value))
 
 
 class _Restore:

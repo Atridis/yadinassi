@@ -21,6 +21,7 @@ from . import python_direct_source_sessions as sessions
 from . import python_direct_source_enums as enums
 from . import python_direct_source_extensions as extensions
 from . import python_direct_source_host_info as host_info
+from . import python_direct_source_temporary as temporary
 
 
 def check_owner(owner):
@@ -192,6 +193,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'prepare_named_value'):invoke.prepare_named_value=bound.prepare_named_value
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=temporary.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         bound=host_info.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         bound=extensions.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -271,6 +274,9 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             routine,owner=selected
             return self._routine(owner,routine,**kwargs)
         function=self._services.get(key)
+        temporary_call=temporary.captured(self,function,require_value=kwargs.get('require_value',False),
+            allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
+        if temporary_call is not None:return temporary_call
         host_call=host_info.captured(self,function,require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
         if host_call is not None:return host_call
@@ -280,16 +286,13 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if type(function) is HostFunction:
             from .source_transactions import SourceTransactionCall
             from .common_templates import SourceTemplateCall
-            from .temporary_storage import SourceTemporaryCall
             impl=function.function
-            if type(impl) in (SourceTransactionCall,SourceTemplateCall,SourceTemporaryCall):
+            if type(impl) in (SourceTransactionCall,SourceTemplateCall):
                 self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
                 if type(impl) is SourceTemplateCall:
                     impl.owner.authorize(self.vm)
                     if kwargs.get('argument_count') is not None and kwargs['argument_count']!=1:
                         raise TypeError('GetCommonTemplate requires one argument')
-                if type(impl) is SourceTemporaryCall and kwargs.get('argument_count') is not None:
-                    impl.authorize_call(self.vm,kwargs['argument_count'])
                 def invoke(*values):
                     self._check()
                     if function.function is not impl:raise BoundaryViolation('source service binding changed')
