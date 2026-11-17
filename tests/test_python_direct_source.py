@@ -172,11 +172,12 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
             def application(self):raise AssertionError('hostile application property')
         with self.assertRaises(BoundaryViolation):check_owner(object.__new__(ForgedSource))
 
-    def test_source_execute_remains_explicitly_unsupported(self):
+    def test_source_execute_updates_only_visible_slot_without_vm(self):
         app,_=self.app();app.start()
-        with self.assertRaisesRegex(ValueError,'Execute'):
-            app.interpreter.execute('Saved=1;Execute("Saved=2;");')
-        self.assertNotIn('saved',app.interpreter.variables)
+        with self.no_vm():
+            app.interpreter.execute('Saved=1;Execute("Saved=2;Private=9;");')
+        self.assertEqual(app.interpreter.variables['saved'],2)
+        self.assertNotIn('private',app.interpreter.variables)
 
 
 if __name__=='__main__':unittest.main()

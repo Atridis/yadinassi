@@ -198,6 +198,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'requires_reference'):invoke.requires_reference=bound.requires_reference
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
         if hasattr(bound,'prepare_named_value'):invoke.prepare_named_value=bound.prepare_named_value
+        if hasattr(bound,'bind_eval'):invoke.bind_eval=bound.bind_eval
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         bound=stored_values.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -218,6 +219,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self._guard_references(bound) if allow_references else bound
     def leave(self):
         self._active=False
+        from .python_direct_source_fragments import release
+        release(self)
     @contextmanager
     def routine_scope(self):
         self._check()
@@ -576,8 +579,8 @@ def execute(owner,program):
         raise BoundaryViolation("reentrant direct source execution is not integrated")
     if type(program) is not list:raise TypeError('source execution requires parsed AST')
     declarations=[n for n in program if type(n) in (ast.Routine,ast.Var)]
-    if any(type(n) in (ast.Import,ast.Execute) for n in _nodes(program)):
-        raise ValueError('direct source imports/Execute are not integrated')
+    if any(type(n) is ast.Import for n in _nodes(program)):
+        raise ValueError('direct source imports are not integrated')
     for n in declarations:
         if type(n) is ast.Routine and (n.is_async or n.is_dual or not n.module_context):
             raise ValueError('direct source async/dual/NoContext routine is not integrated')

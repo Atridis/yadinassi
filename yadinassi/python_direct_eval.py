@@ -25,6 +25,14 @@ def eval_capability(context,function,key):
 
 
 def evaluate(value,context,parent,bindings,visible):
+    if getattr(context,'app',None) is None and getattr(getattr(context,'vm',None),'application',None) is None:
+        return _evaluate(value,context,parent,bindings,visible,None)
+    from .python_direct_source_fragments import execution
+    with execution(context,'eval',parent,bindings,visible) as profile:
+        return _evaluate(value,context,parent,bindings,visible,profile)
+
+
+def _evaluate(value,context,parent,bindings,visible,profile):
     context._check()
     from .runtime import EVAL_MAX_SOURCE,EVAL_MAX_DEPTH
     from .values import to_string
@@ -39,6 +47,7 @@ def evaluate(value,context,parent,bindings,visible):
     depth=getattr(context,'_eval_depth',None)
     if depth is None:depth=context._eval_depth=[0]
     if depth[0]>=EVAL_MAX_DEPTH:raise ValueError('Вычислить: превышен предел вложенности Yadinassi (16)')
+    level=depth[0]
     depth[0]+=1;scope=None
     try:
         from .syntax.parser import parse_expression
@@ -51,9 +60,15 @@ def evaluate(value,context,parent,bindings,visible):
         from .python_direct_execute import FragmentScope
         constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
         external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
-        key=(text,_contract(vm),REPAIRS,constructor_names,external_names,EVAL_MAX_SOURCE,EVAL_MAX_DEPTH)
-        cache=getattr(context,'_eval_units',None)
-        if cache is None:cache=context._eval_units={}
+        if profile is not None:constructor_names,external_names=profile
+        source_repairs=REPAIRS+('authority_checkpoints',) if profile is not None else REPAIRS
+        key=(text,_contract(vm),source_repairs,constructor_names,external_names,profile is not None,EVAL_MAX_SOURCE,EVAL_MAX_DEPTH)
+        if profile is not None:
+            from .python_direct_source_fragments import prepared_cache
+            cache=prepared_cache(context,'eval')
+        else:
+            cache=getattr(context,'_eval_units',None)
+            if cache is None:cache=context._eval_units={}
         unit=cache.get(key)
         if unit is None:
             try:expression=parse_expression(text)
@@ -62,9 +77,9 @@ def evaluate(value,context,parent,bindings,visible):
             program=[ExpressionStatement(expression.token,expression)]
             _,routines,constructors,calls=_source_facts(program)
             _admit_bindings(vm,routines,constructors,calls)
-            plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=REPAIRS,
+            plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=source_repairs,
                 constructors=constructor_names,external_names=external_names,
-                _trusted_entry=True,_return_last_expression=True)
+                _trusted_entry=True,_return_last_expression=True,_source_routine_scopes=profile is not None,_require_last_expression=profile is not None)
             # Retain compilation only, never AST, mutable Program, bindings or authority.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EVAL_MAX_SOURCE):
@@ -82,5 +97,10 @@ def evaluate(value,context,parent,bindings,visible):
             raise converted from None
     finally:
         if scope is not None:scope.active=False
-        depth[0]-=1
+        if profile is None:depth[0]-=1
+        else:
+            changed=(type(depth) is not list or len(depth)!=1 or type(depth[0]) is not int
+                     or depth[0]!=level+1 or getattr(context,'_eval_depth',None) is not depth)
+            if type(depth) is list:list.__setitem__(depth,slice(None),[level])
+            if changed:raise BoundaryViolation('source fragment depth changed during execution')
         context._check()

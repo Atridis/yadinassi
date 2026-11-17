@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -267,6 +267,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         raise TypeError("source callable externals require a tuple of names")
     if _source_callable_externals and not (_trusted_entry and _source_routine_scopes):
         raise ValueError("source callable externals require trusted source scopes")
+    if type(_require_last_expression) is not bool:raise TypeError("last-expression contract requires Boolean")
+    if _require_last_expression and not (_trusted_entry and _return_last_expression):
+        raise ValueError("last-expression contract requires trusted expression return")
     if type(_source_scalar_routines) is not bool:raise TypeError("source scalar routines require Boolean")
     if _source_scalar_routines and not (_trusted_entry and _source_routine_scopes):
         raise ValueError("source scalar routines require trusted source scopes")
@@ -789,7 +792,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 else:emit(depth,f'if {slot!r} not in locals(): {slot} = None')
         elif kind is ast.ExpressionStatement:
             prefix='return ' if _return_last_expression and scope_id is None and node is program[-1] else ''
-            emit(depth,prefix+expression(node.expression,False))
+            emit(depth,prefix+expression(node.expression,bool(prefix) and _require_last_expression))
         elif kind is ast.Return:
             result=expression(node.value) if node.value is not None else 'None'
             if _source_scalar_routines:result='_context.scalar_result('+result+')'

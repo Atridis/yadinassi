@@ -72,6 +72,14 @@ class FragmentScope:
 
 
 def execute_fragment(text,context,parent,bindings,visible):
+    if getattr(context,'app',None) is None and getattr(getattr(context,'vm',None),'application',None) is None:
+        return _execute_fragment(text,context,parent,bindings,visible,None)
+    from .python_direct_source_fragments import execution
+    with execution(context,'execute',parent,bindings,visible) as profile:
+        return _execute_fragment(text,context,parent,bindings,visible,profile)
+
+
+def _execute_fragment(text,context,parent,bindings,visible,profile):
     context._check()
     from .experimental_naked_boundaries import BoundaryViolation
     vm=getattr(context,'vm',None)
@@ -83,6 +91,7 @@ def execute_fragment(text,context,parent,bindings,visible):
     depth=getattr(context,'_execute_depth',None)
     if depth is None:depth=context._execute_depth=[0]
     if depth[0]>=EXECUTE_MAX_DEPTH:raise ValueError('Выполнить: превышен предел вложенности Yadinassi (16)')
+    level=depth[0]
     depth[0]+=1
     scope=None
     try:
@@ -95,9 +104,15 @@ def execute_fragment(text,context,parent,bindings,visible):
         from .python_direct_database import NAMES as DB_NAMES
         constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
         external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
-        key=(text,_contract(vm),REPAIRS,constructor_names,external_names,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
-        cache=getattr(context,'_execute_units',None)
-        if cache is None:cache=context._execute_units={}
+        if profile is not None:constructor_names,external_names=profile
+        source_repairs=REPAIRS+('authority_checkpoints',) if profile is not None else REPAIRS
+        key=(text,_contract(vm),source_repairs,constructor_names,external_names,profile is not None,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
+        if profile is not None:
+            from .python_direct_source_fragments import prepared_cache
+            cache=prepared_cache(context,'execute')
+        else:
+            cache=getattr(context,'_execute_units',None)
+            if cache is None:cache=context._execute_units={}
         unit=cache.get(key)
         if unit is None:
             try:program=parse_fragment(text)
@@ -105,8 +120,8 @@ def execute_fragment(text,context,parent,bindings,visible):
                 raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
             _,routines,constructors,calls=_source_facts(program)
             _admit_bindings(vm,routines,constructors,calls)
-            plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=REPAIRS,
-                constructors=constructor_names,external_names=external_names,_trusted_entry=True)
+            plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=source_repairs,
+                constructors=constructor_names,external_names=external_names,_trusted_entry=True,_source_routine_scopes=profile is not None)
             # No AST, mutable Program, caller scope, references or authorization is retained.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             if len(text)<=EXECUTE_MAX_SOURCE:
@@ -125,5 +140,10 @@ def execute_fragment(text,context,parent,bindings,visible):
             raise converted from None
     finally:
         if scope is not None:scope.active=False
-        depth[0]-=1
+        if profile is None:depth[0]-=1
+        else:
+            changed=(type(depth) is not list or len(depth)!=1 or type(depth[0]) is not int
+                     or depth[0]!=level+1 or getattr(context,'_execute_depth',None) is not depth)
+            if type(depth) is list:list.__setitem__(depth,slice(None),[level])
+            if changed:raise BoundaryViolation('source fragment depth changed during execution')
         context._check()
