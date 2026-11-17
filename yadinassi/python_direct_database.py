@@ -12,7 +12,7 @@ from .document_lines import BSLDocumentLines, BSLDocumentLine
 from .enumerations import BSLEnumerations, BSLEnumManager
 from .enum_types import BSLEnumReference
 from .document_posting_values import DOCUMENT_WRITE_MODES
-from .structures import BSLStructure, BSLFixedStructure
+from .structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from .values import HostFunction, BSLArray, BSLFixedArray
 from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .file_io import BSLFile, BSLBinaryData
@@ -73,7 +73,7 @@ class CatalogBoundary:
         elif kind in (BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
                       BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
             return
-        elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure,
+        elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue,
                       BSLArray, BSLFixedArray, BSLRegexResult, BSLRegexGroup):
             # Detached result data: these public methods cannot execute queries
             # or write. Returned references still require the current root.
@@ -192,11 +192,11 @@ class CatalogBoundary:
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
         elif name=='__getitem__':
-            function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index:value.get_index(index)
+            function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index:value.get_index(index)
         elif name=='__setitem__':
-            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index,new:value.set_index(index,new)
+            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

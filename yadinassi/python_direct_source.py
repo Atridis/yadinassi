@@ -11,6 +11,7 @@ from .experimental_naked_live_state import _ForwardReference
 from .experimental_naked_errors import convert_error
 from .python_direct import REPAIRS, _snapshot, _nodes
 from .python_direct_services import ServicesBoundary, CONSTRUCTORS
+from . import python_direct_fixed as fixed
 from .syntax import ast
 from .values import HostFunction, Reference
 from . import safe_mode, source_transactions, database_transactions
@@ -368,6 +369,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self._module(value.module(self.vm))
     def get_member(self,value,name):
         self._check()
+        if fixed.owns(value):return fixed.get(self,value,name)
         if name.startswith('_'):raise BoundaryViolation('private source member')
         if host_info.owns(value):return host_info.get(self,value,name)
         if extensions.owns(value):return extensions.get(self,value,name)
@@ -381,6 +383,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if fixed.owns(value):return fixed.resolve(self,value,name,require_value=require_value,allow_references=allow_references)
         if host_info.owns(value):return host_info.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         if extensions.owns(value):return extensions.resolve(self,value,name,require_value=require_value,
@@ -414,6 +417,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if fixed.owns(value):return fixed.resolve(self,value,'__setitem__')
         if host_info.owns(value):return host_info.set_member(self,value,name)
         if extensions.owns(value):return extensions.set_member(self,value,name)
         if enums.supports(self,value):return enums.set_member(self,value,name)
@@ -424,6 +428,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if fixed.owns(value):return fixed.resolve(self,value,name)
         if host_info.owns(value):return host_info.resolve(self,value,name)
         if extensions.owns(value):return extensions.resolve(self,value,name)
         if enums.supports(self,value):return enums.resolve(self,value,name)

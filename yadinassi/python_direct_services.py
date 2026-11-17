@@ -3,7 +3,9 @@ from .file_io import BSLFile, BSLBinaryData
 from .http_client import BSLHTTPConnection, BSLHTTPRequest
 from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
-from .values import HostFunction
+from .values import HostFunction, BSLFixedArray
+from .structures import BSLFixedStructure
+from . import python_direct_fixed as fixed
 from .type_descriptions import BSLTypeDescription
 from .value_tables import BSLValueTable
 from .value_lists import BSLValueList
@@ -20,6 +22,8 @@ _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('fixedarray','фиксированныймассив'),BSLFixedArray),
+        (('fixedstructure','фиксированнаяструктура'),BSLFixedStructure),
         (('valuelist','списокзначений'),BSLValueList),
         (('valuelistitem','элементсписказначений'),None),
         (('valuetable','таблицазначений'),BSLValueTable),
@@ -64,6 +68,19 @@ class ServicesBoundary:
                         raise BoundaryViolation('canonical constructor changed during argument evaluation')
                     return original(*values)
                 bound=guarded
+            if expected in fixed.FACTORIES:
+                factory_name=factory.name.casefold()
+                def fixed_constructor(*values):
+                    self._check()
+                    if factory.function is not expected:
+                        raise BoundaryViolation('canonical fixed constructor changed during argument evaluation')
+                    self._before('call_value',factory_name)
+                    if factory.function is not expected:
+                        raise BoundaryViolation('canonical fixed constructor changed at policy boundary')
+                    try:return fixed.construct(expected,values)
+                    except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                    finally:self._check()
+                bound=fixed_constructor
             if expected is BSLTypeDescription:
                 def prepare_omissions(bound,positions,count):
                     self._check()
