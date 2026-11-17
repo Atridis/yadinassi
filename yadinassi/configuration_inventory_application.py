@@ -315,3 +315,7 @@ def canonical(configuration):
 def validated_core(configuration):
     """Trusted projection only after exact full-source and manifest validation."""
     return _checked(configuration)[1]
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (InventoryApplicationConfiguration,) for base in receiver.__mro__))

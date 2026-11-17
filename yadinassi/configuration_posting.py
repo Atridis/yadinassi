@@ -141,3 +141,7 @@ def validate_shape_projection(obj, kind):
             ids.add(identity)
     if seen and seen!=set(categories):raise ValueError('incomplete posting generated identities')
     obj.remove(internal)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (PostingConfiguration,) for base in receiver.__mro__))

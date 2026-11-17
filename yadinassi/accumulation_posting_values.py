@@ -10,7 +10,8 @@ from .accumulation_movements import (AccumulationDirection, AccumulationMovement
                                     AccumulationReplacement)
 from .catalog_backend import BackendError
 from .dates import BSLDate
-from .document_posting_values import BSLRecorderRow, BSLRecorderSet
+from .document_posting_values import BSLRecorderRow, BSLRecorderSet, _DIRECT_MOVEMENT_ORIGINS
+from weakref import ref
 from .documents import _date
 from .transaction_backend import TransactionRequest
 from .values import BSLObject
@@ -104,6 +105,8 @@ class BSLAccumulationSet(BSLRecorderSet):
 
 class BSLAccumulationCollection(BSLObject):
     def __init__(self, document, schemas):
+        self._document=document
+        _DIRECT_MOVEMENT_ORIGINS[self]=('collection',ref(document),None)
         self._sets = {schema.name.casefold(): BSLAccumulationSet(document, schema)
                       for schema in schemas}
 
@@ -114,3 +117,13 @@ class BSLAccumulationCollection(BSLObject):
         if name.casefold() not in self._sets:
             raise ValueError('recorder accumulation register not declared')
         return self._sets[name.casefold()]
+
+_DIRECT_MOVEMENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLAccumulationCollection,BSLAccumulationSet,BSLAccumulationRow,_AccumulationRecordTypes)
+        for base in receiver.__mro__))
+
+from types import FunctionType as _FunctionType
+_DIRECT_MOVEMENT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is type or type(value) is _FunctionType)
+
+_DIRECT_MOVEMENT_NAMESPACE=ACCUMULATION_RECORD_TYPES

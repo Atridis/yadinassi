@@ -310,3 +310,7 @@ class CatalogFormSource:
     definition_xml: bytes
     module_source: bytes
     module_present: bool
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (FieldSchema,) for base in receiver.__mro__))

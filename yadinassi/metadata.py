@@ -565,3 +565,7 @@ def _prepare_enum_query_metadata(root, view):
     for collection, items in staged:
         collection._database_id, collection._generation = identity
         collection._items = items
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLMetadata,BSLDocumentMetadataCollection,BSLDocumentMetadata,) for base in receiver.__mro__))

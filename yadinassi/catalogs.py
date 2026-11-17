@@ -489,3 +489,7 @@ class BSLCatalogSelection(BSLObject):
         if self._position<0:_field(self._manager._defaults(),name);return None
         return _field(self._manager._fields(self._rows[self._position]),name)
     def __str__(self):return str(self._selection_type)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLCatalogs,BSLCatalogManager,) for base in receiver.__mro__))

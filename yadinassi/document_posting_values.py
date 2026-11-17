@@ -4,6 +4,9 @@ The detached buffer deliberately starts empty on object reload. Only the
 same-object lifetime is established by the measured posting profile.
 """
 from decimal import Decimal
+from weakref import WeakKeyDictionary,ref
+
+_DIRECT_MOVEMENT_ORIGINS=WeakKeyDictionary()
 from enum import Enum
 from .values import BSLObject, HostFunction
 from .catalog_backend import BackendError
@@ -40,6 +43,7 @@ class BSLRecorderRow(BSLObject):
     def __str__(self): raise ValueError('movement row presentation is unsupported')
     def __init__(self, owner):
         self._owner = owner
+        _DIRECT_MOVEMENT_ORIGINS[self]=('row',ref(owner),None)
         self._active = True
         self._values = {field.name.casefold(): owner._document._manager._field_default(field)
                         for field in owner._schema.fields}
@@ -71,6 +75,7 @@ class BSLRecorderSet(BSLObject):
     def __str__(self): raise ValueError('movement set presentation is unsupported')
     def __init__(self, document, schema):
         self._document, self._schema = document, schema
+        _DIRECT_MOVEMENT_ORIGINS[self]=('set',ref(document),schema)
         self._rows = []; self._selected = False; self._bytes = 0
     def _mutable(self):
         if self._document._pending_write is not None and self._document._posting_active is None:
@@ -126,7 +131,18 @@ class BSLRecorderSet(BSLObject):
 class BSLRecorderCollection(BSLObject):
     def __str__(self): raise ValueError('movement collection presentation is unsupported')
     def __init__(self, document, schemas):
+        self._document=document
+        _DIRECT_MOVEMENT_ORIGINS[self]=('collection',ref(document),None)
         self._sets = {schema.name.casefold():BSLRecorderSet(document,schema) for schema in schemas}
     def get_member(self, name):
         if name.casefold() not in self._sets: raise ValueError('recorder register not declared')
         return self._sets[name.casefold()]
+
+# Definition-time receiver hooks for the direct live database boundary.
+_DIRECT_MOVEMENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLRecorderCollection,BSLRecorderSet,BSLRecorderRow)
+        for base in receiver.__mro__))
+
+from types import FunctionType as _FunctionType
+_DIRECT_MOVEMENT_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is type or type(value) is _FunctionType)

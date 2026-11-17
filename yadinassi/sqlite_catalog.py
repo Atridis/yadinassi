@@ -2975,3 +2975,7 @@ def _preflight_create(configuration, *, activate=True, query_indexes=False, _sou
         if activate or configuration != canonical:
             raise BackendError('unsupported')
     return (schemas, registers, documents, definitions, register_definitions, document_definitions, storage_version, files)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (SQLiteCatalogBackend,) for base in receiver.__mro__))

@@ -224,3 +224,7 @@ class PostingRuntime:
                 vm._scheduler.active_context.state.pop(vm._diagnostic_owner,None)
                 vm.close()
         return None
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (PostingRuntime,) for base in receiver.__mro__))

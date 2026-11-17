@@ -325,3 +325,7 @@ def canonical(configuration):
     if not _same(fresh, configuration):
         scalar._fail('source/schema divergence')
     return fresh
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (InventoryEnumConfiguration,) for base in receiver.__mro__))

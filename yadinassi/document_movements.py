@@ -102,3 +102,7 @@ def mutation_identity(request):
     if type(request) is not RecorderReplacement or type(request.recorder) is not DocumentKey:
         raise BackendError('invalid_input')
     return ('recorder_movement', request.register_id, request.recorder)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (RecorderRegisterSchema,) for base in receiver.__mro__))

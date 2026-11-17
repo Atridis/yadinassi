@@ -3,6 +3,7 @@
 No arbitrary getattr, no backend access and no replacement for writer validation.
 """
 from .experimental_naked_boundaries import BoundaryViolation
+from . import python_direct_movements as movements
 from .catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from .catalog_types import BSLCatalogReference
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
@@ -30,7 +31,7 @@ from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                               BSLDateQualifiers, BSLBinaryDataQualifiers)
 
-NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента')
+NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента','accumulationrecordtype','виддвижениянакопления')
 
 # Canonical detached receivers only; child rows/items and database owners still
 # traverse live ownership validation. Public protocols retain resource guards.
@@ -40,6 +41,10 @@ _DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
 class CatalogBoundary:
     def _catalog_owner(self, value):
         self._check()
+        if movements.owns(value):
+            movements.check(self,value);return
+        if value is movements.NAMESPACE:
+            movements.namespace(self);return
         if id(value) in SYSTEM_VALUE_IDS:return
         root=self.vm._catalogs
         kind=type(value)
@@ -97,6 +102,11 @@ class CatalogBoundary:
         if owner is not root:
             raise BoundaryViolation('unregistered or foreign database receiver')
 
+    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=movements.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
+        return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+
     def resolve_service(self,name,*args,**kwargs):
         if name.casefold() in ('new:query','new:запрос'):
             self._check()
@@ -115,6 +125,7 @@ class CatalogBoundary:
         if name in ('enums','перечисления'):
             if self.vm._metadata._enumerations is None:raise ValueError('enumerations require an active configuration application')
             return self.vm._metadata._enumerations
+        if name in ('accumulationrecordtype','виддвижениянакопления'):return movements.namespace(self)
         if name in ('documentwritemode','режимзаписидокумента'):
             if self.vm._documents.posting_runtime() is None:raise ValueError('posting profile required')
             return DOCUMENT_WRITE_MODES

@@ -38,6 +38,17 @@ class PostingBoundary(BoundaryContext):
                 or self.vm._family_generation != owner._family_generation
                 or self.document._posting_active is None):
             raise BoundaryViolation('document posting boundary is closed')
+    def checkpoint(self):
+        # Generated loop headers replace visitor steps in this backend. Keep
+        # the writer-owned counter shared by all handlers of one activation.
+        from . import document_posting as posting
+        self._check()
+        steps=self.vm._steps;limit=posting.MAX_STEPS
+        if type(steps) is not int or steps<0 or type(limit) is not int or limit<1:
+            raise BoundaryViolation('posting checkpoint budget changed')
+        self.vm._steps=steps+1
+        if self.vm._steps>limit:
+            raise posting.PostingLimitError('document handler execution budget')
     def _adopt(self,value):
         if id(type(value)) in tuple(map(id,OWNED)):
             self._owned[id(value)]=value
@@ -97,6 +108,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 _POSTING_CONSTRUCTORS=('query','запрос')
+_POSTING_REPAIRS=tuple(REPAIRS)+('authority_checkpoints',)
 _POSTING_NAMES=frozenset(SELF)|frozenset(SYSTEM)|frozenset({
     'number','date','posted','ref','deletionmark',
     'additionalproperties','дополнительныесвойства','registerrecords','движения',
@@ -113,13 +125,13 @@ class PreparedPosting:
 def prepared_posting(runtime,document,parent):
     identity=document._key.document_id
     schema=document._manager._schema
-    key=(runtime._direct_sources[identity],schema,parent.native_target,tuple(REPAIRS),_POSTING_CONSTRUCTORS)
+    key=(runtime._direct_sources[identity],schema,parent.native_target,_POSTING_REPAIRS,_POSTING_CONSTRUCTORS)
     cached=runtime._direct_plans.get(identity)
     if type(cached) is PreparedPosting and cached._key==key:return cached
     program=runtime._programs[identity]
     names=_POSTING_NAMES|{field.name.casefold() for field in schema.fields}|{section.name.casefold() for section in schema.tabular_sections}
     with target_context(parent.native_target):
-        plan=prepare('',source_name='<document-posting>',repairs=REPAIRS,parsed_ast=program,
+        plan=prepare('',source_name='<document-posting>',repairs=_POSTING_REPAIRS,parsed_ast=program,
                      external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
                      _trusted_entry=True,_export_routines=True)
     result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))

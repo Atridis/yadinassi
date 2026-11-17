@@ -194,3 +194,7 @@ def canonical_runtime(configuration):
 def import_variant(files, profile):
     if profile == PROFILE: return import_posting_application(files, posting_runtime=PROFILE)
     return import_posting_configuration(files, posting_runtime=profile)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (PostingApplicationConfiguration,) for base in receiver.__mro__))

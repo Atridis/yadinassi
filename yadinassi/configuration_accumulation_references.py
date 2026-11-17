@@ -147,3 +147,7 @@ def canonical(configuration):
 
 def canonical_runtime(configuration):
     return canonical(configuration) if type(configuration) is InventoryConfiguration else scalar.canonical(configuration)
+
+# Definition-time ABI for the direct live movement ownership traversal.
+_DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (InventoryConfiguration,) for base in receiver.__mro__))
