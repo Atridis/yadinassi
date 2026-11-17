@@ -32,12 +32,18 @@ from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
 
 NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента')
 
+# Canonical detached receivers only; child rows/items and database owners still
+# traverse live ownership validation. Public protocols retain resource guards.
+_DETACHED_TYPES=(BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers, BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue, BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup, BSLFile, BSLBinaryData, BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse, BSLBinaryDataBuffer, BSLMemoryStream, BSLStream, BSLMap, BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings)
+_DETACHED_TYPE_IDS=frozenset(map(id,_DETACHED_TYPES))
+
 class CatalogBoundary:
     def _catalog_owner(self, value):
         self._check()
         if id(value) in SYSTEM_VALUE_IDS:return
         root=self.vm._catalogs
         kind=type(value)
+        if id(kind) in _DETACHED_TYPE_IDS:return
         if value is DOCUMENT_WRITE_MODES:return
         if kind is BSLDocuments: owner=value._catalogs
         elif kind is BSLDocumentManager: owner=value._catalogs
@@ -69,22 +75,6 @@ class CatalogBoundary:
             owner=value._owner_ref()
             if owner is not None and type(owner) is not BSLValueList:
                 raise BoundaryViolation('noncanonical value list owner')
-            return
-        elif kind in (BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
-                      BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
-            return
-        elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue,
-                      BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup):
-            # Detached result data: these public methods cannot execute queries
-            # or write. Returned references still require the current root.
-            return
-        elif kind in (BSLFile,BSLBinaryData,BSLHTTPConnection,BSLHTTPRequest,
-                      BSLHTTPResponse,BSLBinaryDataBuffer,BSLMemoryStream,BSLStream,BSLMap):
-            # Existing public methods retain their own external-access/resource guards.
-            return
-        elif kind in (BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings):
-            # Canonical JSON protocols retain their own file/resource guards.
-            # Expose get_member/get_method only, never Python attributes.
             return
         elif kind is BSLMetadata:
             if value is self.vm._metadata:return
