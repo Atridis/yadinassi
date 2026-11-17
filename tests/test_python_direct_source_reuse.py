@@ -2,6 +2,9 @@
 from contextlib import ExitStack
 from unittest.mock import patch
 import unittest
+import subprocess
+import sys
+from pathlib import Path
 import test_source_session_parameters as session_tests
 from test_configuration_source_runtime import source
 from yadinassi.configuration_source_runtime import SourceApplication
@@ -109,6 +112,24 @@ class SourceReuseTests(unittest.TestCase):
         old=cache._entries[key];cache._entries[key]=Trap()
         with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value();')
         self.assertEqual(effects,[]);cache._entries[key]=old
+        # Patching inherited __new__ changes CPython's type allocation slot even
+        # after mock removes the attribute. Keep the adversarial check, but do
+        # not poison constructors used by later tests in the same process.
+        script="""import sys,unittest
+sys.path.insert(0,'tests')
+from test_python_direct_source_reuse import SourceReuseTests
+result=unittest.TextTestRunner().run(SourceReuseTests('_factory_new_hook_probe'))
+raise SystemExit(not result.wasSuccessful())
+"""
+        options=['-B']+(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else [])
+        child=subprocess.run([sys.executable,*options,'-c',script],
+            cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,timeout=30)
+        self.assertEqual(child.returncode,0,child.stdout+child.stderr)
+        from yadinassi.reusable_values import ReusableValueCache
+        ReusableValueCache(clock=lambda:0)  # Parent constructor remains usable.
+
+    def _factory_new_hook_probe(self):
+        app,out=self.app();effects=[]
         from yadinassi.reusable_values import ReusableValueCache
         with patch.object(ReusableValueCache,'__new__',side_effect=lambda *a:effects.append('factory')):
             with self.assertRaises(BoundaryViolation):self.execute(app,'Helpers.Value();')

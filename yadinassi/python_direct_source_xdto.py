@@ -33,6 +33,7 @@ _METHODS={'type':_TYPE_CALL,'тип':_TYPE_CALL,'create':_CREATE_CALL,'созд�
 _SCALARS=frozenset(('string','boolean','decimal','integer','int','long'))
 _CLASSES=tuple(dict.fromkeys(cls for _,_,classes,_ in _ABI for cls,_,_ in classes))
 _GRAPH_CLASSES=tuple(cls for cls in _CLASSES if cls.__name__.startswith('BSLXDTO') and cls not in (_FACTORY,_VALUE,values.BSLXDTODataObject,values.BSLXDTOList))
+_COPY_SLOT_CLASSES=(xml_io.BSLXMLReader,xml_io.BSLXMLReaderSettings)
 _SEALS=WeakKeyDictionary()
 _VALUES=WeakKeyDictionary()
 
@@ -74,6 +75,13 @@ def _hooks():
         for name,maximum in limits:
             limit=vars(module).get(name)
             if type(limit) is not int or not 0<limit<=maximum:raise BoundaryViolation('source XDTO quota changed')
+
+    # Normal copy.copy must not mutate sealed class dictionaries. The eager
+    # bookkeeping is not a mutable authority input: retain its exact empty form.
+    for cls in _COPY_SLOT_CLASSES:
+        slots=vars(cls).get('__slotnames__')
+        if type(slots) is not list or slots:
+            raise BoundaryViolation('source XDTO copy slot metadata changed')
 
     # The package loader owns atomic publication. Refuse mismatched lowered
     # descriptor caps before it can publish beyond the boundary's tighter cap.

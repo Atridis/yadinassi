@@ -60,6 +60,9 @@ T = BSLXMLNodeType
 
 
 class BSLXMLReaderSettings(BSLObject):
+    # copyreg otherwise installs this lazily after source ABI sealing.
+    # These classes and their bases have no instance slots.
+    __slotnames__ = []
     _props = {'version': 'version', 'версия': 'version', 'lang': 'lang', 'язык': 'lang',
               'space': 'space', 'пробельныесимволы': 'space',
               'validationtype': 'validation', 'типпроверкиправильности': 'validation',
@@ -147,6 +150,9 @@ def _event(kind, name='', value='', **extra):
 
 
 class BSLXMLReader(_FileMethods):
+    # copyreg otherwise installs this lazily after source ABI sealing.
+    # These classes and their bases have no instance slots.
+    __slotnames__ = []
     _methods = _methods(
         ('set_string', False, 'SetString УстановитьСтроку'),
         ('open_file', False, 'OpenFile ОткрытьФайл'), ('close', False, 'Close Закрыть'),

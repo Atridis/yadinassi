@@ -43,6 +43,10 @@ def _hooks():
         current=vars(cls)
         if cls.__mro__ is not mro or len(current)!=len(entries) or any(current.get(k) is not v for k,v in entries):
             raise BoundaryViolation('source XML writer class changed')
+    for cls in (_WRITER,_WRITE_SETTINGS):
+        slots=vars(cls).get('__slotnames__')
+        if type(slots) is not list or slots:
+            raise BoundaryViolation('source XML copy slot metadata changed')
     for name,maximum in writer_module._DIRECT_SOURCE_XML_LIMITS:
         value=vars(writer_module).get(name)
         if type(value) is not int or not 0<value<=maximum:raise BoundaryViolation('source XML writer quota changed')

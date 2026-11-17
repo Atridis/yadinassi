@@ -44,6 +44,8 @@ def _escape(value, attribute=False):
 
 
 class BSLXMLWriterSettings(BSLObject):
+    # Stable empty copyreg bookkeeping, captured by the source ABI below.
+    __slotnames__ = []
     def __init__(self, encoding=None, version=None, indent=None, indent_attributes=None, indent_chars=None):
         self.encoding = 'UTF-8' if encoding is None else _text(encoding)
         if self.encoding: file_io._encoding(self.encoding)
@@ -66,6 +68,8 @@ class BSLXMLWriterSettings(BSLObject):
 
 
 class BSLXMLWriter(BSLObject):
+    # Stable empty copyreg bookkeeping, captured by the source ABI below.
+    __slotnames__ = []
     def __init__(self):
         self._active = False; self._stream = None; self._indent_setting = True
         self._settings = BSLXMLWriterSettings(''); self._stack = []
