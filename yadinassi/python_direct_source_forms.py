@@ -5,12 +5,13 @@ from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 from . import safe_mode,source_transactions,database_transactions
 from .python_direct_source_query import CONSTRUCTOR_NAMES
 from .python_direct_source_resources import CONSTRUCTOR_NAMES as RESOURCE_CONSTRUCTORS
+from .python_direct_source_value_storage import CONSTRUCTOR_NAMES as STORAGE_CONSTRUCTORS
 from .source_forms import _SourceFormInterpreter,_DIRECT_SOURCE_FORM_ABI
 from .configuration_source_runtime import SourceApplication,_SourceInterpreter,_DIRECT_SOURCE_ABI
 from .values import HostFunction
 from .python_direct_services import CONSTRUCTORS as SERVICE_CONSTRUCTORS
 
-CONSTRUCTORS=tuple(dict.fromkeys((*SERVICE_CONSTRUCTORS,*CONSTRUCTOR_NAMES,*RESOURCE_CONSTRUCTORS,'uuid','уникальныйидентификатор')))
+CONSTRUCTORS=tuple(dict.fromkeys((*SERVICE_CONSTRUCTORS,*CONSTRUCTOR_NAMES,*RESOURCE_CONSTRUCTORS,*STORAGE_CONSTRUCTORS,'uuid','уникальныйидентификатор')))
 
 
 

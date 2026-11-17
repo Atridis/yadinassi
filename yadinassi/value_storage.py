@@ -71,12 +71,16 @@ class Snapshot:
 
 
 class _Capture:
-    def __init__(self, root, degree=0, *, source_direct=False):
+    def __init__(self, root, degree=0, *, source_direct=False, source_no_nested_storage=False):
+        self.source_no_nested_storage = source_no_nested_storage
         self.source_direct = source_direct
         self.direct_structure = None
+        self.direct_map = None
         if source_direct:
             from .experimental_naked_structure import _DirectStructure
             self.direct_structure = _DirectStructure
+            from .experimental_naked_collections import _TypedMap
+            self.direct_map = _TypedMap
         self.nodes = 0
         self.text_units = 0
         self.binary_bytes = 0
@@ -126,7 +130,7 @@ class _Capture:
                             or kind is BSLMap or kind is BSLFixedMap
                             or kind is BSLBinaryData or kind is BSLValueStorage
                             or kind is BSLValueTable
-                            or self.source_direct and (kind is list or kind is self.direct_structure))
+                            or self.source_direct and (kind is list or kind is self.direct_structure or kind is self.direct_map))
         if identity_bearing:
             self.remember(value, depth)
         try:
@@ -178,6 +182,8 @@ class _Capture:
                 raise SnapshotError("snapshot binary budget exceeded")
             return self.compressed('binary_zlib', data) if self.degree else ('binary', data)
         if kind is BSLValueStorage:
+            if self.source_no_nested_storage:
+                raise SnapshotError("nested ValueStorage is not integrated in the direct source constructor")
             # Count the nested payload in this capture's existing budgets.
             return ("storage", self.take(BSLValueStorage.get(value), depth + 1))
         if kind is BSLValueTable:
@@ -191,6 +197,28 @@ class _Capture:
                 if len(value) > MAX_NODES - self.nodes:
                     raise SnapshotError("invalid or oversized array")
                 return ("array", tuple(self.take(item, depth + 1) for item in value))
+            if kind is self.direct_map:
+                if dict.__len__(value) > (MAX_NODES - self.nodes) // 2:
+                    raise SnapshotError("invalid or oversized map")
+                captured = []; canonical_keys = set()
+                for token, pair in dict.items(value):
+                    if (type(token) is not tuple or len(token) != 2
+                            or type(pair) is not tuple or len(pair) != 2):
+                        raise SnapshotError("invalid map entry")
+                    key, item = pair
+                    encoded_key = self.take(key, depth + 1)
+                    encoded_item = self.take(item, depth + 1)
+                    expected = ((type(key), key) if type(key) in (Decimal, bool, str, type(None))
+                                else (object, id(key)))
+                    if (token[0] is not expected[0] or type(token[1]) is not type(expected[1])
+                            or token[1] != expected[1]):
+                        raise SnapshotError("inconsistent direct map key")
+                    canonical = map_key(key)
+                    if canonical in canonical_keys:
+                        raise SnapshotError("colliding direct map keys")
+                    canonical_keys.add(canonical)
+                    captured.append((encoded_key, encoded_item))
+                return ("map", tuple(captured))
             if kind is self.direct_structure:
                 if dict.__len__(value) > MAX_NODES - self.nodes:
                     raise SnapshotError("invalid or oversized structure")
@@ -254,9 +282,10 @@ class _Capture:
         raise SnapshotError("unsupported snapshot type")
 
 
-def capture(value, *, compression=None, _source_direct=False):
+def capture(value, *, compression=None, _source_direct=False, _source_no_nested_storage=False):
     """Build a bounded immutable snapshot, or fail without publishing one."""
-    return Snapshot(_Capture(value, compression_degree(compression), source_direct=_source_direct is True).take(value))
+    return Snapshot(_Capture(value, compression_degree(compression), source_direct=_source_direct is True,
+                             source_no_nested_storage=_source_no_nested_storage is True).take(value))
 
 
 class _Restore:
@@ -392,3 +421,54 @@ class BSLValueStorage(BSLObject):
 
     def __str__(self):
         raise ValueError("ХранилищеЗначения: строковое представление не измерено")
+
+
+# Definition-time hooks used only by the finite source ValueStorage adapter.
+_DIRECT_VALUE_STORAGE_ABI=tuple((cls,name,getattr(cls,name)) for cls,names in (
+    (BSLValueStorage,('__new__','__init__','__getattribute__','__setattr__','get','get_method')),
+    (Snapshot,('__new__','__init__','__getattribute__','__setattr__')),
+    (_Capture,('__new__','__getattribute__','__setattr__','__init__','take','_take','reserve','charge_text','remember','compressed','charge_compressed')),
+    (_Restore,('__new__','__getattribute__','__setattr__','__init__','take')),
+    (BSLDate,('__new__','__init__','__post_init__','__getattribute__','__setattr__','__eq__','__hash__','require_known')),
+    (BSLUUID,('__new__','__init__','__getattribute__','__setattr__','__eq__','__hash__')),
+) for name in names)
+_DIRECT_VALUE_STORAGE_FROM_SNAPSHOT=vars(BSLValueStorage)['_from_snapshot']
+_DIRECT_VALUE_STORAGE_FIELDS=((BSLValueStorage,'_snapshot',vars(BSLValueStorage)['_snapshot']),
+                              (Snapshot,'_root',vars(Snapshot)['_root']),
+                              (BSLDate,'ticks',vars(BSLDate)['ticks']),
+                              (BSLDate,'boundary',vars(BSLDate)['boundary']),
+                              (BSLUUID,'text',vars(BSLUUID)['text']))
+_DIRECT_VALUE_STORAGE_FUNCTIONS=tuple((name,globals()[name]) for name in (
+    'capture','restore','_required_field','_bounded_decimal','compression_degree',
+    'compress_payload','expand_payload','map_key','structure_key','take_table','restore_table'))
+
+_DIRECT_VALUE_STORAGE_CLASSES=tuple((name,globals()[name]) for name in ('_Capture','_Restore','BSLValueStorage','Snapshot','BSLDate','BSLUUID'))
+
+_DIRECT_VALUE_STORAGE_DYNAMIC_FIELDS=(
+    (_Capture,('source_no_nested_storage','source_direct','direct_structure','direct_map','nodes',
+               'text_units','binary_bytes','digits','degree','compressed_bytes','active')),
+    (_Restore,('budget',)),
+)
+
+# Source admission seals the finite canonical capture receiver graph, including
+# table schema/row/index objects. Full dictionaries also detect newly installed
+# data descriptors, which object.__getattribute__ deliberately does not bypass.
+from . import value_storage_table as _direct_table_snapshot
+_DIRECT_VALUE_STORAGE_RECEIVER_BINDINGS=tuple(
+    (module,name,value)
+    for module in (sys.modules[__name__],_direct_table_snapshot)
+    for name,value in tuple(vars(module).items())
+    if name.startswith('BSL') and isinstance(value,type)
+)
+_DIRECT_VALUE_STORAGE_RECEIVER_CLASSES=tuple(
+    (cls,tuple(vars(cls).items()),cls.__mro__)
+    for cls in dict.fromkeys(base
+        for _,_,receiver in _DIRECT_VALUE_STORAGE_RECEIVER_BINDINGS
+        for base in receiver.__mro__)
+)
+
+from types import FunctionType as _DirectSnapshotFunctionType
+_DIRECT_VALUE_STORAGE_TABLE_FUNCTIONS=tuple(
+    (name,value) for name,value in tuple(vars(_direct_table_snapshot).items())
+    if type(value) is _DirectSnapshotFunctionType
+)

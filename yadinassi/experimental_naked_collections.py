@@ -557,7 +557,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             args=[expression(arg) for arg in node.arguments];kindname=node.name.casefold()
             if services and kindname in constructors:
                 required_services.add('new:'+kindname)
-                bound='_context.resolve_service('+repr('new:'+kindname)+')'
+                arity=(', argument_count='+str(len(node.arguments))) if _source_routine_scopes else ''
+                bound='_context.resolve_service('+repr('new:'+kindname)+arity+')'
                 if any(type(arg) is ast.OmittedArgument for arg in node.arguments):return dynamic_call(bound,node,False)
                 return bound+'('+', '.join(args)+')'
             if kindname in ('array','массив'):

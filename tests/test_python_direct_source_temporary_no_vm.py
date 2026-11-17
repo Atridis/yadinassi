@@ -34,7 +34,7 @@ class SourceTemporaryNoVM(existing.SourceTemporaryTests):
         self.assertEqual(len(app.temporary_storage._entries),1)
 
     def test_native_closed_profile_replay(self):
-        # Map remains deliberately outside the list/structure snapshot slice.
+        # The source-direct snapshot now admits bounded canonical typed maps too.
         import hashlib
         import json
         from pathlib import Path
@@ -50,10 +50,7 @@ class SourceTemporaryNoVM(existing.SourceTemporaryTests):
         for n in range(1,17):
             with self.subTest(case=n):
                 code=f'ServerAPI.Run({n})'
-                if n == 14:
-                    with self.assertRaisesRegex(BSLError,'unsupported snapshot type'):
-                        self.execute(app,code)
-                elif n == 11:
+                if n == 11:
                     with self.assertRaises(BSLError):self.execute(app,code)
                 elif n in (12,15):self.assertEqual(self.execute(app,code),'error')
                 else:self.assertEqual(self.execute(app,code),expected[n-1])

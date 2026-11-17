@@ -1,7 +1,7 @@
 # Direct source temporary-storage accounting
 
-Source temporary storage accepts the direct compiler's exact list and Structure
-representations through a private capture opt-in. The ordinary ValueStorage
+Source temporary storage accepts the direct compiler's exact list, Structure and
+typed Map representations through a private capture opt-in. The ordinary ValueStorage
 capture contract is unchanged. Existing node, depth, text, Decimal and retained
 storage quotas still apply. Subclasses, malformed structure fields and cycles fail
 closed. Shared children are charged per occurrence.
@@ -21,6 +21,7 @@ not grant source capabilities to a standalone interpreter. Ownership, closed
 application checks, actual server context and transaction boundaries are unchanged.
 
 The no-VM suite replays the existing source-storage tests and native evidence with
-legacy dispatch poisoned. Native fixture case 14 (Map) remains explicitly outside
-this list/Structure slice; its original source-wide test is not altered. Other
-unsupported snapshot types retain their existing failures.
+legacy dispatch poisoned. The source-only ValueStorage extension now also admits
+bounded typed-map accounting, including native fixture case 14 with its unchanged
+expected result. Canonical-key collisions reject. Other unsupported snapshot types
+retain their existing failures.
