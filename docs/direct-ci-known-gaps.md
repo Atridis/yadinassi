@@ -275,3 +275,40 @@ Receipt RPC. Tests cover actual server side/restoration, failure restoration,
 capability-return rejection, custom-factory and parameterized-call exclusion,
 retained binding/signature/side/lifetime checks, later enrollment rejection and
 transaction denial. Original source replay forbids legacy block/call_routine.
+
+## Public form-member references
+
+On `e2eea8c6`, the unchanged managed-form source failed at MF31:
+`BoundaryViolation: unregistered host member: NameField`. The generated call
+correctly prepared a byref argument, but inherited reference binding still used
+the generic HostMembers registry instead of the already-admitted form protocol.
+
+FormBoundary now binds exact current-form model/self-form members after an eager
+public read and reuses the existing `_HostMemberReference`. Reads remain live;
+deferred writes use the existing form setter. Binding does not grant write
+access: `Items.NameField` and `Commands.Apply` can be read by a handler but cannot
+be reassigned. Writable public fields still use model validation. Foreign,
+private, missing, retired and inactive/closed receivers are rejected. No new
+reference implementation, raw attributes, alias cache or VM dispatch was added.
+
+The exact unchanged managed-form source now completes MF1–MF40, including
+FieldChanged, ApplyCommand, flag transfer and the two direct BeforeClose calls.
+The actual comparator `EXECUTE_SCRIPT` also passes in an isolated `-I -B` child:
+exit 0, empty stderr, 541 output bytes, 40 records accepted by
+`parse_records`/`require_available`. Output SHA-256:
+`3cbf5b2e8dee544690cd560f3405ab9029dfd3e0d711b2410c59ba288d8acb34`.
+This is valid host output, **not** a new native measurement or native comparison.
+The source's direct event calls do not prove automatic UI event parity.
+
+Existing standalone zero-argument cross-side restrictions, excluded descriptor
+operations, six-scenario managed-thick-file and Python 3.10 gaps remain. No
+fixtures, native outputs, source hashes, gates or backend selectors changed.
+
+Validation: 49 tests PASS normal and the same 49 PASS under `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_database_admission`, `test_python_direct_bound_forms`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+Independent review: no blockers, 38 combined `-O` tests PASS. Regressions cover
+read-only binding/deferred rejection, live writable properties, self-form writes,
+foreign/private/missing members, retired controls/collections and inactive/closed
+families. Original replay and source-level byref writes forbid legacy dispatch.

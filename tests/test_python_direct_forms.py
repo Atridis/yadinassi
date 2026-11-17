@@ -119,22 +119,25 @@ class DirectDeclarationTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):session.open()
         self.assertEqual(other.form.title,'')
 
-    def test_original_managed_form_reaches_control_byref_call(self):
+    def test_original_managed_form_completes_without_vm_dispatch(self):
         import sys
         from yadinassi.form_runtime import FormSession
         from yadinassi.experimental_naked_boundaries import BoundaryViolation
         with patch.object(sys,'path',[str(Path(__file__).resolve().parents[1]/'scripts')]+sys.path):
-            from form_runtime_packet import source
+            from form_runtime_packet import source,parse_records,require_available
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         self.addCleanup(session.interpreter.close)
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            with self.assertRaisesRegex(BoundaryViolation,'unregistered host member: NameField'):session.open()
+            snapshot=session.open()
+        raw=dict(snapshot.attributes)['FLog'].encode('ascii')
+        require_available(parse_records(raw))
         self.assertEqual(set(session.form._attributes),{'fname','fflag','famount','ftrace','flog'})
-        self.assertEqual(session.form._data['fname'],'programmatic')
-        self.assertEqual(session.form._data['famount'],42)
+        self.assertEqual(session.form._data['fname'],'leave')
+        self.assertEqual(session.form._data['famount'],43)
         self.assertIn('MF22=temp|MF23=removed|MF24=server-create|',session.form._data['flog'])
         self.assertIn('MF25=server-create:client-open|MF26=Ada|MF27=server-updated|',session.form._data['flog'])
-        self.assertTrue(session.form._data['flog'].endswith('MF30=programmatic|'))
+        self.assertIn('MF31=direct-change:NameField|MF32=handler-change|MF33=direct-command:Apply|MF34=43|',session.form._data['flog'])
+        self.assertTrue(session.form._data['flog'].endswith('MF40=direct-calls-complete|'))
 
     def test_live_constructor_replacement_denied_before_argument(self):
         from yadinassi.values import HostFunction
@@ -150,3 +153,83 @@ class DirectDeclarationTests(unittest.TestCase):
         session=self.session('ChangeAttributes(New Array);',side='Client')
         with self.assertRaises(Exception):session.open()
         self.assertEqual(session.form._attributes,{})
+
+
+class DirectFormReferenceTests(unittest.TestCase):
+    def boundary(self):
+        from yadinassi.form_runtime import FormSession
+        from yadinassi.python_direct_forms import FormBoundary
+        session=FormSession('&AtServer\nProcedure Event(Cancel, StandardProcessing) '
+                            'Items.Add("Field",Type("FormField")); Commands.Add("Apply"); EndProcedure',
+                            bindings={'OnCreateAtServer':'Event'})
+        self.addCleanup(session.interpreter.close)
+        session.open();session._begin(session.revision)
+        vm=session.interpreter;vm._context_stack.append('server')
+        def release():
+            vm._context_stack.pop();session._busy=False;session._gate.release()
+        self.addCleanup(release)
+        context=FormBoundary(session,vm.server_routines['event']);context.enter()
+        self.addCleanup(context.leave)
+        return session,context
+
+    def test_readonly_control_and_command_slots_bind_but_reject_write(self):
+        session,context=self.boundary()
+        for collection,name in ((session.form.items,'Field'),(session.form.commands,'Apply')):
+            ref=context.reference_member(collection,name)
+            item=ref.get()
+            self.assertIs(item,collection.get_member(name))
+            with self.assertRaises(ValueError):ref.set(None)
+            self.assertIs(collection.get_member(name),item)
+
+    def test_live_writable_properties_and_self_form(self):
+        session,context=self.boundary()
+        field=session.form.items.get_member('Field')
+        ref=context.reference_member(field,'Title');ref.set('first')
+        field.set_member('Title','second')
+        self.assertEqual(ref.get(),'second')
+        own=context.reference_member(session.form,'Title');own.set('own')
+        self.assertEqual(own.get(),'own')
+
+    def test_foreign_private_and_missing_slots_rejected_at_bind(self):
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        session,context=self.boundary();other,_=self.boundary()
+        for receiver in (other.form,other.form.items,other.form.items.get_member('Field')):
+            with self.subTest(receiver=type(receiver)),self.assertRaises(BoundaryViolation):
+                context.reference_member(receiver,'Title')
+        with self.assertRaises(BoundaryViolation):context.reference_member(session.form,'_session')
+        with self.assertRaises(ValueError):context.reference_member(session.form.items,'Missing')
+
+    def test_retired_control_and_collection_cannot_use_retained_reference(self):
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        session,context=self.boundary();items=session.form.items
+        field=items.get_member('Field');ref=context.reference_member(field,'Title')
+        items.delete(field)
+        for operation in (ref.get,lambda:ref.set('bad')):
+            with self.assertRaises(BoundaryViolation):operation()
+        slot=context.reference_member(session.form.commands,'Apply')
+        from yadinassi.form_model import BSLFormCommands
+        session.form.commands=BSLFormCommands(session.form)
+        with self.assertRaises(BoundaryViolation):slot.get()
+
+    def test_retained_reference_requires_active_open_family(self):
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        session,context=self.boundary();ref=context.reference_member(session.form,'Title')
+        session._busy=False
+        with self.assertRaises(ValueError):ref.get()
+        session._busy=True;session.interpreter.close()
+        with self.assertRaises(BoundaryViolation):ref.get()
+        with self.assertRaises(BoundaryViolation):ref.set('bad')
+
+    def test_source_byref_writes_public_property_and_readonly_slot_stays_readonly(self):
+        from yadinassi.form_runtime import FormSession
+        source=('&AtServer\nProcedure Event(Cancel, StandardProcessing) '
+                'Items.Add("Field",Type("FormField")); Assign(ThisObject.Title); '
+                'Assign(Items.Field.Title); Try Assign(Items.Field); Except Message("readonly"); EndTry; EndProcedure\n'
+                '&AtServer\nProcedure Assign(X) X="updated"; EndProcedure')
+        session=FormSession(source,bindings={'OnCreateAtServer':'Event'})
+        self.addCleanup(session.interpreter.close)
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy')):
+            session.open()
+        self.assertEqual(session.form.title,'updated')
+        self.assertEqual(session.form.items._values['field'].title,'updated')
+        self.assertIn('readonly',str(session.messages))

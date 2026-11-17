@@ -158,6 +158,22 @@ class FormBoundary(ConfigurationBoundary):
         if self.app is not None:return ConfigurationBoundary.resolve_service(self,*args,**kwargs)
         return BoundaryContext.resolve_service(self,*args,**kwargs)
 
+    def set_member(self,value,name,new_value):
+        from . import python_direct_form_objects as objects
+        if value is self.session.form or objects.recognized(value):
+            return self.resolve_set_member(value,name)(new_value)
+        return BoundaryContext.set_member(self,value,name,new_value)
+
+    def reference_member(self,value,name):
+        from . import python_direct_form_objects as objects
+        from .experimental_naked_boundaries import _HostMemberReference
+        if value is self.session.form or objects.recognized(value):
+            # A byref argument requires a readable slot, not an eager write grant.
+            # Every later read/write returns through the current form protocol.
+            self.get_member(value,name)
+            return _HostMemberReference(self,value,name)
+        return BoundaryContext.reference_member(self,value,name)
+
     def get_member(self,value,name):
         from . import python_direct_form_objects as objects
         if objects.recognized(value):return objects.get(self,value,name)
