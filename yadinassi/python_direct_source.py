@@ -198,6 +198,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'requires_reference'):invoke.requires_reference=bound.requires_reference
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
         if hasattr(bound,'prepare_named_value'):invoke.prepare_named_value=bound.prepare_named_value
+        if hasattr(bound,'prepare_argument_shapes'):invoke.prepare_argument_shapes=bound.prepare_argument_shapes
         if hasattr(bound,'bind_eval'):invoke.bind_eval=bound.bind_eval
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):

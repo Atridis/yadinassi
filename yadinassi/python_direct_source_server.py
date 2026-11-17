@@ -1,13 +1,14 @@
-"""Bounded qualified source ServerCall: fresh contextual all-Val activation.
+"""Bounded qualified source ServerCall: fresh contextual activation and named-slot copyback.
 
 Immutable scalar-literal defaults for DontUse; scalar reuse without defaults.
-No copyback, async or NoContext. The origin seal is
+Named byref is DontUse-only and has no defaults. No async or NoContext. The origin seal is
 scoped to the synchronous call, never an entry in the application registry.
 """
 from contextvars import ContextVar
 from decimal import Decimal
 from .syntax import ast
-from .experimental_naked_collections import _OMITTED_REF
+from .experimental_naked_collections import _OMITTED_REF, _Cell
+from .experimental_naked_live_state import _ForwardReference
 import xml.etree.ElementTree as ET
 
 from .experimental_naked_boundaries import BoundaryViolation
@@ -56,6 +57,7 @@ def resolve(parent, owner, routine, *, require_value=False,
     bindings = owner._direct_source_host_bindings
     default_table = plan._source_crossing_defaults
     defaults = default_table[routine.name.casefold()]
+    references = frozenset(i for i,p in enumerate(routine.parameters) if not p.by_value)
     minimum = max((i + 1 for i, p in enumerate(routine.parameters)
                    if p.default is None), default=0)
 
@@ -105,15 +107,16 @@ def resolve(parent, owner, routine, *, require_value=False,
             raise BoundaryViolation('source ServerCall origin changed')
         if (routine.execution_context != 'server' or routine.is_async or routine.is_dual
                 or not routine.module_context or not routine.exported
-                or any(not p.by_value for p in routine.parameters)
                 or owner.module_names
                 or owner.variables):
-            raise ValueError('direct source ServerCall supports contextual all-Val routines')
+            raise ValueError('direct source ServerCall supports contextual routines')
+        if any(not p.by_value and p.default is not None for p in routine.parameters):
+            raise ValueError('source ServerCall byref defaults are not integrated')
         if type(app._reuse_routines) is not dict or app._reuse_routines.get(id(routine)) is not reuse_entry:
             raise BoundaryViolation('source ServerCall reuse authority changed')
         if reuse_entry is not None and (type(reuse_entry) is not tuple or len(reuse_entry)!=5
                 or reuse_entry[0] is not routine or reuse_entry[1] is not owner or reuse_entry[4] is not True
-                or not routine.is_function or any(p.default is not None for p in routine.parameters)):
+                or not routine.is_function or references or any(p.default is not None for p in routine.parameters)):
             raise BoundaryViolation('source ServerCall reuse requires scalar functions without defaults')
 
     def caller():
@@ -146,13 +149,21 @@ def resolve(parent, owner, routine, *, require_value=False,
         caller()
         if not minimum <= len(arguments) <= len(routine.parameters):
             raise TypeError('Неверное количество аргументов: ' + routine.name)
-        values = []
+        values = [];outputs=[]
         for index in range(len(routine.parameters)):
             value = arguments[index] if index < len(arguments) else _OMITTED_REF
             if value is _OMITTED_REF:
                 _, node, value = defaults[index]
                 if node is None:
                     raise TypeError('Неверное количество аргументов: ' + routine.name)
+            if index in references:
+                if type(value) is _ForwardReference:value=value.reference
+                if type(value) is not Reference or getattr(value,'_direct_name_sink',False) is not True:
+                    raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
+                outputs.append((index,value))
+                caller()
+                value=value.get()
+                caller()
             if type(value) is _LateNamedValue:
                 parent._check()
                 value = value.reference.get()
@@ -160,6 +171,8 @@ def resolve(parent, owner, routine, *, require_value=False,
             values.append(value)
         caller()
         packet = transfer(values)
+        for index,_ in outputs:packet[index]=_Cell(packet[index])
+        cells=tuple((index,packet[index]) for index,_ in outputs)
         caller()
         def execute_packet():
             from .runtime import Interpreter
@@ -208,7 +221,10 @@ def resolve(parent, owner, routine, *, require_value=False,
                 with database_transactions.admission(False):
                     result = invoke(fresh, routine, packet)
                     active()
-                    outgoing = transfer([result])[0]
+                    if any(type(cell) is not _Cell or packet[index] is not cell
+                           for index,cell in cells):
+                        raise BoundaryViolation('source ServerCall output cells changed')
+                    outgoing = transfer([result]+[cell.value for _,cell in cells])
                 return outgoing
             finally:
                 if token is not None:
@@ -217,7 +233,17 @@ def resolve(parent, owner, routine, *, require_value=False,
                 side_stack.pop()
                 fresh.close()
                 parent._check()
-        return reuse(packet,execute_packet) if reuse is not None else execute_packet()
+        if reuse is not None:
+            return reuse(packet,lambda:execute_packet()[0])
+        outgoing=execute_packet()
+        caller()
+        # Complete packet and caller validate before any ordered copy-out.
+        # Repeated names intentionally receive the rightmost independent value.
+        for (_,reference),value in zip(outputs,outgoing[1:]):
+            caller()
+            reference.set(value)
+            caller()
+        return outgoing[0]
 
     def named(reference):
         caller()
@@ -230,8 +256,15 @@ def resolve(parent, owner, routine, *, require_value=False,
                 or any(i >= len(defaults) or defaults[i][1] is None for i in positions)):
             raise TypeError('Неверное количество аргументов: ' + routine.name)
         return current, {i: _OMITTED_REF for i in positions}
+    def shapes(named):
+        caller()
+        if type(named) is not tuple or any(type(item) is not bool for item in named):
+            raise BoundaryViolation('source ServerCall argument shapes changed')
+        if any(index>=len(named) or not named[index] for index in references):
+            raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
+    call.prepare_argument_shapes = shapes
     call.prepare_omissions = omissions
     call.prepare_named_value = named
     if allow_references:
-        call.requires_reference = lambda index: False
+        call.requires_reference = lambda index: index in references
     return call

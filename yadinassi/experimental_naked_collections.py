@@ -510,6 +510,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             prepared=temp();defaults=temp()
             setup.append('('+prepared+' := _host_omission_values('+token+', '+repr(omitted)+', '+str(len(node.arguments))+'))')
             setup.extend(['('+token+' := '+prepared+'[0])','('+defaults+' := '+prepared+'[1])'])
+        # Source crossings may reject non-name output positions before any
+        # argument effects. Ordinary standalone dispatch remains unchanged.
+        if _source_routine_scopes and references:
+            shapes=tuple(type(ungroup(arg)) is ast.Name for arg in node.arguments)
+            setup.append('('+token+'.prepare_argument_shapes('+repr(shapes)+') if hasattr('+token+', "prepare_argument_shapes") else None)')
         arguments=[]
         for index,arg in enumerate(node.arguments):
             if index in omitted:arguments.append(defaults+'['+str(index)+']')
