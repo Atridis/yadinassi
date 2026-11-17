@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=()):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=()):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -259,6 +259,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         repairs=repairs | {'constructor_bounds','array_insert_shape'}
     if not repairs<=REPAIRS:raise ValueError('unknown naked repairs: '+repr(repairs-REPAIRS))
     services='service_boundaries' in repairs;authority='authority_checkpoints' in repairs
+    if type(_host_routine_bindings) is not bool:raise TypeError('host routine bindings require Boolean')
+    if _host_routine_bindings and not (_trusted_entry and services and {'byref_routines','dynamic_host_refs'}<=repairs):
+        raise ValueError('host routine bindings require trusted service and reference boundaries')
+    if type(_host_callable_externals) is not tuple or any(type(name) is not str for name in _host_callable_externals):
+        raise TypeError('host callable externals require a tuple of names')
+    if _host_callable_externals and not (_trusted_entry and _host_routine_bindings):
+        raise ValueError('host callable externals require trusted host routine bindings')
     if type(_source_routine_scopes) is not bool:raise TypeError("source routine scopes require Boolean")
     if _source_routine_scopes and not (_trusted_entry and services
             and {'byref_routines','dynamic_host_refs'}<=repairs):
@@ -278,7 +285,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if _source_shadowable_externals and not (_trusted_entry and _source_routine_scopes):
         raise ValueError('source shadowable externals require trusted source scopes')
     shadowable=frozenset(name.casefold() for name in _source_shadowable_externals)
-    source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals)
+    source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals+_host_callable_externals)
     constructors=frozenset(name.casefold() for name in constructors)
     if constructors and not services:raise ValueError('declared constructors require service_boundaries')
     service_references={name.casefold():frozenset(indices) for name,indices in (service_references or {}).items()}
@@ -372,7 +379,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 if type(node) is not ast.Call:continue
                 callee=ungroup(node.callee)
                 # Source-qualified calls use dynamic byref dispatch too.
-                if type(callee) is ast.Attribute and not _source_routine_scopes:continue
+                if type(callee) is ast.Attribute and not (_source_routine_scopes or _host_routine_bindings):continue
                 if type(callee) is ast.Name and callee.name.casefold() in routines:continue
                 for arg in node.arguments:
                     arg=ungroup(arg)
@@ -452,7 +459,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         if not module_name(name):
             value=variable(name)
             return ('('+value+' if '+source_local_exists(name)+' else _live_missing('+repr(name)+'))'
-                if _source_routine_scopes else value)
+                if (_source_routine_scopes or _host_routine_bindings) else value)
         value=temp()
         return '('+value+' if ('+value+' := _initial.get('+repr(name.casefold())+', _LIVE_UNSET)) is not _LIVE_UNSET else _live_missing('+repr(name)+'))'
     def reserved_target(name):
@@ -478,7 +485,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             value='_bound_ref('+sym(node.name)+')'
             if shadow_name(node.name):return '('+value+' if '+shadow_is_set(node.name)+' else _context.external_reference('+repr(node.name.casefold())+'))'
             return ('('+value+' if '+source_local_exists(node.name)+' else _live_missing('+repr(node.name)+'))'
-                if _source_routine_scopes else value)
+                if (_source_routine_scopes or _host_routine_bindings) else value)
         if type(node) is ast.Index:
             obj=expression(node.object);index=expression(node.index)
             if services:

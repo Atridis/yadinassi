@@ -108,6 +108,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 _POSTING_CONSTRUCTORS=('query','запрос')
+# Core child bindings, never the parent's mutable custom registrations.
+_POSTING_CALLABLE_FIELDS=('number','число','date','дата')
 _POSTING_REPAIRS=tuple(REPAIRS)+('authority_checkpoints',)
 _POSTING_NAMES=frozenset(SELF)|frozenset(SYSTEM)|frozenset({
     'number','date','posted','ref','deletionmark',
@@ -125,7 +127,7 @@ class PreparedPosting:
 def prepared_posting(runtime,document,parent):
     identity=document._key.document_id
     schema=document._manager._schema
-    key=(runtime._direct_sources[identity],schema,parent.native_target,_POSTING_REPAIRS,_POSTING_CONSTRUCTORS)
+    key=(runtime._direct_sources[identity],schema,parent.native_target,_POSTING_REPAIRS,_POSTING_CONSTRUCTORS,_POSTING_CALLABLE_FIELDS)
     cached=runtime._direct_plans.get(identity)
     if type(cached) is PreparedPosting and cached._key==key:return cached
     program=runtime._programs[identity]
@@ -133,7 +135,8 @@ def prepared_posting(runtime,document,parent):
     with target_context(parent.native_target):
         plan=prepare('',source_name='<document-posting>',repairs=_POSTING_REPAIRS,parsed_ast=program,
                      external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
-                     _trusted_entry=True,_export_routines=True)
+                     _trusted_entry=True,_export_routines=True,
+                     _host_routine_bindings=True,_host_callable_externals=_POSTING_CALLABLE_FIELDS)
     result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))
     runtime._direct_plans[identity]=result
     return result
