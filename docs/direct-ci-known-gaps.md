@@ -642,3 +642,17 @@ wording mismatch remains documented, with its existing test unchanged.
 
 Integrated verification:203 Python3.12 normal +203 Python3.10 optimized PASS;
 independent65 optimized PASS, including regex binding release without cyclic GC.
+
+### Direct Execute fragments (2026-11-17)
+
+Basec8999470: Execute/Выполнить now compiles dynamic fragments directly over live
+existing bindings and private new names. Whole-fragment parsing/admission, current
+capabilities, name-reference provenance, source/depth restrictions and transaction
+checks remain. Reference callbacks are checked immediately and stale fragment
+references cannot revive in later executions. No VM dispatch or locals flush.
+
+219 Python3.12 normal +219 Python3.10 optimized tests PASS. Original whole native
+child now exits0, emits81 records/1142bytes with no stderr; exact expected138 still
+fails. First50 match, object-transfer remains stage8, and Date/Null graph token
+88 differs from77. Dual/infobase/preprocessor tokens match. No native fixture or
+strict gate changes. [Contract, residual gaps and reproducible report](direct-execute.md).

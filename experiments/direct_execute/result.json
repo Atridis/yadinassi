@@ -1,0 +1,24 @@
+{
+  "source_sha256": "0dc26abc7a2bb786c7875d934fd2821c7e5f9e31175a0cf694c9b1170801f285",
+  "exit_code": 0,
+  "stderr_bytes": 0,
+  "output_bytes": 1142,
+  "output_sha256": "876a745fc4ba475e32a8bcaa3e92a453cd39f19c4839f46a8f0ce99cad4c3fdf",
+  "actual_count": 81,
+  "expected_count": 138,
+  "exact_match": false,
+  "prefix50_equal": true,
+  "actual_object_section": [
+    "object.runtime-error",
+    8
+  ],
+  "expected_object_section_count": 59,
+  "aligned_tail_differences": [
+    {
+      "actual_index": 78,
+      "expected_index": 135,
+      "actual": "dn.v1:22222288",
+      "expected": "dn.v1:22222277"
+    }
+  ]
+}

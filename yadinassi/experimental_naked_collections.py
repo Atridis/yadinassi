@@ -82,7 +82,7 @@ _ALIASES={'добавить':'add','вставить':'insert','получить
 # Named, independently selectable repairs. These are experiment variants, NOT a
 # restoration of the production admission/runtime pipeline. Each repair has a
 # specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state'))
+REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -349,6 +349,22 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     if type(arg) is ast.Name:
                         destination=None if arg.name.casefold() in routine_globals.get(current,()) else current
                         lexical[destination].add(arg.name.casefold())
+    execute_scopes={}
+    if 'execute_fragments' in repairs:
+        if not (live and services and dynamic_refs):raise ValueError('Execute requires live services and references')
+        for current,body in [(None,[n for n in program if type(n) is not ast.Routine]),*((id(r),r.body) for r in routines.values())]:
+            if not any(type(n) is ast.Execute for n in walk(body)):continue
+            names=set()
+            if current is not None:
+                routine=next(r for r in routines.values() if id(r)==current)
+                names.update(p.name.casefold() for p in routine.parameters)
+                for n in walk(body):
+                    if type(n) is ast.Assign and type(n.target) is ast.Name:names.add(n.target.name.casefold())
+                    elif type(n) in (ast.For,ast.ForEach):names.add(n.name.casefold())
+                    elif type(n) is ast.Var:names.update(name.casefold() for name in n.names)
+                names-=routine_globals[current]|routine_externals[current]
+                lexical[current].update(names)
+            execute_scopes[current]=names
     from .python_direct_arrays import array_facts
     array_receivers,array_indexes=frozenset(),frozenset()
     if live and not authority and not constructors.intersection(('array','массив')) and 'array_index_contract' in repairs:
@@ -443,6 +459,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             emit(depth,'def set_'+slot+'(_new):')
             if not is_box:emit(depth+1,'nonlocal '+slot)
             emit(depth+1,target+' = _new')
+            if name in execute_scopes.get(current,()):
+                emit(depth,'def has_'+slot+'():')
+                emit(depth+1,'try: return _fragment_local_exists('+slot+')')
+                emit(depth+1,'except NameError: return False')
     def host_reference(node):
         node=ungroup(node)
         if type(node) is ast.Name:
@@ -768,6 +788,14 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         elif kind is ast.Continue:
             if loops and loops[-1] is not None:emit(depth,loops[-1])
             emit(depth,'continue')
+        elif kind is ast.Execute and 'execute_fragments' in repairs:
+            pairs=[]
+            for key in sorted(execute_scopes[scope_id]):
+                slot=sym(key)
+                storage=(', '+slot) if boxed(key) else ''
+                pairs.append(repr(key)+': _fragment_local_binding(get_'+slot+', set_'+slot+', has_'+slot+storage+')')
+            visible=None if scope_id is None else tuple(sorted(routine_globals.get(scope_id,())))
+            emit(depth,'_execute_fragment('+expression(node.expression)+', _context, _initial, {'+', '.join(pairs)+'}, '+repr(visible)+')')
         elif kind is ast.Try:
             emit(depth,'try:');sequence(node.body,depth+1)
             if source_map is not None and services:
@@ -868,6 +896,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     namespace.update(Decimal=Decimal,SimpleNamespace=SimpleNamespace,_NATIVE_COLLECTION_TYPES=(list,*native_dicts),_NATIVE_DICT_TYPES=native_dicts,_NATIVE_COLLECTION_IDS=tuple(map(id,(list,*native_dicts))),_NATIVE_DICT_IDS=tuple(map(id,native_dicts)))
     from .errors import BSLRuntimeError
     namespace['_BSLRuntimeError']=BSLRuntimeError
+    if 'execute_fragments' in repairs:
+        from .python_direct_execute import execute_fragment,local_binding,local_exists
+        namespace.update(_execute_fragment=execute_fragment,_fragment_local_binding=local_binding,_fragment_local_exists=local_exists)
     if source_map is not None and services:
         from .experimental_naked_errors import handled_error,reraise_handled
         namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,

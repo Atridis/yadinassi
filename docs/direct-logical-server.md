@@ -249,3 +249,11 @@ Python3.10 optimized. Independent integration review:65 optimized tests PASS, в
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_error_description test_python_direct_regex_services test_python_direct_dual test_python_direct_nocontext test_python_direct_server_byref test_python_direct_server_initializers test_python_direct_managed_profile
 ```
+
+## Execute в direct scope
+
+Следующий срез поверх c8999470 подключил dynamic Execute/Выполнить через прямую
+компиляцию с живыми ссылками и отдельными temporary names, включая server и dual.
+Полный исходный native child теперь завершается, но сравнение ещё не проходит
+из-за object-transfer и Date/Null graph observations. [Механизм, проверки и точный
+отчёт](direct-execute.md).

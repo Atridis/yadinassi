@@ -3,7 +3,7 @@
 Client execution with either supported compilation profile and an explicit
 host-selected catalog/query bridge live here. Configuration and forms use separate
 direct entry points; unsupported
-async/NoContext contracts still require explicit compiled-strict. Registered host services remain trusted
+async contracts still require explicit compiled-strict. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
 from dataclasses import dataclass, fields
@@ -21,7 +21,7 @@ REPAIRS=('typed_map_keys','array_index_contract','array_insert_shape',
          'constructor_bounds','byref_routines','error_boundaries',
          'service_boundaries','bsl_truth','bsl_presentation','native_order',
          'typed_find','structure_fields','method_values','dynamic_host_refs',
-         'live_module_state')
+         'live_module_state','execute_fragments')
 
 
 def _nodes(value):

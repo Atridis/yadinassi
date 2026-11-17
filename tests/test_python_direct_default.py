@@ -60,7 +60,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   finally:safe_mode._CURRENT.reset(token)
  def test_unsupported_syntax_has_no_silent_fallback_or_prior_effect(self):
   vm=Interpreter()
-  with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;Execute "r=2;";')
+  with self.assertRaises(PythonDirectUnsupported):vm.execute('x=1;~finish:x=2;')
   self.assertEqual(vm.variables,{})
  def test_constructor_override_not_silently_ignored(self):
   effects=[];vm=Interpreter();vm.register_type('Array',lambda:effects.append(1))

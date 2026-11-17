@@ -44,6 +44,9 @@ class _ForwardReference(_Reference):
 
 def source_reference(state,name,cached=None):
     # Cache only the address, never the value or the binding decision.
+    if type(state) is not dict:
+        from .python_direct_execute import FragmentScope
+        if type(state) is FragmentScope:return _ForwardReference(state.reference(name.casefold()))
     key=name.casefold() if cached is None else cached.key
     value=state.get(key,UNSET)
     if value is UNSET:missing(name)
@@ -51,6 +54,9 @@ def source_reference(state,name,cached=None):
 
 
 def host_reference(state,name):
+    if type(state) is not dict:
+        from .python_direct_execute import FragmentScope
+        if type(state) is FragmentScope:return state.reference(name.casefold())
     key=name.casefold()
     value=state.get(key,UNSET)
     if value is UNSET:missing(name)

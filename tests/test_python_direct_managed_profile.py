@@ -74,12 +74,11 @@ class DirectManagedProfileTests(unittest.TestCase):
                     self.assertFalse(any('.error.other:' in row for row in output))
             self.assertEqual(*captures)
 
-    def test_exact_whole_client_witness_exposes_execute_blocker(self):
+    def test_exact_whole_client_witness_loads_client_initializer(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
-        with self.assertRaisesRegex(UnsupportedNakedSyntax,'statement Execute'):
-            vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
-        self.assertEqual(vm.variables,{})
+        vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
+        self.assertIn('вычислитьпробу',vm._direct_routine_modules)
+        self.assertEqual(vm.variables,{'contextclientcounter':10})
 
 
 class DirectManagedDatabaseTests(unittest.TestCase):
