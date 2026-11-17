@@ -194,3 +194,45 @@ exit 0, empty stderr, 156 bytes, 24 observations accepted by `parse_output`.
 Canonical output SHA-256:
 `5a94916806539bfdd40517a7092b3a543ea6dc53d52f0f0cedbd8d37ba3b23f4`.
 This establishes valid host output; native comparison was not run locally.
+
+## Dynamic form declarations follow-up
+
+On `bc0d117d`, the unchanged managed-form command above failed during preparation
+with `UnsupportedNakedSyntax: constructor TypeDescription`. The direct form
+bridge now admits TypeDescription/ОписаниеТипов only with the existing exact
+BSLTypeDescription constructor and FormAttribute/РеквизитФормы only with the
+current form interpreter's canonical `_make_attribute` binding. Binding checks
+run before constructor argument effects. Existing descriptor/form-model type,
+qualifier, side, scope and lifecycle validation remains in place.
+
+A small ChangeAttributes/ИзменитьРеквизиты service adapter converts exact native
+Python lists to the existing BSLArray input protocol; the model still validates
+and atomically installs/removes declarations. The exact current self-form gets
+public property reads/writes through its existing model methods. Foreign forms,
+private members, missing properties, client-side declaration mutation and
+transaction activation remain rejected. No generic reflection, VM dispatch,
+source fallback or new cache is introduced.
+
+The original unchanged source now executes all 24 server observations and client
+observation 25. It creates the five scalar attributes, controls and commands,
+sets String/Number/Boolean fields and successfully adds/removes `Temporary`.
+The next failure is `BoundaryViolation: unregistered host service: serverread`
+in `FormOpen` at client observation 26. No complete managed-form comparison or
+native parity is claimed, and no fixture/gate/source hash changed.
+
+This slice supports dynamic scalar declarations and own-self properties, not
+all TypeDescription overloads or descriptor operations: native-list type arrays,
+qualifier constructors, methods on unattached descriptors and arbitrary
+self-form methods remain outside this bridge. The standalone form's cross-side
+server routine binding needs a separate implementation; the existing enrolled
+form/RPC route was not replaced.
+
+Validation: 36 tests PASS normal and the same 36 PASS with `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_database_admission`,
+`test_python_direct_bound_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+The original replay-prefix regression forbids Interpreter.block/call_routine.
+Independent review found a private-member exception-class regression, which was
+fixed while retaining the original boundary test; the reviewer then passed 19
+combined `-O` tests plus the two final live-binding/client-mutation regressions.
+No remaining review blockers; no full CI/native pass is claimed.

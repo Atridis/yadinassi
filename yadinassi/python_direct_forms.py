@@ -9,6 +9,7 @@ from .python_direct_configuration import ConfigurationBoundary, check_owner
 from .database_context import SQLiteDBContext
 
 CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
+DECLARATION_CONSTRUCTORS=('typedescription','описаниетипов','formattribute','реквизитформы')
 
 SYSTEM_NAMES = ('thisobject','этотобъект','items','элементы','commands','команды',
                 'parameters','параметры','formfieldtype','видполяформы',
@@ -78,6 +79,33 @@ class FormBoundary(ConfigurationBoundary):
         self.session.form.set_member(name, value)
 
     def resolve_service(self,*args,**kwargs):
+        if args and args[0].casefold() in tuple('new:'+name for name in DECLARATION_CONSTRUCTORS):
+            from .values import HostFunction
+            from .type_descriptions import BSLTypeDescription
+            from .form_runtime import _FormInterpreter
+            self._check()
+            name=args[0].split(':',1)[1].casefold()
+            factory=self.owner.types.get(name)
+            function=factory.function if type(factory) is HostFunction else None
+            canonical=(function is BSLTypeDescription if name in ('typedescription','описаниетипов') else
+                       getattr(function,'__self__',None) is self.owner and
+                       getattr(function,'__func__',None) is _FormInterpreter._make_attribute)
+            if not canonical:
+                raise BoundaryViolation('form declaration constructor requires canonical registration')
+            return BoundaryContext.resolve_callable(self,factory)
+        if args and args[0].casefold() in ('changeattributes','изменитьреквизиты'):
+            bound=(ConfigurationBoundary.resolve_service(self,*args,**kwargs) if self.app is not None
+                   else BoundaryContext.resolve_service(self,*args,**kwargs))
+            def change(*values):
+                from .values import BSLArray
+                converted=[]
+                for value in values:
+                    if type(value) is list:
+                        array=BSLArray();array.items=list(value);value=array
+                    converted.append(value)
+                return bound(*converted)
+            if hasattr(bound,'requires_reference'):change.requires_reference=bound.requires_reference
+            return change
         if args and args[0].casefold() in self.owner._invocation_bindings:
             self._check()
             key=args[0].casefold()
@@ -144,6 +172,11 @@ class FormBoundary(ConfigurationBoundary):
         if value is self.session.form and name.casefold() in ('close','закрыть'):
             from .values import HostFunction
             return HostFunction(name,self.resolve_member(value,name),returns_value=False)
+        if value is self.session.form:
+            self._check()
+            if name.startswith('_'):raise BoundaryViolation('private form member')
+            try:return value.get_member(name)
+            finally:self._check()
         return BoundaryContext.get_member(self,value,name)
 
     def resolve_member(self,value,name):
@@ -180,6 +213,15 @@ class FormBoundary(ConfigurationBoundary):
                 try:return write(new_value)
                 finally:self._check()
             return invoke
+        if value is self.session.form:
+            self._check()
+            if name.startswith('_'):raise BoundaryViolation('private form member')
+            def write(new_value):
+                self._check()
+                if value is not self.session.form:raise BoundaryViolation('form receiver changed')
+                try:value.set_member(name,new_value)
+                finally:self._check()
+            return write
         return BoundaryContext.resolve_set_member(self,value,name)
 
 
@@ -211,7 +253,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
             registry[node.name.casefold()] = node
     names = tuple(attr.name.casefold() for attr in attributes) + tuple(t.name.casefold() for t in tables) + SYSTEM_NAMES + (() if app is None else tuple(app._definitions))
     return prepare_handlers(program, source_text=source if type(source) is str else '',
-                            external_names=names, constructors=CALLBACK_CONSTRUCTORS, repairs=REPAIRS+('authority_checkpoints',))
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS, repairs=REPAIRS+('authority_checkpoints',))
 
 
 def invoke_form(session, handler, side, arguments, *, _export_routine=None):
