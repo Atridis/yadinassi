@@ -1,6 +1,7 @@
 """Bounded qualified source ServerCall: fresh contextual all-Val activation.
 
-Only immutable scalar-literal defaults; no reuse, copyback, async or NoContext. The origin seal is
+Immutable scalar-literal defaults for DontUse; scalar reuse without defaults.
+No copyback, async or NoContext. The origin seal is
 scoped to the synchronous call, never an entry in the application registry.
 """
 from contextvars import ContextVar
@@ -40,6 +41,9 @@ def resolve(parent, owner, routine, *, require_value=False,
             or keys[0][2] is not False):
         raise BoundaryViolation('direct source ServerCall requires a qualified common module')
     key = keys[0]
+    if type(app._reuse_routines) is not dict:
+        raise BoundaryViolation('source ServerCall reuse registry changed')
+    reuse_entry = app._reuse_routines.get(id(routine))
     definition = app.modules.get(key[0])
     if definition is None:
         raise BoundaryViolation('direct source ServerCall module is not current')
@@ -102,9 +106,15 @@ def resolve(parent, owner, routine, *, require_value=False,
         if (routine.execution_context != 'server' or routine.is_async or routine.is_dual
                 or not routine.module_context or not routine.exported
                 or any(not p.by_value for p in routine.parameters)
-                or id(routine) in app._reuse_routines or owner.module_names
+                or owner.module_names
                 or owner.variables):
-            raise ValueError('direct source ServerCall supports contextual all-Val routines without reuse')
+            raise ValueError('direct source ServerCall supports contextual all-Val routines')
+        if type(app._reuse_routines) is not dict or app._reuse_routines.get(id(routine)) is not reuse_entry:
+            raise BoundaryViolation('source ServerCall reuse authority changed')
+        if reuse_entry is not None and (type(reuse_entry) is not tuple or len(reuse_entry)!=5
+                or reuse_entry[0] is not routine or reuse_entry[1] is not owner or reuse_entry[4] is not True
+                or not routine.is_function or any(p.default is not None for p in routine.parameters)):
+            raise BoundaryViolation('source ServerCall reuse requires scalar functions without defaults')
 
     def caller():
         parent._check()
@@ -118,8 +128,8 @@ def resolve(parent, owner, routine, *, require_value=False,
         flags = {element.tag.rsplit('}', 1)[-1]: element.text for element in properties}
         if (flags.get('ServerCall') != 'true' or flags.get('Server') != 'true'
                 or flags.get('ClientManagedApplication') == 'true'
-                or flags.get('ReturnValuesReuse', 'DontUse') != 'DontUse'):
-            raise ValueError('direct source ServerCall requires a server-only DontUse module')
+                or flags.get('ReturnValuesReuse', 'DontUse') != ('DontUse' if reuse_entry is None else reuse_entry[3])):
+            raise ValueError('direct source ServerCall requires the admitted server-only module')
         safe_mode.require_transfer('cross-context or asynchronous calls')
         database_transactions.forbid_transfer(parent.vm._transaction_backend())
 
@@ -128,6 +138,9 @@ def resolve(parent, owner, routine, *, require_value=False,
         raise TypeError('Процедура не возвращает значение: ' + routine.name)
     if argument_count is not None and not minimum <= argument_count <= len(routine.parameters):
         raise TypeError('Неверное количество аргументов: ' + routine.name)
+
+    from .python_direct_source_reuse import prepare as prepare_reuse
+    reuse = prepare_reuse(parent,owner,routine,caller,server=True) if reuse_entry is not None else None
 
     def call(*arguments):
         caller()
@@ -148,60 +161,63 @@ def resolve(parent, owner, routine, *, require_value=False,
         caller()
         packet = transfer(values)
         caller()
-        from .runtime import Interpreter
-        from .configuration_source_runtime import _DIRECT_SOURCE_FACTORY_ABI
-        if any(getattr(Interpreter, name) is not expected
-               or (name != '__init__' and getattr(_SourceInterpreter, name) is not expected)
-               for name, expected in _DIRECT_SOURCE_FACTORY_ABI):
-            raise BoundaryViolation('source ServerCall base factory hooks changed')
-        fresh = _SourceInterpreter(app, output=owner.output, encoding=owner.encoding,
-            native_target=owner.native_target, compilation_profile=owner.compilation_profile,
-            family_owner=app.interpreter)
-        fresh._direct_source_server_activation = True
-        fresh._logical_side = 'server'
-        fresh._transaction_activation_allowed = False
-        fresh._application_exports_enabled = owner._application_exports_enabled
-        fresh.user_messages = owner.user_messages
-        fresh.server_routines = registry.copy()
-        fresh.routines = owner.routines.copy()
-        fresh._direct_source_plans = plans.copy()
-        fresh.module_names = set()
-        fresh.variables = {}
-        fresh._self_module.ready = True
-        fresh_bindings = fresh._direct_source_host_bindings
-        copied = tuple((mapping, tuple(mapping.items())) for mapping in
-                       (fresh.routines, fresh.server_routines, fresh._direct_source_plans))
-        token = None
-        side_stack = fresh._context_stack
-        module_stack = fresh._module_context_stack
-        side_stack.append('server')
-        module_stack.append(True)
-        def active():
-            authority()
-            host_bindings(fresh, fresh_bindings)
-            for current, (original, entries) in zip(
-                    (fresh.routines, fresh.server_routines, fresh._direct_source_plans), copied):
-                if current is not original or len(current) != len(entries):
-                    raise BoundaryViolation('source ServerCall activation registry changed')
-                if any(current.get(name) is not value for name, value in entries):
-                    raise BoundaryViolation('source ServerCall activation declaration changed')
-            if (fresh.application is not app or fresh._logical_side != 'server'
-                    or fresh._transaction_activation_allowed is not False):
-                raise BoundaryViolation('source ServerCall activation changed')
-        try:
-            token = _ACTIVE.set((*_ACTIVE.get(), (fresh, active)))
-            with database_transactions.admission(False):
-                result = invoke(fresh, routine, packet)
-                active()
-                outgoing = transfer([result])[0]
-            return outgoing
-        finally:
-            if token is not None:
-                _ACTIVE.reset(token)
-            module_stack.pop()
-            side_stack.pop()
-            fresh.close()
-            parent._check()
+        def execute_packet():
+            from .runtime import Interpreter
+            from .configuration_source_runtime import _DIRECT_SOURCE_FACTORY_ABI
+            if any(getattr(Interpreter, name) is not expected
+                   or (name != '__init__' and getattr(_SourceInterpreter, name) is not expected)
+                   for name, expected in _DIRECT_SOURCE_FACTORY_ABI):
+                raise BoundaryViolation('source ServerCall base factory hooks changed')
+            fresh = _SourceInterpreter(app, output=owner.output, encoding=owner.encoding,
+                native_target=owner.native_target, compilation_profile=owner.compilation_profile,
+                family_owner=app.interpreter)
+            fresh._direct_source_server_activation = True
+            fresh._logical_side = 'server'
+            fresh._direct_source_scalar_reuse = reuse_entry is not None
+            fresh._transaction_activation_allowed = False
+            fresh._application_exports_enabled = owner._application_exports_enabled
+            fresh.user_messages = owner.user_messages
+            fresh.server_routines = registry.copy()
+            fresh.routines = owner.routines.copy()
+            fresh._direct_source_plans = plans.copy()
+            fresh.module_names = set()
+            fresh.variables = {}
+            fresh._self_module.ready = True
+            fresh_bindings = fresh._direct_source_host_bindings
+            copied = tuple((mapping, tuple(mapping.items())) for mapping in
+                           (fresh.routines, fresh.server_routines, fresh._direct_source_plans))
+            token = None
+            side_stack = fresh._context_stack
+            module_stack = fresh._module_context_stack
+            side_stack.append('server')
+            module_stack.append(True)
+            def active():
+                authority()
+                host_bindings(fresh, fresh_bindings)
+                for current, (original, entries) in zip(
+                        (fresh.routines, fresh.server_routines, fresh._direct_source_plans), copied):
+                    if current is not original or len(current) != len(entries):
+                        raise BoundaryViolation('source ServerCall activation registry changed')
+                    if any(current.get(name) is not value for name, value in entries):
+                        raise BoundaryViolation('source ServerCall activation declaration changed')
+                if (fresh.application is not app or fresh._logical_side != 'server'
+                        or fresh._transaction_activation_allowed is not False):
+                    raise BoundaryViolation('source ServerCall activation changed')
+            try:
+                token = _ACTIVE.set((*_ACTIVE.get(), (fresh, active)))
+                with database_transactions.admission(False):
+                    result = invoke(fresh, routine, packet)
+                    active()
+                    outgoing = transfer([result])[0]
+                return outgoing
+            finally:
+                if token is not None:
+                    _ACTIVE.reset(token)
+                module_stack.pop()
+                side_stack.pop()
+                fresh.close()
+                parent._check()
+        return reuse(packet,execute_packet) if reuse is not None else execute_packet()
 
     def named(reference):
         caller()

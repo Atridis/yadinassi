@@ -42,7 +42,7 @@ def _cache(cache):
         raise BoundaryViolation('source reusable accounting changed')
 
 
-def prepare(boundary,owner,routine,provenance):
+def prepare(boundary,owner,routine,provenance,*,server=False):
     app=boundary.app;caller=boundary.vm
     if type(app._reuse_routines) is not dict or type(app._direct_source_reuse_entries) is not dict:
         raise BoundaryViolation('source reusable registries changed')
@@ -51,9 +51,9 @@ def prepare(boundary,owner,routine,provenance):
         raise BoundaryViolation('source reusable entry changed')
     if entry is None:return None
     if (type(entry) is not tuple or len(entry)!=5 or entry[0] is not routine
-            or entry[1] is not owner or entry[4] is not False
+            or entry[1] is not owner or entry[4] is not server
             or not routine.is_function or any(not p.by_value or p.default is not None for p in routine.parameters)):
-        raise BoundaryViolation('direct source reuse requires same-side explicit Val function')
+        raise BoundaryViolation('direct source reuse requires admitted explicit Val function')
     _hooks()
     if type(app._direct_source_reusable) is not tuple or len(app._direct_source_reusable)!=3:
         raise BoundaryViolation('source reusable store seal changed')
@@ -95,12 +95,17 @@ def prepare(boundary,owner,routine,provenance):
     authorize()
     def call(values,invoke):
         cache,state=authorize()
+        if server:
+            from .invocation import _encode_scalar
+            for value in values:_encode_scalar(value)
         key=_ARGUMENT_KEY(tuple(values))
         if key is None:raise ValueError('unsupported reusable common-module argument')
-        key=(str(entry[2]),routine.name.casefold(),boundary.side,key)
+        key=(str(entry[2]),routine.name.casefold(),'server' if server else boundary.side,key)
         found,cached=cache.lookup(key)
         if found:
-            try:cache.revalidate(key,store.measure(cached))
+            try:
+                if server:_encode_scalar(cached)
+                cache.revalidate(key,store.measure(cached))
             except (TypeError,ValueError):
                 cache.discard(key);raise
             current,current_state=authorize()
@@ -109,6 +114,7 @@ def prepare(boundary,owner,routine,provenance):
             return cached
         reservation=cache.reserve(key)
         result=invoke()
+        if server:_encode_scalar(result)
         current,current_state=authorize()
         if current is not cache or current_state is not state:
             raise BoundaryViolation('source reusable scope changed before publication')

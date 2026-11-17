@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=()):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -267,6 +267,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         raise TypeError("source callable externals require a tuple of names")
     if _source_callable_externals and not (_trusted_entry and _source_routine_scopes):
         raise ValueError("source callable externals require trusted source scopes")
+    if type(_source_scalar_routines) is not bool:raise TypeError("source scalar routines require Boolean")
+    if _source_scalar_routines and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError("source scalar routines require trusted source scopes")
     source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals)
     constructors=frozenset(name.casefold() for name in constructors)
     if constructors and not services:raise ValueError('declared constructors require service_boundaries')
@@ -786,7 +789,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         elif kind is ast.ExpressionStatement:
             prefix='return ' if _return_last_expression and scope_id is None and node is program[-1] else ''
             emit(depth,prefix+expression(node.expression,False))
-        elif kind is ast.Return:emit(depth,'return '+(expression(node.value) if node.value is not None else 'None'))
+        elif kind is ast.Return:
+            result=expression(node.value) if node.value is not None else 'None'
+            if _source_scalar_routines:result='_context.scalar_result('+result+')'
+            emit(depth,'return '+result)
         elif kind is ast.If:
             for index,(condition,block) in enumerate(node.branches):
                 emit(depth,('if ' if index==0 else 'elif ')+truth_expression(condition)+':');sequence(block,depth+1)
@@ -870,6 +876,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             body_depth=depth+2 if source_checks else depth+1
             if _source_routine_scopes:
                 emit(body_depth,'with _context.routine_scope():');body_depth+=1
+            if _source_scalar_routines:
+                actuals=', '.join(sym(parameter.name) for parameter in node.parameters)
+                emit(body_depth,'_context.scalar_values(('+actuals+(',' if actuals else '')+'))')
             previous_scope=scope_id
             if byref:
                 scope_id=id(node)

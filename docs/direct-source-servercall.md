@@ -40,3 +40,7 @@ Security regressions cover argument-time origin mutation, late named values,
 packet cycles, detached outputs, safe mode, transaction boundaries, custom host
 registrations, constructor hooks and expired activations. Existing unsupported
 source-wide cases remain reported separately; this is not a green-full-suite claim.
+
+Scalar ServerCall reuse is separately admitted under the closed contract in
+`direct-source-server-reuse.md`; its no-default scalar constraints do not widen
+the ordinary DontUse transfer profile.

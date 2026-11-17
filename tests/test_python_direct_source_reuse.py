@@ -54,11 +54,15 @@ class SourceReuseTests(unittest.TestCase):
         self.assertEqual(len(app.reusable_values._session._entries),0)
 
     def test_warm_hit_revalidates_entry_and_hooks_before_arguments(self):
-        for mutation in ('entry','cache','owner','policy'):
+        for mutation in ('entry','entry_hook','cache','owner','policy'):
             with self.subTest(mutation=mutation):
                 app,out=self.app('Message(Helpers.Value(1));', 'Function Value(Val X) Export Return X;EndFunction')
                 effects=[];app._session_owner.register_function('Touch',lambda:effects.append(1) or 1)
                 if mutation=='entry':app._reuse_routines.clear()
+                elif mutation=='entry_hook':
+                    class Trap:
+                        def __getitem__(self,index):effects.append('hook');return True
+                    key=next(iter(app._reuse_routines));app._reuse_routines[key]=Trap()
                 elif mutation=='cache':app.reusable_values._session.lookup=lambda key:effects.append('hook')
                 elif mutation=='owner':app.reusable_values.authorize=lambda caller:effects.append('hook')
                 else:app.files['CommonModules/Helpers.xml']=app.files['CommonModules/Helpers.xml'].replace(b'DuringSession',b'DuringRequest')

@@ -39,7 +39,8 @@ class SourceServerReuseTests(unittest.TestCase):
         self.addCleanup(app.close);app.start()
         expected=json.loads(NATIVE.read_bytes())['observations']
         first=self.execute(app,'Results=New Array;For I=1 To 15 Do Results.Add(Observe(I));EndDo;Results')
-        self.assertEqual(first.items,expected[:15])
+        # Direct execution uses its native list representation; observations stay identical.
+        self.assertEqual(first if type(first) is list else first.items,expected[:15])
         last=self.execute(app,'Bit(ClientToken=CachedServerCall.Token("lifetime"))+":"+Bit(SessionToken=ServerInspector.SessionToken("lifetime"))+":"+Bit(RequestToken=ServerInspector.RequestToken("lifetime"))')
         self.assertEqual(last,expected[15])
 

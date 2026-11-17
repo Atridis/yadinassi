@@ -114,6 +114,8 @@ def _signature_matches(node, saved):
 
 
 def _check_plan(owner,plan):
+    if getattr(owner,'_direct_source_scalar_reuse',False) is not plan._source_scalar_reuse:
+        raise BoundaryViolation('source scalar routine contract changed')
     if frozenset(owner.module_names)!=plan._source_layout:
         raise BoundaryViolation("source module layout changed; redeclare")
     for node,signature in plan._source_routines:
@@ -131,8 +133,10 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
         constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
-        _source_callable_externals=_callable_externals)
+        _source_callable_externals=_callable_externals,
+        _source_scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
+    plan._source_scalar_reuse=getattr(owner,'_direct_source_scalar_reuse',False)
     plan._source_layout=frozenset(layout)
     plan._source_routines=tuple((n,_signature(n)) for n in program if type(n) is ast.Routine)
     # Crossing defaults are snapshotted at compilation, not first invocation.
@@ -217,6 +221,14 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         with self.app.safe_mode.routine(self.vm,self.vm):
             try:yield
             finally:self._check()
+    def scalar_values(self,values):
+        self._check()
+        from .invocation import _encode_scalar
+        for value in values:_encode_scalar(value)
+        self._check()
+    def scalar_result(self,value):
+        self.scalar_values((value,))
+        return value
     def external_get(self,name):
         self._check()
         from .python_direct_names import NAMES
@@ -313,11 +325,13 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if (routine.execution_context!=self.side or owner._logical_side!=self.side
                 or routine.is_async or routine.is_dual or not routine.module_context):
             raise ValueError('direct source crossing/async/NoContext routine is not integrated')
-        if type(self.app._reuse_routines) is not dict:
+        if type(self.app._reuse_routines) is not dict or type(self.app._direct_source_reuse_entries) is not dict:
             raise BoundaryViolation('source reusable registry changed')
         entry=self.app._reuse_routines.get(id(routine))
-        if not qualified and entry is not None and entry[4]:
-            raise ValueError('direct source ServerCall reusable routine is not integrated')
+        if (self.app._direct_source_reuse_entries.get(id(routine)) is not entry
+                or entry is not None and (type(entry) is not tuple or len(entry)!=5 or entry[0] is not routine)):
+            raise BoundaryViolation('source reusable entry changed')
+        scalar_reuse=entry is not None and entry[4] is True
         keys=tuple(k for k,v in self.app._instances.items() if v is owner)
         def provenance():
             from .python_direct_source_server import check_activation
@@ -333,7 +347,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                         raise BoundaryViolation('source module admission changed')
         provenance()
         from .python_direct_source_reuse import prepare as prepare_reuse
-        reuse=prepare_reuse(self,owner,routine,provenance) if qualified else None
+        reuse=prepare_reuse(self,owner,routine,provenance,server=scalar_reuse) if qualified else None
         minimum=max((i+1 for i,p in enumerate(routine.parameters) if p.default is None),default=0)
         if argument_count is not None and not minimum<=argument_count<=len(routine.parameters):
             raise TypeError('Неверное количество аргументов: '+routine.name)
@@ -344,7 +358,12 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 raise BoundaryViolation('source routine binding changed')
             values=tuple(_ForwardReference(v) if i in refs and type(v) is Reference else v for i,v in enumerate(values))
             try:
-                return reuse(values,lambda:invoke(owner,routine,values)) if reuse is not None else invoke(owner,routine,values)
+                if scalar_reuse:
+                    from .invocation import _encode_scalar
+                    for value in values:_encode_scalar(value)
+                result=reuse(values,lambda:invoke(owner,routine,values)) if reuse is not None else invoke(owner,routine,values)
+                if scalar_reuse:_encode_scalar(result)
+                return result
             finally:self._check()
         bound=self.resolve_callable(HostFunction(routine.name,call,returns_value=routine.is_function,reference_parameters=refs),
                                     require_value=require_value,allow_references=allow_references)

@@ -2,8 +2,9 @@
 
 Qualified synchronous common-module functions can reuse results in the existing
 application-owned DuringSession and DuringRequest caches. This bounded adapter
-requires explicit Val parameters without defaults. It does not enable ServerCall
-reuse, asynchronous continuations, NoContext or global reusable modules.
+requires explicit Val parameters without defaults. Scalar ServerCall reuse has a
+separate bounded adapter described in direct-source-server-reuse.md. Asynchronous
+continuations, NoContext and global reusable modules remain unsupported.
 Unqualified private calls retain ordinary generated execution, without caching.
 
 Reuse is not an authorization cache. Every invocation checks the actual caller,

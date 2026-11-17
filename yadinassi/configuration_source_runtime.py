@@ -384,6 +384,7 @@ class SourceApplication:
                     for r in program):
                 raise ValueError('source ServerCall reuse requires explicit by-value scalar functions')
             child._logical_side = side
+            child._direct_source_scalar_reuse = scalar_server_reuse
             child._application_exports_enabled = not global_call
             if any(not isinstance(node, ast.Routine) for node in program):
                 raise ValueError('Общий модуль содержит неподдерживаемую инициализацию: ' + path)
