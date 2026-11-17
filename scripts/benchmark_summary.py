@@ -16,10 +16,10 @@ def render(report):
         raise ValueError('unsupported benchmark report')
     environment = report['environment']
     routes = {case['route'].get('requested_route', 'default') for case in report['cases']}
-    title = 'Prepared execution (preparation excluded)' if routes == {'prepared'} else 'Public default API (includes internal preparation)'
-    lines = ['## Execution-layer performance reference: ' + title, '',
-             f"Commit: `{environment['git_head']}`", '',
-             '| Workload | Native Python, ms | Python classes, ms | BSL direct, ms | Classes / Python | BSL / Python | BSL / classes |',
+    title = 'Подготовленное исполнение (без времени подготовки)' if routes == {'prepared'} else 'Обычный публичный API (включает внутреннюю подготовку)'
+    lines = ['## Сравнение производительности: ' + title, '',
+             f"Коммит: `{environment['git_head']}`", '',
+             '| Сценарий | Python, мс | Классы yadinassi, мс | Прямой BSL, мс | Классы / Python | BSL / Python | BSL / классы |',
              '|---|---:|---:|---:|---:|---:|---:|']
     if not report['cases']:
         raise ValueError('empty benchmark report')
@@ -32,20 +32,29 @@ def render(report):
         native, classes, bsl = values
         name = case['case'].replace('|', '\\|').replace('\n', ' ')
         lines.append(f'| {name} | {native*1000:.3f} | {classes*1000:.3f} | {bsl*1000:.3f} | {ratio_cell(classes/native)} | {ratio_cell(bsl/native)} | {ratio_cell(bsl/classes)} |')
-    lines += ['', 'Ratio indicators (unrounded values): 🟩 0 ≤ ratio < 2; 🟨 2 ≤ ratio ≤ 3; 🟧 ratio > 3. Timing cells are not colored.', '', 'Ratios are time ratios: **lower is faster**, native Python = 1×. No speed threshold or speed-based failure.', '',
-              'Wall-time medians; each invocation is checked for the expected Decimal result. '
-              'Setup and first execution are recorded separately in the raw JSON. '
-              'The BSL API is listed below: execute_program includes any preparation it performs internally. '
-              'These microbenchmarks are not whole-application or full semantic equivalence; shared CI runners are noisy.', '']
-    lines += ['| Preparation / first call | BSL parse + prepare, ms | BSL first execution, ms |', '|---|---:|---:|']
+    lines += ['', 'Индикаторы коэффициентов (до округления): 🟩 0 ≤ коэффициент < 2; 🟨 2 ≤ коэффициент ≤ 3; 🟧 коэффициент > 3. Ячейки времени не окрашиваются.', '', 'Коэффициенты сравнивают время: **меньше — быстрее**, Python = 1×. Порогов скорости нет; замедление само по себе не вызывает ошибку.', '',
+              'Медианы полного времени выполнения; результат каждого вызова сверяется с ожидаемым Decimal. '
+              'Подготовка и первое исполнение записаны отдельно в исходном JSON. '
+              'API BSL указан ниже: execute_program включает выполняемую внутри него подготовку. '
+              'Эти микротесты не измеряют всё приложение и не доказывают полную семантическую эквивалентность; общие машины CI дают шум.', '']
+    lines += ['| Подготовка / первый вызов | Разбор + подготовка BSL, мс | Первое исполнение BSL, мс |', '|---|---:|---:|']
     for case in report['cases']:
         if 'preparation_seconds' in case:
             lines.append(f"| {case['case']} | {case['preparation_seconds']['bsl_parse_prepare']*1000:.3f} | {case['first_execution_seconds']['bsl']*1000:.3f} |")
     lines.append('')
+    conditions = {}
     for case in report['cases']:
-        lines.append(f"- {case['case']}: {case['iterations']} iterations, {len(case['samples'])//3} measured rounds; `{case['route'].get('api', 'unknown')}`.")
-    lines += ['', f"Python: `{environment['python'].splitlines()[0]}`", f"CPU: `{environment['processor']}`", '',
-              'Raw artifact includes all wall/CPU samples, source hashes, environment, setup and first-call timings.', '']
+        # Group only identical execution conditions, never just matching rounded
+        # round counts or similarly named APIs. Preserve first-occurrence order.
+        key = (case['iterations'], len(case['samples']),
+               case['route'].get('api', 'unknown'),
+               case['route'].get('requested_route', 'default'), case['route']['backend'])
+        conditions.setdefault(key, []).append(case['case'])
+    for (iterations, sample_count, api, _, _backend), names in conditions.items():
+        label = 'Все сценарии' if len(conditions) == 1 and len(names) > 1 else ', '.join(names)
+        lines.append(f"- {label}: {iterations} итераций, {sample_count//3} измеренных повторов; `{api}`.")
+    lines += ['', f"Python: `{environment['python'].splitlines()[0]}`", f"Процессор: `{environment['processor']}`", '',
+              'Артефакт содержит все замеры полного и процессорного времени, хеши исходников, окружение, время подготовки и первого вызова.', '']
     return '\n'.join(lines)
 
 

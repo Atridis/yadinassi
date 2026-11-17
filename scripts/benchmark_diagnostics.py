@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts import benchmark_execution_layers as core
 from scripts import benchmark_extended_layers as extended
+from scripts import performance_summary_labels as labels
 
 CASES = ('core.map', 'core.byref', 'structure.fields', 'valuetable.build_scan',
          'json.roundtrip', 'xml.scalar_codec', 'db.count', 'db.update',
@@ -121,28 +122,28 @@ def render(report):
     columns = ('python_calls', 'builtin_compile', 'source_map_compile', 'sqlite_execute',
                'configuration_read_source', 'configuration_validate_ddl',
                'configuration_validate_canonical', 'direct_boundary_check', 'catalog_owner_check')
-    lines = ['## Untimed execution diagnostics (separate process)', '',
-             'Commit: `' + report['environment']['git_head'] + '`', '',
-             'One instrumented invocation per layer after two checked unprofiled warmups. '
-             'Setup, reset and result validation are excluded. These are call counts, not timings. '
-             'Case labels show workload iterations and operations per capture (one operation for a form lifecycle).', '',
-             '| Case / route / rows | Layer | Python calls | builtin compile | SourceMap compile | SQLite execute API | read_source | DDL checks | canonical checks | direct _check | owner checks |',
+    lines = ['## Диагностика вызовов без замера времени (отдельный процесс)', '',
+             'Коммит: `' + report['environment']['git_head'] + '`', '',
+             'Один вызов со счётчиками для каждого слоя после двух проверенных прогревочных вызовов без профилирования. '
+             'Подготовка, сброс состояния и проверка результата исключены. Это числа вызовов, не время. '
+             'В подписи указаны итерации и операции за один запуск; жизненный цикл формы считается одной операцией.', '',
+             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | SourceMap.compile | API SQLite execute | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
              '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
     for case in report['cases']:
         for layer, data in case['layers'].items():
             if data['result'] != case['expected'] or any(type(v) is not int or v < 0 for v in data['counters'].values()):
                 raise ValueError('invalid diagnostic result')
-            label = (case['case'] + ' / ' + case['requested_route']
-                     + ' / n=' + str(case['iterations']) + ' / ops=' + str(case['operations_per_capture']))
-            if case['catalog_rows'] is not None: label += ' / ' + str(case['catalog_rows'])
-            lines.append('| ' + label + ' | ' + layer + ' | ' + ' | '.join(str(data['counters'][key]) for key in columns) + ' |')
-    lines += ['', 'No speed gate; no timing ratios or color categories apply to these counters. '
-              'SQLite counts are Connection/Cursor execute API calls, not SQL statements, VM instructions, rows or triggers. '
-              'builtin compile includes parsing-to-AST calls; SourceMap compile is a different, non-additive metric. '
-              'Python entries include recursion; the profiler adds overhead and must not be used for timing comparisons. '
-              'Only the current thread is observed. Missing/non-comparable layers are not invented.', '',
-              'JSON retains every named counter and the source/runner provenance. COUNT uses the same fixed number '
-              'of queries at multiple row counts; fixture seeding is excluded. Raw SQLite still omits catalog/query admission.', '']
+            label = (case['case'] + ' / ' + labels.ROUTES.get(case['requested_route'],case['requested_route'])
+                     + ' / итераций=' + str(case['iterations']) + ' / операций=' + str(case['operations_per_capture']))
+            if case['catalog_rows'] is not None: label += ' / строк=' + str(case['catalog_rows'])
+            lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join(str(data['counters'][key]) for key in columns) + ' |')
+    lines += ['', 'Порогов скорости нет; коэффициенты времени и цветовые категории к счётчикам не применяются. '
+              'Счётчики SQLite отражают вызовы API Connection/Cursor, а не SQL-операторы, инструкции виртуальной машины, строки или триггеры. '
+              'Встроенный compile включает разбор в AST; SourceMap.compile — другая метрика, складывать их нельзя. '
+              'Вызовы Python учитывают рекурсию; профилировщик добавляет накладные расходы и не подходит для сравнения времени. '
+              'Наблюдается только текущий поток. Отсутствующие или несопоставимые слои не подменяются вымышленными данными.', '',
+              'JSON сохраняет все именованные счётчики и сведения об исходниках и среде. COUNT выполняет одинаковое число '
+              'запросов при разном числе строк; заполнение тестовой БД исключено. Сырой SQLite по-прежнему не включает проверки допуска к каталогу и запросам.', '']
     return '\n'.join(lines)
 
 

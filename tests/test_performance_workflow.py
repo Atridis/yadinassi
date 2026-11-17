@@ -30,13 +30,13 @@ class PerformanceWorkflowTests(unittest.TestCase):
         for name in ('execution-layers.json', 'execution-layers-prepared.json',
                      'summary.md', 'summary-prepared.md'):
             self.assertIn('performance-results/' + name, self.job)
-        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 6)
+        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 3)
         self.assertIn('if: always()', self.job)
         self.assertIn('retention-days: 30', self.job)
 
     def test_no_speed_gate_but_correctness_errors_are_not_hidden(self):
         self.assertIn('no speed gate', self.job)
-        self.assertIn('No speed threshold is enforced', self.job)
+        self.assertIn('Порогов скорости нет', self.job)
         self.assertNotIn('continue-on-error', self.job)
         self.assertIn('tests.test_benchmark_execution_layers tests.test_benchmark_summary', self.job)
 
@@ -58,3 +58,14 @@ class PerformanceWorkflowTests(unittest.TestCase):
         self.assertIn('python scripts/benchmark_diagnostics.py --iterations 8', self.job)
         self.assertIn('performance-results/diagnostics.json', self.job)
         self.assertIn('performance-results/diagnostics.md', self.job)
+
+    def test_paired_summary_runs_after_timings_even_on_partial_failure(self):
+        marker = self.job.index('- name: Publish paired performance summary')
+        self.assertGreater(marker, self.job.index('- name: Measure extended prepared reference'))
+        self.assertLess(marker, self.job.index('- name: Collect separate untimed execution diagnostics'))
+        block = self.job[marker:self.job.index('- name: Collect separate untimed execution diagnostics')]
+        self.assertIn('if: ${{ !cancelled() }}', block)
+        self.assertIn('scripts/benchmark_report.py', block)
+        self.assertIn('performance-results/summary-paired.md', block)
+        for name in ('summary.md', 'summary-prepared.md', 'extended-default.md', 'extended-prepared.md'):
+            self.assertNotIn('cat performance-results/' + name, self.job)

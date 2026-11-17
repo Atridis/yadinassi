@@ -1,5 +1,6 @@
 """Counters are isolated from timing and preserve benchmark correctness."""
 from pathlib import Path
+from copy import deepcopy
 import sqlite3
 import sys
 import unittest
@@ -84,9 +85,11 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
     def test_report_has_counts_not_timing_samples_or_ratios(self):
         case = bench.diagnose('core.byref', 2, 'prepared')
         report = {'schema': 'execution-call-diagnostics-v1', 'environment': {'git_head': 'test'}, 'cases': [case]}
+        before = deepcopy(report)
         text = bench.render(report)
-        self.assertIn('Untimed execution diagnostics', text)
-        self.assertIn('SQLite execute API', text)
+        self.assertEqual(report, before)
+        self.assertIn('Диагностика вызовов без замера времени', text)
+        self.assertIn('API SQLite execute', text)
         self.assertFalse(any(emoji in text for emoji in '🟩🟨🟧'))
         self.assertNotIn('median_seconds', str(case))
         self.assertNotIn('samples', case)

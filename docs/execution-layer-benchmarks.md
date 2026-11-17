@@ -250,3 +250,35 @@ they do not yet implement any proposed cache, SQL aggregate pushdown, weaker
 schema validation, local promotion or Map/byref specialization. Such changes
 need separate current-state/transaction/ownership and semantic tests. In
 particular, schema_version alone cannot validate current configuration data.
+
+### Shared core measurement conditions
+
+The core Summary prints identical iteration/round/API conditions once as
+`Все сценарии` instead of repeating one line per workload. Mixed conditions
+remain separate, with the applicable workload names. Grouping also preserves
+requested route and exact sample count; it changes only presentation, never the
+raw samples, measured values, timing/setup tables or ratio indicators.
+
+
+Все подписи и пояснения Summary отображаются на русском. Технические имена
+сценариев и API сохранены. Перевод применяется только при отображении: исходные
+JSON, статусы, причины и примечания не переписываются. Общий API расширенной
+таблицы указывается один раз; индивидуальные пояснения файлов, XML и БД, причины
+недоступности и исключения для жизненного цикла форм остаются видимыми.
+
+
+### Парная раскладка Summary
+
+Один общий блок содержит две самостоятельные таблицы основных сценариев:
+«с подготовкой», затем «без подготовки». Ниже таким же образом расположены две
+отдельные расширенные таблицы. Численные строки не объединяются. Таблицы
+подготовки/первого вызова и пояснения перенесены ниже соответствующей пары;
+диагностика остаётся отдельным блоком.
+
+Подписи различают включение внутренней подготовки execute_program и исполнение
+заранее подготовленного плана execute_prepared, а не холодный и горячий запуск.
+Исключения FormSession и причины N/A сохраняются. Исходные отдельные Markdown/JSON
+остаются в артефакте; добавляется `summary-paired.md`. Сборка общего блока идёт
+после всех timing-шагов и запускается также после ошибки, если run не отменён.
+Корректные доступные таблицы сохраняются, отсутствующие/повреждённые обозначаются
+явно, сборщик возвращает ненулевой код. Отчёты разных коммитов не объединяются.

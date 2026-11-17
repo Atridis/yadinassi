@@ -34,6 +34,7 @@ from yadinassi.xml_io import BSLXMLReader, BSLXMLNodeType
 from yadinassi.xml_writer import BSLXMLWriter
 from scripts.benchmark_execution_layers import metadata
 from scripts.benchmark_summary import ratio_cell
+from scripts import performance_summary_labels as labels
 
 LAYERS = ('python', 'python_classes', 'bsl')
 CASES = ('structure.fields', 'valuetable.build_scan', 'valuelist.build_scan',
@@ -456,9 +457,9 @@ def measure(name, n, rounds, route):
 def render(report):
     if report.get('schema') != 'execution-layers-extended-v1' or not report['cases']:
         raise ValueError('invalid extended report')
-    routes='/'.join(sorted({case['requested_route'] for case in report['cases']}))
-    lines = ['## Extended performance reference: '+routes, '',
-             'Commit: `'+report['environment']['git_head']+'`', '', '| Case | Python ms | Classes ms | BSL ms | Classes / Python | BSL / Python | BSL / classes |', '|---|---:|---:|---:|---:|---:|---:|']
+    routes=' / '.join(labels.ROUTES.get(route, route) for route in sorted({case['requested_route'] for case in report['cases']}))
+    lines = ['## Расширенное сравнение производительности: '+routes, '',
+             'Коммит: `'+report['environment']['git_head']+'`', '', '| Сценарий | Python, мс | Классы yadinassi, мс | BSL, мс | Классы / Python | BSL / Python | BSL / классы |', '|---|---:|---:|---:|---:|---:|---:|']
     for case in report['cases']:
         values = {k:v['median_seconds'] for k,v in case['summary'].items()}
         if not values or set(values) - set(LAYERS) or any(type(v) not in (int, float) or not math.isfinite(v) or v <= 0 for v in values.values()):
@@ -471,16 +472,39 @@ def render(report):
         ratios = [ratio_cell(values['bsl']/values[k]) if 'bsl' in values and k in values and values[k]>0 else '—' for k in ('python','python_classes')]
         ratios.insert(0,ratio_cell(values['python_classes']/values['python']) if 'python' in values and 'python_classes' in values and values['python']>0 else '—')
         lines.append('| '+case['case']+' | '+' | '.join(cells+ratios)+' |')
-    lines += ['', 'Ratio indicators (unrounded): 🟩 0 ≤ ratio < 2; 🟨 2 ≤ ratio ≤ 3; 🟧 ratio > 3. Timing cells are unchanged.', '', 'Warm medians; setup/first calls and all samples are in JSON. No speed gate. Missing comparisons are explicit, never zero.', '']
-    lines += ['| Setup / first call | Shared fixture + BSL preparation, ms | First Python, ms | First classes, ms | First BSL, ms |', '|---|---:|---:|---:|---:|']
+    lines += ['', 'Индикаторы коэффициентов (до округления): 🟩 0 ≤ коэффициент < 2; 🟨 2 ≤ коэффициент ≤ 3; 🟧 коэффициент > 3. Ячейки времени не окрашиваются.', '', 'Медианы после прогрева; подготовка, первые вызовы и все замеры сохранены в JSON. Порогов скорости нет. Недоступные сравнения обозначены явно, а не нулём.', '']
+    lines += ['| Подготовка / первый вызов | Общие тестовые данные + подготовка BSL, мс | Первый Python, мс | Первый вызов классов, мс | Первый BSL, мс |', '|---|---:|---:|---:|---:|']
     for case in report['cases']:
         first=case['first_execution_seconds']
         cells=[f'{first[k]*1000:.3f}' if k in first else '—' for k in LAYERS]
         lines.append('| '+case['case']+' | '+f'{case["fixture_and_prepare_seconds"]*1000:.3f}'+' | '+' | '.join(cells)+' |')
     lines.append('')
+    api_groups = {}
     for case in report['cases']:
-        status = '; '.join(k+': '+v['status']+' ('+v['reason']+')' for k,v in case['statuses'].items())
-        lines.append('- **'+case['case']+'**: '+case['api']+'. '+case['notes']+(' '+status if status else ''))
+        api_groups.setdefault((case['api'], case['requested_route']), []).append(case['case'])
+    shared = {key for key, names in api_groups.items() if len(names) > 1}
+    for key, names in api_groups.items():
+        if key not in shared:
+            continue
+        if len(names) == len(report['cases']):
+            scope = 'для всех сценариев'
+        elif len(shared) == 1:
+            exceptions = [case['case'] for case in report['cases'] if case['case'] not in names]
+            scope = 'для всех сценариев, кроме ' + ', '.join(exceptions)
+        else:
+            scope = 'для ' + ', '.join(names)
+        lines.append('Общий режим исполнения ' + scope + ': `' + labels.api(key[0]) + '`.')
+    lines.append('')
+    for case in report['cases']:
+        details = []
+        if (case['api'], case['requested_route']) not in shared:
+            details.append(labels.api(case['api']) + '.')
+        if case['notes']:
+            details.append(labels.note(case['notes']))
+        if case['statuses']:
+            details.append('; '.join(labels.LAYERS.get(k,k)+': '+labels.STATUSES.get(v['status'],v['status'])+' ('+labels.reason(v['reason'])+')' for k,v in case['statuses'].items()))
+        if details:
+            lines.append('- **'+case['case']+'**: ' + ' '.join(details))
     return '\n'.join(lines)+'\n'
 
 

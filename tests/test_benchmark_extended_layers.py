@@ -38,7 +38,7 @@ class ExtendedReferenceTests(unittest.TestCase):
         case=bench.measure('form.event',3,3,'default')
         text=bench.render({'schema':'execution-layers-extended-v1', 'environment':{'git_head':'test'}, 'cases':[case]})
         self.assertIn('—',text)
-        self.assertIn('not_comparable',text)
+        self.assertIn('несопоставимо',text)
 
     def test_api_bounds_and_prepared_form_rejected_before_fixture(self):
         with patch.object(bench, 'make_case', side_effect=AssertionError('fixture touched')):
@@ -95,7 +95,7 @@ class ExtendedReferenceTests(unittest.TestCase):
         data = copy.deepcopy(source); del data['cases'][0]['summary']['bsl']
         with self.assertRaises(ValueError): bench.render(data)
         data['cases'][0]['statuses']['bsl'] = {'status':'unsupported', 'reason':'explicit test'}
-        self.assertIn('unsupported', bench.render(data))
+        self.assertIn('не поддерживается', bench.render(data))
         data['cases'][0]['statuses']['bsl']['status'] = 'ok'
         with self.assertRaises(ValueError): bench.render(data)
         with self.assertRaises(ValueError): bench.render({**source, 'cases': []})
@@ -123,3 +123,34 @@ class ExtendedReferenceTests(unittest.TestCase):
                 result = case.runs['python_classes']()
             self.assertEqual(result, case.expected)
             with self.assertRaises(AssertionError): bench.validate(case, 'python_classes', result)
+
+    def test_shared_prepared_api_once_without_losing_special_notes_or_json(self):
+        base = bench.measure('structure.fields', 3, 3, 'prepared')
+        cases = [dict(copy.deepcopy(base), case=name) for name in
+                 ('structure.fields', 'valuetable.build_scan', 'file.stat', 'xml.roundtrip', 'db.count')]
+        cases[2]['notes'] = next(text for text in bench.labels.NOTES if text.startswith('Warm filesystem'))
+        cases[3]['notes'] = next(text for text in bench.labels.NOTES if text.startswith('Host XML classes'))
+        del cases[3]['summary']['bsl']
+        cases[3]['statuses']['bsl'] = {'status':'unsupported', 'reason':'python-direct: constructor XMLWriter; select legacy'}
+        cases[4]['notes'] = 'Same SQLite file and 32 catalog rows. Raw SQL baseline excludes BSL catalog/query admission.'
+        data = {'schema':'execution-layers-extended-v1', 'environment':{'git_head':'test'}, 'cases':cases}
+        before = copy.deepcopy(data)
+        text = bench.render(data)
+        self.assertEqual(text.count('execute_prepared(plan)'), 1)
+        self.assertIn('Общий режим исполнения для всех сценариев:', text)
+        self.assertNotIn('- **structure.fields**:', text)
+        self.assertNotIn('- **valuetable.build_scan**:', text)
+        self.assertIn('- **file.stat**: Прогретый файловый кеш ОС', text)
+        self.assertIn('Прямой BSL не поддерживает конструктор XMLWriter', text)
+        self.assertIn('строк справочника: 32', text)
+        self.assertNotIn('Raw SQL baseline', text)
+        self.assertEqual(data, before)
+
+    def test_mixed_apis_keep_exceptions_visible(self):
+        base = bench.measure('structure.fields', 3, 3, 'default')
+        cases = [dict(copy.deepcopy(base), case=name) for name in ('structure.fields','json.roundtrip','form.open')]
+        cases[-1]['api'] = 'FormSession construction + open + close'
+        text = bench.render({'schema':'execution-layers-extended-v1', 'environment':{'git_head':'test'}, 'cases':cases})
+        self.assertEqual(text.count('execute_program(preparsed_ast)'), 1)
+        self.assertIn('для всех сценариев, кроме form.open', text)
+        self.assertIn('- **form.open**: FormSession: создание, открытие и закрытие.', text)
