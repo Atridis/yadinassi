@@ -19,6 +19,19 @@ class PersistentDirectTests(unittest.TestCase):
             vm.execute('Add(X,3);')
         self.assertEqual((vm.variables['x'],vm.variables['total'],vm.variables['r']),(8,13,120))
 
+    def test_one_compile_and_code_only_persistent_plan(self):
+        from yadinassi import python_direct
+        for prepared in (False,True):
+            vm=Interpreter()
+            with patch.object(python_direct,'_compile',wraps=python_direct._compile) as compile_module:
+                if prepared:vm.execute_prepared(vm.prepare('Var N;N=2;Function F() Return N;EndFunction'))
+                else:vm.execute('Var N;N=2;Function F() Return N;EndFunction')
+                self.assertEqual(compile_module.call_count,1)
+            stored=vm._direct_routine_modules['f'].plan
+            self.assertIsNone(stored.last_state);self.assertIsNone(stored.output)
+            vm.execute('N=3;R=F();');self.assertEqual(vm.variables['r'],3)
+            self.assertIsNone(stored.last_state);self.assertIsNone(stored.output)
+
     def test_module_statements_are_not_replayed(self):
         vm=Interpreter();vm.execute('Var N;N=10;Function Read() Return N;EndFunction')
         vm.execute('N=20;R=Read();');self.assertEqual(vm.variables['r'],20)

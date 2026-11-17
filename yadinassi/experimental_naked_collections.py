@@ -239,7 +239,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -790,17 +790,20 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if dynamic_refs:lexical_helpers(None,root_depth)
     # Emit declarations first: BSL routines are available before textual calls.
     sequence([node for node in program if type(node) is ast.Routine],root_depth)
+    if _persistent_routines:
+        emit(root_depth,'if _bind_only:')
+        emit(root_depth+1,'return {'+', '.join(repr(name)+': '+symbol for name,symbol in function_symbols.items())+'}')
     sequence([node for node in program if type(node) is not ast.Routine
               and (_initialize_module or type(node) is not ast.Var)],root_depth)
     body=lines;lines=[]
     builtin_names={'message':'_outputs.append','сообщить':'_outputs.append','string':'str','строка':'str',
                    'number':'Decimal','число':'Decimal','typeof':'type','типзнч':'type',
                    'boolean':'bool','булево':'bool'}
-    emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+'):')
+    emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+(', _bind_only=False' if _persistent_routines else '')+'):')
     if live:
         for key,slot in source_ref_slots.items():emit(1,slot+' = _live_slot_ref(_initial, '+repr(key)+')')
         if _initialize_module:
-            for name in sorted(module_variables):emit(1,'_initial.setdefault('+repr(name)+', None)')
+            for name in sorted(module_variables):emit(1,('if not _bind_only: ' if _persistent_routines else '')+'_initial.setdefault('+repr(name)+', None)')
     for name,slot in symbols.items():
         if live:continue
         if name in builtin_names:emit(1,slot+' = '+builtin_names[name])

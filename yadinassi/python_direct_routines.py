@@ -1,5 +1,6 @@
 """Persistent code only; generated routine closures belong to one execution."""
 from dataclasses import dataclass
+from copy import copy
 
 from .values import HostFunction, Reference
 from .experimental_naked_live_state import _ForwardReference
@@ -18,11 +19,12 @@ class RoutineModule:
 
 def prepare(vm, program, plan):
     from .syntax import ast
-    from .python_direct import _snapshot, _source_facts, _compile, _contract
+    from .python_direct import _snapshot, _source_facts, _contract
     declarations=_snapshot([node for node in program if type(node) in (ast.Var,ast.Routine)])
     nodes,names,constructors,calls=_source_facts(declarations)
     if not names:return None
-    exports=_compile(vm,declarations,nodes,plan.source_text,plan.source_name,_exports=True)
+    exports=copy(plan)
+    exports.last_state=None;exports.output=None
     signatures={node.name.casefold():(node.is_function,
         max((i+1 for i,p in enumerate(node.parameters) if p.default is None),default=0),
         len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not p.by_value))
@@ -62,7 +64,7 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
         # activation or re-run module statements. Declared variables already exist.
         exports=context._routine_exports.get(id(module))
         if exports is None:
-            exports=module.plan.function(vm.variables,module.plan.constants,[],context)
+            exports=module.plan.function(vm.variables,module.plan.constants,[],context,True)
             context._routine_exports[id(module)]=exports
         arguments=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
                         for i,value in enumerate(arguments))

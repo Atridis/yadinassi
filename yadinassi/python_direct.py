@@ -154,7 +154,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
                      module_names=tuple(vm.module_names),
                      constructors=("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
                      external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
-                     _export_routines=_exports,_initialize_module=not _exports)
+                     _export_routines=_exports,_initialize_module=not _exports,_persistent_routines=not _exports and any(type(node) is ast.Routine for node in program))
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
     return plan

@@ -533,3 +533,12 @@ records). This closes the client load/call prerequisite of the native verifier;
 NoContext and dual semantics remain unsupported. No fixture/gate was relaxed.
 
 [Implementation, restrictions, regression coverage and cold cost](direct-persistent-client-routines.md).
+
+### Persistent routine cold compilation (2026-11-17)
+
+One generated module now supports both normal execution and bind-only exports;
+the second compilation introduced by 6b060d62 is removed. Current globals and
+boundary are rebound without module initialization or statements. Cold unchanged
+regex median **843.19→485.87ms** in five alternating pairs; 118 normal/118 optimized
+regressions pass, independent review 66 optimized. Server/NoContext gaps remain.
+[Mechanism, raw samples and reproducer](../experiments/direct_routine_compile/README.md).
