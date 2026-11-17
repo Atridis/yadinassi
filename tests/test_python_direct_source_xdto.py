@@ -59,7 +59,7 @@ class SourceScalarXDTOTests(unittest.TestCase):
         with self.assertRaises(DENIED):app.interpreter.execute('XDTOFactory.Type("x","y");')
     def test_unsupported_surface_and_preloaded_packages(self):
         app=self.app()
-        for code in ('XDTOFactory.Packages;','XDTOFactory.Type("urn:owned:envelope","Envelope");',
+        for code in ('XDTOFactory.Packages;','XDTOFactory.Type("urn:owned:envelope","Envelope").Properties; ',
                      'XDTOFactory.WriteXML(Undefined,Undefined);','New XDTOFactory(Undefined);'):
             with self.subTest(code=code),self.assertRaises(DENIED):app.interpreter.execute(code)
         app=self.app();app.xdto.factory.type('urn:owned:records','Code')

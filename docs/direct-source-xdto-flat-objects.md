@@ -1,5 +1,9 @@
 # Bounded source XDTO flat scalar objects
 
+This documents the original flat-only slice. The subsequent
+[object-tree and list capability](direct-source-xdto-object-trees.md) supersedes
+the nested/list restrictions below while retaining provenance and quota guards.
+
 The ordinary source application's global factory can return a current object
 `Type` only when the **entire type** is flat: no base type, every declared property
 is single-valued (upper bound 1, lower bound 0 or 1), and every property type is

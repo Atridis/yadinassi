@@ -25,7 +25,7 @@ _VALUES=WeakKeyDictionary()
 
 def owns(value):
     kind=type(value)
-    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject
+    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject or kind is values.BSLXDTOList
 
 
 def _hooks():
@@ -249,9 +249,9 @@ def get(boundary,value,name):
         if key not in _METHODS:raise ValueError('source XDTO factory member not integrated')
         return HostFunction(name,_METHODS[key].__get__(factory,_FACTORY))
     if type(value) is _VALUE:
-        if type(vars(value)) is not dict:raise BoundaryViolation('source XDTO value field mapping changed')
+        _field_keys(value);fields=vars(value)
         saved=_VALUES.get(value)
-        if saved is None or any(getattr(value,name) is not old for name,old in saved):
+        if saved is None or len(fields)!=len(saved) or any(fields.get(name) is not old for name,old in saved):
             raise BoundaryViolation('source XDTO value was not produced here or changed')
         _kind(factory,value._type)
         if value._factory is not factory:raise BoundaryViolation('foreign source XDTO value')
@@ -261,6 +261,8 @@ def get(boundary,value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_objects as objects
+    if objects.owns(value):return objects.resolve(boundary,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     from . import python_direct_source_xdto_local as local
     if local.registered(value):return local.resolve(boundary,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     function=get(boundary,value,name)
@@ -269,6 +271,9 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
 
 
 def captured(boundary,function,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_objects as objects
+    result=objects.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if result is not None:return result
     from . import python_direct_source_xdto_local as local
     bound=local.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     if bound is not None:return bound

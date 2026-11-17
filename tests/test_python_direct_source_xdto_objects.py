@@ -70,15 +70,15 @@ class FlatXDTOTests(unittest.TestCase):
         with patch.object(xdto_io,'MAX_UNITS',before[1]):
             with self.assertRaises(basic.DENIED):vm.execute('V.Label="new";')
         self.assertEqual(vm.execute('V.Label;'),'ok');self.assertEqual((app.xdto.factory._nodes,app.xdto.factory._units),before)
-    def test_nested_and_list_types_rejected_whole(self):
+    def test_nested_and_list_types_are_whole_admitted_graphs(self):
         app=self.app();vm=app.interpreter
         for name in ('Nested','Many'):
-            with self.subTest(name=name),self.assertRaises(basic.DENIED):vm.execute('XDTOFactory.Type("urn:owned:records","'+name+'");')
+            self.assertIsNotNone(vm.execute('XDTOFactory.Type("urn:owned:records","'+name+'");'))
         app=self.app(existing.SourceXDTOTests().mapping(False))
-        with self.assertRaises(basic.DENIED):app.interpreter.execute('XDTOFactory.Type("urn:owned:records","Record");')
+        self.assertIsNotNone(app.interpreter.execute('XDTOFactory.Type("urn:owned:records","Record");'))
     def test_no_methods_index_or_io_grants(self):
         app=self.prepared();vm=app.interpreter
-        for code in ('V.Validate();','V.Get("Label");','V["Label"];','XDTOFactory.WriteXML(Undefined,V);','New XMLWriter;'):
+        for code in ('V.Properties();','V.Factory();','XDTOFactory.WriteXML(Undefined,V);','New XMLWriter;'):
             with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
     def test_factory_and_scalar_create_arities_preserved(self):
         app=self.prepared();vm=app.interpreter

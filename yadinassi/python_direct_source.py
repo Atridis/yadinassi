@@ -520,6 +520,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if xdto_objects.owns(value):return xdto_objects.resolve(self,value,name)
         if stored_values.owns(value):return stored_values.resolve(self,value,name)
         if resources.owns(value):return resources.resolve(self,value,name)
         if fixed.owns(value):return fixed.resolve(self,value,name)
@@ -566,6 +567,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self.resolve_member(value,name)(*args)
     def iterate(self,value):
         self._check()
+        if xdto_objects.owns(value):
+            yield from xdto_objects.iterate(self,value);return
         if enums.supports(self,value):
             yield from enums.iterate(self,value);return
         if query.supports(value):
