@@ -14,6 +14,7 @@ from .enum_types import BSLEnumReference
 from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure
 from .values import HostFunction
+from .python_direct_names import NAMES as SYSTEM_NAMES, VALUES as SYSTEM_VALUES, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 
@@ -22,6 +23,7 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 class CatalogBoundary:
     def _catalog_owner(self, value):
         self._check()
+        if any(value is item for item in SYSTEM_VALUES):return
         root=self.vm._catalogs
         kind=type(value)
         if value is DOCUMENT_WRITE_MODES:return
@@ -78,6 +80,7 @@ class CatalogBoundary:
 
     def external_get(self,name):
         self._check()
+        if name in SYSTEM_NAMES:return SYSTEM_NAMES[name]
         if name in ('metadata','метаданные'):return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
         if name in ('documents','документы'):return self.vm._documents
@@ -111,7 +114,9 @@ class CatalogBoundary:
         if name=='__getitem__': function=lambda index:value.get_index(index)
         elif name=='__setitem__': function=lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            raise BoundaryViolation('direct database iterator not connected')
+            if not any(value is item for item in ITERABLES):
+                raise BoundaryViolation('direct database iterator not connected')
+            function=lambda:iter(value)
         else:
             function=value.get_method(name)
             if type(function) is not HostFunction:

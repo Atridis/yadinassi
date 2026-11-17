@@ -362,3 +362,46 @@ explicit column-1 contract on 3.10. Nested prepared errors, host-call errors,
 partial effects, catchable arithmetic errors and noncatchable authority failures
 are covered. More precise 3.10 columns would require additional bookkeeping;
 this change deliberately does not add it.
+
+
+### Direct immutable system names follow-up (2026-11-17)
+
+Baseline `cba04ee94f1eeb067b0533a274a00f01093cd625`: Test/build
+`44062308838` has failed Linux light and Python 3.10 regex jobs, successful
+browser job `133967476079`. Native run `44062308424` has successful managed-form
+`133967091980` and CatalogObject `133967092258`, but fails its required verdict
+(including regex, CatalogQuery and six scenarios). These are exact baseline CI
+results, not claims about this follow-up or general native parity.
+
+The unchanged regex source stopped at RF-05 because routine `Chars.LF` compiled
+to an undefined Python local. The direct compiler now binds eight finite system
+namespaces through the existing external-name seam: Chars, SearchDirection,
+SortDirection, RoundMode, AllowedSign, AllowedLength, DateFractions and
+ErrorCategory, including their Russian aliases. Public operations use the
+existing value implementations. Only the canonical singleton identities are
+admitted; only the three already implemented direction/rounding iterators are
+connected. There is no legacy name resolver, arbitrary reflection, new cache,
+VM fallback or relaxation of database owner/source/schema/transaction checks.
+
+The exact unchanged regex replay now emits its two controls and RF-01 through
+RF-06 successfully, then stops at RF-07 on the still unsupported regex-result
+receiver. This is progression, not completion. On the same 73 existing tests
+(`test_round_modes`, `test_round_mode_iteration`, `test_search_directions`,
+`test_sort_directions`), failures/errors fell from **8/115 to 7/71**; these
+include subtest errors. Old Array representation, host return values, cross-call
+routines and other compatibility gaps remain, and no old fixtures were edited.
+
+Validation: 97 focused tests passed normal and `-O` (new system names, direct
+default/prepared/database/forms/external namespaces, three Chars public API
+tests). The eight new tests also passed on real Python 3.10 under `-O`.
+Independent review passed 40 combined `-O` tests and eight normal tests, without
+code/security blockers. Exact isolated CatalogObject and managed-form children
+still produce the same 156-byte and 541-byte outputs and hashes recorded above.
+
+Known naming limitation: these registered names are read-only externals.
+Module rebinding/declarations, implicit routine-local assignment to such names,
+and same-name routine declarations reject. Parameters and explicit routine-local
+`Var` declarations can shadow them. This deliberately retains the existing
+external-name contract rather than adding a general dynamic name resolver.
+Qualified byref namespace members and other system namespaces are outside this
+slice. No performance improvement or full CI success is claimed.
