@@ -11,6 +11,13 @@ from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQu
 from . import regex_functions, strings
 from .experimental_naked_boundaries import BoundaryViolation
 
+from .type_values import _DIRECT_TYPE_OF_ABI
+from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
+from .runtime import _eval_marker
+
+_REGEX_IMPLEMENTATIONS=tuple(regex_functions.FUNCTIONS)
+_REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
+
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
         (('valuelist','списокзначений'),BSLValueList),
@@ -72,7 +79,6 @@ class ServicesBoundary:
                 bound.prepare_omissions=prepare_omissions
             return bound
         function=self._services.get(key)
-        from .type_values import _DIRECT_TYPE_OF_ABI
         if type(function) is HostFunction and function.function is _DIRECT_TYPE_OF_ABI:
             def direct_type_of(value):
                 if function.function is not _DIRECT_TYPE_OF_ABI:
@@ -94,7 +100,6 @@ class ServicesBoundary:
                 finally:self._check()
             if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
             return invoke
-        from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
         if type(function) is HostFunction and function.function is _DIRECT_VALUE_TO_STRING_ABI:
             self._check()
             self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
@@ -109,7 +114,6 @@ class ServicesBoundary:
             if kwargs.get('allow_references',False):serialize.requires_reference=lambda index:index in function.reference_parameters
             return serialize
         bound=super().resolve_service(name,*args,**kwargs)
-        from .runtime import _eval_marker
         function=self._services.get(key)
         if type(function) is HostFunction and function.function is _eval_marker:
             if kwargs.get('argument_count') is not None and kwargs['argument_count']!=1:
@@ -118,7 +122,7 @@ class ServicesBoundary:
             bound.bind_eval=eval_capability(self,function,key)
         # Only canonical search implementations opt in, never a matching name.
         function=self._services.get(key)
-        if type(function) is HostFunction and (function.function is strings._DIRECT_STR_FIND_ABI or any(function.function is item for item in regex_functions.FUNCTIONS)):
+        if type(function) is HostFunction and (function.function is strings._DIRECT_STR_FIND_ABI or id(function.function) in _REGEX_IDENTITIES):
             implementation=function.function
             required=3 if implementation is regex_functions.str_replace else 2
             maximum=5 if implementation is strings._DIRECT_STR_FIND_ABI else 7 if implementation is regex_functions.str_find else 5 if required==3 else 4
@@ -129,7 +133,7 @@ class ServicesBoundary:
                 from .experimental_naked_collections import _host_omission_error
                 self._check()
                 implementation=function.function
-                if implementation is not strings._DIRECT_STR_FIND_ABI and not any(implementation is item for item in regex_functions.FUNCTIONS):
+                if implementation is not strings._DIRECT_STR_FIND_ABI and id(implementation) not in _REGEX_IDENTITIES:
                     _host_omission_error()
                 required=3 if implementation is regex_functions.str_replace else 2
                 maximum=5 if implementation is strings._DIRECT_STR_FIND_ABI else 7 if implementation is regex_functions.str_find else 5 if required==3 else 4
