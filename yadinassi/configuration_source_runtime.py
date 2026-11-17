@@ -72,7 +72,15 @@ class _SourceInterpreter(Interpreter):
     def execute_program(self, program):
         from .source_transactions import execution
         with execution(self.application), self.application.safe_mode.execution():
+            if self.execution_backend == 'python-direct':
+                from .python_direct_source import execute
+                return execute(self, program)
             return super().execute_program(program)
+
+    def execute(self, text, source='<строка>'):
+        if self.execution_backend == 'python-direct':
+            return self.execute_program(parse(text, source, compilation_profile=self.compilation_profile))
+        return super().execute(text, source)
 
 
     def _new_query(self, text=""):
@@ -205,6 +213,14 @@ class _SourceInterpreter(Interpreter):
             if reference is not None:
                 return reference
         return (yield from super().argument(node, _evaluation=_evaluation))
+
+
+# Exact supported source-host hooks. Subclasses and per-instance replacements
+# remain outside direct admission; source scopes are not generic VM authority.
+_DIRECT_SOURCE_ABI = tuple((name, getattr(_SourceInterpreter, name)) for name in (
+    'compiled_before', 'compiled_after', 'compiled_exception', 'semantic_name',
+    'semantic_assign', 'set_variable', '_visit',
+    'execute', 'execute_program', '_activation_interpreter'))
 
 
 def _walk(value):
@@ -459,6 +475,9 @@ class SourceApplication:
         arguments = arguments[:len(routine.parameters)]
         if arguments and routine.parameters[0].by_value:
             raise ValueError('Параметр обработчика должен передаваться по ссылке: ' + routine.name)
+        if owner.execution_backend == 'python-direct':
+            from .python_direct_source import event
+            return event(owner, routine, arguments)
         call = ast.Call(routine.token, ast.Name(routine.token, routine.name), list(arguments))
         owner.execute_program([ast.ExpressionStatement(routine.token, call)])
 

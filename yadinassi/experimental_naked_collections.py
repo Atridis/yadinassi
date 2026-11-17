@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -259,6 +259,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         repairs=repairs | {'constructor_bounds','array_insert_shape'}
     if not repairs<=REPAIRS:raise ValueError('unknown naked repairs: '+repr(repairs-REPAIRS))
     services='service_boundaries' in repairs;authority='authority_checkpoints' in repairs
+    if type(_source_routine_scopes) is not bool:raise TypeError("source routine scopes require Boolean")
+    if _source_routine_scopes and not (_trusted_entry and services
+            and {'byref_routines','dynamic_host_refs'}<=repairs):
+        raise ValueError("source routine scopes require trusted service and reference boundaries")
     constructors=frozenset(name.casefold() for name in constructors)
     if constructors and not services:raise ValueError('declared constructors require service_boundaries')
     service_references={name.casefold():frozenset(indices) for name,indices in (service_references or {}).items()}
@@ -287,7 +291,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     external_keys=frozenset(name.casefold() for name in external_names)
     from .python_direct_definite import definite_module_reads
     definite_reads = definite_module_reads(program,opaque_names=external_keys) if live and not authority else frozenset()
-    source_checks=authority or (services and not live)
+    source_checks=authority or (services and not live) or _source_routine_scopes
     if live and not byref:raise ValueError('live_module_state requires byref_routines')
     if module_names and not live:raise ValueError('module_names requires live_module_state')
     if any(type(name) is not str for name in module_names):raise TypeError('module names require strings')
@@ -408,9 +412,17 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         if external_name(name):return '_context.external_get('+repr(name.casefold())+')'
         if module_name(name):return '_initial['+repr(name.casefold())+']'
         return sym(name)+('.value' if boxed(name) else '')
+    def source_local_exists(name):
+        slot=sym(name)
+        check=repr(slot)+' in locals()'
+        if boxed(name):check+=' and (type('+slot+') is not _Cell or '+slot+'._value is not _UNSET_REF)'
+        return check
     def read_variable(name):
         if external_name(name):return variable(name)
-        if not module_name(name):return variable(name)
+        if not module_name(name):
+            value=variable(name)
+            return ('('+value+' if '+source_local_exists(name)+' else _live_missing('+repr(name)+'))'
+                if _source_routine_scopes else value)
         value=temp()
         return '('+value+' if ('+value+' := _initial.get('+repr(name.casefold())+', _LIVE_UNSET)) is not _LIVE_UNSET else _live_missing('+repr(name)+'))'
     def reserved_target(name):
@@ -433,7 +445,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 if key not in source_ref_slots:source_ref_slots[key]=temp()
                 text='_live_source_ref(_initial, '+repr(node.name)+', '+source_ref_slots[key]+')'
                 return source_map.expression(text,node) if source_map is not None else text
-            return '_bound_ref('+sym(node.name)+')'
+            value='_bound_ref('+sym(node.name)+')'
+            return ('('+value+' if '+source_local_exists(node.name)+' else _live_missing('+repr(node.name)+'))'
+                if _source_routine_scopes else value)
         if type(node) is ast.Index:
             obj=expression(node.object);index=expression(node.index)
             if services:
@@ -603,11 +617,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 original_obj=obj;guarded=temp() if services or structure_ops is not None else None
                 if guarded is not None:obj=guarded
                 allowed={'add':(list,), 'get':(list,_TypedMap,_NakedMap),'set':(list,), 'find':(list,), 'ubound':(list,), 'property':((structure_ops._DirectStructure,) if structure_ops is not None else (dict,))}.get(method)
+                def source_member_call():
+                    return dynamic_call('_context.resolve_source_member('+guarded+', '+repr(callee.name)+
+                        ', require_value='+repr(require_value)+', argument_count='+str(len(node.arguments))+
+                        ', allow_references=True)',node)
                 def route(direct):
                     if guarded is None:return direct
                     host_args=list(args)
                     if services and method=='property' and len(args)>1 and byref:host_args[1]='_canonical_reference('+reference(node.arguments[1])+')'
-                    host=('_context.resolve_member('+guarded+', '+repr(callee.name)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')'
+                    host=(source_member_call() if _source_routine_scopes else
+                        ('_context.resolve_member('+guarded+', '+repr(callee.name)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')')
                     if allowed is not None:
                         failure='_native_method_missing('+guarded+', '+repr(callee.name)+')'
                         return '('+direct+' if id(type(('+guarded+' := '+original_obj+'))) in '+literal(tuple(map(id,allowed)))+' else ('+failure+' if id(type('+guarded+')) in _NATIVE_COLLECTION_IDS else '+host+'))'
@@ -621,7 +640,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     # Exact native/Python implementation names are not reproduced.
                     return route('('+', '.join([obj,*args,'_invalid_native_arity('+repr(message)+')'])+')[-1]')
                 if services and method not in ('add','clear','find','count','ubound','get','insert','set','delete','property'):
-                    host='_context.resolve_member('+guarded+', '+repr(callee.name)+')('+', '.join(args)+')'
+                    host=(source_member_call() if _source_routine_scopes else
+                        '_context.resolve_member('+guarded+', '+repr(callee.name)+')('+', '.join(args)+')')
                     return '(_native_method_missing('+guarded+', '+repr(callee.name)+') if id(type(('+guarded+' := '+original_obj+'))) in _NATIVE_COLLECTION_IDS else '+host+')'
                 if method=='find' and 'typed_find' in repairs:return route('_typed_find('+obj+', '+', '.join(args)+')')
                 if method in ('add','clear','find'):
@@ -827,6 +847,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if source_checks:
                 emit(depth+1,'_context._check()');emit(depth+1,'try:')
             body_depth=depth+2 if source_checks else depth+1
+            if _source_routine_scopes:
+                emit(body_depth,'with _context.routine_scope():');body_depth+=1
             previous_scope=scope_id
             if byref:
                 scope_id=id(node)
