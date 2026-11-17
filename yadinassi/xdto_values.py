@@ -349,3 +349,6 @@ _DIRECT_SOURCE_XDTO_SCALAR_REGEX=(re,re.fullmatch)
 
 # Definition-time primitive namespace for source-created empty factories.
 _DIRECT_SOURCE_XDTO_NAMESPACE=XS
+
+# Canonical nullable-property sentinel for the source-only flat-object adapter.
+_DIRECT_SOURCE_XDTO_NULL= NULL

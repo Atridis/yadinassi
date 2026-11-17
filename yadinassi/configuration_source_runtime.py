@@ -618,6 +618,8 @@ class SourceApplication:
         finally:
             from .python_direct_source_xdto_local import release_application
             release_application(self)
+            from .python_direct_source_xdto_objects import release_application as release_xdto_objects
+            release_xdto_objects(self)
 
 
 # Definition-time initializer identity for direct session-store admission.

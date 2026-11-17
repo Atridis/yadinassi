@@ -6,8 +6,10 @@ The supported returned type is a primitive or direct package alias of string,
 boolean, decimal, integer, int or long. A created scalar DataValue exposes only
 readonly `Value` / `Значение`. Existing scalar conversion/resource limits apply.
 
-This is not generic object dispatch. Object creation/properties, Packages,
-XML/JSON methods and date/binary scalar creation are not admitted.
+This is not generic object dispatch. Packages, XML/JSON methods and date/binary
+scalar creation are not admitted. The separate bounded
+[flat scalar object slice](direct-source-xdto-flat-objects.md) admits only whole
+flat object types and declared primitive property reads/writes.
 Source-created empty `New XDTOFactory` instances use the separate bounded
 [local factory capability](direct-source-local-xdto.md), not this global owner seal. Forms/object-handler/NoContext subclasses do not gain this
 source capability. A foreign factory, descriptor or value is not reusable in a

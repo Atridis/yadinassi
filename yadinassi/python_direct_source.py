@@ -26,6 +26,7 @@ from . import python_direct_source_templates as templates
 from . import python_direct_source_resources as resources
 from . import python_direct_source_value_storage as stored_values
 from . import python_direct_source_xdto as xdto
+from . import python_direct_source_xdto_objects as xdto_objects
 from . import python_direct_source_xdto_local as local_xdto
 
 
@@ -507,6 +508,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if xdto_objects.owns(value):return xdto_objects.set_member(self,value,name)
         if fixed.owns(value):return fixed.resolve(self,value,'__setitem__')
         if host_info.owns(value):return host_info.set_member(self,value,name)
         if extensions.owns(value):return extensions.set_member(self,value,name)

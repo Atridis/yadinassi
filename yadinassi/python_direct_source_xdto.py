@@ -6,6 +6,8 @@ from uuid import UUID
 from . import source_xdto_packages as source,xdto_io as io,xdto_values as values
 from . import xdto_packages,xdto_schema,xml_io,configuration_xml,configuration_source
 from .values import HostFunction
+from . import values as host_values
+_HOST_ABI=host_values._DIRECT_COLLECTION_CLASS_ABI[-1]
 from .experimental_naked_boundaries import BoundaryViolation
 
 _MODULES=(source,io,values,xdto_packages,xdto_schema,xml_io,configuration_xml,configuration_source)
@@ -21,10 +23,21 @@ _SEALS=WeakKeyDictionary()
 _VALUES=WeakKeyDictionary()
 
 
-def owns(value):return type(value) is _FACTORY or type(value) is _TYPE or type(value) is _VALUE
+def owns(value):
+    kind=type(value)
+    return kind is _FACTORY or kind is _TYPE or kind is _VALUE or kind is values.BSLXDTOObjectType or kind is values.BSLXDTODataObject
 
 
 def _hooks():
+    if (values.XS is not values._DIRECT_SOURCE_XDTO_NAMESPACE
+            or io.XS is not io._DIRECT_SOURCE_XDTO_NAMESPACE):
+        raise BoundaryViolation("source XDTO primitive namespace changed")
+    cls,mro,fields=_HOST_ABI
+    if HostFunction is not cls or host_values.HostFunction is not cls or cls.__mro__ is not mro:
+        raise BoundaryViolation("source XDTO HostFunction binding changed")
+    current=vars(cls)
+    if len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+        raise BoundaryViolation("source XDTO HostFunction hooks changed")
     if (xml_io.expat is not xml_io._DIRECT_SOURCE_XDTO_EXPAT_MODULE
             or configuration_xml.ET is not configuration_xml._DIRECT_SOURCE_XDTO_XML_MODULES[0]
             or configuration_xml.io is not configuration_xml._DIRECT_SOURCE_XDTO_XML_MODULES[1]
@@ -57,12 +70,21 @@ def _hooks():
         raise BoundaryViolation('source XDTO package quota aliases differ')
 
 
+def _field_keys(value):
+    fields=vars(value)
+    if type(fields) is not dict or len(fields)>10000 or any(type(k) is not str for k in fields):
+        raise BoundaryViolation('source XDTO field keys changed')
+    return fields
+
+
 def _graph(factory):
     """Validate finite canonical fields before any loader traversal/callback."""
     if type(vars(factory)) is not dict:raise BoundaryViolation('source XDTO factory fields changed')
+    _field_keys(factory)
     registry=factory._types
     if type(registry) is not dict or len(registry)>values.MAX_TYPES:raise BoundaryViolation('source XDTO type registry changed')
     for key,kind in registry.items():
+        if type(kind) is _TYPE or type(kind) is values.BSLXDTOObjectType:_field_keys(kind)
         if (type(key) is not tuple or len(key)!=2 or any(type(n) is not str for n in key)
                 or (type(kind) is not _TYPE and type(kind) is not values.BSLXDTOObjectType)
                 or type(vars(kind)) is not dict or kind._factory is not factory or type(kind._uri) is not str or type(kind._name) is not str
@@ -139,9 +161,11 @@ def _owner(boundary):
     from .python_direct_source import SourceBoundary
     if type(boundary) is not SourceBoundary:raise BoundaryViolation('source XDTO requires ordinary source boundary')
     boundary._check();_hooks();app=boundary.app;owner=app.xdto
+    if type(owner) is _LOADER:_field_keys(owner)
     if type(owner) is not _LOADER or type(vars(owner)) is not dict or type(owner._application) is not ReferenceType or owner._application() is not app:
         raise BoundaryViolation('source XDTO owner changed')
     factory=owner.factory
+    if type(factory) is _FACTORY:_field_keys(factory)
     if type(factory) is not _FACTORY or type(vars(factory)) is not dict:raise BoundaryViolation('source XDTO factory changed')
     loader=getattr(factory,'_source_packages_loader',None)
     if type(loader) is not MethodType or loader.__self__ is not owner or loader.__func__ is not _LOAD:
@@ -217,6 +241,8 @@ def _kind(factory,kind):
 def get(boundary,value,name):
     from . import python_direct_source_xdto_local as local
     if local.registered(value):return local.get(boundary,value,name)
+    from . import python_direct_source_xdto_objects as objects
+    if objects.owns(value):return objects.get(boundary,value,name)
     _,factory=_owner(boundary)
     if value is factory:
         key=name.casefold()
@@ -253,9 +279,11 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
     if operation is not _TYPE_CALL and operation is not _CREATE_CALL:raise BoundaryViolation('source XDTO method not integrated')
     def check(count=None):
         owner,current=_owner(boundary)
-        if current is not factory or function.function is not callback or function.returns_value is not True or function.reference_parameters:
+        _field_keys(function)
+        if current is not factory or function.function is not callback or function.returns_value is not True or type(function.reference_parameters) is not frozenset or function.reference_parameters:
             raise BoundaryViolation('source XDTO saved method changed')
-        if count is not None and count!=2:raise TypeError('source XDTO Type/Create require two arguments')
+        if count is not None and (count!=2 if operation is _TYPE_CALL else count not in (1,2)):
+            raise TypeError('source XDTO Type requires two arguments; Create requires one or two')
         return owner
     check(argument_count)
     def call(*args):
@@ -275,8 +303,16 @@ def captured(boundary,function,*,require_value=False,argument_count=None,allow_r
             # new graph; old descriptor identities were validated before entry.
             _SEALS[boundary.app]=_seal(owner,boundary.app,factory)
             check()
-            if result is not None:_kind(factory,result)
+            if type(result) is values.BSLXDTOObjectType:
+                from . import python_direct_source_xdto_objects as objects
+                objects.admit_type(factory,result)
+            elif result is not None:_kind(factory,result)
             return result
+        if type(args[0]) is values.BSLXDTOObjectType:
+            if len(args)!=1:raise TypeError('source XDTO object Create requires one argument')
+            from . import python_direct_source_xdto_objects as objects
+            return objects.create(boundary,args[0])
+        if len(args)!=2:raise TypeError('source XDTO scalar Create requires two arguments')
         _kind(factory,args[0])
         if not any(type(args[1]) is cls for cls in (str,bool,Decimal)):raise TypeError('source XDTO Create requires scalar input')
         # Imported quota aliases may be lowered independently. Admit against
