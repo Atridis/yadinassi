@@ -1,0 +1,71 @@
+"""Detached public result protocols retain identity and database boundaries."""
+from decimal import Decimal
+import unittest
+from unittest.mock import patch
+
+from yadinassi import Interpreter
+from yadinassi.errors import BSLRuntimeError
+from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.regex_functions import BSLRegexResult
+from yadinassi.values import BSLArray, BSLFixedArray
+import test_python_direct_database as database_fixture
+
+
+class DirectHostValuesTests(unittest.TestCase):
+    def test_builtin_split_array_methods_index_and_iteration(self):
+        vm=Interpreter()
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')), patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            vm.execute('A=StrSplit("a,b",","); B=A; B[0]="changed"; N=A.Count(); S=""; For Each V In A Do S=S+V; EndDo; R=A.Get(0);')
+        self.assertIs(vm.variables['a'],vm.variables['b'])
+        self.assertIs(type(vm.variables['a']),BSLArray)
+        self.assertEqual((vm.variables['n'],vm.variables['s'],vm.variables['r']),(2,'changedb','changed'))
+
+    def test_fixed_host_array_reads_and_readonly_write(self):
+        source=BSLArray();source.add(Decimal(3));source.add(Decimal(4))
+        fixed=BSLFixedArray(source)
+        vm=Interpreter();vm.register_function('Values',lambda:fixed)
+        vm.execute('A=Values(); S=0; For Each V In A Do S=S+V; EndDo; R=A[1]; Try A[0]=9; Except Readonly=True; EndTry;')
+        self.assertIs(vm.variables['a'],fixed)
+        self.assertEqual((vm.variables['s'],vm.variables['r'],vm.variables['readonly']),(7,4,True))
+        self.assertEqual(fixed.items,(Decimal(3),Decimal(4)))
+
+    def test_host_array_indexes_keep_canonical_bounds_and_type_checks(self):
+        vm=Interpreter();vm.execute('A=StrSplit("a,b",",");')
+        for index in ('-1','0.5','True','2'):
+            for expression in (f'A[{index}]',f'A[{index}]="bad";'):
+                with self.subTest(expression=expression),self.assertRaises(BSLRuntimeError):vm.execute(expression)
+        self.assertEqual(vm.variables['a'].items,['a','b'])
+
+    def test_regex_groups_are_independent_arrays_and_readonly_values(self):
+        vm=Interpreter()
+        vm.execute('R=StrFindByRegularExpression("ab","(a)(b)"); A=R.GetGroups(); G=A[0]; A.Clear(); N=R.GetGroups().Count(); Try G.Value="bad"; Except Readonly=True; EndTry; V=G.Value;')
+        self.assertEqual((vm.variables['n'],vm.variables['readonly'],vm.variables['v']),(2,True,'a'))
+
+    def test_subclasses_private_members_and_arbitrary_receivers_reject(self):
+        class ArraySubclass(BSLArray): pass
+        class ResultSubclass(BSLRegexResult): pass
+        for value,expression in ((ArraySubclass(),'A.Count()'),(ResultSubclass('a',1,1,()),'A.Value'),(object(),'A.Anything')):
+            vm=Interpreter();vm.variables['a']=value
+            with self.subTest(value=type(value).__name__), self.assertRaises(BoundaryViolation):vm.execute(expression)
+        for expression in ('A.items','A._groups','A.__class__'):
+            vm=Interpreter();vm.execute('A=StrFindByRegularExpression("a","(a)");')
+            with self.subTest(expression=expression),self.assertRaises(BSLRuntimeError):vm.execute(expression)
+
+    def test_owner_close_during_array_method_is_checked(self):
+        vm=Interpreter()
+        class Item:
+            def __eq__(self,other):vm.close();return False
+        array=BSLArray();array.add(Item());vm.variables['a']=array;vm.variables['needle']=Item()
+        with self.assertRaises(BoundaryViolation):vm.execute('A.Find(needle);')
+
+
+class DirectHostArrayDatabaseTests(unittest.TestCase):
+    setUp=database_fixture.DirectDatabaseTests.setUp
+
+    def test_array_does_not_grant_foreign_catalog_receiver(self):
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.execute('A=Catalogs.Склады.CreateItem(); A.Description="kept";')
+        foreign=other.variables['a'];array=BSLArray();array.add(foreign)
+        self.vm.variables['values']=array
+        with self.assertRaises(BoundaryViolation):self.vm.execute('Values[0].Description="bad";')
+        self.assertEqual(foreign.get_member('Description'),'kept')

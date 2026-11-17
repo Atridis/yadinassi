@@ -13,7 +13,8 @@ from .enumerations import BSLEnumerations, BSLEnumManager
 from .enum_types import BSLEnumReference
 from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure
-from .values import HostFunction
+from .values import HostFunction, BSLArray, BSLFixedArray
+from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUES as SYSTEM_VALUES, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -44,7 +45,8 @@ class CatalogBoundary:
             if enums is not None and enum_type.snapshot is enums.metadata:return
             owner=None
         elif kind is BSLQuery: owner=value._catalogs
-        elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure):
+        elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure,
+                      BSLArray, BSLFixedArray, BSLRegexResult, BSLRegexGroup):
             # Detached result data: these public methods cannot execute queries
             # or write. Returned references still require the current root.
             return
@@ -111,10 +113,12 @@ class CatalogBoundary:
 
     def resolve_member(self,value,name):
         self._catalog_owner(value)
-        if name=='__getitem__': function=lambda index:value.get_index(index)
-        elif name=='__setitem__': function=lambda index,new:value.set_index(index,new)
+        if name=='__getitem__':
+            function=value.get if type(value) in (BSLArray, BSLFixedArray) else lambda index:value.get_index(index)
+        elif name=='__setitem__':
+            function=value.set if type(value) in (BSLArray, BSLFixedArray) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

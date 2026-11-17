@@ -62,12 +62,11 @@ class DirectSystemNamesTests(unittest.TestCase):
         vm.variables['candidate'] = SEARCH_DIRECTIONS
         self.assertIs(vm.execute('candidate.FromBegin'), SEARCH_DIRECTIONS.get_member('FromBegin'))
 
-    def test_unchanged_regex_replay_advances_through_case_six(self):
+    def test_unchanged_regex_replay_completes_all_forty_cases(self):
         output = []
         vm = Interpreter(output.append)
         source = Path('integrational_tests/measurements/regex_family.bsl').read_text(encoding='utf-8')
-        with self.assertRaisesRegex(BoundaryViolation, 'receiver'):
-            vm.execute(source)
-        self.assertEqual(len(output), 8)  # Two controls, then RF-01..RF-06.
-        self.assertTrue(output[-2].startswith('RF-05: [ok|'))
-        self.assertTrue(output[-1].startswith('RF-06: [ok|'))
+        vm.execute(source)
+        self.assertEqual(len(output), 42)  # Two controls, then RF-01..RF-40.
+        for index,record in enumerate(output[2:],1):
+            self.assertTrue(record.startswith(f'RF-{index:02}: [ok|'),record)

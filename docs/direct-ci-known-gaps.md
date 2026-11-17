@@ -450,3 +450,59 @@ showed no stable meaningful prepared gain and was removed from production.
 [Sources, all samples, rejected candidate and limitations](../experiments/array_map_audit8/README.md).
 Canonical BSLMap semantics, source/schema/transaction gates and VM dispatch are
 unchanged. Full compatibility/CI/native parity remain outside this evidence.
+
+### Detached host results and canonical arrays (2026-11-17)
+
+Baseline `315e4651`: fresh Test/build `44068436107` has failed Python 3.10 regex
+job `133988455026`; native run `44068436082` has failed regex job `133988167581`
+and successful CatalogObject `133988167254`. Performance run `44068435804`
+succeeded. Other jobs were still running during inspection; no overall green
+claim. Locally the unchanged 32-test regex suite reproduced seven errors, and
+original `regex_family.bsl` stopped at RF-07 on a regex-result receiver.
+
+The existing direct public-value bridge now admits the concrete detached
+`BSLRegexResult`, `BSLRegexGroup`, `BSLArray` and `BSLFixedArray` types. Array index
+operations use their existing checked `get`/`set`, and iteration uses their public
+iterator. Members/methods keep the existing before/after boundary checks. No
+legacy Interpreter dispatch, constructor expansion, arbitrary object admission,
+new serialization, deep conversion or replacement data representation was added.
+
+This also fixes ordinary `StrSplit` results: Count/Get/index/iteration and mutable
+aliases work without converting the returned object to a new list. Fixed arrays
+stay read-only. Regex GetGroups retains its independent-array semantics; result
+and group fields remain read-only. Foreign database objects retrieved through
+these containers still require their own current owner. Negative/fractional/bool
+and out-of-range indexes preserve the canonical errors without partial mutation.
+Default `New Array` still uses the existing direct native-list implementation;
+this slice does not unify every legacy/direct collection representation.
+
+The **unchanged** regex source now completes 42 records (two controls and all
+40 available cases). Exact host output: 2088 bytes, SHA256
+`f29009bf8ade447ab95250e77bf004c7191cdea3fa363d4032a7e5e7d486dd76`.
+Both the portable isolated child and actual POSIX comparison adapter match this
+local capture. This is not a fresh native capture or a native-parity claim; the
+historical `original40` fixture has a different source and was not rewritten.
+The earlier system-name regression expecting the RF-07 blocker was strengthened
+to require all 40 successful records.
+
+Validation: 95 combined tests pass normal and optimized, plus a new canonical
+index-boundary regression passes in both modes (all seven host-value tests were
+rerun). Independent review passed 69 combined tests under `-O`, without blockers.
+Exact isolated CatalogObject/managed-form children retain the previously recorded
+156/541-byte outputs and hashes. Tests include subtype/reflection denial, mutable
+alias identity, FixedArray read-only behavior, callback owner-close detection,
+and foreign catalog receiver rejection through an Array.
+
+The unchanged 32-test regex suite now has **three errors instead of seven**, on
+both real Python 3.12 and 3.10. Remaining causes are host optional-argument holes,
+compile-time rejection of the nonconstructible regex-result constructor inside
+Try, and generated-client JSON writer settings construction. Those admission
+rules were not relaxed. Reproducer for the full local replay and isolated child:
+
+```sh
+PYTHONPATH=tests:scripts:. python -B -m unittest \
+  test_python_direct_host_values test_python_direct_system_names \
+  test_native_regex_family_measurement \
+  test_native_regex_family_profile.RegexFamilyProfileTests.test_portable_child_replay_matches_its_own_local_observation \
+  test_native_regex_family_profile.RegexFamilyProfileTests.test_real_isolated_replay_adapter_matches_its_own_local_observation
+```
