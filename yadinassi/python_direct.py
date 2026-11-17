@@ -50,7 +50,7 @@ def _admit_vm(vm):
     if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None or database_transactions._execution.get() is not None:
         _reject('application safe-mode/transaction contexts are not integrated')
     if (vm._configuration_runtime is not None
-            or vm._family_owner is not vm or vm.locals is not None
+            or (vm._family_owner is not vm and not _owned_import_child(vm)) or vm.locals is not None
             or not vm._has_module_context or vm.execution_context!='client'):
         _reject('configuration/server/NoContext contexts are not integrated')
     # The frontend has already selected branches using this source profile.
@@ -63,7 +63,9 @@ def _admit_vm(vm):
             _reject("direct database requires host-selected SQLiteDBContext")
     if vm._scheduler.is_active or vm._scheduler.pending or getattr(vm,'_direct_active',False):
         _reject('nested or asynchronous execution is not integrated')
-    if vm.imports or vm.routines or vm.server_routines or vm._invocation_bindings:
+    from .python_direct_imports import check_live
+    check_live(vm)
+    if vm.routines or vm.server_routines or vm._invocation_bindings:
         _reject('legacy imports/routine registries are not direct modules')
     if type(vm.variables) is not dict or type(vm.functions) is not dict or type(vm.types) is not dict or type(vm.module_names) is not set:
         _reject('custom namespace mappings are not supported')
@@ -90,8 +92,8 @@ def _source_facts(program):
             constructors.add(node.name.casefold())
         if type(node) is ast.Routine and (node.is_async or (not node.module_context and not node.is_dual and node.execution_context!='server') or node.execution_context not in ('client','server')):
             _reject('async source routines are not integrated')
-        if type(node) is ast.Import:
-            _reject('imports are not integrated')
+        if type(node) is ast.Import and node not in program:
+            _reject('imports require module scope')
         if type(node) is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
@@ -129,6 +131,8 @@ def _admit_bindings(vm,routines,constructors,calls):
 def admit(vm,program):
     _admit_vm(vm)
     nodes,routines,constructors,calls=_source_facts(program)
+    from .python_direct_imports import preflight
+    preflight(vm,program)
     _admit_bindings(vm,routines,constructors,calls)
     return nodes,routines
 
@@ -152,6 +156,7 @@ class PreparedDirectModule:
     _exports: object
     _server_layout: frozenset
     _server_declared: frozenset
+    _import_layout: frozenset
 
 
 def _contract(vm):
@@ -164,7 +169,9 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_services import CONSTRUCTORS
     from .python_direct_names import NAMES as SYSTEM_NAMES
-    program=[node for node in program if type(node) is not ast.ServerInitializer
+    from .python_direct_imports import import_names
+    imported=import_names(vm,program)
+    program=[node for node in program if type(node) not in (ast.ServerInitializer,ast.Import)
              and (type(node) not in (ast.Var,ast.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))]
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
@@ -174,7 +181,8 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
                      constructors=tuple(CONSTRUCTORS) + ("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
-                     external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
+                     external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()) + imported,
+                     _import_names=imported,_host_routine_bindings=bool(imported) or _owned_import_child(vm),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
                      _export_routines=_exports,_initialize_module=not _exports,_persistent_routines=not _exports and any(type(node) is ast.Routine for node in program))
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
@@ -216,9 +224,11 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     exports=prepare_routines(vm,owned,plan) if routines or any(type(n) is ast.ServerInitializer for n in owned) else None
     server_declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='server' for name in node.names)
     server_layout=server_declared.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
+    from .python_direct_imports import import_names
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
                                 declared,_contract(vm),routines,constructors,calls,
-                                bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports,server_layout,server_declared)
+                                bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports,server_layout,server_declared,
+                                frozenset(import_names(vm,owned)))
 
 
 def execute_prepared(vm,prepared):
@@ -234,6 +244,10 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
         returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
     else:
         _admit_vm(vm)
+        from .python_direct_imports import preflight,import_names
+        preflight(vm,list(_prepared._snapshot))
+        if frozenset(import_names(vm,_prepared._snapshot))!=_prepared._import_layout:
+            _reject('prepared import namespace layout changed; prepare again')
         _admit_bindings(vm,_prepared._routines,_prepared._constructors,_prepared._calls)
         routines=_prepared._routines
         declared=_prepared._declared
@@ -265,12 +279,45 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     initializers=tuple(getattr(vm,'_direct_server_initializers',()))
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
+    context=make_boundary(vm)
+    database=vm.database_context
+    vm.module_names.update(declared)
+    if exports is not None:
+        if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
+        vm._direct_routine_modules.update({name:exports for name in exports.signatures})
+    vm._direct_server_initializers=initializers
+    previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
+    if database is not None:vm._transaction_activation_allowed=False
+    vm._direct_active=True
+    try:
+        with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
+            decimal_context.prec=38
+            from .python_direct_imports import initialize, record_exports
+            incoming=program if _prepared is None else list(_prepared._snapshot)
+            record_exports(vm,incoming)
+            initialize(vm,incoming)
+            result=plan.run(vm.variables,context=context)
+        vm._self_module.ready=True
+        vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
+        if returns_expression:return result
+        return None if result is vm.variables else result
+    finally:
+        context._routine_exports.clear()
+        vm._direct_active=False
+        vm._transaction_activation_allowed=previous_transactions
+
+
+def make_boundary(vm,*,_parent_check=None):
     from .python_direct_database import CatalogBoundary
     from .python_direct_live_metadata import LiveMetadataBoundary
     from .python_direct_detached_metadata import DetachedMetadataBoundary
     database = vm.database_context
     from .python_direct_services import ServicesBoundary
-    class DirectBoundary(ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
+    from .python_direct_imports import ImportBoundary,check_live
+    from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
+    from . import safe_mode,source_transactions,database_transactions
+    from .python_direct_routines import resolve as resolve_routine
+    class DirectBoundary(ImportBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             if modules is not None and name.casefold() in modules:
@@ -289,6 +336,10 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             return super().resolve_service(name,*args,**kwargs)
         def _check(self):
             super()._check()
+            if _parent_check is not None:_parent_check()
+            if self._import_check_required or vm.imports or vm._family_owner is not vm:
+                check_live(vm)
+                self._import_check_required=True
             if vm._family_closed:
                 raise BoundaryViolation('python-direct interpreter was closed during execution')
             if (vm._configuration_runtime is not None or vm.database_context is not database
@@ -300,26 +351,13 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
     context=DirectBoundary(services=vm.functions)
     context.vm=vm
+    context._import_check_required=bool(vm.imports)
     context._routine_exports={}
     # Preserve live registry updates at subsequent host boundaries, not a copy.
     context._services=vm.functions
-    vm.module_names.update(declared)
-    if exports is not None:
-        if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
-        vm._direct_routine_modules.update({name:exports for name in exports.signatures})
-    vm._direct_server_initializers=initializers
-    previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
-    if database is not None:vm._transaction_activation_allowed=False
-    vm._direct_active=True
-    try:
-        with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
-            decimal_context.prec=38
-            result=plan.run(vm.variables,context=context)
-        vm._self_module.ready=True
-        vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
-        if returns_expression:return result
-        return None if result is vm.variables else result
-    finally:
-        context._routine_exports.clear()
-        vm._direct_active=False
-        vm._transaction_activation_allowed=previous_transactions
+    return context
+
+
+def _owned_import_child(vm):
+    from .python_direct_imports import owned_child
+    return owned_child(vm)

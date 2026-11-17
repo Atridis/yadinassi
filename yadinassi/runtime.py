@@ -2684,9 +2684,16 @@ class Interpreter:
             child._eval_depth = self._eval_depth
             child._execute_depth = self._execute_depth
             child._self_module.path = path
-            child.execute(text, str(path))
-            module = child._self_module
-            self._module_cache[path] = module
+            if self.execution_backend == 'python-direct':
+                from .python_direct_imports import loading_child
+                with loading_child(self,child,path):
+                    child.execute(text,str(path))
+                    module=child._self_module
+                    self._module_cache[path]=module
+            else:
+                child.execute(text, str(path))
+                module = child._self_module
+                self._module_cache[path] = module
         return module
 
     def visit_Label(self, node: ast.Label) -> None:
@@ -2934,6 +2941,13 @@ def binary_values(operator, left, right):
 _COMPILED_BASE_ABI_NAMES = ('compiled_before', 'compiled_after', 'compiled_exception',
                             'semantic_name', 'semantic_assign', 'set_variable')
 _COMPILED_BASE_ABI = tuple(getattr(Interpreter, name) for name in _COMPILED_BASE_ABI_NAMES)
+# Definition-time identities: a lazy direct-import adapter must not bless hooks
+# installed before its first import.
+_DIRECT_IMPORT_LOADER_ABI = tuple((name,vars(Interpreter)[name]) for name in
+    ('semantic_import','_load_module','_check_import_binding','_inherit_host_bindings'))
+_DIRECT_IMPORT_RECEIVER_ABI = tuple((cls,tuple(vars(cls).items()),cls.__mro__)
+                                   for cls in (_Module,_Namespace))
+
 
 @lru_cache(maxsize=1)
 def _source_call_dispatch_types():

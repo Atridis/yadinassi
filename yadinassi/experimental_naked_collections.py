@@ -252,7 +252,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=()):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=()):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -314,7 +314,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if type(external_names) is not tuple and type(external_names) is not list:raise TypeError('external names require a tuple or list')
     if external_names and not (live and services):raise ValueError('external names require live module state and service boundaries')
     if any(type(name) is not str for name in external_names):raise TypeError('external names require strings')
+    if type(_import_names) is not tuple or any(type(name) is not str for name in _import_names):
+        raise TypeError('import names require a tuple of strings')
+    if _import_names and not (_trusted_entry and live and services):
+        raise ValueError('imports require trusted live service boundaries')
+    import_keys=frozenset(name.casefold() for name in _import_names)
     external_keys=frozenset(name.casefold() for name in external_names)
+    if not import_keys<=external_keys:raise ValueError('imports require external names')
     from .python_direct_definite import definite_module_reads
     definite_reads = definite_module_reads(program,opaque_names=external_keys) if live and not authority else frozenset()
     source_checks=authority or (services and not live) or _source_routine_scopes
@@ -427,6 +433,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     raise UnsupportedNakedSyntax('conditional local Var shadowing module storage is unsupported')
     def external_name(name):
         return name.casefold() in (external_keys if scope_id is None else routine_externals.get(scope_id,()))
+    def import_path(node):
+        parts=[];node=ungroup(node)
+        while type(node) is ast.Attribute:
+            parts.append(node.name.casefold());node=ungroup(node.object)
+        if type(node) is ast.Name and node.name.casefold() in import_keys and external_name(node.name):
+            return tuple([node.name.casefold(),*reversed(parts)])
+        return None
     def module_name(name):
         return live and (scope_id is None or name.casefold() in routine_globals.get(scope_id,()))
     def boxed(name):
@@ -458,7 +471,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def read_variable(name):
         if shadow_name(name):
             return '('+variable(name)+' if '+shadow_is_set(name)+' else _context.external_get('+repr(name.casefold())+'))'
-        if external_name(name):return variable(name)
+        if external_name(name):
+            if name.casefold() in import_keys:return '_context.import_get('+repr((name.casefold(),))+')'
+            return variable(name)
         if not module_name(name):
             value=variable(name)
             return ('('+value+' if '+source_local_exists(name)+' else _live_missing('+repr(name)+'))'
@@ -478,6 +493,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         emit(depth,variable(name)+' = '+value)
     def reference(node):
         node=ungroup(node)
+        path=import_path(node)
+        if path is not None:return '_context.import_reference('+repr(path)+')'
         if type(node) is ast.Name:
             if external_name(node.name):return '_context.external_reference('+repr(node.name.casefold())+')'
             if module_name(node.name):
@@ -636,6 +653,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 return '('+native+' if id(type(('+receiver+' := '+obj+'))) in _NATIVE_COLLECTION_IDS else _context.resolve_member('+receiver+', "__getitem__")('+index+'))'
             return '('+list_read+' if isinstance(('+receiver+' := '+expression(node.object)+'),list) else '+other+')'
         if kind is ast.Attribute:
+            path=import_path(node)
+            if path is not None:return '_context.import_get('+repr(path)+')'
             receiver=temp()
             if services:
                 host='(_native_property_missing('+repr(node.name)+') if id(type('+receiver+')) in _MAP_TYPE_IDS else _context.get_member('+receiver+', '+repr(node.name)+'))'
@@ -649,6 +668,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             return '('+receiver+'['+repr(node.name)+'] if isinstance(('+receiver+' := '+expression(node.object)+'),dict) and id(type('+receiver+')) not in _MAP_TYPE_IDS else '+fallback+')'
         if kind is ast.Call:
             callee=ungroup(node.callee)
+            path=import_path(callee)
+            if path is not None:
+                return dynamic_call('_context.resolve_import_call('+repr(path)+
+                    ', require_value='+repr(require_value)+', argument_count='+str(len(node.arguments))+')',node)
             if type(callee) is ast.Attribute:
                 omitted=tuple(i for i,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
                 receiver_root=ungroup(callee.object)
@@ -808,6 +831,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     emit(depth,'else: '+receiver+'['+position+' if type('+receiver+') is list else '+index+'] = '+stored)
                 else:emit(depth,receiver+'['+position+' if isinstance('+receiver+',list) else '+index+'] = '+stored)
             elif type(target) is ast.Attribute:
+                path=import_path(target)
+                if path is not None:
+                    writer=temp();emit(depth,writer+' = _context.resolve_import_write('+repr(path)+')')
+                    emit(depth,writer+'('+value+')');return
                 receiver=temp();stored=temp();emit(depth,receiver+' = '+expression(target.object))
                 writer=temp() if services else None
                 if services:emit(depth,writer+' = None if id(type('+receiver+')) in _NATIVE_DICT_IDS else _context.resolve_set_member('+receiver+', '+repr(target.name)+')')
@@ -823,6 +850,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             else:raise UnsupportedNakedSyntax('assignment target')
         elif kind is ast.Var:
             for name in node.names:
+                if scope_id is None and name.casefold() in import_keys:
+                    emit(depth,'_context.external_set('+repr(name.casefold())+', None)');continue
                 slot=sym(name)
                 if module_name(name):emit(depth,'_initial.setdefault('+repr(name.casefold())+', None)')
                 elif boxed(name):emit(depth,f'if {slot}._value is _UNSET_REF: {slot}.value = None')
@@ -907,7 +936,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             else:emit(depth,'raise'+(' RuntimeError('+expression(node.value)+')' if node.value is not None else ''))
         elif kind is ast.Routine:
             if byref:
-                parameters=[sym(parameter.name)+('=_OMITTED_REF' if parameter.default is not None else '') for parameter in node.parameters]
+                optional=False;parameters=[]
+                for parameter in node.parameters:
+                    optional=optional or parameter.default is not None
+                    parameters.append(sym(parameter.name)+('=_OMITTED_REF' if optional else ''))
             else:parameters=[sym(parameter.name)+('='+expression(parameter.default) if parameter.default is not None else '') for parameter in node.parameters]
             emit(depth,'def '+function_symbols[node.name.casefold()]+'('+', '.join(parameters)+'):')
             nonlocals=(routine_globals[id(node)] if byref else module_variables-{p.name.casefold() for p in node.parameters})
