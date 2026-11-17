@@ -41,11 +41,76 @@ def sections(text):
     return tables[0], tables[1], '\n'.join(prose).strip()
 
 
+def compact_notes(lines):
+    """Group identical case explanations, retaining distinct form operations."""
+    groups = {}
+    result = []
+    form_marker = 'Настоящий жизненный цикл формы.'
+    for line in lines:
+        if not line.startswith('- **') or '**: ' not in line:
+            result.append(line)
+            continue
+        name, body = line[4:].split('**: ', 1)
+        if name in ('form.event', 'form.open') and form_marker in body:
+            operation, shared = body.split(form_marker, 1)
+            result.append('- **' + name + '**: ' + operation.strip())
+            body = form_marker + shared
+        groups.setdefault(body, []).append(name)
+    for body, names in groups.items():
+        result.append('- **' + ', '.join(names) + '**: ' + body)
+    return result
+
+
+def explanations(parts):
+    """Factor only exact complete lines, scoped to the available mode(s)."""
+    by_mode = {route: [line for line in part[2].splitlines() if line.strip()
+                       and not line.startswith(('Коммит:', 'Python:', 'Процессор:'))]
+               for route, part in parts.items() if part}
+    if not by_mode:
+        return []
+    common = []
+    if len(by_mode) == 2:
+        common = [line for line in by_mode['default'] if line in by_mode['prepared']]
+    lines = ['#### Пояснения', '']
+    for line in compact_notes(list(dict.fromkeys(common))):
+        lines += [line, '']
+    for route, prose in by_mode.items():
+        unique = [line for line in prose if line not in common]
+        if unique:
+            lines += ['**' + MODES[route] + ':**', '', *compact_notes(unique), '']
+    return lines
+
+
+def environment_lines(environments):
+    """Never label differing or missing metadata as common environment."""
+    if not environments:
+        return []
+    lines = ['### Окружение', '']
+    keys = list(dict.fromkeys(key for env in environments.values() for key in env))
+    labels = {'python': 'Python', 'processor': 'Процессор', 'platform': 'Платформа'}
+    for key in keys:
+        if key == 'git_head':
+            continue
+        groups = {}
+        for scope, env in environments.items():
+            token = json.dumps(env[key], ensure_ascii=False, sort_keys=True) if key in env else None
+            groups.setdefault(token, []).append(scope)
+        if len(groups) == 1 and key not in labels:
+            continue  # Complete common metadata remains in the source JSON.
+        for value, scopes in groups.items():
+            scope = '' if len(scopes) == len(environments) else ' (' + '; '.join(scopes) + ')'
+            lines += [labels.get(key, key) + scope + ': ' +
+                      ('не указано' if value is None else '`' + value + '`'), '']
+    lines += ['Полные метаданные каждого запуска сохранены в его JSON.', '']
+    return lines
+
+
 def assemble(reports):
     """Available reports are rendered independently, even if another failed."""
     rendered = {}
     errors = []
     commits = set()
+    environments = {}
     for family, route, filename, renderer in INPUTS:
         report = reports.get(filename)
         if report is None:
@@ -62,6 +127,8 @@ def assemble(reports):
                 raise ValueError('report route does not match its label')
             rendered[family, route] = sections(renderer(report))
             commits.add(sha)
+            scope = ('основные' if family == 'core' else 'расширенные') + ' / ' + MODES[route]
+            environments[scope] = report['environment']
         except (KeyError, TypeError, ValueError, IndexError, AttributeError):
             rendered[family, route] = None
             errors.append(filename)
@@ -74,6 +141,9 @@ def assemble(reports):
              'Оба режима измеряются после проверочных вызовов и прогрева. '
              'Сценарии form.event и form.open используют отдельный жизненный цикл FormSession, '
              'а не эти API; они остаются только в первой расширенной таблице.', '']
+    if commits:
+        lines += ['Коммит: `' + next(iter(commits)) + '`', '']
+    lines += environment_lines(environments)
     for family, title in (('core', 'Основные сценарии'), ('extended', 'Расширенные сценарии')):
         lines += ['### ' + title, '']
         for route in ('default', 'prepared'):
@@ -85,17 +155,7 @@ def assemble(reports):
             part = rendered[family, route]
             if part:
                 lines += ['**' + MODES[route] + '**', '', part[1], '']
-        # Retain every API boundary, N/A reason and environment note. Merge only
-        # completely identical prose; mode-specific text remains explicitly scoped.
-        default = rendered[family, 'default']
-        prepared = rendered[family, 'prepared']
-        if default and prepared and default[2] == prepared[2]:
-            lines += ['#### Общие пояснения', '', default[2], '']
-        else:
-            for route in ('default', 'prepared'):
-                part = rendered[family, route]
-                if part:
-                    lines += ['#### Пояснения: ' + MODES[route], '', part[2], '']
+        lines += explanations({route: rendered[family, route] for route in ('default', 'prepared')})
     if errors:
         lines += ['**Неполный отчёт.** Недоступные или некорректные файлы: '
                   + ', '.join('`' + name + '`' for name in errors) + '.', '']

@@ -96,3 +96,51 @@ class PairedReportTests(unittest.TestCase):
         text,errors=paired.assemble(data)
         self.assertIn('execution-layers-prepared.json',errors)
         self.assertIn('| extended-prepared |',text)
+
+
+class ExplanationDedupTests(unittest.TestCase):
+    def test_common_lines_once_and_different_conditions_scoped(self):
+        parts = {'default': ('', '', 'Коммит: `abc`\nShared warning\n- API A\n- file: same'),
+                 'prepared': ('', '', 'Коммит: `abc`\nShared warning\n- API B\n- file: same')}
+        text = '\n'.join(paired.explanations(parts))
+        self.assertEqual(text.count('Shared warning'), 1)
+        self.assertEqual(text.count('- file: same'), 1)
+        self.assertIn('**с подготовкой:**\n\n- API A', text)
+        self.assertIn('**без подготовки:**\n\n- API B', text)
+        self.assertNotIn('Коммит:', text)
+
+    def test_partial_prose_keeps_scope_and_all_warnings(self):
+        text='\n'.join(paired.explanations({'default':None,'prepared':('', '', 'Warning\nAPI B')}))
+        self.assertIn('**без подготовки:**',text)
+        self.assertIn('Warning',text)
+        self.assertNotIn('**с подготовкой:**',text)
+
+    def test_metadata_difference_including_missing_is_explicit(self):
+        envs={'основные / с подготовкой':{'python':'3.12','processor':'x','timer':'A'},
+              'основные / без подготовки':{'python':'3.12','processor':'y'}}
+        text='\n'.join(paired.environment_lines(envs))
+        self.assertEqual(text.count('Python:'),1)
+        self.assertIn('Процессор (основные / с подготовкой)',text)
+        self.assertIn('Процессор (основные / без подготовки)',text)
+        self.assertIn('timer (основные / без подготовки): не указано',text)
+
+    def test_commit_global_once_environment_not_silently_merged(self):
+        data=reports()
+        for value in data.values():value['environment'].update(python='same',processor='cpu')
+        data['extended-prepared.json']['environment']['processor']='other'
+        text,errors=paired.assemble(data)
+        self.assertFalse(errors)
+        self.assertEqual(text.count('Коммит: `abc`'),1)
+        self.assertEqual(text.count('Python:'),1)
+        self.assertIn('Процессор (расширенные / без подготовки): `"other"`',text)
+        self.assertNotIn('#### Пояснения:',text)
+
+    def test_identical_file_notes_and_form_suffix_keep_operations(self):
+        lines=['- **file.stat**: same', '- **file.binary_roundtrip**: same',
+               '- **form.event**: dispatch. Настоящий жизненный цикл формы. N/A reason',
+               '- **form.open**: open/close. Настоящий жизненный цикл формы. N/A reason']
+        text='\n'.join(paired.compact_notes(lines))
+        self.assertIn('**file.stat, file.binary_roundtrip**: same',text)
+        self.assertEqual(text.count('N/A reason'),1)
+        self.assertIn('**form.event**: dispatch.',text)
+        self.assertIn('**form.open**: open/close.',text)
