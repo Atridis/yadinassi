@@ -474,3 +474,7 @@ class BSLInformationRegisterRecordSet(BSLObject):
         method=methods.get(name.casefold())
         return HostFunction(name,method) if method else super().get_member(name)
     def __str__(self): return str(self._set_type)
+
+# Definition-time type identities inspected by live Metadata.FindByType.
+_DIRECT_LIVE_METADATA_TYPE=BSLInformationRegisterType
+_DIRECT_LIVE_METADATA_TYPE_ABI=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in BSLInformationRegisterType.__mro__)

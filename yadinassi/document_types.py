@@ -94,3 +94,7 @@ class BSLDocumentReference(BSLObject):
         # !todo Native document presentation depends on configuration; measure
         # before exposing anything, never leak a Python repr or invent a format.
         raise ValueError('document reference presentation is unsupported')
+
+# Definition-time type identities inspected by live Metadata.FindByType.
+_DIRECT_LIVE_METADATA_TYPE=BSLDocumentType
+_DIRECT_LIVE_METADATA_TYPE_ABI=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in BSLDocumentType.__mro__)

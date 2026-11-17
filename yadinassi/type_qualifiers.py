@@ -218,3 +218,11 @@ __all__ = ["BSLAllowedSign", "BSLAllowedLength", "BSLDateFractions",
            "ALLOWED_SIGNS", "ALLOWED_LENGTHS", "DATE_FRACTIONS",
            "BSLNumberQualifiers", "BSLStringQualifiers", "BSLDateQualifiers",
            "BSLBinaryDataQualifiers"]
+
+# Definition-time dependencies of lazy live metadata descriptions.
+from types import FunctionType as _LiveMetadataFunctionType
+_DIRECT_LIVE_METADATA_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if isinstance(value,type) or type(value) is _LiveMetadataFunctionType)
+_DIRECT_LIVE_METADATA_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for name,value in _DIRECT_LIVE_METADATA_BINDINGS
+        if isinstance(value,type) and value.__module__==__name__ for base in value.__mro__))

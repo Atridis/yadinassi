@@ -97,3 +97,7 @@ class BSLCatalogReference(BSLObject):
         if type(value) is not str:
             raise ValueError('catalog reference presentation is unsupported')
         return value
+
+# Definition-time type identities inspected by live Metadata.FindByType.
+_DIRECT_LIVE_METADATA_TYPE=BSLCatalogType
+_DIRECT_LIVE_METADATA_TYPE_ABI=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in BSLCatalogType.__mro__)

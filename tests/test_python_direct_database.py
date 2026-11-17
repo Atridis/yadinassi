@@ -174,14 +174,15 @@ class DirectDatabaseTests(unittest.TestCase):
             other.variables['foreign']=self.vm.variables[name]
             with self.subTest(name=name),self.assertRaises(BoundaryViolation):other.execute('X='+expression+';')
 
-    def test_metadata_private_readonly_and_unsupported_family_boundaries(self):
+    def test_metadata_private_readonly_and_admitted_family_boundaries(self):
         from yadinassi.errors import BSLRuntimeError
         for source in ('Metadata=1;', 'Metadata.Catalogs=1;', 'Metadata.Catalogs.Склады.Name="bad";',
                        'Metadata.Catalogs["Склады"]=1;', 'X=Metadata._catalogs;', 'X=Metadata.Catalogs._context;',
                        'X=Metadata.Catalogs.Склады._root;'):
             with self.subTest(source=source),self.assertRaises(BSLRuntimeError):self.vm.execute(source)
-        with self.assertRaises(BoundaryViolation):self.vm.execute('For Each X In Metadata.Catalogs Do EndDo;')
-        with self.assertRaises(BoundaryViolation):self.vm.execute('X=Metadata.Documents.Count();')
+        self.vm.execute('Names=New Array;For Each X In Metadata.Catalogs Do Names.Add(X.Name);EndDo;')
+        self.assertEqual(list(self.vm.variables['names']),['ВидыНоменклатуры','Склады','Номенклатура'])
+        self.assertEqual(self.vm.execute('Metadata.Documents.Count();'),2)
 
     def test_metadata_subclasses_rejected(self):
         from yadinassi.metadata import BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata

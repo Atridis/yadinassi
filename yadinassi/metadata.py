@@ -12,6 +12,42 @@ from uuid import UUID
 from .values import BSLObject, HostFunction, to_string
 
 
+# Private constructor/publication provenance for the live direct metadata port.
+# Records contain weak object links, never a strong child -> root retention path.
+from weakref import WeakKeyDictionary as _WeakKeyDictionary, ref as _weakref
+_LIVE_METADATA_ORIGINS=_WeakKeyDictionary()
+
+def _live_freeze(value):
+    if type(value) is UUID:return ('uuid',(value,value.int))
+    if any(type(value) is cls for cls in _LIVE_SCHEMA_CLASSES):
+        return ('schema',(value,tuple((name,_live_freeze(getattr(value,name))) for name in type(value).__slots__)))
+    if type(value) is dict:return ('dict',tuple((k,_live_freeze(v)) for k,v in value.items()))
+    if type(value) is tuple:return ('tuple',tuple(_live_freeze(v) for v in value))
+    try:return ('weak',_weakref(value))
+    except TypeError:return ('value',value)
+
+def _live_fields(value):
+    if type(value) is BSLMetadata:
+        names=('_catalogs','_documents','_information_registers','_identity','_orders','_configuration_name')
+        return tuple((name,_live_freeze(vars(value)[name])) for name in names)
+    return tuple((name,_live_freeze(item)) for name,item in vars(value).items())
+
+def _live_issue(value,parent,relation):
+    _LIVE_METADATA_ORIGINS[value]=(_weakref(parent) if parent is not None else None,relation,_live_fields(value))
+    if type(value) is _DeclaredMetadataCollection:
+        for key,item in value._items.items():_live_issue(item,value,('item',key))
+    elif type(value) is StandardAttributeDescriptions:
+        for index,item in enumerate(value._items):_live_issue(item,value,('standard',index))
+    elif type(value) is BSLTabularSectionMetadata:
+        _live_issue(value._attributes,value,('field','_attributes'))
+
+def _live_refresh(value,names):
+    origin=_LIVE_METADATA_ORIGINS.get(value)
+    if origin is not None:
+        prior=dict(origin[2]);current=dict(_live_fields(value))
+        for name in names:prior[name]=current[name]
+        _LIVE_METADATA_ORIGINS[value]=(origin[0],origin[1],tuple(prior.items()))
+
 class _MetadataObject(BSLObject):
     def __str__(self) -> str:
         raise ValueError('metadata presentation is unsupported')
@@ -106,6 +142,7 @@ class BSLAttributeMetadata(_MetadataObject):
                 binding(self._owner._root).value_type(self._field.target_enum_id)
             if self._description is None:
                 self._description = _field_description(self._field, self._owner._root)
+                _live_refresh(self,('_description',))
             return self._description
         return super().get_member(name)
 
@@ -129,6 +166,8 @@ class BSLTabularSectionMetadata(_MetadataObject):
         if key in ('standardattributes','стандартныереквизиты'):
             if self._standard is None:
                 self._standard = StandardAttributeDescriptions((('LineNumber','НомерСтроки', _scalar_description('number',(9,0,'Nonnegative'))),))
+                if self in _LIVE_METADATA_ORIGINS:
+                    _live_issue(self._standard,self,('field','_standard'));_live_refresh(self,('_standard',))
             return self._standard
         return super().get_member(name)
 
@@ -265,6 +304,9 @@ class BSLCatalogMetadataCollection(MetadataObjectCollection):
             finally: view.close()
             self._database_id,self._generation = database,generation
             self._items = items
+            if self in _LIVE_METADATA_ORIGINS:
+                for key,item in items.items():_live_issue(item,self,('item',key))
+                _live_refresh(self,('_items','_database_id','_generation'))
         return self._items
 
     def _ordered(self):
@@ -324,6 +366,9 @@ class BSLMetadata(_MetadataObject):
         self._configuration_name = None
         self._identity = None
         self._orders = {}
+        _live_issue(self,None,('root',))
+        for name in ('_catalogs','_documents','_information_registers'):
+            _live_issue(getattr(self,name),self,('field',name))
 
     def _accept_snapshot(self, database, generation, info=None):
         if self._identity is not None and self._identity != (database,generation):
@@ -333,6 +378,7 @@ class BSLMetadata(_MetadataObject):
             self._configuration_name = name
             self._orders = dict(orders)
         self._identity = database,generation
+        _live_refresh(self,('_identity','_orders','_configuration_name'))
 
     def _ensure_source_info(self):
         if self._orders: return
@@ -469,6 +515,8 @@ def _child_collection(owner, key):
             label = {'attributes':'Реквизит','dimensions':'Измерение','resources':'Ресурс'}[family]
             result = _DeclaredMetadataCollection(tuple(BSLAttributeMetadata(owner,f,label) for f in fields))
         owner._children[family] = result
+        if owner in _LIVE_METADATA_ORIGINS:
+            _live_issue(result,owner,('child',family));_live_refresh(owner,('_children',))
     return owner._children[family]
 
 
@@ -565,7 +613,23 @@ def _prepare_enum_query_metadata(root, view):
     for collection, items in staged:
         collection._database_id, collection._generation = identity
         collection._items = items
+        if collection in _LIVE_METADATA_ORIGINS:
+            for key,item in items.items():_live_issue(item,collection,('item',key))
+            _live_refresh(collection,('_items','_database_id','_generation'))
 
 # Definition-time ABI for the direct live movement ownership traversal.
 _DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in dict.fromkeys(base for receiver in (BSLMetadata,BSLDocumentMetadataCollection,BSLDocumentMetadata,) for base in receiver.__mro__))
+
+from .catalog_backend import FieldSchema,TabularSectionSchema
+from .document_backend import DocumentSchema
+from .register_backend import InformationRegisterSchema
+_LIVE_SCHEMA_CLASSES=(FieldSchema,TabularSectionSchema,CatalogSchema,DocumentSchema,InformationRegisterSchema)
+from types import FunctionType as _LiveFunctionType
+_DIRECT_LIVE_METADATA_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for value in tuple(globals().values())
+        if type(value) is type and value.__module__==__name__ for base in value.__mro__))
+_DIRECT_LIVE_METADATA_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is type or type(value) is _LiveFunctionType)
+
+_DIRECT_LIVE_METADATA_UUID_ABI=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in UUID.__mro__)
