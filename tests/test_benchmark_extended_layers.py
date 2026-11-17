@@ -5,10 +5,17 @@ from contextlib import ExitStack
 from pathlib import Path
 import copy
 import tempfile
-from decimal import Decimal
+from decimal import Decimal, localcontext, getcontext, Inexact, Rounded
 from scripts import benchmark_extended_layers as bench
 
 class ExtendedReferenceTests(unittest.TestCase):
+    def setUp(self):
+        # Plain Python reference work intentionally rounds Decimals. Keep its
+        # flags/context local to this test, not the following runtime contracts.
+        context = localcontext()
+        context.__enter__()
+        self.addCleanup(context.__exit__, None, None, None)
+
     def test_actual_workloads_repeat_on_both_routes(self):
         expected={
             'structure.fields':'3','valuetable.build_scan':'3','valuelist.build_scan':'3',
@@ -154,3 +161,21 @@ class ExtendedReferenceTests(unittest.TestCase):
         self.assertEqual(text.count('execute_program(preparsed_ast)'), 1)
         self.assertIn('для всех сценариев, кроме form.open', text)
         self.assertIn('- **form.open**: FormSession: создание, открытие и закрытие.', text)
+
+
+class BenchmarkDecimalIsolationTests(unittest.TestCase):
+    def test_actual_reference_workloads_restore_callers_decimal_context(self):
+        with localcontext() as caller:
+            caller.prec = 28
+            caller.traps[Inexact] = caller.traps[Rounded] = False
+            caller.clear_flags()
+            saved = caller.copy()
+            result = unittest.TestResult()
+            ExtendedReferenceTests('test_actual_workloads_repeat_on_both_routes').run(result)
+            self.assertEqual(result.testsRun, 1)
+            self.assertTrue(result.wasSuccessful(), result.errors + result.failures)
+            self.assertIs(getcontext(), caller)
+            self.assertEqual(caller.prec, saved.prec)
+            self.assertEqual(caller.rounding, saved.rounding)
+            self.assertEqual(caller.traps, saved.traps)
+            self.assertEqual(caller.flags, saved.flags)
