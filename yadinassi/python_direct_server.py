@@ -52,6 +52,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         self.side=side
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
+        if self.vm.execution_context==side:self._handled_errors=parent._handled_errors
         self.database=self.vm.database_context
         self._routine_exports={};self.state={}
         self.module_context=module_context

@@ -39,6 +39,7 @@ class BoundaryContext:
         self._epoch = 0
         self._admitted_epoch = None
         self._revoked = False
+        self._handled_errors = []
 
     def external_get(self, name):
         """Explicit product namespace seam; ordinary contexts grant none."""
@@ -84,6 +85,9 @@ class BoundaryContext:
                 return self.resolve_callable(fallback,require_value=require_value,allow_references=allow_references)
             raise BoundaryViolation('unregistered host service: '+name)
         function=self._services[key]  # Registered service outranks a variable.
+        if key in ('errordescription','описаниеошибки') and type(function) is HostFunction:
+            from .experimental_naked_errors import description_service
+            function=description_service(self,function)
         if type(function) is HostFunction:
             self._validate_host_function(function,require_value,allow_references)
         def invoke(*args):

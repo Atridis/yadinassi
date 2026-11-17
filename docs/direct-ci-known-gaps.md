@@ -623,3 +623,22 @@ to the known ErrorDescription gap. Full source advances to JSON writer parameter
 constructor admission; owned-SQLite verifier remains `interpreter_failed`.
 No native fixture rewrite or parity claim.
 [Contract, exact observations and reproducer](direct-logical-server.md).
+
+### Direct handler ErrorDescription (2026-11-17)
+
+Base88438f0e: generated recoverable Except scopes now expose normalized current
+error text through the canonical own-VM builtin. Same-side diagnostic inheritance,
+nested-handler invalidation, rethrow and finally cleanup are explicit; cross-side
+scopes remain separate. Custom host overrides and fail-closed boundaries remain.
+ExceptionInfo is not added.
+
+Unchanged scalar35/module10/NoContext15/dual9 records now exactly match explicit
+compiled-strict control. Original numbers emits421 records, matching control:
+all six stream-format errors are recognized. No native fixture was rewritten.
+Full source advances past JSON constructors to unsupported Execute in a server
+NoContext plan; actual owned-SQLite verifier still fails. Baseline array-error
+wording mismatch remains documented, with its existing test unchanged.
+[Contract, regressions and reproducer](direct-logical-server.md).
+
+Integrated verification:203 Python3.12 normal +203 Python3.10 optimized PASS;
+independent65 optimized PASS, including regex binding release without cyclic GC.

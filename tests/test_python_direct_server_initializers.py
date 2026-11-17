@@ -86,7 +86,7 @@ class DirectServerInitializerTests(unittest.TestCase):
         with self.assertRaises(BSLRuntimeError):owner.execute('Read();')
         self.assertEqual(effects,[])
 
-    def test_original_module_context_witness_with_known_diagnostic_gap(self):
+    def test_original_module_context_witness_matches_control(self):
         text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text()
         declarations=text.split('// BEGIN bounded module context declarations\n',1)[1].split('// END bounded module context declarations',1)[0]
         body=text.split('// BEGIN bounded module context measurement\n',1)[1].split('// BEGIN bounded no-context witness',1)[0]
@@ -97,5 +97,5 @@ class DirectServerInitializerTests(unittest.TestCase):
             owner=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
             owner.execute(source);rows.append(list(owner.execute('RunModuleContextProbe()')))
         self.assertEqual([len(r) for r in rows],[10,10])
-        self.assertEqual([(i,a,b) for i,(a,b) in enumerate(zip(*rows)) if a!=b],[(6,False,True)])
+        self.assertEqual(*rows)
         self.assertEqual(rows[0][2:6],[Decimal(100),Decimal(111),True,Decimal(100)])

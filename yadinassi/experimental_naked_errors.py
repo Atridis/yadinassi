@@ -1,5 +1,6 @@
 """Optional experiment-only source mapping; no checks on the success hot path."""
 import ast
+from contextlib import contextmanager
 from decimal import DivisionByZero
 from types import CodeType
 from .errors import BSLError, BSLRuntimeError
@@ -117,3 +118,36 @@ def convert_error(error,filename,source):
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
     lines=source.splitlines();source_line=lines[line-1] if 0<line<=len(lines) else ''
     return BSLRuntimeError(message,filename,line,column,source_line=source_line)
+
+
+@contextmanager
+def handled_error(context,error,filename,source):
+    """Activation-local diagnostics; nested handlers discard stale outer details."""
+    errors=context._handled_errors
+    for index in range(len(errors)):errors[index]=None
+    errors.append(convert_error(error,filename,source))
+    try:yield
+    finally:errors.pop()
+
+
+def reraise_handled(context):
+    errors=context._handled_errors
+    if not errors:raise ValueError('Нет активного исключения для повторного вызова')
+    if errors[-1] is None:
+        raise ValueError('Повторный вызов исключения после вложенного обработчика пока не поддерживается; используйте явное сообщение')
+    raise errors[-1]
+
+
+def description_service(context,function):
+    """Replace only the current owner's canonical diagnostic builtin."""
+    from types import MethodType
+    from .values import HostFunction
+    from .runtime import _DIRECT_ERROR_DESCRIPTION_ABI
+    method=function.function
+    if (type(method) is not MethodType or method.__func__ is not _DIRECT_ERROR_DESCRIPTION_ABI
+            or method.__self__ is not getattr(context,'vm',None)):
+        return function
+    def description():
+        errors=context._handled_errors
+        return str(errors[-1]) if errors and errors[-1] is not None else ''
+    return HostFunction(function.name,description,reference_parameters=function.reference_parameters,returns_value=function.returns_value)

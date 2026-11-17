@@ -770,9 +770,17 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             emit(depth,'continue')
         elif kind is ast.Try:
             emit(depth,'try:');sequence(node.body,depth+1)
-            emit(depth,'except (ArithmeticError,ValueError,TypeError,IndexError,RecursionError,_BSLRuntimeError):' if source_map is not None else 'except Exception:');sequence(node.handler,depth+1)
+            if source_map is not None and services:
+                caught=temp()
+                emit(depth,'except (ArithmeticError,ValueError,TypeError,IndexError,RecursionError,_BSLRuntimeError) as '+caught+':')
+                emit(depth+1,'with _handled_error(_context, '+caught+', _error_filename, _error_source):')
+                sequence(node.handler,depth+2)
+            else:
+                emit(depth,'except (ArithmeticError,ValueError,TypeError,IndexError,RecursionError,_BSLRuntimeError):' if source_map is not None else 'except Exception:');sequence(node.handler,depth+1)
         elif kind is ast.Raise:
-            if source_map is not None and node.value is not None:
+            if source_map is not None and services and node.value is None:
+                emit(depth,'_reraise_handled(_context)')
+            elif source_map is not None and node.value is not None:
                 emit(depth,f'raise _BSLRuntimeError(str({expression(node.value)}), {source_name!r}, {node.token.line}, {node.token.column})')
             else:emit(depth,'raise'+(' RuntimeError('+expression(node.value)+')' if node.value is not None else ''))
         elif kind is ast.Routine:
@@ -860,6 +868,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     namespace.update(Decimal=Decimal,SimpleNamespace=SimpleNamespace,_NATIVE_COLLECTION_TYPES=(list,*native_dicts),_NATIVE_DICT_TYPES=native_dicts,_NATIVE_COLLECTION_IDS=tuple(map(id,(list,*native_dicts))),_NATIVE_DICT_IDS=tuple(map(id,native_dicts)))
     from .errors import BSLRuntimeError
     namespace['_BSLRuntimeError']=BSLRuntimeError
+    if source_map is not None and services:
+        from .experimental_naked_errors import handled_error,reraise_handled
+        namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,
+                         _error_filename=source_name,_error_source=source)
     code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
     exec(code,namespace)
     return Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)

@@ -205,3 +205,47 @@ controlled failure, но его ErrorDescription guard делает rethrow из
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_dual test_python_direct_nocontext test_python_direct_server_initializers test_python_direct_server_byref test_python_direct_server test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
 ```
+
+## ErrorDescription в прямых обработчиках
+
+Срез поверх `88438f0ed93833aca5ff494ec3530ab880e64214` добавляет диагностический
+scope только при входе в сгенерированный `Except`. Recoverable Python errors
+нормализуются существующим source mapper; ErrorDescription/ОписаниеОшибки читает
+текущее обработанное исключение. VM block/call dispatch не используется.
+
+Состояние принадлежит activation boundary. Обычные и dual same-side вызовы
+разделяют handler frames, client→server crossing получает пустой scope. Вложенный
+обработчик удаляет сведения об outer error, как existing control; выход, return
+и escaping exception снимают frame через finally. Bare Raise сохраняет original
+error, а повторный Raise после вложенного handler отвергается вместо оживления
+устаревшего исключения. Внешний Python except не становится BSL diagnostic scope.
+
+Подменяется только сервис, привязанный к текущему VM и исходному canonical
+методу: identity сохранена при загрузке runtime. Пользовательская регистрация,
+class-level override, проверка арности и текущие boundary checks сохранены.
+Fail-closed ошибки по-прежнему не ловятся BSL handler. ExceptionInfo и расширенные
+поля ошибки этим срезом не подключены; это не полная совместимость diagnostics.
+
+Исходные BSL fixtures не менялись. С explicit compiled-strict control теперь
+полностью совпадают bounded blocks: scalar-copyback35, module-context10,
+NoContext15 и dual9 records. Dual witness наконец завершается. Оригинальный
+numbers checkpoint даёт421 records, как control, вместо427: шесть format-stream
+ошибок распознаются, поэтому дополнительные `.error.other` записи не исполняются.
+Тест сохраняет проверки всех шести true predicates и отсутствия error.other.
+
+После объединения с JSON/regex полный original client source останавливается
+на `UnsupportedNakedSyntax: statement Execute` при подготовке серверного
+NoContext-плана. Настоящий owned-SQLite verifier остаётся `interpreter_failed`.
+Старый `test_exact_source_errors_and_partial_effects` воспроизводимо красный и
+на base3c9dde8f: Python array wording отличается от отдельного экспериментального
+array helper; этот тест и его expectation не ослаблялись.
+
+Integrated verification:203 tests PASS на Python3.12 normal и203 PASS на
+Python3.10 optimized. Independent integration review:65 optimized tests PASS, включая обязательный
+`regex_binding_released_without_cyclic_gc`; ServicesBoundary и omission capability
+из JSON/regex сохранены. Новые lifecycle/scope/provenance regressions:
+`tests/test_python_direct_error_description.py`.
+
+```sh
+PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_error_description test_python_direct_regex_services test_python_direct_dual test_python_direct_nocontext test_python_direct_server_byref test_python_direct_server_initializers test_python_direct_managed_profile
+```

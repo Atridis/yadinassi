@@ -61,17 +61,23 @@ class DirectManagedProfileTests(unittest.TestCase):
             self.assertEqual(vm.variables,{})
 
     def test_original_dates_and_numbers_complete_under_managed_profile(self):
-        for name,count in (('dates',185),('numbers',427)):
+        for name,count in (('dates',185),('numbers',421)):
             source=(ROOT/'integrational_tests/tests'/f'{name}.bsl').read_text()
             captures=[]
             for profile in ('standalone',PROFILE):
                 output=[];vm=Interpreter(output.append,compilation_profile=profile);vm.execute(source)
                 self.assertEqual(len(output),count);captures.append(output)
+                if name=='numbers':
+                    descriptions=[row for row in output if '.error.stream-format:' in row]
+                    self.assertEqual(len(descriptions),6)
+                    self.assertTrue(all(row.endswith('[true]') for row in descriptions))
+                    self.assertFalse(any('.error.other:' in row for row in output))
             self.assertEqual(*captures)
 
-    def test_exact_whole_client_witness_exposes_json_constructor_blocker(self):
+    def test_exact_whole_client_witness_exposes_execute_blocker(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'constructor ПараметрыЗаписиJSON'):
+        from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+        with self.assertRaisesRegex(UnsupportedNakedSyntax,'statement Execute'):
             vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
         self.assertEqual(vm.variables,{})
 

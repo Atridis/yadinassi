@@ -99,7 +99,7 @@ R=Read();''')
             self.assertEqual(vm.variables['x'],1);self.assertTrue(vm._has_module_context)
             self.assertEqual(vm.execution_context,'client')
 
-    def test_original_nocontext_witness_known_diagnostics_only(self):
+    def test_original_nocontext_witness_matches_control(self):
         text=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text()
         source=text.split('// BEGIN bounded no-context witness\n',1)[1].split('// BEGIN bounded dual witness',1)[0]
         rows=[]
@@ -107,5 +107,5 @@ R=Read();''')
             vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
             vm.execute(source);rows.append(list(vm.execute('RunNoContextProbe()')))
         self.assertEqual([len(row) for row in rows],[15,15])
-        self.assertEqual([(i,a,b) for i,(a,b) in enumerate(zip(*rows)) if a!=b],[(6,False,True),(8,False,True),(12,False,True)])
+        self.assertEqual(*rows)
         self.assertEqual(rows[0][1:6],[Decimal(12),Decimal(22),Decimal(0),Decimal(12),Decimal(2)])

@@ -2965,3 +2965,6 @@ _PLAIN_SCOPE_ABI = (Interpreter.locals, Interpreter._context_stack, Interpreter.
 from .async_runtime import ExecutionContext as _PlainExecutionContext
 _PLAIN_STORAGE_ABI = tuple((cls, vars(cls).get('__dict__'), cls.__mro__)
                            for cls in (Interpreter, Scheduler, _PlainExecutionContext))
+
+# Capture canonical diagnostic identity before trusted host class overrides.
+_DIRECT_ERROR_DESCRIPTION_ABI = Interpreter._error_description

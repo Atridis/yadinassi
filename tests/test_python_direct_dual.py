@@ -118,7 +118,10 @@ Z=100;Tick();
             with self.assertRaises(PythonDirectUnsupported):vm.execute_program(tree)
             self.assertEqual(vm.variables,{})
 
-    def test_original_dual_witness_reaches_known_error_description_gap(self):
+    def test_original_dual_witness_matches_control(self):
         source=Path('scripts/native_1c_bootstrap/client_probe.bsl').read_text().split('// BEGIN bounded dual witness\n',1)[1].split('// BEGIN bounded Date Null measurement',1)[0]
-        vm=Interpreter(compilation_profile='managed-thick-file');vm.execute(source)
-        with self.assertRaisesRegex(BSLRuntimeError,'dual-directive-controlled-failure'):vm.execute('CollectDualDirectiveProbe()')
+        rows=[]
+        for backend in ('python-direct','compiled-strict'):
+            vm=Interpreter(compilation_profile='managed-thick-file',execution_backend=backend)
+            vm.execute(source);rows.append(list(vm.execute('CollectDualDirectiveProbe()')))
+        self.assertEqual([len(row) for row in rows],[9,9]);self.assertEqual(*rows)
