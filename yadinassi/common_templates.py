@@ -48,6 +48,7 @@ class SourceCommonTemplates:
         self._app = weakref.ref(application)
         self._entries = {entry.name.casefold(): entry for entry in application.source.metadata
                          if entry.family == 'CommonTemplate'}
+        self._direct_source_entries = tuple(self._entries.items())
         self._loaded = {}
         self._bytes = 0
 
@@ -118,3 +119,10 @@ class SourceTemplateCall:
         if len(values) != 1:
             raise TypeError('GetCommonTemplate requires one argument')
         return self.owner.get(caller, values[0])
+
+
+# Captured before the source-direct adapter can encounter host replacements.
+_DIRECT_SOURCE_TEMPLATE_ABI=tuple((cls,name,getattr(cls,name)) for cls,names in (
+    (SourceTemplateCall, ('__call__','invoke')),
+    (SourceCommonTemplates, ('authorize','get')),
+) for name in names)

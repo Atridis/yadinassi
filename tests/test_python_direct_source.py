@@ -119,7 +119,7 @@ Procedure OnStart() Outer();Message(SafeMode());EndProcedure''')
         with self.assertRaises(Exception):vm.execute('GetCommonTemplate(Effect(),Effect());')
         self.assertEqual(effects,[])
         vm.functions['getcommontemplate']=other.interpreter.functions['getcommontemplate']
-        with self.assertRaises(Exception):vm.execute('GetCommonTemplate(Effect());')
+        with self.assertRaises(BoundaryViolation):vm.execute('GetCommonTemplate(Effect());')
         self.assertEqual(effects,[])
 
     def test_prepared_signature_change_rejected_before_arguments(self):

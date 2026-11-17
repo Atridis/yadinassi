@@ -204,3 +204,10 @@ class BSLTextDocument(BSLObject):
         if key in procedures:
             return HostFunction(name, procedures[key], returns_value=False)
         return super().get_method(name)
+
+
+_DIRECT_TEXT_DOCUMENT_ABI=tuple((name,getattr(BSLTextDocument,name)) for name in (
+    '__new__','__init__','__getattribute__','__setattr__','get_method','__str__','get_text','line_count','get_line',
+    'set_text','read','write','_replace','add_line','insert_line','replace_line','delete_line','clear'))
+_DIRECT_TEXT_HELPERS=tuple((name,globals()[name]) for name in (
+    '_units','_text','_line_text','_index','_separator','_spans'))

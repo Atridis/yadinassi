@@ -53,16 +53,22 @@ CONSTRUCTORS = {
 class ServicesBoundary:
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         from .temporary_storage import SourceTemporaryCall
+        from .common_templates import SourceTemplateCall
         if type(value) is HostFunction and type(value.function) is SourceTemporaryCall:
             raise ValueError('temporary storage belongs to another or closed source application')
+        if type(value) is HostFunction and type(value.function) is SourceTemplateCall:
+            raise ValueError('foreign or inactive source common template owner')
         return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
 
     def resolve_service(self,name,*args,**kwargs):
         key=name.casefold()
         from .temporary_storage import SourceTemporaryCall
+        from .common_templates import SourceTemplateCall
         function=self._services.get(key)
         if type(function) is HostFunction and type(function.function) is SourceTemporaryCall:
             raise ValueError('temporary storage belongs to another or closed source application')
+        if type(function) is HostFunction and type(function.function) is SourceTemplateCall:
+            raise ValueError('foreign or inactive source common template owner')
         if key.startswith('new:') and key[4:] in CONSTRUCTORS:
             self._check()
             expected=CONSTRUCTORS[key[4:]]

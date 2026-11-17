@@ -551,3 +551,8 @@ FUNCTIONS = (
     ('ПолучитьДвоичныеДанныеИзСтроки', binary_from_string, 'GetBinaryDataFromString', True),
     ('ПолучитьСтрокуИзДвоичныхДанных', string_from_binary, 'GetStringFromBinaryData', True),
 )
+
+
+_DIRECT_SOURCE_BINARY_ABI=tuple((name,getattr(BSLBinaryData,name)) for name in (
+    '__new__','__init__','__getattribute__','__setattr__','get_method','size'))
+_DIRECT_SOURCE_BINARY_FROM_BYTES=vars(BSLBinaryData)['from_bytes']
