@@ -279,6 +279,7 @@ class SourceApplication:
         self.common_templates = SourceCommonTemplates(self)
         self._instances = {}
         self._reuse_routines = {}
+        self._direct_source_reuse_entries = {}
         self._global_exports = {}
         self.side = None
         self.state = 'prepared'
@@ -290,6 +291,8 @@ class SourceApplication:
             source_family=self.interpreter, unsupported=unsupported)
         from .reusable_values import ApplicationReusableValues
         self.reusable_values = ApplicationReusableValues(self, source_family=self.interpreter)
+        self._direct_source_reusable = (self.reusable_values, self.reusable_values._session,
+                                        self.reusable_values._request_key)
         from .safe_mode import SourceSafeMode
         self.safe_mode = SourceSafeMode(self)
         if type(source_catalog_records) is not bool or type(source_document_records) is not bool or type(source_document_sections) is not bool:
@@ -391,6 +394,8 @@ class SourceApplication:
                     if routine.is_async:
                         raise ValueError('Асинхронные повторно используемые модули пока не поддержаны')
                     self._reuse_routines[id(routine)] = (routine, child, definition.identity, reuse, scalar_server_reuse)
+                    self._direct_source_reuse_entries[id(routine)] = self._reuse_routines[id(routine)]
+                child._direct_source_reuse_seal = (definition, self.files[definition.path], self.files[path])
             from .values import BSLType
             child._self_module._platform_type = BSLType.COMMON_MODULE
             child._self_module.ready = True

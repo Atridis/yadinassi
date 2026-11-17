@@ -308,13 +308,16 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 return invoke
         bound=super().resolve_service(name,*args,**kwargs)
         return self._guard_references(bound) if kwargs.get("allow_references") else bound
-    def _routine(self,owner,routine,*,require_value=False,allow_references=False,argument_count=None,**unused):
+    def _routine(self,owner,routine,*,require_value=False,allow_references=False,argument_count=None,qualified=False,**unused):
         check_owner(owner);_preflight(owner,routine)
         if (routine.execution_context!=self.side or owner._logical_side!=self.side
                 or routine.is_async or routine.is_dual or not routine.module_context):
             raise ValueError('direct source crossing/async/NoContext routine is not integrated')
-        if id(routine) in self.app._reuse_routines:
-            raise ValueError('direct source reusable routine is not integrated')
+        if type(self.app._reuse_routines) is not dict:
+            raise BoundaryViolation('source reusable registry changed')
+        entry=self.app._reuse_routines.get(id(routine))
+        if not qualified and entry is not None and entry[4]:
+            raise ValueError('direct source ServerCall reusable routine is not integrated')
         keys=tuple(k for k,v in self.app._instances.items() if v is owner)
         def provenance():
             from .python_direct_source_server import check_activation
@@ -329,6 +332,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                     if selected is not owner._self_module:
                         raise BoundaryViolation('source module admission changed')
         provenance()
+        from .python_direct_source_reuse import prepare as prepare_reuse
+        reuse=prepare_reuse(self,owner,routine,provenance) if qualified else None
         minimum=max((i+1 for i,p in enumerate(routine.parameters) if p.default is None),default=0)
         if argument_count is not None and not minimum<=argument_count<=len(routine.parameters):
             raise TypeError('Неверное количество аргументов: '+routine.name)
@@ -338,7 +343,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             if (owner.server_routines if self.side=='server' else owner.routines).get(routine.name.casefold()) is not routine:
                 raise BoundaryViolation('source routine binding changed')
             values=tuple(_ForwardReference(v) if i in refs and type(v) is Reference else v for i,v in enumerate(values))
-            try:return invoke(owner,routine,values)
+            try:
+                return reuse(values,lambda:invoke(owner,routine,values)) if reuse is not None else invoke(owner,routine,values)
             finally:self._check()
         bound=self.resolve_callable(HostFunction(routine.name,call,returns_value=routine.is_function,reference_parameters=refs),
                                     require_value=require_value,allow_references=allow_references)
@@ -429,7 +435,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 from .python_direct_source_server import resolve
                 return resolve(self,owner,routine,require_value=require_value,
                     argument_count=argument_count,allow_references=allow_references)
-            return self._routine(owner,routine,require_value=require_value,
+            return self._routine(owner,routine,qualified=True,require_value=require_value,
                 argument_count=argument_count,allow_references=allow_references)
         function=self.resolve_member(value,name)
         return self.resolve_callable(HostFunction(name,function),require_value=require_value,
@@ -482,7 +488,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             # Dynamic member lowering has no byref address contract yet.
             if any(not p.by_value for p in routine.parameters):
                 raise ValueError('direct source qualified byref is not integrated')
-            return self._routine(owner,routine)
+            return self._routine(owner,routine,qualified=True)
         if self._metadata(value):
             function=value.get_method(name)
             def invoke_member(*values):
@@ -520,7 +526,8 @@ def _run(owner,plan,callback=None):
     previous=getattr(owner,'_direct_source_active',0)
     owner._direct_source_active=previous+1
     try:
-        with target_context(owner.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
+        from .python_direct_source_requests import request_scope
+        with request_scope(owner),target_context(owner.native_target),execution_backend_policy('python-direct'),localcontext() as decimal:
             decimal.prec=38
             context.enter()
             try:

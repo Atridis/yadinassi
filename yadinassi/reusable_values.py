@@ -172,3 +172,10 @@ class ApplicationReusableValues:
         if state is not None and self._request_key in state:state[self._request_key].refresh()
     def close(self):
         self._session.close();self._closed=True
+
+# Direct source admission validates canonical cache hooks before invoking them.
+_DIRECT_REUSE_ABI = tuple((cls, name, getattr(cls, name)) for cls, names in (
+    (ApplicationReusableValues, ('__new__', '__getattribute__', '__setattr__', '__init__', 'authorize', 'measure', 'cache', 'refresh', 'close')),
+    (ReusableValueCache, ('__new__', '__getattribute__', '__setattr__', '__init__', '_open', '_key', 'lookup', 'reserve', 'publish',
+                         'revalidate', 'discard', 'refresh', 'close')),
+) for name in names)
