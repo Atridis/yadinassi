@@ -6,7 +6,6 @@ from yadinassi.python_direct import PythonDirectUnsupported
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.unique_identifiers import BSLUUID
 from yadinassi.values import HostFunction
-from yadinassi.errors import BSLRuntimeError
 
 TEXT='6fe6c569-c38f-4f76-a3a6-bea52c24ed0a'
 
@@ -59,23 +58,12 @@ class DirectUUIDTests(unittest.TestCase):
         with self.assertRaises(PythonDirectUnsupported):vm.execute_prepared(prepared)
         self.assertNotIn('a',vm.variables)
 
-    def test_original_catalog_replay_reaches_metadata_after_selection(self):
+    def test_original_catalog_replay_completes_without_legacy_dispatch(self):
         import sys
         from pathlib import Path
         scripts=str(Path(__file__).resolve().parents[1]/'scripts')
         with patch.object(sys,'path',[scripts]+sys.path):
             from catalog_object_behavior.replay import replay
-        original=Interpreter.register_function;rows=[]
-        def register(vm,name,function,*args,**kwargs):
-            if name=='CBOEmit':
-                actual=function
-                def function(number,value):
-                    rows.append(value)
-                    return actual(number,value)
-            return original(vm,name,function,*args,**kwargs)
-        # This deliberately records the next unsupported operation, not a claim
-        # that the complete native comparison passed.
-        with patch.object(Interpreter,'register_function',register),patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            with self.assertRaisesRegex(BSLRuntimeError,'Metadata'):
-                replay()
-        self.assertEqual(rows,[True]*8+['initial','initial',True,True,'edited',False,True,True,'100',1,False,'first-update','stale-update',True,True])
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            rows=replay()
+        self.assertEqual(rows,[True]*8+['initial','initial',True,True,'edited',False,True,True,'100',1,False,'first-update','stale-update',True,True,True])

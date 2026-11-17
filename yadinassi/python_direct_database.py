@@ -14,9 +14,10 @@ from .enum_types import BSLEnumReference
 from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure
 from .values import HostFunction
+from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 
-NAMES=('catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента')
+NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента')
 
 class CatalogBoundary:
     def _catalog_owner(self, value):
@@ -45,6 +46,15 @@ class CatalogBoundary:
             # Detached result data: these public methods cannot execute queries
             # or write. Returned references still require the current root.
             return
+        elif kind is BSLMetadata:
+            if value is self.vm._metadata:return
+            owner=None
+        elif kind is BSLCatalogMetadataCollection:
+            if value is self.vm._metadata._catalogs:return
+            owner=None
+        elif kind is BSLCatalogMetadata:
+            if value._root is self.vm._metadata:return
+            owner=None
         elif kind is BSLCatalogs: owner=value
         elif kind is BSLCatalogManager: owner=value._catalogs
         elif kind in (BSLCatalogObject, BSLCatalogSelection): owner=value._manager._catalogs
@@ -68,6 +78,7 @@ class CatalogBoundary:
 
     def external_get(self,name):
         self._check()
+        if name in ('metadata','метаданные'):return self.vm._metadata
         if name in ('catalogs','справочники'):return self.vm._catalogs
         if name in ('documents','документы'):return self.vm._documents
         if name in ('enums','перечисления'):

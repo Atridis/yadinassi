@@ -151,3 +151,75 @@ class DirectDatabaseTests(unittest.TestCase):
         with patch.object(selection,'next',side_effect=AssertionError('cursor effect')) as advance:
             with self.assertRaises(BoundaryViolation):self.vm.execute('CloseOwner(); S.Next();')
             advance.assert_not_called()
+
+    def test_catalog_metadata_aliases_identity_and_public_lookup(self):
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            self.vm.execute('M=Metadata.Catalogs.Склады; R=Catalogs.Склады.EmptyRef(); '
+                            'Same=M=R.Metadata(); Alias=M=Метаданные.Справочники.Склады; '
+                            'Name=M.Имя; Full=M.FullName(); '
+                            'Found=Metadata.Catalogs.Find("Склады")=M; '
+                            'Indexed=Metadata.Catalogs["Склады"]=M; '
+                            'ByName=Metadata.FindByFullName("Catalog.Склады")=M; '
+                            'ByType=Metadata.FindByType(TypeOf(R))=M;')
+        for name in ('same','alias','found','indexed','byname','bytype'):
+            self.assertTrue(self.vm.variables[name],name)
+        self.assertEqual(self.vm.variables['name'],'Склады')
+        self.assertEqual(self.vm.variables['full'],'Справочник.Склады')
+        self.assertEqual(self.vm.execution_backend_stats['fallback'],0)
+
+    def test_metadata_foreign_roots_collections_and_items_rejected(self):
+        self.vm.execute('Root=Metadata; Collection=Metadata.Catalogs; Item=Collection.Склады;')
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        for name,expression in (('root','foreign.Catalogs'),('collection','foreign.Count()'),('item','foreign.Name')):
+            other.variables['foreign']=self.vm.variables[name]
+            with self.subTest(name=name),self.assertRaises(BoundaryViolation):other.execute('X='+expression+';')
+
+    def test_metadata_private_readonly_and_unsupported_family_boundaries(self):
+        from yadinassi.errors import BSLRuntimeError
+        for source in ('Metadata=1;', 'Metadata.Catalogs=1;', 'Metadata.Catalogs.Склады.Name="bad";',
+                       'Metadata.Catalogs["Склады"]=1;', 'X=Metadata._catalogs;', 'X=Metadata.Catalogs._context;',
+                       'X=Metadata.Catalogs.Склады._root;'):
+            with self.subTest(source=source),self.assertRaises(BSLRuntimeError):self.vm.execute(source)
+        with self.assertRaises(BoundaryViolation):self.vm.execute('For Each X In Metadata.Catalogs Do EndDo;')
+        with self.assertRaises(BoundaryViolation):self.vm.execute('X=Metadata.Documents.Count();')
+
+    def test_metadata_subclasses_rejected(self):
+        from yadinassi.metadata import BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata
+        for base in (BSLMetadata,BSLCatalogMetadataCollection,BSLCatalogMetadata):
+            class Derived(base):pass
+            self.vm.variables['foreign']=object.__new__(Derived)
+            with self.subTest(base=base),self.assertRaises(BoundaryViolation):self.vm.execute('X=foreign.Name;')
+
+    def test_bound_metadata_method_rechecks_current_owner(self):
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        original=self.vm._metadata
+        def change():
+            self.vm._metadata=other._metadata
+            return 'Catalog.Склады'
+        self.vm.register_function('Change',change)
+        try:
+            with patch.object(original,'find_by_full_name',side_effect=AssertionError('lookup effect')) as lookup:
+                with self.assertRaises(BoundaryViolation):self.vm.execute('X=Metadata.FindByFullName(Change());')
+                lookup.assert_not_called()
+        finally:self.vm._metadata=original
+
+    def test_prepared_metadata_binds_current_runtime(self):
+        plan=self.vm.prepare('M=Metadata.Catalogs.Склады;')
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.execute_prepared(plan)
+        self.assertIs(other.variables['m']._root,other._metadata)
+        self.assertNotIn('m',self.vm.variables)
+        plain=Interpreter();self.addCleanup(plain.close)
+        with self.assertRaisesRegex(Exception,'contract changed'):plain.execute_prepared(plan)
+
+    def test_metadata_context_change_denied_before_lookup(self):
+        original=self.vm._metadata;context=self.vm._database_context
+        def change():
+            self.vm._database_context=None
+            return 'Catalog.Склады'
+        self.vm.register_function('Change',change)
+        try:
+            with patch.object(original,'find_by_full_name',side_effect=AssertionError('lookup effect')) as lookup:
+                with self.assertRaises(BoundaryViolation):self.vm.execute('X=Metadata.FindByFullName(Change());')
+                lookup.assert_not_called()
+        finally:self.vm._database_context=context

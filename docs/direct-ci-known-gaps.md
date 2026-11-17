@@ -147,3 +147,50 @@ The additional `test_catalog_dynamic_types` probe had one existing failure,
 receiver); it was reproduced separately on unchanged `7486c984`. Combined with
 the first three focused modules, that probe ran 38 tests: 37 PASS, one error,
 in both modes. No full CI success is claimed.
+
+## Catalog metadata follow-up
+
+On `392b6fa5`, the unchanged CatalogObject replay reproduced the undefined
+`Metadata` failure at observation 24. The direct database namespace now resolves
+`Metadata`/`Метаданные` to the current runtime metadata root. Exact root,
+catalog metadata collection and catalog metadata item receivers use current
+runtime identity checks before public protocol access and again before a bound
+method invocation. The existing metadata implementation still owns lazy snapshot
+loading, source order and schema validation; no VM dispatch or new cache is added.
+Public catalog lookup, indexing, Name/FullName and identity are available.
+Private members, writes, subclasses, foreign runtime metadata and collection
+iteration remain rejected. Other metadata receiver families (including document
+collections and catalog child collections) have not been admitted by this slice.
+The namespace remains scoped to the existing host-selected database profile;
+no-database/configuration/managed-profile compatibility is not claimed.
+
+The exact original `catalog_object_behavior.replay.replay()` now returns all
+24 observations, including the final reference/metadata identity `True`:
+
+```text
+[True, True, True, True, True, True, True, True, 'initial', 'initial',
+ True, True, 'edited', False, True, True, '100', 1, False,
+ 'first-update', 'stale-update', True, True, True]
+```
+
+The full host replay regression forbids Interpreter.block/call_routine. No
+native fixture, expected output, source binding, comparison gate or backend
+selector changed. This completes that owned logical host replay, **not** a new
+native measurement or a claim that its output matches native observations.
+Managed-form TypeDescription, six-scenario managed-thick-file, Python 3.10 source
+positions and broader direct compatibility gaps remain.
+
+Validation: 67 tests PASS normal and the same 67 PASS under `-O`, using
+`test_python_direct_database`, `test_python_direct_uuid`,
+`test_python_direct_form_database_admission`,
+`test_python_direct_catalog_preparation`,
+`test_python_direct_prepared_validator`, and `test_python_direct_default`.
+New tests cover both aliases, public lookup/identity, foreign/subclass/private/
+write/iteration denials, prepared current-runtime binding, and owner/context
+replacement after method binding before invocation.
+
+The actual comparator's `EXECUTE_SCRIPT` also ran in an isolated `-I -B` child:
+exit 0, empty stderr, 156 bytes, 24 observations accepted by `parse_output`.
+Canonical output SHA-256:
+`5a94916806539bfdd40517a7092b3a543ea6dc53d52f0f0cedbd8d37ba3b23f4`.
+This establishes valid host output; native comparison was not run locally.
