@@ -1,7 +1,8 @@
-"""Default trusted-standalone AST -> Python execution. No legacy fallback.
+"""Default trusted-client AST -> Python execution. No legacy fallback.
 
-Standalone execution and an explicit host-selected catalog/query bridge live
-here. Configuration and forms use separate direct entry points; unsupported
+Client execution with either supported compilation profile and an explicit
+host-selected catalog/query bridge live here. Configuration and forms use separate
+direct entry points; unsupported
 async/server/NoContext contracts still require explicit compiled-strict. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
@@ -50,9 +51,12 @@ def _admit_vm(vm):
         _reject('application safe-mode/transaction contexts are not integrated')
     if (vm._configuration_runtime is not None
             or vm._family_owner is not vm or vm.locals is not None
-            or not vm._has_module_context or vm.execution_context!='client'
-            or vm.compilation_profile!='standalone'):
-        _reject('configuration/database/server/NoContext contexts are not integrated')
+            or not vm._has_module_context or vm.execution_context!='client'):
+        _reject('configuration/server/NoContext contexts are not integrated')
+    # The frontend has already selected branches using this source profile.
+    # Compilation symbols do not grant server dispatch or a runtime context.
+    if vm.compilation_profile not in ('standalone','managed-thick-file'):
+        _reject('compilation profile is not integrated')
     if vm.database_context is not None:
         from .database_context import SQLiteDBContext
         if type(vm.database_context) is not SQLiteDBContext:

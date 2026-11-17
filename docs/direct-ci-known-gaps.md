@@ -506,3 +506,19 @@ PYTHONPATH=tests:scripts:. python -B -m unittest \
   test_native_regex_family_profile.RegexFamilyProfileTests.test_portable_child_replay_matches_its_own_local_observation \
   test_native_regex_family_profile.RegexFamilyProfileTests.test_real_isolated_replay_adapter_matches_its_own_local_observation
 ```
+
+### Managed profile client path (2026-11-17)
+
+Baseline `3bd91286`: the real `verify_client_interpreter` child was rejected solely
+because direct admission required standalone compilation. The existing managed
+frontend is now admitted for the same client execution path, with prepared plans
+still bound to their compilation profile. Runtime server/NoContext/configuration
+checks and source-side declarations remain enforced; profile flags grant no
+runtime authority. No VM dispatch or persistent routine implementation was added.
+
+The original dates/numbers scenarios now complete under managed-thick-file with
+185/427 messages, matching standalone direct output. **The entire six-scenario
+preflight still fails**: the exact isolated child now rejects server declarations,
+before producing any witness values. Original collections still stops at
+FixedStructure; functions/strings/values at Execute. 72 combined tests pass normal
+and optimized. [Precise progression, hashes, context limits and reproducer](direct-managed-client-profile.md).
