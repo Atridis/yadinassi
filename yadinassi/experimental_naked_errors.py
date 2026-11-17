@@ -97,7 +97,22 @@ class SourceMap:
         return compile(tree,filename,'exec')
 
 
-def convert_error(error,filename,source):
+class _ErrorLocations:
+    """One code table and one source, owned by the current boundary activation."""
+    __slots__=('code','positions','source','lines')
+    def __init__(self):
+        self.code=None;self.positions=();self.source=None;self.lines=()
+    def for_code(self,code):
+        if self.code is not code:
+            self.code=code;self.positions=tuple(code.co_positions())
+        return self.positions
+    def for_source(self,source):
+        if self.source is not source:
+            self.source=source;self.lines=source.splitlines()
+        return self.lines
+
+
+def convert_error(error,filename,source,*,_context=None):
     """Convert only recoverable runtime errors, preserving nonrecoverable boundaries."""
     if isinstance(error,BSLError) or not isinstance(error,(ArithmeticError,ValueError,TypeError,IndexError,RecursionError)):
         return error
@@ -106,18 +121,36 @@ def convert_error(error,filename,source):
         if tb.tb_frame.f_code.co_filename==filename:chosen=tb
         tb=tb.tb_next
     if chosen is None:return error
+    locations=None
+    if _context is not None:
+        locations=getattr(_context,'_error_locations',None)
+        if locations is None:
+            locations=_ErrorLocations();_context._error_locations=locations
     line,column=chosen.tb_lineno,0
     # SourceMap already rewrites AST line numbers to BSL lines on Python 3.10.
     # PEP 657 adds expression columns on 3.11+; their absence is diagnostic only.
     if hasattr(chosen.tb_frame.f_code, 'co_positions'):
-        positions=list(chosen.tb_frame.f_code.co_positions())
+        code=chosen.tb_frame.f_code
+        positions=tuple(code.co_positions()) if locations is None else locations.for_code(code)
         index=chosen.tb_lasti//2
         if index<len(positions):line,_,column,_=positions[index]
     line=line or chosen.tb_lineno;column=(column or 0)+1
     message=str(error) or type(error).__name__
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
-    lines=source.splitlines();source_line=lines[line-1] if 0<line<=len(lines) else ''
+    lines=source.splitlines() if locations is None else locations.for_source(source)
+    source_line=lines[line-1] if 0<line<=len(lines) else ''
     return BSLRuntimeError(message,filename,line,column,source_line=source_line)
+
+
+class _HandledError:
+    __slots__=('error','filename','source','resolved')
+    def __init__(self,error,filename,source):
+        self.error=error;self.filename=filename;self.source=source;self.resolved=False
+    def resolve(self,context):
+        if not self.resolved:
+            self.error=convert_error(self.error,self.filename,self.source,_context=context)
+            self.resolved=True
+        return self.error
 
 
 @contextmanager
@@ -125,7 +158,7 @@ def handled_error(context,error,filename,source):
     """Activation-local diagnostics; nested handlers discard stale outer details."""
     errors=context._handled_errors
     for index in range(len(errors)):errors[index]=None
-    errors.append(convert_error(error,filename,source))
+    errors.append(_HandledError(error,filename,source))
     try:yield
     finally:errors.pop()
 
@@ -135,7 +168,7 @@ def reraise_handled(context):
     if not errors:raise ValueError('Нет активного исключения для повторного вызова')
     if errors[-1] is None:
         raise ValueError('Повторный вызов исключения после вложенного обработчика пока не поддерживается; используйте явное сообщение')
-    raise errors[-1]
+    raise errors[-1].resolve(context)
 
 
 def description_service(context,function):
@@ -149,5 +182,5 @@ def description_service(context,function):
         return function
     def description():
         errors=context._handled_errors
-        return str(errors[-1]) if errors and errors[-1] is not None else ''
+        return str(errors[-1].resolve(context)) if errors and errors[-1] is not None else ''
     return HostFunction(function.name,description,reference_parameters=function.reference_parameters,returns_value=function.returns_value)
