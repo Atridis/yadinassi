@@ -94,7 +94,7 @@ class GraphXDTOTests(unittest.TestCase):
         self.assertEqual(effects,[])
     def test_io_and_descriptor_surface_still_denied(self):
         app=self.prepared();vm=app.interpreter
-        for code in ('New XMLWriter;','XDTOFactory.WriteXML(Undefined,P);','T.Properties;','P.Properties();'):
+        for code in ('New XMLWriter(Undefined);','XDTOFactory.WriteXML(Undefined,P);','T.Properties;','P.Properties();'):
             with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
     def test_orphan_list_handle_cannot_attach_unreachable_child(self):
         app=self.prepared();vm=app.interpreter;vm.execute('L=P.Children;L.Add(C);P.Unset("Children");')

@@ -102,6 +102,11 @@ def _check(boundary,target):
     if not owns(target):raise BoundaryViolation('source XDTO receiver changed')
     records=_RECORDS.get(boundary.app)
     if records is None or target not in records:raise BoundaryViolation('source XDTO receiver not produced here')
+    types=_validate_records(factory,records)
+    return owner,factory,types.get(target._type) if type(target) is _OBJECT else target._prop
+
+
+def _validate_records(factory,records):
     if len(records)>shared.values.MAX_NODES:raise BoundaryViolation('source XDTO value inventory exceeds bounds')
     types={}
     # Check the entire bounded private value inventory before native traversal.
@@ -170,7 +175,7 @@ def _check(boundary,target):
                 raise BoundaryViolation('source XDTO child type changed')
             elif type(child) is _OBJECT and (child._owner is not parent or child._owning is not prop):
                 raise BoundaryViolation('source XDTO child ownership changed')
-    return owner,factory,types.get(target._type) if type(target) is _OBJECT else target._prop
+    return types
 
 
 def _budget(factory,nodes=0,units=0):
@@ -185,9 +190,7 @@ def _publish(boundary,owner,factory,*changed):
 
 
 def create(boundary,kind):
-    records=_RECORDS.get(boundary.app)
-    if records:_check(boundary,next(iter(records)))
-    owner,factory=shared._owner(boundary);_hooks();admit_type(factory,kind);_budget(factory,1)
+    owner,factory=check_inventory(boundary);admit_type(factory,kind);_budget(factory,1)
     result=shared._CREATE_CALL(factory,kind)
     if type(result) is not _OBJECT:raise BoundaryViolation('source XDTO object constructor changed')
     _publish(boundary,owner,factory,result);_check(boundary,result);return result
@@ -345,3 +348,56 @@ def iterate(boundary,value):
     if type(value) is not _LIST:raise ValueError('source XDTO object is not iterable')
     for child in tuple(value._items):
         _check(boundary,value);yield _native(child)
+
+
+def check_inventory(boundary):
+    owner,factory=shared._owner(boundary);_hooks()
+    _validate_records(factory,_RECORDS.get(boundary.app,{}))
+    return owner,factory
+
+
+def stage_xml_result(boundary,factory,result):
+    """Private canonical-reader output admission, without publication."""
+    records=dict(_RECORDS.get(boundary.app,{}));new=[];pending=[result];seen=set()
+    while pending:
+        value=pending.pop()
+        if value is None:continue
+        if id(value) in seen:continue
+        seen.add(id(value))
+        if len(seen)>min(shared.io.MAX_NODES,shared.values.MAX_NODES):raise BoundaryViolation('source XML output graph limit')
+        if not any(type(value) is cls for cls in (_OBJECT,_LIST,shared._VALUE)):
+            raise BoundaryViolation('source XML foreign output value')
+        fields=_fields(value)
+        if value in records:raise BoundaryViolation('source XML output reused existing value')
+        if type(value) is _OBJECT:
+            if set(fields)!={'_factory','_type','_owner','_owning','_values'} or value._factory is not factory:
+                raise BoundaryViolation('source XML object fields changed')
+            admit_type(factory,value._type)
+            if type(value._values) is not dict or any(type(k) is not str for k in value._values):raise BoundaryViolation('source XML object mapping changed')
+            if len(seen)+len(pending)+len(value._values)>min(shared.io.MAX_NODES,shared.values.MAX_NODES):raise BoundaryViolation("source XML output entry limit")
+            pending.extend(value._values.values())
+        elif type(value) is _LIST:
+            if set(fields)!={'_owner','_prop','_items'} or type(value._items) is not list or len(value._items)>shared.values.MAX_LIST:
+                raise BoundaryViolation('source XML list fields changed')
+            if len(seen)+len(pending)+len(value._items)>min(shared.io.MAX_NODES,shared.values.MAX_NODES):raise BoundaryViolation("source XML output entry limit")
+            pending.extend(value._items)
+        else:
+            if set(fields)!={'_factory','_type','_value','_lexical'} or value._factory is not factory:
+                raise BoundaryViolation('source XML scalar fields changed')
+            shared._kind(factory,value._type)
+            if not any(type(value._value) is cls for cls in (str,bool,Decimal)) or type(value._lexical) is not str:
+                raise BoundaryViolation('source XML scalar representation changed')
+            native,lexical=shared.values.scalar(value._type,value._value)
+            if lexical!=value._lexical:raise BoundaryViolation('source XML scalar lexical mismatch')
+        records[value]=_snapshot(value);new.append(value)
+    if type(result) is _OBJECT and (result._owner is not None or result._owning is not None):
+        raise BoundaryViolation('source XML root has an owner')
+    _validate_records(factory,records)
+    return records,tuple(new)
+
+
+def publish_xml_result(boundary,staged):
+    records,new=staged
+    _RECORDS[boundary.app]=records
+    for value in new:
+        if type(value) is shared._VALUE:shared._VALUES[value]=tuple(_fields(value).items())

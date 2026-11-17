@@ -396,3 +396,17 @@ class BSLXMLWriter(BSLObject):
         key=name.casefold()
         if key in methods: return HostFunction(name,methods[key],returns_value=key in ('close','закрыть','lookupprefix','найтипрефикс'))
         return super().get_method(name)
+
+# Definition-time hooks for the source-created string-only XDTO IO boundary.
+from types import FunctionType as _DirectXMLFunction
+_DIRECT_SOURCE_XML_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _DirectXMLFunction or isinstance(value,type))
+_DIRECT_SOURCE_XML_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (BSLXMLWriter,BSLXMLWriterSettings)
+        for base in receiver.__mro__))
+_DIRECT_SOURCE_XML_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
+    if name.startswith('MAX_') and type(value) is int and value>0)
+_DIRECT_SOURCE_XML_CONSTANTS=(expat,expat.ParserCreate,_XML_URI,_XMLNS_URI,file_io,file_io._file_errors)
+_DIRECT_SOURCE_XML_FILE_HELPERS=tuple((name,getattr(file_io,name)) for name in ('_bool','_text','_file_errors','_encoding'))
+
+_DIRECT_SOURCE_XML_DICT=next(vars(cls)["__dict__"] for cls in BSLXMLWriter.__mro__ if "__dict__" in vars(cls))

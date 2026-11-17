@@ -27,6 +27,7 @@ from . import python_direct_source_resources as resources
 from . import python_direct_source_value_storage as stored_values
 from . import python_direct_source_xdto as xdto
 from . import python_direct_source_xdto_objects as xdto_objects
+from . import python_direct_source_xdto_xml as xdto_xml
 from . import python_direct_source_xdto_local as local_xdto
 
 
@@ -144,7 +145,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
-        constructors=(local_xdto.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
+        constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
         _source_callable_externals=_callable_externals,_source_shadowable_externals=shadowable,
@@ -294,6 +295,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key.startswith('new:') and key[4:] in xdto_xml.CONSTRUCTOR_NAMES:
+            return xdto_xml.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in local_xdto.CONSTRUCTOR_NAMES:
             return local_xdto.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in stored_values.CONSTRUCTOR_NAMES:
@@ -449,6 +452,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self._module(value.module(self.vm))
     def get_member(self,value,name):
         self._check()
+        if xdto_xml.owns(value):return xdto_xml.get(self,value,name)
         if xdto.owns(value):return xdto.get(self,value,name)
         if stored_values.owns(value):return stored_values.get(self,value,name)
         if resources.owns(value):return resources.get(self,value,name)
@@ -466,6 +470,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if xdto_xml.owns(value):return xdto_xml.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if xdto.owns(value):return xdto.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if stored_values.owns(value):return stored_values.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if resources.owns(value):return resources.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)

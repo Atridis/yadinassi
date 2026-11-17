@@ -245,6 +245,9 @@ def get(boundary,value,name):
     if objects.owns(value):return objects.get(boundary,value,name)
     _,factory=_owner(boundary)
     if value is factory:
+        from . import python_direct_source_xdto_xml as xml
+        method=xml.factory_method(boundary,factory,name)
+        if method is not None:return method
         key=name.casefold()
         if key not in _METHODS:raise ValueError('source XDTO factory member not integrated')
         return HostFunction(name,_METHODS[key].__get__(factory,_FACTORY))
@@ -271,6 +274,11 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
 
 
 def captured(boundary,function,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_xml as xml
+    result=xml.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if result is not None:return result
+    result=xml.captured_factory(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if result is not None:return result
     from . import python_direct_source_xdto_objects as objects
     result=objects.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     if result is not None:return result

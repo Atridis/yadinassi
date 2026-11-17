@@ -1,5 +1,9 @@
 # Bounded source XDTO object trees and lists
 
+The subsequent [string-only XML capability](direct-source-xdto-xml-strings.md)
+adds staged IO for these graphs. The IO exclusions below describe this original
+object-tree slice, not a grant for general XML or JSON operations.
+
 This extends the global source factory's flat-object capability, not the local
 empty-factory capability. Current package object types may contain nested object
 properties and bounded lists of the previously admitted scalar types or object

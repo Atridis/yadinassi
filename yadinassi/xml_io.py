@@ -404,3 +404,5 @@ _DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().
 _DIRECT_SOURCE_XDTO_PARSER_CREATE=expat.ParserCreate
 
 _DIRECT_SOURCE_XDTO_EXPAT_MODULE=expat
+
+_DIRECT_SOURCE_XML_CONSTANTS=(T,_XML_URI,expat.XML_PARAM_ENTITY_PARSING_NEVER,expat.ExpatError)

@@ -107,7 +107,7 @@ class BSLXDTOFactory(_FileMethods):
             seen.add(prop._name)
         obj.validate();return obj
     @_allocation_transaction
-    def read_xml(self,reader,kind=None):
+    def read_xml(self,reader,kind=None,*,_source_string_only=False):
         if type(reader) is not BSLXMLReader or reader._source is None:raise TypeError('XDTO: ожидается открытое ЧтениеXML')
         if reader._position>=0:raise ValueError('XDTO: позиционное чтение пока не поддерживается')
         root=_xml_tree(reader._source)
@@ -119,7 +119,11 @@ class BSLXDTOFactory(_FileMethods):
         elif ('http://www.w3.org/2001/XMLSchema-instance','nil') in root['attrs']:
             raise ValueError('XDTO: nil требует известного корневого свойства')
         self._kind(kind);value=self._from_tree(root,kind)
-        staged=copy.copy(reader)
+        if _source_string_only:
+            if type(reader._source) is not str or reader._tokens is not None or reader._position!=-1:
+                raise ValueError('source XML requires unread string reader')
+            staged=BSLXMLReader();staged.set_string(reader._source)
+        else:staged=copy.copy(reader)
         while staged.read():pass
         reader.__dict__.update(staged.__dict__)
         return value
@@ -139,7 +143,7 @@ class BSLXDTOFactory(_FileMethods):
                         raise ValueError('XDTO: retained derived type serialization unsupported')
                     pending.append((child,depth+1))
 
-    def write_xml(self,writer,value,local_name=None,uri=None,form=None,type_assignment=None):
+    def write_xml(self,writer,value,local_name=None,uri=None,form=None,type_assignment=None,*,_source_string_only=False):
         if type(writer) is not BSLXMLWriter:raise TypeError('XDTO: ожидается ЗаписьXML')
         if (form is not None and form is not BSLXMLForm.ELEMENT) or type_assignment is not None:raise ValueError('XDTO: расширенные формы записи пока не поддерживаются')
         value=self._value(value)
@@ -176,7 +180,13 @@ class BSLXDTOFactory(_FileMethods):
             stack.append(('end',None,'','',depth));stack.extend(reversed(children))
         result=tmp.close()
         # Reuse the bounded XML writer's staged in-memory commit, never copy fd.
-        staged=object.__new__(BSLXMLWriter);staged.__dict__=copy.deepcopy({k:v for k,v in writer.__dict__.items() if k!='_stream'});staged._stream=None
+        if _source_string_only:
+            if (writer._stream is not None or writer._active is not True or writer._roots or writer._stack
+                    or writer._attribute is not None or writer._cost!=0 or writer._nodes!=0):
+                raise ValueError('source XML requires empty active string writer')
+            staged=BSLXMLWriter();staged.set_string()
+        else:
+            staged=object.__new__(BSLXMLWriter);staged.__dict__=copy.deepcopy({k:v for k,v in writer.__dict__.items() if k!='_stream'});staged._stream=None
         staged.write_raw(result);stream=writer._stream;writer.__dict__.update(staged.__dict__);writer._stream=stream
     def _plain(self,value,depth=0):
         if depth>MAX_DEPTH:raise ValueError('XDTO: превышена глубина JSON')

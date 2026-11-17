@@ -78,7 +78,7 @@ class FlatXDTOTests(unittest.TestCase):
         self.assertIsNotNone(app.interpreter.execute('XDTOFactory.Type("urn:owned:records","Record");'))
     def test_no_methods_index_or_io_grants(self):
         app=self.prepared();vm=app.interpreter
-        for code in ('V.Properties();','V.Factory();','XDTOFactory.WriteXML(Undefined,V);','New XMLWriter;'):
+        for code in ('V.Properties();','V.Factory();','XDTOFactory.WriteXML(Undefined,V);','New XMLWriter(Undefined);'):
             with self.subTest(code=code),self.assertRaises(basic.DENIED):vm.execute(code)
     def test_factory_and_scalar_create_arities_preserved(self):
         app=self.prepared();vm=app.interpreter
