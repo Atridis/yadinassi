@@ -1,5 +1,9 @@
 # Source XDTO string-only XML IO
 
+The subsequent [string-only JSON capability](direct-source-xdto-json-strings.md)
+adds explicit-type JSON roundtrips. JSON exclusions below describe this original
+XML slice. Neither capability grants generic file or stream IO.
+
 This is a bounded XDTO roundtrip capability, not general XML or filesystem access.
 The source application may create zero-argument XMLReader/XMLWriter values.
 Reader SetString(text) and Close(), writer SetString() and Close(), and the global

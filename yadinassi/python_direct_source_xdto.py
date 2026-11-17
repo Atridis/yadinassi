@@ -241,9 +241,11 @@ def namespace(boundary,name):
 
 
 def _kind(factory,kind):
+    if type(kind) is _TYPE:_field_keys(kind)
     if (type(kind) is not _TYPE or kind._factory is not factory or type(kind._uri) is not str or type(kind._name) is not str or factory._types.get((kind._uri,kind._name)) is not kind):
         raise BoundaryViolation('source XDTO requires a current scalar type from this factory')
     base=kind._base
+    if type(base) is _TYPE:_field_keys(base)
     if base is not None:
         if (type(base) is not _TYPE or base._factory is not factory or base._uri!=values.XS
                 or base._base is not None or factory._types.get((base._uri,base._name)) is not base):
@@ -259,6 +261,9 @@ def get(boundary,value,name):
     if objects.owns(value):return objects.get(boundary,value,name)
     _,factory=_owner(boundary)
     if value is factory:
+        from . import python_direct_source_xdto_json as json
+        method=json.factory_method(boundary,factory,name)
+        if method is not None:return method
         from . import python_direct_source_xdto_xml as xml
         method=xml.factory_method(boundary,factory,name)
         if method is not None:return method
@@ -288,6 +293,11 @@ def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_
 
 
 def captured(boundary,function,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_json as json
+    result=json.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if result is not None:return result
+    result=json.captured_factory(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if result is not None:return result
     from . import python_direct_source_xdto_xml as xml
     result=xml.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     if result is not None:return result

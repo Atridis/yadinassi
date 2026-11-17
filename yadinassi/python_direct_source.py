@@ -28,6 +28,7 @@ from . import python_direct_source_value_storage as stored_values
 from . import python_direct_source_xdto as xdto
 from . import python_direct_source_xdto_objects as xdto_objects
 from . import python_direct_source_xdto_xml as xdto_xml
+from . import python_direct_source_xdto_json as xdto_json
 from . import python_direct_source_xdto_local as local_xdto
 
 
@@ -145,7 +146,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
-        constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
+        constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
         _source_callable_externals=_callable_externals,_source_shadowable_externals=shadowable,
@@ -216,6 +217,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'bind_eval'):invoke.bind_eval=bound.bind_eval
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        xdto_json.reject_global_callable(value)
         bound=xdto.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         bound=stored_values.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -233,6 +235,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         captured=storage.captured(self,value,require_value=require_value,allow_references=allow_references)
         if captured is not None:return captured
         bound=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        bound=xdto_json.guard_global_callable(self,value,bound)
         return self._guard_references(bound) if allow_references else bound
     def leave(self):
         self._active=False
@@ -295,6 +298,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key.startswith('new:') and key[4:] in xdto_json.CONSTRUCTOR_NAMES:
+            return xdto_json.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in xdto_xml.CONSTRUCTOR_NAMES:
             return xdto_xml.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in local_xdto.CONSTRUCTOR_NAMES:
@@ -332,6 +337,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             routine,owner=selected
             return self._routine(owner,routine,**kwargs)
         function=self._services.get(key)
+        guard_target=self.vm.types.get(key[4:]) if key.startswith("new:") else function
+        xdto_json.reject_global_callable(guard_target)
         template_call=templates.captured(self,function,require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
         if template_call is not None:return template_call
@@ -357,6 +364,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 if kwargs.get('allow_references'):invoke.requires_reference=lambda index:False
                 return invoke
         bound=super().resolve_service(name,*args,**kwargs)
+        bound=xdto_json.guard_global_callable(self,guard_target,bound)
         return self._guard_references(bound) if kwargs.get("allow_references") else bound
     def _routine(self,owner,routine,*,require_value=False,allow_references=False,argument_count=None,qualified=False,**unused):
         check_owner(owner);_preflight(owner,routine)
@@ -452,6 +460,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self._module(value.module(self.vm))
     def get_member(self,value,name):
         self._check()
+        if xdto_json.owns(value):return xdto_json.get(self,value,name)
         if xdto_xml.owns(value):return xdto_xml.get(self,value,name)
         if xdto.owns(value):return xdto.get(self,value,name)
         if stored_values.owns(value):return stored_values.get(self,value,name)
@@ -470,6 +479,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if xdto_json.owns(value):return xdto_json.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if xdto_xml.owns(value):return xdto_xml.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if xdto.owns(value):return xdto.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if stored_values.owns(value):return stored_values.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)

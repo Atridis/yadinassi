@@ -622,6 +622,8 @@ class SourceApplication:
             release_xdto_objects(self)
             from .python_direct_source_xdto_xml import release_application as release_xdto_xml
             release_xdto_xml(self)
+            from .python_direct_source_xdto_json import release_application as release_xdto_json
+            release_xdto_json(self)
 
 
 # Definition-time initializer identity for direct session-store admission.

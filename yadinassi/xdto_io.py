@@ -224,16 +224,23 @@ class BSLXDTOFactory(_FileMethods):
                 for v in pair.value.items:items.add(self._from_plain(prop._type,v,depth+1))
         obj.validate();return obj
     @_allocation_transaction
-    def read_json(self,reader,kind=None,*callbacks):
+    def read_json(self,reader,kind=None,*callbacks,_source_string_only=False):
         if type(reader) is not BSLJSONReader or reader._source is None:raise TypeError('XDTO: ожидается открытое ЧтениеJSON')
         if callbacks or kind is None:raise ValueError('XDTO: требуется явный тип без callbacks')
         kind=self._kind(kind)
         if reader._position>=0:raise ValueError('XDTO: позиционное чтение JSON пока не поддерживается')
         if len(reader._source)>MAX_SCHEMA_BYTES:raise ValueError('XDTO: превышен размер JSON')
-        staged=copy.copy(reader)
+        if _source_string_only:
+            if type(reader._source) is not str or reader._tokens is not None or reader._position!=-1:
+                raise ValueError('source JSON requires unread string reader')
+            staged=BSLJSONReader();staged.set_string(reader._source)
+        else:staged=copy.copy(reader)
         # Inspect bounded parsed tokens before map conversion can collapse duplicate keys.
         from .json_processing import T
-        probe=copy.copy(reader);objects=[]
+        if _source_string_only:
+            probe=BSLJSONReader();probe.set_string(reader._source)
+        else:probe=copy.copy(reader)
+        objects=[]
         while probe.read():
             token,key=probe._current
             if token is T.START_OBJECT:objects.append(set())

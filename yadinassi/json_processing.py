@@ -701,3 +701,29 @@ def write_json(writer, value, settings=None):
     if type(writer) is not BSLJSONWriter:
         raise TypeError("ЗаписатьJSON: ожидается ЗаписьJSON")
     writer._write_encoded(_encode(value, settings))
+
+# Definition-time closed dependencies for source-owned XDTO string codecs.
+from types import FunctionType as _SourceJSONFunction
+from . import maps as _source_json_maps,values as _source_json_values,structures as _source_json_structures,json_dates as _source_json_dates
+import sys as _source_json_sys
+_SOURCE_JSON_MODULES=(_source_json_sys.modules[__name__],_source_json_maps,_source_json_values,_source_json_structures,_source_json_dates)
+_DIRECT_SOURCE_JSON_BINDINGS=tuple((module,name,value) for module in _SOURCE_JSON_MODULES
+    for name,value in tuple(vars(module).items()) if type(value) is _SourceJSONFunction or isinstance(value,type))
+_DIRECT_SOURCE_JSON_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in
+        (BSLJSONReader,BSLJSONWriter,BSLJSONWriterSettings,BSLJSONValueType,BSLJSONLineBreak,
+         BSLJSONSerializerSettings,BSLJSONDateFormat,_source_json_dates.BSLJSONDateWritingVariant,
+         _Pairs,BSLMap,BSLArray,_source_json_structures.BSLKeyAndValue)
+        for base in receiver.__mro__))
+_DIRECT_SOURCE_JSON_LIMITS=(MAX_TEXT,MAX_DEPTH)
+_DIRECT_SOURCE_JSON_CONSTANTS=(T,_JSON_SCALARS,_JSON_COLLECTIONS,_SKIP_JSON_PROPERTY,json,os,os.linesep)
+_DIRECT_SOURCE_JSON_STDLIB=tuple((module,name,value) for module,names in
+    ((json,('loads','dumps','JSONDecoder','JSONEncoder','JSONDecodeError','decoder','encoder','scanner')),
+     (json.decoder,('JSONDecoder','JSONDecodeError','JSONObject','JSONArray','scanstring','scanner','WHITESPACE','WHITESPACE_STR','BACKSLASH','STRINGCHUNK')),
+     (json.encoder,('JSONEncoder','encode_basestring','encode_basestring_ascii')),
+     (json.scanner,('make_scanner','c_make_scanner','py_make_scanner','NUMBER_RE')))
+    for name in names for value in (getattr(module,name),))
+_DIRECT_SOURCE_JSON_STDLIB_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in (json.JSONDecoder,json.JSONEncoder,json.JSONDecodeError)
+        for base in receiver.__mro__))
+_DIRECT_SOURCE_JSON_DICT=next(vars(cls)['__dict__'] for cls in BSLJSONWriter.__mro__ if '__dict__' in vars(cls))
