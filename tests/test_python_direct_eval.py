@@ -1,0 +1,77 @@
+import unittest
+from decimal import Decimal
+from unittest.mock import patch
+from yadinassi import Interpreter
+from yadinassi.experimental_naked_boundaries import BoundaryViolation
+from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+
+class DirectEvalTests(unittest.TestCase):
+    def test_source_ast_prepared_live_locals_and_module(self):
+        from yadinassi.syntax.parser import parse
+        source='Var M;M=2;Function F(A) B=4;Return Eval("A+B+M");EndFunction R=F(3);'
+        for route in ('source','ast','prepared'):
+            vm=Interpreter()
+            with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
+                if route=='source':vm.execute(source)
+                elif route=='ast':vm.execute_program(parse(source))
+                else:vm.execute_prepared(vm.prepare(source))
+            self.assertEqual(vm.variables['r'],9)
+
+    def test_live_byref_and_aliasing(self):
+        vm=Interpreter();vm.execute('Function Change(X) X=X+1;Return X;EndFunction Function F() X=4;A=New Array;A.Add(2);R=Вычислить("Change(X)");Eval("A.Set(0,3)");Return X+A[0];EndFunction R=F();')
+        self.assertEqual(vm.variables['r'],8)
+
+    def test_complete_parse_and_unknown_constructor_before_effects(self):
+        for text in ('Effect();Effect()','Effect() garbage','Effect()+New UnknownConstructor'):
+            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1) or 1)
+            try:vm.execute('Eval("'+text+'");')
+            except Exception:pass
+            else:self.fail('invalid expression accepted')
+            self.assertEqual(effects,[])
+
+    def test_custom_override_and_argument_mutation(self):
+        vm=Interpreter();vm.register_function('Eval',lambda text:'custom')
+        self.assertEqual(vm.execute('Eval("1+2");'),'custom')
+        vm=Interpreter();original=vm.functions['eval'];effects=[]
+        def mutate():original.function=lambda text:effects.append(text);return '1'
+        vm.register_function('Mutate',mutate)
+        with self.assertRaises(BoundaryViolation):vm.execute('Eval(Mutate());')
+        self.assertEqual(effects,[])
+
+    def test_revocation_and_retained_reference(self):
+        vm=Interpreter();vm.register_function('Close',lambda:vm.close() or '1')
+        with self.assertRaises(BoundaryViolation):vm.execute('Eval(Close());')
+        vm=Interpreter();refs=[]
+        vm.register_function('Capture',lambda x:refs.append(x) or 1)
+        vm.functions['capture'].reference_parameters=frozenset((0,))
+        vm.execute('X=2;Eval("Capture(X)");')
+        with self.assertRaises(BoundaryViolation):refs[0].get()
+
+    def test_arity_omission_and_limits(self):
+        for text in ('Eval()','Eval(Effect(),Effect())','Eval(,)'):
+            vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))
+            vm.execute('Try '+text+';Except Caught=True;EndTry;')
+            self.assertTrue(vm.variables['caught']);self.assertEqual(effects,[])
+        vm=Interpreter();self.assertEqual(vm.execute('Eval(12)'),Decimal(12))
+        vm.execute('Try Eval(Undefined);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
+        vm=Interpreter();vm.variables['s']='1'*65537
+        vm.execute('Try Eval(S);Except Caught=True;EndTry;');self.assertTrue(vm.variables['caught'])
+        vm=Interpreter();vm.execute('S="Eval(S)";Try Eval(S);Except Caught=True;EndTry;R=Eval("1");')
+        self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['r'],1)
+
+    def test_diagnostic_context_preserves_description(self):
+        vm=Interpreter();vm.execute('Try X=1/0;Except R=Eval("ErrorDescription()");S=ErrorDescription();EndTry;')
+        self.assertIn('Деление на ноль',vm.variables['r']);self.assertEqual(vm.variables['r'],vm.variables['s'])
+        vm=Interpreter();vm.execute('Function H() Try Raise "inner";Except EndTry;Return 1;EndFunction Try Raise "outer";Except Eval("H()");R=ErrorDescription();EndTry;')
+        self.assertEqual(vm.variables['r'],'')
+
+    def test_server_and_nocontext_local_scope(self):
+        for directive in ('AtServer','AtServerNoContext','AtClientAtServerNoContext'):
+            vm=Interpreter(compilation_profile='managed-thick-file')
+            vm.execute('&'+directive+'\nFunction F(Val A) B=4;Return Eval("A+B");EndFunction R=F(3);')
+            self.assertEqual(vm.variables['r'],7)
+
+    def test_depth_shared_across_dual_calls(self):
+        vm=Interpreter(compilation_profile='managed-thick-file')
+        vm.execute('&AtClientAtServerNoContext\nFunction D(Val N) If N=0 Then Return 0;EndIf;Return Eval("D(N-1)");EndFunction Try R=Eval("D(20)");Except Caught=True;EndTry;S=Eval("D(2)");')
+        self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['s'],0)

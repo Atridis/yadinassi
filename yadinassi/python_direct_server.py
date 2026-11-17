@@ -60,6 +60,7 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
         self._execute_depth=getattr(parent,"_execute_depth",None)
+        self._eval_depth=getattr(parent,"_eval_depth",None)
         if self.vm.execution_context==side:self._handled_errors=parent._handled_errors
         self.database=self.vm.database_context
         self._routine_exports={};self.state={}

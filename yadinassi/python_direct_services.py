@@ -76,6 +76,13 @@ class ServicesBoundary:
             if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
             return invoke
         bound=super().resolve_service(name,*args,**kwargs)
+        from .runtime import _eval_marker
+        function=self._services.get(key)
+        if type(function) is HostFunction and function.function is _eval_marker:
+            if kwargs.get('argument_count') is not None and kwargs['argument_count']!=1:
+                raise TypeError('Вычислить ожидает 1 аргумент')
+            from .python_direct_eval import eval_capability
+            bound.bind_eval=eval_capability(self,function,key)
         # Only canonical regex implementations opt in, never a matching name.
         function=self._services.get(key)
         if type(function) is HostFunction and any(function.function is item for item in regex_functions.FUNCTIONS):

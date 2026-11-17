@@ -357,7 +357,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if 'execute_fragments' in repairs:
         if not (live and services and dynamic_refs):raise ValueError('Execute requires live services and references')
         for current,body in [(None,[n for n in program if type(n) is not ast.Routine]),*((id(r),r.body) for r in routines.values())]:
-            if not any(type(n) is ast.Execute for n in walk(body)):continue
+            if not any(type(n) is ast.Execute or (type(n) is ast.Call and type(ungroup(n.callee)) is ast.Name and ungroup(n.callee).name.casefold() in ('eval','вычислить')) for n in walk(body)):continue
             names=set()
             if current is not None:
                 routine=next(r for r in routines.values() if id(r)==current)
@@ -706,7 +706,15 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 required_services.add(callee.name.casefold())
                 fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
                 if dynamic_refs and callee.name.casefold() not in service_references:
-                    return dynamic_call('_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')',node)
+                    bound='_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')'
+                    if 'execute_fragments' in repairs and callee.name.casefold() in ('eval','вычислить'):
+                        pairs=[]
+                        for key in sorted(execute_scopes[scope_id]):
+                            slot=sym(key);storage=(', '+slot) if boxed(key) else ''
+                            pairs.append(repr(key)+': _fragment_local_binding(get_'+slot+', set_'+slot+', has_'+slot+storage+')')
+                        visible=None if scope_id is None else tuple(sorted(routine_globals.get(scope_id,())))
+                        bound='_bind_eval('+bound+', _context, _initial, {'+', '.join(pairs)+'}, '+repr(visible)+')'
+                    return dynamic_call(bound,node)
                 return '_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
             if services and dynamic_refs:return dynamic_call('_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+', allow_references=True)',node)
             if services:return '_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+')('+', '.join(expression(arg) for arg in node.arguments)+')'
@@ -926,7 +934,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     namespace['_BSLRuntimeError']=BSLRuntimeError
     if 'execute_fragments' in repairs:
         from .python_direct_execute import execute_fragment,local_binding,local_exists
-        namespace.update(_execute_fragment=execute_fragment,_fragment_local_binding=local_binding,_fragment_local_exists=local_exists)
+        from .python_direct_eval import bind_eval
+        namespace.update(_bind_eval=bind_eval,_execute_fragment=execute_fragment,_fragment_local_binding=local_binding,_fragment_local_exists=local_exists)
     if source_map is not None and services:
         from .experimental_naked_errors import handled_error,reraise_handled
         namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,
