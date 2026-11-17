@@ -198,3 +198,55 @@ on success and failure. File measurements use warm OS/page cache, without fsync,
 cold-storage or power-loss guarantees. Normal GC stays enabled. No performance
 threshold is added: incorrect results, unexpected unsupported operations or
 malformed reports fail, while the one declared unavailable XML capability is N/A.
+
+## Separate untimed call diagnostics
+
+After **all** core/extended timing commands, a separate Python process runs
+`benchmark_diagnostics.py`. The timing runners never import or enable this
+profiler. Diagnostic overhead therefore cannot enter their measured samples.
+It is a current-thread `sys.setprofile` observer, not production instrumentation,
+a runtime cache or a changed validation policy. Existing profiler state is not
+overwritten; exceptions always remove this runner's observer.
+
+```sh
+python -m unittest tests.test_benchmark_diagnostics
+python scripts/benchmark_diagnostics.py --iterations 8 --output /tmp/diagnostics.json --summary /tmp/diagnostics.md
+```
+
+CI adds `diagnostics.json/.md` to the same artifact and an explicitly **untimed**
+Summary table. Counts have no speed thresholds, timing ratios or color categories.
+A checked initial call and warmup precede one instrumented call per layer; fixture
+setup, prepared-module construction, resets and post-call correctness checks are
+excluded. Default still counts internal compilation performed by execute_program.
+Form opening still includes its actual compilation/lifecycle; forms are not
+relabeled as prepared-module execution. JSON retains absent-baseline reasons.
+
+Named counters cover Python entries, built-in compile, SourceMap.compile,
+recursive prepared-AST snapshots, catalog transaction begin, read_source, DDL and
+canonical checks, recursive configuration equality, direct/base boundary checks,
+catalog ownership/member dispatch and live source-reference construction.
+Targets are matched by exact repository source filename and function name and
+validated to exist before the run; recursive calls count separately. These are
+non-additive observations of related paths, not disjoint cost percentages.
+Builtin compile includes parsing-to-AST uses, so it is not synonymous with a
+completed executable module. Python-call counts exclude profiler callback work.
+
+SQLite execute/executemany/executescript count **Python SQLite API invocations**,
+including Connection and Cursor methods. They do not count executed SQL
+statements, rows, triggers, SQLite VM instructions or time. One executescript or
+executemany API call may issue many statements. Only the current Python thread
+is observed. No SQL trace hook is installed on application connections.
+
+COUNT diagnostics hold query count fixed at eight and seed 32, 128 and 512 rows
+in separate fresh databases (custom `--count-rows`, bounded 1..1024). Canonical
+seeding is outside instrumentation. Increasing Python calls at stable execute
+counts can identify row materialization; constant counts alone do not prove
+constant work or latency. Raw SQLite still omits the catalog/query protocol.
+`--iterations` is bounded 1..64, independently of timing workload sizes.
+
+The audit's profiles were on an older commit and must not be attributed to a
+new head. These counters make repeatable source-bound comparisons possible;
+they do not yet implement any proposed cache, SQL aggregate pushdown, weaker
+schema validation, local promotion or Map/byref specialization. Such changes
+need separate current-state/transaction/ownership and semantic tests. In
+particular, schema_version alone cannot validate current configuration data.

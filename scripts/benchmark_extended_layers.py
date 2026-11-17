@@ -124,7 +124,9 @@ Procedure Bench(Command)
 EndProcedure'''
 
 
-def make_case(name, n, route, stack):
+def make_case(name, n, route, stack, *, catalog_rows=32):
+    if type(catalog_rows) is not int or not 1 <= catalog_rows <= 1024:
+        raise ValueError('catalog rows must be an integer in 1..1024')
     if name not in CASES or route not in ('default', 'prepared'):
         raise ValueError('unknown case or route')
     if type(n) is not int or not 1 <= n <= 1000:
@@ -295,7 +297,7 @@ def make_case(name, n, route, stack):
         from yadinassi.queries import BSLQuery
         path, context, owner, manager = database(stack)
         if name == 'db.count':
-            for i in range(32):
+            for i in range(catalog_rows):
                 item = manager.create_item(); item.set_member('Description', 'Bench '+str(i)); item.write()
             connection = sqlite3.connect(path); stack.callback(connection.close)
             from yadinassi.sqlite_query_indexes import register_query_collations
@@ -303,7 +305,7 @@ def make_case(name, n, route, stack):
             schema_id = str(manager._schema.identity)
             table = connection.execute('SELECT physical_name FROM catalog_storage_map WHERE catalog_id=?', (schema_id,)).fetchone()[0]
             count_sql = 'SELECT COUNT(*) FROM '+chr(34)+table.replace(chr(34),chr(34)*2)+chr(34)
-            case.expected = D(n*32)
+            case.expected = D(n*catalog_rows)
             def native():
                 result = D(0)
                 for _ in range(n):
@@ -317,7 +319,7 @@ def make_case(name, n, route, stack):
                     result += cursor.get_member('N')
                 return result
             source = f'R=0;For I=1 To {n} Do Q=New Query("SELECT COUNT(*) AS N FROM Catalog.Склады");S=Q.Execute().Select();S.Next();R=R+S.N;EndDo;'
-            case.notes = 'Same SQLite file and 32 catalog rows. Raw SQL baseline excludes BSL catalog/query admission.'
+            case.notes = f'Same SQLite file and {catalog_rows} catalog rows. Raw SQL baseline excludes BSL catalog/query admission.'
         else:
             item = manager.create_item(); item.set_member('Description', 'Initial'); item.write()
             ref = item.get_member('Ref'); case.expected = D(n)

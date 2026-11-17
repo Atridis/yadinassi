@@ -30,7 +30,7 @@ class PerformanceWorkflowTests(unittest.TestCase):
         for name in ('execution-layers.json', 'execution-layers-prepared.json',
                      'summary.md', 'summary-prepared.md'):
             self.assertIn('performance-results/' + name, self.job)
-        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 5)
+        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 6)
         self.assertIn('if: always()', self.job)
         self.assertIn('retention-days: 30', self.job)
 
@@ -47,3 +47,14 @@ class PerformanceWorkflowTests(unittest.TestCase):
                 self.assertIn('performance-results/extended-' + route + '.' + extension, self.job)
         self.assertIn('python -m unittest tests.test_benchmark_extended_layers', self.job)
         self.assertIn('path: performance-results/', self.job)
+
+    def test_diagnostics_are_a_separate_process_after_all_timings(self):
+        marker = self.job.index('- name: Collect separate untimed execution diagnostics')
+        for name in ('- name: Measure three equivalent execution layers',
+                     '- name: Measure prepared execution separately',
+                     '- name: Measure extended default reference',
+                     '- name: Measure extended prepared reference'):
+            self.assertLess(self.job.index(name), marker)
+        self.assertIn('python scripts/benchmark_diagnostics.py --iterations 8', self.job)
+        self.assertIn('performance-results/diagnostics.json', self.job)
+        self.assertIn('performance-results/diagnostics.md', self.job)
