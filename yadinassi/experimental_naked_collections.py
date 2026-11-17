@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=()):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -273,6 +273,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if type(_source_scalar_routines) is not bool:raise TypeError("source scalar routines require Boolean")
     if _source_scalar_routines and not (_trusted_entry and _source_routine_scopes):
         raise ValueError("source scalar routines require trusted source scopes")
+    if type(_source_shadowable_externals) is not tuple or any(type(name) is not str for name in _source_shadowable_externals):
+        raise TypeError('source shadowable externals require a tuple of names')
+    if _source_shadowable_externals and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError('source shadowable externals require trusted source scopes')
+    shadowable=frozenset(name.casefold() for name in _source_shadowable_externals)
     source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals)
     constructors=frozenset(name.casefold() for name in constructors)
     if constructors and not services:raise ValueError('declared constructors require service_boundaries')
@@ -314,7 +319,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     scope_id=None
     if external_keys & (module_variables|routines.keys()):raise UnsupportedNakedSyntax("external names collide with module declarations")
-    routine_externals={}
+    routine_externals={};routine_shadows={}
     source_ref_slots={}
     cells={None:set()};routine_globals={}
     def walk(value):
@@ -333,7 +338,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             declarations={name.casefold() for node in walk(routine.body) if type(node) is ast.Var for name in node.names}
             routine_globals[id(routine)]=module_variables-parameters-declarations
             routine_externals[id(routine)]=external_keys-parameters-declarations
-            cells[id(routine)]={parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}
+            assigned=set()
+            for node in walk(routine.body):
+                if type(node) is ast.Assign and type(node.target) is ast.Name:assigned.add(node.target.name.casefold())
+                elif type(node) in (ast.For,ast.ForEach):assigned.add(node.name.casefold())
+            shadows=assigned & shadowable & routine_externals[id(routine)]-module_variables
+            routine_shadows[id(routine)]=shadows
+            routine_externals[id(routine)]-=shadows
+            if shadows and any(type(node) is ast.Execute or (type(node) is ast.Call and type(ungroup(node.callee)) is ast.Name and ungroup(node.callee).name.casefold() in ('eval','вычислить')) for node in walk(routine.body)):
+                raise UnsupportedNakedSyntax('source implicit namespace shadow with Execute/Eval is not integrated')
+            cells[id(routine)]={parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}|shadows
         for current,body in [(None,[node for node in program if type(node) is not ast.Routine]),*((id(routine),routine.body) for routine in routines.values())]:
             for node in walk(body):
                 if type(node) is not ast.Call:continue
@@ -429,7 +443,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         check=repr(slot)+' in locals()'
         if boxed(name):check+=' and (type('+slot+') is not _Cell or '+slot+'._value is not _UNSET_REF)'
         return check
+    def shadow_name(name):return name.casefold() in routine_shadows.get(scope_id,())
+    def shadow_is_set(name):return sym(name)+'._value is not _UNSET_REF'
     def read_variable(name):
+        if shadow_name(name):
+            return '('+variable(name)+' if '+shadow_is_set(name)+' else _context.external_get('+repr(name.casefold())+'))'
         if external_name(name):return variable(name)
         if not module_name(name):
             value=variable(name)
@@ -458,6 +476,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 text='_live_source_ref(_initial, '+repr(node.name)+', '+source_ref_slots[key]+')'
                 return source_map.expression(text,node) if source_map is not None else text
             value='_bound_ref('+sym(node.name)+')'
+            if shadow_name(node.name):return '('+value+' if '+shadow_is_set(node.name)+' else _context.external_reference('+repr(node.name.casefold())+'))'
             return ('('+value+' if '+source_local_exists(node.name)+' else _live_missing('+repr(node.name)+'))'
                 if _source_routine_scopes else value)
         if type(node) is ast.Index:
@@ -498,6 +517,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 return source_map.expression(text,node) if source_map is not None else text
             slot=sym(node.name)
             text='_host_name_reference(get_'+slot+', set_'+slot+', '+repr(node.name)+(', '+slot if boxed(node.name) else '')+')'
+            if shadow_name(node.name):text='('+text+' if '+shadow_is_set(node.name)+' else _context.external_reference('+repr(node.name.casefold())+'))'
             return source_map.expression(text,node) if source_map is not None else text
         if type(node) is ast.Index or type(node) is ast.Attribute:
             return '_canonical_reference('+reference(node)+')'
@@ -973,7 +993,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                          _error_filename=source_name,_error_source=source)
     code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
     exec(code,namespace)
-    return Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)
+    result=Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)
+    result._source_implicit_shadows=frozenset(name for names in routine_shadows.values() for name in names)
+    return result
 
 compile_source=prepare
 

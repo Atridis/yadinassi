@@ -115,6 +115,13 @@ def _signature_matches(node, saved):
 
 
 def _check_plan(owner,plan):
+    shadows=plan._source_implicit_shadows
+    if shadows:
+        exports=owner.application.interpreter.exported_variables
+        if type(exports) is not set or any(type(name) is not str for name in exports):
+            raise BoundaryViolation('source application export names changed')
+        if not shadows.isdisjoint(exports):
+            raise BoundaryViolation('source implicit shadow conflicts with current application exports')
     if getattr(owner,'_direct_source_scalar_reuse',False) is not plan._source_scalar_reuse:
         raise BoundaryViolation('source scalar routine contract changed')
     if frozenset(owner.module_names)!=plan._source_layout:
@@ -128,13 +135,16 @@ def _check_plan(owner,plan):
 def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callable_externals=()):
     names={n.name.casefold() for n in program if type(n) is ast.Routine}
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
+    from .configuration_source_runtime import _SourceInterpreter
+    from .source_manager_modules import MANAGER_NAMES
+    shadowable=tuple(sorted(set(MANAGER_NAMES)-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
-        _source_callable_externals=_callable_externals,
+        _source_callable_externals=_callable_externals,_source_shadowable_externals=shadowable,
         _source_scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
     plan._source_scalar_reuse=getattr(owner,'_direct_source_scalar_reuse',False)
