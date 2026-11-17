@@ -127,6 +127,7 @@ def set_member(boundary,value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,allow_references=False,argument_count=None):
+    check(boundary,value)
     if name=='__getitem__' and type(value) is SourceDocumentSection:
         def row(index):
             check(boundary,value)

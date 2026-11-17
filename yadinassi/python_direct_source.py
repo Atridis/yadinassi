@@ -44,6 +44,13 @@ def check_owner(owner):
     return app
 
 
+def _manager_key(key):
+    # Common modules may themselves be named "Manager". Their third key
+    # element is Boolean; a metadata manager key carries its String name.
+    return (type(key) is tuple and len(key)==3 and key[0]=='manager'
+            and type(key[1]) is str and type(key[2]) is str)
+
+
 def _external_names(owner,declared=()):
     from .python_direct_names import NAMES
     app=owner.application
@@ -253,7 +260,9 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
                 raise BoundaryViolation('source routine owner replaced')
             for key in keys:
                 if type(key) is tuple and len(key)==3:
-                    if self.app.module(key[0],self.vm,global_call=key[2]) is not owner._self_module:
+                    selected=(self.app.manager_module(key[1],key[2],self.vm) if _manager_key(key)
+                              else self.app.module(key[0],self.vm,global_call=key[2]))
+                    if selected is not owner._self_module:
                         raise BoundaryViolation('source module admission changed')
         provenance()
         minimum=max((i+1 for i,p in enumerate(routine.parameters) if p.default is None),default=0)
@@ -283,10 +292,12 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
         owner=value.interpreter
         keys=[key for key,child in self.app._instances.items() if child is owner]
-        if not keys or any(type(key) is not tuple or len(key)!=3 or key[2] for key in keys):
+        if not keys or any(type(key) is not tuple or len(key)!=3 or (not _manager_key(key) and key[2]) for key in keys):
             raise BoundaryViolation('foreign or non-qualified source module')
-        if self.app.module(keys[0][0],self.vm) is not value:
-            raise BoundaryViolation('source module binding changed')
+        for key in keys:
+            selected=(self.app.manager_module(key[1],key[2],self.vm) if _manager_key(key)
+                      else self.app.module(key[0],self.vm))
+            if selected is not value:raise BoundaryViolation('source module binding changed')
         check_owner(owner)
         if value is not owner._self_module or not value.ready:raise BoundaryViolation('inactive source module')
         return owner
@@ -302,6 +313,16 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             owners=[root,*root._objects.values()]
             return any(value is collection for owner in owners for collection in owner._collections.values())
         return False
+    def _manager_export(self,value,name):
+        from .source_references import SourceReferenceManager,_METHODS
+        if type(value) is not SourceReferenceManager:return None
+        storage.check(self,value)
+        from .source_catalog_runtime import _MANAGER_METHODS as catalog_methods
+        from .source_document_runtime import _MANAGER_METHODS as document_methods
+        if (name.casefold() in _METHODS
+                or value.family=='Catalog' and name.casefold() in catalog_methods
+                or value.family=='Document' and name.casefold() in document_methods):return None
+        return self._module(value.module(self.vm))
     def get_member(self,value,name):
         self._check()
         if name.startswith('_'):raise BoundaryViolation('private source member')
@@ -315,6 +336,10 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
         if query.supports(value):return query.resolve_member(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
+        manager=self._manager_export(value,name)
+        if manager is not None:
+            return self._routine(manager,manager._self_module.routine(name),require_value=require_value,
+                argument_count=argument_count,allow_references=allow_references)
         if storage.owns(value):return storage.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         owner=self._module(value)
@@ -341,6 +366,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def resolve_member(self,value,name):
         self._check()
         if query.supports(value):return query.resolve_member(self,value,name)
+        manager=self._manager_export(value,name)
+        if manager is not None:return self._routine(manager,manager._self_module.routine(name))
         if storage.owns(value):return storage.resolve(self,value,name)
         if name in ('__getitem__','__setitem__','__iter__') and self._metadata(value):
             def operation(*args):
