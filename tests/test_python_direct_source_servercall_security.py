@@ -169,6 +169,65 @@ class SourceServerCallSecurity(unittest.TestCase):
         self.assertEqual(_ACTIVE.get(), ())
         self.assertEqual(app.interpreter.execution_context, 'client')
 
+    def test_default_mutation_is_not_reauthorized_at_first_call(self):
+        import copy
+        from decimal import Decimal
+        for timing in ('before', 'during'):
+            for mutation in ('parameter', 'node', 'value'):
+                with self.subTest(timing=timing, mutation=mutation):
+                    output = []
+                    holder = {}
+                    def change():
+                        routine = holder['owner'].server_routines['run']
+                        if mutation == 'parameter':
+                            routine.parameters[0] = copy.copy(routine.parameters[0])
+                        elif mutation == 'node':
+                            routine.parameters[0].default = copy.copy(routine.parameters[0].default)
+                        else:
+                            routine.parameters[0].default.value = Decimal(999)
+                    def emit(value):
+                        output.append(value)
+                        if timing == 'during' and value == 'arg':
+                            change()
+                    app = self.app('Function Run(Val X=1) Export Message("wrong"); Return X; EndFunction', emit)
+                    holder['owner'] = app.module('serverapi', app.interpreter).interpreter
+                    app.interpreter.execute('Function Touch() Message("arg"); Return 1; EndFunction')
+                    if timing == 'before':
+                        change()
+                    with self.assertRaises(BoundaryViolation):
+                        app.interpreter.execute('ServerAPI.Run(Touch())')
+                    self.assertEqual(output, [] if timing == 'before' else ['arg'])
+                    self.assertEqual(app.interpreter.execution_context, 'client')
+
+    def test_mutated_signature_rejected_before_host_protocols(self):
+        for field in ('parameters', 'name'):
+            with self.subTest(field=field):
+                callbacks = []
+                class TrapList(list):
+                    def __len__(self):
+                        callbacks.append('len')
+                        return super().__len__()
+                    def __iter__(self):
+                        callbacks.append('iter')
+                        return super().__iter__()
+                class TrapName:
+                    def casefold(self):
+                        callbacks.append('casefold')
+                        return 'run'
+                holder = {}
+                def emit(value):
+                    routine = holder['owner'].server_routines['run']
+                    if field == 'parameters':
+                        routine.parameters = TrapList(routine.parameters)
+                    else:
+                        routine.name = TrapName()
+                app = self.app('Function Run(Val X=1) Export Return X; EndFunction', emit)
+                holder['owner'] = app.module('serverapi', app.interpreter).interpreter
+                app.interpreter.execute('Function Touch() Message("arg"); Return 1; EndFunction')
+                with self.assertRaises(BoundaryViolation):
+                    app.interpreter.execute('ServerAPI.Run(Touch())')
+                self.assertEqual(callbacks, [])
+
 
 if __name__ == '__main__':
     unittest.main()

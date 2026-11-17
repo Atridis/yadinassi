@@ -1,9 +1,12 @@
 """Bounded qualified source ServerCall: fresh contextual all-Val activation.
 
-No reuse, defaults, copyback, async or NoContext admission. The origin seal is
+Only immutable scalar-literal defaults; no reuse, copyback, async or NoContext. The origin seal is
 scoped to the synchronous call, never an entry in the application registry.
 """
 from contextvars import ContextVar
+from decimal import Decimal
+from .syntax import ast
+from .experimental_naked_collections import _OMITTED_REF
 import xml.etree.ElementTree as ET
 
 from .experimental_naked_boundaries import BoundaryViolation
@@ -47,6 +50,25 @@ def resolve(parent, owner, routine, *, require_value=False,
     registry = owner.server_routines
     plans = owner._direct_source_plans
     bindings = owner._direct_source_host_bindings
+    default_table = plan._source_crossing_defaults
+    defaults = default_table[routine.name.casefold()]
+    minimum = max((i + 1 for i, p in enumerate(routine.parameters)
+                   if p.default is None), default=0)
+
+    def default_values():
+        if (plan._source_crossing_defaults is not default_table
+                or default_table.get(routine.name.casefold()) is not defaults
+                or len(defaults) != len(routine.parameters)):
+            raise BoundaryViolation('source ServerCall default snapshot changed')
+        for parameter, (saved_parameter, node, value) in zip(routine.parameters, defaults):
+            if parameter is not saved_parameter or parameter.default is not node:
+                raise BoundaryViolation('source ServerCall default binding changed')
+            if node is not None:
+                if type(node) is not ast.Literal or (value is not None and type(value) not in (str, bool, Decimal)):
+                    raise ValueError('source ServerCall defaults require immutable scalar literals')
+                if node.value is not value:
+                    raise BoundaryViolation('source ServerCall default literal changed')
+
 
     def host_bindings(current_owner, expected):
         if current_owner._direct_source_host_bindings is not expected:
@@ -62,6 +84,11 @@ def resolve(parent, owner, routine, *, require_value=False,
 
     def authority():
         check_owner(owner)
+        # Validate exact AST/parameter types before reading mutable names,
+        # lengths or defaults; those lookups must not invoke host callbacks.
+        if _preflight(owner, routine) is not plan:
+            raise BoundaryViolation('source ServerCall origin plan changed')
+        default_values()
         host_bindings(owner, bindings)
         if (app.modules.get(key[0]) is not definition
                 or app.files.get(definition.path) is not metadata
@@ -70,15 +97,14 @@ def resolve(parent, owner, routine, *, require_value=False,
                 or owner.server_routines is not registry
                 or owner._direct_source_plans is not plans
                 or registry.get(routine.name.casefold()) is not routine
-                or _preflight(owner, routine) is not plan
                 or not owner._self_module.ready or owner._logical_side != 'server'):
             raise BoundaryViolation('source ServerCall origin changed')
         if (routine.execution_context != 'server' or routine.is_async or routine.is_dual
                 or not routine.module_context or not routine.exported
-                or any(not p.by_value or p.default is not None for p in routine.parameters)
+                or any(not p.by_value for p in routine.parameters)
                 or id(routine) in app._reuse_routines or owner.module_names
                 or owner.variables):
-            raise ValueError('direct source ServerCall supports contextual all-Val routines without defaults or reuse')
+            raise ValueError('direct source ServerCall supports contextual all-Val routines without reuse')
 
     def caller():
         parent._check()
@@ -100,15 +126,20 @@ def resolve(parent, owner, routine, *, require_value=False,
     caller()
     if require_value and not routine.is_function:
         raise TypeError('Процедура не возвращает значение: ' + routine.name)
-    if argument_count is not None and argument_count != len(routine.parameters):
+    if argument_count is not None and not minimum <= argument_count <= len(routine.parameters):
         raise TypeError('Неверное количество аргументов: ' + routine.name)
 
     def call(*arguments):
         caller()
-        if len(arguments) != len(routine.parameters):
+        if not minimum <= len(arguments) <= len(routine.parameters):
             raise TypeError('Неверное количество аргументов: ' + routine.name)
         values = []
-        for value in arguments:
+        for index in range(len(routine.parameters)):
+            value = arguments[index] if index < len(arguments) else _OMITTED_REF
+            if value is _OMITTED_REF:
+                _, node, value = defaults[index]
+                if node is None:
+                    raise TypeError('Неверное количество аргументов: ' + routine.name)
             if type(value) is _LateNamedValue:
                 parent._check()
                 value = value.reference.get()
@@ -177,6 +208,13 @@ def resolve(parent, owner, routine, *, require_value=False,
         if type(reference) is not Reference:
             raise TypeError('named server value requires a source reference')
         return _LateNamedValue(reference)
+    def omissions(current, positions, count):
+        caller()
+        if (not minimum <= count <= len(defaults)
+                or any(i >= len(defaults) or defaults[i][1] is None for i in positions)):
+            raise TypeError('Неверное количество аргументов: ' + routine.name)
+        return current, {i: _OMITTED_REF for i in positions}
+    call.prepare_omissions = omissions
     call.prepare_named_value = named
     if allow_references:
         call.requires_reference = lambda index: False

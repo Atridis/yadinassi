@@ -61,16 +61,47 @@ class DirectSourceServerCallNoVM(unittest.TestCase):
         self.assertEqual(app.interpreter.execution_context, 'client')
         self.assertEqual(app.interpreter._module_context_stack, [True])
 
-    def test_byref_and_default_rejected_before_effects(self):
+    def test_byref_and_nonliteral_default_rejected_before_effects(self):
         for body, call in (
             ('Function Bad(X) Export Return X; EndFunction', 'ServerAPI.Bad(Touch())'),
-            ('Function Bad(Val X=1) Export Return X; EndFunction', 'ServerAPI.Bad(Touch())'),
+            ('Function Bad(Val X=-1) Export Return X; EndFunction', 'ServerAPI.Bad(Touch())'),
         ):
             with self.subTest(body=body):
                 app, output = self.run_app(existing.configuration('', body))
                 app.interpreter.execute('Function Touch() Message("wrong"); Return 1; EndFunction')
                 app.interpreter.execute('Try X=' + call + '; Except Message("rejected"); EndTry;')
                 self.assertEqual(output, ['rejected'])
+
+    test_optional_val_hole = existing.SourceServerCallTests.test_optional_val_hole
+
+    def test_literal_defaults_are_materialized_before_transfer(self):
+        app, output = self.run_app(existing.configuration('',
+            'Function Read(Val X=Undefined, Val Y=False, Val Z="", Val N=0) Export '
+            'Return X=Undefined And Not Y And Z="" And N=0; EndFunction'))
+        app.interpreter.execute('Message(ServerAPI.Read()); Message(ServerAPI.Read(,,,));')
+        self.assertEqual(output, ['Да', 'Да'])
+
+    def test_required_hole_rejected_before_actual_effect(self):
+        app, output = self.run_app(existing.configuration('',
+            'Function Read(Val X, Val Y=1) Export Return X; EndFunction'))
+        app.interpreter.execute('Function Touch() Message("wrong"); Return 1; EndFunction')
+        app.interpreter.execute('Try A=ServerAPI.Read(,Touch()); Except Message("rejected"); EndTry;')
+        self.assertEqual(output, ['rejected'])
+
+
+class DirectSourceServerCallTemporaryNoVM(unittest.TestCase):
+    """Scalar temporary-storage scenarios newly admitted by literal defaults."""
+    import test_source_temporary_storage as _temporary
+    setUp = DirectSourceServerCallNoVM.setUp
+    app = _temporary.SourceTemporaryTests.app
+    execute = _temporary.SourceTemporaryTests.execute
+    put = _temporary.SourceTemporaryTests.put
+    get = _temporary.SourceTemporaryTests.get
+    test_roundtrip_replacement_delete = _temporary.SourceTemporaryTests.test_roundtrip_replacement_delete
+    test_close_releases_values = _temporary.SourceTemporaryTests.test_close_releases_values
+    test_atomic_admission_and_quotas = _temporary.SourceTemporaryTests.test_atomic_admission_and_quotas
+    test_start_failure_cleans_store = _temporary.SourceTemporaryTests.test_start_failure_cleans_store
+
 
 
 if __name__ == '__main__':

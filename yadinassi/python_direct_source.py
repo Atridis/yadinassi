@@ -132,6 +132,12 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
     plan._source_layout=frozenset(layout)
     plan._source_routines=tuple((n,_signature(n)) for n in program if type(n) is ast.Routine)
+    # Crossing defaults are snapshotted at compilation, not first invocation.
+    # Nonliteral defaults retain their ordinary same-side behavior but cannot
+    # acquire authority through the bounded all-Val crossing adapter.
+    plan._source_crossing_defaults={n.name.casefold(): tuple(
+        (p, p.default, p.default.value if type(p.default) is ast.Literal else _MISSING)
+        for p in n.parameters) for n in program if type(n) is ast.Routine}
     plan._source_constructors=frozenset(n.name.casefold() for n in _nodes(program)
         if type(n) is ast.New and n.name.casefold() in native)
     from .python_direct import _admit_bindings
