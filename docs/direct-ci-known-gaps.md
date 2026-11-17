@@ -656,3 +656,16 @@ child now exits0, emits81 records/1142bytes with no stderr; exact expected138 st
 fails. First50 match, object-transfer remains stage8, and Date/Null graph token
 88 differs from77. Dual/infobase/preprocessor tokens match. No native fixture or
 strict gate changes. [Contract, residual gaps and reproducible report](direct-execute.md).
+
+### Exact whole-client replay: direct types and named Val timing (2026-11-17)
+
+Basee00be58f: canonical TypeOf recognizes exact direct Array/Structure/Map values;
+host overrides, service policy and canonical global API remain unchanged. Named
+Val arguments on client→server calls are read after all argument effects; ordinary
+expression results remain eager. Transfer checks and Val no-copyback are preserved.
+
+Original unchanged owned-SQLite whole client verifier now passes138/138 with exact
+bytes in managed and standalone/preprocessor modes. 228 normal Python3.12 and228
+optimized Python3.10 tests PASS; independent52 focused optimized PASS. This is local
+bounded replay, not new1C measurement or full CI green. Broader type/constructor
+compatibility remains incomplete. [Contract and exact reports](direct-native-client-replay.md).

@@ -336,3 +336,6 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
     if entry is not None and entry[0] is kind:
         return entry[1]
     raise TypeError("ТипЗнч для этого значения пока не поддерживается")
+
+# Stable canonical identity for direct representations; host overrides stay host code.
+_DIRECT_TYPE_OF_ABI = type_of

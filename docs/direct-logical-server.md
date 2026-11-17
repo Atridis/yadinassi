@@ -257,3 +257,11 @@ PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_error_descri
 Полный исходный native child теперь завершается, но сравнение ещё не проходит
 из-за object-transfer и Date/Null graph observations. [Механизм, проверки и точный
 отчёт](direct-execute.md).
+
+## Полный bounded client replay
+
+Срез поверх e00be58f устранил TypeOf для прямых коллекций и три расхождения момента
+чтения именованных Val аргументов client→server. Исходный owned-SQLite verifier
+теперь совпадает138/138, включая object transfer и Date/Null graphs. Это локальный
+bounded replay, не новый native1C run или полный зелёный CI.
+[Механизм, ограничения и exact hashes](direct-native-client-replay.md).

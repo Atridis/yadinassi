@@ -487,7 +487,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         arguments=[]
         for index,arg in enumerate(node.arguments):
             if index in omitted:arguments.append(defaults+'['+str(index)+']')
-            else:arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+expression(arg)+')')
+            else:
+                value=expression(arg)
+                if type(ungroup(arg)) is ast.Name:
+                    value='('+token+'.prepare_named_value('+host_reference(arg)+') if hasattr('+token+', "prepare_named_value") else '+value+')'
+                arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+value+')')
         return '('+', '.join(setup)+', '+token+'('+', '.join(arguments)+'))[-1]'
     def truth_expression(node):
         value=expression(node)

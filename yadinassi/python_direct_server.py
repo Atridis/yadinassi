@@ -77,6 +77,11 @@ class ServerBoundary(ServicesBoundary,CatalogBoundary,BoundaryContext):
         return super().resolve_service(name,*args,**kwargs)
 
 
+class _LateNamedValue:
+    __slots__=('reference',)
+    def __init__(self,reference):self.reference=reference
+
+
 def resolve_server(parent,module,name,*,require_value,allow_references):
     vm=parent.vm
     references=module.signatures[name][3]
@@ -124,7 +129,13 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
                     raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
                 outputs.append((i,value))
         # Named byref actuals are storage: read only after all argument effects.
-        packet=transfer([value.get() if i in references else value for i,value in enumerate(arguments)])
+        def read_argument(index,value):
+            reference=value.reference if type(value) is _LateNamedValue else value if index in references else None
+            if reference is None:return value
+            parent._check()
+            try:return reference.get()
+            finally:parent._check()
+        packet=transfer([read_argument(i,value) for i,value in enumerate(arguments)])
         for i,_ in outputs:packet[i]=_Cell(packet[i])
         context=ServerBoundary(parent,module_context=module_context)
         previous=getattr(vm,'_transaction_activation_allowed',True)
@@ -158,7 +169,14 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
         for (_,reference),value in zip(outputs,outgoing[1:]):reference.set(value)
         return outgoing[0]
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
-    return parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)
+    bound=parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)
+    if not getattr(parent,'_server_side',False):
+        def prepare_named_value(reference):
+            parent._check()
+            if type(reference) is not Reference:raise TypeError('named server value requires a source reference')
+            return _LateNamedValue(reference)
+        bound.prepare_named_value=prepare_named_value
+    return bound
 
 
 def resolve_dual_client(parent,module,name,*,require_value,allow_references):

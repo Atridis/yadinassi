@@ -26,6 +26,29 @@ class ServicesBoundary:
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
             return super().resolve_callable(factory)
+        function=self._services.get(key)
+        from .type_values import _DIRECT_TYPE_OF_ABI
+        if type(function) is HostFunction and function.function is _DIRECT_TYPE_OF_ABI:
+            def direct_type_of(value):
+                if function.function is not _DIRECT_TYPE_OF_ABI:
+                    raise BoundaryViolation('TypeOf implementation changed during argument evaluation')
+                from .experimental_naked_structure import _DirectStructure
+                from .experimental_naked_collections import _TypedMap
+                from .values import BSLType
+                kind=type(value)
+                if kind is list:return BSLType.ARRAY
+                if kind is _DirectStructure:return BSLType.STRUCTURE
+                if kind is _TypedMap:return BSLType.MAP
+                return _DIRECT_TYPE_OF_ABI(value)
+            self._check()
+            self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
+            def invoke(*arguments):
+                self._before('call',key)
+                try:return direct_type_of(*arguments)
+                except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                finally:self._check()
+            if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
+            return invoke
         bound=super().resolve_service(name,*args,**kwargs)
         # Only canonical regex implementations opt in, never a matching name.
         function=self._services.get(key)
