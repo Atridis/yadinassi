@@ -18,7 +18,7 @@ from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .file_io import BSLFile, BSLBinaryData
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLStream
-from .maps import BSLMap
+from .maps import BSLMap, BSLFixedMap
 from .value_lists import BSLValueList, BSLValueListItem
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
@@ -74,7 +74,7 @@ class CatalogBoundary:
                       BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
             return
         elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure, BSLKeyAndValue,
-                      BSLArray, BSLFixedArray, BSLRegexResult, BSLRegexGroup):
+                      BSLArray, BSLFixedArray, BSLFixedMap, BSLRegexResult, BSLRegexGroup):
             # Detached result data: these public methods cannot execute queries
             # or write. Returned references still require the current root.
             return
@@ -194,9 +194,9 @@ class CatalogBoundary:
         elif name=='__getitem__':
             function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index:value.get_index(index)
         elif name=='__setitem__':
-            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
+            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap, BSLFixedMap, BSLFixedStructure) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLFixedStructure, BSLFixedMap, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

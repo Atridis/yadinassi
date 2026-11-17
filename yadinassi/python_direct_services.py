@@ -5,6 +5,7 @@ from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .values import HostFunction, BSLFixedArray
 from .structures import BSLFixedStructure
+from .maps import BSLFixedMap
 from . import python_direct_fixed as fixed
 from .type_descriptions import BSLTypeDescription
 from .value_tables import BSLValueTable
@@ -22,6 +23,7 @@ _REGEX_IDENTITIES=frozenset(map(id,_REGEX_IMPLEMENTATIONS))
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('fixedmap','фиксированноесоответствие'),BSLFixedMap),
         (('fixedarray','фиксированныймассив'),BSLFixedArray),
         (('fixedstructure','фиксированнаяструктура'),BSLFixedStructure),
         (('valuelist','списокзначений'),BSLValueList),
