@@ -40,15 +40,19 @@ class PairedReportTests(unittest.TestCase):
         self.assertEqual(data, before)
         for family,title in [('core','Основные сценарии'),('extended','Расширенные сценарии')]:
             section=text.split('### '+title,1)[1].split('#### Подготовка и первый вызов',1)[0]
-            self.assertLess(section.index('#### с подготовкой'), section.index('| '+family+'-default |'))
-            self.assertLess(section.index('| '+family+'-default |'), section.index('#### без подготовки'))
-            self.assertLess(section.index('#### без подготовки'), section.index('| '+family+'-prepared |'))
+            self.assertLess(section.index('#### Подготовка включена в замер'), section.index('| '+family+'-default |'))
+            self.assertLess(section.index('| '+family+'-default |'), section.index('#### План подготовлен заранее'))
+            self.assertLess(section.index('#### План подготовлен заранее'), section.index('| '+family+'-prepared |'))
             self.assertNotIn('Пояснения', section)
         self.assertEqual(text.count('## Сравнение производительности\n'),1)
         self.assertEqual(text.count(paired.LEGEND),1)
         self.assertLess(text.index(paired.LEGEND),text.index('### Основные сценарии'))
         self.assertNotIn('холодн',text)
         self.assertNotIn('горяч',text)
+        self.assertNotIn('без подготовки',text)
+        self.assertNotIn('с подготовкой',text)
+        self.assertIn('предварительный разбор исходного BSL в AST не входит',text)
+        self.assertIn('отдельный жизненный цикл FormSession',text)
 
     def test_all_numeric_table_lines_are_preserved_verbatim(self):
         data = reports(); text,_ = paired.assemble(data)
@@ -105,24 +109,24 @@ class ExplanationDedupTests(unittest.TestCase):
         text = '\n'.join(paired.explanations(parts))
         self.assertEqual(text.count('Shared warning'), 1)
         self.assertEqual(text.count('- file: same'), 1)
-        self.assertIn('**с подготовкой:**\n\n- API A', text)
-        self.assertIn('**без подготовки:**\n\n- API B', text)
+        self.assertIn('**Подготовка включена в замер:**\n\n- API A', text)
+        self.assertIn('**План подготовлен заранее:**\n\n- API B', text)
         self.assertNotIn('Коммит:', text)
 
     def test_partial_prose_keeps_scope_and_all_warnings(self):
         text='\n'.join(paired.explanations({'default':None,'prepared':('', '', 'Warning\nAPI B')}))
-        self.assertIn('**без подготовки:**',text)
+        self.assertIn('**План подготовлен заранее:**',text)
         self.assertIn('Warning',text)
-        self.assertNotIn('**с подготовкой:**',text)
+        self.assertNotIn('**Подготовка включена в замер:**',text)
 
     def test_metadata_difference_including_missing_is_explicit(self):
-        envs={'основные / с подготовкой':{'python':'3.12','processor':'x','timer':'A'},
-              'основные / без подготовки':{'python':'3.12','processor':'y'}}
+        envs={'основные / Подготовка включена в замер':{'python':'3.12','processor':'x','timer':'A'},
+              'основные / План подготовлен заранее':{'python':'3.12','processor':'y'}}
         text='\n'.join(paired.environment_lines(envs))
         self.assertEqual(text.count('Python:'),1)
-        self.assertIn('Процессор (основные / с подготовкой)',text)
-        self.assertIn('Процессор (основные / без подготовки)',text)
-        self.assertIn('timer (основные / без подготовки): не указано',text)
+        self.assertIn('Процессор (основные / Подготовка включена в замер)',text)
+        self.assertIn('Процессор (основные / План подготовлен заранее)',text)
+        self.assertIn('timer (основные / План подготовлен заранее): не указано',text)
 
     def test_commit_global_once_environment_not_silently_merged(self):
         data=reports()
@@ -132,7 +136,7 @@ class ExplanationDedupTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(text.count('Коммит: `abc`'),1)
         self.assertEqual(text.count('Python:'),1)
-        self.assertIn('Процессор (расширенные / без подготовки): `"other"`',text)
+        self.assertIn('Процессор (расширенные / План подготовлен заранее): `"other"`',text)
         self.assertNotIn('#### Пояснения:',text)
 
     def test_identical_file_notes_and_form_suffix_keep_operations(self):
