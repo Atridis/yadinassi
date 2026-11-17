@@ -101,6 +101,7 @@ def _source_facts(program):
 
 
 def _admit_bindings(vm,routines,constructors,calls):
+    if not constructors and not calls:return
     from .values import BSLArray
     from .maps import BSLMap
     from .structures import BSLStructure
@@ -256,11 +257,13 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     database = vm.database_context
     class DirectBoundary(CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
-            self._check()
-            routine=resolve_routine(self,name.casefold(),require_value=kwargs.get('require_value',False),
-                                    allow_references=kwargs.get('allow_references',False),
-                                    argument_count=kwargs.get('argument_count'))
-            if routine is not None:return routine
+            modules=getattr(vm,'_direct_routine_modules',None)
+            if modules is not None and name.casefold() in modules:
+                self._check()
+                routine=resolve_routine(self,name.casefold(),require_value=kwargs.get('require_value',False),
+                                        allow_references=kwargs.get('allow_references',False),
+                                        argument_count=kwargs.get('argument_count'))
+                if routine is not None:return routine
             if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
                 from .unique_identifiers import BSLUUID
                 self._check()

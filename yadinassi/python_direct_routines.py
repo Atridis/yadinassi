@@ -62,6 +62,7 @@ def prepare(vm, program, plan):
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
+    if not calls:return
     from .python_direct import _contract, _reject, _admit_bindings
     registry=getattr(vm,'_direct_routine_modules',{}) if registry is None else registry
     layout=frozenset(vm.module_names) if layout is None else layout
@@ -73,9 +74,10 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initiali
         seen.add(id(module))
         if module.contract!=_contract(vm):_reject('persistent routine backend/target/profile contract changed; redeclare')
         if module.layout!=layout:_reject('persistent routine module-name layout changed; redeclare')
-        current_server_layout=frozenset().union(*(m.server_layout for m in registry.values()))
-        if module.server_names and module.server_layout!=current_server_layout:
-            _reject('persistent server module-name layout changed; redeclare')
+        if module.server_names:
+            current_server_layout=frozenset().union(*(m.server_layout for m in registry.values()))
+            if module.server_layout!=current_server_layout:
+                _reject('persistent server module-name layout changed; redeclare')
         if any(registry.get(key) is not module for key in module.signatures):
             _reject('routines declared together were partially replaced; redeclare the module')
         _admit_bindings(vm,frozenset(),module.constructors,frozenset())
