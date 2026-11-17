@@ -44,7 +44,7 @@ class ConfigurationBoundary(BoundaryContext):
         return result
     def external_set(self,name,value):
         raise ValueError('common module names are read-only')
-    def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False):
+    def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
         self._check()
         function=self._services.get(name.casefold())
         if type(function) is not HostFunction:

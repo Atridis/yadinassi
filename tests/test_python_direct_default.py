@@ -30,10 +30,10 @@ class PythonDirectDefaultTests(unittest.TestCase):
   vm.execute('Var x;x=1;');vm.execute('Function F() x=x+1;Return x;EndFunction r=F();')
   self.assertIs(vm.variables,original);self.assertEqual(vm.variables['r'],2)
   vm.execute('x=x+1;');self.assertEqual(vm.variables['x'],3)
- def test_cross_execute_routine_gap_fails_before_effects(self):
+ def test_cross_execute_routine_uses_direct_definition(self):
   vm=Interpreter();vm.execute('Function F() Return 1;EndFunction')
-  with self.assertRaisesRegex(PythonDirectUnsupported,'persist across'):vm.execute('x=8;r=F();')
-  self.assertNotIn('x',vm.variables)
+  vm.execute('x=8;r=F();')
+  self.assertEqual((vm.variables['x'],vm.variables['r']),(8,1))
  def test_observable_callback_values(self):
   vm=Interpreter();vm.register_function('Write',lambda:vm.variables.__setitem__('x',Decimal(9)))
   vm.execute('x=1;Write();r=x;');self.assertEqual(vm.variables['r'],9)

@@ -522,3 +522,14 @@ preflight still fails**: the exact isolated child now rejects server declaration
 before producing any witness values. Original collections still stops at
 FixedStructure; functions/strings/values at Execute. 72 combined tests pass normal
 and optimized. [Precise progression, hashes, context limits and reproducer](direct-managed-client-profile.md).
+
+### Persistent client routines (2026-11-17)
+
+Baseline `e5cb5a68`: separate execute/execute_prepared calls can now invoke stored
+client routine code with fresh globals and boundary context. Unchanged regex
+source emits 42 records, then its helpers can be called separately (two matching
+records). This closes the client load/call prerequisite of the native verifier;
+**the full six-scenario verifier still fails at server declarations**. Server,
+NoContext and dual semantics remain unsupported. No fixture/gate was relaxed.
+
+[Implementation, restrictions, regression coverage and cold cost](direct-persistent-client-routines.md).

@@ -106,8 +106,8 @@ def _admit_bindings(vm,routines,constructors,calls):
         constructor=vm.types.get(name)
         if type(constructor) is not HostFunction or constructor.function is not native_types[name]:
             _reject('overridden direct collection constructors are not integrated')
-    if calls & (getattr(vm,'_direct_routine_names',set())-routines):
-        _reject('routines do not persist across execute calls; redeclare the routine in this source')
+    from .python_direct_routines import validate_calls
+    validate_calls(vm,calls-routines)
 
 
 def admit(vm,program):
@@ -133,6 +133,7 @@ class PreparedDirectModule:
     _constructors: frozenset
     _calls: frozenset
     _returns_expression: bool
+    _exports: object
 
 
 def _contract(vm):
@@ -140,7 +141,7 @@ def _contract(vm):
             vm.compiled_ast_contract, vm.database_context is not None)
 
 
-def _compile(vm,program,nodes,source_text,source_name):
+def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_names import NAMES as SYSTEM_NAMES
@@ -152,7 +153,8 @@ def _compile(vm,program,nodes,source_text,source_name):
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
                      constructors=("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
-                     external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()),parsed_ast=program,_trusted_entry=True,_return_last_expression=True)
+                     external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
+                     _export_routines=_exports,_initialize_module=not _exports)
     except UnsupportedNakedSyntax as error:
         _reject(str(error))
     return plan
@@ -189,9 +191,11 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     nodes,routines,constructors,calls=_source_facts(owned)
     plan=_compile(vm,owned,nodes,source_text,source_name)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var for name in node.names)
+    from .python_direct_routines import prepare as prepare_routines
+    exports=prepare_routines(vm,owned,plan) if routines else None
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
                                 declared,_contract(vm),routines,constructors,calls,
-                                bool(owned and type(owned[-1]) is ast.ExpressionStatement))
+                                bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports)
 
 
 def execute_prepared(vm,prepared):
@@ -225,10 +229,22 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from .native_targets import target_context
     from .execution_policy import execution_backend_policy
     plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
+    from .python_direct_routines import prepare as prepare_routines, resolve as resolve_routine
+    exports=(_prepared._exports if _prepared is not None else prepare_routines(vm,program,plan)) if routines else None
+    from .python_direct_routines import validate_calls
+    prospective=dict(getattr(vm,'_direct_routine_modules',{}))
+    if exports is not None:prospective.update({name:exports for name in exports.signatures})
+    calls=_prepared._calls if _prepared is not None else _source_facts(program)[3]
+    validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared)
     from .python_direct_database import CatalogBoundary
     database = vm.database_context
     class DirectBoundary(CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
+            self._check()
+            routine=resolve_routine(self,name.casefold(),require_value=kwargs.get('require_value',False),
+                                    allow_references=kwargs.get('allow_references',False),
+                                    argument_count=kwargs.get('argument_count'))
+            if routine is not None:return routine
             if name.casefold() in ('new:uuid','new:уникальныйидентификатор'):
                 from .unique_identifiers import BSLUUID
                 self._check()
@@ -250,10 +266,13 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
     context=DirectBoundary(services=vm.functions)
     context.vm=vm
+    context._routine_exports={}
     # Preserve live registry updates at subsequent host boundaries, not a copy.
     context._services=vm.functions
     vm.module_names.update(declared)
-    vm._direct_routine_names=getattr(vm,'_direct_routine_names',set())|routines
+    if exports is not None:
+        if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
+        vm._direct_routine_modules.update({name:exports for name in exports.signatures})
     previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
     if database is not None:vm._transaction_activation_allowed=False
     vm._direct_active=True
@@ -266,5 +285,6 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
         if returns_expression:return result
         return None if result is vm.variables else result
     finally:
+        context._routine_exports.clear()
         vm._direct_active=False
         vm._transaction_activation_allowed=previous_transactions

@@ -239,7 +239,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -645,7 +645,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 required_services.add(callee.name.casefold())
                 fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
                 if dynamic_refs and callee.name.casefold() not in service_references:
-                    return dynamic_call('_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True)',node)
+                    return dynamic_call('_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')',node)
                 return '_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
             if services and dynamic_refs:return dynamic_call('_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+', allow_references=True)',node)
             if services:return '_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+')('+', '.join(expression(arg) for arg in node.arguments)+')'
@@ -790,7 +790,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if dynamic_refs:lexical_helpers(None,root_depth)
     # Emit declarations first: BSL routines are available before textual calls.
     sequence([node for node in program if type(node) is ast.Routine],root_depth)
-    sequence([node for node in program if type(node) is not ast.Routine],root_depth)
+    sequence([node for node in program if type(node) is not ast.Routine
+              and (_initialize_module or type(node) is not ast.Var)],root_depth)
     body=lines;lines=[]
     builtin_names={'message':'_outputs.append','сообщить':'_outputs.append','string':'str','строка':'str',
                    'number':'Decimal','число':'Decimal','typeof':'type','типзнч':'type',
@@ -798,7 +799,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+'):')
     if live:
         for key,slot in source_ref_slots.items():emit(1,slot+' = _live_slot_ref(_initial, '+repr(key)+')')
-        for name in sorted(module_variables):emit(1,'_initial.setdefault('+repr(name)+', None)')
+        if _initialize_module:
+            for name in sorted(module_variables):emit(1,'_initial.setdefault('+repr(name)+', None)')
     for name,slot in symbols.items():
         if live:continue
         if name in builtin_names:emit(1,slot+' = '+builtin_names[name])

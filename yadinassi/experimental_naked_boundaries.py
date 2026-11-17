@@ -77,7 +77,7 @@ class BoundaryContext:
         )
         return capability.value
 
-    def resolve_service(self,name,fallback=_MISSING,*,require_value=False,allow_references=False):
+    def resolve_service(self,name,fallback=_MISSING,*,require_value=False,allow_references=False,argument_count=None):
         self._check();key=name.casefold()
         if key not in self._services:
             if fallback is not _MISSING:

@@ -11,15 +11,15 @@ class PreparedAdmissionTests(unittest.TestCase):
             self.assertEqual(vm.execute_prepared(plan),3)
             self.assertEqual(vm.execute_prepared(plan),3)
         self.assertEqual(vm.module_names,{'x'})
-    def test_later_routine_registry_rejects_saved_call_before_effects(self):
+    def test_later_routine_registry_is_used_by_saved_calls(self):
         for call in ('F();','((F))();','If False Then F();EndIf;'):
             with self.subTest(call=call):
                 vm=Interpreter();vm.register_function('F',lambda:1)
                 plan=vm.prepare('x=1;'+call)
                 vm.execute('Function F() Return 2;EndFunction')
-                with self.assertRaisesRegex(PythonDirectUnsupported,'redeclare'):
-                    vm.execute_prepared(plan)
-                self.assertNotIn('x',vm.variables)
+                vm.execute_prepared(plan)
+                self.assertEqual(vm.variables['x'],1)
+                self.assertEqual(vm.execute('F();'),2)
     def test_redeclared_routine_is_not_stale(self):
         vm=Interpreter();plan=vm.prepare('Function F() Return 3;EndFunction x=F();')
         vm.execute('Function F() Return 2;EndFunction')
