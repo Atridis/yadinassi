@@ -476,7 +476,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         if type(node) is ast.Index or type(node) is ast.Attribute:
             return '_canonical_reference('+reference(node)+')'
         return expression(node)
-    def dynamic_call(bound,node):
+    def dynamic_call(bound,node, references=True):
         token=temp()
         omitted=tuple(index for index,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
         setup=['('+token+' := '+bound+')']
@@ -489,9 +489,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if index in omitted:arguments.append(defaults+'['+str(index)+']')
             else:
                 value=expression(arg)
-                if type(ungroup(arg)) is ast.Name:
+                if references and type(ungroup(arg)) is ast.Name:
                     value='('+token+'.prepare_named_value('+host_reference(arg)+') if hasattr('+token+', "prepare_named_value") else '+value+')'
-                arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+value+')')
+                arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+value+')' if references else value)
         return '('+', '.join(setup)+', '+token+'('+', '.join(arguments)+'))[-1]'
     def truth_expression(node):
         value=expression(node)
@@ -534,7 +534,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             args=[expression(arg) for arg in node.arguments];kindname=node.name.casefold()
             if services and kindname in constructors:
                 required_services.add('new:'+kindname)
-                return '_context.resolve_service('+repr('new:'+kindname)+')('+', '.join(args)+')'
+                bound='_context.resolve_service('+repr('new:'+kindname)+')'
+                if any(type(arg) is ast.OmittedArgument for arg in node.arguments):return dynamic_call(bound,node,False)
+                return bound+'('+', '.join(args)+')'
             if kindname in ('array','массив'):
                 if 'constructor_bounds' in repairs:return '_array_constructor_bounds('+', '.join(args)+')'
                 if not args:return '[]'

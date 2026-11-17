@@ -681,3 +681,15 @@ Unchanged logical-model replay matches accepted native artifact14334693411 exact
 No fixture, schema gate or VM dispatch change. This is local replay against the
 existing native run44098520311, not a new1C run or full CI success.
 [Reproducer, evidence and remaining scope](../experiments/direct_query_table/README.md).
+
+### Direct HTTP owned-loopback replay (2026-11-17)
+
+Base593c1dbd: native HTTP accepted40 observations but host compilation rejected
+File. A finite canonical file/binary/HTTP protocol set is now connected, with
+narrow optional HTTP constructor holes and post-argument factory identity checks.
+Direct header Map aliases are retained under existing exact header validation.
+Original owned-loopback replay now matches native40 plus controls exactly:
+1838bytes,SHA256 d159e9a8b3a11329b453871870e44794478edd30a4ea4681ffa1e31ecb91d971.
+107normal/107optimized tests and30 independent optimized tests PASS. No native
+fixture/security gate changes; TLS/client-context/full-CI parity not claimed.
+[Reproducer, evidence and limits](../experiments/direct_http_protocol/README.md).

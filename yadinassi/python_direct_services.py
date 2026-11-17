@@ -1,4 +1,7 @@
-"""Finite canonical constructors for direct JSON and regex interoperability."""
+"""Finite canonical constructors for direct JSON, regex and HTTP/file protocols."""
+from .file_io import BSLFile, BSLBinaryData
+from .http_client import BSLHTTPConnection, BSLHTTPRequest
+from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .values import HostFunction
 from . import regex_functions, strings
@@ -6,6 +9,11 @@ from .experimental_naked_boundaries import BoundaryViolation
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('file','файл'),BSLFile),
+        (('binarydata','двоичныеданные'),BSLBinaryData),
+        (('binarydatabuffer','буфердвоичныхданных'),BSLBinaryDataBuffer),
+        (('httpconnection','httpсоединение'),BSLHTTPConnection),
+        (('httprequest','httpзапрос'),BSLHTTPRequest),
         (('jsonreader','чтениеjson'),BSLJSONReader),
         (('jsonwriter','записьjson'),BSLJSONWriter),
         (('jsonwritersettings','параметрызаписиjson'),BSLJSONWriterSettings),
@@ -25,7 +33,24 @@ class ServicesBoundary:
             factory=self.vm.types.get(key[4:])
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
-            return super().resolve_callable(factory)
+            bound=super().resolve_callable(factory)
+            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer):
+                original=bound
+                def guarded(*values):
+                    self._check()
+                    if factory.function is not expected:
+                        raise BoundaryViolation('HTTP/file constructor changed during argument evaluation')
+                    return original(*values)
+                bound=guarded
+            if expected in (BSLHTTPConnection,BSLHTTPRequest):
+                limit=8 if expected is BSLHTTPConnection else 2
+                def prepare_omissions(bound,positions,count):
+                    self._check()
+                    if count>limit or any(index<1 or index>=limit for index in positions):
+                        raise TypeError('HTTP constructor argument omission is not supported')
+                    return bound,{index:None for index in positions}
+                bound.prepare_omissions=prepare_omissions
+            return bound
         function=self._services.get(key)
         from .type_values import _DIRECT_TYPE_OF_ABI
         if type(function) is HostFunction and function.function is _DIRECT_TYPE_OF_ABI:

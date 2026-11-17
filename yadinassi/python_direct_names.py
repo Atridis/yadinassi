@@ -1,6 +1,8 @@
 """Finite immutable system namespaces for the direct backend."""
 from types import MappingProxyType
 
+from .http_client import BYTE_ORDER_MARK_USE
+from .binary_streams import POSITIONS_IN_STREAM
 from .chars import CHARS
 from .search_directions import SEARCH_DIRECTIONS
 from .sort_directions import SORT_DIRECTIONS
@@ -13,6 +15,8 @@ NAMES = MappingProxyType({
     alias: value
     for aliases, value in (
         (("chars", "символы"), CHARS),
+        (("byteordermarkuse", "использованиеbyteordermark"), BYTE_ORDER_MARK_USE),
+        (("positioninstream", "позициявпотоке"), POSITIONS_IN_STREAM),
         (("searchdirection", "направлениепоиска"), SEARCH_DIRECTIONS),
         (("sortdirection", "направлениесортировки"), SORT_DIRECTIONS),
         (("roundmode", "режимокругления"), ROUND_MODES),

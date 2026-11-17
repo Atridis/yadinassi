@@ -55,10 +55,13 @@ def _body(data):
 
 
 def _headers(value):
-    if type(value) is not BSLMap: raise TypeError('HTTP: заголовки должны быть Соответствием')
-    if len(value._items) > MAX_HEADERS: raise ValueError('HTTP: слишком много заголовков')
+    from .experimental_naked_collections import _TypedMap
+    if type(value) is BSLMap: entries=value._items
+    elif type(value) is _TypedMap: entries=value
+    else: raise TypeError('HTTP: заголовки должны быть Соответствием')
+    if len(entries) > MAX_HEADERS: raise ValueError('HTTP: слишком много заголовков')
     result = []; seen = set(); size = 0
-    for key, val in value._items.values():
+    for key, val in dict.values(entries):
         key = _text(key, 256); val = _text(val, MAX_HEADER_BYTES)
         if not _TOKEN.fullmatch(key) or any(ord(c) < 32 or ord(c) == 127 for c in val):
             raise ValueError('HTTP: недопустимый заголовок')
