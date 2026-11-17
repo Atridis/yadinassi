@@ -56,4 +56,6 @@ def host_reference(state,name):
     if value is UNSET:missing(name)
     if type(value) is Reference:return value
     ref=_SlotReference(state,key)
-    return Reference(ref.get,ref.set)
+    result=Reference(ref.get,ref.set)
+    result._direct_name_sink=True
+    return result

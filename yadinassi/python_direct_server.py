@@ -1,12 +1,14 @@
 """Synchronous logical server calls with fresh side-local state, no VM dispatch.
 
-Only module-context Val signatures are admitted. NoContext, dual declarations,
-server initializers and cross-side reference copyback remain explicit gaps.
+Module-context calls support Val and named-variable reference copyback.
+NoContext, dual declarations and server initializers remain explicit gaps.
 """
 from decimal import Decimal
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .python_direct_database import CatalogBoundary
-from .values import HostFunction, NULL
+from .values import HostFunction, Reference, NULL
+from .experimental_naked_collections import _Cell
+from .experimental_naked_live_state import _ForwardReference
 
 
 def transfer(value):
@@ -71,6 +73,7 @@ class ServerBoundary(CatalogBoundary,BoundaryContext):
 
 def resolve_server(parent,module,name,*,require_value,allow_references):
     vm=parent.vm
+    references=module.signatures[name][3]
     def execute(context,arguments):
         exports=context._routine_exports.get(id(module))
         if exports is None:
@@ -84,9 +87,20 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
             if converted is error:raise
             raise converted from None
     def invoke(*arguments):
-        if getattr(parent,'_server_side',False):return execute(parent,arguments)
+        if getattr(parent,'_server_side',False):
+            bound=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
+                        for i,value in enumerate(arguments))
+            return execute(parent,bound)
         parent._check()
-        packet=transfer(list(arguments))
+        outputs=[]
+        for i,value in enumerate(arguments):
+            if i in references:
+                if type(value) is not Reference or getattr(value,'_direct_name_sink',False) is not True:
+                    raise TypeError('Межконтекстные параметры без Знач пока требуют имя переменной')
+                outputs.append((i,value))
+        # Named byref actuals are storage: read only after all argument effects.
+        packet=transfer([value.get() if i in references else value for i,value in enumerate(arguments)])
+        for i,_ in outputs:packet[i]=_Cell(packet[i])
         context=ServerBoundary(parent)
         previous=getattr(vm,'_transaction_activation_allowed',True)
         vm._transaction_activation_allowed=False
@@ -94,12 +108,18 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
         try:
             context.enter()
             try:
-                try:return transfer(execute(context,packet))
+                try:
+                    result=execute(context,packet)
+                    outgoing=transfer([result]+[packet[i].value for i,_ in outputs])
                 finally:context._check()
             finally:context.leave()
         finally:
             vm._context_stack.pop()
             vm._transaction_activation_allowed=previous
             parent._check()
-    function=HostFunction(name,invoke,returns_value=module.signatures[name][0])
+        # Publish only after the complete packet and current caller validate.
+        # Ordered independent copy-out intentionally gives the rightmost alias.
+        for (_,reference),value in zip(outputs,outgoing[1:]):reference.set(value)
+        return outgoing[0]
+    function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
     return parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)

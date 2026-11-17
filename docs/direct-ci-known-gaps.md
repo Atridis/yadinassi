@@ -564,3 +564,17 @@ Map inlining is rejected as mixed/noisy. Module locals are rejected despite
 compute-only gains: a live callback counterexample returns3 instead of10.
 No production Map rewrite or flush/snapshot layer was added.
 [All samples, rejection evidence and reproducer](../experiments/audit9_remaining/README.md).
+
+### Named server byref copyback (2026-11-17)
+
+Base2b492f54: именованные клиентские переменные теперь поддерживают серверный
+copyback через независимые formal cells и проверку всего выходного packet до
+публикации. Property/index sinks, включая forwarding, не допускаются. Общие
+transfer limits, owner/context checks, отсутствие copyback при escaping error
+сохранены. NoContext/dual/init не разрешались этим изменением.
+
+Неизменённый scalar witness:35 records,33 совпадения с explicit legacy control;
+два известных ErrorDescription расхождения. Full owned-SQLite verifier остаётся
+красным на server initialization; object witness — stage8 TypeOf(Structure).
+125+8 tests normal и optimized,85 independent optimized PASS.
+[Контракт, ограничения и воспроизведение](direct-logical-server.md).

@@ -18,10 +18,15 @@ from .values import Reference as _CanonicalReference
 def _canonical_reference(value):
     return _CanonicalReference(value.get,value.set)
 
-def _host_name_reference(getter,setter,name):
+def _host_name_reference(getter,setter,name,storage=None):
     try:getter()
     except NameError:raise ValueError('Переменная или функция не определена: '+name) from None
-    return _CanonicalReference(getter,setter)
+    from .experimental_naked_live_state import _SlotReference, _ForwardReference
+    result=_CanonicalReference(getter,setter)
+    result._direct_name_sink=(storage is None or type(storage) in (_Cell,_SlotReference)
+        or (type(storage) is _ForwardReference and type(storage.reference) is _CanonicalReference
+            and getattr(storage.reference,'_direct_name_sink',False) is True))
+    return result
 
 def _host_omission_error():
     raise TypeError('Пропуск аргументов встроенных функций, методов и конструкторов пока не поддерживается')
@@ -441,7 +446,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 text='_live_host_ref(_initial, '+repr(node.name)+')'
                 return source_map.expression(text,node) if source_map is not None else text
             slot=sym(node.name)
-            text='_host_name_reference(get_'+slot+', set_'+slot+', '+repr(node.name)+')'
+            text='_host_name_reference(get_'+slot+', set_'+slot+', '+repr(node.name)+(', '+slot if boxed(node.name) else '')+')'
             return source_map.expression(text,node) if source_map is not None else text
         if type(node) is ast.Index or type(node) is ast.Attribute:
             return '_canonical_reference('+reference(node)+')'

@@ -90,8 +90,6 @@ def _source_facts(program):
             constructors.add(node.name.casefold())
         if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context not in ('client','server')):
             _reject('async/NoContext source routines are not integrated')
-        if type(node) is ast.Routine and node.execution_context=='server' and any(not p.by_value for p in node.parameters):
-            _reject('server reference parameters are not integrated')
         if type(node) is ast.Import or type(node) is ast.ServerInitializer:
             _reject('imports/server initialization are not integrated')
         if type(node) is ast.Call:

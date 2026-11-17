@@ -66,7 +66,6 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         with self.assertRaises(BoundaryViolation):vm.execute('S();')
     def test_unsupported_declarations_and_duplicate_refuse_before_effect(self):
         for declaration in ('&AtServerNoContext\nFunction S() Return 1; EndFunction',
-            '&AtServer\nProcedure S(X) EndProcedure',
             'Function S() Return 1; EndFunction\n&AtServer\nFunction S() Return 2; EndFunction'):
             vm=Interpreter()
             with self.assertRaises(PythonDirectUnsupported):vm.execute('Effect=1;\n'+declaration)
