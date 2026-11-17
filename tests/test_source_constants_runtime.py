@@ -84,7 +84,12 @@ class SourceConstantsRuntimeTests(unittest.TestCase):
                 other._session_owner.register_function('CapturedSetter', setter.function, returns_value=False)
                 other._session_owner._context_stack.append('server')
                 try:
-                    with self.assertRaisesRegex(BSLError, 'owning synchronous server'):
+                    # Direct storage rejects foreign capabilities before invoking
+                    # their authorization callbacks; legacy reports a BSL error.
+                    from yadinassi.experimental_naked_boundaries import BoundaryViolation
+                    direct=other._session_owner.execution_backend=='python-direct'
+                    with self.assertRaisesRegex(BoundaryViolation if direct else BSLError,
+                                                'foreign source constants' if direct else 'owning synchronous server'):
                         other._session_owner.execute('CapturedSetter(True);')
                 finally:
                     other._session_owner._context_stack.pop()

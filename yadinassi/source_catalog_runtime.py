@@ -290,6 +290,8 @@ class _ObjectInterpreter(_SourceInterpreter):
 
 def create_object(caller,manager,definition,identity=None,revision=0,values=None):
     app,store=store_for(manager,caller)
+    if definition.object_module is not None and caller.execution_backend == 'python-direct':
+        raise ValueError('direct source catalog handlers not integrated')
     obj=SourceCatalogObject(manager,definition,identity)
     path=definition.object_module
     if path is not None:

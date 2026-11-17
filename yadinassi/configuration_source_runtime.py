@@ -220,7 +220,8 @@ class _SourceInterpreter(Interpreter):
 _DIRECT_SOURCE_ABI = tuple((name, getattr(_SourceInterpreter, name)) for name in (
     'compiled_before', 'compiled_after', 'compiled_exception', 'semantic_name',
     'semantic_assign', 'set_variable', '_visit',
-    'execute', 'execute_program', '_activation_interpreter'))
+    'execute', 'execute_program', '_activation_interpreter',
+    '_new_query', '_new_temp_tables_manager', '_new_type_description'))
 
 
 def _walk(value):

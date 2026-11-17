@@ -14,6 +14,8 @@ from .python_direct_services import ServicesBoundary, CONSTRUCTORS
 from .syntax import ast
 from .values import HostFunction, Reference
 from . import safe_mode, source_transactions, database_transactions
+from . import python_direct_source_storage as storage
+from . import python_direct_source_query as query
 
 
 def check_owner(owner):
@@ -87,7 +89,7 @@ def _compile(owner,program,*,exports=False,layout=()):
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=_external_names(owner,names|set(layout)),
-        constructors=tuple(CONSTRUCTORS)+('uuid','уникальныйидентификатор'),
+        constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True)
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
@@ -144,6 +146,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        captured=storage.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if captured is not None:return captured
         bound=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
         return self._guard_references(bound) if allow_references else bound
     def leave(self):
@@ -158,6 +162,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
         from .python_direct_names import NAMES
         if name in NAMES:return NAMES[name]
+        namespace=storage.namespace(self,name)
+        if namespace is not None:return namespace
         if name in ('metadata','метаданные'):return self.app.metadata
         if name in self.app.modules:return self.app.module(name,self.vm)
         from .source_application_exports import variable
@@ -188,6 +194,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key.startswith('new:') and key[4:] in query.CONSTRUCTOR_NAMES:
+            return query.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in ('uuid','уникальныйидентификатор'):
             from .unique_identifiers import BSLUUID
             function=self.vm.types.get(key[4:])
@@ -205,6 +213,9 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             routine,owner=selected
             return self._routine(owner,routine,**kwargs)
         function=self._services.get(key)
+        captured=storage.captured(self,function,require_value=kwargs.get('require_value',False),
+            allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
+        if captured is not None:return captured
         if type(function) is HostFunction:
             from .source_transactions import SourceTransactionCall
             from .common_templates import SourceTemplateCall
@@ -294,12 +305,18 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def get_member(self,value,name):
         self._check()
         if name.startswith('_'):raise BoundaryViolation('private source member')
+        if query.supports(value):return query.get_member(self,value,name)
+        if storage.owns(value):return storage.get(self,value,name)
         if self._metadata(value) or self._module(value) is not None:
             try:return value.get_member(name)
             finally:self._check()
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if query.supports(value):return query.resolve_member(self,value,name,require_value=require_value,
+            argument_count=argument_count,allow_references=allow_references)
+        if storage.owns(value):return storage.resolve(self,value,name,require_value=require_value,
+            argument_count=argument_count,allow_references=allow_references)
         owner=self._module(value)
         if owner is not None:
             return self._routine(owner,value.routine(name),require_value=require_value,
@@ -307,12 +324,24 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         function=self.resolve_member(value,name)
         return self.resolve_callable(HostFunction(name,function),require_value=require_value,
                                      allow_references=allow_references)
+    def set_member(self,value,name,new_value):
+        return self.resolve_set_member(value,name)(new_value)
+    def reference_member(self,value,name):
+        if storage.owns(value) or query.supports(value):
+            self.get_member(value,name)
+            from .experimental_naked_boundaries import _HostMemberReference
+            return _HostMemberReference(self,value,name)
+        return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if query.supports(value):return query.resolve_set_member(self,value,name)
+        if storage.owns(value):return storage.set_member(self,value,name)
         if self._metadata(value):raise ValueError('source metadata is read-only')
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if query.supports(value):return query.resolve_member(self,value,name)
+        if storage.owns(value):return storage.resolve(self,value,name)
         if name in ('__getitem__','__setitem__','__iter__') and self._metadata(value):
             def operation(*args):
                 self._check()
@@ -348,6 +377,10 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self.resolve_member(value,name)(*args)
     def iterate(self,value):
         self._check()
+        if query.supports(value):
+            yield from query.iterate(self,value);return
+        if storage.owns(value):
+            yield from storage.iterate(self,value);return
         if not self._metadata(value):raise ValueError('direct source iteration is not integrated')
         for item in value:
             self._check();yield item

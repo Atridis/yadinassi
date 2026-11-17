@@ -160,6 +160,8 @@ def create_manager(caller, owner, name):
     module_files = [p for p, raw in app.files.items() if p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()]
     if any(p != path for p in module_files):
         raise ValueError('unsupported constant module location')
+    if module_files and caller.execution_backend == 'python-direct':
+        raise ValueError('direct source constant handlers not integrated')
     manager = SourceConstantValueManager(owner, definition.name)
     if module_files:
         from .configuration_modules import compile_module
