@@ -693,3 +693,26 @@ Original owned-loopback replay now matches native40 plus controls exactly:
 107normal/107optimized tests and30 independent optimized tests PASS. No native
 fixture/security gate changes; TLS/client-context/full-CI parity not claimed.
 [Reproducer, evidence and limits](../experiments/direct_http_protocol/README.md).
+
+### Associative comparator evidence ordering (2026-11-17)
+
+Native run44105800556 on HTTP head2900ac37 passed the individual profiles, but
+six-scenario job134117746049 stopped with semantic_result_invalid (summary artifact
+14337928616). Its preprocessor_status=failed is set by discard_infobase_capture
+on the later failure; it is not independent evidence of a preprocessor mismatch.
+The six-scenario EXECUTE_SCRIPT explicitly selects the legacy interpreter oracle,
+so this failure must not be described as direct-language parity evidence.
+
+A real comparator/validator composition defect is reproduced with the existing
+source-bound1023-record fixture: permitted Structure and nested Map permutations
+produce equivalent with accepted_labels in source order, but the strict validator
+requires ELIGIBLE_LABELS order (lexicographic for associative-order-v2). The producer
+now sorts only that evidence list. Raw bytes/hashes, record counts, typed payload
+relation, eligible labels, rejection paths and validator are unchanged. No gate is
+relaxed, and no native fixture is rewritten. Regression composes freshly loaded
+comparator with the unchanged validator and tests wrong-order/ineligible-mutation
+rejections.114 tests PASS normalPython3.12 and optimizedPython3.10.
+
+The failed CI private comparison payload was not exported; this is a reproduced
+contract bug consistent with its error, not proof of the precise failed payload
+or a green rerun. Actual subsequent CI must establish further progress.

@@ -265,7 +265,7 @@ def compare_collections(native, actual, source_sha256):
                     if tree != side[original]:
                         raise grammar._Reject('roundtrip_failed')
         result.update(status='equivalent', records=RECORD_COUNT,
-                      byte_equal_records=equal, accepted_labels=accepted)
+                      byte_equal_records=equal, accepted_labels=sorted(accepted))
     except grammar._Reject as error:
         result['reason'] = str(error)
     except (ValueError, UnicodeError, TypeError):

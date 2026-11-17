@@ -126,3 +126,32 @@ class AssociativeHistoricalSourceTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(restored.encode()).hexdigest(), contract['base_sha256'])
             self.assertEqual(without_associative_order_harness(restored, path), restored)
             self.assertEqual(without_associative_order_harness(source + '# unknown', path), source + '# unknown')
+
+
+class ActualComparatorContractTests(unittest.TestCase):
+    def test_multiple_permitted_payloads_emit_canonical_evidence_order(self):
+        from tests.test_native_associative_order import BoundProfileTests
+        from tests.test_native_1c_map_contract import mapping,sequence,string,scalar,STRUCTURE,ARRAY,encode
+        case=BoundProfileTests();left=case.records();right=list(left)
+        pairs=((string('First'),scalar('N',b'1')),(string('Second'),scalar('U')))
+        for ordinal in (295,298):
+            right[ordinal-1]=(left[ordinal-1][0],mapping(pairs[::-1],STRUCTURE))
+        for ordinal in (303,306):
+            left[ordinal-1]=(left[ordinal-1][0],sequence(ARRAY,(mapping(pairs),)))
+            right[ordinal-1]=(right[ordinal-1][0],sequence(ARRAY,(mapping(pairs[::-1]),)))
+        native,actual=encode(left),encode(right)
+        contract=full.associative_contract()
+        result=contract.compare_collections(native,actual,contract.SOURCE_SHA256)
+        self.assertEqual(result['status'],'equivalent')
+        self.assertEqual(result['byte_equal_records'],1019)
+        self.assertEqual(result['accepted_labels'],sorted((left[i-1][0] for i in (295,298,303,306))))
+        full.validate_semantic_result(result,raw_matched=False,comparison_mode=full.ASSOCIATIVE_MODE)
+        self.assertNotEqual(native,actual)
+        # Validator remains strict; only the producer's metadata ordering changes.
+        bad={**result,'accepted_labels':result['accepted_labels'][::-1]}
+        with self.assertRaisesRegex(full.FullError,'semantic_result_invalid'):
+            full.validate_semantic_result(bad,raw_matched=False,comparison_mode=full.ASSOCIATIVE_MODE)
+        changed=list(right);changed[9]=(changed[9][0],changed[9][1]+b' ')
+        refused=contract.compare_collections(native,encode(changed),contract.SOURCE_SHA256)
+        self.assertEqual(refused['status'],'rejected')
+        full.validate_semantic_result(refused,raw_matched=False,comparison_mode=full.ASSOCIATIVE_MODE)
