@@ -312,6 +312,14 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             if args and args[0] is not _MISSING:
                 return self.resolve_callable(args[0],require_value=kwargs.get('require_value',False),
                     allow_references=kwargs.get('allow_references',False))
+            if self.side=='client' and self.vm is self.app._session_owner:
+                registry=self.vm.server_routines
+                if type(registry) is not dict or any(type(name) is not str for name in registry):
+                    raise BoundaryViolation('source session crossing requires canonical registry names')
+                server=registry.get(key)
+                if server is not None:
+                    from .python_direct_source_server import resolve_session
+                    return resolve_session(self,server,**kwargs)
             selected=self.app.resolve_global(key,self.vm)
             if selected is None:raise ValueError('Переменная или функция не определена: '+name)
             routine,owner=selected
