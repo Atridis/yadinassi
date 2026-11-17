@@ -5,6 +5,12 @@ from pathlib import Path
 import sys
 
 
+def ratio_cell(value):
+    """Use portable color indicators; GitHub strips inline cell styles."""
+    indicator = "🟩" if value < 2 else "🟨" if value <= 3 else "🟧"
+    return f"{indicator} {value:.2f}×"
+
+
 def render(report):
     if report['schema'] != 'execution-layers-v1':
         raise ValueError('unsupported benchmark report')
@@ -25,8 +31,8 @@ def render(report):
             raise ValueError('invalid timing')
         native, classes, bsl = values
         name = case['case'].replace('|', '\\|').replace('\n', ' ')
-        lines.append(f'| {name} | {native*1000:.3f} | {classes*1000:.3f} | {bsl*1000:.3f} | {classes/native:.2f}× | {bsl/native:.2f}× | {bsl/classes:.2f}× |')
-    lines += ['', 'Ratios are time ratios: **lower is faster**, native Python = 1×. No speed threshold or speed-based failure.', '',
+        lines.append(f'| {name} | {native*1000:.3f} | {classes*1000:.3f} | {bsl*1000:.3f} | {ratio_cell(classes/native)} | {ratio_cell(bsl/native)} | {ratio_cell(bsl/classes)} |')
+    lines += ['', 'Ratio indicators (unrounded values): 🟩 0 ≤ ratio < 2; 🟨 2 ≤ ratio ≤ 3; 🟧 ratio > 3. Timing cells are not colored.', '', 'Ratios are time ratios: **lower is faster**, native Python = 1×. No speed threshold or speed-based failure.', '',
               'Wall-time medians; each invocation is checked for the expected Decimal result. '
               'Setup and first execution are recorded separately in the raw JSON. '
               'The BSL API is listed below: execute_program includes any preparation it performs internally. '

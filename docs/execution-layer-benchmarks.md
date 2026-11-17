@@ -129,3 +129,18 @@ Python / Python with yadinassi classes / BSL, and both validate every result.
 They must not be conflated: the default `execute_program` table includes internal
 preparation; the prepared table does not. First-call and preparation milliseconds
 are also visible below each timing table.
+
+### Ratio color indicators
+
+Both timing tables decorate only the three ratio columns: 🟩 for 0 ≤ ratio < 2,
+🟨 for 2 ≤ ratio ≤ 3 (including both endpoints), and 🟧 for ratio > 3. The category
+uses the unrounded ratio; the printed number still has two decimal places.
+Timing, preparation and first-call cells remain unchanged. These are visual
+references only, not pass/fail gates.
+
+GitHub's [markup sanitization](https://github.com/github/markup#github-markup)
+removes inline styles, so custom cell backgrounds and a precise dark-yellow shade
+are not dependable in Actions Summary. Colored square indicators preserve the
+meaning in supported Markdown without CSS; the yellow shade depends on the
+viewer's emoji font. Numeric values and the explicit legend remain readable
+without relying on color. Summary Markdown and its artifact use the same renderer.
