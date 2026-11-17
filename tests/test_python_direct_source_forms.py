@@ -52,10 +52,10 @@ class DirectSourceForms(unittest.TestCase):
                 self.assertIsNotNone(self.command(controller)['error'])
             self.assertFalse(target.exists())
 
-    def test_nocontext_rejected_before_specialized_server_creation(self):
+    def test_nocontext_server_factory_replacement_rejected_before_callback(self):
         code=CODE+b'\n&AtServerNoContext\nFunction Remote(Val X) Return X; EndFunction'
-        with self.no_vm(),patch('yadinassi.source_forms._SourceNoContextServer',side_effect=AssertionError('legacy NoContext server')):
-            with self.assertRaisesRegex(ValueError,'NoContext is not integrated'):self.controller(code)
+        with self.no_vm(),patch('yadinassi.source_forms._SourceNoContextServer',side_effect=AssertionError('wrong NoContext server factory callback')):
+            with self.assertRaisesRegex(ValueError,'NoContext server factory changed'):self.controller(code)
 
     def test_failed_validation_releases_exact_source_child(self):
         from yadinassi.source_forms import _SourceFormInterpreter,source_form_definition

@@ -95,6 +95,10 @@ class SourceFormBoundary(FormBoundary,SourceBoundary):
         return SourceBoundary.external_reference(self,name)
 
     def resolve_service(self,name,*args,**kwargs):
+        from .python_direct_source_nocontext import resolve
+        nocontext=resolve(self,name,require_value=kwargs.get('require_value',False),
+            argument_count=kwargs.get('argument_count'),allow_references=kwargs.get('allow_references',False))
+        if nocontext is not None:return nocontext
         key=name.casefold()
         special=tuple('new:'+n for n in CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS)
         if key in tuple('new:'+n for n in DECLARATION_CONSTRUCTORS):

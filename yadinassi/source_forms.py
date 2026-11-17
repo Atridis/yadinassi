@@ -1,6 +1,8 @@
 """Explicitly selected supported source form; no inferred CRUD/profile grants."""
 from .configuration_source_runtime import _SourceInterpreter
 from .form_runtime import _FormInterpreter
+from .runtime import Interpreter
+from .invocation import InvocationServer, InvocationPort
 from .configuration_forms import _definition
 from .ui.form_app import FormController
 
@@ -46,15 +48,29 @@ class _SourceNoContextServer:
         from .invocation import InvocationServer
         self.application = application
         self.sink = None
+        if application.interpreter.execution_backend=='python-direct':
+            for cls,name,expected in (*_DIRECT_SOURCE_NOCONTEXT_ABI,*_DIRECT_SOURCE_NOCONTEXT_TRANSPORT_ABI):
+                if getattr(cls,name) is not expected:
+                    raise ValueError('source NoContext factory hooks changed')
+            if _SourceNoContextInterpreter is not _DIRECT_SOURCE_NOCONTEXT_CLASS:
+                raise ValueError('source NoContext factory class changed')
         self.prototype = _SourceNoContextInterpreter(application, output=self._message,
             family_owner=application.interpreter, compilation_profile=application.compilation_profile)
         self.prototype._logical_side = 'server'
-        self.prototype.execute_program(admitted_program(program.nocontext, side='nocontext', label='<source-form-nocontext>'))
+        nodes=admitted_program(program.nocontext, side='nocontext', label='<source-form-nocontext>')
+        if self.prototype.execution_backend=='python-direct':
+            from .python_direct_source_nocontext import prepare
+            prepare(self,nodes)
+        else:
+            self.prototype.execute_program(nodes)
         endpoints = {}
         for binding in program.nocontext_bindings:
             routine = self.prototype.server_routines[binding.name.casefold()]
             endpoints[binding.endpoint] = (binding, lambda values, routine=routine: self._invoke(routine, values))
         self.server = InvocationServer.from_handlers(endpoints, message_scope=self._scope)
+        if self.prototype.execution_backend=='python-direct':
+            self._direct_transport=(self.server,self.server._callbacks,tuple(self.server._callbacks.items()),
+                self.server._routines,tuple(self.server._routines.items()),self.server._message_scope,self.server._gate)
 
     def _message(self, value):
         if self.sink is None:
@@ -77,6 +93,9 @@ class _SourceNoContextServer:
         from .native_targets import target_context
         from .syntax import ast
         self.application.require_open()
+        if self.prototype.execution_backend=='python-direct':
+            from .python_direct_source_nocontext import invoke
+            return invoke(self,routine,values)
         self.prototype._source_call_budget = [0]
         activation = self.prototype._new_server_activation(module_context=False)
         activation._context_stack.append('server')
@@ -93,6 +112,9 @@ class _SourceNoContextServer:
 
     def exchange(self, raw):
         self.application.require_open()
+        if self.prototype.execution_backend=='python-direct':
+            from .python_direct_source_nocontext import _check
+            _check(self)
         return self.server.exchange(raw)
 
 
@@ -151,6 +173,22 @@ _DIRECT_SOURCE_FORM_ABI=tuple((name,getattr(_SourceFormInterpreter,name)) for na
     '_new_temp_tables_manager','_make_attribute'))
 
 
+_DIRECT_SOURCE_NOCONTEXT_TRANSPORT_ABI=tuple(
+    (cls,name,getattr(cls,name)) for cls,names in (
+        (InvocationServer,('exchange','_reply','_message')),
+        (InvocationPort,('invoke',)),
+    ) for name in names)
+_DIRECT_SOURCE_NOCONTEXT_SERVER_CLASS=_SourceNoContextServer
+_DIRECT_SOURCE_NOCONTEXT_CLASS=_SourceNoContextInterpreter
+_DIRECT_SOURCE_NOCONTEXT_ABI=tuple(
+    (cls,name,getattr(cls,name)) for cls,names in (
+        (_SourceNoContextInterpreter,('__init__','__new__','compiled_before','_visit','_activation_interpreter','_inherit_host_bindings','register_function','register_type','_bind_schema_scope')),
+        (_SourceNoContextServer,('__init__','_message','_scope','_invoke','exchange')),
+        (_SourceInterpreter,('__init__','__new__','register_function','register_type','_bind_schema_scope')),
+        (Interpreter,('__init__','register_function','register_type','_bind_schema_scope')),
+    ) for name in names)
+
+
 def source_form_definition(application, name, *, progressive=False, diagnostics=None):
     application.require_open()
     if application.constant_store is not None:
@@ -179,7 +217,7 @@ def source_form_definition(application, name, *, progressive=False, diagnostics=
         try:
             with application.safe_mode.execution():
                 return _definition(name,metadata._entry.identity,xml,module,compilation_profile=application.compilation_profile,
-                                   validation_interpreter_factory=validation_factory,reject_nocontext=True)
+                                   validation_interpreter_factory=validation_factory,reject_nocontext=False)
         finally:
             if validation_child is not None and not validation_child._family_released:validation_child.close()
     if progressive:
@@ -201,8 +239,6 @@ class SourceFormController:
         diagnostics = []
         self.definition = source_form_definition(application, name, progressive=progressive, diagnostics=diagnostics)
         self.diagnostics = tuple(diagnostics)
-        if application.interpreter.execution_backend=='python-direct' and self.definition.program.nocontext_bindings:
-            raise ValueError('direct source form NoContext is not integrated')
         def factory(side):
             def make(session, output, **kwargs):
                 if kwargs.get('database_context') is not None:
@@ -218,10 +254,21 @@ class SourceFormController:
             self.nocontext = None
             if self.definition.program.nocontext_bindings:
                 from .invocation import InvocationPort
+                if (application.interpreter.execution_backend=='python-direct'
+                        and _SourceNoContextServer is not _DIRECT_SOURCE_NOCONTEXT_SERVER_CLASS):
+                    raise ValueError('source NoContext server factory changed')
                 self.nocontext = _SourceNoContextServer(application, self.definition.program)
+                self.nocontext._direct_source_sessions=(self.client.session,self.server.session)
+                self.client.session._direct_source_nocontext_server=self.nocontext
+                self.server.session._direct_source_nocontext_server=self.nocontext
                 port = InvocationPort(self.nocontext.exchange)
                 for binding in self.definition.program.nocontext_bindings:
                     self.client.session.bind_nocontext(port, binding)
+                if application.interpreter.execution_backend=='python-direct':
+                    self.nocontext._direct_client_bindings=tuple(
+                        (binding.name.casefold(),self.client.session.interpreter._invocation_bindings[binding.name.casefold()])
+                        for binding in self.definition.program.nocontext_bindings)
+                    self.nocontext._direct_port=(port,port._exchange,port._gate)
 
     def exchange(self, request):
         self.application.require_open()

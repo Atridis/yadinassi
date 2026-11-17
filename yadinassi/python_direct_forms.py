@@ -284,7 +284,13 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
         declared={node.name.casefold() for node in program if type(node) is ast.Routine}
         declared.update(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
         names=tuple(dict.fromkeys((*names,*(name for name in external_names(session) if name not in declared))))
-    prepared=prepare_handlers(program, source_text=source if type(source) is str else '',
+    # Source NoContext bodies must never share a lexical generated closure
+    # with the form's contextual state. Their calls use the explicit formless
+    # adapter; original declarations remain in the live signature registry.
+    executable_program=([node for node in program
+                         if type(node) is not ast.Routine or node.module_context]
+                        if source_mode else program)
+    prepared=prepare_handlers(executable_program, source_text=source if type(source) is str else '',
                             external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+(CONSTRUCTORS if source_mode else ()),
                             repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
@@ -298,7 +304,7 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
                 return vm._copy_context_packet([result])[0]
             return call
         for node in program:
-            if type(node) is ast.Routine and node.execution_context=='server' and not node.parameters:
+            if type(node) is ast.Routine and node.module_context and node.execution_context=='server' and not node.parameters:
                 vm._invocation_bindings.setdefault(node.name.casefold(),(node,bind(node)))
     return prepared
 
