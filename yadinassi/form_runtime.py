@@ -325,7 +325,9 @@ class FormSession:
             self._direct_handlers = None
             if self.interpreter.execution_backend == "python-direct":
                 from .python_direct_forms import prepare_form
-                self._direct_handlers = prepare_form(self, program, source, attributes, tables)
+                self._direct_handlers = prepare_form(self, program, source, attributes, tables,
+                    local_server_calls=(interpreter_factory is None and database_context is None
+                                        and reference_scope is None))
             else:
                 self.interpreter.execute_program(program)
             for identity, schema in enumerate(tables, 1):

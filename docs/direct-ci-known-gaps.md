@@ -236,3 +236,42 @@ Independent review found a private-member exception-class regression, which was
 fixed while retaining the original boundary test; the reviewer then passed 19
 combined `-O` tests plus the two final live-binding/client-mutation regressions.
 No remaining review blockers; no full CI/native pass is claimed.
+
+## Standalone zero-argument server calls
+
+On `1cd9d1f4`, the original managed-form host source reproduced
+`BoundaryViolation: unregistered host service: serverread` at MF26. Direct
+handler preparation deliberately separates client and server closure families;
+standalone FormSession had not installed a cross-side invocation binding.
+
+The default standalone FormSession now opts in to bindings for its own
+zero-argument server routines. Custom interpreter factories, DB contexts and
+reference scopes do not opt in. The existing invocation binding protocol checks
+current binding/routine identity, side, signature, arity and function/procedure
+use. Existing bound transports take precedence; no renderer dispatch, network
+RPC or general configuration-module route is replaced. Later enrollment or
+acquisition of DB/configuration/reference ownership rejects the local path.
+
+Invocation uses the existing prepared Python export entry with fresh server
+state and the existing side/transaction scope. Return values pass through the
+existing cross-context packet copier, so form/capability objects do not escape.
+No AST body dispatch, legacy activation interpreter or fallback is used.
+Parameterized calls, default/byref argument transfer and native Python
+collection transfer are outside this narrow slice.
+
+The unchanged managed-form source now reaches MF1–MF30: MF26 reads `Ada`, MF27
+observes `server-updated`, and MF30 is `programmatic`. It next fails at MF31 with
+`BoundaryViolation: unregistered host member: NameField`, while preparing the
+byref `Items.NameField` argument of FieldChanged. This is a separate control
+reference boundary, not a failed server call. Full managed-form output/native
+comparison remains incomplete; fixtures, source hashes and gates are unchanged.
+
+Validation: 43 tests PASS normal and the same 43 PASS under `-O`, combining
+`test_python_direct_forms`, `test_python_direct_form_invocation`,
+`test_python_direct_form_database_admission`, `test_python_direct_bound_forms`,
+`test_python_direct_form_callbacks` and `test_python_direct_form_rpc`.
+Independent review: no blockers; 29 focused `-O` tests PASS, including actual
+Receipt RPC. Tests cover actual server side/restoration, failure restoration,
+capability-return rejection, custom-factory and parameterized-call exclusion,
+retained binding/signature/side/lifetime checks, later enrollment rejection and
+transaction denial. Original source replay forbids legacy block/call_routine.

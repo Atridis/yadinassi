@@ -233,7 +233,7 @@ def check_form_owner(app,owner):
     check_owner(app,owner,allow_database=True)
 
 
-def prepare_form(session, program, source, attributes, tables, *, install_metadata=True):
+def prepare_form(session, program, source, attributes, tables, *, install_metadata=True, local_server_calls=False):
     from .form_runtime import _FormInterpreter
     if type(session.interpreter) is not _FormInterpreter:
         raise BoundaryViolation('direct specialized source-form runtime is not connected')
@@ -252,8 +252,22 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
             registry = session.interpreter.server_routines if node.execution_context == 'server' else session.interpreter.routines
             registry[node.name.casefold()] = node
     names = tuple(attr.name.casefold() for attr in attributes) + tuple(t.name.casefold() for t in tables) + SYSTEM_NAMES + (() if app is None else tuple(app._definitions))
-    return prepare_handlers(program, source_text=source if type(source) is str else '',
+    prepared=prepare_handlers(program, source_text=source if type(source) is str else '',
                             external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS, repairs=REPAIRS+('authority_checkpoints',))
+    if install_metadata and local_server_calls:
+        vm=session.interpreter
+        def bind(routine):
+            def call(values):
+                if (vm._configuration_runtime is not None or vm.database_context is not None
+                        or session._owned_form_enrollment is not None or session.reference_scope is not None):
+                    raise BoundaryViolation('local form server call requires standalone ownership')
+                result=invoke_export(session,routine,values)
+                return vm._copy_context_packet([result])[0]
+            return call
+        for node in program:
+            if type(node) is ast.Routine and node.execution_context=='server' and not node.parameters:
+                vm._invocation_bindings.setdefault(node.name.casefold(),(node,bind(node)))
+    return prepared
 
 
 def invoke_form(session, handler, side, arguments, *, _export_routine=None):
@@ -298,5 +312,5 @@ def invoke_form(session, handler, side, arguments, *, _export_routine=None):
 
 
 def invoke_export(session,routine,arguments):
-    """Execute only the exact endpoint already admitted by ReplicatedFormServer."""
+    """Execute an exact endpoint admitted by an RPC or standalone form binding."""
     return invoke_form(session,routine.name,'server',arguments,_export_routine=routine)

@@ -119,7 +119,7 @@ class DirectDeclarationTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):session.open()
         self.assertEqual(other.form.title,'')
 
-    def test_original_managed_form_reaches_cross_side_call(self):
+    def test_original_managed_form_reaches_control_byref_call(self):
         import sys
         from yadinassi.form_runtime import FormSession
         from yadinassi.experimental_naked_boundaries import BoundaryViolation
@@ -128,12 +128,13 @@ class DirectDeclarationTests(unittest.TestCase):
         session=FormSession(source(),bindings={'OnCreateAtServer':'FormCreate','OnOpen':'FormOpen','BeforeClose':'FormBeforeClose'})
         self.addCleanup(session.interpreter.close)
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
-            with self.assertRaisesRegex(BoundaryViolation,'unregistered host service: serverread'):session.open()
+            with self.assertRaisesRegex(BoundaryViolation,'unregistered host member: NameField'):session.open()
         self.assertEqual(set(session.form._attributes),{'fname','fflag','famount','ftrace','flog'})
-        self.assertEqual(session.form._data['fname'],'Ada')
+        self.assertEqual(session.form._data['fname'],'programmatic')
         self.assertEqual(session.form._data['famount'],42)
         self.assertIn('MF22=temp|MF23=removed|MF24=server-create|',session.form._data['flog'])
-        self.assertIn('MF25=server-create:client-open|',session.form._data['flog'])
+        self.assertIn('MF25=server-create:client-open|MF26=Ada|MF27=server-updated|',session.form._data['flog'])
+        self.assertTrue(session.form._data['flog'].endswith('MF30=programmatic|'))
 
     def test_live_constructor_replacement_denied_before_argument(self):
         from yadinassi.values import HostFunction

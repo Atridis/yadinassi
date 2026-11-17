@@ -61,3 +61,84 @@ class FormInvocationTests(TestCase):
             with self.assertRaises(BoundaryViolation):bound()
         vm.close()
         with self.assertRaises(BoundaryViolation):bound()
+
+
+class StandaloneServerCallTests(TestCase):
+    def session(self,body='Set(); Message(Read());',server=None,**kwargs):
+        from yadinassi.form_runtime import FormSession
+        if server is None:
+            server=('&AtServer\nProcedure Set() ThisObject.Title="server"; EndProcedure\n'
+                    '&AtServer\nFunction Read() Return ThisObject.Title; EndFunction')
+        session=FormSession('&AtClient\nProcedure Event(Cancel) '+body+' EndProcedure\n'+server,
+                            bindings={'OnOpen':'Event'},**kwargs)
+        self.addCleanup(session.interpreter.close)
+        return session
+
+    def test_function_and_procedure_use_direct_server_side(self):
+        from yadinassi import Interpreter
+        session=self.session(server='&AtServer\nProcedure Set() Side(); ThisObject.Title="server"; EndProcedure\n&AtServer\nFunction Read() Side(); Return ThisObject.Title; EndFunction');sides=[]
+        session.interpreter.register_function('Side',lambda:sides.append(session.interpreter.execution_context))
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            session.open()
+        self.assertEqual(session.form.title,'server')
+        self.assertEqual(sides,['server','server'])
+        self.assertEqual(session.interpreter.execution_context,'client')
+        self.assertTrue(session.interpreter._transaction_activation_allowed)
+
+    def test_server_failure_restores_scope_and_client_continues(self):
+        session=self.session('Try X=Read(); Except ThisObject.Title="caught"; EndTry;',
+                             '&AtServer\nFunction Read() Raise "boom"; EndFunction')
+        session.open()
+        self.assertEqual(session.form.title,'caught')
+        self.assertEqual(session.interpreter.execution_context,'client')
+        self.assertTrue(session.interpreter._transaction_activation_allowed)
+        self.assertFalse(session._busy)
+
+    def test_cross_side_capability_result_rejected(self):
+        session=self.session('X=Read(); ThisObject.Title="escaped";',
+                             '&AtServer\nFunction Read() Return ThisObject; EndFunction')
+        with self.assertRaisesRegex(Exception,'Межконтекстная передача'):session.open()
+        self.assertEqual(session.form.title,'')
+
+    def test_parameterized_routine_and_custom_factory_not_auto_enrolled(self):
+        from yadinassi.form_runtime import _FormInterpreter
+        session=self.session('X=Read(1);','&AtServer\nFunction Read(Val X) Return X; EndFunction')
+        with self.assertRaisesRegex(BoundaryViolation,'unregistered host service'):session.open()
+        session=self.session(interpreter_factory=_FormInterpreter)
+        with self.assertRaisesRegex(BoundaryViolation,'unregistered host service'):session.open()
+
+    def boundary(self,session):
+        session._begin(session.revision)
+        def release():session._busy=False;session._gate.release()
+        self.addCleanup(release)
+        context=FormBoundary(session,session.interpreter.routines['event']);context.enter()
+        self.addCleanup(context.leave)
+        return context
+
+    def test_bound_call_checks_signature_registry_side_and_lifetime(self):
+        session=self.session();vm=session.interpreter;context=self.boundary(session)
+        bound=context.resolve_service('read',require_value=True)
+        with patch.object(vm.server_routines['read'],'is_function',False):
+            with self.assertRaises(BoundaryViolation):bound()
+        with patch.dict(vm._invocation_bindings,{'read':(vm.server_routines['read'],lambda values:self.fail('replaced'))}):
+            with self.assertRaises(BoundaryViolation):bound()
+        vm._context_stack.append('server')
+        try:
+            with self.assertRaises(BoundaryViolation):bound()
+        finally:vm._context_stack.pop()
+        with self.assertRaises(TypeError):bound(1)
+        with self.assertRaises(TypeError):context.resolve_service('set',require_value=True)
+        vm.close()
+        with self.assertRaises(BoundaryViolation):bound()
+
+    def test_local_binding_denies_later_enrollment(self):
+        session=self.session();context=self.boundary(session);bound=context.resolve_service('read')
+        with patch.object(session,'_owned_form_enrollment',object()):
+            with self.assertRaisesRegex(BoundaryViolation,'standalone ownership'):bound()
+
+    def test_server_transaction_activation_remains_denied(self):
+        session=self.session('Set();','&AtServer\nProcedure Set() BeginTransaction(); EndProcedure')
+        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
+            with self.assertRaises(Exception):session.open()
+            begin.assert_not_called()
+        self.assertTrue(session.interpreter._transaction_activation_allowed)
