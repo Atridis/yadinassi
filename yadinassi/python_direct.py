@@ -266,9 +266,10 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     from .python_direct_database import CatalogBoundary
+    from .python_direct_detached_metadata import DetachedMetadataBoundary
     database = vm.database_context
     from .python_direct_services import ServicesBoundary
-    class DirectBoundary(ServicesBoundary, CatalogBoundary, BoundaryContext):
+    class DirectBoundary(ServicesBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             if modules is not None and name.casefold() in modules:

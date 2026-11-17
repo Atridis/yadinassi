@@ -7,6 +7,8 @@ identities are read from XML without granting executable/storage capabilities.
 """
 import xml.etree.ElementTree as ET
 from io import BytesIO
+from weakref import WeakKeyDictionary
+_DIRECT_DETACHED_METADATA_ORIGINS=WeakKeyDictionary()
 
 from .configuration_source import ConfigurationSource, SourceMetadata, _identity
 from .configuration_xml import MD, XR, XSI
@@ -270,6 +272,10 @@ class SourceMetadataRoot(SourceMetadataObject):
         self._objects = {}
         entry = self._inventory['Configuration.xml']
         super().__init__(self, entry)
+        _DIRECT_DETACHED_METADATA_ORIGINS[self]=(
+            self._files,tuple(self._files.items()),self._inventory,tuple(self._inventory.items()),
+            tuple((item,tuple((name,getattr(item,name)) for name in ('identity','family','name','path')),item.identity.int)
+                  for item in self._inventory.values()),entry,self._name)
 
     def _reference_collection(self, property_name, family):
         """Resolve declared references only; metadata membership grants no rights."""
@@ -350,3 +356,43 @@ class SourceMetadataRoot(SourceMetadataObject):
         if name.casefold() in ('findbyfullname', 'найтипополномуимени'):
             return HostFunction(name, self.find_by_full_name)
         return super().get_member(name)
+
+
+# Definition-time hooks for the finite standalone read-only metadata adapter.
+from types import FunctionType as _DetachedMetadataFunction
+_DIRECT_DETACHED_METADATA_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _DetachedMetadataFunction or isinstance(value,type))
+_DIRECT_DETACHED_METADATA_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in
+        (SourceMetadataRoot,SourceMetadataObject,_DeclaredMetadataCollection,SourceMetadata,ConfigurationSource)
+        for base in receiver.__mro__))
+_DIRECT_DETACHED_METADATA_PARSER=(ET,ET.iterparse,BytesIO)
+_DIRECT_DETACHED_METADATA_TABLES=tuple((name,value,tuple(value.items()) if type(value) is dict else value)
+    for name,value in tuple(globals().items()) if name in
+    ('_FAMILIES','_EMBEDDED','_FILE_CHILDREN','_COLLECTIONS','_FAMILY','_FULL_FAMILIES'))
+
+from . import configuration_source as _detached_source_admission
+from .configuration_xml import ConfigurationFile as _DetachedConfigurationFile
+from uuid import UUID as _DetachedUUID
+_DIRECT_DETACHED_METADATA_ADMISSION_BINDINGS=_detached_source_admission._DIRECT_SOURCE_XDTO_BINDINGS
+_DIRECT_DETACHED_METADATA_ADMISSION_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for receiver in
+        (_DetachedConfigurationFile,_detached_source_admission.SourceDiagnostic,_DetachedUUID,
+         _detached_source_admission.PurePosixPath)
+        for base in receiver.__mro__))
+_DIRECT_DETACHED_METADATA_ADMISSION_MODULES=(_detached_source_admission.ET,_detached_source_admission.io,
+    _detached_source_admission.ET.iterparse,_detached_source_admission.io.StringIO)
+
+from . import metadata as _detached_metadata_module
+_DIRECT_DETACHED_METADATA_COLLECTION_GLOBALS=tuple((name,getattr(_detached_metadata_module,name))
+    for name in ('to_string','Decimal','HostFunction'))
+_DIRECT_DETACHED_METADATA_FILE_OWNERS=(_FILE_OWNERS,frozenset(_FILE_OWNERS))
+
+_DIRECT_DETACHED_METADATA_XML_FACTORIES=tuple((name,getattr(ET,name))
+    for name in ('Element','XMLPullParser','XMLParser','TreeBuilder'))
+_DIRECT_DETACHED_METADATA_XML_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for _,receiver in _DIRECT_DETACHED_METADATA_XML_FACTORIES
+        for base in receiver.__mro__))
+_DIRECT_DETACHED_METADATA_NAMESPACES=tuple((module,name,getattr(module,name))
+    for module,names in (( __import__(__name__,fromlist=['MD']),('MD','XR','XSI')),
+                         (_detached_source_admission,('MD',))) for name in names)
