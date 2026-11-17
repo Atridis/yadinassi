@@ -107,3 +107,43 @@ no native remeasurement or CI pass is claimed. Six-scenario and managed-form
 failures above are unchanged. Focused tests cover aliases, invalid arguments,
 registry substitution before execution and at a service boundary, argument
 ordering, prepared-module revalidation, and the actual catalog replay prefix.
+
+## Owned catalog selection follow-up
+
+On `7486c984`, the unchanged replay command above reproduces
+`BoundaryViolation: unregistered or foreign database receiver` at `CS.Next()`
+after observations 1–17. The direct database boundary now admits the exact
+`BSLCatalogSelection` type only through its manager's current catalog root,
+using the same owner check as catalog objects. Public Next/Следующий,
+GetObject/ПолучитьОбъект and field access use the existing selection protocol.
+There is no VM dispatch, generic getattr, detached-selection exemption or new
+iterator adapter. Selection fields remain read-only; explicit database
+transactions and existing writer/source/schema checks are unchanged.
+
+The original replay now emits observations 1–23, including count=1 and the
+rejected stale write (persisted `first-update`, buffer `stale-update`). It still
+fails at observation 24: `BSLRuntimeError: Переменная или функция не определена:
+Metadata`. No fixture, native expected output or comparison gate changed.
+This is a host replay prefix, **not** a complete accepted comparison or native
+remeasurement. Managed-form TypeDescription, six-scenario managed-thick-file,
+Python 3.10 source positions and broader legacy parity gaps remain.
+
+Focused regressions exercise actual SQLite selection, both aliases, fields,
+GetObject, empty/end/restart behavior, foreign/subclass rejection, private and
+write/iteration denial, owner replacement after method binding, closed-family
+checks and the unchanged original replay with legacy dispatch forbidden:
+
+```sh
+PYTHONPATH=tests:scripts:. python -B -m unittest test_python_direct_database test_python_direct_uuid
+PYTHONPATH=tests:scripts:. python -B -O -m unittest test_python_direct_database test_python_direct_uuid
+```
+
+Validation for this slice: 60 tests PASS in normal mode and the same 60 PASS
+under `-O`: the two modules above plus `test_python_direct_form_database_admission`,
+`test_python_direct_catalog_preparation`, `test_python_direct_prepared_validator`
+and `test_python_direct_default`. Independent review found no blockers.
+The additional `test_catalog_dynamic_types` probe had one existing failure,
+`test_interpreter_value_operations` on `ref.IsEmpty()` (foreign database
+receiver); it was reproduced separately on unchanged `7486c984`. Combined with
+the first three focused modules, that probe ran 38 tests: 37 PASS, one error,
+in both modes. No full CI success is claimed.

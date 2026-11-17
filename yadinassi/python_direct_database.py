@@ -3,7 +3,7 @@
 No arbitrary getattr, no backend access and no replacement for writer validation.
 """
 from .experimental_naked_boundaries import BoundaryViolation
-from .catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject
+from .catalogs import BSLCatalogs, BSLCatalogManager, BSLCatalogObject, BSLCatalogSelection
 from .catalog_types import BSLCatalogReference
 from .catalog_sections import BSLCatalogSection, BSLCatalogSectionRow
 from .documents import BSLDocuments, BSLDocumentManager, BSLDocumentObject
@@ -47,7 +47,7 @@ class CatalogBoundary:
             return
         elif kind is BSLCatalogs: owner=value
         elif kind is BSLCatalogManager: owner=value._catalogs
-        elif kind is BSLCatalogObject: owner=value._manager._catalogs
+        elif kind in (BSLCatalogObject, BSLCatalogSelection): owner=value._manager._catalogs
         elif kind is BSLCatalogSection: owner=value._owner._manager._catalogs
         elif kind is BSLCatalogSectionRow: owner=value._section._owner._manager._catalogs
         elif kind is BSLCatalogReference:

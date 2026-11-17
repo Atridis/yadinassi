@@ -97,3 +97,57 @@ class DirectDatabaseTests(unittest.TestCase):
         self.assertEqual(other.variables['a'].get_member('Description'),'fresh')
         other.execute('A.Description="current";')
         self.assertEqual(other.variables['a'].get_member('Description'),'current')
+
+    def test_catalog_selection_aliases_fields_restart_and_get_object(self):
+        with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):
+            self.vm.execute('A=Catalogs.Склады.CreateItem(); A.Description="Warehouse"; A.Write(); '
+                            'S=Catalogs.Склады.Select(); Before=S.Description; Missing=S.GetObject(); '
+                            'Found=S.Следующий(); Name=S.Наименование; R=S.Ссылка; O=S.ПолучитьОбъект(); '
+                            'Done=S.Next(); Last=S.Description; Restart=S.Next();')
+        values=self.vm.variables
+        self.assertIsNone(values['before']);self.assertIsNone(values['missing'])
+        self.assertTrue(values['found']);self.assertFalse(values['done']);self.assertTrue(values['restart'])
+        self.assertEqual(values['name'],'Warehouse');self.assertEqual(values['last'],'Warehouse')
+        self.assertEqual(values['o'].get_member('Ref'),values['r'])
+        self.assertEqual(self.vm.execution_backend_stats['fallback'],0)
+
+    def test_empty_catalog_selection_and_readonly_private_surface(self):
+        self.vm.execute('S=Catalogs.Склады.Select(); Found=S.Next(); Again=S.Следующий();')
+        self.assertFalse(self.vm.variables['found']);self.assertFalse(self.vm.variables['again'])
+        with self.assertRaisesRegex(BoundaryViolation,'iterator not connected'):
+            self.vm.execute('For Each X In S Do EndDo;')
+        for source in ('X=S._manager;','X=S._rows;','S.Description="bad";'):
+            with self.subTest(source=source),self.assertRaises(Exception):self.vm.execute(source)
+
+    def test_foreign_and_subclass_catalog_selection_rejected(self):
+        from yadinassi.catalogs import BSLCatalogSelection
+        self.vm.execute('S=Catalogs.Склады.Select();')
+        selection=self.vm.variables['s']
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.variables['s']=selection
+        for source in ('S.Next();','X=S.Description;','X=S.GetObject();'):
+            with self.subTest(source=source),self.assertRaises(BoundaryViolation):other.execute(source)
+        class Derived(BSLCatalogSelection):pass
+        self.vm.variables['s']=Derived(selection._manager,())
+        with self.assertRaises(BoundaryViolation):self.vm.execute('S.Next();')
+
+    def test_bound_selection_rechecks_owner_after_argument_effect(self):
+        self.vm.execute('S=Catalogs.Склады.Select();')
+        selection=self.vm.variables['s'];original=selection._manager
+        other=Interpreter(database_context=self.context);self.addCleanup(other.close)
+        other.execute('S=Catalogs.Склады.Select();')
+        def change():selection._manager=other.variables['s']._manager
+        self.vm.register_function('Change',change)
+        try:
+            with patch.object(selection,'next',side_effect=AssertionError('cursor effect')) as advance:
+                with self.assertRaises(BoundaryViolation):self.vm.execute('S.Next(Change());')
+                advance.assert_not_called()
+        finally:selection._manager=original
+
+    def test_selection_rejects_closed_family_at_service_boundary(self):
+        self.vm.execute('S=Catalogs.Склады.Select();')
+        selection=self.vm.variables['s']
+        self.vm.register_function('CloseOwner',self.vm.close)
+        with patch.object(selection,'next',side_effect=AssertionError('cursor effect')) as advance:
+            with self.assertRaises(BoundaryViolation):self.vm.execute('CloseOwner(); S.Next();')
+            advance.assert_not_called()
