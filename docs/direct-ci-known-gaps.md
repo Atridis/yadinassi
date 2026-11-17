@@ -669,3 +669,15 @@ bytes in managed and standalone/preprocessor modes. 228 normal Python3.12 and228
 optimized Python3.10 tests PASS; independent52 focused optimized PASS. This is local
 bounded replay, not new1C measurement or full CI green. Broader type/constructor
 compatibility remains incomplete. [Contract and exact reports](direct-native-client-replay.md).
+
+### CatalogQuery Unload detached table access (2026-11-17)
+
+Basee242b35c: original CatalogQuery replay failed at observation19 after Unload,
+when the direct boundary rejected ValueTable.Count. Exact detached table/row/column
+protocols and type qualifiers are now connected, preserving current database
+ownership for values extracted from cells and canonical slice/deletion checks.
+Unchanged logical-model replay matches accepted native artifact14334693411 exactly:
+24 records,513 bytes,SHA256 2a0a0e7db4025a5babc7ece3edd833feddba7ccffc16027bd6139cc184aa5c84.
+No fixture, schema gate or VM dispatch change. This is local replay against the
+existing native run44098520311, not a new1C run or full CI success.
+[Reproducer, evidence and remaining scope](../experiments/direct_query_table/README.md).

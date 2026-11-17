@@ -19,6 +19,11 @@ from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
+from .value_tables import (BSLValueTable, BSLValueTableRow,
+                           BSLValueTableColumn, BSLValueTableColumnCollection)
+from .type_descriptions import BSLTypeDescription
+from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
+                              BSLDateQualifiers, BSLBinaryDataQualifiers)
 
 NAMES=('metadata','метаданные','catalogs','справочники','documents','документы','enums','перечисления','documentwritemode','режимзаписидокумента')
 
@@ -46,6 +51,14 @@ class CatalogBoundary:
             if enums is not None and enum_type.snapshot is enums.metadata:return
             owner=None
         elif kind is BSLQuery: owner=value._catalogs
+        elif kind in (BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection):
+            # Detached table data has no database authority. Its public protocol
+            # still enforces row/column ownership, deletion and slice restrictions.
+            if type(value.table) is BSLValueTable:return
+            raise BoundaryViolation('noncanonical value table owner')
+        elif kind in (BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
+                      BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
+            return
         elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure,
                       BSLArray, BSLFixedArray, BSLRegexResult, BSLRegexGroup):
             # Detached result data: these public methods cannot execute queries

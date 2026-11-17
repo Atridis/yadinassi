@@ -1,0 +1,10 @@
+{
+  "source_sha256": "9fd13234641cba1526412d747d7cea62211178f7773808db8ad3b1c1b6f60be2",
+  "records": 24,
+  "output_bytes": 513,
+  "output_sha256": "2a0a0e7db4025a5babc7ece3edd833feddba7ccffc16027bd6139cc184aa5c84",
+  "native_sha256": "2a0a0e7db4025a5babc7ece3edd833feddba7ccffc16027bd6139cc184aa5c84",
+  "native_run": 44098520311,
+  "native_artifact": 14334693411,
+  "exact_match": true
+}
