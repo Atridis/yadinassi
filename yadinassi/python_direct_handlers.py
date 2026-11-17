@@ -76,12 +76,13 @@ class PreparedHandlers:
                 for slot,by_value in zip(slots,descriptor.by_value)]
 
 
-def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),repairs=REPAIRS):
+def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_names=(),external_names=(),constructors=(),repairs=REPAIRS,_source_routine_scopes=False):
     """Prepare an already-admitted form module; never infer host capabilities.
 
     Only same-side routines share a generated closure family. A cross-side call
     must resolve through an explicit service supplied by the owning runtime.
     """
+    if type(_source_routine_scopes) is not bool:raise TypeError('source routine scopes require Boolean')
     if type(program) is not list or any(type(node) not in (ast.Routine,ast.Var) for node in program):
         raise ValueError('direct handlers require a declaration-only AST list')
     owned=_snapshot(program)
@@ -100,5 +101,5 @@ def prepare_handlers(program,*,source_text,source_name='<direct-form>',module_na
         namespace_options={'external_names':external_names} if external_names else {}
         plans[side]=prepare(source_text,source_name=source_name,repairs=repairs,
                             module_names=module_names,constructors=constructors,parsed_ast=selected,
-                            _trusted_entry=True,_export_routines=True,**namespace_options)
+                            _trusted_entry=True,_export_routines=True,_source_routine_scopes=_source_routine_scopes,**namespace_options)
     return PreparedHandlers(MappingProxyType(plans),MappingProxyType(descriptors),source_text,source_name)

@@ -39,7 +39,7 @@ class FormBoundary(ConfigurationBoundary):
         registry=vm.server_routines if self.routine.execution_context=='server' else vm.routines
         if registry.get(self.routine.name.casefold()) is not self.routine:
             raise BoundaryViolation("form handler binding changed")
-        if self.app is not None:
+        if self.owner._configuration_runtime is not None:
             check_form_owner(self.app,vm)
             self.app.check_call(self.routine,vm)
         if (vm._family_owner._family_closed or vm._family_released
@@ -69,13 +69,13 @@ class FormBoundary(ConfigurationBoundary):
         if name in ('formfieldtype','видполяформы'):
             from .form_model import FORM_FIELD_VIEWS
             return FORM_FIELD_VIEWS
-        if self.app is not None and name in self.app._definitions:
+        if self.owner._configuration_runtime is not None and name in self.app._definitions:
             return ConfigurationBoundary.external_get(self,name)
         return form.get_member(name)
 
     def external_set(self, name, value):
         self._check()
-        if name in SYSTEM_NAMES or self.app is not None and name in self.app._definitions: raise ValueError('Форма: поле только для чтения')
+        if name in SYSTEM_NAMES or self.owner._configuration_runtime is not None and name in self.app._definitions: raise ValueError('Форма: поле только для чтения')
         self.session.form.set_member(name, value)
 
     def resolve_service(self,*args,**kwargs):
@@ -94,7 +94,7 @@ class FormBoundary(ConfigurationBoundary):
                 raise BoundaryViolation('form declaration constructor requires canonical registration')
             return BoundaryContext.resolve_callable(self,factory)
         if args and args[0].casefold() in ('changeattributes','изменитьреквизиты'):
-            bound=(ConfigurationBoundary.resolve_service(self,*args,**kwargs) if self.app is not None
+            bound=(ConfigurationBoundary.resolve_service(self,*args,**kwargs) if self.owner._configuration_runtime is not None
                    else BoundaryContext.resolve_service(self,*args,**kwargs))
             def change(*values):
                 from .values import BSLArray
@@ -121,7 +121,7 @@ class FormBoundary(ConfigurationBoundary):
                         or (routine.is_function,tuple((p.name,p.by_value,p.default) for p in routine.parameters))!=signature
                         or any(not p.by_value or p.default is not None for p in routine.parameters)):
                     raise BoundaryViolation('form invocation binding changed')
-                if self.app is not None:self.app.check_call(routine,self.owner)
+                if self.owner._configuration_runtime is not None:self.app.check_call(routine,self.owner)
             check()
             if kwargs.get('require_value',False) and not routine.is_function:
                 raise TypeError('Процедура не возвращает значение: '+routine.name)
@@ -146,7 +146,7 @@ class FormBoundary(ConfigurationBoundary):
                 return result
             return create
         if args and args[0].casefold() in ('getattributes','получитьреквизиты'):
-            bound=(ConfigurationBoundary.resolve_service(self,*args,**kwargs) if self.app is not None
+            bound=(ConfigurationBoundary.resolve_service(self,*args,**kwargs) if self.owner._configuration_runtime is not None
                    else BoundaryContext.resolve_service(self,*args,**kwargs))
             def attributes(*values):
                 from .values import BSLArray
@@ -155,7 +155,7 @@ class FormBoundary(ConfigurationBoundary):
                 return result.items
             if hasattr(bound,'requires_reference'):attributes.requires_reference=bound.requires_reference
             return attributes
-        if self.app is not None:return ConfigurationBoundary.resolve_service(self,*args,**kwargs)
+        if self.owner._configuration_runtime is not None:return ConfigurationBoundary.resolve_service(self,*args,**kwargs)
         return BoundaryContext.resolve_service(self,*args,**kwargs)
 
     def set_member(self,value,name,new_value):
@@ -214,7 +214,7 @@ class FormBoundary(ConfigurationBoundary):
                 try:return self.session.request_close(result)
                 finally:self._check()
             return close
-        if self.app is not None:return ConfigurationBoundary.resolve_member(self,value,name)
+        if self.owner._configuration_runtime is not None:return ConfigurationBoundary.resolve_member(self,value,name)
         return BoundaryContext.resolve_member(self,value,name)
 
     def resolve_set_member(self,value,name):
@@ -251,10 +251,13 @@ def check_form_owner(app,owner):
 
 def prepare_form(session, program, source, attributes, tables, *, install_metadata=True, local_server_calls=False):
     from .form_runtime import _FormInterpreter
-    if type(session.interpreter) is not _FormInterpreter:
+    from .python_direct_source_forms import is_source_session,check_source_session,external_names,CONSTRUCTORS
+    source_mode=is_source_session(session)
+    if source_mode:check_source_session(session)
+    elif type(session.interpreter) is not _FormInterpreter:
         raise BoundaryViolation('direct specialized source-form runtime is not connected')
     from . import safe_mode, source_transactions, database_transactions
-    if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
+    if not source_mode and (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
             or database_transactions._execution.get() is not None):
         raise BoundaryViolation("direct restricted form execution is not connected")
     app=session.interpreter._configuration_runtime
@@ -267,9 +270,23 @@ def prepare_form(session, program, source, attributes, tables, *, install_metada
         if install_metadata and type(node) is ast.Routine:
             registry = session.interpreter.server_routines if node.execution_context == 'server' else session.interpreter.routines
             registry[node.name.casefold()] = node
+    if source_mode and install_metadata:
+        from .python_direct_source import _signature
+        session._direct_source_signatures=tuple((node,_signature(node)) for node in program if type(node) is ast.Routine)
+        from .python_direct import _nodes
+        native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
+        session._direct_source_constructors=frozenset(node.name.casefold() for node in _nodes(program)
+            if type(node) is ast.New and node.name.casefold() in native)
+        from .python_direct import _admit_bindings
+        _admit_bindings(session.interpreter,frozenset(),session._direct_source_constructors,frozenset())
     names = tuple(attr.name.casefold() for attr in attributes) + tuple(t.name.casefold() for t in tables) + SYSTEM_NAMES + (() if app is None else tuple(app._definitions))
+    if source_mode:
+        declared={node.name.casefold() for node in program if type(node) is ast.Routine}
+        declared.update(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
+        names=tuple(dict.fromkeys((*names,*(name for name in external_names(session) if name not in declared))))
     prepared=prepare_handlers(program, source_text=source if type(source) is str else '',
-                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS, repairs=REPAIRS+('authority_checkpoints',))
+                            external_names=names, constructors=CALLBACK_CONSTRUCTORS+DECLARATION_CONSTRUCTORS+(CONSTRUCTORS if source_mode else ()),
+                            repairs=REPAIRS+('authority_checkpoints',),_source_routine_scopes=source_mode)
     if install_metadata and local_server_calls:
         vm=session.interpreter
         def bind(routine):
@@ -312,19 +329,28 @@ def invoke_form(session, handler, side, arguments, *, _export_routine=None):
         vm._transaction_activation_allowed = False
         vm._context_stack.append(side)
         vm._module_context_stack.append(True)
-        try: yield
+        try:
+            from contextlib import ExitStack
+            from .python_direct_source_forms import is_source_session
+            with ExitStack() as stack:
+                if is_source_session(session):
+                    stack.enter_context(source_transactions.execution(vm.application))
+                    stack.enter_context(vm.application.safe_mode.execution())
+                yield
         finally:
             vm._module_context_stack.pop()
             vm._context_stack.pop()
             vm._transaction_activation_allowed = previous_transactions
     # Server module variables are activation-local; client variables persist.
     state = {} if side == 'server' else session.interpreter.variables
+    from .python_direct_source_forms import is_source_session,SourceFormBoundary
+    boundary=SourceFormBoundary if is_source_session(session) else FormBoundary
     if _export_routine is not None:
         return session._direct_handlers.invoke_export(handler, side, arguments,
                 is_function=routine.is_function,state=state,
-                context_factory=lambda: FormBoundary(session,routine),execution_scope=scope)
+                context_factory=lambda: boundary(session,routine),execution_scope=scope)
     return session._direct_handlers.invoke(handler, side, arguments, state=state,
-                context_factory=lambda: FormBoundary(session,routine), execution_scope=scope)
+                context_factory=lambda: boundary(session,routine), execution_scope=scope)
 
 
 def invoke_export(session,routine,arguments):

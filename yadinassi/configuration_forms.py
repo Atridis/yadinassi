@@ -391,7 +391,7 @@ class ConfigurationForms:
             raise ValueError('undeclared configuration form') from None
 
 
-def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False, enum_definitions=(), compilation_profile="standalone"):
+def _definition(public_name, identity, raw, module, catalog_schema=None, document_schema=None, reference_catalogs=(), posting_application=False, enum_definitions=(), compilation_profile="standalone", validation_interpreter_factory=None, reject_nocontext=False):
     root, namespaces = _parse(raw)
     if root.tag != L + 'Form' or set(root.attrib) - {'version'}:
         raise ValueError('unsupported form definition envelope')
@@ -541,6 +541,8 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
             raise ValueError('reserved internal reference dispatch name')
         source += '\n&AtServer\nFunction YadinassiReferenceAction()\nReturn HostReferenceAction();\nEndFunction\n'
     program = compile_form_module(source, object_fields=tuple(field for field, _ in (*object_fields, *object_sections)), object_sections=tuple(field for field, _ in object_sections), compilation_profile=compilation_profile)
+    if reject_nocontext and program.nocontext_bindings:
+        raise ValueError('direct source form NoContext is not integrated')
     from .syntax import ast
     declared_names = set()
     for side in (program.client, program.server, program.nocontext):
@@ -559,7 +561,7 @@ def _definition(public_name, identity, raw, module, catalog_schema=None, documen
         catalog_schema, object_fields, write_handler, document_schema, object_sections, tables,
         reference_targets if reference_slots else (), tuple(reference_slots), posting_application, tuple(layout) if has_groups else (), enum_targets if reference_slots else ())
     # Validate every declared handler and all reserved-name collisions eagerly.
-    validation_server = definition.create_server(_validate_only=True)
+    validation_server = definition.create_server(_validate_only=True,interpreter_factory=validation_interpreter_factory)
     validation_server.session.interpreter.close()
     return definition
 

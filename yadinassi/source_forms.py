@@ -142,6 +142,15 @@ class _SourceFormInterpreter(_SourceInterpreter, _FormInterpreter):
         return child
 
 
+# Definition-time source-form admission ABI. Legacy evaluator hooks are excluded
+# deliberately so direct tests can poison them without changing admission.
+_DIRECT_SOURCE_FORM_ABI=tuple((name,getattr(_SourceFormInterpreter,name)) for name in (
+    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_index',
+    'semantic_assign','set_variable','_visit','execute','execute_program',
+    '_activation_interpreter','_invocation_argument','_new_query','_new_type_description',
+    '_new_temp_tables_manager','_make_attribute'))
+
+
 def source_form_definition(application, name, *, progressive=False, diagnostics=None):
     application.require_open()
     if application.constant_store is not None:
@@ -158,16 +167,31 @@ def source_form_definition(application, name, *, progressive=False, diagnostics=
         raise ValueError('selected form definition missing: ' + definition_path)
     raw = application.files[definition_path]
     module = application.files.get(prefix + '/Ext/Form/Module.bsl', b'')
+    direct=application.interpreter.execution_backend=='python-direct'
+    validation_child=None
+    def validation_factory(session,output,**kwargs):
+        nonlocal validation_child
+        validation_child=_SourceFormInterpreter(application,session,output,**kwargs)
+        validation_child._logical_side='server'
+        return validation_child
+    def definition_for(xml):
+        if not direct:return _definition(name,metadata._entry.identity,xml,module,compilation_profile=application.compilation_profile)
+        try:
+            with application.safe_mode.execution():
+                return _definition(name,metadata._entry.identity,xml,module,compilation_profile=application.compilation_profile,
+                                   validation_interpreter_factory=validation_factory,reject_nocontext=True)
+        finally:
+            if validation_child is not None and not validation_child._family_released:validation_child.close()
     if progressive:
         from .source_form_projection import project_source_form
         from dataclasses import replace
         from hashlib import sha256
         projection = project_source_form(raw)
-        definition = _definition(name, metadata._entry.identity, projection.xml, module, compilation_profile=application.compilation_profile)
+        definition = definition_for(projection.xml)
         if diagnostics is not None:
             diagnostics.extend(projection.diagnostics)
         return replace(definition, source_sha256=sha256(raw+b'\0'+module).hexdigest())
-    return _definition(name, metadata._entry.identity, raw, module, compilation_profile=application.compilation_profile)
+    return definition_for(raw)
 
 
 class SourceFormController:
@@ -177,6 +201,8 @@ class SourceFormController:
         diagnostics = []
         self.definition = source_form_definition(application, name, progressive=progressive, diagnostics=diagnostics)
         self.diagnostics = tuple(diagnostics)
+        if application.interpreter.execution_backend=='python-direct' and self.definition.program.nocontext_bindings:
+            raise ValueError('direct source form NoContext is not integrated')
         def factory(side):
             def make(session, output, **kwargs):
                 if kwargs.get('database_context') is not None:
