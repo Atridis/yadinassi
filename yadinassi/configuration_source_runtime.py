@@ -570,8 +570,27 @@ class SourceApplication:
         self.session_parameters._authorize(caller)
         if self._session_handler is not None:
             routine = self._session_handler
-            yield from caller.call_routine(routine, [ast.Literal(routine.token, names)][:len(routine.parameters)],
-                                           self._session_owner, require_value=False)
+            if caller.execution_backend=='python-direct':
+                from .python_direct_source import invoke,check_owner
+                from .experimental_naked_boundaries import BoundaryViolation
+                owner=self._session_owner
+                if (type(routine) is not ast.Routine or type(owner) is not _SourceInterpreter
+                        or owner.application is not self
+                        or self._instances.get('<session>') is not owner
+                        or owner.server_routines.get(routine.name.casefold()) is not routine
+                        or routine.execution_context!='server' or routine.is_function
+                        or routine.is_async or routine.is_dual or not routine.module_context
+                        or len(routine.parameters)>1):
+                    raise BoundaryViolation('source session initializer binding changed')
+                check_owner(owner)
+                owner._context_stack.append('server');owner._module_context_stack.append(True)
+                try:
+                    invoke(owner,routine,[names][:len(routine.parameters)])
+                finally:
+                    owner._module_context_stack.pop();owner._context_stack.pop()
+            else:
+                yield from caller.call_routine(routine, [ast.Literal(routine.token, names)][:len(routine.parameters)],
+                                               self._session_owner, require_value=False)
 
     def close(self):
         if self.constant_store is not None:
@@ -581,3 +600,7 @@ class SourceApplication:
         self.reusable_values.close()
         self.interpreter.close()
         self.state = 'closed'
+
+
+# Definition-time initializer identity for direct session-store admission.
+_DIRECT_SOURCE_SESSION_INITIALIZER=SourceApplication.initialize_session_parameters

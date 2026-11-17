@@ -16,6 +16,7 @@ from .values import HostFunction, Reference
 from . import safe_mode, source_transactions, database_transactions
 from . import python_direct_source_storage as storage
 from . import python_direct_source_query as query
+from . import python_direct_source_sessions as sessions
 
 
 def check_owner(owner):
@@ -194,6 +195,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
         from .python_direct_names import NAMES
         if name in NAMES:return NAMES[name]
+        session=sessions.namespace(self,name)
+        if session is not None:return session
         namespace=storage.namespace(self,name)
         if namespace is not None:return namespace
         if name in ('metadata','метаданные'):return self.app.metadata
@@ -351,6 +354,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def get_member(self,value,name):
         self._check()
         if name.startswith('_'):raise BoundaryViolation('private source member')
+        if sessions.owns(value):return sessions.get(self,value,name)
         if query.supports(value):return query.get_member(self,value,name)
         if storage.owns(value):return storage.get(self,value,name)
         if self._metadata(value) or self._module(value) is not None:
@@ -359,6 +363,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if sessions.owns(value):return sessions.resolve(self,value,name,require_value=require_value,
+            argument_count=argument_count,allow_references=allow_references)
         if query.supports(value):return query.resolve_member(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         manager=self._manager_export(value,name)
@@ -377,19 +383,21 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def set_member(self,value,name,new_value):
         return self.resolve_set_member(value,name)(new_value)
     def reference_member(self,value,name):
-        if storage.owns(value) or query.supports(value):
+        if storage.owns(value) or query.supports(value) or sessions.owns(value):
             self.get_member(value,name)
             from .experimental_naked_boundaries import _HostMemberReference
             return _HostMemberReference(self,value,name)
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if sessions.owns(value):return sessions.set_member(self,value,name)
         if query.supports(value):return query.resolve_set_member(self,value,name)
         if storage.owns(value):return storage.set_member(self,value,name)
         if self._metadata(value):raise ValueError('source metadata is read-only')
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if sessions.owns(value):return sessions.resolve(self,value,name)
         if query.supports(value):return query.resolve_member(self,value,name)
         manager=self._manager_export(value,name)
         if manager is not None:return self._routine(manager,manager._self_module.routine(name))

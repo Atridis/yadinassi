@@ -152,3 +152,8 @@ class BSLSessionParameters(BSLObject):
 
     def set_member(self,name,value):
         raise ValueError('session parameter assignment requires the executing interpreter')
+
+
+# Definition-time identities for the optional exact source-session bridge.
+_DIRECT_SESSION_PARAMETERS_ABI=tuple((name,getattr(BSLSessionParameters,name)) for name in (
+    'read','write','_authorize','_key','_validate_value'))
