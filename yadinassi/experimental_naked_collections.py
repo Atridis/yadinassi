@@ -249,7 +249,7 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=()):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if not _trusted_entry:_enabled()
@@ -263,6 +263,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if _source_routine_scopes and not (_trusted_entry and services
             and {'byref_routines','dynamic_host_refs'}<=repairs):
         raise ValueError("source routine scopes require trusted service and reference boundaries")
+    if type(_source_callable_externals) is not tuple or any(type(name) is not str for name in _source_callable_externals):
+        raise TypeError("source callable externals require a tuple of names")
+    if _source_callable_externals and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError("source callable externals require trusted source scopes")
+    source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals)
     constructors=frozenset(name.casefold() for name in constructors)
     if constructors and not services:raise ValueError('declared constructors require service_boundaries')
     service_references={name.casefold():frozenset(indices) for name,indices in (service_references or {}).items()}
@@ -703,9 +708,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if type(callee) is ast.Name and callee.name.casefold() in routines:
                 return function_symbols[callee.name.casefold()]+'('+', '.join(expression(arg) for arg in node.arguments)+')'
             if services and type(callee) is ast.Name and callee.name.casefold() not in routines:
-                if external_name(callee.name):raise UnsupportedNakedSyntax('external namespace names are not callable: '+callee.name)
+                external_call=external_name(callee.name) and callee.name.casefold() in source_callable_externals
+                if external_name(callee.name) and not external_call:raise UnsupportedNakedSyntax('external namespace names are not callable: '+callee.name)
                 required_services.add(callee.name.casefold())
                 fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
+                if external_call:fallback='_MISSING'
                 if dynamic_refs and callee.name.casefold() not in service_references:
                     bound='_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')'
                     if 'execute_fragments' in repairs and callee.name.casefold() in ('eval','вычислить'):

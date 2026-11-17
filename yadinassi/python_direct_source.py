@@ -114,7 +114,7 @@ def _check_plan(owner,plan):
             raise BoundaryViolation('source declaration binding changed')
 
 
-def _compile(owner,program,*,exports=False,layout=(),_extra_externals=()):
+def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callable_externals=()):
     names={n.name.casefold() for n in program if type(n) is ast.Routine}
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
@@ -122,7 +122,8 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=()):
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
-        _return_last_expression=not exports,_source_routine_scopes=True)
+        _return_last_expression=not exports,_source_routine_scopes=True,
+        _source_callable_externals=_callable_externals)
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
     plan._source_layout=frozenset(layout)
     plan._source_routines=tuple((n,_signature(n)) for n in program if type(n) is ast.Routine)

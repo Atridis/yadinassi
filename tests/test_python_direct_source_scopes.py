@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import unittest
 
 from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.experimental_naked_collections import prepare
+from yadinassi.experimental_naked_collections import prepare, UnsupportedNakedSyntax
 from yadinassi.python_direct import REPAIRS
 from yadinassi.values import HostFunction
 
@@ -30,6 +30,18 @@ class ScopeContext(BoundaryContext):
 class SourceRoutineScopeTests(unittest.TestCase):
     def compile(self,source,**kwargs):
         return prepare(source,repairs=REPAIRS,_trusted_entry=True,**kwargs)
+
+    def test_callable_external_requires_trusted_source_scope_opt_in(self):
+        with self.assertRaisesRegex(ValueError,'trusted source scopes'):
+            self.compile('A=Depth();',_source_callable_externals=('depth',))
+        with self.assertRaisesRegex(TypeError,'tuple of names'):
+            self.compile('A=Depth();',_source_routine_scopes=True,_source_callable_externals='depth')
+        with self.assertRaisesRegex(UnsupportedNakedSyntax,'not callable'):
+            self.compile('A=Depth();',external_names=('depth',),_source_routine_scopes=True)
+        plan=self.compile('A=Depth();',external_names=('depth',),
+            _source_routine_scopes=True,_source_callable_externals=('depth',))
+        state={};plan.run(state,context=ScopeContext())
+        self.assertEqual(state['a'],0)
 
     def test_same_module_nested_calls_and_early_return_have_distinct_frames(self):
         plan=self.compile('''Function Inner() Return Depth(); EndFunction

@@ -88,8 +88,12 @@ class SourceCatalogObject(BSLObject):
         routine=matches[0]
         vm.variables['__catalog_cancel']=False
         try:
-            yield from vm.call_routine(routine,[ast.Name(routine.token,'__catalog_cancel')],vm,require_value=False)
-            cancelled=vm.variables['__catalog_cancel']
+            if vm.execution_backend=='python-direct':
+                from .python_direct_source_catalog import invoke_event
+                cancelled=invoke_event(vm,routine)
+            else:
+                yield from vm.call_routine(routine,[ast.Name(routine.token,'__catalog_cancel')],vm,require_value=False)
+                cancelled=vm.variables['__catalog_cancel']
             if type(cancelled) is not bool:raise TypeError('catalog event Cancel requires Boolean')
             if cancelled:raise ValueError('catalog write cancelled by handler')
         finally:
@@ -288,10 +292,15 @@ class _ObjectInterpreter(_SourceInterpreter):
         return (yield from super().argument(node, _evaluation=_evaluation))
 
 
+# Snapshot owner hooks without admitting the AST evaluator entry points.
+_DIRECT_CATALOG_ABI=tuple((name,getattr(_ObjectInterpreter,name)) for name in (
+    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_assign',
+    'set_variable','_visit','execute','execute_program','_activation_interpreter','field',
+    '_new_query','_new_type_description','_new_temp_tables_manager'))
+
+
 def create_object(caller,manager,definition,identity=None,revision=0,values=None):
     app,store=store_for(manager,caller)
-    if definition.object_module is not None and caller.execution_backend == 'python-direct':
-        raise ValueError('direct source catalog handlers not integrated')
     obj=SourceCatalogObject(manager,definition,identity)
     path=definition.object_module
     if path is not None:
@@ -309,7 +318,11 @@ def create_object(caller,manager,definition,identity=None,revision=0,values=None
             token=_constructing.set((*stack,key))
             vm._self_module.ready=True
             with admission(False),routine_frame(caller,vm):
-                yield from vm._execute_program(program)
+                if vm.execution_backend=='python-direct':
+                    from .python_direct_source_catalog import prepare_and_execute
+                    prepare_and_execute(vm,program)
+                else:
+                    yield from vm._execute_program(program)
             if not store.transaction_active:
                 raise ValueError('catalog initialization transaction aborted')
             store_for(manager,caller)

@@ -55,12 +55,13 @@ class DirectSourceStorageGuards(unittest.TestCase):
             self.assertEqual(app.constant_store.get('Text'),'handler')
         self.assertFalse(app.constant_store.transaction_active)
 
-    def test_catalog_module_refused_before_object_interpreter_construction(self):
+    def test_catalog_module_initializer_executes_without_vm(self):
         app,caller=self.app(catalog_source('Description="initializer";'),catalog=True)
         manager=SourceReferenceManager(app,'Catalog','Items')
-        with self.no_vm(app),patch('yadinassi.source_catalog_runtime._ObjectInterpreter',side_effect=AssertionError('VM construction')):
-            with self.assertRaisesRegex(ValueError,'direct source catalog handlers'):
-                finish(create_object(caller,manager,app.constant_store.catalog('Items')))
+        with self.no_vm(app):
+            obj=finish(create_object(caller,manager,app.constant_store.catalog('Items')))
+            self.addCleanup(obj.interpreter.close)
+            self.assertEqual(obj.property_read(caller,'Description'),'initializer')
         self.assertEqual(app.constant_store.read_records('Items'),[])
         self.assertFalse(app.constant_store.transaction_active)
 
