@@ -25,7 +25,9 @@ _METHODS={'count':(MetadataObjectCollection.count,0),'количество':(Met
           'find':(MetadataObjectCollection.find,1),'найти':(MetadataObjectCollection.find,1)}
 
 
-def _owns(value):return any(type(value) is cls for cls in (_ROOT,_OBJECT,_COLLECTION))
+def _owns(value):
+    kind=type(value)
+    return kind is _ROOT or kind is _OBJECT or kind is _COLLECTION
 
 
 def _hooks():
