@@ -551,3 +551,16 @@ No array copy, Find change or relaxed readonly/index/owner rules. Representative
 2000-token StrSplit/Get processing: **35.10→25.02ms**, five alternating rounds;
 regex/SQLite Save show no stable gain. 45 tests pass normal and optimized,
 independent review 40 optimized. [Raw, controls and limits](../experiments/direct_host_access_audit9/README.md).
+
+### Remaining audit9 candidates (2026-11-17)
+
+Only bounded pure SQL identifier quoting is selected: exact-str admission precedes
+cache lookup; current byte limit stays in its key. Schema/source/transaction
+validation remains fresh. Actual Product Save improves in seven final pairs
+(median42.80→30.62ms; first exact series36.91→33.19ms, noisy environment).
+62 normal/62 optimized tests and50 independent optimized checks pass.
+
+Map inlining is rejected as mixed/noisy. Module locals are rejected despite
+compute-only gains: a live callback counterexample returns3 instead of10.
+No production Map rewrite or flush/snapshot layer was added.
+[All samples, rejection evidence and reproducer](../experiments/audit9_remaining/README.md).

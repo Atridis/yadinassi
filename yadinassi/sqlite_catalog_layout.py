@@ -3,6 +3,7 @@
 Registry entries, rather than current metadata names, determine physical names.
 """
 from uuid import UUID
+from functools import lru_cache
 import unicodedata
 
 from .catalog_backend import BackendError
@@ -17,11 +18,18 @@ _RESERVED = frozenset(('database_info', 'configuration_file', 'catalog_schema', 
 
 
 def quote_identifier(name):
-    if type(name) is not str or not name or any(unicodedata.category(ch).startswith('C') for ch in name):
+    # Reject host objects/subclasses before hashing or comparing cache keys.
+    if type(name) is not str:raise BackendError('invalid_input')
+    return _quote_identifier(name, _MAX_IDENTIFIER_BYTES)
+
+
+@lru_cache(maxsize=512)
+def _quote_identifier(name, max_bytes):
+    if not name or any(unicodedata.category(ch).startswith('C') for ch in name):
         raise BackendError('invalid_input')
     try: size = len(name.encode('utf-8'))
     except UnicodeEncodeError: raise BackendError('invalid_input') from None
-    if size > _MAX_IDENTIFIER_BYTES: raise BackendError('invalid_input')
+    if size > max_bytes: raise BackendError('invalid_input')
     return '"' + name.replace('"', '""') + '"'
 
 
