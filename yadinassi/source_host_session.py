@@ -46,3 +46,9 @@ class SourceSessionCall:
             # Explicit host identity, not native File/Srvr syntax or DB grants.
             return 'SQLite=' + app.constant_store.path
         return self.session if self.current else self.session._background_job
+
+
+# Definition-time identities for optional direct source session access.
+_DIRECT_HOST_SESSION_ABI=tuple((cls,tuple((name,getattr(cls,name)) for name in names)) for cls,names in (
+    (SourceHostSession,('authorize','get_member')),
+    (SourceSessionCall,('__call__','invoke'))))

@@ -35,8 +35,8 @@ class _SourceInterpreter(Interpreter):
                                    russian, returns_value=operation is not temporary.delete_marker)
         self._metadata._enumerations = application.enumerations
         self._source_reusable_runtime = application
-        from .source_system_info import SourceSystemInfo
-        self.register_type('SystemInfo', lambda: SourceSystemInfo(application), 'СистемнаяИнформация')
+        from .source_system_info import SourceSystemInfoFactory
+        self.register_type('SystemInfo', SourceSystemInfoFactory(application), 'СистемнаяИнформация')
         from .source_host_session import SourceSessionCall
         self.register_function('GetCurrentInfoBaseSession', SourceSessionCall(application.host_session, True),
                                'ПолучитьТекущийСеансИнформационнойБазы')

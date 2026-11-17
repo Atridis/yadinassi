@@ -19,6 +19,7 @@ from . import python_direct_source_query as query
 from . import python_direct_source_sessions as sessions
 from . import python_direct_source_enums as enums
 from . import python_direct_source_extensions as extensions
+from . import python_direct_source_host_info as host_info
 
 
 def check_owner(owner):
@@ -123,7 +124,7 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
-        constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
+        constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
         _source_callable_externals=_callable_externals)
@@ -181,6 +182,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=host_info.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         bound=extensions.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         captured=storage.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -237,6 +240,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key.startswith('new:') and key[4:] in host_info.CONSTRUCTORS:
+            return host_info.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in query.CONSTRUCTOR_NAMES:
             return query.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in ('uuid','уникальныйидентификатор'):
@@ -256,16 +261,18 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             routine,owner=selected
             return self._routine(owner,routine,**kwargs)
         function=self._services.get(key)
+        host_call=host_info.captured(self,function,require_value=kwargs.get('require_value',False),
+            allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
+        if host_call is not None:return host_call
         captured=storage.captured(self,function,require_value=kwargs.get('require_value',False),
             allow_references=kwargs.get('allow_references',False),argument_count=kwargs.get('argument_count'))
         if captured is not None:return captured
         if type(function) is HostFunction:
             from .source_transactions import SourceTransactionCall
             from .common_templates import SourceTemplateCall
-            from .source_host_session import SourceSessionCall
             from .temporary_storage import SourceTemporaryCall
             impl=function.function
-            if type(impl) in (SourceTransactionCall,SourceTemplateCall,SourceSessionCall,SourceTemporaryCall):
+            if type(impl) in (SourceTransactionCall,SourceTemplateCall,SourceTemporaryCall):
                 self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
                 if type(impl) is SourceTemplateCall:
                     impl.owner.authorize(self.vm)
@@ -362,6 +369,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def get_member(self,value,name):
         self._check()
         if name.startswith('_'):raise BoundaryViolation('private source member')
+        if host_info.owns(value):return host_info.get(self,value,name)
         if extensions.owns(value):return extensions.get(self,value,name)
         if enums.supports(self,value):return enums.get(self,value,name)
         if sessions.owns(value):return sessions.get(self,value,name)
@@ -373,6 +381,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if host_info.owns(value):return host_info.resolve(self,value,name,require_value=require_value,
+            argument_count=argument_count,allow_references=allow_references)
         if extensions.owns(value):return extensions.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         if enums.supports(self,value):return enums.resolve(self,value,name,require_value=require_value,
@@ -404,6 +414,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if host_info.owns(value):return host_info.set_member(self,value,name)
         if extensions.owns(value):return extensions.set_member(self,value,name)
         if enums.supports(self,value):return enums.set_member(self,value,name)
         if sessions.owns(value):return sessions.set_member(self,value,name)
@@ -413,6 +424,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if host_info.owns(value):return host_info.resolve(self,value,name)
         if extensions.owns(value):return extensions.resolve(self,value,name)
         if enums.supports(self,value):return enums.resolve(self,value,name)
         if sessions.owns(value):return sessions.resolve(self,value,name)

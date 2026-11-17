@@ -33,3 +33,20 @@ class SourceSystemInfo(BSLObject):
         if key in ('iscompatibilitytarget',):
             return app.compatibility_target is not None
         raise ValueError('source SystemInfo property is not supported: ' + name)
+
+
+class SourceSystemInfoFactory:
+    """Canonical source-owned constructor marker, not native platform detection."""
+    def __init__(self, application):
+        self._application=weakref.ref(application)
+
+    def __call__(self):
+        app=self._application()
+        if app is None:
+            raise ValueError('source system information factory belongs to a closed application')
+        return SourceSystemInfo(app)
+
+
+# Definition-time identities for optional direct source host-information access.
+_DIRECT_SYSTEM_INFO_ABI=((SourceSystemInfo,(('__new__',SourceSystemInfo.__new__),('__init__',SourceSystemInfo.__init__),('get_member',SourceSystemInfo.get_member))),
+                         (SourceSystemInfoFactory,(('__call__',SourceSystemInfoFactory.__call__),)))
