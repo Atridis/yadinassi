@@ -346,7 +346,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             for node in walk(body):
                 if type(node) is not ast.Call:continue
                 callee=ungroup(node.callee)
-                if type(callee) is ast.Attribute:continue
+                # Source-qualified calls use dynamic byref dispatch too.
+                if type(callee) is ast.Attribute and not _source_routine_scopes:continue
                 if type(callee) is ast.Name and callee.name.casefold() in routines:continue
                 for arg in node.arguments:
                     arg=ungroup(arg)

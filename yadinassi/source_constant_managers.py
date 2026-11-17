@@ -58,6 +58,14 @@ class _ValueInterpreter(_SourceInterpreter):
         super().set_variable(name, value)
 
 
+# Only the generated constant-manager bridge may admit this exact owner. Legacy
+# evaluator hooks are intentionally omitted so tests can poison them.
+_DIRECT_CONSTANT_ABI=tuple((name,getattr(_ValueInterpreter,name)) for name in (
+    'compiled_before','compiled_after','compiled_exception','semantic_name','semantic_assign',
+    'set_variable','_visit','execute','execute_program','_activation_interpreter',
+    '_new_query','_new_type_description','_new_temp_tables_manager'))
+
+
 class SourceConstantValueManager(BSLObject):
     def __init__(self, owner, name):
         self.owner, self.name = owner, name
@@ -135,10 +143,14 @@ class SourceConstantValueManager(BSLObject):
             raise ValueError('unsupported constant event signature')
         # Reserved internal storage remains reachable when Write is called from
         # an exported routine with an active local frame. It never aliases user locals.
-        vm.variables['__constant_cancel'] = False
-        argument = ast.Name(routine.token, '__constant_cancel')
-        yield from vm.call_routine(routine, [argument], vm, require_value=False)
-        cancelled = vm.variables.pop('__constant_cancel')
+        if vm.execution_backend=='python-direct':
+            from .python_direct_source_constants import invoke_event
+            cancelled=invoke_event(vm,routine)
+        else:
+            vm.variables['__constant_cancel'] = False
+            argument = ast.Name(routine.token, '__constant_cancel')
+            yield from vm.call_routine(routine, [argument], vm, require_value=False)
+            cancelled = vm.variables.pop('__constant_cancel')
         if type(cancelled) is not bool:
             raise TypeError('constant event Cancel requires Boolean')
         if cancelled:
@@ -160,8 +172,6 @@ def create_manager(caller, owner, name):
     module_files = [p for p, raw in app.files.items() if p.startswith(prefix) and p.lower().endswith('.bsl') and raw.strip()]
     if any(p != path for p in module_files):
         raise ValueError('unsupported constant module location')
-    if module_files and caller.execution_backend == 'python-direct':
-        raise ValueError('direct source constant handlers not integrated')
     manager = SourceConstantValueManager(owner, definition.name)
     if module_files:
         from .configuration_modules import compile_module
@@ -191,7 +201,11 @@ def create_manager(caller, owner, name):
             # other callers cannot use a manager whose initialization is pending.
             vm._self_module.ready = True
             with admission(False), routine_frame(caller, vm):
-                yield from vm._execute_program(program)
+                if vm.execution_backend=='python-direct':
+                    from .python_direct_source_constants import prepare_and_execute
+                    prepare_and_execute(vm,program)
+                else:
+                    yield from vm._execute_program(program)
             if not store.transaction_active:
                 raise ValueError('constant initialization transaction aborted')
             owner._store(caller)

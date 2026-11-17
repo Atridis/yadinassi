@@ -114,12 +114,12 @@ def _check_plan(owner,plan):
             raise BoundaryViolation('source declaration binding changed')
 
 
-def _compile(owner,program,*,exports=False,layout=()):
+def _compile(owner,program,*,exports=False,layout=(),_extra_externals=()):
     names={n.name.casefold() for n in program if type(n) is ast.Routine}
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
-        module_names=tuple(layout),external_names=_external_names(owner,names|set(layout)),
+        module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True)

@@ -44,12 +44,15 @@ class DirectSourceStorageGuards(unittest.TestCase):
              source_transactions.execution(app),app.safe_mode.execution():
             yield
 
-    def test_constant_module_refused_before_value_interpreter_construction(self):
+    def test_constant_module_executes_generated_initializer_and_handler_without_vm(self):
         source=configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Value="initializer"; Procedure BeforeWrite(Cancel) Value="handler";EndProcedure'})
         app,caller=self.app(source);owner=SourceConstants(app)
-        with self.no_vm(app),patch('yadinassi.source_constant_managers._ValueInterpreter',side_effect=AssertionError('VM construction')):
-            with self.assertRaisesRegex(ValueError,'direct source constant handlers'):
-                finish(create_manager(caller,owner,'Text'))
+        with self.no_vm(app):
+            manager=finish(create_manager(caller,owner,'Text'))
+            self.addCleanup(manager.interpreter.close)
+            self.assertEqual(manager.value_read(caller),'initializer')
+            finish(ConstantCall(owner,'Text',True).descriptor().invoke(caller,['submitted']))
+            self.assertEqual(app.constant_store.get('Text'),'handler')
         self.assertFalse(app.constant_store.transaction_active)
 
     def test_catalog_module_refused_before_object_interpreter_construction(self):
@@ -81,11 +84,11 @@ class DirectSourceStorageGuards(unittest.TestCase):
         self.assertEqual(app.constant_store.get('Text'),'before')
 
     def test_late_handler_in_batch_rolls_back_without_prior_member_writes(self):
-        app,caller=self.app(configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Procedure OnWrite(Cancel) EndProcedure'}))
+        app,caller=self.app(configuration({'Constants/Text/Ext/ValueManagerModule.bsl':b'Procedure FillCheckProcessing(Cancel,Fields) EndProcedure'}))
         owner=SourceConstants(app)
         with self.no_vm(app):
             finish(ConstantCall(owner,'Flag',True).descriptor().invoke(caller,[False]))
-            with self.assertRaisesRegex(ValueError,'direct source constant handlers'):
+            with self.assertRaisesRegex(ValueError,'FillCheckProcessing'):
                 finish(write_values(caller,owner,{'Flag':True,'Text':'blocked'}))
         self.assertFalse(app.constant_store.get('Flag'))
         self.assertFalse(app.constant_store.transaction_active)

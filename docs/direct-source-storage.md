@@ -29,11 +29,11 @@ violation. It never interprets a yielded AST operation.
 
 ## Deliberate exclusions
 
-Source constant value-manager modules and catalog object modules are rejected
-before constructing their specialized legacy interpreter. Existing legacy
-backends retain those modules unchanged. A legacy-created object with an
-attached interpreter cannot enter this direct adapter either. This is an
-explicit unsupported feature, not permission to skip its handlers.
+Catalog object modules remain rejected before constructing their specialized
+legacy interpreter. Constant value-manager modules are now handled by the
+[bounded direct constants adapter](direct-source-constants.md). Legacy-created
+objects with an attached interpreter still cannot enter the direct adapter.
+Unsupported handlers are never skipped; existing legacy backends are unchanged.
 
 Forms, document lifecycle, manager-module exports, cross-side calls and general
 interpreter-aware descriptors are not enabled by this slice. Foreign queries,

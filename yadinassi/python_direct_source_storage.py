@@ -42,7 +42,9 @@ def check(boundary,value):
     if kind in (SourceConstantSet,SourceConstantValueManager):
         check(boundary,value.owner)
         if kind is SourceConstantValueManager:
-            if value.interpreter is not None:raise BoundaryViolation('direct source constant handlers are not integrated')
+            if value.interpreter is not None:
+                from .python_direct_source_constants import check_manager
+                check_manager(value,caller)
             value.authorize(caller)
         return
     if kind is SourceConstants:
@@ -128,6 +130,12 @@ def set_member(boundary,value,name):
 
 def resolve(boundary,value,name,*,require_value=False,allow_references=False,argument_count=None):
     check(boundary,value)
+    if type(value) is SourceConstantValueManager:
+        from .source_constant_managers import _STANDARD_METHODS
+        if name.casefold() not in _STANDARD_METHODS:
+            from .python_direct_source_constants import bind_export
+            return bind_export(boundary,value,name,require_value=require_value,
+                allow_references=allow_references,argument_count=argument_count)
     if name=='__getitem__' and type(value) is SourceDocumentSection:
         def row(index):
             check(boundary,value)
