@@ -1,7 +1,7 @@
 """Synchronous logical server calls with fresh side-local state, no VM dispatch.
 
-Module-context calls support Val and named-variable reference copyback.
-NoContext and dual declarations remain explicit gaps.
+Module-context and NoContext calls support Val and named-variable copyback.
+Dual declarations remain an explicit gap.
 """
 from decimal import Decimal
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -46,18 +46,19 @@ def transfer(value):
 
 class ServerBoundary(CatalogBoundary,BoundaryContext):
     _server_side=True
-    def __init__(self,parent):
+    def __init__(self,parent,*,module_context=True):
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
         self.database=self.vm.database_context
         self._routine_exports={};self.state={}
+        self.module_context=module_context
     def _check(self):
         super()._check()
         from . import safe_mode,source_transactions,database_transactions
         vm=self.vm
         if (vm._family_closed or vm.database_context is not self.database
                 or vm._configuration_runtime is not None or vm.locals is not None
-                or not vm._has_module_context or vm.execution_context!='server'
+                or vm._has_module_context!=self.module_context or vm.execution_context!='server'
                 or safe_mode._CURRENT.get() is not None
                 or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
@@ -74,23 +75,42 @@ class ServerBoundary(CatalogBoundary,BoundaryContext):
 def resolve_server(parent,module,name,*,require_value,allow_references):
     vm=parent.vm
     references=module.signatures[name][3]
+    module_context=name not in module.nocontext_names
+    server_plan=module.server_plan if module_context else module.nocontext_plan
+    if getattr(parent,'_server_side',False) and not parent.module_context and module_context:
+        raise TypeError('Подпрограмма без контекста не может вызывать контекстную подпрограмму')
     def execute(context,arguments):
         exports=context._routine_exports.get(id(module))
         if exports is None:
-            for key in module.server_layout:context.state.setdefault(key,None)
-            exports=module.server_plan.function(context.state,module.server_plan.constants,[],context)
+            if module_context:
+                for key in module.server_layout:context.state.setdefault(key,None)
+            exports=server_plan.function(context.state,server_plan.constants,[],context)
             context._routine_exports[id(module)]=exports
         try:return exports[name](*arguments)
         except Exception as error:
             from .experimental_naked_errors import convert_error
-            converted=convert_error(error,module.server_plan.source_name,module.server_plan.source_text)
+            converted=convert_error(error,server_plan.source_name,server_plan.source_text)
             if converted is error:raise
             raise converted from None
     def invoke(*arguments):
         if getattr(parent,'_server_side',False):
             bound=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
                         for i,value in enumerate(arguments))
-            return execute(parent,bound)
+            if parent.module_context==module_context:return execute(parent,bound)
+            # Contextual server -> NoContext is a same-side call: references stay
+            # live, but globals and initializer capabilities do not follow it.
+            context=ServerBoundary(parent,module_context=False)
+            module_stack=vm._module_context_stack
+            module_stack.append(False)
+            try:
+                context.enter()
+                try:
+                    try:return execute(context,bound)
+                    finally:context._check()
+                finally:context.leave()
+            finally:
+                module_stack.pop()
+                parent._check()
         parent._check()
         outputs=[]
         for i,value in enumerate(arguments):
@@ -101,15 +121,16 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
         # Named byref actuals are storage: read only after all argument effects.
         packet=transfer([value.get() if i in references else value for i,value in enumerate(arguments)])
         for i,_ in outputs:packet[i]=_Cell(packet[i])
-        context=ServerBoundary(parent)
+        context=ServerBoundary(parent,module_context=module_context)
         previous=getattr(vm,'_transaction_activation_allowed',True)
         vm._transaction_activation_allowed=False
-        vm._context_stack.append('server')
+        side_stack=vm._context_stack;module_stack=vm._module_context_stack
+        side_stack.append('server');module_stack.append(module_context)
         try:
             context.enter()
             try:
                 try:
-                    for initializer in getattr(vm,'_direct_server_initializers',()):
+                    for initializer in (getattr(vm,'_direct_server_initializers',()) if module_context else ()):
                         for key in initializer.server_layout:context.state.setdefault(key,None)
                         plan=initializer.initializer_plan
                         try:plan.function(context.state,plan.constants,[],context)
@@ -124,7 +145,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
                 finally:context._check()
             finally:context.leave()
         finally:
-            vm._context_stack.pop()
+            module_stack.pop();side_stack.pop()
             vm._transaction_activation_allowed=previous
             parent._check()
         # Publish only after the complete packet and current caller validate.

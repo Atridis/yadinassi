@@ -88,8 +88,8 @@ def _source_facts(program):
             _reject('unsupported declaration side')
         if type(node) is ast.New and node.name.casefold() in native_names:
             constructors.add(node.name.casefold())
-        if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context not in ('client','server')):
-            _reject('async/NoContext source routines are not integrated')
+        if type(node) is ast.Routine and (node.is_async or node.is_dual or (not node.module_context and node.execution_context!='server') or node.execution_context not in ('client','server')):
+            _reject('async/dual source routines are not integrated')
         if type(node) is ast.Import:
             _reject('imports are not integrated')
         if type(node) is ast.Call:

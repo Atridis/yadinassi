@@ -21,6 +21,8 @@ class RoutineModule:
     initializer_plan: object = None
     initializer_constructors: frozenset = frozenset()
     initializer_calls: frozenset = frozenset()
+    nocontext_plan: object = None
+    nocontext_names: frozenset = frozenset()
 
 
 def prepare(vm, program, plan):
@@ -39,6 +41,9 @@ def prepare(vm, program, plan):
     declared={name.casefold() for node in declarations if type(node) is ast.Var and node.execution_context=='client' for name in node.names}
     server=[node for node in declarations if type(node) is not ast.ServerInitializer and node.execution_context=='server']
     server_names=frozenset(node.name.casefold() for node in server if type(node) is ast.Routine)
+    nocontext=[node for node in server if type(node) is ast.Routine and not node.module_context]
+    nocontext_names=frozenset(node.name.casefold() for node in nocontext)
+    server=[node for node in server if type(node) is not ast.Routine or node.module_context]
     server_layout=frozenset(name.casefold() for node in server if type(node) is ast.Var for name in node.names)
     server_layout=server_layout.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
     server_plan=None
@@ -46,9 +51,14 @@ def prepare(vm, program, plan):
         from .experimental_naked_collections import prepare as compile_server
         from .python_direct import REPAIRS
         from .python_direct_names import NAMES
-    if server_names:
+    if server_names-nocontext_names:
         server_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=server,
             repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            _trusted_entry=True,_export_routines=True)
+    nocontext_plan=None
+    if nocontext:
+        nocontext_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=nocontext,
+            repairs=REPAIRS,external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
@@ -58,7 +68,7 @@ def prepare(vm, program, plan):
             _trusted_entry=True,_initialize_module=False)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
-                         initializer_plan,initializer_constructors,initializer_calls)
+                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
@@ -74,7 +84,7 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initiali
         seen.add(id(module))
         if module.contract!=_contract(vm):_reject('persistent routine backend/target/profile contract changed; redeclare')
         if module.layout!=layout:_reject('persistent routine module-name layout changed; redeclare')
-        if module.server_names:
+        if module.server_names-module.nocontext_names:
             current_server_layout=frozenset().union(*(m.server_layout for m in registry.values()))
             if module.server_layout!=current_server_layout:
                 _reject('persistent server module-name layout changed; redeclare')
@@ -82,7 +92,7 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initiali
             _reject('routines declared together were partially replaced; redeclare the module')
         _admit_bindings(vm,frozenset(),module.constructors,frozenset())
         validate_calls(vm,module.calls,seen,registry=registry,layout=layout,initializers=initializers)
-        if module.server_names:
+        if module.server_names-module.nocontext_names:
             for initializer in initializers:
                 marker=('initializer',id(initializer))
                 if marker in seen:continue

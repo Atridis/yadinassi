@@ -592,3 +592,19 @@ ErrorDescription gap. Full original/owned-SQLite witness теперь блоки
 NoContext и всё ещё не даёт полного результата. 144 normal/144 optimized,
 78 independent optimized PASS. Audit10 source-map сохранён.
 [Контракт и воспроизведение](direct-logical-server.md).
+
+### Direct server NoContext (2026-11-17)
+
+Base9f727099: synchronous NoContext routines now use separate direct Python
+exports without module globals or server initialization. Same-side byref stays
+live; client copyback keeps its aggregate validation and failure atomicity.
+NoContext cannot call contextual server/client code, including argument effects.
+Owner/context/transaction checks remain; callback close/reset unwinds captured
+stacks without corrupting replacement root scopes.
+
+Original NoContext witness completes15 records,12 match explicit compiled-strict;
+indices6,8,12 remain the known ErrorDescription gap. Full original admission now
+stops at dual routines; actual owned-SQLite verifier still returns
+`interpreter_failed`. 159 normal/159 optimized tests PASS, independent review
+without blockers. No native fixture changes or parity claim.
+[Contract, limits and reproducer](direct-logical-server.md).

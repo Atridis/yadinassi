@@ -25,7 +25,7 @@ Server layout учитывает предыдущие объявления. Пр
 
 ## Явные ограничения
 
-- `NoContext`, dual/async и imports не подключены. Существующий native `client_probe.bsl` поэтому
+- Dual/async и imports не подключены. Существующий native `client_probe.bsl` поэтому
   **по-прежнему не выполняется целиком**.
 - DB namespace и Query на сервере не добавлены этим пакетом. Отдельные формы
   и configuration runtime сохраняют свои собственные точки входа.
@@ -125,4 +125,41 @@ dual и другие указанные ранее gaps не сняты этим
 
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_server_initializers test_python_direct_server test_python_direct_server_byref test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
+```
+
+## Серверные процедуры без контекста
+
+Срез поверх `9f7270993c0db86d4d8393d3c6bc2f9afda5df02` допускает синхронные
+`&AtServerNoContext` / `&НаСервереБезКонтекста` процедуры напрямую. Их отдельный
+Python-план не получает клиентских или серверных module globals. Вызов с клиента
+не запускает серверные initializers; contextual server → NoContext создаёт
+отдельный scope, сохраняя обычные same-side byref-ссылки. NoContext → contextual
+server и NoContext → client отвергаются до вычисления аргументов.
+
+Client crossing сохраняет существующие transfer limits и атомарную публикацию
+проверенного copyback. Ошибка не публикует выходы клиенту; ошибка same-side
+вызова не отменяет уже сделанную запись по ссылке. Проверяются текущий владелец,
+server side и отсутствие module-context capability. Закрытие/reset runtime
+в callback не повреждает новые корневые context stacks при выходе: снимается
+именно захваченный stack. Pure NoContext declaration groups не зависят от
+server layout и initializers; смешанные группы сохраняют прежнюю консервативную
+валидацию всей группы. План не хранит состояние или долгоживущий допуск.
+
+**159 targeted normal + 159 optimized PASS**. Independent review: blockers нет;
+после исправления unwind выполнены 9 NoContext optimized tests и 4 дополнительные
+close/reset probes через оба вида перехода. Тесты:
+`tests/test_python_direct_nocontext.py`, соседние server/byref/initializer,
+persistent/prepared, managed-profile, configuration/database и boundary suites.
+
+Неизменённый блок между `BEGIN bounded no-context witness` и
+`BEGIN bounded dual witness` исходного `client_probe.bsl` даёт все 15 records.
+С explicit compiled-strict control совпадают 12; индексы 6, 8, 12 дают False
+вместо True из-за прежнего ErrorDescription gap. Все state/copyback значения
+совпадают. Полный original source теперь останавливается на
+`async/dual source routines are not integrated`; настоящий owned-SQLite verifier
+по-прежнему возвращает `interpreter_failed`. Ни native parity, ни полный зелёный
+CI не заявляются; исходный fixture не менялся.
+
+```sh
+PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_nocontext test_python_direct_server_initializers test_python_direct_server_byref test_python_direct_server test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
 ```
