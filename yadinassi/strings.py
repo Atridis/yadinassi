@@ -478,3 +478,6 @@ BUILTINS = (
     ("СтрРазделить", split, "StrSplit"),
     ("СтрСоединить", join, "StrConcat"),
 )
+
+# Stable identity for direct optional-argument admission.
+_DIRECT_STR_FIND_ABI = str_find

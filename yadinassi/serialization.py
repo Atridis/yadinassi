@@ -238,7 +238,8 @@ def _pattern_entry(kind: BSLType, value: BSLTypeDescription) -> str:
 
 
 class _Writer:
-    def __init__(self):
+    def __init__(self, *, direct=False):
+        self.direct = direct
         self.parts = []
         self.size = 0
         self.nodes = 0
@@ -278,10 +279,22 @@ class _Writer:
         self.nodes += 1
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
             raise _resource("ЗначениеВСтрокуВнутр")
+        direct_items = None
         try:
             kind = type_of(value)
         except TypeError:
-            raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
+            if not self.direct:
+                raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
+            from .experimental_naked_collections import _TypedMap
+            from .experimental_naked_structure import _DirectStructure
+            if type(value) is list:
+                kind, direct_items = BSLType.ARRAY, value
+            elif type(value) is _TypedMap:
+                kind, direct_items = BSLType.MAP, dict.values(value)
+            elif type(value) is _DirectStructure:
+                kind, direct_items = BSLType.STRUCTURE, dict.values(value)
+            else:
+                raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
         if kind in (BSLType.CATALOGS_MANAGER, BSLType.DOCUMENTS_MANAGER, BSLType.INFORMATION_REGISTERS_MANAGER):
             raise ValueError("ЗначениеВСтрокуВнутр: сериализация менеджера справочников пока не поддерживается")
         if kind in _TREE_CODEC_TYPES or (kind is BSLType.TYPE and value in _TREE_CODEC_TYPES):
@@ -346,17 +359,18 @@ class _Writer:
                 elif kind is BSLType.KEY_AND_VALUE:
                     self.pair(value.key, value.value, depth)
                 else:
-                    count = len(value.items) if kind in _ARRAYS else len(value._items)
+                    items = direct_items if direct_items is not None else value.items if kind in _ARRAYS else value._items.values()
+                    count = len(items)
                     if count > _MAX_NODES:
                         raise _resource("ЗначениеВСтрокуВнутр")
                     self.emit('{' + str(count))
                     if kind in _ARRAYS:
-                        for item in value.items:
+                        for item in items:
                             self.emit(',\n')
                             self.value(item, depth + 1)
                     else:
                         # Associative payload order is not a compatibility contract.
-                        entries = value._items.values()
+                        entries = items
                         for key, item in entries:
                             self.emit(',\n')
                             self.pair(key, item, depth)
@@ -506,6 +520,14 @@ class _Writer:
 
 def value_to_string_internal(value: object) -> str:
     writer = _Writer()
+    writer.value(value)
+    return ''.join(writer.parts)
+
+
+_DIRECT_VALUE_TO_STRING_ABI = value_to_string_internal
+
+def _direct_value_to_string_internal(value):
+    writer = _Writer(direct=True)
     writer.value(value)
     return ''.join(writer.parts)
 

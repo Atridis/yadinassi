@@ -142,9 +142,9 @@ class CatalogBoundary:
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
         elif name=='__getitem__':
-            function=value.get if type(value) in (BSLArray, BSLFixedArray) else lambda index:value.get_index(index)
+            function=value.get if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index:value.get_index(index)
         elif name=='__setitem__':
-            function=value.set if type(value) in (BSLArray, BSLFixedArray) else lambda index,new:value.set_index(index,new)
+            function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
             if type(value) not in (BSLArray, BSLFixedArray) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')

@@ -75,6 +75,20 @@ class ServicesBoundary:
                 finally:self._check()
             if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
             return invoke
+        from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
+        if type(function) is HostFunction and function.function is _DIRECT_VALUE_TO_STRING_ABI:
+            self._check()
+            self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
+            def serialize(value):
+                self._before('call',key)
+                try:
+                    if function.function is not _DIRECT_VALUE_TO_STRING_ABI:
+                        raise BoundaryViolation('serialization implementation changed during argument evaluation')
+                    return _direct_value_to_string_internal(value)
+                except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                finally:self._check()
+            if kwargs.get('allow_references',False):serialize.requires_reference=lambda index:index in function.reference_parameters
+            return serialize
         bound=super().resolve_service(name,*args,**kwargs)
         from .runtime import _eval_marker
         function=self._services.get(key)
@@ -83,12 +97,12 @@ class ServicesBoundary:
                 raise TypeError('Вычислить ожидает 1 аргумент')
             from .python_direct_eval import eval_capability
             bound.bind_eval=eval_capability(self,function,key)
-        # Only canonical regex implementations opt in, never a matching name.
+        # Only canonical search implementations opt in, never a matching name.
         function=self._services.get(key)
-        if type(function) is HostFunction and any(function.function is item for item in regex_functions.FUNCTIONS):
+        if type(function) is HostFunction and (function.function is strings._DIRECT_STR_FIND_ABI or any(function.function is item for item in regex_functions.FUNCTIONS)):
             implementation=function.function
             required=3 if implementation is regex_functions.str_replace else 2
-            maximum=7 if implementation is regex_functions.str_find else 5 if required==3 else 4
+            maximum=5 if implementation is strings._DIRECT_STR_FIND_ABI else 7 if implementation is regex_functions.str_find else 5 if required==3 else 4
             count=kwargs.get('argument_count')
             if count is not None and not required<=count<=maximum:
                 raise TypeError('Регулярное выражение: неверное количество аргументов')
@@ -96,10 +110,10 @@ class ServicesBoundary:
                 from .experimental_naked_collections import _host_omission_error
                 self._check()
                 implementation=function.function
-                if not any(implementation is item for item in regex_functions.FUNCTIONS):
+                if implementation is not strings._DIRECT_STR_FIND_ABI and not any(implementation is item for item in regex_functions.FUNCTIONS):
                     _host_omission_error()
                 required=3 if implementation is regex_functions.str_replace else 2
-                maximum=7 if implementation is regex_functions.str_find else 5 if required==3 else 4
+                maximum=5 if implementation is strings._DIRECT_STR_FIND_ABI else 7 if implementation is regex_functions.str_find else 5 if required==3 else 4
                 if not required<=count<=maximum:
                     raise TypeError('Регулярное выражение: неверное количество аргументов')
                 if any(index<required for index in positions):_host_omission_error()
