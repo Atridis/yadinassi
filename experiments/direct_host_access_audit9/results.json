@@ -1,0 +1,1418 @@
+{
+  "baseline": "31d65378662fa3909565218863986cbec8274495",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "summary": {
+    "split_get_ms": {
+      "before": 35.10372599885159,
+      "owner": 32.889518999581924,
+      "after": 25.016032999701565
+    },
+    "regex_prepared_ms": {
+      "before": 52.42259400074545,
+      "owner": 52.79484200036677,
+      "after": 51.69060099979106
+    },
+    "kind_description_ms": {
+      "before": 9.427222,
+      "owner": 8.813337,
+      "after": 8.571842
+    },
+    "kind_save_ms": {
+      "before": 28.276014,
+      "owner": 28.650987,
+      "after": 28.177272
+    },
+    "product_description_ms": {
+      "before": 8.82865,
+      "owner": 8.454422,
+      "after": 8.896232
+    },
+    "product_save_ms": {
+      "before": 36.626826,
+      "owner": 38.727461,
+      "after": 37.192816
+    }
+  },
+  "samples": [
+    {
+      "pair": 0,
+      "mode": "before",
+      "split_get_ms": [
+        43.355069999961415,
+        33.28687899920624,
+        37.622104999172734,
+        41.96874799890793,
+        34.9964529996214,
+        31.057670999871334,
+        41.460375001406646
+      ],
+      "regex_prepared_ms": [
+        70.4313979986182,
+        66.38847000067472,
+        65.0608200012357
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 38.396205,
+          "save_ms": 50.25324
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.739348,
+          "save_ms": 41.071059
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 14.498078,
+          "save_ms": 44.037392
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 17.827551,
+          "save_ms": 30.13155
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.339537,
+          "save_ms": 50.907303
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 9.988283,
+          "save_ms": 29.993023
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 12.753701,
+          "save_ms": 123.472904
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.77337,
+          "save_ms": 41.195222
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 12.371725,
+          "save_ms": 81.178229
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 32.085493,
+          "save_ms": 77.334332
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 11.753304,
+          "save_ms": 49.535898
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.455475,
+          "save_ms": 36.626826
+        }
+      ]
+    },
+    {
+      "pair": 0,
+      "mode": "owner",
+      "split_get_ms": [
+        40.14503200050967,
+        31.90099099992949,
+        47.47467400011374,
+        40.245969999887166,
+        37.46709200095211,
+        47.80988300080935,
+        27.66118399995321
+      ],
+      "regex_prepared_ms": [
+        78.42475199868204,
+        52.47656400024425,
+        69.21186600084184
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 24.443551,
+          "save_ms": 34.251299
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.83308,
+          "save_ms": 30.324952
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 7.407118,
+          "save_ms": 50.468257
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.841643,
+          "save_ms": 28.110295
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.781743,
+          "save_ms": 26.10139
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.075089,
+          "save_ms": 25.865903
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.431084,
+          "save_ms": 105.11891
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.414079,
+          "save_ms": 33.908401
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.454422,
+          "save_ms": 33.670643
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 6.566387,
+          "save_ms": 34.638802
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.94008,
+          "save_ms": 44.805521
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.362843,
+          "save_ms": 40.815738
+        }
+      ]
+    },
+    {
+      "pair": 0,
+      "mode": "after",
+      "split_get_ms": [
+        21.779177001008065,
+        20.87673599999107,
+        25.930264999260544,
+        24.668115000167745,
+        25.016032999701565,
+        22.537893999469816,
+        25.267032000556355
+      ],
+      "regex_prepared_ms": [
+        56.7571779993159,
+        46.59630400055903,
+        48.51494800095679
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.270551,
+          "save_ms": 26.977733
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.445984,
+          "save_ms": 30.342475
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 10.520241,
+          "save_ms": 31.818406
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 7.935438,
+          "save_ms": 23.946688
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 6.640312,
+          "save_ms": 25.84518
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.989424,
+          "save_ms": 28.128129
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.313254,
+          "save_ms": 124.243915
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.703363,
+          "save_ms": 37.955815
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.239883,
+          "save_ms": 35.488573
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 8.451413,
+          "save_ms": 33.171146
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 9.201367,
+          "save_ms": 34.118359
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.935322,
+          "save_ms": 37.192816
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "after",
+      "split_get_ms": [
+        28.875690000859322,
+        25.424608998946496,
+        22.84440000039467,
+        22.142034998978488,
+        24.82320799936133,
+        23.887205999926664,
+        25.76610700089077
+      ],
+      "regex_prepared_ms": [
+        65.08152300011716,
+        60.03203900036169,
+        46.971109999503824
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.014319,
+          "save_ms": 29.876435
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.735403,
+          "save_ms": 26.939011
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 7.352518,
+          "save_ms": 23.930803
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.446717,
+          "save_ms": 32.918928
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.571842,
+          "save_ms": 24.021653
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.850502,
+          "save_ms": 32.136839
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.998939,
+          "save_ms": 95.885465
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 7.40491,
+          "save_ms": 31.774029
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 6.178447,
+          "save_ms": 30.992571
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 10.685803,
+          "save_ms": 44.615651
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 7.881348,
+          "save_ms": 43.111462
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 10.117589,
+          "save_ms": 29.978069
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "owner",
+      "split_get_ms": [
+        25.365582998347236,
+        32.480334000865696,
+        32.889518999581924,
+        27.33107299900439,
+        37.14295900135767,
+        27.18426899991755,
+        30.249862998971366
+      ],
+      "regex_prepared_ms": [
+        56.46303700086719,
+        42.74665199955052,
+        51.900722000937094
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 27.989813,
+          "save_ms": 26.707411
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.943076,
+          "save_ms": 29.855535
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.234745,
+          "save_ms": 28.243681
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 11.564574,
+          "save_ms": 28.650987
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.03071,
+          "save_ms": 24.968222
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.077356,
+          "save_ms": 28.920058
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.014631,
+          "save_ms": 101.070459
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.421259,
+          "save_ms": 38.540093
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.931639,
+          "save_ms": 38.876851
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.435216,
+          "save_ms": 39.510426
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.367472,
+          "save_ms": 34.243739
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.930448,
+          "save_ms": 32.232734
+        }
+      ]
+    },
+    {
+      "pair": 1,
+      "mode": "before",
+      "split_get_ms": [
+        36.12870300094073,
+        37.0071060006012,
+        34.56558099969698,
+        42.84943399943586,
+        33.47314499842469,
+        28.483252999649267,
+        33.45202099990274
+      ],
+      "regex_prepared_ms": [
+        56.07995799982746,
+        74.89515400084201,
+        45.71353800020006
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 27.444806,
+          "save_ms": 33.213648
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.472975,
+          "save_ms": 24.422339
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.459504,
+          "save_ms": 31.010368
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.427222,
+          "save_ms": 29.194468
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 7.187097,
+          "save_ms": 27.785414
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 6.772305,
+          "save_ms": 26.073776
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.41148,
+          "save_ms": 97.154924
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 7.472959,
+          "save_ms": 34.866709
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.82865,
+          "save_ms": 41.35076
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.741015,
+          "save_ms": 29.431885
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 10.21627,
+          "save_ms": 30.750506
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.679117,
+          "save_ms": 43.706918
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "before",
+      "split_get_ms": [
+        38.94991200104414,
+        35.23191200110887,
+        32.73040400017635,
+        31.387233000714332,
+        28.5486500015395,
+        34.37164500064682,
+        32.34235899981286
+      ],
+      "regex_prepared_ms": [
+        51.14480000156618,
+        53.334124999310006,
+        43.181037000977085
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 40.125432,
+          "save_ms": 37.625777
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.879881,
+          "save_ms": 33.247604
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 13.68086,
+          "save_ms": 31.747185
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 7.865801,
+          "save_ms": 25.559865
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 15.623935,
+          "save_ms": 26.093049
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 17.963423,
+          "save_ms": 75.508234
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.940954,
+          "save_ms": 137.516766
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 12.610723,
+          "save_ms": 36.802702
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.977823,
+          "save_ms": 29.718104
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 8.490276,
+          "save_ms": 31.856668
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 9.6379,
+          "save_ms": 43.173182
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.227794,
+          "save_ms": 53.409573
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "owner",
+      "split_get_ms": [
+        41.40882100000454,
+        30.446501999904285,
+        30.253659999289084,
+        31.824088000576012,
+        34.955596000145306,
+        31.438451000212808,
+        26.290220999726444
+      ],
+      "regex_prepared_ms": [
+        57.617439999376074,
+        44.368086999384104,
+        47.500910000962904
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.120191,
+          "save_ms": 24.238227
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.688391,
+          "save_ms": 33.087526
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 10.3004,
+          "save_ms": 26.626727
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 10.698904,
+          "save_ms": 30.471373
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 12.399065,
+          "save_ms": 23.833543
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.339785,
+          "save_ms": 22.550433
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.345958,
+          "save_ms": 98.501807
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.884547,
+          "save_ms": 40.17308
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.115723,
+          "save_ms": 40.752974
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 9.735432,
+          "save_ms": 38.727461
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 7.252493,
+          "save_ms": 29.666211
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.966475,
+          "save_ms": 29.202108
+        }
+      ]
+    },
+    {
+      "pair": 2,
+      "mode": "after",
+      "split_get_ms": [
+        31.903212999168318,
+        28.40229499997804,
+        25.490794998404454,
+        25.226558000213117,
+        23.46271200076444,
+        21.200389001023723,
+        22.3864939998748
+      ],
+      "regex_prepared_ms": [
+        53.81336599930364,
+        49.71939200004272,
+        53.93458399885276
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 33.093072,
+          "save_ms": 42.848905
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.034119,
+          "save_ms": 44.989612
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.847069,
+          "save_ms": 33.441548
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 12.994057,
+          "save_ms": 38.315631
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 11.628893,
+          "save_ms": 31.861816
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 9.301435,
+          "save_ms": 28.177272
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 19.935755,
+          "save_ms": 149.947182
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 10.193905,
+          "save_ms": 33.29128
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.681789,
+          "save_ms": 30.248759
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.920767,
+          "save_ms": 34.309689
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.624228,
+          "save_ms": 38.781016
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.339816,
+          "save_ms": 40.917798
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "mode": "after",
+      "split_get_ms": [
+        19.700766999449115,
+        24.584067999967374,
+        26.272282999343588,
+        24.405083000601735,
+        23.592507999637746,
+        30.245181998907356,
+        28.10619400042924
+      ],
+      "regex_prepared_ms": [
+        61.889487000371446,
+        49.98281600092014,
+        43.49657999955525
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 30.404757,
+          "save_ms": 34.859278
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.052348,
+          "save_ms": 34.579226
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 11.393982,
+          "save_ms": 26.97524
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.605468,
+          "save_ms": 31.696203
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 10.612949,
+          "save_ms": 38.502357
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 10.357747,
+          "save_ms": 27.641497
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.828117,
+          "save_ms": 136.551272
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 17.905195,
+          "save_ms": 52.142938
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.711634,
+          "save_ms": 38.642596
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 10.145701,
+          "save_ms": 46.482874
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 10.494607,
+          "save_ms": 42.789257
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.933387,
+          "save_ms": 46.276006
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "mode": "owner",
+      "split_get_ms": [
+        40.354115999434725,
+        31.182071999865002,
+        38.185238001460675,
+        41.41090700068162,
+        38.76262000085262,
+        47.13411599914252,
+        33.05183100019349
+      ],
+      "regex_prepared_ms": [
+        76.26604700089956,
+        52.79484200036677,
+        62.26808499923209
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 26.16517,
+          "save_ms": 29.563337
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.363949,
+          "save_ms": 33.714246
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.630259,
+          "save_ms": 36.252274
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 10.109762,
+          "save_ms": 47.44684
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.813337,
+          "save_ms": 27.420608
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.801889,
+          "save_ms": 25.227788
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.16603,
+          "save_ms": 141.68055
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.627917,
+          "save_ms": 69.246986
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 10.174675,
+          "save_ms": 53.739975
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 6.925908,
+          "save_ms": 46.177483
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 12.51106,
+          "save_ms": 56.481621
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 15.284758,
+          "save_ms": 36.503817
+        }
+      ]
+    },
+    {
+      "pair": 3,
+      "mode": "before",
+      "split_get_ms": [
+        39.93043300033605,
+        76.7064580013539,
+        79.00831199913227,
+        53.55351700018218,
+        67.18957300108741,
+        34.5690909998666,
+        77.77743400038162
+      ],
+      "regex_prepared_ms": [
+        52.32351499944343,
+        52.42259400074545,
+        52.85858199931681
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.950034,
+          "save_ms": 28.149253
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.041981,
+          "save_ms": 27.984613
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 10.766167,
+          "save_ms": 31.977132
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.115827,
+          "save_ms": 24.214629
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 7.807332,
+          "save_ms": 22.810152
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.898895,
+          "save_ms": 27.196876
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.793051,
+          "save_ms": 96.409949
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.53723,
+          "save_ms": 35.42571
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.963753,
+          "save_ms": 37.601949
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.114529,
+          "save_ms": 32.390037
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 7.025791,
+          "save_ms": 32.640403
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 6.767034,
+          "save_ms": 122.59716
+        }
+      ]
+    },
+    {
+      "pair": 4,
+      "mode": "before",
+      "split_get_ms": [
+        33.1011779999244,
+        32.52217199951701,
+        31.77622700059146,
+        32.40836000077252,
+        35.10372599885159,
+        39.00915300073393,
+        35.891107998395455
+      ],
+      "regex_prepared_ms": [
+        49.581635001231916,
+        48.78015099893673,
+        48.83233700093115
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 26.662536,
+          "save_ms": 25.423044
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.490279,
+          "save_ms": 28.276014
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.701217,
+          "save_ms": 26.319661
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.272774,
+          "save_ms": 27.254312
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 10.040155,
+          "save_ms": 33.289416
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.598776,
+          "save_ms": 25.072225
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 6.955832,
+          "save_ms": 96.765242
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.606054,
+          "save_ms": 34.247249
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 13.031496,
+          "save_ms": 35.971229
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 10.376618,
+          "save_ms": 45.232769
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 11.528373,
+          "save_ms": 35.430011
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.262243,
+          "save_ms": 32.270799
+        }
+      ]
+    },
+    {
+      "pair": 4,
+      "mode": "owner",
+      "split_get_ms": [
+        30.41069999926549,
+        34.94474900071509,
+        32.88520400019479,
+        34.67186300076719,
+        36.516319998554536,
+        30.49350200126355,
+        32.5674199993955
+      ],
+      "regex_prepared_ms": [
+        52.49019500115537,
+        49.21462499987683,
+        55.37718100094935
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 24.263951,
+          "save_ms": 27.480993
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 11.135402,
+          "save_ms": 26.896663
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.928278,
+          "save_ms": 28.720252
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.001489,
+          "save_ms": 31.763013
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.049901,
+          "save_ms": 27.41282
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 9.80078,
+          "save_ms": 30.050769
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 12.194275,
+          "save_ms": 100.478866
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.408493,
+          "save_ms": 32.629112
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 9.756678,
+          "save_ms": 35.702303
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 6.897239,
+          "save_ms": 39.235066
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.954051,
+          "save_ms": 38.015226
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.962002,
+          "save_ms": 39.758859
+        }
+      ]
+    },
+    {
+      "pair": 4,
+      "mode": "after",
+      "split_get_ms": [
+        24.422417998721357,
+        29.249044000607682,
+        26.216853999358136,
+        23.314465999646927,
+        28.126364999479847,
+        26.93849100069201,
+        25.4970099995262
+      ],
+      "regex_prepared_ms": [
+        49.34376299934229,
+        51.69060099979106,
+        54.640213998936815
+      ],
+      "ui": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 34.993932,
+          "save_ms": 26.698632
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 6.535191,
+          "save_ms": 21.0359
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.118298,
+          "save_ms": 21.915462
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.971596,
+          "save_ms": 32.524615
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 6.241107,
+          "save_ms": 25.271507
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 6.804243,
+          "save_ms": 26.987897
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.277079,
+          "save_ms": 122.258553
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 6.490952,
+          "save_ms": 27.775557
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.896232,
+          "save_ms": 34.452727
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.310699,
+          "save_ms": 33.618079
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 9.503212,
+          "save_ms": 38.819886
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.665963,
+          "save_ms": 44.52864
+        }
+      ]
+    }
+  ]
+}

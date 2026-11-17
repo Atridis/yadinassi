@@ -32,9 +32,28 @@ class DirectHostValuesTests(unittest.TestCase):
     def test_host_array_indexes_keep_canonical_bounds_and_type_checks(self):
         vm=Interpreter();vm.execute('A=StrSplit("a,b",",");')
         for index in ('-1','0.5','True','2'):
-            for expression in (f'A[{index}]',f'A[{index}]="bad";'):
+            for expression in (f'A[{index}]',f'A.Get({index})',f'A.Получить({index})',f'A[{index}]="bad";'):
                 with self.subTest(expression=expression),self.assertRaises(BSLRuntimeError):vm.execute(expression)
         self.assertEqual(vm.variables['a'].items,['a','b'])
+
+    def test_get_aliases_preserve_nested_identity_and_live_mutations(self):
+        nested=BSLArray();nested.add(Decimal(3))
+        array=BSLArray();array.add(nested)
+        for value in (array,BSLFixedArray(array)):
+            vm=Interpreter();vm.variables['a']=value
+            vm.execute('B=A.Get(0);C=A.ПОЛУЧИТЬ(0);Try B[0]=9;Except Readonly=True;EndTry;R=C.Get(0);')
+            self.assertIs(vm.variables['b'],value.items[0]);self.assertIs(vm.variables['c'],value.items[0])
+            if type(value) is BSLArray:
+                self.assertIs(value.items[0],nested);self.assertEqual(vm.variables['r'],9)
+                self.assertNotIn('readonly',vm.variables)
+            else:
+                self.assertTrue(vm.variables['readonly']);self.assertEqual(vm.variables['r'],3)
+
+    def test_get_checks_runtime_after_argument_evaluation(self):
+        vm=Interpreter();array=BSLArray();array.add(Decimal(7));vm.variables['a']=array
+        vm.register_function('Close',lambda:vm.close() or Decimal(0))
+        with self.assertRaises(BoundaryViolation):vm.execute('A.Get(Close());')
+        self.assertEqual(array.items,[Decimal(7)])
 
     def test_regex_groups_are_independent_arrays_and_readonly_values(self):
         vm=Interpreter()

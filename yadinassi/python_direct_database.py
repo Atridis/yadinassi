@@ -15,7 +15,7 @@ from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure
 from .values import HostFunction, BSLArray, BSLFixedArray
 from .regex_functions import BSLRegexResult, BSLRegexGroup
-from .python_direct_names import NAMES as SYSTEM_NAMES, VALUES as SYSTEM_VALUES, ITERABLES
+from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 
@@ -24,7 +24,7 @@ NAMES=('metadata','метаданные','catalogs','справочники','do
 class CatalogBoundary:
     def _catalog_owner(self, value):
         self._check()
-        if any(value is item for item in SYSTEM_VALUES):return
+        if id(value) in SYSTEM_VALUE_IDS:return
         root=self.vm._catalogs
         kind=type(value)
         if value is DOCUMENT_WRITE_MODES:return
@@ -113,7 +113,9 @@ class CatalogBoundary:
 
     def resolve_member(self,value,name):
         self._catalog_owner(value)
-        if name=='__getitem__':
+        if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
+            function=value.get
+        elif name=='__getitem__':
             function=value.get if type(value) in (BSLArray, BSLFixedArray) else lambda index:value.get_index(index)
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray) else lambda index,new:value.set_index(index,new)

@@ -23,4 +23,6 @@ NAMES = MappingProxyType({
     for alias in aliases
 })
 VALUES = tuple(NAMES.values())
+# VALUES retains these immutable singletons, so their identities cannot be reused.
+VALUE_IDS = frozenset(map(id, VALUES))
 ITERABLES = (SEARCH_DIRECTIONS, SORT_DIRECTIONS, ROUND_MODES)

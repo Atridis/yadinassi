@@ -542,3 +542,12 @@ boundary are rebound without module initialization or statements. Cold unchanged
 regex median **843.19→485.87ms** in five alternating pairs; 118 normal/118 optimized
 regressions pass, independent review 66 optimized. Server/NoContext gaps remain.
 [Mechanism, raw samples and reproducer](../experiments/direct_routine_compile/README.md).
+
+### Audit9 host access (2026-11-17)
+
+Canonical singleton identity lookup and direct BSLArray/FixedArray Get method
+selection remove repeated scan/method wrappers; current boundary checks remain.
+No array copy, Find change or relaxed readonly/index/owner rules. Representative
+2000-token StrSplit/Get processing: **35.10→25.02ms**, five alternating rounds;
+regex/SQLite Save show no stable gain. 45 tests pass normal and optimized,
+independent review 40 optimized. [Raw, controls and limits](../experiments/direct_host_access_audit9/README.md).
