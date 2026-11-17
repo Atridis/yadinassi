@@ -105,3 +105,12 @@ class BSLEnumerations(BSLObject):
         if not sep or family is None: return None
         manager=self.get_index(item)
         return manager._value_type if family=='ref' else manager._manager_type
+
+
+# Definition-time method identities for the optional exact source enum bridge.
+_DIRECT_ENUM_ABI=tuple((cls,tuple((name,getattr(cls,name)) for name in (
+    'get_member','get_method','get_index','set_member','set_index','__iter__',
+    'count','get','index_of','find','contains','is_empty','_snapshot','_ordered','__eq__')
+    if hasattr(cls,name))) for cls in (
+    BSLEnumerations,BSLEnumManager,BSLEnumReference,BSLEnumType,EnumMetadata,EnumValueMetadata,
+    _DeclaredMetadataCollection))
