@@ -26,6 +26,8 @@ CONSTRUCTORS = {
         (('jsonreader','чтениеjson'),BSLJSONReader),
         (('jsonwriter','записьjson'),BSLJSONWriter),
         (('jsonwritersettings','параметрызаписиjson'),BSLJSONWriterSettings),
+        (('collectionindexes','индексыколлекции'),None),
+        (('collectionindex','индексколлекции'),None),
         (('searchdirection','направлениепоиска'),None),
         (('resultofsearchbyregularexpression','результатпоискапорегулярномувыражению'),None),
         (('resultofsearchbyregularexpressiongroup','группарезультатапоискапорегулярномувыражению'),None),

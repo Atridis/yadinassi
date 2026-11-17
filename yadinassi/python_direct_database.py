@@ -23,7 +23,7 @@ from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
-from .value_tables import (BSLValueTable, BSLValueTableRow,
+from .value_tables import (BSLValueTable, BSLValueTableRow, BSLCollectionIndex, BSLCollectionIndexes,
                            BSLValueTableColumn, BSLValueTableColumnCollection)
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
@@ -55,10 +55,14 @@ class CatalogBoundary:
             if enums is not None and enum_type.snapshot is enums.metadata:return
             owner=None
         elif kind is BSLQuery: owner=value._catalogs
-        elif kind in (BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection):
+        elif kind in (BSLValueTableRow, BSLValueTableColumn, BSLValueTableColumnCollection,
+                      BSLCollectionIndex, BSLCollectionIndexes):
             # Detached table data has no database authority. Its public protocol
             # still enforces row/column ownership, deletion and slice restrictions.
-            if type(value.table) is BSLValueTable:return
+            if type(value.table) is BSLValueTable:
+                if kind in (BSLCollectionIndex, BSLCollectionIndexes) and value.table._bounded_slice_read:
+                    raise BoundaryViolation('bounded slice index receiver is not connected')
+                return
             raise BoundaryViolation('noncanonical value table owner')
         elif kind in (BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
                       BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
@@ -146,7 +150,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray) and not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:
