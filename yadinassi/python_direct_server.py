@@ -14,6 +14,13 @@ from .experimental_naked_live_state import _ForwardReference
 
 def transfer(value):
     """Copy the bounded direct Array/Structure envelope, preserving no aliases."""
+    # A packet of immutable scalars needs a fresh envelope, not a recursive copier.
+    # Include the envelope itself in the same 10,000-node budget as the slow path.
+    if type(value) is list and len(value)<10000:
+        for item in value:
+            if item is not None and item is not NULL and type(item) not in (str,bool,Decimal):
+                break
+        else:return value.copy()
     from .experimental_naked_structure import _DirectStructure
     from .runtime import Interpreter
     from .values import BSLArray
