@@ -607,13 +607,17 @@ class SourceApplication:
                                                self._session_owner, require_value=False)
 
     def close(self):
-        if self.constant_store is not None:
-            self.constant_store.close()
-        self.temporary_storage.close()
-        self.session_parameters.close()
-        self.reusable_values.close()
-        self.interpreter.close()
-        self.state = 'closed'
+        try:
+            if self.constant_store is not None:
+                self.constant_store.close()
+            self.temporary_storage.close()
+            self.session_parameters.close()
+            self.reusable_values.close()
+            self.interpreter.close()
+            self.state = 'closed'
+        finally:
+            from .python_direct_source_xdto_local import release_application
+            release_application(self)
 
 
 # Definition-time initializer identity for direct session-store admission.

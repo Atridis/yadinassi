@@ -215,6 +215,8 @@ def _kind(factory,kind):
 
 
 def get(boundary,value,name):
+    from . import python_direct_source_xdto_local as local
+    if local.registered(value):return local.get(boundary,value,name)
     _,factory=_owner(boundary)
     if value is factory:
         key=name.casefold()
@@ -233,12 +235,17 @@ def get(boundary,value,name):
 
 
 def resolve(boundary,value,name,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_local as local
+    if local.registered(value):return local.resolve(boundary,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
     function=get(boundary,value,name)
     if type(function) is not HostFunction:raise ValueError('source XDTO member is not callable')
     return captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
 
 
 def captured(boundary,function,*,require_value=False,argument_count=None,allow_references=False):
+    from . import python_direct_source_xdto_local as local
+    bound=local.captured(boundary,function,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
+    if bound is not None:return bound
     if type(function) is not HostFunction or type(function.function) is not MethodType:return None
     callback=function.function;factory=callback.__self__
     if type(factory) is not _FACTORY:return None

@@ -26,6 +26,7 @@ from . import python_direct_source_templates as templates
 from . import python_direct_source_resources as resources
 from . import python_direct_source_value_storage as stored_values
 from . import python_direct_source_xdto as xdto
+from . import python_direct_source_xdto_local as local_xdto
 
 
 def check_owner(owner):
@@ -138,11 +139,11 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     names.update(name.casefold() for n in program if type(n) is ast.Var for name in n.names)
     from .configuration_source_runtime import _SourceInterpreter
     from .source_manager_modules import MANAGER_NAMES
-    shadowable=tuple(sorted(set(MANAGER_NAMES)-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
+    shadowable=tuple(sorted((set(MANAGER_NAMES)|set(local_xdto.CONSTRUCTOR_NAMES))-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
     plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
         parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
-        constructors=tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
+        constructors=(local_xdto.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
         _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
         _return_last_expression=not exports,_source_routine_scopes=True,
         _source_callable_externals=_callable_externals,_source_shadowable_externals=shadowable,
@@ -292,6 +293,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return _ForwardReference(canonical)
     def resolve_service(self,name,*args,**kwargs):
         self._check();key=name.casefold()
+        if key.startswith('new:') and key[4:] in local_xdto.CONSTRUCTOR_NAMES:
+            return local_xdto.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in stored_values.CONSTRUCTOR_NAMES:
             return stored_values.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in resources.CONSTRUCTOR_NAMES:

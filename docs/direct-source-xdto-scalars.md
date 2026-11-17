@@ -7,8 +7,9 @@ boolean, decimal, integer, int or long. A created scalar DataValue exposes only
 readonly `Value` / `Значение`. Existing scalar conversion/resource limits apply.
 
 This is not generic object dispatch. Object creation/properties, Packages,
-XML/JSON methods, date/binary scalar creation and standalone `New XDTOFactory`
-are not admitted. Forms/object-handler/NoContext subclasses do not gain this
+XML/JSON methods and date/binary scalar creation are not admitted.
+Source-created empty `New XDTOFactory` instances use the separate bounded
+[local factory capability](direct-source-local-xdto.md), not this global owner seal. Forms/object-handler/NoContext subclasses do not gain this
 source capability. A foreign factory, descriptor or value is not reusable in a
 second application. Saved method calls revalidate ownership before argument
 execution and again at invocation.

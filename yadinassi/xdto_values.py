@@ -346,3 +346,6 @@ _DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().
     if name.startswith('MAX_') and type(value) is int and value>0)
 
 _DIRECT_SOURCE_XDTO_SCALAR_REGEX=(re,re.fullmatch)
+
+# Definition-time primitive namespace for source-created empty factories.
+_DIRECT_SOURCE_XDTO_NAMESPACE=XS

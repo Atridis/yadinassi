@@ -251,3 +251,6 @@ _DIRECT_SOURCE_XDTO_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
              'BSLXMLReader','BSLXMLReaderSettings')) for base in value.__mro__))
 _DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
     if name.startswith('MAX_') and type(value) is int and value>0)
+
+# Definition-time primitive namespace for source-created empty factories.
+_DIRECT_SOURCE_XDTO_NAMESPACE=XS
