@@ -6,12 +6,15 @@ from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .values import HostFunction
 from .type_descriptions import BSLTypeDescription
 from .value_tables import BSLValueTable
+from .value_lists import BSLValueList
 from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers
 from . import regex_functions, strings
 from .experimental_naked_boundaries import BoundaryViolation
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('valuelist','списокзначений'),BSLValueList),
+        (('valuelistitem','элементсписказначений'),None),
         (('valuetable','таблицазначений'),BSLValueTable),
         (('typedescription','описаниетипов'),BSLTypeDescription),
         (('numberqualifiers','квалификаторычисла'),BSLNumberQualifiers),
@@ -46,7 +49,7 @@ class ServicesBoundary:
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
             bound=super().resolve_callable(factory)
-            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
+            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueList,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound
                 def guarded(*values):
                     self._check()

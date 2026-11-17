@@ -19,6 +19,7 @@ from .file_io import BSLFile, BSLBinaryData
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLStream
 from .maps import BSLMap
+from .value_lists import BSLValueList, BSLValueListItem
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
@@ -64,7 +65,12 @@ class CatalogBoundary:
                     raise BoundaryViolation('bounded slice index receiver is not connected')
                 return
             raise BoundaryViolation('noncanonical value table owner')
-        elif kind in (BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
+        elif kind is BSLValueListItem:
+            owner=value._owner_ref()
+            if owner is not None and type(owner) is not BSLValueList:
+                raise BoundaryViolation('noncanonical value list owner')
+            return
+        elif kind in (BSLValueList, BSLValueTable, BSLTypeDescription, BSLNumberQualifiers,
                       BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers):
             return
         elif kind in (BSLQueryResult, BSLQueryResultSelection, BSLStructure, BSLFixedStructure,
@@ -141,6 +147,46 @@ class CatalogBoundary:
             finally:self._check()
         return write
 
+    def reference_member(self,value,name):
+        if type(value) is not BSLValueListItem:return super().reference_member(value,name)
+        self._catalog_owner(value)
+        value.reference_get_member(name)
+        def read():
+            self._catalog_owner(value)
+            try:return value.reference_get_member(name)
+            finally:self._check()
+        def write(new_value):
+            self._catalog_owner(value)
+            try:value.reference_set_member(name,new_value)
+            finally:self._check()
+        from .experimental_naked_live_state import _ForwardReference
+        from .values import Reference
+        return _ForwardReference(Reference(read,write))
+
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) not in (BSLValueList,BSLValueListItem):
+            return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        self._catalog_owner(value)
+        function=value.get_method(name)
+        if type(function) is not HostFunction:
+            raise BoundaryViolation('value list method requires canonical HostFunction')
+        if require_value and not function.returns_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        defaults=()
+        if type(value) is BSLValueList:
+            if name.casefold() in ('add','добавить'):defaults=(None,'',False)
+            elif name.casefold() in ('insert','вставить'):defaults=(None,None,'',False)
+        optional=range(1 if name.casefold() in ('insert','вставить') else 0,len(defaults))
+        if any(index not in optional for index in omitted):
+            raise TypeError('Пропуск обязательного аргумента метода списка значений')
+        def invoke(*arguments):
+            self._catalog_owner(value)
+            values=list(arguments) if omitted else arguments
+            for index in omitted:values[index]=defaults[index]
+            try:return function(*values)
+            finally:self._check()
+        return invoke
+
     def resolve_member(self,value,name):
         self._catalog_owner(value)
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
@@ -150,7 +196,7 @@ class CatalogBoundary:
         elif name=='__setitem__':
             function=value.set if type(value) in (BSLArray, BSLFixedArray, BSLMap) else lambda index,new:value.set_index(index,new)
         elif name=='__iter__':
-            if type(value) not in (BSLArray, BSLFixedArray, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
+            if type(value) not in (BSLArray, BSLFixedArray, BSLValueList, BSLCollectionIndex, BSLCollectionIndexes) and not any(value is item for item in ITERABLES):
                 raise BoundaryViolation('direct database iterator not connected')
             function=lambda:iter(value)
         else:

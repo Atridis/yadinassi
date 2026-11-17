@@ -608,6 +608,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         if kind is ast.Call:
             callee=ungroup(node.callee)
             if type(callee) is ast.Attribute:
+                omitted=tuple(i for i,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
+                receiver_root=ungroup(callee.object)
+                while type(receiver_root) is ast.Attribute:receiver_root=ungroup(receiver_root.object)
+                if services and omitted and type(receiver_root) is not ast.Name:
+                    return '_host_omission_error()'
                 obj=expression(callee.object);method=_ALIASES.get(callee.name.casefold(),callee.name.casefold())
                 args=[expression(arg) for arg in node.arguments]
                 if id(node) in array_receivers:
@@ -632,7 +637,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     host_args=list(args)
                     if services and method=='property' and len(args)>1 and byref:host_args[1]='_canonical_reference('+reference(node.arguments[1])+')'
                     host=(source_member_call() if _source_routine_scopes else
-                        ('_context.resolve_member('+guarded+', '+repr(callee.name)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')')
+                        ('_context.resolve_member_call('+guarded+', '+repr(callee.name)+', require_value='+repr(require_value)+', omitted='+repr(omitted)+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')')
                     if allowed is not None:
                         failure='_native_method_missing('+guarded+', '+repr(callee.name)+')'
                         return '('+direct+' if id(type(('+guarded+' := '+original_obj+'))) in '+literal(tuple(map(id,allowed)))+' else ('+failure+' if id(type('+guarded+')) in _NATIVE_COLLECTION_IDS else '+host+'))'
@@ -647,7 +652,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     return route('('+', '.join([obj,*args,'_invalid_native_arity('+repr(message)+')'])+')[-1]')
                 if services and method not in ('add','clear','find','count','ubound','get','insert','set','delete','property'):
                     host=(source_member_call() if _source_routine_scopes else
-                        '_context.resolve_member('+guarded+', '+repr(callee.name)+')('+', '.join(args)+')')
+                        '_context.resolve_member_call('+guarded+', '+repr(callee.name)+', require_value='+repr(require_value)+', omitted='+repr(omitted)+')('+', '.join(args)+')')
                     return '(_native_method_missing('+guarded+', '+repr(callee.name)+') if id(type(('+guarded+' := '+original_obj+'))) in _NATIVE_COLLECTION_IDS else '+host+')'
                 if method=='find' and 'typed_find' in repairs:return route('_typed_find('+obj+', '+', '.join(args)+')')
                 if method in ('add','clear','find'):

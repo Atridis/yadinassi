@@ -143,6 +143,10 @@ class BoundaryContext:
             finally:self._check()
         return write
 
+    def resolve_member_call(self, value, name, *, require_value=False, omitted=()):
+        """Call-site facts for receivers with a stricter public call protocol."""
+        return self.resolve_member(value, name)
+
     def reference_member(self, value, name):
         """Bind a host output slot with one eager read before entering callee.
 
