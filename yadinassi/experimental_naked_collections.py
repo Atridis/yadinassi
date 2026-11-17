@@ -13,7 +13,7 @@ from .syntax import ast
 from .syntax.parser import parse
 from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING
 
-from .values import Reference as _CanonicalReference
+from .values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
 
 def _canonical_reference(value):
     return _CanonicalReference(value.get,value.set)
@@ -129,6 +129,9 @@ def _array_insert_shape(obj,key,value=None):
     else:obj.extend([None]*(index-len(obj))+[value])
 
 def _array_constructor_bounds(*sizes):
+    if len(sizes)==1 and type(sizes[0]) is _CanonicalFixedArray:
+        from .experimental_naked_resources import bounded_array
+        return bounded_array(sizes[0])
     if not sizes:return []
     for size in sizes:
         if type(size) is not Decimal:raise TypeError('Ожидается число')
@@ -654,7 +657,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     return '_host_omission_error()'
                 obj=expression(callee.object);method=_ALIASES.get(callee.name.casefold(),callee.name.casefold())
                 args=[expression(arg) for arg in node.arguments]
-                if id(node) in array_receivers:
+                if id(node) in array_receivers and not omitted:
                     if method=='add':return '('+obj+').append('+(', '.join(args) if args else 'None')+')'
                     if method=='clear':return '('+obj+').clear()'
                     if method in ('count','ubound'):
@@ -672,6 +675,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                         ', require_value='+repr(require_value)+', argument_count='+str(len(node.arguments))+
                         ', allow_references=True)',node)
                 def route(direct):
+                    if services and omitted:direct='_host_omission_error()'
                     if guarded is None:return direct
                     host_args=list(args)
                     if services and method=='property' and len(args)>1 and byref:host_args[1]='_canonical_reference('+reference(node.arguments[1])+')'

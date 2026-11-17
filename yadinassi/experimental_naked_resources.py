@@ -39,6 +39,8 @@ def bounded_array(*dimensions, max_slots=None, max_dimensions=None):
         dims=values._MAX_ARRAY_DIMENSIONS if max_dimensions is None else max_dimensions
         if slots<0 or dims<1:raise ValueError('Массив: превышен предел ресурсов Yadinassi')
         return []
+    if len(dimensions)==1 and type(dimensions[0]) is values.BSLFixedArray:
+        return _copy_fixed_array(dimensions[0],max_slots,max_dimensions)
     widths=array_widths(dimensions,max_slots=max_slots,max_dimensions=max_dimensions)
     def create(depth):
         if depth==len(widths)-1:return [None]*widths[depth]
@@ -59,3 +61,33 @@ def bounded_insert(array,index,value=None,*,max_growth=None):
     else:
         # Prepare the full tail before publishing any mutation, as the VM does.
         tail=[None]*(offset-len(array));tail.append(value);array.extend(tail)
+
+
+def _copy_fixed_array(source,max_slots,max_dimensions):
+    """Preflight exact fixed snapshots before allocating native mutable arrays."""
+    limit=values._MAX_ARRAY_CONSTRUCTION if max_slots is None else max_slots
+    depth_limit=values._MAX_ARRAY_DIMENSIONS if max_dimensions is None else max_dimensions
+    active=set();cost=0
+    def check(array,depth):
+        nonlocal cost
+        if depth>depth_limit:raise ValueError('Массив: превышен предел измерений Yadinassi')
+        items=object.__getattribute__(array,'items')
+        if type(items) is not tuple:raise TypeError('Некорректный фиксированный массив')
+        identity=id(array)
+        if identity in active:raise ValueError('Циклический фиксированный массив не поддерживается')
+        cost+=len(items)+(depth>1)
+        if cost>limit:raise ValueError('Массив: превышен предел ресурсов Yadinassi')
+        active.add(identity)
+        try:
+            for item in items:
+                if type(item) is values.BSLFixedArray:check(item,depth+1)
+                elif any(base is values.BSLFixedArray for base in type.__getattribute__(type(item),'__mro__')):
+                    raise TypeError('Подкласс фиксированного массива не поддерживается')
+        finally:active.remove(identity)
+    try:check(source,1)
+    finally:del check
+    def copy(array):
+        return [copy(item) if type(item) is values.BSLFixedArray else item
+                for item in object.__getattribute__(array,'items')]
+    try:return copy(source)
+    finally:del copy
