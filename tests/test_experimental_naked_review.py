@@ -70,10 +70,10 @@ class NakedReviewRegressions(unittest.TestCase):
             prepare('r=obj.Value;',repairs=('service_boundaries',)).run({'obj':obj},context=BoundaryContext())
         source='m=New Map;m.Insert("a",1);For Each p In m Do p.Value=9;EndDo;'
         with self.assertRaises(BoundaryViolation):prepare(source,repairs=('service_boundaries',)).run(context=BoundaryContext())
-    def test_error_repair_rejects_missing_position_support_before_execution(self):
+    def test_error_repair_rejects_missing_line_support_before_execution(self):
         from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
         with patch('yadinassi.experimental_naked_errors.source_mapping_supported',return_value=False):
-            with self.assertRaisesRegex(UnsupportedNakedSyntax,'3.11'):
+            with self.assertRaisesRegex(UnsupportedNakedSyntax,'3.10'):
                 prepare('result=1/0;',repairs=('error_boundaries',))
             self.assertEqual(prepare('result=7;').run()['result'],7)
     def test_service_only_and_byref_registered_routines(self):

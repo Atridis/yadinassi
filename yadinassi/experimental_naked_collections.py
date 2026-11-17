@@ -267,7 +267,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     symbols={};constants=[];serial=0;lines=[];loops=[]
     from .experimental_naked_errors import SourceMap, source_mapping_supported
     if 'error_boundaries' in repairs and not source_mapping_supported():
-        raise UnsupportedNakedSyntax('error_boundaries requires Python code position metadata (3.11+)')
+        raise UnsupportedNakedSyntax('error_boundaries requires Python code line metadata (3.10+)')
     source_map=SourceMap() if 'error_boundaries' in repairs else None
     byref='byref_routines' in repairs
     live='live_module_state' in repairs

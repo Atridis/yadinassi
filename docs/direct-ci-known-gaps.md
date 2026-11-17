@@ -312,3 +312,53 @@ Independent review: no blockers, 38 combined `-O` tests PASS. Regressions cover
 read-only binding/deferred rejection, live writable properties, self-form writes,
 foreign/private/missing members, retired controls/collections and inactive/closed
 families. Original replay and source-level byref writes forbid legacy dispatch.
+
+## Python 3.10: line-only direct diagnostics
+
+CI on `944c6274`: Test/build run `44060348171`, Python 3.10 job
+`133960636116` ran 32 regex tests with 9 errors, all initially blocked by
+`error_boundaries requires Python code position metadata (3.11+)`. Performance
+run `44060348045` succeeded; the browser job `133960729283` succeeded. Native
+managed-form job `133960365934` in run `44060348318` succeeded and logged
+`Managed form measurement accepted`. Linux light job `133960729266` failed;
+its large log could not be retrieved through the connector (Transport closed),
+so no new aggregate failure count is asserted here.
+
+The chosen shared cause was the unconditional requirement for column metadata,
+not the regex implementation. On real CPython 3.10.22, even the default Array
+smoke failed before executing any BSL. SourceMap already rewrites generated AST
+line numbers to the original BSL source. Python 3.10's line metadata is therefore
+sufficient for execution and line-level diagnostics. Admission now requires
+`co_lines` (3.10+); error conversion uses traceback line and column **1** when
+`co_positions` is unavailable. Python 3.11+ keeps its existing exact-position
+path. This is an explicit diagnostic precision difference, not VM fallback.
+No execution wrapper, hot-loop check, exception-type widening, source/schema/
+transaction change, CI allowance or backend selector was introduced.
+
+Validation used actual CPython 3.10.22 and 3.12.14, not a mocked version:
+
+* On **each** version, the same 84 focused tests passed normal and `-O`: mapping
+  unit tests, portable diagnostics, permission-error control, direct default,
+  prepared API, SQLite database and forms. Another 13 neighboring review tests
+  passed normal and `-O` on each version. The missing-line-support test still
+  rejects before execution; only its required-version diagnostic was updated.
+* Independent review found that stale `3.11` assertion; it was fixed and the
+  reviewer independently passed all 13 tests under `-O` on both versions.
+  No remaining blockers. The older full error suite still has the previously
+  confirmed Array wording mismatch (`list index out of range` versus the Russian
+  checked-index message); it was reproduced on the unchanged 3.12 baseline.
+* Exact isolated comparator children on 3.10 now complete CatalogObject
+  (24 observations, 156 bytes) and managed form (40 records, 541 bytes). Their
+  output hashes exactly match the 3.12 results above. This is host output
+  equivalence, not a new native measurement on 3.10.
+* The unchanged 32-test Python 3.10 regex CI command now has **7 errors**, down
+  from 9. Remaining failures are real direct gaps: regex-result receivers,
+  optional argument holes, unsupported constructors and Chars/other system
+  names in routines. The native regex replay also fails on 3.12, independently
+  of line metadata. Neither the regex suite nor full CI is claimed green.
+
+The source-map precision tests retain exact columns on 3.11+ and assert the
+explicit column-1 contract on 3.10. Nested prepared errors, host-call errors,
+partial effects, catchable arithmetic errors and noncatchable authority failures
+are covered. More precise 3.10 columns would require additional bookkeeping;
+this change deliberately does not add it.

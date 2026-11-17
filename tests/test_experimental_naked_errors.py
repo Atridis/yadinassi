@@ -3,6 +3,7 @@ import unittest
 import os
 from unittest.mock import patch
 from decimal import Decimal
+from types import CodeType
 from yadinassi.syntax.parser import parse
 from yadinassi.errors import BSLRuntimeError
 from yadinassi.experimental_naked_errors import SourceMap,convert_error
@@ -21,7 +22,8 @@ class NakedErrorMappingTests(unittest.TestCase):
         except Exception as error:converted=convert_error(error,'original.bsl',source)
         self.assertIsInstance(converted,BSLRuntimeError)
         self.assertEqual(converted.message,'Деление на ноль')
-        self.assertEqual((converted.line,converted.column),(node.value.token.line,node.value.token.column))
+        self.assertEqual(converted.line,node.value.token.line)
+        self.assertEqual(converted.column,node.value.token.column if hasattr(CodeType,'co_positions') else 1)
         self.assertEqual(converted.source_line,source)
     def test_normalization_is_once_per_text_and_compile(self):
         import yadinassi.experimental_naked_errors as errors
@@ -53,9 +55,12 @@ class NakedErrorMappingTests(unittest.TestCase):
             mapping.enter(node);mapping.expression('(1 / 0)',node.value)
             mapping.line(row);mapping.leave()
         code=mapping.compile('x=1/0\ny=1/0\n','duplicate.bsl',0)
-        positions=set(code.co_positions())
-        for node in (first,second):
-            self.assertIn((1,1,node.value.token.column-1,node.value.token.column),positions)
+        if hasattr(code,'co_positions'):
+            positions=set(code.co_positions())
+            for node in (first,second):
+                self.assertIn((1,1,node.value.token.column-1,node.value.token.column),positions)
+        else:
+            self.assertEqual({line for _,_,line in code.co_lines() if line is not None},{1})
 
     def test_authority_and_control_failures_remain_outside_conversion(self):
         from yadinassi.experimental_naked_boundaries import BoundaryViolation
@@ -86,3 +91,44 @@ class NakedErrorIntegrationTests(unittest.TestCase):
             program=prepare('caught=False;Try Host();Except caught=True;EndTry;',repairs=('error_boundaries',))
             with self.assertRaises(PermissionError):program.run({'host':denied})
             self.assertIs(program.last_state['caught'],False)
+
+
+class DirectPortableDiagnosticsTests(unittest.TestCase):
+    def test_prepared_nested_error_preserves_bsl_line_and_effects(self):
+        from yadinassi import Interpreter
+        source='Function Fail()\n  x=1;\n  Return 1/0;\nEndFunction\nbefore=7; result=Fail();'
+        vm=Interpreter();plan=vm.prepare(source,'portable.bsl')
+        with patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
+            with self.assertRaises(BSLRuntimeError) as caught:vm.execute_prepared(plan)
+        error=caught.exception
+        self.assertEqual(error.line,3)
+        self.assertEqual(error.source_line,'  Return 1/0;')
+        self.assertEqual(error.column,11 if hasattr(CodeType,'co_positions') else 1)
+        self.assertEqual(error.message,'Деление на ноль')
+        self.assertEqual(vm.variables['before'],7)
+        self.assertNotIn('result',vm.variables)
+        self.assertEqual(vm.execution_backend_stats['fallback'],0)
+
+    def test_host_error_uses_bsl_call_line(self):
+        from yadinassi import Interpreter
+        vm=Interpreter()
+        def fail():raise ValueError('host failure')
+        vm.register_function('Fail',fail)
+        source='before=1;\n\nFail();'
+        with self.assertRaises(BSLRuntimeError) as caught:vm.execute(source,'host.bsl')
+        self.assertEqual(caught.exception.line,3)
+        self.assertEqual(caught.exception.source_line,'Fail();')
+        self.assertEqual(caught.exception.column,1)
+        self.assertEqual(vm.variables['before'],1)
+
+    def test_try_handles_runtime_error_without_masking_authority(self):
+        from yadinassi import Interpreter
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        vm=Interpreter()
+        vm.execute('caught=False; Try x=1/0; Except caught=True; EndTry;')
+        self.assertTrue(vm.variables['caught'])
+        def deny():raise BoundaryViolation('closed')
+        vm.register_function('Deny',deny)
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('caught=False; Try Deny(); Except caught=True; EndTry;')
+        self.assertFalse(vm.variables['caught'])

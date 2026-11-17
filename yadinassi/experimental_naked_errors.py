@@ -7,7 +7,7 @@ from .syntax import ast as bsl_ast
 
 
 def source_mapping_supported():
-    return hasattr(CodeType, "co_positions")
+    return hasattr(CodeType, "co_lines")
 
 
 def _normalized(text):
@@ -87,9 +87,13 @@ def convert_error(error,filename,source):
         if tb.tb_frame.f_code.co_filename==filename:chosen=tb
         tb=tb.tb_next
     if chosen is None:return error
-    positions=list(chosen.tb_frame.f_code.co_positions())
-    index=chosen.tb_lasti//2
-    line,_,column,_=positions[index] if index<len(positions) else (chosen.tb_lineno,None,0,None)
+    line,column=chosen.tb_lineno,0
+    # SourceMap already rewrites AST line numbers to BSL lines on Python 3.10.
+    # PEP 657 adds expression columns on 3.11+; their absence is diagnostic only.
+    if hasattr(chosen.tb_frame.f_code, 'co_positions'):
+        positions=list(chosen.tb_frame.f_code.co_positions())
+        index=chosen.tb_lasti//2
+        if index<len(positions):line,_,column,_=positions[index]
     line=line or chosen.tb_lineno;column=(column or 0)+1
     message=str(error) or type(error).__name__
     if isinstance(error,(ZeroDivisionError,DivisionByZero)):message='Деление на ноль'
