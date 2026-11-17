@@ -121,7 +121,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
             _,routines,constructors,calls=_source_facts(program)
             _admit_bindings(vm,routines,constructors,calls)
             plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=source_repairs,
-                constructors=constructor_names,external_names=external_names,_trusted_entry=True,_source_routine_scopes=profile is not None)
+                constructors=constructor_names,external_names=external_names,_trusted_entry=True,_dynamic_new=profile is None,_source_routine_scopes=profile is not None)
             # No AST, mutable Program, caller scope, references or authorization is retained.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             if len(text)<=EXECUTE_MAX_SOURCE:

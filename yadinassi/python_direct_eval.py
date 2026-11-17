@@ -79,7 +79,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             _admit_bindings(vm,routines,constructors,calls)
             plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=source_repairs,
                 constructors=constructor_names,external_names=external_names,
-                _trusted_entry=True,_return_last_expression=True,_source_routine_scopes=profile is not None,_require_last_expression=profile is not None)
+                _trusted_entry=True,_dynamic_new=profile is None,_return_last_expression=True,_source_routine_scopes=profile is not None,_require_last_expression=profile is not None)
             # Retain compilation only, never AST, mutable Program, bindings or authority.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EVAL_MAX_SOURCE):

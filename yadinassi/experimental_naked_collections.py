@@ -252,9 +252,11 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=()):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False):
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
+    if type(_dynamic_new) is not bool:raise TypeError('dynamic construction opt-in requires Boolean')
+    if _dynamic_new and not _trusted_entry:raise ValueError('dynamic construction requires trusted direct entry')
     if not _trusted_entry:_enabled()
     if isinstance(repairs,str):repairs=tuple(name for name in repairs.split(',') if name)
     repairs=frozenset(repairs)
@@ -311,6 +313,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     source_map=SourceMap() if 'error_boundaries' in repairs else None
     byref='byref_routines' in repairs
     live='live_module_state' in repairs
+    if _dynamic_new and not (live and services):raise ValueError('dynamic construction requires live service boundaries')
     if type(external_names) is not tuple and type(external_names) is not list:raise TypeError('external names require a tuple or list')
     if external_names and not (live and services):raise ValueError('external names require live module state and service boundaries')
     if any(type(name) is not str for name in external_names):raise TypeError('external names require strings')
@@ -608,6 +611,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             return '('+expression(node.left)+' '+operator+' '+expression(node.right)+')'
         if kind is ast.Conditional:
             return '('+expression(node.when_true)+' if '+truth_expression(node.condition)+' else '+expression(node.when_false)+')'
+        if kind is ast.DynamicNew:
+            if not _dynamic_new:raise UnsupportedNakedSyntax('dynamic construction is not enabled for this entry')
+            return '_direct_dynamic_new(_context, '+expression(node.type_expression)+', '+(expression(node.parameters) if node.parameters is not None else 'None')+')'
         if kind is ast.New:
             args=[expression(arg) for arg in node.arguments];kindname=node.name.casefold()
             if services and kindname in constructors:
@@ -1035,6 +1041,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         from .experimental_naked_errors import handled_error,reraise_handled
         namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,
                          _error_filename=source_name,_error_source=source)
+    if _dynamic_new:
+        from .python_direct_dynamic_new import construct
+        namespace['_direct_dynamic_new']=construct
     code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
     exec(code,namespace)
     result=Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)

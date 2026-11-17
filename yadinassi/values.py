@@ -406,6 +406,8 @@ def equal(left: object, right: object) -> bool:
 
 class BSLObject:
     """Subclass to expose a type through Interpreter.register_type()."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
 
     def get_member(self, name: str) -> object:
         raise ValueError(f"Метод или свойство не найдено: {name}")
@@ -425,6 +427,8 @@ class BSLFixedCollection:
 
 class _ArrayBase(BSLObject):
     """Shared reads; fixed arrays do not inherit any mutable collection API."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
 
     def __iter__(self):
         return iter(self.items)
@@ -475,6 +479,8 @@ _MAX_ARRAY_DIMENSIONS = 64
 
 
 class BSLArray(_ArrayBase):
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
     def __init__(self, size: object = Decimal(0), *dimensions: object):
         if isinstance(size, BSLFixedArray):
             if dimensions:
@@ -658,6 +664,8 @@ class InterpreterCall:
 
 class HostFunction:
     """Only explicitly registered callables may be invoked from BSL."""
+    # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
+    __slotnames__ = []
 
     def __init__(self, name: str, function: Callable, *,
                  reference_parameters: frozenset[int] = frozenset(),
@@ -678,3 +686,7 @@ _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
     'integer', 'require_number', 'equal', 'BSLArray', 'HostFunction',
     'BSLFixedCollection', '_MAX_INSERT_GROWTH', '_MAX_ARRAY_CONSTRUCTION',
     '_MAX_ARRAY_DIMENSIONS'))
+
+# Immutable identity/name pairs for finite direct dynamic construction. Never
+# read a host-patched Enum.value descriptor at the lazy adapter boundary.
+_DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)

@@ -9,15 +9,21 @@ from yadinassi.values import BSLArray, BSLType
 
 
 class DynamicNewTests(unittest.TestCase):
+    backend = "python-direct"
+
     def setUp(self):
-        self.vm = Interpreter()
+        self.vm = Interpreter(execution_backend=self.backend)
+
+    def assert_array_representation(self, value):
+        expected = list if self.backend == "python-direct" else BSLArray
+        self.assertIs(type(value), expected)
 
     def test_keyword_and_type_aliases(self):
         for keyword in ('Новый', 'New', 'нОвЫй', 'nEw'):
             for name in ('Массив', 'Array', 'мАсСиВ', 'aRrAy'):
                 with self.subTest(keyword=keyword, name=name):
-                    self.assertIsInstance(self.vm.execute(f'{keyword}("{name}")'), BSLArray)
-                    self.assertIsInstance(self.vm.execute(f'{keyword}(Type("{name}"))'), BSLArray)
+                    self.assert_array_representation(self.vm.execute(f'{keyword}("{name}")'))
+                    self.assert_array_representation(self.vm.execute(f'{keyword}(Type("{name}"))'))
 
     def test_empty_mutable_collections(self):
         for name in ('Array', 'Structure', 'Map'):
@@ -234,6 +240,10 @@ class DynamicNewTests(unittest.TestCase):
                             'x = factory.Make(Type("Array"), args);', encoding='utf-8-sig')
             self.vm.execute(main.read_text(encoding="utf-8-sig"), str(main))
             self.assertEqual(self.vm.execute('x.Count()'), Decimal(2))
+
+
+class LegacyDynamicNewTests(DynamicNewTests):
+    backend = "compiled-strict"
 
 
 if __name__ == '__main__':
