@@ -30,7 +30,7 @@ class PerformanceWorkflowTests(unittest.TestCase):
         for name in ('execution-layers.json', 'execution-layers-prepared.json',
                      'summary.md', 'summary-prepared.md'):
             self.assertIn('performance-results/' + name, self.job)
-        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 3)
+        self.assertEqual(self.job.count('>> "$GITHUB_STEP_SUMMARY"'), 5)
         self.assertIn('if: always()', self.job)
         self.assertIn('retention-days: 30', self.job)
 
@@ -39,3 +39,11 @@ class PerformanceWorkflowTests(unittest.TestCase):
         self.assertIn('No speed threshold is enforced', self.job)
         self.assertNotIn('continue-on-error', self.job)
         self.assertIn('tests.test_benchmark_execution_layers tests.test_benchmark_summary', self.job)
+
+    def test_extended_reports_share_independent_job_and_artifact(self):
+        for route in ('default', 'prepared'):
+            self.assertIn('--iterations 64 --rounds 5 --bsl-route ' + route, self.job)
+            for extension in ('json', 'md'):
+                self.assertIn('performance-results/extended-' + route + '.' + extension, self.job)
+        self.assertIn('python -m unittest tests.test_benchmark_extended_layers', self.job)
+        self.assertIn('path: performance-results/', self.job)

@@ -172,6 +172,16 @@ jobs:
           python scripts/benchmark_execution_layers.py --bsl-route prepared --iterations 100000 --rounds 9 > performance-results/execution-layers-prepared.json
           python scripts/benchmark_summary.py performance-results/execution-layers-prepared.json > performance-results/summary-prepared.md
           cat performance-results/summary-prepared.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Check extended benchmark correctness
+        run: python -m unittest tests.test_benchmark_extended_layers
+      - name: Measure extended default reference
+        run: |
+          python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route default --output performance-results/extended-default.json --summary performance-results/extended-default.md
+          cat performance-results/extended-default.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Measure extended prepared reference
+        run: |
+          python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route prepared --output performance-results/extended-prepared.json --summary performance-results/extended-prepared.md
+          cat performance-results/extended-prepared.md >> "$GITHUB_STEP_SUMMARY"
       - name: Explain incomplete results
         if: failure()
         run: echo 'Performance reference did not finish. See the failing step and raw artifact. No speed threshold is enforced; setup, correctness, and measurement errors still fail this job.' >> "$GITHUB_STEP_SUMMARY"

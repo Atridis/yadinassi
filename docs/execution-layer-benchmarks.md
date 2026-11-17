@@ -144,3 +144,57 @@ are not dependable in Actions Summary. Colored square indicators preserve the
 meaning in supported Markdown without CSS; the yellow shade depends on the
 viewer's emoji font. Numeric values and the explicit legend remain readable
 without relying on color. Summary Markdown and its artifact use the same renderer.
+
+## Extended reference workloads
+
+The same independent performance job appends extended default/prepared tables
+and saves `extended-default.json/.md` and `extended-prepared.json/.md` inside the
+existing artifact. Core reference tables and job dependencies are unchanged.
+Run the reviewed, repository-owned runner (not an attachment script):
+
+```sh
+python -m unittest tests.test_benchmark_extended_layers
+python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route default --output /tmp/extended-default.json --summary /tmp/extended-default.md
+python scripts/benchmark_extended_layers.py --iterations 64 --rounds 5 --bsl-route prepared --output /tmp/extended-prepared.json --summary /tmp/extended-prepared.md
+```
+
+The bounded reference uses 64 operations and five rounds, not the core table's
+100000 iterations. Select workloads with repeated `--case`; accepted sizes are
+1..1000, rounds 3..20. Tiny unit runs establish correctness, not useful timings.
+
+| Case | Work and honest comparison boundary |
+|---|---|
+| `structure.fields` | Mutable field write/read with Decimal checksum; Python dict vs BSL Structure. |
+| `valuetable.build_scan` | Build one column, populate and read numeric rows; Python list of dicts is a bounded reference, not a full ValueTable implementation. |
+| `valuelist.build_scan` | Construct and traverse indexed value items; complete resulting sequence checked outside timing. |
+| `types.adjust_value` | Bounded two-decimal half-up rounding vs NumberQualifiers/TypeDescription; no claim of general type adjustment equivalence. |
+| `json.roundtrip` | Writer/reader construction and string-array roundtrip, Unicode/escaping and actual decoded contents checked. |
+| `xml.scalar_codec` | Supported numeric XMLString/XMLValue roundtrip. |
+| `file.stat` | Open/fstat/close a regular 4096-byte temporary file; BSL additionally enforces its access envelope. |
+| `file.binary_roundtrip` | Read and overwrite identical bytes to a different temporary output per layer; remove output before each sample, verify all bytes afterwards. |
+| `xml.roundtrip` | XML numeric-attribute serialization/parsing; verify complete output structure and checksum. The known missing direct XMLWriter constructor is explicit unsupported/N/A, without legacy fallback; other errors fail. |
+| `db.count` | Same fresh SQLite file, 32 canonically seeded warehouses. Raw SQLite COUNT omits BSL catalog/query admission, so ratios include that envelope and algorithm differences. |
+| `db.update` | Canonical read/modify/write existing catalog item; reset before each sample and canonical persisted-value readback after it. No native Python ratio: raw UPDATE omits writer semantics. Not a crash-durability test. |
+| `form.event` | Real FormSession command dispatch and snapshot; open/setup outside timer, counter reset inside handler. BSL-only, no invented Python/classes equivalent. |
+| `form.open` | Actual FormSession construction, direct open, managed close dispatch and interpreter teardown. BSL-only lifecycle, not a prepared-module measurement. |
+
+Forms appear only in the default extended table. An explicitly requested prepared
+form case is rejected: FormSession is not `execute_prepared`. For other cases,
+BSL default uses `execute_program(preparsed_ast)` including internal preparation;
+prepared creates one explicit plan in setup and measures `execute_prepared(plan)`.
+No hidden legacy fallback is used. Missing comparisons display `—` and an explicit
+`unsupported` or `not_comparable` reason; they are never zero or ratios.
+
+Shared fixture/BSL preparation, first invocation and per-sample reset time are
+recorded separately. One untimed warmup follows the checked first invocation.
+Execution order rotates through available layers; every timed result is validated
+outside its timer. JSON retains wall/CPU samples, median/min/max/MAD, source/runner
+hashes, exact commit and environment. Colored indicators remain only in ratio
+cells, with the same <2 / 2..3 / >3 legend; setup and all timings stay uncolored.
+
+Each filesystem/database case owns a fresh temporary directory and uses no user
+files or existing database. ExitStack closes VMs/connections and removes fixtures
+on success and failure. File measurements use warm OS/page cache, without fsync,
+cold-storage or power-loss guarantees. Normal GC stays enabled. No performance
+threshold is added: incorrect results, unexpected unsupported operations or
+malformed reports fail, while the one declared unavailable XML capability is N/A.
