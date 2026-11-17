@@ -1,5 +1,6 @@
 """Lazy, atomic source-owned XDTO binding. Never resolve an external schema."""
-from weakref import ref
+from weakref import ref, WeakKeyDictionary
+_DIRECT_SOURCE_XDTO_PRIMITIVES=WeakKeyDictionary()
 from .configuration_xml import MD, _object, _props, _text
 from .configuration_xdto import ConfigurationXDTOPackage
 from .xdto_io import BSLXDTOFactory
@@ -13,6 +14,14 @@ class SourceXDTOPackages:
         self._application = ref(application)
         self.factory = BSLXDTOFactory()
         self.factory._source_packages_loader = self.load
+        initial_packages=self.factory._packages
+        initial_objects=(initial_packages,*initial_packages._items,
+                         *(package._roots for package in initial_packages._items))
+        self._direct_scalar_primitives = (
+            self.factory,tuple((key,kind,tuple(vars(kind).items())) for key,kind in self.factory._types.items()),
+            self.factory._types,self.factory._roots,initial_packages,
+            tuple((obj,tuple(vars(obj).items())) for obj in initial_objects))
+        _DIRECT_SOURCE_XDTO_PRIMITIVES[application]=self._direct_scalar_primitives
         self._loaded = set()
         self._bytes = 0
         self._inventory = None
@@ -112,3 +121,16 @@ class SourceXDTOPackages:
         self.factory._packages = candidate._packages
         self._loaded.update(pending)
         self._bytes += added_bytes
+
+
+# Definition-time admission data for the source-only scalar XDTO boundary.
+from types import FunctionType as _SourceXDTOFunction
+_DIRECT_SOURCE_XDTO_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _SourceXDTOFunction or isinstance(value,type))
+_DIRECT_SOURCE_XDTO_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for name,value in _DIRECT_SOURCE_XDTO_BINDINGS
+        if isinstance(value,type) and (name.startswith('BSLXDTO') or name in
+            ('SourceXDTOPackages','ConfigurationXDTOPackage','ConfigurationSource','SourceMetadata',
+             'BSLXMLReader','BSLXMLReaderSettings')) for base in value.__mro__))
+_DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
+    if name.startswith('MAX_') and type(value) is int and value>0)

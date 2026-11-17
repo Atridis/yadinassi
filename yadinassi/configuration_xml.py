@@ -1160,3 +1160,19 @@ def import_catalog_forms_configuration(files):
     """Explicit scalar catalog object-form profile; ordinary import stays inert."""
     from .configuration_catalog_profile import catalog_forms_configuration
     return catalog_forms_configuration(files)[0]
+
+
+# Definition-time admission data for the source-only scalar XDTO boundary.
+from types import FunctionType as _SourceXDTOFunction
+_DIRECT_SOURCE_XDTO_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _SourceXDTOFunction or isinstance(value,type))
+_DIRECT_SOURCE_XDTO_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for name,value in _DIRECT_SOURCE_XDTO_BINDINGS
+        if isinstance(value,type) and (name.startswith('BSLXDTO') or name in
+            ('SourceXDTOPackages','ConfigurationXDTOPackage','ConfigurationSource','SourceMetadata',
+             'BSLXMLReader','BSLXMLReaderSettings')) for base in value.__mro__))
+_DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
+    if name.startswith('MAX_') and type(value) is int and value>0)
+_DIRECT_SOURCE_XDTO_XML_INPUT=(ET.iterparse,io.StringIO)
+
+_DIRECT_SOURCE_XDTO_XML_MODULES=(ET,io)

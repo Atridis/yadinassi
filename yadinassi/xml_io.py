@@ -387,3 +387,20 @@ class BSLXMLReader(_FileMethods):
             self._settings.ignore_whitespace = _bool(value)
             return
         return super().set_member(name,value)
+
+
+# Definition-time admission data for the source-only scalar XDTO boundary.
+from types import FunctionType as _SourceXDTOFunction
+_DIRECT_SOURCE_XDTO_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _SourceXDTOFunction or isinstance(value,type))
+_DIRECT_SOURCE_XDTO_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for name,value in _DIRECT_SOURCE_XDTO_BINDINGS
+        if isinstance(value,type) and (name.startswith('BSLXDTO') or name in
+            ('SourceXDTOPackages','ConfigurationXDTOPackage','ConfigurationSource','SourceMetadata',
+             'BSLXMLReader','BSLXMLReaderSettings','BSLXMLNodeType','BSLXMLSpace',
+             'BSLXMLValidationType')) for base in value.__mro__))
+_DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
+    if name.startswith('MAX_') and type(value) is int and value>0)
+_DIRECT_SOURCE_XDTO_PARSER_CREATE=expat.ParserCreate
+
+_DIRECT_SOURCE_XDTO_EXPAT_MODULE=expat

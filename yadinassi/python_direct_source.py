@@ -25,6 +25,7 @@ from . import python_direct_source_temporary as temporary
 from . import python_direct_source_templates as templates
 from . import python_direct_source_resources as resources
 from . import python_direct_source_value_storage as stored_values
+from . import python_direct_source_xdto as xdto
 
 
 def check_owner(owner):
@@ -212,6 +213,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'bind_eval'):invoke.bind_eval=bound.bind_eval
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=xdto.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         bound=stored_values.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         bound=resources.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -258,6 +261,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if session is not None:return session
         namespace=storage.namespace(self,name)
         if namespace is not None:return namespace
+        if name in ('xdtofactory','фабрикаxdto'):return xdto.namespace(self,name)
         if name in ('metadata','метаданные'):return self.app.metadata
         if name in self.app.modules:return self.app.module(name,self.vm)
         from .source_application_exports import variable
@@ -433,6 +437,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return self._module(value.module(self.vm))
     def get_member(self,value,name):
         self._check()
+        if xdto.owns(value):return xdto.get(self,value,name)
         if stored_values.owns(value):return stored_values.get(self,value,name)
         if resources.owns(value):return resources.get(self,value,name)
         if fixed.owns(value):return fixed.get(self,value,name)
@@ -449,6 +454,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if xdto.owns(value):return xdto.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if stored_values.owns(value):return stored_values.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if resources.owns(value):return resources.resolve(self,value,name,require_value=require_value,argument_count=argument_count,allow_references=allow_references)
         if fixed.owns(value):return fixed.resolve(self,value,name,require_value=require_value,allow_references=allow_references)

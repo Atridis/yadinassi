@@ -160,3 +160,19 @@ def load_schemas(factory,paths,packages=None):
         packages[-1]._element_qualified=element_form=='qualified'
         packages[-1]._attribute_qualified=attribute_form=='qualified'
     factory._packages=BSLXDTOPackageCollection(packages)
+
+
+# Definition-time admission data for the source-only scalar XDTO boundary.
+from types import FunctionType as _SourceXDTOFunction
+_DIRECT_SOURCE_XDTO_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+    if type(value) is _SourceXDTOFunction or isinstance(value,type))
+_DIRECT_SOURCE_XDTO_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in dict.fromkeys(base for name,value in _DIRECT_SOURCE_XDTO_BINDINGS
+        if isinstance(value,type) and (name.startswith('BSLXDTO') or name in
+            ('SourceXDTOPackages','ConfigurationXDTOPackage','ConfigurationSource','SourceMetadata',
+             'BSLXMLReader','BSLXMLReaderSettings')) for base in value.__mro__))
+_DIRECT_SOURCE_XDTO_LIMITS=tuple((name,value) for name,value in tuple(globals().items())
+    if name.startswith('MAX_') and type(value) is int and value>0)
+
+from . import xml_writer as _direct_source_xml_writer
+_DIRECT_SOURCE_XDTO_NAME_HELPERS=(_direct_source_xml_writer,_direct_source_xml_writer._name,_direct_source_xml_writer._text)
