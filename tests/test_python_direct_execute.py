@@ -141,3 +141,68 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
         vm.register_function('Stale',lambda:refs[0].set(9))
         with self.assertRaises(BoundaryViolation):vm.execute('Stale();')
         self.assertEqual(vm.variables['x'],1)
+
+class ExecutePreparationReuseTests(unittest.TestCase):
+    def test_repeated_fragment_prepares_once_but_reads_current_locals(self):
+        from yadinassi.syntax import parser
+        with patch.object(parser,'parse_fragment',wraps=parser.parse_fragment) as parse:
+            vm=Interpreter();vm.execute('Function F() S=0;For I=1 To 20 Do Execute("S=S+1;");EndDo;Return S;EndFunction R=F();')
+        self.assertEqual(vm.variables['r'],20)
+        self.assertEqual(parse.call_count,1)
+
+    def test_cached_constructor_facts_are_admitted_again(self):
+        vm=Interpreter()
+        def change():vm.register_type('Array',lambda:[])
+        vm.register_function('Change',change)
+        with self.assertRaises(BSLError):
+            vm.execute('Saved=0;Execute("Saved=Saved+1;A=New Array;");Change();Execute("Saved=Saved+1;A=New Array;");')
+        self.assertEqual(vm.variables['saved'],1)
+
+    def test_private_names_are_fresh_on_cache_hit(self):
+        vm=Interpreter();seen=[];vm.register_function('Seen',seen.append)
+        vm.execute('For I=1 To 3 Do Execute("Try Seen(Private);Except Seen(0);EndTry;Private=9;");EndDo;')
+        self.assertEqual(seen,[0,0,0])
+
+    def test_entries_are_bounded_and_activation_local(self):
+        from yadinassi.syntax import parser
+        vm=Interpreter();sources=['X='+str(i)+';' for i in range(17)]
+        vm.variables['fragments']=sources+[sources[0]]
+        with patch.object(parser,'parse_fragment',wraps=parser.parse_fragment) as parse:
+            vm.execute('For Each Fragment In fragments Do Execute(Fragment);EndDo;')
+            self.assertEqual(parse.call_count,18)
+            vm.execute('Execute("X=0;");')
+            self.assertEqual(parse.call_count,19)
+
+    def test_text_budget_evicts_even_below_entry_limit(self):
+        from yadinassi.syntax import parser
+        a='//'+('a'*33000)+'\nX=1;';b='//'+('b'*33000)+'\nX=2;'
+        vm=Interpreter();vm.variables.update(a=a,b=b)
+        with patch.object(parser,'parse_fragment',wraps=parser.parse_fragment) as parse:
+            vm.execute('Execute(a);Execute(b);Execute(a);')
+        self.assertEqual(parse.call_count,3)
+
+    def test_limits_rechecked_after_cache_hit(self):
+        vm=Interpreter()
+        with patch('yadinassi.runtime.EXECUTE_MAX_SOURCE',65536):
+            def shrink():
+                import yadinassi.runtime as runtime
+                runtime.EXECUTE_MAX_SOURCE=1
+            vm.register_function('Shrink',shrink)
+            with self.assertRaisesRegex(BSLError,'предел текста'):
+                vm.execute('X=0;Execute("X=X+1;");Shrink();Execute("X=X+1;");')
+        self.assertEqual(vm.variables['x'],1)
+
+    def test_cached_unit_does_not_keep_scope_or_vm_alive(self):
+        import weakref,gc
+        import yadinassi.python_direct_execute as fragments
+        refs=[];contexts=[];units=[];original=fragments.FragmentScope.__init__
+        def track(scope,*args):
+            original(scope,*args);refs.append(weakref.ref(scope))
+            contexts.append(weakref.ref(scope.context))
+            units.extend(scope.context._execute_units.values())
+        vm=Interpreter();vmref=weakref.ref(vm)
+        with patch.object(fragments.FragmentScope,'__init__',track):
+            vm.execute('X=0;For I=1 To 3 Do Execute("X=X+1;");EndDo;')
+        vm.close();del vm;gc.collect()
+        self.assertTrue(units)
+        self.assertIsNone(vmref());self.assertTrue(all(ref() is None for ref in refs+contexts))

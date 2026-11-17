@@ -88,26 +88,39 @@ def execute_fragment(text,context,parent,bindings,visible):
     try:
         from .syntax.parser import parse_fragment
         from .errors import BSLError, BSLRuntimeError
-        from .python_direct import _source_facts,_admit_bindings,REPAIRS
+        from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
         from .experimental_naked_collections import prepare
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
-        try:program=parse_fragment(text)
-        except BSLError as error:
-            raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
-        _,routines,constructors,calls=_source_facts(program)
-        _admit_bindings(vm,routines,constructors,calls)
-        plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=REPAIRS,
-            constructors=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+
-                (('query','запрос') if vm.database_context is not None else ()),
-            external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ()),
-            _trusted_entry=True)
+        constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
+        external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
+        key=(text,_contract(vm),REPAIRS,constructor_names,external_names,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
+        cache=getattr(context,'_execute_units',None)
+        if cache is None:cache=context._execute_units={}
+        unit=cache.get(key)
+        if unit is None:
+            try:program=parse_fragment(text)
+            except BSLError as error:
+                raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
+            _,routines,constructors,calls=_source_facts(program)
+            _admit_bindings(vm,routines,constructors,calls)
+            plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=REPAIRS,
+                constructors=constructor_names,external_names=external_names,_trusted_entry=True)
+            # No AST, mutable Program, caller scope, references or authorization is retained.
+            unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
+            if len(text)<=EXECUTE_MAX_SOURCE:
+                while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EXECUTE_MAX_SOURCE):
+                    del cache[next(iter(cache))]
+                cache[key]=unit
+        else:
+            _admit_bindings(vm,*unit[:3])
+        function,constants,source_name,source_text=unit[3:]
         scope=FragmentScope(parent,bindings,visible,context)
-        try:plan.function(scope,plan.constants,[],context)
+        try:function(scope,constants,[],context)
         except Exception as error:
             from .experimental_naked_errors import convert_error
-            converted=convert_error(error,plan.source_name,plan.source_text)
+            converted=convert_error(error,source_name,source_text)
             if converted is error:raise
             raise converted from None
     finally:
