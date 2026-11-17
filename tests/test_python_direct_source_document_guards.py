@@ -30,15 +30,17 @@ class DirectDocumentGuards(unittest.TestCase):
     def no_vm(self,app):
         with patch.object(Interpreter,'_execute_program',side_effect=AssertionError('legacy program')), \
              patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')), \
-             patch('yadinassi.source_document_runtime._ObjectInterpreter',side_effect=AssertionError('legacy construction')), \
              source_transactions.execution(app),app.safe_mode.execution():yield
 
-    def test_module_refused_before_initialization_or_transaction(self):
-        for module in (b'Number="initializer";',b'Procedure OnWrite(Cancel) EndProcedure'):
+    def test_module_initialization_executes_without_vm(self):
+        for module in (b'Number="INIT";',b'Procedure OnWrite(Cancel) EndProcedure'):
             with self.subTest(module=module):
                 app,caller,manager=self.app(documents.package(extra={'Documents/Invoice/Ext/ObjectModule.bsl':module}))
-                with self.no_vm(app),self.assertRaisesRegex(ValueError,'direct source document handlers'):
-                    finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+                with self.no_vm(app):
+                    obj=finish(create_object(caller,manager,app.constant_store.document('Invoice')))
+                    self.addCleanup(obj.interpreter.close)
+                    if module.startswith(b'Number='):
+                        self.assertEqual(obj.property_read(caller,'Number'),'INIT')
                 self.assertFalse(app.constant_store.transaction_active)
                 self.assertEqual(app.constant_store.read_documents('Invoice'),[])
 

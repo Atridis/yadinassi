@@ -29,9 +29,9 @@ class DirectDocumentSecurity(unittest.TestCase):
             obj.interpreter=object()
             with patch.object(app.constant_store,'write_document_bundle',side_effect=AssertionError('SQL write')):
                 for receiver,name in ((obj,'Write'),(section,'Clear'),(row,'Flag')):
-                    with self.subTest(name=name),self.assertRaisesRegex(BoundaryViolation,'handlers'):
+                    with self.subTest(name=name),self.assertRaisesRegex(BoundaryViolation,'not direct-owned'):
                         storage.get(boundary,receiver,name)
-                with self.assertRaisesRegex(BoundaryViolation,'handlers'):
+                with self.assertRaisesRegex(BoundaryViolation,'not direct-owned'):
                     storage.captured(boundary,HostFunction('Write',SourceDocumentCall(obj,'write')))
         self.assertEqual(app.constant_store.read_documents('Invoice'),[])
 

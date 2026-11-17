@@ -67,8 +67,9 @@ def check(boundary,value):
         if kind in (SourceCatalogObject,SourceDocumentObject):
             if value.interpreter is not None:
                 if kind is SourceDocumentObject:
-                    raise BoundaryViolation('direct source document handlers are not integrated')
-                from .python_direct_source_catalog import check_object
+                    from .python_direct_source_document import check_object
+                else:
+                    from .python_direct_source_catalog import check_object
                 check_object(value,caller)
             value.authorize(caller)
         else:
@@ -132,6 +133,12 @@ def set_member(boundary,value,name):
 
 def resolve(boundary,value,name,*,require_value=False,allow_references=False,argument_count=None):
     check(boundary,value)
+    if type(value) is SourceDocumentObject:
+        from .source_document_runtime import _OBJECT_METHODS
+        if name.casefold() not in _OBJECT_METHODS:
+            from .python_direct_source_document import bind_export
+            return bind_export(boundary,value,name,require_value=require_value,
+                allow_references=allow_references,argument_count=argument_count)
     if type(value) is SourceCatalogObject:
         from .source_catalog_runtime import _OBJECT_METHODS
         if name.casefold() not in _OBJECT_METHODS:

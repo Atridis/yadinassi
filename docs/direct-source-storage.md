@@ -32,6 +32,7 @@ violation. It never interprets a yielded AST operation.
 Catalog object modules are now handled by the
 [bounded direct catalog adapter](direct-source-catalog-handlers.md), and constant
 value-manager modules by the [direct constants adapter](direct-source-constants.md).
+Document modules use the [nonposting direct document adapter](direct-source-document-handlers.md).
 Legacy-created objects with an attached interpreter still cannot enter the direct adapter.
 Unsupported handlers are never skipped; existing legacy backends are unchanged.
 
