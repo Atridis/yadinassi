@@ -93,17 +93,23 @@ opt-in. Unit runs are correctness checks, **not** published performance evidence
 
 ## GitHub Actions timing reference
 
-`Performance reference` is a separate workflow/job, independent of the build,
-heavy tests, native-1C and PR-base admission gates. It runs for draft/stacked PRs,
-main pushes and manual dispatch. The checkout is the exact PR head (or dispatch
-SHA), not a synthetic merge commit. It uses read-only permissions and no secrets.
+`Performance reference` is an independent job in the `Test and build` workflow,
+next to the JavaScript job, with no `needs` dependency in either direction. It
+does not gate the build verdict, packaging, release, heavy tests or native-1C,
+and it does not wait for PR-base admission. It runs for draft/stacked PRs, main
+pushes, tag pushes and manual dispatch, using the main workflow triggers. The
+standalone `performance.yml` is removed so events do not launch duplicate timing
+runs. Cancellation follows the main workflow concurrency policy. The checkout is
+the exact PR head (or dispatch SHA), not a synthetic merge commit. It uses read-only permissions and no secrets.
 
 Open its **Summary** for the native Python / Python classes / BSL direct median
 milliseconds and time ratios (native = 1×). The raw artifact retains every sample,
 source hashes, environment and setup/first-call timings. Nine rounds at 100000
 iterations are references, not a performance SLA; noisy runners affect numbers.
 There are **no speed thresholds**. A wrong result, setup failure or invalid report
-still fails the job rather than displaying an apparently successful timing.
+still fails the job rather than displaying an apparently successful timing. Such
+a failure can make the overall workflow conclusion red, but no other job depends
+on this result. Repository branch-protection settings are not changed here.
 
 The third column uses the public default API. On a backend that recompiles inside
 `execute_program`, that cost belongs to its measured call; it is not represented

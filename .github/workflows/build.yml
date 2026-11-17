@@ -141,6 +141,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # Informational timings run independently of admission and all required jobs.
+  performance:
+    name: Performance reference (Python / classes / BSL, no speed gate)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Measure the exact candidate, including stacked and draft PRs.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install pinned runtime dependencies
+        run: python -m pip install -e . wcwidth==0.8.2
+      - name: Check benchmark correctness and report formatting
+        run: python -m unittest tests.test_benchmark_execution_layers tests.test_benchmark_summary
+      - name: Measure three equivalent execution layers
+        run: |
+          mkdir -p performance-results
+          python scripts/benchmark_execution_layers.py --bsl-route default --iterations 100000 --rounds 9 > performance-results/execution-layers.json
+      - name: Publish timing table
+        run: |
+          python scripts/benchmark_summary.py performance-results/execution-layers.json > performance-results/summary.md
+          cat performance-results/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Measure prepared execution separately
+        run: |
+          python scripts/benchmark_execution_layers.py --bsl-route prepared --iterations 100000 --rounds 9 > performance-results/execution-layers-prepared.json
+          python scripts/benchmark_summary.py performance-results/execution-layers-prepared.json > performance-results/summary-prepared.md
+          cat performance-results/summary-prepared.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Explain incomplete results
+        if: failure()
+        run: echo 'Performance reference did not finish. See the failing step and raw artifact. No speed threshold is enforced; setup, correctness, and measurement errors still fail this job.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: performance-reference-${{ github.run_id }}-${{ github.run_attempt }}
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 30
+
   light:
     name: Light tests (${{ matrix.target }})
     needs: admission
