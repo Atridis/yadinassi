@@ -151,6 +151,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._instance_keys=tuple(k for k,v in self.app._instances.items() if v is owner)
     def _check(self):
         super()._check();check_owner(self.vm);_check_plan(self.vm,self.plan)
+        from .python_direct_source_server import check_activation
+        check_activation(self.vm)
         from .python_direct import _admit_bindings
         _admit_bindings(self.vm,frozenset(),self.plan._source_constructors,frozenset())
         if (not self._active or self.vm.execution_context!=self.side or self.vm._family_generation!=self.generation
@@ -181,6 +183,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             return bound(*guarded)
         if hasattr(bound,'requires_reference'):invoke.requires_reference=bound.requires_reference
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
+        if hasattr(bound,'prepare_named_value'):invoke.prepare_named_value=bound.prepare_named_value
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         bound=host_info.captured(self,value,require_value=require_value,allow_references=allow_references)
@@ -299,6 +302,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             raise ValueError('direct source reusable routine is not integrated')
         keys=tuple(k for k,v in self.app._instances.items() if v is owner)
         def provenance():
+            from .python_direct_source_server import check_activation
+            if owner is self.vm and check_activation(owner):return
             if owner is self.app.interpreter:return
             if not keys or any(self.app._instances.get(k) is not owner for k in keys):
                 raise BoundaryViolation('source routine owner replaced')
@@ -402,7 +407,12 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
             argument_count=argument_count,allow_references=allow_references)
         owner=self._module(value)
         if owner is not None:
-            return self._routine(owner,value.routine(name),require_value=require_value,
+            routine=value.routine(name)
+            if self.side=='client' and routine.execution_context=='server':
+                from .python_direct_source_server import resolve
+                return resolve(self,owner,routine,require_value=require_value,
+                    argument_count=argument_count,allow_references=allow_references)
+            return self._routine(owner,routine,require_value=require_value,
                 argument_count=argument_count,allow_references=allow_references)
         function=self.resolve_member(value,name)
         return self.resolve_callable(HostFunction(name,function),require_value=require_value,

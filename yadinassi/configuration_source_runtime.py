@@ -57,6 +57,10 @@ class _SourceInterpreter(Interpreter):
                 ('active', 'TransactionActive', 'ТранзакцияАктивна')):
             self.register_function(english, SourceTransactionCall(application, operation),
                                    russian, returns_value=operation == 'active')
+        self._direct_source_host_bindings = tuple(
+            (registry, tuple((name, wrapper, wrapper.function, wrapper.name, wrapper.reference_parameters, wrapper.returns_value)
+                             for name, wrapper in registry.items()))
+            for registry in (self.functions, self.types))
 
 
     def _activation_interpreter(self):
@@ -218,11 +222,15 @@ class _SourceInterpreter(Interpreter):
 # Exact supported source-host hooks. Subclasses and per-instance replacements
 # remain outside direct admission; source scopes are not generic VM authority.
 _DIRECT_SOURCE_ABI = tuple((name, getattr(_SourceInterpreter, name)) for name in (
+    '__new__', '__init__',
     'compiled_before', 'compiled_after', 'compiled_exception', 'semantic_name',
     'semantic_assign', 'set_variable', '_visit',
     'execute', 'execute_program', '_activation_interpreter',
     '_new_query', '_new_temp_tables_manager', '_new_type_description'))
 
+
+_DIRECT_SOURCE_FACTORY_ABI = tuple((name, getattr(Interpreter, name)) for name in (
+    '__init__', 'register_function', 'register_type', '_bind_schema_scope'))
 
 def _walk(value):
     if isinstance(value, ast.Node):
