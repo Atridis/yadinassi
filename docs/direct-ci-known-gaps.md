@@ -608,3 +608,18 @@ stops at dual routines; actual owned-SQLite verifier still returns
 `interpreter_failed`. 159 normal/159 optimized tests PASS, independent review
 without blockers. No native fixture changes or parity claim.
 [Contract, limits and reproducer](direct-logical-server.md).
+
+### Direct dual NoContext routines (2026-11-17)
+
+Base5a78cac5: paired client/server dual declarations now compile to side-specific
+Python plans without module globals, VM dispatch or same-side collection copies.
+Current capabilities and cross-side transfer validation remain. Partial or
+signature-mismatched AST pairs are explicitly unsupported. 169 normal/169 optimized
+tests PASS; independent58 optimized PASS, no blockers.
+
+Original dual operation positive values agree with explicit compiled-strict;
+the unchanged complete dual witness still rethrows its controlled exception due
+to the known ErrorDescription gap. Full source advances to JSON writer parameters
+constructor admission; owned-SQLite verifier remains `interpreter_failed`.
+No native fixture rewrite or parity claim.
+[Contract, exact observations and reproducer](direct-logical-server.md).

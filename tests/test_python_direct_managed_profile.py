@@ -42,7 +42,7 @@ class DirectManagedProfileTests(unittest.TestCase):
 
     def test_unsupported_runtime_sides_still_refuse_before_effects(self):
         for declaration in ('&AtServer\nVar State;',
-                            '&AtClientAtServerNoContext\nFunction F() Return 1; EndFunction'):
+                            'Async Function F() Return 1; EndFunction'):
             vm=Interpreter(compilation_profile=PROFILE)
             with self.subTest(declaration=declaration),self.assertRaises(PythonDirectUnsupported):
                 vm.execute('Effect=1;\n'+declaration)
@@ -69,9 +69,9 @@ class DirectManagedProfileTests(unittest.TestCase):
                 self.assertEqual(len(output),count);captures.append(output)
             self.assertEqual(*captures)
 
-    def test_exact_whole_client_witness_exposes_dual_blocker(self):
+    def test_exact_whole_client_witness_exposes_json_constructor_blocker(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'async/dual'):
+        with self.assertRaisesRegex(PythonDirectUnsupported,'constructor ПараметрыЗаписиJSON'):
             vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
         self.assertEqual(vm.variables,{})
 

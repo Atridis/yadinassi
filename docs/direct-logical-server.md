@@ -25,7 +25,7 @@ Server layout учитывает предыдущие объявления. Пр
 
 ## Явные ограничения
 
-- Dual/async и imports не подключены. Существующий native `client_probe.bsl` поэтому
+- Async и imports не подключены. Существующий native `client_probe.bsl` поэтому
   **по-прежнему не выполняется целиком**.
 - DB namespace и Query на сервере не добавлены этим пакетом. Отдельные формы
   и configuration runtime сохраняют свои собственные точки входа.
@@ -162,4 +162,46 @@ CI не заявляются; исходный fixture не менялся.
 
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_nocontext test_python_direct_server_initializers test_python_direct_server_byref test_python_direct_server test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
+```
+
+## Общие клиент-серверные процедуры без контекста
+
+Срез поверх `5a78cac5b34cf58cc9919b6656940365d31f8850` компилирует две версии
+`&AtClientAtServerNoContext` / `&НаКлиентеНаСервереБезКонтекста` напрямую.
+Frontend уже выбирает разные тела для сторон; runtime выбирает соответствующий
+Python-план по текущей стороне. Клиентская версия исполняется в отдельном scope
+без globals; серверная использует существующий NoContext route. Локальные и
+persistent вызовы не возвращаются в VM dispatch. Same-side byref и aliasing
+коллекций сохраняются, включая записи до escaping exception. Контекстные вызовы
+из dual отвергаются до вычисления аргументов. NoContext client→server переход
+сохраняет существующие aggregate transfer/copyback checks.
+
+Допускается пара с общей source-token provenance и одинаковой сигнатурой;
+частичные пары после условной компиляции и различающиеся default/parameter
+сигнатуры пока явно отвергаются до effects. Это ограничение direct implementation,
+не заявление об ограничении языка. Group replacement и prepared current-binding,
+owner/side/module-context/transaction проверки сохранены. Scope не кеширует допуск
+или VM; callback close/reset снимает захваченный stack.
+
+**169 normal +169 optimized tests PASS**, independent review **58 optimized PASS**,
+blockers нет. Новые проверки находятся в `tests/test_python_direct_dual.py`:
+source/AST/prepared/persistent, side-specific compilation, aliasing/error writes,
+context isolation, отказ до argument effects, malformed pairs и close/reset.
+
+Неизменённые объявления dual witness теперь загружаются. Positive вызов его
+оригинальной `DualProbeOperation` совпадает с explicit compiled-strict:
+scalar12, aliased array32, profile mask0. Нулевые AtClient/AtServer flags внутри
+dual сохраняют текущую политику препроцессора и не выводятся из runtime side.
+Отдельная standalone проверка Client/Server branches даёт4/8/8 для client/server/
+server-NoContext callers. Исходный `CollectDualDirectiveProbe()` доходит до
+controlled failure, но его ErrorDescription guard делает rethrow из-за прежнего
+пустого diagnostic description. Полного результата этого witness нет.
+
+Полный original `client_probe.bsl` теперь проходит dual admission и останавливается
+на `constructor ПараметрыЗаписиJSON`. Настоящий owned-SQLite verifier остаётся
+`interpreter_failed`. Fixtures не менялись; native parity, полный CI и ускорение
+не заявляются.
+
+```sh
+PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_dual test_python_direct_nocontext test_python_direct_server_initializers test_python_direct_server_byref test_python_direct_server test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
 ```

@@ -1,7 +1,7 @@
 """Synchronous logical server calls with fresh side-local state, no VM dispatch.
 
 Module-context and NoContext calls support Val and named-variable copyback.
-Dual declarations remain an explicit gap.
+Dual declarations select a side-local NoContext plan.
 """
 from decimal import Decimal
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -46,7 +46,9 @@ def transfer(value):
 
 class ServerBoundary(CatalogBoundary,BoundaryContext):
     _server_side=True
-    def __init__(self,parent,*,module_context=True):
+    def __init__(self,parent,*,module_context=True,side="server"):
+        self._server_side=side=="server"
+        self.side=side
         super().__init__()
         self.vm=parent.vm;self._services=self.vm.functions
         self.database=self.vm.database_context
@@ -58,7 +60,7 @@ class ServerBoundary(CatalogBoundary,BoundaryContext):
         vm=self.vm
         if (vm._family_closed or vm.database_context is not self.database
                 or vm._configuration_runtime is not None or vm.locals is not None
-                or vm._has_module_context!=self.module_context or vm.execution_context!='server'
+                or vm._has_module_context!=self.module_context or vm.execution_context!=self.side
                 or safe_mode._CURRENT.get() is not None
                 or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
@@ -77,7 +79,7 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
     references=module.signatures[name][3]
     module_context=name not in module.nocontext_names
     server_plan=module.server_plan if module_context else module.nocontext_plan
-    if getattr(parent,'_server_side',False) and not parent.module_context and module_context:
+    if not getattr(parent,'module_context',True) and module_context:
         raise TypeError('Подпрограмма без контекста не может вызывать контекстную подпрограмму')
     def execute(context,arguments):
         exports=context._routine_exports.get(id(module))
@@ -152,5 +154,35 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
         # Ordered independent copy-out intentionally gives the rightmost alias.
         for (_,reference),value in zip(outputs,outgoing[1:]):reference.set(value)
         return outgoing[0]
+    function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
+    return parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)
+
+
+def resolve_dual_client(parent,module,name,*,require_value,allow_references):
+    vm=parent.vm
+    references=module.signatures[name][3]
+    def invoke(*arguments):
+        parent._check()
+        context=ServerBoundary(parent,module_context=False,side='client')
+        stack=vm._module_context_stack
+        stack.append(False)
+        try:
+            context.enter()
+            try:
+                exports=module.dual_plan.function({},module.dual_plan.constants,[],context)
+                bound=tuple(_ForwardReference(value) if i in references and type(value) is Reference else value
+                            for i,value in enumerate(arguments))
+                try:
+                    try:return exports[name](*bound)
+                    except Exception as error:
+                        from .experimental_naked_errors import convert_error
+                        converted=convert_error(error,module.dual_plan.source_name,module.dual_plan.source_text)
+                        if converted is error:raise
+                        raise converted from None
+                finally:context._check()
+            finally:context.leave()
+        finally:
+            stack.pop()
+            parent._check()
     function=HostFunction(name,invoke,reference_parameters=references,returns_value=module.signatures[name][0])
     return parent.resolve_callable(function,require_value=require_value,allow_references=allow_references)

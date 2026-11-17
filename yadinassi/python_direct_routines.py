@@ -23,6 +23,8 @@ class RoutineModule:
     initializer_calls: frozenset = frozenset()
     nocontext_plan: object = None
     nocontext_names: frozenset = frozenset()
+    dual_plan: object = None
+    dual_names: frozenset = frozenset()
 
 
 def prepare(vm, program, plan):
@@ -60,6 +62,13 @@ def prepare(vm, program, plan):
         nocontext_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=nocontext,
             repairs=REPAIRS,external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
+    dual=[node for node in declarations if type(node) is ast.Routine and node.is_dual and node.execution_context=='client']
+    dual_names=frozenset(node.name.casefold() for node in dual)
+    dual_plan=None
+    if dual:
+        dual_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=dual,
+            repairs=REPAIRS,external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            _trusted_entry=True,_export_routines=True)
     initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
     if initializer_body:
         _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
@@ -68,7 +77,7 @@ def prepare(vm, program, plan):
             _trusted_entry=True,_initialize_module=False)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
                          constructors,calls-names,server_plan,server_names,server_layout,
-                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names)
+                         initializer_plan,initializer_constructors,initializer_calls,nocontext_plan,nocontext_names,dual_plan,dual_names)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
@@ -111,10 +120,13 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
     returns_value,minimum,maximum,references=module.signatures[name]
     if argument_count is not None and not minimum<=argument_count<=maximum:
         raise TypeError('Неверное количество аргументов: '+name)
+    if name in module.dual_names and not getattr(context,'_server_side',False):
+        from .python_direct_server import resolve_dual_client
+        return resolve_dual_client(context,module,name,require_value=require_value,allow_references=allow_references)
     if name in module.server_names:
         from .python_direct_server import resolve_server
         return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references)
-    if getattr(context,'_server_side',False):
+    if getattr(context,'_server_side',False) or getattr(context,'module_context',True) is False:
         raise TypeError('Вызов клиентской подпрограммы с сервера запрещён')
     def invoke(*arguments):
         # Rebind code to current state/services/boundary, never retain an old VM

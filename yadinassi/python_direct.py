@@ -88,15 +88,26 @@ def _source_facts(program):
             _reject('unsupported declaration side')
         if type(node) is ast.New and node.name.casefold() in native_names:
             constructors.add(node.name.casefold())
-        if type(node) is ast.Routine and (node.is_async or node.is_dual or (not node.module_context and node.execution_context!='server') or node.execution_context not in ('client','server')):
-            _reject('async/dual source routines are not integrated')
+        if type(node) is ast.Routine and (node.is_async or (not node.module_context and not node.is_dual and node.execution_context!='server') or node.execution_context not in ('client','server')):
+            _reject('async source routines are not integrated')
         if type(node) is ast.Import:
             _reject('imports are not integrated')
         if type(node) is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
             if type(callee) is ast.Name:calls.add(callee.name.casefold())
-    if len(routines)!=len(routine_nodes):_reject('duplicate routine declarations')
+    groups={}
+    for node in routine_nodes:groups.setdefault(node.name.casefold(),[]).append(node)
+    for group in groups.values():
+        if any(node.is_dual for node in group):
+            if (len(group)!=2 or not all(node.is_dual and not node.module_context for node in group)
+                    or {node.execution_context for node in group}!={'client','server'}
+                    or len({(node.token.source,node.token.line,node.token.column,node.token.kind) for node in group})!=1):
+                _reject('dual routines require one client and one server declaration')
+            def signature(node):
+                return (node.is_function,[(p.name.casefold(),p.by_value,p.default) for p in node.parameters])
+            if signature(group[0])!=signature(group[1]):_reject('dual routine signatures differ')
+        elif len(group)!=1:_reject('duplicate routine declarations')
     return nodes,routines,frozenset(constructors),frozenset(calls)
 
 
@@ -153,7 +164,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_names import NAMES as SYSTEM_NAMES
     program=[node for node in program if type(node) is not ast.ServerInitializer
-             and (type(node) not in (ast.Var,ast.Routine) or node.execution_context=='client')]
+             and (type(node) not in (ast.Var,ast.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))]
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
         lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
