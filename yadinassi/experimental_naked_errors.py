@@ -12,15 +12,30 @@ def source_mapping_supported():
 
 def _normalized(text):
     text=text.strip()
-    while text.startswith('(') and text.endswith(')'):
-        balance=0;whole=True
-        # Generated text is Python; AST normalization handles literals/quotes.
-        try:
-            tree=ast.parse(text,mode='eval')
-            return ast.dump(tree.body,include_attributes=False)
-        except SyntaxError:return text
-    try:return ast.dump(ast.parse(text,mode='eval').body,include_attributes=False)
+    try:return ast.parse(text,mode='eval').body
     except SyntaxError:return text
+
+
+class _StructureIndex:
+    """Compile-local exact structural identities, excluding source attributes.
+
+    Child identities keep parent keys small: no repeated serialization of full
+    subtrees. Node objects are retained as keys only for this compilation, avoiding
+    id reuse while normalized expression trees are collected.
+    """
+    def __init__(self):
+        self.nodes={};self.structures={}
+    def key(self,value):
+        if isinstance(value,ast.AST):
+            if value in self.nodes:return self.nodes[value]
+            structure=(type(value).__name__,tuple((name,self.key(child)) for name,child in ast.iter_fields(value)))
+            result=self.structures.setdefault(structure,len(self.structures))
+            self.nodes[value]=result
+            return result
+        if isinstance(value,list):return ('list',tuple(self.key(child) for child in value))
+        # ast.dump uses repr for scalar fields; preserve its distinctions (bool
+        # vs int, bytes vs str, signed zero), not Python numeric equality.
+        return ('scalar',repr(value))
 
 
 class SourceMap:
@@ -44,17 +59,19 @@ class SourceMap:
     def line(self,number):
         if self.current is not None:self.rows[number]=(self.current.token,tuple(self.expressions))
     def compile(self,generated,filename,body_offset):
-        tree=ast.parse(generated,filename=filename);by_line={};normalized={}
+        tree=ast.parse(generated,filename=filename);by_line={};normalized={};index=_StructureIndex()
         # Repeated generated text needs normalization only once in this compile.
         # Nothing is retained between programs or added to the execution path.
         for line,(token,expressions) in self.rows.items():
-            groups={}
+            groups={};root_types=set()
             for text,where in expressions:
                 if text not in normalized:normalized[text]=_normalized(text)
-                groups.setdefault(normalized[text],[]).append(where)
-            # An AST dump starts with its node class. Impossible root classes
-            # cannot match; avoid recursively dumping their entire subtrees.
-            by_line[line+body_offset]=(token,groups,{key.partition('(')[0] for key in groups})
+                expression=normalized[text]
+                if not isinstance(expression,ast.AST):continue
+                groups.setdefault(index.key(expression),[]).append(where)
+                root_types.add(type(expression).__name__)
+            # Impossible root classes cannot match; do not index their subtrees.
+            by_line[line+body_offset]=(token,groups,root_types)
         consumed={}
         def visit(node,inherited=None,parent_line=None):
             original=getattr(node,'lineno',None)
@@ -63,7 +80,7 @@ class SourceMap:
             if row:
                 token=token or row[0]
                 if isinstance(node,ast.expr) and type(node).__name__ in row[2]:
-                    key=ast.dump(node,include_attributes=False)
+                    key=index.key(node)
                     # Attribute/source location fields do not enter the key.
                     matches=row[1].get(key)
                     if matches:
@@ -74,7 +91,8 @@ class SourceMap:
             if token is not None and original is not None:
                 node.lineno=token.line;node.end_lineno=token.line
                 node.col_offset=max(0,token.column-1);node.end_col_offset=node.col_offset+1
-        visit(tree)
+        try:visit(tree)
+        finally:del visit  # Break the recursive closure cycle; release the index promptly.
         return compile(tree,filename,'exec')
 
 

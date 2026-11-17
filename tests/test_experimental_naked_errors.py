@@ -36,7 +36,7 @@ class NakedErrorMappingTests(unittest.TestCase):
                 mapping.compile('x=1+2\ny=1+2\n','repeat.bsl',0)
                 normalize.assert_called_once_with('(1 + 2)')
 
-    def test_impossible_root_class_is_not_dumped(self):
+    def test_mapping_does_not_serialize_subtrees(self):
         import ast
         import yadinassi.experimental_naked_errors as errors
         node=parse('x=1+2;','filter.bsl')[0]
@@ -44,8 +44,7 @@ class NakedErrorMappingTests(unittest.TestCase):
         mapping.expression('(1 + 2)',node.value);mapping.line(1);mapping.leave()
         with patch.object(errors.ast,'dump',wraps=ast.dump) as dump:
             mapping.compile('x=1+2\n','filter.bsl',0)
-            self.assertTrue(dump.call_args_list)
-            self.assertTrue(all(isinstance(call.args[0],ast.BinOp) for call in dump.call_args_list))
+            dump.assert_not_called()
 
     def test_duplicate_expressions_retain_distinct_source_locations(self):
         source='x=1/0; y=1/0;'
