@@ -4,11 +4,20 @@ from .http_client import BSLHTTPConnection, BSLHTTPRequest
 from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
 from .values import HostFunction
+from .type_descriptions import BSLTypeDescription
+from .value_tables import BSLValueTable
+from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQualifiers, BSLBinaryDataQualifiers
 from . import regex_functions, strings
 from .experimental_naked_boundaries import BoundaryViolation
 
 CONSTRUCTORS = {
     alias: factory for aliases,factory in (
+        (('valuetable','таблицазначений'),BSLValueTable),
+        (('typedescription','описаниетипов'),BSLTypeDescription),
+        (('numberqualifiers','квалификаторычисла'),BSLNumberQualifiers),
+        (('stringqualifiers','квалификаторыстроки'),BSLStringQualifiers),
+        (('datequalifiers','квалификаторыдаты'),BSLDateQualifiers),
+        (('binarydataqualifiers','квалификаторыдвоичныхданных'),BSLBinaryDataQualifiers),
         (('file','файл'),BSLFile),
         (('binarydata','двоичныеданные'),BSLBinaryData),
         (('binarydatabuffer','буфердвоичныхданных'),BSLBinaryDataBuffer),
@@ -35,14 +44,19 @@ class ServicesBoundary:
             if type(factory) is not HostFunction or factory.function is not expected:
                 raise BoundaryViolation('direct constructor requires canonical registration: '+key[4:])
             bound=super().resolve_callable(factory)
-            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer):
+            if expected in (BSLHTTPConnection,BSLHTTPRequest,BSLFile,BSLBinaryData,BSLBinaryDataBuffer,BSLValueTable,BSLTypeDescription,BSLNumberQualifiers,BSLStringQualifiers,BSLDateQualifiers,BSLBinaryDataQualifiers):
                 original=bound
                 def guarded(*values):
                     self._check()
                     if factory.function is not expected:
-                        raise BoundaryViolation('HTTP/file constructor changed during argument evaluation')
+                        raise BoundaryViolation('canonical constructor changed during argument evaluation')
                     return original(*values)
                 bound=guarded
+            if expected is BSLTypeDescription:
+                def prepare_omissions(bound,positions,count):
+                    self._check()
+                    return bound,{index:None for index in positions}
+                bound.prepare_omissions=prepare_omissions
             if expected in (BSLHTTPConnection,BSLHTTPRequest):
                 limit=8 if expected is BSLHTTPConnection else 2
                 def prepare_omissions(bound,positions,count):
