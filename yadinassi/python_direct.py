@@ -90,8 +90,8 @@ def _source_facts(program):
             constructors.add(node.name.casefold())
         if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context not in ('client','server')):
             _reject('async/NoContext source routines are not integrated')
-        if type(node) is ast.Import or type(node) is ast.ServerInitializer:
-            _reject('imports/server initialization are not integrated')
+        if type(node) is ast.Import:
+            _reject('imports are not integrated')
         if type(node) is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
@@ -151,7 +151,8 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_names import NAMES as SYSTEM_NAMES
-    program=[node for node in program if type(node) not in (ast.Var,ast.Routine) or node.execution_context=='client']
+    program=[node for node in program if type(node) is not ast.ServerInitializer
+             and (type(node) not in (ast.Var,ast.Routine) or node.execution_context=='client')]
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
         lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
@@ -199,7 +200,7 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     plan=_compile(vm,owned,nodes,source_text,source_name)
     declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
     from .python_direct_routines import prepare as prepare_routines
-    exports=prepare_routines(vm,owned,plan) if routines else None
+    exports=prepare_routines(vm,owned,plan) if routines or any(type(n) is ast.ServerInitializer for n in owned) else None
     server_declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='server' for name in node.names)
     server_layout=server_declared.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
@@ -242,12 +243,15 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     from .execution_policy import execution_backend_policy
     plan=_compile(vm,program,nodes,source_text,source_name) if _prepared is None else copy(_prepared._plan)
     from .python_direct_routines import prepare as prepare_routines, resolve as resolve_routine
-    exports=(_prepared._exports if _prepared is not None else prepare_routines(vm,program,plan)) if routines else None
+    exports=(_prepared._exports if _prepared is not None else
+             prepare_routines(vm,program,plan) if routines or any(type(n) is ast.ServerInitializer for n in program) else None)
     from .python_direct_routines import validate_calls
     prospective=dict(getattr(vm,'_direct_routine_modules',{}))
     if exports is not None:prospective.update({name:exports for name in exports.signatures})
     calls=_prepared._calls if _prepared is not None else _source_facts(program)[3]
-    validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared)
+    initializers=tuple(getattr(vm,'_direct_server_initializers',()))
+    if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
+    validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     from .python_direct_database import CatalogBoundary
     database = vm.database_context
     class DirectBoundary(CatalogBoundary, BoundaryContext):
@@ -285,6 +289,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     if exports is not None:
         if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
         vm._direct_routine_modules.update({name:exports for name in exports.signatures})
+    vm._direct_server_initializers=initializers
     previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
     if database is not None:vm._transaction_activation_allowed=False
     vm._direct_active=True

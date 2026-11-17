@@ -578,3 +578,17 @@ transfer limits, owner/context checks, отсутствие copyback при esca
 красным на server initialization; object witness — stage8 TypeOf(Structure).
 125+8 tests normal и optimized,85 independent optimized PASS.
 [Контракт, ограничения и воспроизведение](direct-logical-server.md).
+
+### Direct server initialization (2026-11-17)
+
+Base ed6feafb: явно скомпилированные серверные initializers исполняются по порядку
+один раз на новый client→server crossing, до callee, в отдельном server state.
+Nested calls не переинициализируют state; ошибки/closed owner не дают copyback.
+Current constructor/dependency/profile/layout checks сохранены, code-only plans
+не удерживают closures. Server layout expansion требует fresh Interpreter.
+
+Original module-context witness:10 records,9 совпадений; index6 — прежний
+ErrorDescription gap. Full original/owned-SQLite witness теперь блокируется
+NoContext и всё ещё не даёт полного результата. 144 normal/144 optimized,
+78 independent optimized PASS. Audit10 source-map сохранён.
+[Контракт и воспроизведение](direct-logical-server.md).

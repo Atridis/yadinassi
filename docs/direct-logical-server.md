@@ -25,7 +25,7 @@ Server layout учитывает предыдущие объявления. Пр
 
 ## Явные ограничения
 
-- `NoContext`, dual/async, серверные initializers и imports не подключены. Существующий native `client_probe.bsl` поэтому
+- `NoContext`, dual/async и imports не подключены. Существующий native `client_probe.bsl` поэтому
   **по-прежнему не выполняется целиком**.
 - DB namespace и Query на сервере не добавлены этим пакетом. Отдельные формы
   и configuration runtime сохраняют свои собственные точки входа.
@@ -81,4 +81,48 @@ object-transfer блок возвращает `object.runtime-error`, stage 8: T
 
 ```sh
 PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_server_byref test_python_direct_server test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
+```
+
+## Серверная инициализация
+
+Срез поверх `ed6feafb30f5a1b734534b21ea5620bed92852b0` компилирует явно
+выделенные frontend ServerInitializer bodies в отдельные Python-планы. При
+загрузке клиентского модуля они не исполняются. При каждом новом клиентском
+вызове сервера создаётся state, затем все установленные initializers исполняются
+в порядке загрузки, затем вызывается процедура. Вложенные серверные вызовы
+используют тот же state и повторно initialization не запускают. Initializer может
+вызывать серверные процедуры через существующий direct service boundary.
+
+Повторная загрузка, включая execute_prepared, добавляет initializer повторно,
+как существующий runtime. Замена routine не удаляет ранее установленные
+initializers. Хранятся code/facts, не closures или состояние. Все initializer
+constructor bindings и транзитивные routine dependencies проверяются заново;
+prospective metadata учитывается до клиентских source effects. Prepared layout
+проверяется на текущем получателе. Init-only source допускается при существующем
+server layout; отдельное объявление server Var без routine остаётся прежним gap.
+
+При расширении server layout ранее скомпилированный initializer не получает
+новые имена молча: требуется свежий Interpreter и повторная загрузка исходников.
+Ошибка initialization не вызывает процедуру, не публикует byref copyback и
+восстанавливает client context. Source location сохраняется; закрытие владельца
+и обратный вызов client из server остаются запрещёнными.
+
+**144 targeted normal + 144 optimized PASS**, independent review **78 optimized
+PASS**, включая prepared/source-map и SQLite validator boundaries. Source-map
+из audit10 сохранён без изменений. Тесты находятся в
+`tests/test_python_direct_server_initializers.py`.
+
+Из оригинального `client_probe.bsl` без изменения BSL взяты module-context
+объявления, соответствующий measurement block и заключительная initialization.
+Direct/control дают 10 records, 9 совпадают. Counters: client10→11; server
+initial100, nested111, следующий crossing снова100. Индекс6 False вместоTrue —
+старый ErrorDescription gap, не полная parity. Native fixture не изменён.
+
+Полный original source теперь проходит initializer admission и останавливается
+на `async/NoContext source routines are not integrated`. Настоящий owned-SQLite
+verifier всё ещё возвращает `interpreter_failed` без witness values. NoContext,
+dual и другие указанные ранее gaps не сняты этим срезом.
+
+```sh
+PYTHONPATH=tests:scripts:. python -O -m unittest test_python_direct_server_initializers test_python_direct_server test_python_direct_server_byref test_python_direct_persistent test_python_direct_prepared_admission test_python_direct_managed_profile
 ```

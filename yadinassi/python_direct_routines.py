@@ -18,14 +18,18 @@ class RoutineModule:
     server_plan: object = None
     server_names: frozenset = frozenset()
     server_layout: frozenset = frozenset()
+    initializer_plan: object = None
+    initializer_constructors: frozenset = frozenset()
+    initializer_calls: frozenset = frozenset()
 
 
 def prepare(vm, program, plan):
     from .syntax import ast
     from .python_direct import _snapshot, _source_facts, _contract
-    declarations=_snapshot([node for node in program if type(node) in (ast.Var,ast.Routine)])
+    declarations=_snapshot([node for node in program if type(node) in (ast.Var,ast.Routine,ast.ServerInitializer)])
     nodes,names,constructors,calls=_source_facts(declarations)
-    if not names:return None
+    initializer_body=[item for node in declarations if type(node) is ast.ServerInitializer for item in node.body]
+    if not names and not initializer_body:return None
     exports=copy(plan)
     exports.last_state=None;exports.output=None
     signatures={node.name.casefold():(node.is_function,
@@ -33,26 +37,35 @@ def prepare(vm, program, plan):
         len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not p.by_value))
         for node in declarations if type(node) is ast.Routine}
     declared={name.casefold() for node in declarations if type(node) is ast.Var and node.execution_context=='client' for name in node.names}
-    server=[node for node in declarations if node.execution_context=='server']
+    server=[node for node in declarations if type(node) is not ast.ServerInitializer and node.execution_context=='server']
     server_names=frozenset(node.name.casefold() for node in server if type(node) is ast.Routine)
     server_layout=frozenset(name.casefold() for node in server if type(node) is ast.Var for name in node.names)
     server_layout=server_layout.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
     server_plan=None
-    if server_names:
+    if server_names or initializer_body:
         from .experimental_naked_collections import prepare as compile_server
         from .python_direct import REPAIRS
         from .python_direct_names import NAMES
+    if server_names:
         server_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=server,
             repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
             _trusted_entry=True,_export_routines=True)
+    initializer_plan=None;initializer_constructors=initializer_calls=frozenset()
+    if initializer_body:
+        _,_,initializer_constructors,initializer_calls=_source_facts(initializer_body)
+        initializer_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=initializer_body,
+            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            _trusted_entry=True,_initialize_module=False)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
-                         constructors,calls-names,server_plan,server_names,server_layout)
+                         constructors,calls-names,server_plan,server_names,server_layout,
+                         initializer_plan,initializer_constructors,initializer_calls)
 
 
-def validate_calls(vm, calls, seen=None, *, registry=None, layout=None):
+def validate_calls(vm, calls, seen=None, *, registry=None, layout=None, initializers=None):
     from .python_direct import _contract, _reject, _admit_bindings
     registry=getattr(vm,'_direct_routine_modules',{}) if registry is None else registry
     layout=frozenset(vm.module_names) if layout is None else layout
+    initializers=getattr(vm,'_direct_server_initializers',()) if initializers is None else initializers
     seen=set() if seen is None else seen
     for name in calls:
         module=registry.get(name)
@@ -66,7 +79,16 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None):
         if any(registry.get(key) is not module for key in module.signatures):
             _reject('routines declared together were partially replaced; redeclare the module')
         _admit_bindings(vm,frozenset(),module.constructors,frozenset())
-        validate_calls(vm,module.calls,seen,registry=registry,layout=layout)
+        validate_calls(vm,module.calls,seen,registry=registry,layout=layout,initializers=initializers)
+        if module.server_names:
+            for initializer in initializers:
+                marker=('initializer',id(initializer))
+                if marker in seen:continue
+                seen.add(marker)
+                if initializer.contract!=_contract(vm):_reject('server initializer contract changed; reload in a fresh interpreter')
+                if initializer.server_layout!=current_server_layout:_reject('server initializer layout changed; reload in a fresh interpreter')
+                _admit_bindings(vm,frozenset(),initializer.initializer_constructors,frozenset())
+                validate_calls(vm,initializer.initializer_calls,seen,registry=registry,layout=layout,initializers=initializers)
 
 
 def resolve(context, name, *, require_value=False, allow_references=False, argument_count=None):

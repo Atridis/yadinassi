@@ -1,7 +1,7 @@
 """Synchronous logical server calls with fresh side-local state, no VM dispatch.
 
 Module-context calls support Val and named-variable reference copyback.
-NoContext, dual declarations and server initializers remain explicit gaps.
+NoContext and dual declarations remain explicit gaps.
 """
 from decimal import Decimal
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
@@ -109,6 +109,16 @@ def resolve_server(parent,module,name,*,require_value,allow_references):
             context.enter()
             try:
                 try:
+                    for initializer in getattr(vm,'_direct_server_initializers',()):
+                        for key in initializer.server_layout:context.state.setdefault(key,None)
+                        plan=initializer.initializer_plan
+                        try:plan.function(context.state,plan.constants,[],context)
+                        except Exception as error:
+                            from .experimental_naked_errors import convert_error
+                            converted=convert_error(error,plan.source_name,plan.source_text)
+                            if converted is error:raise
+                            raise converted from None
+                        context._check()
                     result=execute(context,packet)
                     outgoing=transfer([result]+[packet[i].value for i,_ in outputs])
                 finally:context._check()

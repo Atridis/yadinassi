@@ -70,9 +70,9 @@ class DirectManagedProfileTests(unittest.TestCase):
                 self.assertEqual(len(output),count);captures.append(output)
             self.assertEqual(*captures)
 
-    def test_exact_whole_client_witness_exposes_server_initializer_blocker(self):
+    def test_exact_whole_client_witness_exposes_nocontext_blocker(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'imports/server initialization'):
+        with self.assertRaisesRegex(PythonDirectUnsupported,'async/NoContext'):
             vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
         self.assertEqual(vm.variables,{})
 
