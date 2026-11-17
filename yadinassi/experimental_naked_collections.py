@@ -748,10 +748,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 external_call=external_name(callee.name) and callee.name.casefold() in source_callable_externals
                 if external_name(callee.name) and not external_call:raise UnsupportedNakedSyntax('external namespace names are not callable: '+callee.name)
                 required_services.add(callee.name.casefold())
+                service_name=callee.name if _source_routine_scopes else callee.name.casefold()
                 fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
                 if external_call:fallback='_MISSING'
                 if dynamic_refs and callee.name.casefold() not in service_references:
-                    bound='_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')'
+                    bound='_context.resolve_service('+repr(service_name)+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')'
                     if 'execute_fragments' in repairs and callee.name.casefold() in ('eval','вычислить'):
                         pairs=[]
                         for key in sorted(execute_scopes[scope_id]):
@@ -760,7 +761,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                         visible=None if scope_id is None else tuple(sorted(routine_globals.get(scope_id,())))
                         bound='_bind_eval('+bound+', _context, _initial, {'+', '.join(pairs)+'}, '+repr(visible)+')'
                     return dynamic_call(bound,node)
-                return '_context.resolve_service('+repr(callee.name.casefold())+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
+                return '_context.resolve_service('+repr(service_name)+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
             if services and dynamic_refs:return dynamic_call('_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+', allow_references=True)',node)
             if services:return '_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+')('+', '.join(expression(arg) for arg in node.arguments)+')'
             return expression(callee)+'('+', '.join(expression(arg) for arg in node.arguments)+')'

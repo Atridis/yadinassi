@@ -187,7 +187,8 @@ def bind(boundary,value,function,name,*,require_value=False,allow_references=Fal
         if argument_count is not None:impl.prepare(boundary.vm,argument_count)
     elif type(impl) is SourceReferenceCall:
         if argument_count is not None and argument_count!=(1 if impl.operation=='ref' else 0):
-            raise TypeError('invalid source reference argument count')
+            raise TypeError('source GetRef requires one explicit UUID' if impl.operation=='ref'
+                            else 'source EmptyRef/Metadata take no arguments')
     elif type(impl) is SourceCatalogCall:
         from .source_catalog_runtime import store_for
         manager=impl.receiver if type(impl.receiver) is SourceReferenceManager else impl.receiver.manager
