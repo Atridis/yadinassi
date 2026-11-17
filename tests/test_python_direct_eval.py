@@ -75,3 +75,60 @@ class DirectEvalTests(unittest.TestCase):
         vm=Interpreter(compilation_profile='managed-thick-file')
         vm.execute('&AtClientAtServerNoContext\nFunction D(Val N) If N=0 Then Return 0;EndIf;Return Eval("D(N-1)");EndFunction Try R=Eval("D(20)");Except Caught=True;EndTry;S=Eval("D(2)");')
         self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['s'],0)
+
+class EvalPreparationReuseTests(unittest.TestCase):
+    def test_reuse_preparation_not_values(self):
+        from yadinassi.syntax import parser
+        with patch.object(parser,'parse_expression',wraps=parser.parse_expression) as parse:
+            vm=Interpreter();vm.execute('Function F() S=0;For I=1 To 20 Do S=Eval("S+1");EndDo;Return S;EndFunction R=F();')
+        self.assertEqual(vm.variables['r'],20);self.assertEqual(parse.call_count,1)
+
+    def test_cached_constructor_readmission_before_effects(self):
+        from yadinassi import BSLError
+        vm=Interpreter();seen=[];vm.register_function('Effect',lambda x:seen.append(x))
+        vm.register_function('Change',lambda:vm.register_type('Array',lambda:[]))
+        with self.assertRaises(BSLError):vm.execute('Eval("Effect(New Array)");Change();Eval("Effect(New Array)");')
+        self.assertEqual(len(seen),1)
+
+    def test_entry_and_text_eviction_and_activation_isolation(self):
+        from yadinassi.syntax import parser
+        for expressions in ([str(i) for i in range(17)]+['0'],['1'+(' '*33000),'2'+(' '*33000),'1'+(' '*33000)]):
+            vm=Interpreter();vm.variables['expressions']=expressions
+            with patch.object(parser,'parse_expression',wraps=parser.parse_expression) as parse:
+                vm.execute('For Each E In expressions Do R=Eval(E);EndDo;')
+                self.assertEqual(parse.call_count,len(expressions))
+                vm.execute('R=Eval("0");');self.assertEqual(parse.call_count,len(expressions)+1)
+
+    def test_limits_are_checked_after_warmup(self):
+        from yadinassi import BSLError
+        vm=Interpreter()
+        with patch('yadinassi.runtime.EVAL_MAX_SOURCE',65536):
+            def shrink():
+                import yadinassi.runtime as runtime
+                runtime.EVAL_MAX_SOURCE=1
+            vm.register_function('Shrink',shrink)
+            with self.assertRaisesRegex(BSLError,'предел текста'):vm.execute('S=0;S=Eval("S+1");Shrink();S=Eval("S+1");')
+        self.assertEqual(vm.variables['s'],1)
+
+    def test_retained_units_do_not_retain_owner_or_scope(self):
+        import gc,weakref
+        import yadinassi.python_direct_execute as fragments
+        units=[];refs=[];original=fragments.FragmentScope.__init__
+        def track(scope,*args):
+            original(scope,*args);refs.extend((weakref.ref(scope),weakref.ref(scope.context)))
+            units.extend(scope.context._eval_units.values())
+        vm=Interpreter();ref=weakref.ref(vm)
+        with patch.object(fragments.FragmentScope,'__init__',track):vm.execute('S=0;For I=1 To 3 Do S=Eval("S+1");EndDo;')
+        vm.close();del vm;gc.collect()
+        self.assertTrue(units);self.assertIsNone(ref());self.assertTrue(all(r() is None for r in refs))
+
+    def test_cached_calls_reject_partial_persistent_replacement(self):
+        from yadinassi import BSLError
+        vm=Interpreter();seen=[]
+        vm.execute('Function F() Return 1;EndFunction Function G() Return F();EndFunction')
+        replacement=Interpreter();replacement.execute('Function F() Return 9;EndFunction')
+        vm.register_function('Change',lambda:vm._direct_routine_modules.__setitem__('f',replacement._direct_routine_modules['f']))
+        vm.register_function('Effect',lambda:seen.append('effect') or 0)
+        with self.assertRaisesRegex(BSLError,'partially replaced'):
+            vm.execute('R=Eval("Effect()+G()");Change();R=Eval("Effect()+G()");')
+        self.assertEqual(seen,['effect'])

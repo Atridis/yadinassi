@@ -43,28 +43,41 @@ def evaluate(value,context,parent,bindings,visible):
     try:
         from .syntax.parser import parse_expression
         from .syntax.ast import ExpressionStatement
-        from .python_direct import _source_facts,_admit_bindings,REPAIRS
+        from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
         from .experimental_naked_collections import prepare
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
         from .python_direct_execute import FragmentScope
-        try:expression=parse_expression(text)
-        except BSLError as error:
-            raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
-        program=[ExpressionStatement(expression.token,expression)]
-        _,routines,constructors,calls=_source_facts(program)
-        _admit_bindings(vm,routines,constructors,calls)
-        plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=REPAIRS,
-            constructors=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+
-                (('query','запрос') if vm.database_context is not None else ()),
-            external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ()),
-            _trusted_entry=True,_return_last_expression=True)
+        constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
+        external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
+        key=(text,_contract(vm),REPAIRS,constructor_names,external_names,EVAL_MAX_SOURCE,EVAL_MAX_DEPTH)
+        cache=getattr(context,'_eval_units',None)
+        if cache is None:cache=context._eval_units={}
+        unit=cache.get(key)
+        if unit is None:
+            try:expression=parse_expression(text)
+            except BSLError as error:
+                raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
+            program=[ExpressionStatement(expression.token,expression)]
+            _,routines,constructors,calls=_source_facts(program)
+            _admit_bindings(vm,routines,constructors,calls)
+            plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=REPAIRS,
+                constructors=constructor_names,external_names=external_names,
+                _trusted_entry=True,_return_last_expression=True)
+            # Retain compilation only, never AST, mutable Program, bindings or authority.
+            unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
+            while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EVAL_MAX_SOURCE):
+                del cache[next(iter(cache))]
+            cache[key]=unit
+        else:
+            _admit_bindings(vm,*unit[:3])
+        function,constants,source_name,source_text=unit[3:]
         scope=FragmentScope(parent,bindings,visible,context)
-        try:return plan.function(scope,plan.constants,[],context)
+        try:return function(scope,constants,[],context)
         except Exception as error:
             from .experimental_naked_errors import convert_error
-            converted=convert_error(error,plan.source_name,plan.source_text)
+            converted=convert_error(error,source_name,source_text)
             if converted is error:raise
             raise converted from None
     finally:

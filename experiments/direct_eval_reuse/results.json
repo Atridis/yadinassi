@@ -1,0 +1,198 @@
+[
+  {
+    "pair": 0,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.8080333510006312,
+    "result": "1000"
+  },
+  {
+    "pair": 0,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.030682586999319028,
+    "result": "1000"
+  },
+  {
+    "pair": 1,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.043323227000655606,
+    "result": "1000"
+  },
+  {
+    "pair": 1,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.3424510449985974,
+    "result": "1000"
+  },
+  {
+    "pair": 2,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.4401383420008642,
+    "result": "1000"
+  },
+  {
+    "pair": 2,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.03332566699828021,
+    "result": "1000"
+  },
+  {
+    "pair": 3,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.03825556699666777,
+    "result": "1000"
+  },
+  {
+    "pair": 3,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.3212202130016522,
+    "result": "1000"
+  },
+  {
+    "pair": 4,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.2290808750003634,
+    "result": "1000"
+  },
+  {
+    "pair": 4,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.034375672999885865,
+    "result": "1000"
+  },
+  {
+    "pair": 5,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.03624974200283759,
+    "result": "1000"
+  },
+  {
+    "pair": 5,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.1672246220005036,
+    "result": "1000"
+  },
+  {
+    "pair": 6,
+    "locals": 0,
+    "variant": "baseline",
+    "seconds": 1.3780196640000213,
+    "result": "1000"
+  },
+  {
+    "pair": 6,
+    "locals": 0,
+    "variant": "candidate",
+    "seconds": 0.05746359600016149,
+    "result": "1000"
+  },
+  {
+    "pair": 0,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.5772121869995317,
+    "result": "1000"
+  },
+  {
+    "pair": 0,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.16421826299847453,
+    "result": "1000"
+  },
+  {
+    "pair": 1,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.20466761900024721,
+    "result": "1000"
+  },
+  {
+    "pair": 1,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.4747676890001458,
+    "result": "1000"
+  },
+  {
+    "pair": 2,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.4231998799987196,
+    "result": "1000"
+  },
+  {
+    "pair": 2,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.15570923699851846,
+    "result": "1000"
+  },
+  {
+    "pair": 3,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.19192489200213458,
+    "result": "1000"
+  },
+  {
+    "pair": 3,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.3728010160011763,
+    "result": "1000"
+  },
+  {
+    "pair": 4,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.6216342900006566,
+    "result": "1000"
+  },
+  {
+    "pair": 4,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.24798092899800395,
+    "result": "1000"
+  },
+  {
+    "pair": 5,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.17395072300132597,
+    "result": "1000"
+  },
+  {
+    "pair": 5,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.5546996699995361,
+    "result": "1000"
+  },
+  {
+    "pair": 6,
+    "locals": 100,
+    "variant": "baseline",
+    "seconds": 1.8303411710003274,
+    "result": "1000"
+  },
+  {
+    "pair": 6,
+    "locals": 100,
+    "variant": "candidate",
+    "seconds": 0.16816589399968507,
+    "result": "1000"
+  }
+]
