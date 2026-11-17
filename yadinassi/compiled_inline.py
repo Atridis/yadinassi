@@ -5,7 +5,6 @@ Node references remain diagnostic/helper handles; control operands are captured
 in generated bindings rather than reread from mutable AST during execution.
 """
 from dataclasses import dataclass
-import ast as pyast
 import sys
 from decimal import Decimal
 
@@ -65,8 +64,7 @@ class _CodeCache:
             self.misses += 1
         # Parsing/compilation intentionally outside lock. Concurrent misses may
         # compile twice, but share no namespaces or partially constructed code.
-        code = compile(pyast.parse(source, filename='<bsl-inline>'),
-                       '<bsl-inline>', 'exec', flags=flags,
+        code = compile(source, '<bsl-inline>', 'exec', flags=flags,
                        dont_inherit=True, optimize=level)
         if type(code) is not CodeType:
             raise ValueError('inline cache accepts executable code objects only')

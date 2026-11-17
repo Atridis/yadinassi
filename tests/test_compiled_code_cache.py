@@ -25,6 +25,43 @@ class CompiledCodeCacheTests(unittest.TestCase):
             self.assertEqual(compiler.call_count, calls)
         self.assertEqual(cache.info()['hits'], 1)
 
+    def test_miss_compiles_source_once_without_intermediate_ast(self):
+        import ast
+        import builtins
+        source = 'def generated():\n    return 41 + 1\n'
+        with patch('ast.parse', side_effect=AssertionError('redundant parse')), \
+                patch('builtins.compile', wraps=builtins.compile) as compiler:
+            code = _CodeCache().get(source, optimize=0)
+        compiler.assert_called_once_with(source, '<bsl-inline>', 'exec',
+                                         flags=0, dont_inherit=True, optimize=0)
+        namespace = {}
+        exec(code, namespace)
+        self.assertEqual(namespace['generated'](), 42)
+
+    def test_generated_source_diagnostics_and_failed_compiles_not_cached(self):
+        cache = _CodeCache()
+        for _ in range(2):
+            with self.assertRaises(SyntaxError) as caught:
+                cache.get('def generated():\n    return (\n')
+            self.assertEqual(caught.exception.filename, '<bsl-inline>')
+            self.assertEqual(caught.exception.lineno, 2)
+            self.assertEqual(cache.info()['entries'], 0)
+        self.assertEqual(cache.info()['misses'], 2)
+        with self.assertRaises(SyntaxError):
+            cache.get('return 42')
+        self.assertEqual(cache.info()['entries'], 0)
+
+    def test_caller_future_flags_are_not_inherited(self):
+        import __future__
+        namespace = {'cache': _CodeCache()}
+        caller = compile("code = cache.get('x: int = 1')", '<caller>', 'exec',
+                         flags=__future__.annotations.compiler_flag,
+                         dont_inherit=True)
+        exec(caller, namespace)
+        result = {}
+        exec(namespace['code'], result)
+        self.assertIs(result['__annotations__']['x'], int)
+
     def test_fresh_vm_values_callbacks_and_no_host_retention(self):
         class Host:
             def __init__(self, value): self.value = value
