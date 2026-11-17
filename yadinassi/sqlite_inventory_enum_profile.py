@@ -143,7 +143,18 @@ def read_source(connection, *, _prepared=None):
 
 
 def admit(connection,database_id,catalogs,documents,*,validate_rows=False,_prepared=None):
-    config,domain,key=read_source(connection,_prepared=_prepared)
+    source=read_source(connection,_prepared=_prepared)
+    return _admit_source(connection,database_id,catalogs,documents,source,
+                         validate_rows=validate_rows,_prepared=_prepared)
+
+
+def _admit_source(connection,database_id,catalogs,documents,source,*,validate_rows=False,_prepared=None):
+    """Finish admission using a source just read in this same transaction.
+
+    Internal seam only: the caller must not retain this tuple across transactions
+    or perform writes between read_source and this validation.
+    """
+    config,domain,key=source
     if domain.database_id!=database_id or config.catalogs!=catalogs or config.documents!=documents:
         raise BackendError('integrity')
     if connection.execute('SELECT COUNT(*) FROM accumulation_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')

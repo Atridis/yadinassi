@@ -405,3 +405,17 @@ and same-name routine declarations reject. Parameters and explicit routine-local
 external-name contract rather than adding a general dynamic name resolver.
 Qualified byref namespace members and other system namespaces are outside this
 slice. No performance improvement or full CI success is claimed.
+
+### Transaction-local source read (audit8, 2026-11-17)
+
+On baseline `8da65871`, format-16 `_begin` read and validated source twice inside
+one SQLite transaction. The second admission now consumes the first local tuple;
+public standalone admission still reads fresh source. All subsequent validation
+and prepared-import publication remain. No long-lived admission cache or VM
+change. Source SELECT count for read/write/read: 6 -> 3.
+
+85 normal + 85 optimized targeted tests pass; independent review: 47 optimized
+pass, no blockers. Seven alternating actual MainDemoHost pairs show Product Save
+55.643 -> 43.161ms, with all pair medians improved. Other operations have small
+or negative/noisy changes; no generic speedup claimed. Current-snapshot and
+corruption cases pass. [Raw results, reproducer, limits and next-candidate profile](../experiments/transaction_source_read/README.md) accompany this slice.

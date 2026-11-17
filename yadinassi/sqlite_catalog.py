@@ -1539,7 +1539,8 @@ class SQLiteCatalogBackend:
                 if self.format_version in (11, 12) and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
                 if self.format_version == 16:
                     from .sqlite_inventory_enum_profile import read_source
-                    config, domain, _ = read_source(connection, _prepared=self._prepared_source)
+                    enum_source = read_source(connection, _prepared=self._prepared_source)
+                    config, domain, _ = enum_source
                     if config != self.accumulation_configuration or domain != self._enum_domain:
                         raise BackendError('schema_changed')
                 if self.storage_version >= 2:
@@ -1583,9 +1584,9 @@ class SQLiteCatalogBackend:
                              _prepared=self._prepared_source) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 if self.format_version == 16:
-                    from .sqlite_inventory_enum_profile import admit
-                    if admit(connection, self.database_id, self._schemas, self._document_schemas,
-                             _prepared=self._prepared_source) != self.accumulation_configuration:
+                    from .sqlite_inventory_enum_profile import _admit_source
+                    if _admit_source(connection, self.database_id, self._schemas, self._document_schemas,
+                                     enum_source, _prepared=self._prepared_source) != self.accumulation_configuration:
                         raise BackendError('schema_changed')
                 view = _View(self, connection, operation_id)
                 if handle is not None:
