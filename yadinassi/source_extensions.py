@@ -74,3 +74,10 @@ class ExtensionCall:
 
     def invoke(self, caller, values):
         return self.manager.read(caller, self.operation, values)
+
+
+# Definition-time method identities for the optional direct source bridge.
+_DIRECT_EXTENSIONS_ABI=tuple((cls,tuple((name,getattr(cls,name)) for name in names)) for cls,names in (
+    (SourceExtensions,('get_member','read')),
+    (SourceExtensionSources,('get_member',)),
+    (ExtensionCall,('__call__','invoke'))))

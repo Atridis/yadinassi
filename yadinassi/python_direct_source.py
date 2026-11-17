@@ -18,6 +18,7 @@ from . import python_direct_source_storage as storage
 from . import python_direct_source_query as query
 from . import python_direct_source_sessions as sessions
 from . import python_direct_source_enums as enums
+from . import python_direct_source_extensions as extensions
 
 
 def check_owner(owner):
@@ -180,6 +181,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         if hasattr(bound,'prepare_omissions'):invoke.prepare_omissions=bound.prepare_omissions
         return invoke
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=extensions.captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         captured=storage.captured(self,value,require_value=require_value,allow_references=allow_references)
         if captured is not None:return captured
         bound=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
@@ -196,6 +199,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         self._check()
         from .python_direct_names import NAMES
         if name in NAMES:return NAMES[name]
+        extension=extensions.namespace(self,name)
+        if extension is not None:return extension
         enumeration=enums.namespace(self,name)
         if enumeration is not None:return enumeration
         session=sessions.namespace(self,name)
@@ -357,6 +362,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
     def get_member(self,value,name):
         self._check()
         if name.startswith('_'):raise BoundaryViolation('private source member')
+        if extensions.owns(value):return extensions.get(self,value,name)
         if enums.supports(self,value):return enums.get(self,value,name)
         if sessions.owns(value):return sessions.get(self,value,name)
         if query.supports(value):return query.get_member(self,value,name)
@@ -367,6 +373,8 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         raise ValueError('direct source receiver is not integrated')
     def resolve_source_member(self,value,name,*,require_value=False,argument_count=None,allow_references=False):
         self._check()
+        if extensions.owns(value):return extensions.resolve(self,value,name,require_value=require_value,
+            argument_count=argument_count,allow_references=allow_references)
         if enums.supports(self,value):return enums.resolve(self,value,name,require_value=require_value,
             argument_count=argument_count,allow_references=allow_references)
         if sessions.owns(value):return sessions.resolve(self,value,name,require_value=require_value,
@@ -396,6 +404,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().reference_member(value,name)
     def resolve_set_member(self,value,name):
         self._check()
+        if extensions.owns(value):return extensions.set_member(self,value,name)
         if enums.supports(self,value):return enums.set_member(self,value,name)
         if sessions.owns(value):return sessions.set_member(self,value,name)
         if query.supports(value):return query.resolve_set_member(self,value,name)
@@ -404,6 +413,7 @@ class SourceBoundary(ServicesBoundary,BoundaryContext):
         return super().resolve_set_member(value,name)
     def resolve_member(self,value,name):
         self._check()
+        if extensions.owns(value):return extensions.resolve(self,value,name)
         if enums.supports(self,value):return enums.resolve(self,value,name)
         if sessions.owns(value):return sessions.resolve(self,value,name)
         if query.supports(value):return query.resolve_member(self,value,name)
