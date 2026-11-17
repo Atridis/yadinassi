@@ -15,6 +15,9 @@ class RoutineModule:
     layout: frozenset
     constructors: frozenset
     calls: frozenset
+    server_plan: object = None
+    server_names: frozenset = frozenset()
+    server_layout: frozenset = frozenset()
 
 
 def prepare(vm, program, plan):
@@ -29,9 +32,21 @@ def prepare(vm, program, plan):
         max((i+1 for i,p in enumerate(node.parameters) if p.default is None),default=0),
         len(node.parameters),frozenset(i for i,p in enumerate(node.parameters) if not p.by_value))
         for node in declarations if type(node) is ast.Routine}
-    declared={name.casefold() for node in declarations if type(node) is ast.Var for name in node.names}
+    declared={name.casefold() for node in declarations if type(node) is ast.Var and node.execution_context=='client' for name in node.names}
+    server=[node for node in declarations if node.execution_context=='server']
+    server_names=frozenset(node.name.casefold() for node in server if type(node) is ast.Routine)
+    server_layout=frozenset(name.casefold() for node in server if type(node) is ast.Var for name in node.names)
+    server_layout=server_layout.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
+    server_plan=None
+    if server_names:
+        from .experimental_naked_collections import prepare as compile_server
+        from .python_direct import REPAIRS
+        from .python_direct_names import NAMES
+        server_plan=compile_server(plan.source_text,source_name=plan.source_name,parsed_ast=server,
+            repairs=REPAIRS,module_names=tuple(server_layout),external_names=tuple(NAMES),constructors=('uuid','уникальныйидентификатор'),
+            _trusted_entry=True,_export_routines=True)
     return RoutineModule(exports,signatures,_contract(vm),frozenset(vm.module_names)|declared,
-                         constructors,calls-names)
+                         constructors,calls-names,server_plan,server_names,server_layout)
 
 
 def validate_calls(vm, calls, seen=None, *, registry=None, layout=None):
@@ -45,6 +60,9 @@ def validate_calls(vm, calls, seen=None, *, registry=None, layout=None):
         seen.add(id(module))
         if module.contract!=_contract(vm):_reject('persistent routine backend/target/profile contract changed; redeclare')
         if module.layout!=layout:_reject('persistent routine module-name layout changed; redeclare')
+        current_server_layout=frozenset().union(*(m.server_layout for m in registry.values()))
+        if module.server_names and module.server_layout!=current_server_layout:
+            _reject('persistent server module-name layout changed; redeclare')
         if any(registry.get(key) is not module for key in module.signatures):
             _reject('routines declared together were partially replaced; redeclare the module')
         _admit_bindings(vm,frozenset(),module.constructors,frozenset())
@@ -59,6 +77,11 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
     returns_value,minimum,maximum,references=module.signatures[name]
     if argument_count is not None and not minimum<=argument_count<=maximum:
         raise TypeError('Неверное количество аргументов: '+name)
+    if name in module.server_names:
+        from .python_direct_server import resolve_server
+        return resolve_server(context,module,name,require_value=require_value,allow_references=allow_references)
+    if getattr(context,'_server_side',False):
+        raise TypeError('Вызов клиентской подпрограммы с сервера запрещён')
     def invoke(*arguments):
         # Rebind code to current state/services/boundary, never retain an old VM
         # activation or re-run module statements. Declared variables already exist.

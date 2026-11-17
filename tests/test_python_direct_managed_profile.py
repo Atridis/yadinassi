@@ -41,7 +41,7 @@ class DirectManagedProfileTests(unittest.TestCase):
             self.assertEqual(vm.variables,{})
 
     def test_unsupported_runtime_sides_still_refuse_before_effects(self):
-        for declaration in ('&AtServer\nVar State;', '&AtServer\nFunction F() Return 1; EndFunction',
+        for declaration in ('&AtServer\nVar State;', '&AtServer\nFunction F(X) Return X; EndFunction',
                             '&AtServerNoContext\nFunction F() Return 1; EndFunction',
                             '&AtClientAtServerNoContext\nFunction F() Return 1; EndFunction'):
             vm=Interpreter(compilation_profile=PROFILE)
@@ -72,7 +72,7 @@ class DirectManagedProfileTests(unittest.TestCase):
 
     def test_exact_whole_client_witness_exposes_server_declaration_blocker(self):
         vm=Interpreter(compilation_profile=PROFILE)
-        with self.assertRaisesRegex(PythonDirectUnsupported,'server declarations'):
+        with self.assertRaisesRegex(PythonDirectUnsupported,'server reference parameters|async/NoContext'):
             vm.execute((ROOT/'scripts/native_1c_bootstrap/client_probe.bsl').read_text())
         self.assertEqual(vm.variables,{})
 

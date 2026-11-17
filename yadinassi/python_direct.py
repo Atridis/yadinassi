@@ -3,7 +3,7 @@
 Client execution with either supported compilation profile and an explicit
 host-selected catalog/query bridge live here. Configuration and forms use separate
 direct entry points; unsupported
-async/server/NoContext contracts still require explicit compiled-strict. Registered host services remain trusted
+async/NoContext contracts still require explicit compiled-strict. Registered host services remain trusted
 Python capabilities, not a sandbox.
 """
 from dataclasses import dataclass, fields
@@ -76,23 +76,29 @@ def _source_facts(program):
         _reject('execute_program requires a parsed AST list')
     nodes=tuple(_nodes(program))
     routines=frozenset(node.name.casefold() for node in program if type(node) is ast.Routine)
+    routine_nodes=[node for node in program if type(node) is ast.Routine]
+    if any(type(node) is ast.Var and node.execution_context=='server' for node in program) and not any(node.execution_context=='server' for node in routine_nodes):
+        _reject('server variables require a server routine in the same declaration module')
     constructors=set();calls=set()
     native_names={'array','массив','map','соответствие','structure','структура','uuid','уникальныйидентификатор'}
     for node in nodes:
         if node.token is None:
             _reject('execute_program requires source tokens on every node')
-        if type(node) is ast.Var and node.execution_context!='client':
-            _reject('server declarations are not integrated')
+        if type(node) is ast.Var and node.execution_context not in ('client','server'):
+            _reject('unsupported declaration side')
         if type(node) is ast.New and node.name.casefold() in native_names:
             constructors.add(node.name.casefold())
-        if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context!='client'):
-            _reject('async/server/NoContext source routines are not integrated')
+        if type(node) is ast.Routine and (node.is_async or node.is_dual or not node.module_context or node.execution_context not in ('client','server')):
+            _reject('async/NoContext source routines are not integrated')
+        if type(node) is ast.Routine and node.execution_context=='server' and any(not p.by_value for p in node.parameters):
+            _reject('server reference parameters are not integrated')
         if type(node) is ast.Import or type(node) is ast.ServerInitializer:
             _reject('imports/server initialization are not integrated')
         if type(node) is ast.Call:
             callee=node.callee
             while type(callee) is ast.Group:callee=callee.expression
             if type(callee) is ast.Name:calls.add(callee.name.casefold())
+    if len(routines)!=len(routine_nodes):_reject('duplicate routine declarations')
     return nodes,routines,frozenset(constructors),frozenset(calls)
 
 
@@ -134,6 +140,8 @@ class PreparedDirectModule:
     _calls: frozenset
     _returns_expression: bool
     _exports: object
+    _server_layout: frozenset
+    _server_declared: frozenset
 
 
 def _contract(vm):
@@ -145,6 +153,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_names import NAMES as SYSTEM_NAMES
+    program=[node for node in program if type(node) not in (ast.Var,ast.Routine) or node.execution_context=='client']
     source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
     if source_text is None:
         lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
@@ -190,12 +199,14 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     owned=_snapshot(program)
     nodes,routines,constructors,calls=_source_facts(owned)
     plan=_compile(vm,owned,nodes,source_text,source_name)
-    declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var for name in node.names)
+    declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
     from .python_direct_routines import prepare as prepare_routines
     exports=prepare_routines(vm,owned,plan) if routines else None
+    server_declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='server' for name in node.names)
+    server_layout=server_declared.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
                                 declared,_contract(vm),routines,constructors,calls,
-                                bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports)
+                                bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports,server_layout,server_declared)
 
 
 def execute_prepared(vm,prepared):
@@ -207,7 +218,7 @@ def execute_prepared(vm,prepared):
 def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     if _prepared is None:
         nodes,routines=admit(vm,program)
-        declared=frozenset(name.casefold() for node in program if type(node) is ast.Var for name in node.names)
+        declared=frozenset(name.casefold() for node in program if type(node) is ast.Var and node.execution_context=='client' for name in node.names)
         returns_expression=bool(program and type(program[-1]) is ast.ExpressionStatement)
     else:
         _admit_vm(vm)
@@ -220,6 +231,9 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             _reject('prepared modules require an open interpreter')
         if _contract(vm) != _prepared._contract:
             _reject('prepared backend/target/profile contract changed; prepare again')
+        current_server_layout=_prepared._server_declared.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
+        if current_server_layout != _prepared._server_layout:
+            _reject('prepared server module-name layout changed; prepare again')
         if frozenset(vm.module_names)|_prepared._declared != _prepared._layout:
             _reject('prepared module-name layout changed; prepare again')
     from .runtime import Interpreter
