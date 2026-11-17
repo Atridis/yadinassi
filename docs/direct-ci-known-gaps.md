@@ -419,3 +419,18 @@ pass, no blockers. Seven alternating actual MainDemoHost pairs show Product Save
 55.643 -> 43.161ms, with all pair medians improved. Other operations have small
 or negative/noisy changes; no generic speedup claimed. Current-snapshot and
 corruption cases pass. [Raw results, reproducer, limits and next-candidate profile](../experiments/transaction_source_read/README.md) accompany this slice.
+
+### Current-layout validation without creation preflight (audit8, 2026-11-17)
+
+Baseline `0cdb512c`: existing main-demo database validation constructed and
+discarded a new layout/DDL before loading the actual persisted layout and
+constructing DDL again. Shared fresh catalog validation is now separated from
+creation-only construction. All current canonical/domain/codec/bounds/reference,
+SQLite layout/DDL/index checks remain. Creation still preflights before allocation;
+no cache or change to transaction/data-row validation.
+
+98 normal + 98 optimized tests pass; independent review: 47 optimized, no blockers.
+Seven alternating actual host pairs: Kind Save 31.255 -> 27.493ms, Product Save
+42.692 -> 36.484ms. Six of seven pair medians improve; noise and all raw samples
+are retained. [Reproducer, results and scope](../experiments/current_catalog_shape/README.md).
+No general speedup/full CI/native parity claim.

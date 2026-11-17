@@ -32,8 +32,8 @@ def _base_ddls():
             *s.DOCUMENT_DDL, s._SEQUENCE_DDL, *DDL)
 
 
-def _catalog_shape(catalogs, domain):
-    """Pure codec/layout validation, not a source or write capability."""
+def _validate_catalogs(catalogs, domain):
+    """Validate codec, bounds and references without constructing a new layout."""
     s = _storage()
     if (type(domain) is not EnumValueDomain or type(catalogs) is not tuple
             or not 0 < len(catalogs) <= 512
@@ -58,6 +58,12 @@ def _catalog_shape(catalogs, domain):
         if any(f.target_catalog_id not in identities for f in s._all_fields(catalog)
                if f.kind == 'catalog_ref'):
             raise BackendError('invalid_input')
+
+
+def _catalog_shape(catalogs, domain):
+    """Preflight a new database before allocation, including every SQL declaration."""
+    _validate_catalogs(catalogs, domain)
+    s = _storage()
     reserved = tuple(ddl.split('(')[0].split()[-1] for ddl in _base_ddls())
     layout = s.build_layout(catalogs, reserved_names=reserved)
     sections = s.build_section_layout(catalogs, layout)
@@ -114,8 +120,12 @@ def create_catalog_tables(connection, config, domain):
 def validate_main_demo_ddl(connection, config, domain):
     """Exact full format16 table vocabulary, including catalog section tables."""
     _require_config(config)
-    preflight_catalog_sections(config, domain)
+    if type(domain) is not EnumValueDomain or domain != EnumValueDomain(domain.database_id, config.enumerations):
+        raise BackendError('invalid_input')
+    _validate_catalogs(config.catalogs, domain)
     s = _storage()
+    # Validate the persisted layout, then construct its expected DDL once.
+    # Creation preflight's generated layout is unused on this read path.
     layout = s.load_layout(connection, config.catalogs)
     sections = s.load_section_layout(connection, config.catalogs, layout)
     expected = {ddl.split('(')[0].split()[-1]: ddl for ddl in _base_ddls()}

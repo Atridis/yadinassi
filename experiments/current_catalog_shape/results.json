@@ -1,0 +1,1165 @@
+{
+  "baseline": "0cdb512cacbcec8c2d0502a64e0593c184b6e0b4",
+  "pairs": 7,
+  "warm_median_ms": {
+    "kind": {
+      "description_ms": {
+        "before": 9.615336,
+        "after": 8.828774
+      },
+      "save_ms": {
+        "before": 31.255203,
+        "after": 27.492653
+      }
+    },
+    "product": {
+      "description_ms": {
+        "before": 10.193827,
+        "after": 8.80194
+      },
+      "save_ms": {
+        "before": 42.691969,
+        "after": 36.484433
+      }
+    }
+  },
+  "files": {
+    "yadinassi/sqlite_main_demo_profile.py": "c1a3b8cd66c8093be3f1bc23a82b23487fbb24af8378877a888394ffb90c4314"
+  },
+  "samples": [
+    {
+      "pair": 0,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 34.186254,
+          "save_ms": 30.06055
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 11.979385,
+          "save_ms": 33.199345
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 11.397631,
+          "save_ms": 30.273531
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.430837,
+          "save_ms": 31.851191
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 10.574819,
+          "save_ms": 27.929817
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 10.30089,
+          "save_ms": 27.361353
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.509488,
+          "save_ms": 102.856861
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.303115,
+          "save_ms": 43.977275
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 10.010241,
+          "save_ms": 40.64394
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 13.123442,
+          "save_ms": 51.512968
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 9.923614,
+          "save_ms": 38.153187
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.078688,
+          "save_ms": 38.587
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 0,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 24.191286,
+          "save_ms": 28.495666
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.868994,
+          "save_ms": 26.990724
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.257285,
+          "save_ms": 27.339719
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.786404,
+          "save_ms": 28.011205
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.38342,
+          "save_ms": 27.390128
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.204917,
+          "save_ms": 22.370886
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.175286,
+          "save_ms": 118.988847
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 7.735456,
+          "save_ms": 32.478956
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.693113,
+          "save_ms": 37.339026
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 8.952766,
+          "save_ms": 40.011585
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 12.569035,
+          "save_ms": 36.484433
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.362987,
+          "save_ms": 33.945011
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 24.408145,
+          "save_ms": 26.94181
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.551081,
+          "save_ms": 23.445133
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.420769,
+          "save_ms": 27.492653
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.23642,
+          "save_ms": 28.725797
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.828774,
+          "save_ms": 24.109086
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.462989,
+          "save_ms": 24.304158
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.861522,
+          "save_ms": 85.006296
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 7.638441,
+          "save_ms": 34.470655
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 8.085611,
+          "save_ms": 34.640905
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.131134,
+          "save_ms": 35.903839
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.567609,
+          "save_ms": 39.672121
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 15.365915,
+          "save_ms": 49.250136
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 1,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.481524,
+          "save_ms": 33.061008
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.171575,
+          "save_ms": 29.006811
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.842666,
+          "save_ms": 35.075417
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.34143,
+          "save_ms": 33.59177
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.177218,
+          "save_ms": 30.244046
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 13.876638,
+          "save_ms": 40.967526
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 13.07271,
+          "save_ms": 90.792265
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 11.432022,
+          "save_ms": 39.099556
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 10.193827,
+          "save_ms": 50.582382
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 10.598653,
+          "save_ms": 37.286801
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 9.411555,
+          "save_ms": 40.775646
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 18.647324,
+          "save_ms": 45.570553
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 47.805014,
+          "save_ms": 36.074867
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.521988,
+          "save_ms": 33.027825
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.615336,
+          "save_ms": 35.981364
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.212069,
+          "save_ms": 32.004019
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 10.275316,
+          "save_ms": 28.434542
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 9.401409,
+          "save_ms": 31.396754
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 8.972185,
+          "save_ms": 102.280657
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.111101,
+          "save_ms": 36.896248
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 10.951952,
+          "save_ms": 38.769677
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 9.982918,
+          "save_ms": 45.244973
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 11.00116,
+          "save_ms": 45.295975
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.042175,
+          "save_ms": 45.007617
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 2,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 46.833807,
+          "save_ms": 49.907991
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 12.27056,
+          "save_ms": 54.465478
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 19.095939,
+          "save_ms": 51.108286
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 11.520391,
+          "save_ms": 49.105791
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 11.779368,
+          "save_ms": 57.203862
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 13.260863,
+          "save_ms": 40.079192
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 20.159735,
+          "save_ms": 182.063886
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 14.759482,
+          "save_ms": 64.234687
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 14.08769,
+          "save_ms": 66.927553
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 14.32349,
+          "save_ms": 68.653404
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 15.335401,
+          "save_ms": 63.197409
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 12.154336,
+          "save_ms": 83.760748
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 56.466554,
+          "save_ms": 53.676085
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 17.393535,
+          "save_ms": 51.117674
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 11.41125,
+          "save_ms": 43.841327
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 16.379898,
+          "save_ms": 47.395672
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 13.002519,
+          "save_ms": 52.584056
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 21.641868,
+          "save_ms": 51.290742
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 15.949429,
+          "save_ms": 180.943132
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 16.552015,
+          "save_ms": 108.987602
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 31.229244,
+          "save_ms": 81.111844
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 14.234707,
+          "save_ms": 74.638504
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 16.165828,
+          "save_ms": 64.245831
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 20.498419,
+          "save_ms": 74.467574
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 3,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 57.108435,
+          "save_ms": 64.829238
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 20.702041,
+          "save_ms": 61.675814
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 23.252461,
+          "save_ms": 62.793568
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 18.730035,
+          "save_ms": 59.324062
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 19.61842,
+          "save_ms": 62.823689
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 18.302623,
+          "save_ms": 53.030473
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 20.227991,
+          "save_ms": 194.864833
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 16.06398,
+          "save_ms": 79.84638
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 18.155501,
+          "save_ms": 77.318816
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 17.851248,
+          "save_ms": 81.80523
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 20.363404,
+          "save_ms": 70.63979
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 18.850422,
+          "save_ms": 81.893158
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 27.350571,
+          "save_ms": 32.534547
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 9.470626,
+          "save_ms": 30.269762
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 9.042471,
+          "save_ms": 33.434475
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 11.106238,
+          "save_ms": 34.372737
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.484313,
+          "save_ms": 28.506229
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 12.106985,
+          "save_ms": 29.909693
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.636524,
+          "save_ms": 93.514567
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 9.705845,
+          "save_ms": 37.561995
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 10.630356,
+          "save_ms": 58.452787
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 8.991933,
+          "save_ms": 42.691969
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 10.922061,
+          "save_ms": 37.328899
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.52532,
+          "save_ms": 35.947962
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 4,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 26.773685,
+          "save_ms": 24.265721
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.044737,
+          "save_ms": 25.610844
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 7.97976,
+          "save_ms": 27.644803
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.436136,
+          "save_ms": 26.272814
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.456065,
+          "save_ms": 27.137712
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.804067,
+          "save_ms": 26.60727
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.709774,
+          "save_ms": 88.3913
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.205127,
+          "save_ms": 34.452346
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.950726,
+          "save_ms": 34.038966
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 7.421066,
+          "save_ms": 31.16775
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 11.606044,
+          "save_ms": 37.853985
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.697775,
+          "save_ms": 34.08132
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 29.239045,
+          "save_ms": 29.394751
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.550875,
+          "save_ms": 24.199107
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 7.788129,
+          "save_ms": 29.33443
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 7.56592,
+          "save_ms": 25.000109
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 7.796726,
+          "save_ms": 25.888145
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 7.376339,
+          "save_ms": 26.980115
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 7.60344,
+          "save_ms": 98.222183
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 13.136173,
+          "save_ms": 35.894078
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 6.569512,
+          "save_ms": 53.666223
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 9.119355,
+          "save_ms": 30.41097
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 7.202376,
+          "save_ms": 30.704233
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 7.798329,
+          "save_ms": 32.964924
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 5,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 33.768895,
+          "save_ms": 37.665424
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 7.637956,
+          "save_ms": 29.975484
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 10.545045,
+          "save_ms": 29.193804
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.225419,
+          "save_ms": 30.248862
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.283858,
+          "save_ms": 30.866482
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.513628,
+          "save_ms": 30.49459
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.482618,
+          "save_ms": 90.78544
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.668513,
+          "save_ms": 38.134296
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 11.924686,
+          "save_ms": 44.013356
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 11.493539,
+          "save_ms": 40.265833
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 10.037989,
+          "save_ms": 36.019893
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 9.01721,
+          "save_ms": 35.903108
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "before",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 28.60984,
+          "save_ms": 31.341837
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 10.236294,
+          "save_ms": 31.255203
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 8.657007,
+          "save_ms": 29.333071
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 9.838195,
+          "save_ms": 30.731675
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 8.309601,
+          "save_ms": 29.87646
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 9.445232,
+          "save_ms": 31.415595
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.315616,
+          "save_ms": 105.737778
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 10.883833,
+          "save_ms": 38.221919
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 9.717932,
+          "save_ms": 44.790603
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 9.376375,
+          "save_ms": 38.191933
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 12.996485,
+          "save_ms": 46.352403
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.120324,
+          "save_ms": 47.735168
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    },
+    {
+      "pair": 6,
+      "mode": "after",
+      "samples": [
+        {
+          "profile": "kind",
+          "iteration": 0,
+          "description_ms": 24.100735,
+          "save_ms": 28.024764
+        },
+        {
+          "profile": "kind",
+          "iteration": 1,
+          "description_ms": 8.403487,
+          "save_ms": 27.308473
+        },
+        {
+          "profile": "kind",
+          "iteration": 2,
+          "description_ms": 10.708739,
+          "save_ms": 55.433148
+        },
+        {
+          "profile": "kind",
+          "iteration": 3,
+          "description_ms": 8.845232,
+          "save_ms": 27.972172
+        },
+        {
+          "profile": "kind",
+          "iteration": 4,
+          "description_ms": 9.079488,
+          "save_ms": 23.333377
+        },
+        {
+          "profile": "kind",
+          "iteration": 5,
+          "description_ms": 8.930437,
+          "save_ms": 28.160059
+        },
+        {
+          "profile": "product",
+          "iteration": 0,
+          "description_ms": 9.525729,
+          "save_ms": 102.343567
+        },
+        {
+          "profile": "product",
+          "iteration": 1,
+          "description_ms": 8.602632,
+          "save_ms": 41.082118
+        },
+        {
+          "profile": "product",
+          "iteration": 2,
+          "description_ms": 7.947337,
+          "save_ms": 31.352626
+        },
+        {
+          "profile": "product",
+          "iteration": 3,
+          "description_ms": 8.227764,
+          "save_ms": 33.222786
+        },
+        {
+          "profile": "product",
+          "iteration": 4,
+          "description_ms": 8.726418,
+          "save_ms": 31.700096
+        },
+        {
+          "profile": "product",
+          "iteration": 5,
+          "description_ms": 8.80194,
+          "save_ms": 32.211855
+        }
+      ],
+      "hashes": {
+        "form_event_simulation.py": "b6e21b7393fd6f5ee7ebcf3a6fa7cd7ee9231929185bab9de0cfaf4f1b21e0f9"
+      }
+    }
+  ]
+}
