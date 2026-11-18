@@ -52,6 +52,18 @@ CONSTRUCTORS = {
 }
 
 class ServicesBoundary:
+    def resolve_set_member(self, value, name):
+        # Iterator pairs are direct scalar containers, not database receivers.
+        # Resolve before the RHS, but report readonly only after evaluating it.
+        # Exact identity admits no protocol, subclass, or payload authority.
+        if type(value) is not _CanonicalMapEntry:
+            return super().resolve_set_member(value, name)
+        self._check()
+        def readonly(new_value):
+            self._check()
+            raise ValueError('Свойство недоступно для записи: '+name)
+        return readonly
+
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         from .temporary_storage import SourceTemporaryCall
         from .common_templates import SourceTemplateCall

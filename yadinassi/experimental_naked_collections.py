@@ -103,7 +103,9 @@ class _TypedMap(dict):
             for key,value in dict(*args).items():self[key]=value
     def __setitem__(self,key,value):dict.__setitem__(self,self.token(key),(key,value))
     def __getitem__(self,key):return dict.__getitem__(self,self.token(key))[1]
-    def __delitem__(self,key):dict.__delitem__(self,self.token(key))
+    def __delitem__(self,key):
+        # BSL Map.Delete is idempotent, including absent identity keys.
+        dict.pop(self,self.token(key),None)
     def __contains__(self,key):return dict.__contains__(self,self.token(key))
     def get(self,key,default=None):
         entry=dict.get(self,self.token(key));return default if entry is None else entry[1]

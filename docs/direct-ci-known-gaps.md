@@ -716,3 +716,25 @@ rejections.114 tests PASS normalPython3.12 and optimizedPython3.10.
 The failed CI private comparison payload was not exported; this is a reproduced
 contract bug consistent with its error, not proof of the precise failed payload
 or a green rerun. Actual subsequent CI must establish further progress.
+
+### Direct iterator pair readonly and idempotent Map.Delete (2026-11-18)
+
+On base4ecd7fa9, assigning to a direct Map/Structure iterator pair accidentally
+entered database receiver admission. The resulting BoundaryViolation escaped BSL
+Try/Except and unittest setUpClass, aborting the light runner. Exact canonical
+iterator pairs now return a readonly writer: receiver resolution and RHS effects
+keep their order, authority is checked both before and after the RHS, then the
+ordinary catchable BSL property-write error is raised. Subclasses, counterfeits,
+foreign receivers and closed execution remain fail-closed. No payload is inspected,
+no mutability is granted, and no VM or legacy fallback is used.
+
+The next replay blocker was deleting an absent direct Map key. Typed Map.Delete
+now matches BSL's idempotent behavior while preserving typed and identity keys.
+Fixed collections and other receiver protocols are unchanged.
+
+The unchanged DescriptorMapNativeRuntimeTests setup now reaches source line3013,
+where Structure construction from FixedStructure remains unsupported. This is an
+ordinary reported BSLRuntimeError, not successful full collections parity. The
+larger focused cohort still has its pre-existing array diagnostic-text mismatch
+(test_exact_source_errors_and_partial_effects); this slice does not hide or update
+that assertion. Python3.10 source-column precision also remains limited.
