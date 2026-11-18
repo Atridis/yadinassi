@@ -974,8 +974,9 @@ class _Plan:
             with witness:
                 self.prepare_memberships(view, budget)
                 self.prepare_hierarchies(view, budget)
-                from .query_pushdown import try_count
+                from .query_pushdown import try_count, try_numeric
                 pushed = try_count(self, view, budget)
+                if pushed is None:pushed = try_numeric(self, view, budget)
                 if pushed is not None:return pushed
                 sources = [self.load(i, view, budget) for i in range(len(self.sources))]
         finally:

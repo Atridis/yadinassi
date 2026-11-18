@@ -219,6 +219,18 @@ class CatalogAggregateResult:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogNumericAggregateRequest:
+    """Ordered (operation, logical field UUID) pairs; never SQL fragments."""
+    operations: tuple
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogNumericAggregateResult:
+    count: int
+    values: tuple
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogPage:
     cards: tuple[CatalogCard, ...]
     continuation: str | None

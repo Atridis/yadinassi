@@ -2413,6 +2413,34 @@ class _View:
             values.append(_decode(encoded,definition,self.database_id, enum_domain=self._backend._enum_domain))
         return CatalogValueRow(key,tuple(values))
 
+    def _aggregate_numeric_catalog(self, catalog_id, request):
+        from .catalog_backend import CatalogAggregateRequest, CatalogNumericAggregateResult
+        operations=request.operations
+        if type(operations) is not tuple or not 1<=len(operations)<=64:raise BackendError('invalid_input')
+        schema=self.catalog_schema(catalog_id);expressions=[]
+        if (self._operation_id is not None or not self._cache_validation_allowed()
+                or self._backend.storage_version<2 or schema.hierarchy!='none'):return None
+        for item in operations:
+            if type(item) is not tuple or len(item)!=2:raise BackendError('invalid_input')
+            operation,identity=item
+            if type(operation) is not str:raise BackendError('invalid_input')
+            if operation=='count' and identity is None:
+                expressions.append('COUNT(*)');continue
+            if operation not in ('sum','avg') or type(identity) is not UUID:raise BackendError('invalid_input')
+            field=next((f for f in schema.fields if f.identity==identity),None)
+            if field is None or field.kind!='number':raise BackendError('invalid_input')
+            column=quote_identifier(self._backend._layout.field_name(schema.identity,identity))
+            expressions.append(('SUM' if operation=='sum' else 'AVG')+'(CAST('+column+' AS REAL))')
+        # Reuse complete scalar admission and normalized UUID uniqueness proof.
+        # A cache is only valid on this exact readonly pinned view/epoch.
+        proof=self.aggregate_catalog(catalog_id,CatalogAggregateRequest())
+        if proof is None:return None
+        table,_,where,args=self._source(schema)
+        row=self._connection.execute('SELECT COUNT(*),'+','.join(expressions)+' FROM '+table+' WHERE '+where,args).fetchone()
+        if type(row) is not tuple or len(row)!=len(expressions)+1 or type(row[0]) is not int or row[0]!=proof.count:
+            raise BackendError('integrity')
+        return CatalogNumericAggregateResult(proof.count,row[1:])
+
     @_boundary
     def aggregate_catalog(self, catalog_id, request):
         """SQL COUNT with complete-source admission and distinct logical IDs.
@@ -2420,8 +2448,10 @@ class _View:
         The extra proof is snapshot/connection-local, never a metadata receipt.
         Unsupported storage/transaction shapes decline without changing scans.
         """
-        from .catalog_backend import CatalogAggregateRequest, CatalogAggregateResult
+        from .catalog_backend import CatalogAggregateRequest, CatalogAggregateResult, CatalogNumericAggregateRequest
         self._require()
+        if type(request) is CatalogNumericAggregateRequest:
+            return self._aggregate_numeric_catalog(catalog_id,request)
         if type(request) is not CatalogAggregateRequest or request.operation != 'count_all_v1':
             raise BackendError('invalid_input')
         schema = self.catalog_schema(catalog_id)
