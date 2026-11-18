@@ -3,10 +3,11 @@ import gc
 import types
 import unittest
 import weakref
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from decimal import Decimal
 
 from yadinassi import Interpreter
+from yadinassi.errors import BSLRuntimeError
 from yadinassi import runtime_dependencies as dependencies
 from yadinassi.values import InterpreterCall, BSLArray
 from yadinassi import translated_access
@@ -132,7 +133,9 @@ class DependencyHandleTests(unittest.TestCase):
 
     def test_preargument_denial_precedes_later_lazy_dependencies(self):
         from yadinassi import runtime
-        vm = Interpreter(); self.addCleanup(vm.close)
+        # This contract requires interpreter-aware dispatch; direct intentionally
+        # refuses that protocol instead of running its authorization callbacks.
+        vm = Interpreter(execution_backend="compiled-strict"); self.addCleanup(vm.close)
         def deny(caller): raise PermissionError('denied')
         def dispatch(caller, values):
             if False: yield
@@ -146,3 +149,30 @@ class DependencyHandleTests(unittest.TestCase):
         with patch.object(runtime, '_runtime_module', dependency):
             with self.assertRaisesRegex(PermissionError, 'denied'):
                 vm.execute('Denied(Effect());')
+
+
+    def test_direct_unsupported_descriptor_has_no_authorization_effect_or_lazy_work(self):
+        from yadinassi import runtime
+        forbidden=('reusable_values','common_templates','temporary_storage')
+        for warm in (False,True):
+            with self.subTest(warm=warm):
+                dependencies._load_module.cache_clear()
+                if warm:
+                    for name in forbidden:dependencies.runtime_module(name)
+                vm=Interpreter(execution_backend='python-direct');self.addCleanup(vm.close)
+                authorize=Mock(side_effect=AssertionError('authorization must not run'))
+                dispatch=Mock(side_effect=AssertionError('dispatch must not run'))
+                effect=Mock(side_effect=AssertionError('argument must not run'))
+                vm.register_function('Denied',InterpreterCall(1,1,authorize,dispatch))
+                vm.register_function('Effect',effect)
+                original=runtime._runtime_module;reached=[]
+                def dependency(name):
+                    reached.append(name)
+                    if name in forbidden:self.fail('dependency reached before unsupported refusal')
+                    return original(name)
+                with patch.object(runtime,'_runtime_module',dependency):
+                    with self.assertRaisesRegex(BSLRuntimeError,'explicit interpreter dispatch') as caught:
+                        vm.execute('Denied(Effect());')
+                self.assertIs(type(caught.exception),BSLRuntimeError)
+                authorize.assert_not_called();dispatch.assert_not_called();effect.assert_not_called()
+                self.assertFalse(set(forbidden).intersection(reached))

@@ -229,6 +229,19 @@ class BSLType(Enum):
         return "Не определено" if self is BSLType.UNDEFINED else self.value
 
 
+# Freeze canonical presentation (including unmeasured cases) before lazy direct
+# imports can observe public Enum property or method replacements.
+def _direct_type_presentations():
+    result=[]
+    for member in BSLType:
+        try:label=BSLType.__str__(member)
+        except ValueError as error:result.append((member,None,error.args[0]))
+        else:result.append((member,label,None))
+    return tuple(result)
+
+_DIRECT_TYPE_PRESENTATIONS = _direct_type_presentations()
+
+
 def _presented_number(value: Decimal) -> Decimal:
     """Bounded empirical presentation; never alter the stored numeric value."""
     if not value.is_finite():

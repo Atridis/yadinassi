@@ -11,10 +11,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 from .syntax import ast
 from .syntax.parser import parse
-from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING
+from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING, BoundaryViolation
 
 from .values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
 from .maps import _DIRECT_FIXED_MAP_SNAPSHOT
+from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
+
+_MAP_DATE_TYPE, _MAP_DATE_BOUNDARY = _DIRECT_EQUALITY_DATE_STATE
 
 _FIXED_MAP, _FIXED_MAP_STORAGE, _CANONICAL_VALUE_KEY_TYPES, _SINGLETON_KEY_TYPES = _DIRECT_FIXED_MAP_SNAPSHOT
 
@@ -80,6 +83,7 @@ class _MapEntry:
 
 # Retain the definition identity before lazy direct service admission.
 _DIRECT_MAP_ENTRY_TYPE = _MapEntry
+_DIRECT_MAP_ENTRY_STORAGE = vars(_MapEntry)["__dict__"]
 
 
 _ALIASES={'добавить':'add','вставить':'insert','получить':'get','установить':'set',
@@ -97,6 +101,16 @@ class _NakedMap(dict):
 class _TypedMap(dict):
     @staticmethod
     def token(key):
+        if type(key) is _MAP_DATE_TYPE:
+            try:boundary=_MAP_DATE_BOUNDARY.__get__(key,_MAP_DATE_TYPE)
+            except AttributeError:
+                raise BoundaryViolation('invalid exact date boundary state') from None
+            if type(boundary) is not bool:
+                raise BoundaryViolation('invalid exact date boundary state')
+            if boundary:
+                raise UnsupportedDateRange(
+                    'Дата: после выхода за диапазон известно только скалярное '
+                    'внутреннее представление; дальнейшая операция пока не поддерживается')
         if type(key) is Decimal or type(key) is bool or type(key) is str or key is None:
             return type(key),key
         return object,id(key)

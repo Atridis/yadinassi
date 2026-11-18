@@ -140,6 +140,22 @@ class ServicesBoundary:
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         bound=_string_callable(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
+        if type(value) is HostFunction and value.function is _DIRECT_VALUE_TO_STRING_ABI:
+            self._check()
+            self._validate_host_function(value,require_value,allow_references)
+            def serialize_pair(argument):
+                self._before('call_value',value.name.casefold())
+                try:
+                    if value.function is not _DIRECT_VALUE_TO_STRING_ABI:
+                        raise BoundaryViolation('serialization implementation changed during argument evaluation')
+                    # Preserve captured service behavior outside the new pair slice.
+                    if type(argument) is _CanonicalMapEntry:
+                        return _direct_value_to_string_internal(argument)
+                    return _DIRECT_VALUE_TO_STRING_ABI(argument)
+                except PermissionError as error:raise BoundaryViolation(str(error)) from error
+                finally:self._check()
+            if allow_references:serialize_pair.requires_reference=lambda index:index in value.reference_parameters
+            return serialize_pair
         from .python_direct_fill import resolve_fill
         bound=resolve_fill(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound

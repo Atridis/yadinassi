@@ -7,7 +7,7 @@ from decimal import Decimal
 from .strings import concatenate as _join
 from .collation import _DIRECT_STRING_KEY_ABI as _string_key
 from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
-from .values import NULL, to_string, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
+from .values import NULL, to_string, _DIRECT_TYPE_PRESENTATIONS, _DIRECT_ARRAY_TYPE, _DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_COLLECTION_TYPE, divide as _divide
 from .structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 from .maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .experimental_naked_boundaries import BoundaryViolation
@@ -29,6 +29,9 @@ _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
 _COLLECTION_TYPE_IDS=tuple(map(id,_COLLECTION_TYPES))
 _SUPPORTED_TYPE_IDS=_SCALAR_TYPE_IDS+_COLLECTION_TYPE_IDS
 _FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_FIXED_TYPES))
+
+_TYPE_PRESENTATIONS = {id(member): (member, label, error)
+                       for member, label, error in _DIRECT_TYPE_PRESENTATIONS}
 
 _TYPE_MRO = vars(type)['__mro__']
 
@@ -68,6 +71,10 @@ def typed_find(array, value):
 
 
 def presentation(value):
+    entry = _TYPE_PRESENTATIONS.get(id(value))
+    if entry is not None and entry[0] is value:
+        if entry[2] is not None:raise ValueError(entry[2])
+        return entry[1]
     kind = type(value)
     if kind is list or any(base is _DIRECT_ARRAY_TYPE for base in _TYPE_MRO.__get__(kind)):
         return 'Массив'

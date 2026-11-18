@@ -280,14 +280,25 @@ class _Writer:
         if self.nodes > _MAX_NODES or depth > _MAX_DEPTH:
             raise _resource("ЗначениеВСтрокуВнутр")
         direct_items = None
+        direct_pair = None
         try:
             kind = type_of(value)
         except TypeError:
             if not self.direct:
                 raise TypeError("ЗначениеВСтрокуВнутр: значение не относится к поддерживаемым типам BSL") from None
-            from .experimental_naked_collections import _TypedMap
+            from .experimental_naked_collections import (_TypedMap, _DIRECT_MAP_ENTRY_TYPE,
+                                                        _DIRECT_MAP_ENTRY_STORAGE)
             from .experimental_naked_structure import _DirectStructure
-            if type(value) is list:
+            if type(value) is _DIRECT_MAP_ENTRY_TYPE:
+                # Read the definition-time storage descriptor, never user hooks.
+                state = _DIRECT_MAP_ENTRY_STORAGE.__get__(value, _DIRECT_MAP_ENTRY_TYPE)
+                if (type(state) is not dict or len(state) != 2
+                        or any(type(key) is not str for key in state)
+                        or set(state) != {'key', 'value'}):
+                    raise TypeError("ЗначениеВСтрокуВнутр: недопустимое состояние пары")
+                direct_pair = (state['key'], state['value'])
+                kind = BSLType.KEY_AND_VALUE
+            elif type(value) is list:
                 kind, direct_items = BSLType.ARRAY, value
             elif type(value) is _TypedMap:
                 kind, direct_items = BSLType.MAP, dict.values(value)
@@ -357,7 +368,10 @@ class _Writer:
                 elif kind is BSLType.VALUE_TABLE:
                     self.table(value, depth)
                 elif kind is BSLType.KEY_AND_VALUE:
-                    self.pair(value.key, value.value, depth)
+                    if direct_pair is not None:
+                        self.pair(direct_pair[0], direct_pair[1], depth)
+                    else:
+                        self.pair(value.key, value.value, depth)
                 else:
                     items = direct_items if direct_items is not None else value.items if kind in _ARRAYS else value._items.values()
                     count = len(items)
