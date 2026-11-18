@@ -1,6 +1,7 @@
 """Counters are isolated from timing and preserve benchmark correctness."""
 from pathlib import Path
 from copy import deepcopy
+from contextlib import ExitStack, closing
 import sqlite3
 import sys
 import unittest
@@ -64,9 +65,49 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
             self.assertEqual(case['expected'], str(2 * size))
             self.assertEqual(case['catalog_rows'], size)
             self.assertEqual(case['layers']['python']['counters']['sqlite_execute'], 2)
-            self.assertGreater(case['layers']['python_classes']['counters']['configuration_read_source'], 0)
+            # diagnose captures only after two successful unprofiled warmups.
+            # Warm readonly admission reuses this connection's pinned epoch.
+            for layer in ('python_classes', 'bsl'):
+                counts = case['layers'][layer]['counters']
+                self.assertEqual(counts['configuration_read_source'], 0)
+                self.assertEqual(counts['sqlite_catalog_begin'], 2)
             self.assertEqual(case['layers']['python_classes']['counters']['sqlite_execute'],
                              case['layers']['bsl']['counters']['sqlite_execute'])
+
+    def test_source_counter_observes_cold_warm_and_changed_epoch(self):
+        # Set up outside capture, as the production diagnostic does. Explicitly
+        # retire any setup read handle so the first observed read is cold.
+        with ExitStack() as stack:
+            path, context, owner, manager = bench.extended.database(stack)
+            backend = context.backend
+            backend._close_idle_read_handle()
+            def read():
+                with closing(backend.begin_read()) as view:
+                    return tuple(view.catalogs())
+            expected, cold = bench.capture(read)
+            actual, warm = bench.capture(read)
+            self.assertEqual(actual, expected)
+            self.assertEqual(cold['configuration_read_source'], 1)
+            self.assertEqual(warm['configuration_read_source'], 0)
+            for counts in (cold, warm):
+                self.assertEqual(counts['sqlite_catalog_begin'], 1)
+                self.assertGreater(counts['sqlite_execute'], 0)
+            # A genuine SQLite page change invalidates the retained connection's
+            # epoch; a no-op UPDATE is deliberately not used as evidence.
+            with closing(sqlite3.connect(path)) as db:
+                db.execute('UPDATE catalog_sequence SET next_value=next_value+1')
+                db.commit()
+            actual, changed = bench.capture(read)
+            self.assertEqual(actual, expected)
+            self.assertEqual(changed['configuration_read_source'], 1)
+            backend._close_idle_read_handle()
+            actual, reopened = bench.capture(read)
+            self.assertEqual(actual, expected)
+            self.assertEqual(reopened['configuration_read_source'], 1)
+            for counts in (changed, reopened):
+                self.assertEqual(counts['sqlite_catalog_begin'], 1)
+                self.assertGreater(counts['sqlite_execute'], 0)
+        self.assertIsNone(sys.getprofile())
 
     def test_forms_have_no_false_prepared_or_native_baseline(self):
         case = bench.diagnose('form.event', 2, 'default')

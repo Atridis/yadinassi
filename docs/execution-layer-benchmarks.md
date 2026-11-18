@@ -282,3 +282,21 @@ JSON, статусы, причины и примечания не перепис
 после всех timing-шагов и запускается также после ошибки, если run не отменён.
 Корректные доступные таблицы сохраняются, отсутствующие/повреждённые обозначаются
 явно, сборщик возвращает ненулевой код. Отчёты разных коммитов не объединяются.
+
+### Warm readonly admission counters after SQL COUNT pushdown
+
+The diagnostic captures only the invocation after two successful unprofiled
+warmups. On a retained format16 readonly connection, `configuration_read_source`
+may therefore be zero: full source admission happened before capture, and the
+same pinned SQLite epoch permits reuse. This counter records entries into
+`read_source`, not all admission checks and not a count of authorization decisions.
+A warm read still begins a lease, pins the snapshot, checks journal/query-only/
+data-version state and compares the current detached admission descriptor.
+
+Cold connections and changed SQLite epochs require complete admission again;
+own writes invalidate retained proofs. The diagnostics regression explicitly
+observes cold read_source=1, warm=0, a genuine external page-changing commit=1,
+and a newly opened readonly connection=1, with fixture setup and mutation outside
+capture. Separate runtime admission tests cover corrupt source/schema rejection
+and rollback/publication ordering. A zero warm counter is not proof that cold or
+changed-epoch validation was removed, and these untimed counts claim no latency.
