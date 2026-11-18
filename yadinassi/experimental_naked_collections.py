@@ -89,7 +89,7 @@ _ALIASES={'добавить':'add','вставить':'insert','получить
 # Named, independently selectable repairs. These are experiment variants, NOT a
 # restoration of the production admission/runtime pipeline. Each repair has a
 # specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality'))
+REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','decimal_division'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -330,7 +330,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if service_references and (not services or 'byref_routines' not in repairs):raise ValueError('service references require explicit byref and service repairs')
     if any(type(index) is not int or index<0 for indices in service_references.values() for index in indices):raise ValueError('invalid service reference index')
     scalar_ops=None
-    if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find','array_identity_equality'}:
+    if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find','array_identity_equality','decimal_division'}:
         from . import experimental_naked_scalar_semantics as scalar_ops
     structure_ops=None
     if 'structure_fields' in repairs:
@@ -624,9 +624,13 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             return value
         if kind is ast.Group:return '('+expression(node.expression,require_value)+')'
         if kind is ast.Unary:
+            if node.operator in ('+','-') and 'decimal_division' in repairs:
+                return '_decimal_sign('+expression(node.operand)+', '+repr(node.operator)+')'
             if node.operator=='NOT' and 'bsl_truth' in repairs:return '(not '+truth_expression(node.operand)+')'
             return '('+('not ' if node.operator=='NOT' else node.operator)+expression(node.operand)+')'
         if kind is ast.Binary:
+            if node.operator=='/' and 'decimal_division' in repairs:
+                return '_decimal_divide('+expression(node.left)+', '+expression(node.right)+')'
             if node.operator in ('AND','OR') and 'bsl_truth' in repairs:
                 return '('+truth_expression(node.left)+(' and ' if node.operator=='AND' else ' or ')+truth_expression(node.right)+')'
             if node.operator=='+' and 'bsl_presentation' in repairs:
@@ -1064,6 +1068,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if scalar_ops is not None:namespace.update(_bsl_truth=scalar_ops.truth,_bsl_concatenate=scalar_ops.concatenate,_native_order=scalar_ops.order,_typed_find=scalar_ops.typed_find)
     if 'array_identity_equality' in repairs:
         namespace.update(_array_equal=scalar_ops.array_equal,_array_not_equal=scalar_ops.array_not_equal)
+    if 'decimal_division' in repairs:
+        namespace.update(_decimal_divide=scalar_ops.decimal_divide,_decimal_sign=scalar_ops.decimal_sign)
     native_dicts=(dict,_TypedMap,_NakedMap)
     if structure_ops is not None:
         native_dicts+= (structure_ops._DirectStructure,)

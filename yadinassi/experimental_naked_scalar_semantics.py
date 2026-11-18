@@ -6,7 +6,7 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 from decimal import Decimal
 from .strings import concatenate as _join
 from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
-from .values import NULL, to_string, _DIRECT_FIXED_ARRAY_TYPE
+from .values import NULL, to_string, _DIRECT_FIXED_ARRAY_TYPE, divide as _divide
 from .structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 from .maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .experimental_naked_boundaries import BoundaryViolation
@@ -131,3 +131,17 @@ def array_not_equal(left, right):
     # Do not rewrite arbitrary __ne__ as not __eq__: this slice does not change
     # the pre-existing non-array operator contract.
     return left != right
+
+
+def decimal_divide(left, right):
+    """Pure bounded native-observed division, never host arithmetic dispatch."""
+    if type(left) is not Decimal or type(right) is not Decimal:
+        raise TypeError('Ожидается число')
+    return _divide(left, right)
+
+
+def decimal_sign(value, operator):
+    """A sign changes no precision; Decimal unary +/- would use host context."""
+    if type(value) is not Decimal:
+        raise TypeError('Ожидается число')
+    return value.copy_negate() if operator == '-' else value
