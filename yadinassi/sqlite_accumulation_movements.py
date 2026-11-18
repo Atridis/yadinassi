@@ -90,47 +90,54 @@ def validate_database_budget(connection):
         raise BackendError('unsupported')
 
 
+def _initialize_headers(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=(), enum_domain=None):
+    """Shared live metadata checks; no layout admission or usable port result."""
+    if (type(connection) is not sqlite3.Connection or type(database_id) is not UUID
+            or not database_id.int or type(generation) is not int
+            or not 1 <= generation < 2**63 or type(schemas) is not tuple
+            or not 1 <= len(schemas) <= 512 or type(active_only) is not bool):
+        raise BackendError('invalid_input')
+    if connection.execute('PRAGMA foreign_keys').fetchone() != (1,):
+        raise BackendError('unsupported')
+    if enum_domain is not None:_storage()._enum_domain(enum_domain,database_id)
+    self._enum_domain=enum_domain
+    data = tuple(schema_data(schema,enum_domain=enum_domain) for schema in schemas)
+    identities = [item.identity for schema in schemas for item in (schema, *schema.fields)]
+    if (len(set(identities)) != len(identities)
+            or len({s.name.casefold() for s in schemas}) != len(schemas)):
+        raise BackendError('invalid_input')
+    definitions = tuple(_json(item) for item in data)
+    if sum(len(item.encode('utf-8')) for item in definitions) > MAX_BYTES:
+        raise BackendError('unsupported')
+    self.connection = connection
+    self.database_id = database_id
+    self.generation = generation
+    # The generic host codec can retain inactive raw occurrences. The
+    # activated source-granted profile is deliberately narrower.
+    self.active_only = active_only
+    self.schemas = {schema.identity: schema for schema in schemas}
+    self.definitions = {schema.identity: raw for schema, raw in zip(schemas, definitions)}
+    if (type(reference_catalogs) is not tuple or len(reference_catalogs) > 512
+            or any(type(c) is not CatalogSchema for c in reference_catalogs)):
+        raise BackendError('invalid_input')
+    targets = {c.identity for c in reference_catalogs}
+    reference_profile = any(schema.value_profile in ('catalog_reference_v1','catalog_enum_reference_v1') for schema in schemas)
+    expected_profile=('catalog_enum_reference_v1' if enum_domain is not None else 'catalog_reference_v1' if reference_profile else 'scalar_v1')
+    if (reference_profile != bool(reference_catalogs)
+            or any(schema.value_profile != expected_profile
+                   for schema in schemas)
+            or any(f.target_catalog_id not in targets for schema in schemas
+                   for f in schema.fields if f.kind == 'catalog_ref')):
+        raise BackendError('unsupported')
+    return reference_profile
+
+
 class AccumulationMovementPort:
     """Private host primitive; the owning application supplies the transaction."""
 
     def __init__(self, connection, database_id, generation, schemas, *, active_only=False, reference_catalogs=(), enum_domain=None):
-        if (type(connection) is not sqlite3.Connection or type(database_id) is not UUID
-                or not database_id.int or type(generation) is not int
-                or not 1 <= generation < 2**63 or type(schemas) is not tuple
-                or not 1 <= len(schemas) <= 512 or type(active_only) is not bool):
-            raise BackendError('invalid_input')
-        if connection.execute('PRAGMA foreign_keys').fetchone() != (1,):
-            raise BackendError('unsupported')
-        if enum_domain is not None:_storage()._enum_domain(enum_domain,database_id)
-        self._enum_domain=enum_domain
-        data = tuple(schema_data(schema,enum_domain=enum_domain) for schema in schemas)
-        identities = [item.identity for schema in schemas for item in (schema, *schema.fields)]
-        if (len(set(identities)) != len(identities)
-                or len({s.name.casefold() for s in schemas}) != len(schemas)):
-            raise BackendError('invalid_input')
-        definitions = tuple(_json(item) for item in data)
-        if sum(len(item.encode('utf-8')) for item in definitions) > MAX_BYTES:
-            raise BackendError('unsupported')
-        self.connection = connection
-        self.database_id = database_id
-        self.generation = generation
-        # The generic host codec can retain inactive raw occurrences. The
-        # activated source-granted profile is deliberately narrower.
-        self.active_only = active_only
-        self.schemas = {schema.identity: schema for schema in schemas}
-        self.definitions = {schema.identity: raw for schema, raw in zip(schemas, definitions)}
-        if (type(reference_catalogs) is not tuple or len(reference_catalogs) > 512
-                or any(type(c) is not CatalogSchema for c in reference_catalogs)):
-            raise BackendError('invalid_input')
-        targets = {c.identity for c in reference_catalogs}
-        reference_profile = any(schema.value_profile in ('catalog_reference_v1','catalog_enum_reference_v1') for schema in schemas)
-        expected_profile=('catalog_enum_reference_v1' if enum_domain is not None else 'catalog_reference_v1' if reference_profile else 'scalar_v1')
-        if (reference_profile != bool(reference_catalogs)
-                or any(schema.value_profile != expected_profile
-                       for schema in schemas)
-                or any(f.target_catalog_id not in targets for schema in schemas
-                       for f in schema.fields if f.kind == 'catalog_ref')):
-            raise BackendError('unsupported')
+        reference_profile = _initialize_headers(self, connection, database_id, generation, schemas,
+            active_only=active_only, reference_catalogs=reference_catalogs, enum_domain=enum_domain)
         self._reference_layout = (_storage().load_layout(connection, reference_catalogs)
                                   if reference_profile else None)
 
@@ -417,3 +424,19 @@ class AccumulationMovementPort:
         if snapshot != self._snapshot(schema, request.recorder, revision, self._encoded(schema, request.rows)):
             raise BackendError('integrity')
         return AccumulationOutcome(request.register_id, request.recorder, revision, snapshot, row_count)
+
+
+def _admit_headers(connection, database_id, schemas, *, reference_catalogs, enum_domain):
+    """Validate only headers after fresh same-transaction format16 source admission.
+
+    The ephemeral object never escapes or performs row/reference operations.
+    This is not a port factory: actual reads/writes must use the full constructor.
+    Caller must not write between read_source and this internal validation.
+    """
+    port = object.__new__(AccumulationMovementPort)
+    _initialize_headers(port, connection, database_id, 1, schemas,
+                        active_only=True, reference_catalogs=reference_catalogs,
+                        enum_domain=enum_domain)
+    for schema in schemas:
+        port._require(schema.identity,
+                      DocumentKey(database_id, schema.recorder_documents[0], UUID(int=1)))

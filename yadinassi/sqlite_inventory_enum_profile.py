@@ -167,10 +167,15 @@ def _admit_source(connection,database_id,catalogs,documents,source,*,validate_ro
     if connection.execute('SELECT COUNT(*) FROM accumulation_register_schema').fetchone()[0]!=len(config.registers):raise BackendError('integrity')
     if validate_rows:
         _preflight_config(config)
-    port=AccumulationMovementPort(connection,database_id,1,config.registers,active_only=True,reference_catalogs=catalogs,enum_domain=domain)
     from .document_backend import DocumentKey
-    for schema in config.registers:
-        port._require(schema.identity,DocumentKey(database_id,schema.recorder_documents[0],UUID(int=1)))
+    if validate_rows:
+        port=AccumulationMovementPort(connection,database_id,1,config.registers,active_only=True,reference_catalogs=catalogs,enum_domain=domain)
+        for schema in config.registers:
+            port._require(schema.identity,DocumentKey(database_id,schema.recorder_documents[0],UUID(int=1)))
+    else:
+        from .sqlite_accumulation_movements import _admit_headers
+        _admit_headers(connection,database_id,config.registers,
+                       reference_catalogs=catalogs,enum_domain=domain)
     if validate_rows:
         stored_documents,_=_storage().load_document_schemas(connection,catalogs,enum_domain=domain)
         if stored_documents!=config.documents:raise BackendError('integrity')

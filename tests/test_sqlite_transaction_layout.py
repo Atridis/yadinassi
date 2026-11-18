@@ -16,9 +16,9 @@ class TransactionLayoutTests(unittest.TestCase):
     setUp = fixture.TransactionSourceTests.setUp
     mutate = fixture.TransactionSourceTests.mutate
 
-    def test_each_transaction_loads_layout_twice_sections_once_not_three_and_two(self):
-        # The remaining second catalog load belongs to AccumulationMovementPort;
-        # this change deliberately does not share admission across that boundary.
+    def test_each_transaction_loads_layout_and_sections_once(self):
+        # Source admission checks the layout; header-only admission performs
+        # no reference operations and must not reload the same registry.
         for writer in (False, False, True, False):
             with self.subTest(writer=writer):
                 trace = []
@@ -33,7 +33,7 @@ class TransactionLayoutTests(unittest.TestCase):
                         connection = view._connection
                     connection.set_trace_callback(None) if not writer else None
                 self.assertEqual(source.call_count, 1)
-                self.assertEqual(trace.count('SELECT catalog_id,physical_name FROM catalog_storage_map'), 2)
+                self.assertEqual(trace.count('SELECT catalog_id,physical_name FROM catalog_storage_map'), 1)
                 self.assertEqual(trace.count('SELECT catalog_id,section_id,physical_name FROM catalog_section_storage_map'), 1)
 
     def test_default_triple_and_optional_maps_match_fresh_loads(self):
@@ -142,13 +142,21 @@ class Format16ProfileLayoutTests(unittest.TestCase):
                              patch.object(storage, 'load_section_layout', wraps=storage.load_section_layout) as sections:
                             view = backend.begin_write(uuid4()) if writer else backend.begin_read()
                             with closing(view): self.assertTrue(view.catalogs())
-                            self.assertEqual(load.call_count, 2)
+                            self.assertEqual(load.call_count, 1)
                             self.assertEqual(sections.call_count, 1)
                     with patch.object(module, method, side_effect=BackendError('integrity')):
                         for writer in (False, True):
                             with self.assertRaises(BackendError):
                                 backend.begin_write(uuid4()) if writer else backend.begin_read()
                             self.assertIsNone(backend._active)
+                    from yadinassi.sqlite_accumulation_movements import AccumulationMovementPort
+                    for writer in (False, True):
+                        backend._prepared_source.clear()
+                        with patch.object(AccumulationMovementPort, '_require', side_effect=BackendError('integrity')):
+                            with self.assertRaises(BackendError):
+                                backend.begin_write(uuid4()) if writer else backend.begin_read()
+                        self.assertIsNone(backend._active)
+                        self.assertIsNone(backend._prepared_source._entry)
                     with closing(backend.begin_read()): pass
                     with closing(backend.begin_write(uuid4())): pass
                 finally: backend.close()

@@ -186,7 +186,13 @@ output-only option exposes the freshly validated maps only to this call chain.
 
 No map is retained on the backend, prepared-source cache or read handle. No map is
 accepted as a caller input, and no result crosses a commit, rollback or connection
-boundary. Other storage formats keep their original layout loads. The separate
-accumulation-port layout admission is not changed by this optimization. This is a
-reduction in duplicate admission SQL, not relaxed source/DDL validation or a new
-row-cache authority.
+boundary. Other storage formats keep their original layout loads.
+
+Format16 header-only accumulation admission also avoids constructing an unused
+reference layout after that fresh source validation. A private helper runs the
+same current metadata initialization and ordinary `_require` checks on an
+internal ephemeral object, then returns no port or grant. It performs no row or
+reference operations. Explicit row validation and all normal movement-port
+constructors still load their full reference layout; actual reads and writes
+retain their reference checks. This is a reduction in duplicate admission SQL,
+not relaxed source/DDL validation or a new row-cache authority.
