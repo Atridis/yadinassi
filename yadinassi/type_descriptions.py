@@ -529,3 +529,12 @@ _DIRECT_LIVE_METADATA_BINDINGS=tuple((name,value) for name,value in tuple(global
 _DIRECT_LIVE_METADATA_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in dict.fromkeys(base for name,value in _DIRECT_LIVE_METADATA_BINDINGS
         if isinstance(value,type) and value.__module__==__name__ for base in value.__mro__))
+
+# Empty descriptor defaults are part of fresh table row allocation semantics.
+_DIRECT_REGION_FUNCTIONS = tuple(
+    (fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
+    for fn in [*globals().values(), *(getattr(value,'__func__',value)
+                for cls,mro,entries in _DIRECT_LIVE_METADATA_CLASSES for name,value in entries)]
+    if type(fn) is type(lambda:None))
+_DIRECT_REGION_GLOBALS = tuple((name,value) for name,value in tuple(globals().items()) if not name.startswith('__'))
+_DIRECT_REGION_KEYS = frozenset(globals()) | {'_DIRECT_REGION_GLOBALS','_DIRECT_REGION_KEYS'}

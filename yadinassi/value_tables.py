@@ -919,3 +919,17 @@ _DIRECT_REFERENCE_WRITE_ABI = tuple((cls, cls.__mro__, tuple(
     for cls in _DIRECT_REFERENCE_WRITE_TYPES)
 _DIRECT_REFERENCE_ADJUST = _adjust
 _DIRECT_REFERENCE_INDEX_LIMIT = _MAX_INDEX_UNITS
+
+# Eager collection-region lowering may bypass only dynamic routing. Pin the
+# canonical implementation and its global dependencies at definition time.
+_DIRECT_REGION_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items())) for cls in
+    (BSLValueTable, BSLValueTableRow, BSLValueTableColumnCollection,
+     BSLValueTableColumn, BSLCollectionIndexes, BSLTypeDescription, BSLObject))
+_DIRECT_REGION_LIMITS = tuple((name,value) for name,value in tuple(globals().items()) if name.startswith('_MAX_'))
+_DIRECT_REGION_FUNCTIONS = tuple(
+    (fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
+    for fn in [*globals().values(), *(getattr(value,'__func__',value)
+                for cls,mro,entries in _DIRECT_REGION_ABI for name,value in entries)]
+    if type(fn) is type(lambda:None))
+_DIRECT_REGION_GLOBALS = tuple((name,value) for name,value in tuple(globals().items()) if not name.startswith('__'))
+_DIRECT_REGION_KEYS = frozenset(globals()) | {'_DIRECT_REGION_GLOBALS','_DIRECT_REGION_KEYS'}

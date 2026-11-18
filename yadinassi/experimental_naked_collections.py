@@ -299,7 +299,9 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False,_configuration_calls=False,_catalog_preparation_bounds=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False,_configuration_calls=False,_catalog_preparation_bounds=False,_collection_regions=False):
+    if type(_collection_regions) is not bool or (_collection_regions and not _trusted_entry):
+        raise ValueError('collection regions require trusted direct entry')
     if type(_catalog_preparation_bounds) is not bool:
         raise TypeError('catalog preparation bounds require Boolean')
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
@@ -391,6 +393,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     function_symbols={name:'fn'+str(i) for i,name in enumerate(routines)}
     module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
     scope_id=None
+    region_end=0; region_ops={}; region_states={}; region_active=False
+    if _collection_regions and live and not authority and not routines:
+        from .python_direct_collection_regions import analyze
+        region_end,region_ops,region_states=analyze(program,opaque_names=external_keys)
     if external_keys & (module_variables|routines.keys()):raise UnsupportedNakedSyntax("external names collide with module declarations")
     routine_externals={};routine_shadows={}
     source_ref_slots={}
@@ -897,7 +903,25 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         if kind is ast.OmittedArgument:return 'None'
         raise UnsupportedNakedSyntax('expression '+kind.__name__)
     def expression(node,require_value=True):
-        text=_expression(node,require_value)
+        nonlocal region_active
+        operation=region_ops.get(id(node)) if region_active else None
+        if operation is None:
+            text=_expression(node,require_value)
+        else:
+            # The slow arm is wholly ordinary direct execution. Do not embed
+            # redundant nested region branches in both arms (source blow-up).
+            region_active=False
+            try:text=_expression(node,require_value)
+            finally:region_active=True
+        if operation is not None:
+            if type(node) is ast.Call:
+                parts=[expression(node.callee.object), *(expression(arg) for arg in node.arguments)]
+            else:
+                parts=[expression(node.object)]
+                if operation=='row_get':parts.append(repr(node.name))
+            fast='_collection_helpers['+repr(operation)+'](_context, '+', '.join(parts)+')'
+            text='('+fast+' if _collection_fast else '+text+')'
+
         if _catalog_preparation_bounds:
             text='_context.preparation_value((_context.preparation_step(), '+text+')[1])'
         return source_map.expression(text,node) if source_map is not None else text
@@ -914,7 +938,17 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     def _statement(node,depth):
         nonlocal scope_id
         kind=type(node)
+        if region_active and ((kind is ast.Assign and type(node.value) is ast.New) or (kind is ast.ExpressionStatement and type(node.expression) is ast.Call and id(node.expression) not in region_ops)):
+            emit(depth,'_collection_fast = False')
         if kind is ast.Assign:
+            if region_active and region_ops.get(id(node))=='row_set':
+                emit(depth,'if _collection_fast:')
+                receiver=temp(); stored=temp()
+                emit(depth+1,receiver+' = '+expression(node.target.object))
+                emit(depth+1,stored+' = '+expression(node.value))
+                emit(depth+1,"_collection_helpers['row_set'](_context, "+receiver+', '+repr(node.target.name)+', '+stored+')')
+                emit(depth,'else:')
+                depth+=1
             value=expression(node.value);target=node.target
             if type(target) is ast.Name:assign_name(target.name,value,depth)
             elif type(target) is ast.Index:
@@ -966,6 +1000,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 emit(depth,('if ' if index==0 else 'elif ')+truth_expression(condition)+':');sequence(block,depth+1)
             if node.otherwise:emit(depth,'else:');sequence(node.otherwise,depth+1)
         elif kind is ast.For:
+            if region_active and id(node) in region_states:
+                emit(depth,'_collection_fast = _collection_admitted(_context, _initial, '+repr(region_states[id(node)][0])+', '+repr(region_states[id(node)][1])+')')
             counter=variable(node.name);last=temp()
             if live:
                 first=temp();emit(depth,first+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end));assign_name(node.name,first,depth)
@@ -979,6 +1015,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if external_name(node.name):increment='_context.external_set('+repr(node.name.casefold())+', '+read_variable(node.name)+' + 1)'
             else:increment=counter+' = '+(counter if proven_counter else read_variable(node.name))+' + 1' if module_name(node.name) else counter+' += 1'
             loops.append(increment);sequence(node.body,depth+1);loops.pop();emit(depth+1,increment)
+            if region_active:emit(depth,'_collection_fast = False')
         elif kind is ast.While:
             if authority:
                 emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
@@ -1083,8 +1120,15 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if _persistent_routines:
         emit(root_depth,'if _bind_only:')
         emit(root_depth+1,'return {'+', '.join(repr(name)+': '+symbol for name,symbol in function_symbols.items())+'}')
-    sequence([node for node in program if type(node) is not ast.Routine
-              and (_initialize_module or type(node) is not ast.Var)],root_depth)
+    if region_end:
+        emit(root_depth,'_collection_fast = False')
+        region_active=True
+        sequence(program[:region_end],root_depth)
+        region_active=False
+        sequence(program[region_end:],root_depth)
+    else:
+        sequence([node for node in program if type(node) is not ast.Routine
+                  and (_initialize_module or type(node) is not ast.Var)],root_depth)
     body=lines;lines=[]
     builtin_names={'message':'_outputs.append','сообщить':'_outputs.append','string':'str','строка':'str',
                    'number':'Decimal','число':'Decimal','typeof':'type','типзнч':'type',
@@ -1115,6 +1159,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     else:emit(1,'return _initial')
     generated='\n'.join(lines)+'\n'
     namespace={name:value for name,value in globals().items() if name.startswith('_')}
+    if region_end:
+        from .python_direct_collection_regions import admitted,helpers
+        namespace.update(_collection_admitted=admitted,_collection_helpers=helpers())
     if live:
         from . import experimental_naked_live_state as live_ops
         namespace.update(_live_slot_ref=live_ops._SlotReference,_LIVE_UNSET=live_ops.UNSET,_live_missing=live_ops.missing,_live_readonly=live_ops.readonly,_live_source_ref=live_ops.source_reference,_live_host_ref=live_ops.host_reference)

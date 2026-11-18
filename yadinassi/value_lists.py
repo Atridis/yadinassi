@@ -467,3 +467,18 @@ class BSLValueList(BSLObject):
         if key in procedures:
             return HostFunction(name, procedures[key], returns_value=False)
         return super().get_method(name)
+
+_DIRECT_REGION_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items())) for cls in
+    (BSLValueList, BSLValueListItem, BSLTypeDescription, BSLObject))
+_DIRECT_REGION_LIMITS = tuple((name,value) for name,value in tuple(globals().items()) if name.startswith('_MAX_'))
+_DIRECT_REGION_WEAKREF = weakref.ref
+_DIRECT_REGION_WEAKREF_TYPE = weakref.ReferenceType
+_DIRECT_REGION_GETWEAKREFS = weakref.getweakrefs
+_DIRECT_REGION_TYPES = (BSLValueList,BSLValueListItem)
+_DIRECT_REGION_FUNCTIONS = tuple(
+    (fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
+    for fn in [*globals().values(), *(getattr(value,'__func__',value)
+                for cls,mro,entries in _DIRECT_REGION_ABI for name,value in entries)]
+    if type(fn) is type(lambda:None))
+_DIRECT_REGION_GLOBALS = tuple((name,value) for name,value in tuple(globals().items()) if not name.startswith('__'))
+_DIRECT_REGION_KEYS = frozenset(globals()) | {'_DIRECT_REGION_GLOBALS','_DIRECT_REGION_KEYS'}

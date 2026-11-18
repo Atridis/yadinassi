@@ -339,3 +339,5 @@ def type_of(value: object) -> BSLType | BSLCatalogType:
 
 # Stable canonical identity for direct representations; host overrides stay host code.
 _DIRECT_TYPE_OF_ABI = type_of
+
+_DIRECT_REGION_VALUE_TYPES = _VALUE_TYPES
