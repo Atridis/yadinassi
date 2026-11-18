@@ -41,7 +41,9 @@ class _StructureIndex:
 
 class SourceMap:
     _use_markers=False
-    _allow_markers=True
+    # Real auxiliary parses are observable authorization points for Python
+    # compile audit hooks. Do not omit them on the ordinary public path.
+    _allow_markers=False
     def __init__(self):
         self.current=None;self.expressions=[];self.rows={};self.stack=[]
         self.markers=self._use_markers;self.locations=[];self.expression_sources=[]

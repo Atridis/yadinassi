@@ -48,6 +48,57 @@ def signature(code):
 
 
 class SourceMapStructureTests(unittest.TestCase):
+    def test_selective_auxiliary_compile_audit_denial_is_preserved(self):
+        # Audit hooks cannot be removed: isolate both registration and denial.
+        import subprocess,sys
+        code="""
+import sys
+from yadinassi import Interpreter
+from yadinassi.experimental_naked_errors import SourceMap
+source='T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;'
+vm=Interpreter();default=SourceMap._allow_markers;SourceMap._allow_markers=False
+vm.execute(source,'audit.bsl')
+seen=[]
+def observe(event,args):
+    if event=='compile' and args[1]=='<unknown>' and type(args[0]) is bytes:seen.append(args[0])
+sys.addaudithook(observe)
+vm.execute(source,'audit.bsl')
+if not seen:raise AssertionError('baseline has no real auxiliary parses')
+target=b'_constants[0]'
+if target not in seen:raise AssertionError('target auxiliary parse absent')
+SourceMap._allow_markers=default;vm.variables.clear()
+def deny(event,args):
+    if event=='compile' and args[1]=='<unknown>' and args[0]==target:
+        raise RuntimeError('selective auxiliary compile denied')
+sys.addaudithook(deny)
+try:vm.execute(source,'audit.bsl')
+except RuntimeError as error:
+    if str(error)!='selective auxiliary compile denied':raise AssertionError(str(error))
+    if vm.variables:raise AssertionError(vm.variables)
+else:raise AssertionError('selective compile authorization bypassed')
+"""
+        result=subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',code],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_default_compile_audit_stream_matches_unmarked_baseline(self):
+        import subprocess,sys
+        code="""
+import sys
+from yadinassi import Interpreter
+from yadinassi.experimental_naked_errors import SourceMap
+source='T=New ValueTable;T.Columns.Add("N");For I=0 To 2 Do Row=T.Add();Row.N=I;EndDo;'
+vm=Interpreter();vm.execute(source,'audit.bsl');seen=[]
+def observe(event,args):
+    if event=='compile':seen.append((args[0] if type(args[0]) is bytes else type(args[0]).__name__,args[1]))
+sys.addaudithook(observe)
+vm.execute(source,'audit.bsl');current=list(seen);seen.clear()
+SourceMap._allow_markers=False
+vm.execute(source,'audit.bsl')
+if current!=seen:raise AssertionError('default audit stream differs from unmarked baseline')
+"""
+        result=subprocess.run([sys.executable,*(['-'+'O'*sys.flags.optimize] if sys.flags.optimize else []),'-c',code],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_structural_identity_matches_dump_identity(self):
         snippets=('x+x','x + y','x[1]','x[True]','x[1.0]','x["1"]','x[b"1"]',
             'x[-0.0]','x[0.0]','f(x,y=1)','f(x,**y)','[x for x in y if x]',
@@ -96,7 +147,8 @@ class SourceMapStructureTests(unittest.TestCase):
         for prefix in prefixes:
             for suffix in suffixes:
                 with self.subTest(prefix=prefix[:30],suffix=suffix[:30]):
-                    direct=Interpreter().prepare(prefix+suffix,'mixed.bsl')
+                    with patch.object(SourceMap,'_allow_markers',True):
+                        direct=Interpreter().prepare(prefix+suffix,'mixed.bsl')
                     self.assertIn('_source_location_marker',direct._plan.generated_source)
                     with patch.object(SourceMap,'_allow_markers',False),patch.object(SourceMap,'compile',dump_compile):
                         reference=Interpreter().prepare(prefix+suffix,'mixed.bsl')
@@ -106,7 +158,7 @@ class SourceMapStructureTests(unittest.TestCase):
     def test_collection_markers_do_not_increase_arithmetic_nesting(self):
         for depth in (5,30,60):
             source='T=New ValueList;For I=0 To 1 Do T.Add('+('1+('*depth)+'1'+(')'*depth)+');EndDo;'
-            direct=Interpreter().prepare(source)
+            with patch.object(SourceMap,'_allow_markers',True):direct=Interpreter().prepare(source)
             with patch.object(SourceMap,'_allow_markers',False):reference=Interpreter().prepare(source)
             self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
 
