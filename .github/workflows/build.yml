@@ -158,6 +158,19 @@ jobs:
           python-version: '3.12'
       - name: Install pinned runtime dependencies
         run: python -m pip install -e . wcwidth==0.8.2
+      - name: Measure explicitly isolated recovered bare subset
+        if: ${{ !cancelled() }}
+        run: |
+          python -m unittest tests.test_benchmark_recovery tests.test_benchmark_recovered_drivers
+          python scripts/benchmark_recovered_drivers.py --output performance-results/recovered-bare.json --rounds 5
+      - name: Publish isolated bare coverage and preliminary measurements
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f performance-results/recovered-bare.md ]; then
+            cat performance-results/recovered-bare.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Изолированный bare: отчёт не создан; это не успешный замер.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Check benchmark correctness and report formatting
         run: python -m unittest tests.test_benchmark_execution_layers tests.test_benchmark_summary tests.test_benchmark_report
       - name: Measure three equivalent execution layers
