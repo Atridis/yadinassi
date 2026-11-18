@@ -92,10 +92,16 @@ def _validate_ddl(connection, config, domain):
     from .sqlite_query_indexes import admit_query_indexes,read_index_bundle_ddls
     admit_query_indexes(connection,s.transaction_profile.profile_index_ddls(7,config.catalogs,layout),
         read_index_bundle_ddls(7,config.catalogs,layout,format_version=16))
+    return layout,sections
 
 
-def read_source(connection, *, _prepared=None):
-    """Rehash current source before decoding typed schemas; no row authority."""
+def read_source(connection, *, _prepared=None, _with_layout=False):
+    """Rehash current source before decoding typed schemas; no row authority.
+
+    The internal output-only layout option returns maps validated by this call.
+    They are ephemeral facts of this connection/transaction, not reusable grants.
+    The ordinary source triple and prepared-source cache remain unchanged.
+    """
     if (connection.execute('PRAGMA application_id').fetchone()!=(_storage()._APPLICATION_ID,)
             or connection.execute('PRAGMA user_version').fetchone()!=(16,)):
         raise BackendError('integrity')
@@ -136,10 +142,11 @@ def read_source(connection, *, _prepared=None):
     domain=EnumValueDomain(database_id,config.enumerations)
     if profile == MAIN_PROFILE:
         from .sqlite_main_demo_profile import validate_main_demo_ddl
-        validate_main_demo_ddl(connection,config,domain)
+        maps=validate_main_demo_ddl(connection,config,domain)
     else:
-        _validate_ddl(connection,config,domain)
-    return config,domain,key
+        maps=_validate_ddl(connection,config,domain)
+    source=config,domain,key
+    return (source,maps) if _with_layout else source
 
 
 def admit(connection,database_id,catalogs,documents,*,validate_rows=False,_prepared=None):

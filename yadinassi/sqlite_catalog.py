@@ -1539,18 +1539,22 @@ class SQLiteCatalogBackend:
                 if self.format_version in (11, 12) and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
                 if self.format_version == 16:
                     from .sqlite_inventory_enum_profile import read_source
-                    enum_source = read_source(connection, _prepared=self._prepared_source)
+                    enum_source, validated_maps = read_source(connection, _prepared=self._prepared_source, _with_layout=True)
                     config, domain, _ = enum_source
-                    if config != self.accumulation_configuration or domain != self._enum_domain:
+                    if (config != self.accumulation_configuration or domain != self._enum_domain
+                            or config.catalogs != self._schemas):
                         raise BackendError('schema_changed')
                 if self.storage_version >= 2:
                     if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
                     for identity, name, definition in self._schema_snapshot:
                         if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
-                    layout = load_layout(connection, self._schemas)
+                    # Format16 source admission just validated these maps on this
+                    # same transaction and exact schemas. Never retain them on a
+                    # handle/cache or reuse them after rollback/commit.
+                    layout = validated_maps[0] if self.format_version == 16 else load_layout(connection, self._schemas)
                     if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
                     if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
-                        section_layout = load_section_layout(connection, self._schemas, layout)
+                        section_layout = validated_maps[1] if self.format_version == 16 else load_section_layout(connection, self._schemas, layout)
                         if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
                             raise BackendError('schema_changed')
                 if self.storage_version in (4, 6, 7, 8, 9, 10):

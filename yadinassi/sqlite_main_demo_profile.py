@@ -144,3 +144,4 @@ def validate_main_demo_ddl(connection, config, domain):
     from .sqlite_query_indexes import admit_query_indexes, read_index_bundle_ddls
     admit_query_indexes(connection, s.transaction_profile.profile_index_ddls(7, config.catalogs, layout),
                         read_index_bundle_ddls(7, config.catalogs, layout, format_version=16))
+    return layout, sections
