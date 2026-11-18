@@ -9,7 +9,7 @@ from threading import get_ident
 from .experimental_naked_boundaries import BoundaryViolation
 from .experimental_naked_collections import prepare
 from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
-from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner
+from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot
 from .native_targets import target_context
 from .runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI
 from .syntax import ast
@@ -26,7 +26,7 @@ def _deny():
 
 
 def _unsupported():
-    raise PythonDirectUnsupported('direct configuration commands support only noDB client scalar modules with Val parameters and no defaults')
+    raise PythonDirectUnsupported('direct configuration commands support only noDB client scalar modules with Val parameters and scalar literal defaults')
 
 
 class _Scope:
@@ -71,12 +71,13 @@ class _Scope:
             for key,routine in dict.items(owner.routines):
                 if (type(key) is not str or type(routine) is not ast.Routine
                         or type(routine.parameters) is not list
-                        or any(type(p) is not ast.Parameter for p in routine.parameters)):_deny()
+                        or any(type(p) is not ast.Parameter or type(p.name) is not str for p in routine.parameters)):_deny()
                 if (routine.is_async or routine.is_dual or
-                        any(not p.by_value or p.default is not None for p in routine.parameters)):_unsupported()
+                        any(type(p.by_value) is not bool or not p.by_value or (p.default is not None and type(p.default) is not ast.Literal) for p in routine.parameters)):_unsupported()
         self.owners=tuple(owners)
         self.plans=tuple(owner._direct_configuration_plan for owner in owners)
         self.functions=tuple(plan.function for plan in self.plans)
+        self.parameters=tuple(parameter_snapshot(plan) for plan in self.plans)
         self.routines=tuple(tuple(owner.routines.items()) for owner in owners)
         self._check_state(app,root)
         self.metadata=metadata.Readers(self)
@@ -125,7 +126,7 @@ class _Scope:
             if (app._definitions.get(name) is not definition or not definition.client
                     or definition.server or definition.server_call or definition.global_module
                     or definition.return_values_reuse!='DontUse'):_deny()
-        for current,plan,code,routines in zip(self.owners,self.plans,self.functions,self.routines):
+        for current,plan,code,routines,parameters in zip(self.owners,self.plans,self.functions,self.routines,self.parameters):
             check_owner(app,current)
             if (type(current.variables) is not dict or type(current.functions) is not dict
                     or any(type(key) is not str for key in current.variables)):_deny()
@@ -136,14 +137,51 @@ class _Scope:
             if (current.database_context is not None or current.execution_context!='client'
                     or current._invocation_bindings or current.server_routines
                     or current._direct_configuration_plan is not plan or plan.function is not code
-                    or type(current.routines) is not dict or len(current.routines)!=len(routines)):_deny()
+                    or type(current.routines) is not dict or len(current.routines)!=len(routines)
+                    or parameter_snapshot(plan) is not parameters):_deny()
             for key,routine in routines:
                 if (current.routines.get(key) is not routine or type(routine) is not ast.Routine
                         or routine.is_async or routine.is_dual or routine.execution_context!='client'
                         or type(routine.parameters) is not list
-                        or any(type(p) is not ast.Parameter or not p.by_value or p.default is not None for p in routine.parameters)):_deny()
+                        or any(type(p) is not ast.Parameter or type(p.by_value) is not bool or not p.by_value or type(p.name) is not str for p in routine.parameters)):_deny()
+                self.parameter_values(current,routine)
         if type(root.variables) is not dict or any(type(key) is not str for key in root.variables):_deny()
         self.values(root.variables.values())
+
+    def parameter_values(self,owner,routine):
+        index=next((i for i,current in enumerate(self.owners) if current is owner),None)
+        if index is None:_deny()
+        table=self.parameters[index]
+        if type(table) is not tuple:_deny()
+        entries=next((entries for saved,entries in table if saved is routine),None)
+        if entries is None or len(entries)!=len(routine.parameters):_deny()
+        for current,(saved,name,by_value,node,value) in zip(routine.parameters,entries):
+            if (current is not saved or current.name is not name or current.by_value is not by_value
+                    or current.default is not node):_deny()
+            if node is not None:
+                if type(node) is not ast.Literal:_unsupported()
+                if node.value is not value:_deny()
+                self.values((value,))
+        return entries
+
+    def omissions(self,owner,routine,omitted):
+        entries=self.parameter_values(owner,routine)
+        if type(omitted) is not tuple or any(type(i) is not int for i in omitted):_deny()
+        if any(i<0 or i>=len(entries) for i in omitted):
+            raise TypeError('common-module omission outside parameter list')
+
+    def arguments(self,owner,routine,args,omitted):
+        entries=self.parameter_values(owner,routine);self.omissions(owner,routine,omitted)
+        if len(args)>len(entries):raise TypeError('common-module argument count mismatch')
+        values=list(args)
+        for index in omitted:
+            if index>=len(values):raise TypeError('common-module omission outside argument list')
+            values[index]=entries[index][4]
+        for _,_,_,node,value in entries[len(values):]:
+            if node is None:raise TypeError('required common-module argument missing')
+            values.append(value)
+        self.values(values)
+        return tuple(values)
 
     def service(self,function,owner):
         # Message is the only host capability newly exposed by this lane.
@@ -204,7 +242,9 @@ def _validate_command(program,app):
             elif type(callee) is ast.Name:
                 if callee.name.casefold() not in ('message','сообщить'):_unsupported()
             else:_unsupported()
-            for argument in node.arguments:expression(argument)
+            for argument in node.arguments:
+                if type(argument) is ast.OmittedArgument and type(callee) is ast.Attribute:continue
+                expression(argument)
             return
         _unsupported()
     def statements(nodes):
@@ -241,7 +281,7 @@ def execute_command(app,text,source):
     app.check_program(program);_validate_command(program,app)
     plan=prepare(text,source_name=source,parsed_ast=_snapshot(program),
         repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions)+metadata.ROOT_NAMES,
-        _trusted_entry=True,_return_last_expression=True)
+        _trusted_entry=True,_return_last_expression=True,_configuration_calls=True)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
     scope.enter()

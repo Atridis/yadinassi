@@ -72,6 +72,7 @@ def _string_callable(context,function,*,name=None,require_value=False,allow_refe
             if kind is list:return 'Массив'
             if kind is _DirectStructureType:return 'Структура'
             if kind is _DirectMapType:return 'Соответствие'
+            if kind is _CanonicalMapEntry:return 'КлючИЗначение'
             # Preserve the existing canonical service for all other values.
             # This adds no new host-object admission or payload traversal.
             return _DIRECT_TO_STRING_ABI(value)

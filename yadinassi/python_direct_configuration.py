@@ -5,6 +5,19 @@ execution, scheduler dispatcher, arbitrary host reflection or implicit fallback.
 """
 from decimal import localcontext
 from contextvars import ContextVar
+from types import FunctionType
+from weakref import WeakKeyDictionary, ref
+
+_PARAMETERS = WeakKeyDictionary()
+
+def parameter_snapshot(plan):
+    function=plan.function
+    if type(function) is not FunctionType:raise BoundaryViolation('configuration plan function changed')
+    entry=_PARAMETERS.get(function)
+    if entry is None or entry[0]() is not plan or plan._configuration_parameters is not entry[1]:
+        raise BoundaryViolation('configuration parameter snapshot changed')
+    return entry[1]
+
 
 _COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
 from . import safe_mode, source_transactions, database_transactions
@@ -112,13 +125,16 @@ class ConfigurationBoundary(BoundaryContext):
             if self.app.resolve_module(module_name,self.owner) is not value:
                 raise BoundaryViolation('common module binding changed')
             self.app.check_call(routine,self.owner)
+            if self._command_scope is not None:self._check()
             if any(not p.by_value for p in routine.parameters):
                 raise BoundaryViolation('direct public common-module byref arguments are not connected')
             if routine.is_async or routine.is_dual:
                 raise BoundaryViolation('direct common-module async/dual calls are not connected')
         admit()
-        def invoke(*args):
+        def invoke_arguments(args,omitted=()):
             admit()
+            scope=self._command_scope
+            if scope is not None:args=scope.arguments(target,routine,args,omitted)
             if len(args)!=len(routine.parameters):raise TypeError('common-module argument count mismatch')
             binding=target._invocation_bindings.get(routine.name.casefold())
             if binding is not None:
@@ -132,8 +148,30 @@ class ConfigurationBoundary(BoundaryContext):
             result=invoke_routine(self.app,target,routine,args)
             if scope is not None:scope.values((result,))
             return result
+        def invoke(*args):return invoke_arguments(args)
+        def check_argument_count(count):
+            self._check()
+            entries=self._command_scope.parameter_values(target,routine)
+            minimum=max((i+1 for i,entry in enumerate(entries) if entry[3] is None),default=0)
+            if not minimum<=count<=len(entries):raise TypeError('common-module argument count mismatch')
+        def with_omissions(omitted):
+            self._check()
+            self._command_scope.omissions(target,routine,omitted)
+            def call(*args):return invoke_arguments(args,omitted)
+            call.returns_value=routine.is_function
+            call.check_argument_count=check_argument_count
+            return call
         invoke.returns_value=routine.is_function
+        if self._command_scope is not None:
+            invoke.with_omissions=with_omissions
+            invoke.check_argument_count=check_argument_count
         return invoke
+
+    def resolve_configuration_member_call(self,value,name,*,require_value=False,omitted=(),argument_count):
+        bound=self.resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        if self._command_scope is not None and hasattr(bound,'check_argument_count'):
+            bound.check_argument_count(argument_count)
+        return bound
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         if self._command_scope is None:
@@ -141,6 +179,10 @@ class ConfigurationBoundary(BoundaryContext):
         bound=self.resolve_member(value,name)
         if self._command_scope is not None and require_value and not bound.returns_value:
             raise TypeError('Процедура не возвращает значение: '+name)
+        if omitted:
+            if not hasattr(bound,'with_omissions'):
+                raise TypeError('metadata methods do not accept omitted arguments')
+            return bound.with_omissions(omitted)
         return bound
 
 
@@ -153,7 +195,14 @@ def install(app,owner,program,source_text=''):
     owned=_snapshot(program)
     plan=prepare(source_text,source_name=program[0].token.source if program else '<configuration>',
         parsed_ast=owned,repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions),
-        _trusted_entry=True,_export_routines=True)
+        _trusted_entry=True,_export_routines=True,_configuration_calls=True)
+    # Capture original declaration bindings when this exact plan is installed.
+    # Never infer a default from later host-mutated declaration metadata.
+    plan._configuration_parameters=tuple((node,tuple(
+        (parameter,parameter.name,parameter.by_value,parameter.default,
+         parameter.default.value if type(parameter.default) is ast.Literal else None)
+        for parameter in node.parameters)) for node in program if type(node) is ast.Routine)
+    _PARAMETERS[plan.function]=(ref(plan),plan._configuration_parameters)
     owner._direct_configuration_plan=plan
     for node in program:
         if type(node) is ast.Routine:

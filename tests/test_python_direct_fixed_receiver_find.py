@@ -110,7 +110,7 @@ class DirectFixedReceiverFindTests(unittest.TestCase):
         self.assertIsNone(captured(context,fake));self.assertEqual(seen,[])
 
     def test_scalar_native_observation_and_date_controls_are_unchanged(self):
-        capture=(Path(__file__).resolve().parents[1]/'integrational_tests/fill_exclude_native/collections.out').read_text()
+        capture=(Path(__file__).resolve().parents[1]/'integrational_tests/fill_exclude_native/collections.out').read_text(encoding='utf-8')
         self.assertIn('fixed-array.find: [0]',capture)
         vm=Interpreter();vm.execute('A=New Array;A.Add(1);F=New FixedArray(A);R=F.Find(1);')
         self.assertEqual(vm.variables['r'],0)

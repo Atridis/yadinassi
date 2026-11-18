@@ -10,7 +10,7 @@ its explicit transport remain separate capabilities.
 An already-running exact configuration application, with synchronous client-only
 common modules, no database, session module/parameters, reusable result cache,
 global modules or server transport. All registered routines have explicit
-`Val` parameters without defaults. Commands can assign scalar root variables,
+`Val` parameters with optional immutable scalar literal defaults. Commands can assign scalar root variables,
 evaluate scalar expressions, handle ordinary errors with nested Try/Except,
 raise or rethrow them, call named exported module routines and report
 results using canonical `Message`/`Сообщить`. Arguments and results are limited
@@ -39,7 +39,7 @@ A trusted output callback is still a host side effect and is not sandboxed.
 ## Explicit non-goals
 
 This does not make the configuration/reuse CI group green. Existing non-Val
-routines, argument defaults, globals, client/server selection, ServerCall,
+routines, expression defaults, globals, client/server selection, ServerCall,
 async/dual calls, session initialization, reusable values and database-backed
 applications remain unavailable through this entry. In particular the legacy
 `test_named_export_private_routine_and_casefold` uses non-Val parameters and is
@@ -98,3 +98,22 @@ the existing direct backend's condition semantics and error lowering. This adds
 no loop, constructor, dynamic evaluation or host capability. Fatal scope/lifetime
 violations remain outside the catchable error set; captured callables remain
 bound to their original active command and exact context.
+
+### Literal defaults for Val parameters
+
+Qualified calls in this lane may omit optional `Val` arguments whose installed
+default is an immutable scalar literal (`Undefined`, Boolean, String or Number).
+Trailing omissions and explicit comma holes use the recorded default; explicitly
+supplied `Undefined` remains `Undefined`, rather than selecting a default. A
+comma hole in a parameter without a default binds `Undefined`, matching the
+canonical same-side semantics. Missing required trailing arguments and excess
+arguments are rejected before evaluating actual arguments. Internal
+same-module calls retain the existing generated direct default semantics.
+
+The original parameter identities, literal nodes and values are sealed to the
+installed generated function. They are checked at scope admission and again at
+call boundaries, including after argument effects. Replacing declaration metadata
+or the default snapshot is not authority to alter the installed program.
+Expression defaults (including unary expressions), by-reference parameters,
+transport, server/global modules, reuse and database access remain outside this
+command lane. No evaluator or legacy fallback is used to obtain default values.

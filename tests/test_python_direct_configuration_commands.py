@@ -36,7 +36,7 @@ class DirectConfigurationCommandTests(unittest.TestCase):
     def test_byref_defaults_global_and_crossing_fail_before_effects(self):
         for source,flags in (
             ('Function F(X) Export Return X;EndFunction',{}),
-            ('Function F(Val X=1) Export Return X;EndFunction',{}),
+            ('Function F(Val X=-1) Export Return X;EndFunction',{}),
             ('Function F(Val X) Export Return X;EndFunction',{'Global':'true'}),
             ('Function F(Val X) Export Return X;EndFunction',SERVER)):
             with self.subTest(source=source,flags=flags):
