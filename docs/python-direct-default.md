@@ -73,3 +73,13 @@ wrapper/serialization expectations and FixedArray construction do not match this
 route. Explicit empty native-call slots are also incomplete: for example,
 `a.Insert(0,)` can currently mutate instead of rejecting the omission. Do not
 mistake the focused smoke tests for a full compatibility pass.
+
+### Missing routine-local names
+
+Names without a lexical binding in a direct routine now raise a catchable BSL
+undefined-name error with the original source spelling/location. They do not
+resolve through generated Python globals or leak another side's module state.
+This is a compile-time classification, not a blanket conversion of host
+`NameError` exceptions, and adds no lookup to valid bound-name reads. Conditional
+reads before a local assignment and other incomplete local/reference contracts
+are not claimed fixed by this slice.

@@ -38,7 +38,7 @@ N=100;Tick();
 #EndIf
 ''')
         for name in ('ReadN','ReadClient'):
-            with self.assertRaises(NameError):vm.execute(name+'();')
+            with self.assertRaisesRegex(BSLRuntimeError, "не определена"):vm.execute(name+'();')
             self.assertEqual(effects,[]);self.assertTrue(vm._has_module_context)
         vm.execute('R=Contextual();');self.assertEqual(vm.variables['r'],100);self.assertEqual(effects,[1])
 

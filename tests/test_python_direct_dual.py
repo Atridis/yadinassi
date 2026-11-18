@@ -77,7 +77,7 @@ Function F() Return X;EndFunction
 Z=100;Tick();
 #EndIf
 ''')
-        with self.assertRaises(NameError):vm.execute('F();')
+        with self.assertRaisesRegex(BSLRuntimeError, "не определена"):vm.execute('F();')
         self.assertEqual(effects,[])
 
     def test_contextual_targets_refuse_before_argument_effects(self):

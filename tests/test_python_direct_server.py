@@ -49,7 +49,7 @@ A=New Array; A.Add(1); X=New Structure("A",A); R=S(X); R.A.Add(3);
         self.assertEqual(vm.variables['r'].get('A'),[Decimal(1),Decimal(2),Decimal(3)])
     def test_server_cannot_read_client_state(self):
         vm=Interpreter();vm.execute('Var Secret;Secret=42;\n&AtServer\nFunction S() Return Secret; EndFunction')
-        with self.assertRaises(NameError):vm.execute('S();')
+        with self.assertRaisesRegex(BSLRuntimeError, "не определена"):vm.execute('S();')
         self.assertEqual(vm.variables['secret'],42);self.assertEqual(vm.execution_context,'client')
     def test_client_call_denied_before_argument_effect(self):
         vm=Interpreter();effects=[];vm.register_function('Effect',lambda:effects.append(1))

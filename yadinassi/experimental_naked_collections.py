@@ -460,6 +460,18 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     # Raw diagnostic profiles return Python int from Count, which the existing
     # checked-index contract rejects. Do not silently repair that mismatch.
     if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
+    # Names with no lexical binding in a routine cannot resolve to another
+    # side's module or a generated Python global. Diagnose them as BSL names,
+    # without adding locals() probes to every valid routine variable read.
+    routine_bindings={}
+    if live:
+        for r in routines.values():
+            names={p.name.casefold() for p in r.parameters}|cells[id(r)]|lexical[id(r)]
+            for n in walk(r.body):
+                if type(n) is ast.Var:names.update(name.casefold() for name in n.names)
+                elif type(n) is ast.Assign and type(n.target) is ast.Name:names.add(n.target.name.casefold())
+                elif type(n) in (ast.For,ast.ForEach):names.add(n.name.casefold())
+            routine_bindings[id(r)]=names
     routine_locals={id(r):{p.name.casefold() for p in r.parameters}|{name.casefold() for n in r.body if type(n) is ast.Var for name in n.names} for r in routines.values()}
     if live:
         for r in routines.values():
@@ -511,6 +523,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if name.casefold() in import_keys:return '_context.import_get('+repr((name.casefold(),))+')'
             return variable(name)
         if not module_name(name):
+            if live and scope_id is not None and name.casefold() not in routine_bindings[scope_id]:
+                return '_live_missing('+repr(name)+')'
             value=variable(name)
             return ('('+value+' if '+source_local_exists(name)+' else _live_missing('+repr(name)+'))'
                 if (_source_routine_scopes or _host_routine_bindings) else value)
