@@ -89,7 +89,7 @@ _ALIASES={'добавить':'add','вставить':'insert','получить
 # Named, independently selectable repairs. These are experiment variants, NOT a
 # restoration of the production admission/runtime pipeline. Each repair has a
 # specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'))
+REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division','numeric_boolean_equality'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -337,7 +337,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if service_references and (not services or 'byref_routines' not in repairs):raise ValueError('service references require explicit byref and service repairs')
     if any(type(index) is not int or index<0 for indices in service_references.values() for index in indices):raise ValueError('invalid service reference index')
     scalar_ops=None
-    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'}:
+    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division','numeric_boolean_equality'}:
         from . import experimental_naked_scalar_semantics as scalar_ops
     structure_ops=None
     if 'structure_fields' in repairs:
@@ -665,6 +665,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 if 'uca_string_order' not in repairs and type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str and type(node.right.value) is str:
                     return literal(scalar_ops.order(node.left.value,node.right.value,node.operator))
                 return '_native_order('+expression(node.left)+', '+expression(node.right)+', '+repr(node.operator)+')'
+            if node.operator in ('=','<>') and 'numeric_boolean_equality' in repairs:
+                helper='_numeric_boolean_equal' if node.operator=='=' else '_numeric_boolean_not_equal'
+                return helper+'('+expression(node.left)+', '+expression(node.right)+')'
             if node.operator in ('=','<>') and repairs & {'array_identity_equality','structure_identity_equality','map_identity_equality'}:
                 # A syntactic primitive literal cannot denote an Array/Structure/Map. Keep
                 # the previous scalar operator; no variable/type inference.
@@ -1116,6 +1119,10 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             equal,not_equal=scalar_ops.structure_equal,scalar_ops.structure_not_equal
         else:equal,not_equal=scalar_ops.collection_equal,scalar_ops.collection_not_equal
         namespace.update(_array_equal=equal,_array_not_equal=not_equal)
+    if 'numeric_boolean_equality' in repairs:
+        equal,not_equal=scalar_ops.numeric_boolean_operators(
+            namespace.get('_array_equal'),namespace.get('_array_not_equal'))
+        namespace.update(_numeric_boolean_equal=equal,_numeric_boolean_not_equal=not_equal)
     if 'decimal_division' in repairs:
         namespace.update(_decimal_divide=scalar_ops.decimal_divide,_decimal_sign=scalar_ops.decimal_sign)
     native_dicts=(dict,_TypedMap,_NakedMap)

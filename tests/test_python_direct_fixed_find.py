@@ -45,7 +45,7 @@ class DirectFixedFindTests(unittest.TestCase):
                 self.assertIsNone(typed_find([Evil()],value))
         self.assertEqual(events,[])
 
-    def test_subclasses_foreign_and_receiver_subclasses_remain_rejected(self):
+    def test_fixed_subclass_keys_are_identity_only_foreign_and_receivers_rejected(self):
         events=[]
         class Meta(type):
             def __eq__(self,other):events.append('class eq');raise AssertionError('class eq')
@@ -54,8 +54,11 @@ class DirectFixedFindTests(unittest.TestCase):
             def __eq__(self,other):events.append('eq');raise AssertionError('eq')
         class Child(BSLFixedStructure):pass
         class ListChild(list):pass
-        for value in (Foreign(),Child('X',1)):
-            with self.assertRaises(UnsupportedScalarSemantics):typed_find([value],value)
+        value=Foreign()
+        with self.assertRaises(UnsupportedScalarSemantics):typed_find([value],value)
+        child=Child('X',1)
+        self.assertEqual(typed_find([child],child),Decimal(0))
+        self.assertIsNone(typed_find([child],Child('X',1)))
         fixed=BSLFixedStructure('X',1)
         with self.assertRaises(UnsupportedScalarSemantics):typed_find(ListChild([fixed]),fixed)
         self.assertIsNone(typed_find([Foreign(),Child('X',1)],fixed));self.assertEqual(events,[])

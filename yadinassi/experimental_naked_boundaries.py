@@ -6,7 +6,7 @@ Registered services are trusted Python capabilities, not a Python sandbox.
 Post-call invalidation does not undo a service's already completed side effects.
 """
 from dataclasses import dataclass
-from .values import HostFunction
+from .values import HostFunction, _DIRECT_INTERPRETER_CALL_TYPE
 _MISSING=object()
 
 
@@ -93,6 +93,8 @@ class BoundaryContext:
                 from .python_direct_transactions import service as transaction_service
                 function=transaction_service(self,function)
             self._validate_host_function(function,require_value,allow_references)
+            if type(function.function) is _DIRECT_INTERPRETER_CALL_TYPE:
+                raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
         def invoke(*args):
             self._before('call',key)
             try:return function(*args)
@@ -124,6 +126,8 @@ class BoundaryContext:
             from .python_direct_transactions import service as transaction_service
             value=transaction_service(self,value)
         self._validate_host_function(value,require_value,allow_references)
+        if type(value.function) is _DIRECT_INTERPRETER_CALL_TYPE:
+            raise ValueError('interpreter-aware call requires an explicit interpreter dispatch')
         # Bind the canonical wrapper, not its mutable implementation field.
         name=value.name.casefold()
         def invoke(*args):

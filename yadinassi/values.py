@@ -434,6 +434,10 @@ class BSLFixedCollection:
     """Marker for fixed collections with identity comparison semantics."""
 
 
+# Definition-time identity marker; comparing descendants grants no member access.
+_DIRECT_FIXED_COLLECTION_TYPE = BSLFixedCollection
+
+
 class _ArrayBase(BSLObject):
     """Shared reads; fixed arrays do not inherit any mutable collection API."""
     # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
@@ -671,6 +675,10 @@ class InterpreterCall:
         return (yield from operation)
 
 
+# Definition-time identity: generic direct calls must not dispatch this protocol.
+_DIRECT_INTERPRETER_CALL_TYPE = InterpreterCall
+
+
 class HostFunction:
     """Only explicitly registered callables may be invoked from BSL."""
     # Stable copyreg cache: ordinary copy/deepcopy must not mutate the class ABI.
@@ -701,6 +709,7 @@ _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
 _DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)
 
 # Stable identity for bounded direct fixed-collection lookup.
+_DIRECT_ARRAY_TYPE = BSLArray
 _DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray
 _DIRECT_FIXED_FIND_ABI=(_ArrayBase.find,tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in BSLFixedArray.__mro__))
