@@ -662,6 +662,12 @@ class SQLiteCatalogBackend:
                     self._document_schemas, validate_rows=True, _prepared=self._prepared_source)
                 self._accumulation_schemas = self.accumulation_configuration.registers
             self._sqlite_schema_version = connection.execute('PRAGMA schema_version').fetchone()[0]
+            # The generic epoch descriptor must also notice DDL changes whose
+            # writer deliberately restored schema_version to its old value.
+            self._admission_ddl_snapshot = None
+            if self.format_version != 16 and self._read_admission_cache_allowed():
+                self._admission_ddl_snapshot = tuple(connection.execute(
+                    'SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').fetchall())
             _uuid(self.database_id)
             if self.storage_version == 5:
                 imported, catalogs, info, manifest = self._inert_source_snapshot(connection, admitting=True)
@@ -1112,6 +1118,21 @@ class SQLiteCatalogBackend:
     def _main_demo_source_snapshot(self, connection):
         from .configuration_main_demo import MainDemoConfiguration, PROFILE, _same
         from .sqlite_inventory_enum_profile import read_source
+        owner = self._active
+        handle = self._read_handle
+        if (type(owner) is _View and owner._connection is connection
+                and owner._operation_id is None and handle is not None
+                and owner._read_handle is handle and handle.connection is connection
+                and handle._pending_admission is not None):
+            owner._require()
+            if not _same(handle._pending_admission, self._read_admission_descriptor()):
+                raise BackendError('schema_changed')
+            # Reuse only this explicit connection's already admitted snapshot.
+            # No active writer, foreign connection or unregistered lease grant.
+            config = self.accumulation_configuration
+            if type(config) is not MainDemoConfiguration or config.profile != PROFILE:
+                raise BackendError('schema_changed')
+            return config
         config, domain, _ = read_source(connection, _prepared=self._prepared_source)
         if (type(config) is not MainDemoConfiguration or config.profile != PROFILE
                 or domain.database_id != self.database_id
@@ -1518,6 +1539,99 @@ class SQLiteCatalogBackend:
             return RegisterView(raw).resolve_set(operation_id, draft)
         finally: raw.close()
 
+    def _validate_transaction_admission(self, connection, *, _receipt_only=False):
+        if self.format_version != 16 and self._read_admission_cache_allowed():
+            identity = connection.execute(
+                'SELECT database_uuid,generation,activated,activation_issues FROM database_info WHERE singleton=1').fetchone()
+            if identity != (str(self.database_id), self.configuration_generation,
+                            int(self.activated), _json(list(self.activation_issues))):
+                raise BackendError('schema_changed')
+            if tuple(connection.execute(
+                    'SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name').fetchall()) != self._admission_ddl_snapshot:
+                raise BackendError('schema_changed')
+        if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
+            connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
+            raise BackendError('schema_changed')
+        if self.format_version in (11, 12) and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
+        if self.format_version == 16:
+            from .sqlite_inventory_enum_profile import read_source
+            enum_source, validated_maps = read_source(connection, _prepared=self._prepared_source, _with_layout=True)
+            config, domain, _ = enum_source
+            if (config != self.accumulation_configuration or domain != self._enum_domain
+                    or config.catalogs != self._schemas):
+                raise BackendError('schema_changed')
+        if self.storage_version >= 2:
+            if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
+            for identity, name, definition in self._schema_snapshot:
+                if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
+            # Format16 source admission just validated these maps on this
+            # same transaction and exact schemas. These freshly loaded map
+            # objects are not retained; readonly format16 handles separately
+            # capture a detached admission descriptor after all checks pass.
+            layout = validated_maps[0] if self.format_version == 16 else load_layout(connection, self._schemas)
+            if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
+            if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
+                section_layout = validated_maps[1] if self.format_version == 16 else load_section_layout(connection, self._schemas, layout)
+                if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
+                    raise BackendError('schema_changed')
+        if self.storage_version in (4, 6, 7, 8, 9, 10):
+            self._check_sequences(connection, self._schemas)
+        if self.storage_version in (7, 8, 9, 10):
+            documents, rows = load_document_schemas(connection, self._schemas, allow_empty=self.storage_version in (8, 9, 10), enum_domain=self._enum_domain)
+            if rows != self._document_snapshot or documents != self._document_schemas: raise BackendError('schema_changed')
+        if self.storage_version in (8, 9, 10):
+            registers, rows = load_register_schemas(connection, self._schemas, self._document_schemas, allow_empty=self.storage_version == 10)
+            if rows != self._register_snapshot or registers != self._register_schemas: raise BackendError('schema_changed')
+        if _source_profile_for_issues(self.activation_issues) == DOCUMENT_FORMS_PROFILE:
+            self._document_form_source_snapshot(connection)
+        elif _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE):
+            self._business_source_snapshot(connection)
+        if self.storage_version == 6:
+            if _receipt_only: self._demo_receipt_identity(connection)
+            else: self._demo_source_snapshot(connection)
+        if self.format_version == 13:
+            from .sqlite_posting_profile import admit
+            if admit(connection, self.database_id, self._document_schemas,
+                     _prepared=self._prepared_source) != self.posting_configuration:
+                raise BackendError('schema_changed')
+        if self.format_version == 14:
+            from .sqlite_accumulation_profile import admit
+            if admit(connection, self.database_id, self._document_schemas,
+                     _prepared=self._prepared_source) != self.accumulation_configuration:
+                raise BackendError('schema_changed')
+        if self.format_version == 15:
+            from .sqlite_inventory_profile import admit
+            if admit(connection, self.database_id, self._schemas, self._document_schemas,
+                     _prepared=self._prepared_source) != self.accumulation_configuration:
+                raise BackendError('schema_changed')
+        if self.format_version == 16:
+            from .sqlite_inventory_enum_profile import _admit_source
+            if _admit_source(connection, self.database_id, self._schemas, self._document_schemas,
+                             enum_source, _prepared=self._prepared_source) != self.accumulation_configuration:
+                raise BackendError('schema_changed')
+
+    def _read_admission_cache_allowed(self):
+        # Source-bearing profiles require their own complete descriptor. Generic
+        # migrated catalogs have no stored-code execution grant to transfer.
+        return (self.format_version == 16 or
+                (self.storage_version in (2, 3, 4)
+                 and self.format_version in (2, 3, 4, 11)
+                 and not self.activation_issues))
+
+    def _read_admission_descriptor(self):
+        # Detached source/schema/layout values, not a grant for a newly loaded
+        # configuration and not a proof of catalog/document row validity.
+        return (self.database_id, self.format_version, self.storage_version,
+                self._sqlite_schema_version, self.activation_issues,
+                self.configuration_generation, self.accumulation_configuration,
+                self._enum_domain, self._schemas, self._schema_snapshot,
+                self._document_schemas, self._document_snapshot,
+                self._register_schemas, self._register_snapshot,
+                tuple(self._layout._tables.items()), tuple(self._layout._fields.items()),
+                None if not hasattr(self, '_section_layout') else tuple(self._section_layout._tables.items()),
+                None if not hasattr(self, '_section_layout') else tuple(self._section_layout._fields.items()),
+                self._admission_ddl_snapshot)
+
     @lifecycle
     def _begin(self, operation_id, *, _receipt_only=False):
         if _receipt_only and operation_id is not None: raise BackendError('unsupported')
@@ -1546,69 +1660,30 @@ class SQLiteCatalogBackend:
                     raise BackendError('busy')
             try:
                 connection.execute('BEGIN IMMEDIATE' if operation_id is not None else 'BEGIN')
-                if (connection.execute('PRAGMA user_version').fetchone()[0] != self.format_version or
-                    connection.execute('PRAGMA schema_version').fetchone()[0] != self._sqlite_schema_version):
-                    raise BackendError('schema_changed')
-                if self.format_version in (11, 12) and transaction_profile.base_version(connection) != self.storage_version: raise BackendError('schema_changed')
-                if self.format_version == 16:
-                    from .sqlite_inventory_enum_profile import read_source
-                    enum_source, validated_maps = read_source(connection, _prepared=self._prepared_source, _with_layout=True)
-                    config, domain, _ = enum_source
-                    if (config != self.accumulation_configuration or domain != self._enum_domain
-                            or config.catalogs != self._schemas):
-                        raise BackendError('schema_changed')
-                if self.storage_version >= 2:
-                    if connection.execute('SELECT COUNT(*) FROM catalog_schema').fetchone()[0] != len(self._schema_snapshot): raise BackendError('schema_changed')
-                    for identity, name, definition in self._schema_snapshot:
-                        if not connection.execute('SELECT 1 FROM catalog_schema WHERE identity=? AND name=? AND definition=?', (identity,name,definition)).fetchone(): raise BackendError('schema_changed')
-                    # Format16 source admission just validated these maps on this
-                    # same transaction and exact schemas. Never retain them on a
-                    # handle/cache or reuse them after rollback/commit.
-                    layout = validated_maps[0] if self.format_version == 16 else load_layout(connection, self._schemas)
-                    if layout._tables != self._layout._tables or layout._fields != self._layout._fields: raise BackendError('schema_changed')
-                    if self.storage_version in (3, 4, 6, 7, 8, 9, 10):
-                        section_layout = validated_maps[1] if self.format_version == 16 else load_section_layout(connection, self._schemas, layout)
-                        if section_layout._tables != self._section_layout._tables or section_layout._fields != self._section_layout._fields:
+                proofs = None
+                descriptor = None
+                if handle is not None and self._read_admission_cache_allowed():
+                    # BEGIN alone does not pin a snapshot. Reading sqlite_schema
+                    # takes a real shared read lock before sampling data_version.
+                    connection.execute('SELECT rootpage FROM sqlite_schema LIMIT 1').fetchone()
+                    if connection.execute('PRAGMA journal_mode').fetchone() != ('delete',):
+                        raise BackendError('unsupported')
+                    proofs = handle.pin()
+                    if handle.admission is not None:
+                        from .configuration_inventory_enums import _same
+                        if not _same(handle.admission, self._read_admission_descriptor()):
                             raise BackendError('schema_changed')
-                if self.storage_version in (4, 6, 7, 8, 9, 10):
-                    self._check_sequences(connection, self._schemas)
-                if self.storage_version in (7, 8, 9, 10):
-                    documents, rows = load_document_schemas(connection, self._schemas, allow_empty=self.storage_version in (8, 9, 10), enum_domain=self._enum_domain)
-                    if rows != self._document_snapshot or documents != self._document_schemas: raise BackendError('schema_changed')
-                if self.storage_version in (8, 9, 10):
-                    registers, rows = load_register_schemas(connection, self._schemas, self._document_schemas, allow_empty=self.storage_version == 10)
-                    if rows != self._register_snapshot or registers != self._register_schemas: raise BackendError('schema_changed')
-                if _source_profile_for_issues(self.activation_issues) == DOCUMENT_FORMS_PROFILE:
-                    self._document_form_source_snapshot(connection)
-                elif _source_profile_for_issues(self.activation_issues) in (BUSINESS_PROFILE, REFERENCE_PROFILE):
-                    self._business_source_snapshot(connection)
-                if self.storage_version == 6:
-                    if _receipt_only: self._demo_receipt_identity(connection)
-                    else: self._demo_source_snapshot(connection)
-                if self.format_version == 13:
-                    from .sqlite_posting_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas,
-                             _prepared=self._prepared_source) != self.posting_configuration:
-                        raise BackendError('schema_changed')
-                if self.format_version == 14:
-                    from .sqlite_accumulation_profile import admit
-                    if admit(connection, self.database_id, self._document_schemas,
-                             _prepared=self._prepared_source) != self.accumulation_configuration:
-                        raise BackendError('schema_changed')
-                if self.format_version == 15:
-                    from .sqlite_inventory_profile import admit
-                    if admit(connection, self.database_id, self._schemas, self._document_schemas,
-                             _prepared=self._prepared_source) != self.accumulation_configuration:
-                        raise BackendError('schema_changed')
-                if self.format_version == 16:
-                    from .sqlite_inventory_enum_profile import _admit_source
-                    if _admit_source(connection, self.database_id, self._schemas, self._document_schemas,
-                                     enum_source, _prepared=self._prepared_source) != self.accumulation_configuration:
-                        raise BackendError('schema_changed')
+                        descriptor = handle.admission
+                if descriptor is None:
+                    self._validate_transaction_admission(connection, _receipt_only=_receipt_only)
+                    if handle is not None and self._read_admission_cache_allowed():
+                        from copy import deepcopy
+                        descriptor = deepcopy(self._read_admission_descriptor())
                 view = _View(self, connection, operation_id)
                 if handle is not None:
                     view._read_handle = handle
-                    view._validated_sources = handle.pin()
+                    view._validated_sources = handle.pin() if proofs is None else proofs
+                    handle._pending_admission = descriptor
             except sqlite3.OperationalError:
                 raise BackendError('busy') from None
             self._active = view
@@ -1916,6 +1991,21 @@ class _View:
     @_boundary
     def catalog_schema(self, catalog_id):
         self._require(); _uuid(catalog_id)
+        handle = getattr(self, '_read_handle', None)
+        if (self._operation_id is None and handle is not None
+                and handle.connection is self._connection
+                and handle._pending_admission is not None
+                and getattr(self, '_historical_catalogs', None) is None):
+            from .configuration_inventory_enums import _same
+            schemas = self._backend._schemas
+            if not _same(handle._pending_admission[8], schemas):
+                raise BackendError('schema_changed')
+            # The pinned snapshot's full admission already checked these exact
+            # persisted schemas. No SELECT/JSON decode for each operator.
+            for schema in schemas:
+                if schema.identity == catalog_id:
+                    return schema
+            raise BackendError('not_found')
         row = self._connection.execute('SELECT definition FROM catalog_schema WHERE identity=?', (str(catalog_id),)).fetchone()
         if row is None: raise BackendError('not_found')
         historical = getattr(self, '_historical_catalogs', None)
@@ -2322,6 +2412,46 @@ class _View:
             else: encoded = [tags[definition.kind],value]
             values.append(_decode(encoded,definition,self.database_id, enum_domain=self._backend._enum_domain))
         return CatalogValueRow(key,tuple(values))
+
+    @_boundary
+    def aggregate_catalog(self, catalog_id, request):
+        """SQL COUNT with complete-source admission and distinct logical IDs.
+
+        The extra proof is snapshot/connection-local, never a metadata receipt.
+        Unsupported storage/transaction shapes decline without changing scans.
+        """
+        from .catalog_backend import CatalogAggregateRequest, CatalogAggregateResult
+        self._require()
+        if type(request) is not CatalogAggregateRequest or request.operation != 'count_all_v1':
+            raise BackendError('invalid_input')
+        schema = self.catalog_schema(catalog_id)
+        if (self._operation_id is not None or not self._cache_validation_allowed()
+                or self._backend.storage_version < 2 or schema.hierarchy != 'none'):
+            return None
+        self._validate_scan_scalars(catalog_id, schema)
+        table, _, where, args = self._source(schema)
+        proof = ('catalog-count-unique-v1', catalog_id, schema)
+        previous = self._validated_sources.get(proof) if self._cache_validation_allowed() else None
+        if previous is None:
+            # TEXT primary keys do not prove UUID uniqueness: accepted aliases
+            # can normalize to one logical identity. Match relational seen-set.
+            row = self._connection.execute(
+                'SELECT COUNT(*), COUNT(DISTINCT record_id COLLATE yadinassi_uuid_v1) '
+                'FROM %s WHERE %s' % (table, where), args).fetchone()
+            if (type(row) is not tuple or len(row) != 2
+                    or any(type(value) is not int for value in row)
+                    or not 0 <= row[0] <= _MAX_ROWS or row[0] != row[1]):
+                raise BackendError('integrity')
+            count = row[0]
+            if self._cache_validation_allowed():self._validated_sources[proof] = (count,)
+        else:
+            row = self._connection.execute('SELECT COUNT(*) FROM %s WHERE %s' % (table,where),args).fetchone()
+            if (type(previous) is not tuple or len(previous) != 1 or type(previous[0]) is not int
+                    or type(row) is not tuple or len(row) != 1 or type(row[0]) is not int
+                    or row != previous):
+                raise BackendError('integrity')
+            count = row[0]
+        return CatalogAggregateResult(count)
 
     @_boundary
     def scan_catalog(self, catalog_id, request):

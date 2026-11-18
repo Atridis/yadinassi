@@ -1,7 +1,9 @@
 """Backend-owned positive source admission, never a parser/VM authority cache.
 
-Callers still read, bound and hash actual source bytes and validate persisted
-metadata in their current SQLite snapshot. Keys include the complete checked
+On full admission callers read, bound and hash actual source bytes and validate
+persisted metadata in their current SQLite snapshot. Format16 readonly handles
+may separately retain a completed admission for an unchanged connection-local
+epoch (see sqlite_read_handles and docs/sqlite-admission-epoch.md). Keys include the complete checked
 source inventory and database/profile/schema identity. Only immutable importer
 results are retained, and only after the caller's entire admission succeeds.
 There is no process-wide state, negative cache or connection data_version key.

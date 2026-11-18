@@ -203,6 +203,22 @@ class CatalogScanRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class CatalogAggregateRequest:
+    """Closed logical aggregate capability; never SQL or physical identifiers.
+
+    Version 1 permits only COUNT(*) of one complete catalog. Backends may return
+    None to decline this shape; accepted results prove complete row validation
+    and uniqueness of normalized logical record identities in the same view.
+    """
+    operation: str = 'count_all_v1'
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogAggregateResult:
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CatalogPage:
     cards: tuple[CatalogCard, ...]
     continuation: str | None

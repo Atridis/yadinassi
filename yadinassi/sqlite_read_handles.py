@@ -72,11 +72,15 @@ class ReadHandle:
         self.epoch = None
         self.proofs = {}
         self.failed = False
+        self.admission = None
+        self._pending_admission = None
 
     def invalidate(self):
         self.epoch = None
         self.proofs.clear()
         self.failed = True
+        self.admission = None
+        self._pending_admission = None
 
     def pin(self):
         """Called only after the owner pinned its real read snapshot."""
@@ -92,6 +96,8 @@ class ReadHandle:
         epoch = row[0]
         if epoch != self.epoch:
             self.proofs.clear()
+            self.admission = None
+        self._pending_admission = None
         self.epoch = epoch
         self.failed = False
         # A view owns a distinct dictionary; closing it cannot mutate a proof
@@ -108,3 +114,5 @@ class ReadHandle:
             raise BackendError('busy')
         retained = {} if self.failed else _bounded_proofs(proofs)
         self.proofs = retained
+        self.admission = None if self.failed else self._pending_admission
+        self._pending_admission = None
