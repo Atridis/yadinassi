@@ -65,7 +65,7 @@ A=New Structure("Value",1);B=New Structure("Value",1);EqualContents=(A=B);'''
         # This slice deliberately does not reinterpret raw host dictionaries.
 
     def test_experiment_repairs_remain_independent(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         source='S=New Structure("X",1);T=New Structure("X",1);R=(S=T);A=New Array;B=New Array;Q=(A=B);'
         for repairs,expected in ((('structure_fields',),(True,True)),
                 (('structure_fields','array_identity_equality'),(True,False)),

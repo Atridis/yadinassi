@@ -1,6 +1,6 @@
 import unittest
 from decimal import Decimal
-from yadinassi.experimental_naked_collections import prepare,UnsupportedNakedSyntax
+from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 from yadinassi.python_direct import REPAIRS
 

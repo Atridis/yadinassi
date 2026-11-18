@@ -22,3 +22,12 @@ Published `767c685ecfdb8ba645e8a52c39d2e3af4b8a9232`, workflow
 The ordinary core performance measurements completed; extended measurements were
 skipped after failed correctness, and the paired report was consequently incomplete.
 Passing these repairs does not imply the full light/runtime suite is green.
+
+Follow-up on `e97eadd9`: extended correctness, both measurement routes and the
+paired report completed. The next untimed diagnostics step exposed an obsolete
+assertion that default execution must enter `SourceMap.compile`. The report now
+retains that historical counter and adds `direct_ast_compile`, observing the
+actual `experimental_direct_ast.compile_module` entry. Default captures one
+entry; prepared execution captures none. Real builtin compile calls remain a
+separate counter and are checked to be positive only for the default route.
+Old JSON without the new field renders a dash, never a fabricated zero.

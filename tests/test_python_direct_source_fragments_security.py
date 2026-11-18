@@ -14,7 +14,7 @@ from yadinassi.python_direct_source_fragments import execution, _ACTIVE
 
 class SourceFragmentsSecurity(unittest.TestCase):
     def setUp(self):
-        old=patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('old compiler'))
+        old=patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler'))
         old.start();self.addCleanup(old.stop)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))

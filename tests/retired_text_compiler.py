@@ -1,0 +1,997 @@
+"""Retired text generator: test-only differential oracle, never production.
+
+The shared values, references and Program are imported without duplication so
+comparisons preserve canonical runtime identities. No production module imports
+this oracle. Remove alongside the historical repair fixtures when retired.
+"""
+import os
+from dataclasses import fields
+from decimal import Decimal
+from types import SimpleNamespace
+from yadinassi.syntax import ast
+from yadinassi.syntax.parser import parse
+from yadinassi.experimental_naked_collections import (
+    BoundaryViolation,
+    ENV,
+    Program,
+    REPAIRS,
+    UnsupportedDateRange,
+    UnsupportedNakedSyntax,
+    _ALIASES,
+    _AttributeRef,
+    _CANONICAL_VALUE_KEY_TYPES,
+    _CanonicalFixedArray,
+    _CanonicalReference,
+    _Cell,
+    _DIRECT_EQUALITY_DATE_STATE,
+    _DIRECT_FIXED_MAP_SNAPSHOT,
+    _DIRECT_MAP_ENTRY_STORAGE,
+    _DIRECT_MAP_ENTRY_TYPE,
+    _FIXED_MAP,
+    _FIXED_MAP_STORAGE,
+    _HostIndexReference,
+    _HostMemberReference,
+    _IndexRef,
+    _MAP_DATE_BOUNDARY,
+    _MAP_DATE_TYPE,
+    _MAP_TYPE_IDS,
+    _MISSING,
+    _MapEntry,
+    _NakedMap,
+    _OMITTED_REF,
+    _Reference,
+    _SINGLETON_KEY_TYPES,
+    _TypedMap,
+    _UNSET_REF,
+    _argument_count_error,
+    _array_constructor_bounds,
+    _array_insert_shape,
+    _array_set_checked,
+    _array_set_raw,
+    _as_ref,
+    _bound_ref,
+    _canonical_reference,
+    _checked_array_index,
+    _enabled,
+    _host_name_reference,
+    _host_omission_error,
+    _host_omission_values,
+    _invalid_native_arity,
+    _native_method_missing,
+    _native_property_missing,
+    _native_property_write_missing,
+    _procedure_value_error,
+    _property_output,
+    _routine_value_error,
+)
+
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False,_configuration_calls=False,_catalog_preparation_bounds=False,_collection_regions=False):
+    if type(_collection_regions) is not bool or (_collection_regions and not _trusted_entry):
+        raise ValueError('collection regions require trusted direct entry')
+    if type(_catalog_preparation_bounds) is not bool:
+        raise TypeError('catalog preparation bounds require Boolean')
+    # Internal trusted backend entry, not an environment mutation or sandbox grant.
+    if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
+    if type(_dynamic_new) is not bool:raise TypeError('dynamic construction opt-in requires Boolean')
+    if type(_configuration_calls) is not bool:raise TypeError('configuration call opt-in requires Boolean')
+    if _dynamic_new and not _trusted_entry:raise ValueError('dynamic construction requires trusted direct entry')
+    if not _trusted_entry:_enabled()
+    if isinstance(repairs,str):repairs=tuple(name for name in repairs.split(',') if name)
+    repairs=frozenset(repairs)
+    if 'resource_bounds' in repairs:
+        repairs=repairs | {'constructor_bounds','array_insert_shape'}
+    if not repairs<=REPAIRS:raise ValueError('unknown naked repairs: '+repr(repairs-REPAIRS))
+    if 'uca_string_order' in repairs and 'native_order' not in repairs:
+        raise ValueError('uca_string_order requires native_order')
+    services='service_boundaries' in repairs;authority='authority_checkpoints' in repairs
+    if _catalog_preparation_bounds and not (_trusted_entry and services and authority):
+        raise ValueError('catalog preparation bounds require trusted authority boundaries')
+    if type(_host_routine_bindings) is not bool:raise TypeError('host routine bindings require Boolean')
+    if _host_routine_bindings and not (_trusted_entry and services and {'byref_routines','dynamic_host_refs'}<=repairs):
+        raise ValueError('host routine bindings require trusted service and reference boundaries')
+    if type(_host_callable_externals) is not tuple or any(type(name) is not str for name in _host_callable_externals):
+        raise TypeError('host callable externals require a tuple of names')
+    if _host_callable_externals and not (_trusted_entry and _host_routine_bindings):
+        raise ValueError('host callable externals require trusted host routine bindings')
+    if type(_source_routine_scopes) is not bool:raise TypeError("source routine scopes require Boolean")
+    if _source_routine_scopes and not (_trusted_entry and services
+            and {'byref_routines','dynamic_host_refs'}<=repairs):
+        raise ValueError("source routine scopes require trusted service and reference boundaries")
+    if type(_source_callable_externals) is not tuple or any(type(name) is not str for name in _source_callable_externals):
+        raise TypeError("source callable externals require a tuple of names")
+    if _source_callable_externals and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError("source callable externals require trusted source scopes")
+    if type(_require_last_expression) is not bool:raise TypeError("last-expression contract requires Boolean")
+    if _require_last_expression and not (_trusted_entry and _return_last_expression):
+        raise ValueError("last-expression contract requires trusted expression return")
+    if type(_source_scalar_routines) is not bool:raise TypeError("source scalar routines require Boolean")
+    if _source_scalar_routines and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError("source scalar routines require trusted source scopes")
+    if type(_source_shadowable_externals) is not tuple or any(type(name) is not str for name in _source_shadowable_externals):
+        raise TypeError('source shadowable externals require a tuple of names')
+    if _source_shadowable_externals and not (_trusted_entry and _source_routine_scopes):
+        raise ValueError('source shadowable externals require trusted source scopes')
+    shadowable=frozenset(name.casefold() for name in _source_shadowable_externals)
+    source_callable_externals=frozenset(name.casefold() for name in _source_callable_externals+_host_callable_externals)
+    constructors=frozenset(name.casefold() for name in constructors)
+    if constructors and not services:raise ValueError('declared constructors require service_boundaries')
+    service_references={name.casefold():frozenset(indices) for name,indices in (service_references or {}).items()}
+    if service_references and (not services or 'byref_routines' not in repairs):raise ValueError('service references require explicit byref and service repairs')
+    if any(type(index) is not int or index<0 for indices in service_references.values() for index in indices):raise ValueError('invalid service reference index')
+    scalar_ops=None
+    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division','numeric_boolean_equality'}:
+        from yadinassi import experimental_naked_scalar_semantics as scalar_ops
+    structure_ops=None
+    if 'structure_fields' in repairs:
+        from yadinassi import experimental_naked_structure as structure_ops
+    required_services=set()
+    program=parse(source,source_name) if parsed_ast is None else parsed_ast
+    if _export_routines and any(type(node) not in (ast.Routine,ast.Var) for node in program):
+        raise UnsupportedNakedSyntax('routine export requires a declaration-only module')
+    symbols={};constants=[];serial=0;lines=[];loops=[]
+    from yadinassi.experimental_naked_errors import SourceMap, source_mapping_supported
+    if 'error_boundaries' in repairs and not source_mapping_supported():
+        raise UnsupportedNakedSyntax('error_boundaries requires Python code line metadata (3.10+)')
+    source_map=SourceMap() if 'error_boundaries' in repairs else None
+    byref='byref_routines' in repairs
+    live='live_module_state' in repairs
+    if _dynamic_new and not (live and services):raise ValueError('dynamic construction requires live service boundaries')
+    if type(external_names) is not tuple and type(external_names) is not list:raise TypeError('external names require a tuple or list')
+    if external_names and not (live and services):raise ValueError('external names require live module state and service boundaries')
+    if any(type(name) is not str for name in external_names):raise TypeError('external names require strings')
+    if type(_import_names) is not tuple or any(type(name) is not str for name in _import_names):
+        raise TypeError('import names require a tuple of strings')
+    if _import_names and not (_trusted_entry and live and services):
+        raise ValueError('imports require trusted live service boundaries')
+    import_keys=frozenset(name.casefold() for name in _import_names)
+    external_keys=frozenset(name.casefold() for name in external_names)
+    if not import_keys<=external_keys:raise ValueError('imports require external names')
+    from yadinassi.python_direct_definite import definite_module_reads
+    definite_reads = definite_module_reads(program,opaque_names=external_keys) if live and not authority else frozenset()
+    source_checks=authority or (services and not live) or _source_routine_scopes
+    if live and not byref:raise ValueError('live_module_state requires byref_routines')
+    if module_names and not live:raise ValueError('module_names requires live_module_state')
+    if any(type(name) is not str for name in module_names):raise TypeError('module names require strings')
+    predeclared={name.casefold() for name in module_names}
+    dynamic_refs='dynamic_host_refs' in repairs
+    if dynamic_refs and not (byref and services):raise ValueError('dynamic_host_refs requires byref_routines and service_boundaries')
+    routines={node.name.casefold():node for node in program if type(node) is ast.Routine}
+    function_symbols={name:'fn'+str(i) for i,name in enumerate(routines)}
+    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
+    scope_id=None
+    region_end=0; region_ops={}; region_states={}; region_active=False
+    if _collection_regions and live and not authority and not routines:
+        from yadinassi.python_direct_collection_regions import analyze
+        region_end,region_ops,region_states=analyze(program,opaque_names=external_keys)
+    if external_keys & (module_variables|routines.keys()):raise UnsupportedNakedSyntax("external names collide with module declarations")
+    routine_externals={};routine_shadows={}
+    source_ref_slots={}
+    cells={None:set()};routine_globals={}
+    def walk(value):
+        if isinstance(value,ast.Node):
+            yield value
+            for field in fields(value):
+                if field.name!='token':yield from walk(getattr(value,field.name))
+        elif isinstance(value,(list,tuple)):
+            for item in value:yield from walk(item)
+    def ungroup(node):
+        while type(node) is ast.Group:node=node.expression
+        return node
+    if byref:
+        for routine in routines.values():
+            parameters={parameter.name.casefold() for parameter in routine.parameters}
+            declarations={name.casefold() for node in walk(routine.body) if type(node) is ast.Var for name in node.names}
+            routine_globals[id(routine)]=module_variables-parameters-declarations
+            routine_externals[id(routine)]=external_keys-parameters-declarations
+            assigned=set()
+            for node in walk(routine.body):
+                if type(node) is ast.Assign and type(node.target) is ast.Name:assigned.add(node.target.name.casefold())
+                elif type(node) in (ast.For,ast.ForEach):assigned.add(node.name.casefold())
+            shadows=assigned & shadowable & routine_externals[id(routine)]-module_variables
+            routine_shadows[id(routine)]=shadows
+            routine_externals[id(routine)]-=shadows
+            if shadows and any(type(node) is ast.Execute or (type(node) is ast.Call and type(ungroup(node.callee)) is ast.Name and ungroup(node.callee).name.casefold() in ('eval','вычислить')) for node in walk(routine.body)):
+                raise UnsupportedNakedSyntax('source implicit namespace shadow with Execute/Eval is not integrated')
+            cells[id(routine)]={parameter.name.casefold() for parameter in routine.parameters if not parameter.by_value}|shadows
+        for current,body in [(None,[node for node in program if type(node) is not ast.Routine]),*((id(routine),routine.body) for routine in routines.values())]:
+            for node in walk(body):
+                if type(node) is not ast.Call:continue
+                callee=ungroup(node.callee)
+                actuals=[]
+                if type(callee) is ast.Name and callee.name.casefold() in routines:
+                    routine=routines[callee.name.casefold()]
+                    actuals=[arg for param,arg in zip(routine.parameters,node.arguments) if not param.by_value]
+                elif type(callee) is ast.Name and callee.name.casefold() in service_references:
+                    actuals=[arg for index,arg in enumerate(node.arguments) if index in service_references[callee.name.casefold()]]
+                elif type(callee) is ast.Attribute and _ALIASES.get(callee.name.casefold(),callee.name.casefold())=='property':
+                    actuals=node.arguments[1:2]
+                for arg in actuals:
+                    arg=ungroup(arg)
+                    if type(arg) is ast.Name:
+                        destination=None if arg.name.casefold() in routine_globals.get(current,()) else current
+                        cells[destination].add(arg.name.casefold())
+    lexical={key:set() for key in cells}
+    if dynamic_refs:
+        for current,body in [(None,[n for n in program if type(n) is not ast.Routine]),*((id(r),r.body) for r in routines.values())]:
+            for node in walk(body):
+                if type(node) is not ast.Call:continue
+                callee=ungroup(node.callee)
+                # Source-qualified calls use dynamic byref dispatch too.
+                if type(callee) is ast.Attribute and not (_source_routine_scopes or _host_routine_bindings):continue
+                if type(callee) is ast.Name and callee.name.casefold() in routines:continue
+                for arg in node.arguments:
+                    arg=ungroup(arg)
+                    if type(arg) is ast.Name:
+                        destination=None if arg.name.casefold() in routine_globals.get(current,()) else current
+                        lexical[destination].add(arg.name.casefold())
+    execute_scopes={}
+    if 'execute_fragments' in repairs:
+        if not (live and services and dynamic_refs):raise ValueError('Execute requires live services and references')
+        for current,body in [(None,[n for n in program if type(n) is not ast.Routine]),*((id(r),r.body) for r in routines.values())]:
+            if not any(type(n) is ast.Execute or (type(n) is ast.Call and type(ungroup(n.callee)) is ast.Name and ungroup(n.callee).name.casefold() in ('eval','вычислить')) for n in walk(body)):continue
+            names=set()
+            if current is not None:
+                routine=next(r for r in routines.values() if id(r)==current)
+                names.update(p.name.casefold() for p in routine.parameters)
+                for n in walk(body):
+                    if type(n) is ast.Assign and type(n.target) is ast.Name:names.add(n.target.name.casefold())
+                    elif type(n) in (ast.For,ast.ForEach):names.add(n.name.casefold())
+                    elif type(n) is ast.Var:names.update(name.casefold() for name in n.names)
+                names-=routine_globals[current]|routine_externals[current]
+                lexical[current].update(names)
+            execute_scopes[current]=names
+    from yadinassi.python_direct_arrays import array_facts
+    array_receivers,array_indexes=frozenset(),frozenset()
+    if live and not authority and not constructors.intersection(('array','массив')) and 'array_index_contract' in repairs:
+        routine_array_opaque={id(r):routine_globals.get(id(r),set())|routine_externals.get(id(r),set())|
+                             {p.name.casefold() for p in r.parameters if not p.by_value}
+                             for r in routines.values()}
+        array_definite_reads=set()
+        array_receivers,array_indexes=array_facts(program,opaque_names=external_keys,routine_opaque=routine_array_opaque,
+                                                  definite_reads=array_definite_reads)
+        definite_reads=definite_reads|array_definite_reads
+    # Raw diagnostic profiles return Python int from Count, which the existing
+    # checked-index contract rejects. Do not silently repair that mismatch.
+    if not repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'}:array_indexes=frozenset()
+    # Names with no lexical binding in a routine cannot resolve to another
+    # side's module or a generated Python global. Diagnose them as BSL names,
+    # without adding locals() probes to every valid routine variable read.
+    routine_bindings={}
+    if live:
+        for r in routines.values():
+            names={p.name.casefold() for p in r.parameters}|cells[id(r)]|lexical[id(r)]
+            for n in walk(r.body):
+                if type(n) is ast.Var:names.update(name.casefold() for name in n.names)
+                elif type(n) is ast.Assign and type(n.target) is ast.Name:names.add(n.target.name.casefold())
+                elif type(n) in (ast.For,ast.ForEach):names.add(n.name.casefold())
+            routine_bindings[id(r)]=names
+    routine_locals={id(r):{p.name.casefold() for p in r.parameters}|{name.casefold() for n in r.body if type(n) is ast.Var for name in n.names} for r in routines.values()}
+    if live:
+        for r in routines.values():
+            direct_vars={id(n) for n in r.body if type(n) is ast.Var}
+            for n in walk(r.body):
+                if type(n) is ast.Var and id(n) not in direct_vars and any(name.casefold() in module_variables|external_keys|{'thisobject','этотобъект'} for name in n.names):
+                    raise UnsupportedNakedSyntax('conditional local Var shadowing module storage is unsupported')
+    def external_name(name):
+        return name.casefold() in (external_keys if scope_id is None else routine_externals.get(scope_id,()))
+    def import_path(node):
+        parts=[];node=ungroup(node)
+        while type(node) is ast.Attribute:
+            parts.append(node.name.casefold());node=ungroup(node.object)
+        if type(node) is ast.Name and node.name.casefold() in import_keys and external_name(node.name):
+            return tuple([node.name.casefold(),*reversed(parts)])
+        return None
+    def module_name(name):
+        return live and (scope_id is None or name.casefold() in routine_globals.get(scope_id,()))
+    def boxed(name):
+        key=name.casefold()
+        return byref and (key in cells[scope_id] or (key in routine_globals.get(scope_id,()) and key in cells[None]))
+    def sym(name):
+        key=name.casefold()
+        if key not in symbols:symbols[key]='v'+str(len(symbols))
+        return symbols[key]
+    def temp():
+        nonlocal serial
+        serial+=1;return 't'+str(serial)
+    def emit(depth,text):
+        if source_map is not None:source_map.line(len(lines)+1)
+        lines.append('    '*depth+text)
+    def literal(value):
+        constants.append(value);return '_constants['+str(len(constants)-1)+']'
+    def variable(name):
+        if external_name(name):return '_context.external_get('+repr(name.casefold())+')'
+        if module_name(name):return '_initial['+repr(name.casefold())+']'
+        return sym(name)+('.value' if boxed(name) else '')
+    def source_local_exists(name):
+        slot=sym(name)
+        check=repr(slot)+' in locals()'
+        if boxed(name):check+=' and (type('+slot+') is not _Cell or '+slot+'._value is not _UNSET_REF)'
+        return check
+    def shadow_name(name):return name.casefold() in routine_shadows.get(scope_id,())
+    def shadow_is_set(name):return sym(name)+'._value is not _UNSET_REF'
+    def read_variable(name):
+        if shadow_name(name):
+            return '('+variable(name)+' if '+shadow_is_set(name)+' else _context.external_get('+repr(name.casefold())+'))'
+        if external_name(name):
+            if name.casefold() in import_keys:return '_context.import_get('+repr((name.casefold(),))+')'
+            return variable(name)
+        if not module_name(name):
+            if live and scope_id is not None and name.casefold() not in routine_bindings[scope_id]:
+                return '_live_missing('+repr(name)+')'
+            value=variable(name)
+            return ('('+value+' if '+source_local_exists(name)+' else _live_missing('+repr(name)+'))'
+                if (_source_routine_scopes or _host_routine_bindings) else value)
+        value=temp()
+        return '('+value+' if ('+value+' := _initial.get('+repr(name.casefold())+', _LIVE_UNSET)) is not _LIVE_UNSET else _live_missing('+repr(name)+'))'
+    def reserved_target(name):
+        return live and name.casefold() in ('thisobject','этотобъект') and (module_name(name) or name.casefold() not in routine_locals.get(scope_id,set()))
+    def assign_name(name,value,depth):
+        if external_name(name):
+            emit(depth,'_context.external_set('+repr(name.casefold())+', '+value+')');return
+        if reserved_target(name):
+            saved=temp();emit(depth,saved+' = '+value)
+            if module_name(name):emit(depth,'if '+repr(name.casefold())+' not in _initial: _live_readonly('+repr(name.casefold())+')')
+            else:emit(depth,'_live_readonly('+repr(name.casefold())+')')
+            value=saved
+        emit(depth,variable(name)+' = '+value)
+    def reference(node):
+        node=ungroup(node)
+        path=import_path(node)
+        if path is not None:return '_context.import_reference('+repr(path)+')'
+        if type(node) is ast.Name:
+            if external_name(node.name):return '_context.external_reference('+repr(node.name.casefold())+')'
+            if module_name(node.name):
+                key=node.name.casefold()
+                if key not in source_ref_slots:source_ref_slots[key]=temp()
+                text='_live_source_ref(_initial, '+repr(node.name)+', '+source_ref_slots[key]+')'
+                return source_map.expression(text,node) if source_map is not None else text
+            value='_bound_ref('+sym(node.name)+')'
+            if shadow_name(node.name):return '('+value+' if '+shadow_is_set(node.name)+' else _context.external_reference('+repr(node.name.casefold())+'))'
+            return ('('+value+' if '+source_local_exists(node.name)+' else _live_missing('+repr(node.name)+'))'
+                if (_source_routine_scopes or _host_routine_bindings) else value)
+        if type(node) is ast.Index:
+            obj=expression(node.object);index=expression(node.index)
+            if services:
+                receiver=temp()
+                return '(_IndexRef('+receiver+', '+index+', '+repr('array_index_contract' in repairs)+') if id(type(('+receiver+' := '+obj+'))) in _NATIVE_COLLECTION_IDS else _context.reference_index('+receiver+', '+index+'))'
+            return '_IndexRef('+obj+', '+index+', '+repr('array_index_contract' in repairs)+')'
+        if type(node) is ast.Attribute:
+            obj=expression(node.object)
+            if services:
+                receiver=temp()
+                return '(_AttributeRef('+receiver+', '+repr(node.name)+') if id(type(('+receiver+' := '+obj+'))) in _NATIVE_DICT_IDS else _context.reference_member('+receiver+', '+repr(node.name)+'))'
+            return '_AttributeRef('+obj+', '+repr(node.name)+')'
+        return '_Cell('+expression(node)+')'
+    def lexical_helpers(current,depth):
+        for name in sorted(lexical[current]):
+            if external_name(name):continue
+            if live and current is None:continue
+            slot=sym(name)
+            is_box=name in cells[current]
+            target=slot+('.value' if is_box else '')
+            if not is_box:emit(depth,'if False: '+slot+' = None')
+            emit(depth,'def get_'+slot+'(): return '+target)
+            emit(depth,'def set_'+slot+'(_new):')
+            if not is_box:emit(depth+1,'nonlocal '+slot)
+            emit(depth+1,target+' = _new')
+            if name in execute_scopes.get(current,()):
+                emit(depth,'def has_'+slot+'():')
+                emit(depth+1,'try: return _fragment_local_exists('+slot+')')
+                emit(depth+1,'except NameError: return False')
+    def host_reference(node):
+        node=ungroup(node)
+        if type(node) is ast.Name:
+            if external_name(node.name):return '_context.external_reference('+repr(node.name.casefold())+')'
+            if module_name(node.name):
+                text='_live_host_ref(_initial, '+repr(node.name)+')'
+                return source_map.expression(text,node) if source_map is not None else text
+            slot=sym(node.name)
+            text='_host_name_reference(get_'+slot+', set_'+slot+', '+repr(node.name)+(', '+slot if boxed(node.name) else '')+')'
+            if shadow_name(node.name):text='('+text+' if '+shadow_is_set(node.name)+' else _context.external_reference('+repr(node.name.casefold())+'))'
+            return source_map.expression(text,node) if source_map is not None else text
+        if type(node) is ast.Index or type(node) is ast.Attribute:
+            return '_canonical_reference('+reference(node)+')'
+        return expression(node)
+    def dynamic_call(bound,node, references=True):
+        token=temp()
+        omitted=tuple(index for index,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
+        setup=['('+token+' := '+bound+')']
+        if omitted:
+            prepared=temp();defaults=temp()
+            setup.append('('+prepared+' := _host_omission_values('+token+', '+repr(omitted)+', '+str(len(node.arguments))+'))')
+            setup.extend(['('+token+' := '+prepared+'[0])','('+defaults+' := '+prepared+'[1])'])
+        # Source crossings may reject non-name output positions before any
+        # argument effects. Ordinary standalone dispatch remains unchanged.
+        if _source_routine_scopes and references:
+            shapes=tuple(type(ungroup(arg)) is ast.Name for arg in node.arguments)
+            setup.append('('+token+'.prepare_argument_shapes('+repr(shapes)+') if hasattr('+token+', "prepare_argument_shapes") else None)')
+        arguments=[]
+        for index,arg in enumerate(node.arguments):
+            if index in omitted:arguments.append(defaults+'['+str(index)+']')
+            else:
+                value=expression(arg)
+                if references and type(ungroup(arg)) is ast.Name:
+                    value='('+token+'.prepare_named_value('+host_reference(arg)+') if hasattr('+token+', "prepare_named_value") else '+value+')'
+                arguments.append('('+host_reference(arg)+' if '+token+'.requires_reference('+str(index)+') else '+value+')' if references else value)
+        return '('+', '.join(setup)+', '+token+'('+', '.join(arguments)+'))[-1]'
+    def truth_expression(node):
+        value=expression(node)
+        if 'bsl_truth' not in repairs:return value
+        if type(node) is ast.Literal and type(node.value) is bool:return value
+        if not _catalog_preparation_bounds and type(node) is ast.Literal and type(node.value) is Decimal:return literal(node.value!=0)
+        return '_bsl_truth('+value+')'
+    def _expression(node,require_value=True):
+        kind=type(node)
+        if kind is ast.Literal:return literal(node.value)
+        if kind is ast.Name:
+            value=(variable(node.name) if scope_id is None and id(node) in definite_reads else read_variable(node.name))
+            if node.name.casefold() in routines:
+                presence=(repr(node.name.casefold())+' in _initial' if module_name(node.name) else repr(sym(node.name))+' in locals()')
+                return '('+value+' if '+presence+' else _routine_value_error('+repr(node.name)+'))'
+            return value
+        if kind is ast.Group:return '('+expression(node.expression,require_value)+')'
+        if kind is ast.Unary:
+            if node.operator in ('+','-') and 'decimal_division' in repairs:
+                return '_decimal_sign('+expression(node.operand)+', '+repr(node.operator)+')'
+            if node.operator=='NOT' and 'bsl_truth' in repairs:return '(not '+truth_expression(node.operand)+')'
+            return '('+('not ' if node.operator=='NOT' else node.operator)+expression(node.operand)+')'
+        if kind is ast.Binary:
+            if node.operator=='/' and 'decimal_division' in repairs:
+                return '_decimal_divide('+expression(node.left)+', '+expression(node.right)+')'
+            if node.operator in ('AND','OR') and 'bsl_truth' in repairs:
+                return '('+truth_expression(node.left)+(' and ' if node.operator=='AND' else ' or ')+truth_expression(node.right)+')'
+            if node.operator=='+' and 'bsl_presentation' in repairs:
+                if not _catalog_preparation_bounds and type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str:
+                    return literal(scalar_ops.concatenate(node.left.value,node.right.value))
+                left=expression(node.left);right=expression(node.right)
+                if type(node.left) is ast.Literal and type(node.left.value) is not str:return '('+left+' + '+right+')'
+                captured=temp()
+                return '(_bsl_concatenate('+captured+', '+right+') if type(('+captured+' := '+left+')) is str else '+captured+' + '+right+')'
+            if node.operator in ('<','<=','>','>=') and 'native_order' in repairs:
+                if 'uca_string_order' not in repairs and type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str and type(node.right.value) is str:
+                    return literal(scalar_ops.order(node.left.value,node.right.value,node.operator))
+                return '_native_order('+expression(node.left)+', '+expression(node.right)+', '+repr(node.operator)+')'
+            if node.operator in ('=','<>') and 'numeric_boolean_equality' in repairs:
+                helper='_numeric_boolean_equal' if node.operator=='=' else '_numeric_boolean_not_equal'
+                return helper+'('+expression(node.left)+', '+expression(node.right)+')'
+            if node.operator in ('=','<>') and repairs & {'array_identity_equality','structure_identity_equality','map_identity_equality'}:
+                # A syntactic primitive literal cannot denote an Array/Structure/Map. Keep
+                # the previous scalar operator; no variable/type inference.
+                primitive_literal=any(type(operand) is ast.Literal and
+                    any(type(operand.value) is scalar for scalar in (bool,int,Decimal,str,type(None)))
+                    for operand in (node.left,node.right))
+                if not primitive_literal:
+                    helper='_array_equal' if node.operator=='=' else '_array_not_equal'
+                    return helper+'('+expression(node.left)+', '+expression(node.right)+')'
+            operator={'=':'==','<>':'!=','AND':'and','OR':'or'}.get(node.operator,node.operator)
+            return '('+expression(node.left)+' '+operator+' '+expression(node.right)+')'
+        if kind is ast.Conditional:
+            return '('+expression(node.when_true)+' if '+truth_expression(node.condition)+' else '+expression(node.when_false)+')'
+        if kind is ast.DynamicNew:
+            if not _dynamic_new:raise UnsupportedNakedSyntax('dynamic construction is not enabled for this entry')
+            return '_direct_dynamic_new(_context, '+expression(node.type_expression)+', '+(expression(node.parameters) if node.parameters is not None else 'None')+')'
+        if kind is ast.New:
+            args=[expression(arg) for arg in node.arguments];kindname=node.name.casefold()
+            if services and kindname in constructors:
+                required_services.add('new:'+kindname)
+                arity=(', argument_count='+str(len(node.arguments))) if _source_routine_scopes else ''
+                bound='_context.resolve_service('+repr('new:'+kindname)+arity+')'
+                if any(type(arg) is ast.OmittedArgument for arg in node.arguments):return dynamic_call(bound,node,False)
+                return bound+'('+', '.join(args)+')'
+            if (services and kindname in ('array','массив','map','соответствие','structure','структура')
+                    and any(type(arg) is ast.OmittedArgument for arg in node.arguments)):
+                # Native collection lowering has no optional-slot protocol.
+                # Reject the reached call before any supplied argument effects.
+                return '_host_omission_error()'
+            if kindname in ('array','массив'):
+                if 'constructor_bounds' in repairs:return '_array_constructor_bounds('+', '.join(args)+')'
+                if not args:return '[]'
+                if len(args)==1:return '([None] * int('+args[0]+'))'
+                dims=temp();shape='[None] * int('+dims+'['+str(len(args)-1)+'])'
+                for dimension in reversed(range(len(args)-1)):
+                    shape='['+shape+' for _ in range(int('+dims+'['+str(dimension)+']))]'
+                return '(('+dims+' := ('+', '.join(args)+')), '+shape+')[1]'
+            if kindname in ('map','соответствие'):return ('_TypedMap' if 'typed_map_keys' in repairs else '_NakedMap' if byref or 'bsl_presentation' in repairs else 'dict')+'('+', '.join(args)+')'
+            if kindname in ('structure','структура'):
+                if structure_ops is not None:
+                    keys=ungroup(node.arguments[0]) if args else None
+                    if keys is None or type(keys) is ast.Literal and type(keys.value) is str:
+                        try:schema=structure_ops.prepare_structure_schema('' if keys is None else keys.value)
+                        except ValueError:pass  # Invalid fields must fail after argument effects.
+                        else:
+                            return '_structure_from_schema('+literal(schema)+('' if not args[1:] else ', '+', '.join(args[1:]))+')'
+                    return '_new_structure('+', '.join(args)+')'
+                if not args:return '{}'
+                values=temp()
+                return '(('+values+' := ('+', '.join(args)+',)), {key: '+values+'[idx+1] if idx+1<len('+values+') else None for idx,key in enumerate('+values+'[0].split(","))})[1]'
+            raise UnsupportedNakedSyntax('constructor '+node.name)
+        if kind is ast.Index:
+            if id(node) in array_receivers:
+                obj=expression(node.object);index=expression(node.index)
+                if id(node) in array_indexes:return '('+obj+')[int('+index+')]'
+                receiver=temp()
+                return '(('+receiver+' := '+obj+'), '+receiver+'[_checked_array_index('+receiver+', '+index+')])[1]'
+            receiver=temp();index=expression(node.index)
+            list_read=receiver+'['+('_checked_array_index('+receiver+', '+index+')' if 'array_index_contract' in repairs else 'int('+index+')')+']'
+            other='('+receiver+'.get('+index+') if id(type('+receiver+')) in _MAP_TYPE_IDS else '+receiver+'['+index+'])'
+            if services:
+                obj=expression(node.object)
+                native='('+list_read+' if type('+receiver+') is list else '+other+')'
+                return '('+native+' if id(type(('+receiver+' := '+obj+'))) in _NATIVE_COLLECTION_IDS else _context.resolve_member('+receiver+', "__getitem__")('+index+'))'
+            return '('+list_read+' if isinstance(('+receiver+' := '+expression(node.object)+'),list) else '+other+')'
+        if kind is ast.Attribute:
+            path=import_path(node)
+            if path is not None:return '_context.import_get('+repr(path)+')'
+            receiver=temp()
+            if services:
+                host='(_native_property_missing('+repr(node.name)+') if id(type('+receiver+')) in _MAP_TYPE_IDS else _context.get_member('+receiver+', '+repr(node.name)+'))'
+                field={'key':'key','ключ':'key','value':'value','значение':'value'}.get(node.name.casefold())
+                if field is not None:host='('+receiver+'.'+field+' if type('+receiver+') is _MapEntry else '+host+')'
+                if 'method_values' in repairs:host='(_array_method_value('+receiver+', '+repr(node.name)+') if type('+receiver+') is list else '+host+')'
+                if structure_ops is not None:host='(_structure_get_known('+receiver+', '+repr(node.name.casefold())+', '+repr(node.name)+') if type('+receiver+') is _DirectStructure else '+host+')'
+                return '('+receiver+'['+repr(node.name)+'] if type(('+receiver+' := '+expression(node.object)+')) is dict else '+host+')'
+            fallback='(_native_property_missing('+repr(node.name)+') if id(type('+receiver+')) in _MAP_TYPE_IDS else getattr('+receiver+','+repr(node.name.casefold())+'))'
+            if 'method_values' in repairs:fallback='(_array_method_value('+receiver+', '+repr(node.name)+') if type('+receiver+') is list else '+fallback+')'
+            return '('+receiver+'['+repr(node.name)+'] if isinstance(('+receiver+' := '+expression(node.object)+'),dict) and id(type('+receiver+')) not in _MAP_TYPE_IDS else '+fallback+')'
+        if kind is ast.Call:
+            callee=ungroup(node.callee)
+            path=import_path(callee)
+            if path is not None:
+                return dynamic_call('_context.resolve_import_call('+repr(path)+
+                    ', require_value='+repr(require_value)+', argument_count='+str(len(node.arguments))+')',node)
+            if type(callee) is ast.Attribute:
+                omitted=tuple(i for i,arg in enumerate(node.arguments) if type(arg) is ast.OmittedArgument)
+                receiver_root=ungroup(callee.object)
+                while type(receiver_root) is ast.Attribute:receiver_root=ungroup(receiver_root.object)
+                if services and omitted and type(receiver_root) is not ast.Name:
+                    return '_host_omission_error()'
+                obj=expression(callee.object);method=_ALIASES.get(callee.name.casefold(),callee.name.casefold())
+                args=[expression(arg) for arg in node.arguments]
+                if id(node) in array_receivers and not omitted:
+                    if method=='add':return '('+obj+').append('+(', '.join(args) if args else 'None')+')'
+                    if method=='clear':return '('+obj+').clear()'
+                    if method in ('count','ubound'):
+                        value='len('+obj+')'+(' - 1' if method=='ubound' else '')
+                        return 'Decimal('+value+')' if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'} else '('+value+')'
+                    if method=='get':
+                        if id(node) in array_indexes:return '('+obj+')[int('+args[0]+')]'
+                        receiver=temp()
+                        return '(('+receiver+' := '+obj+'), '+receiver+'[_checked_array_index('+receiver+', '+args[0]+')])[1]'
+                original_obj=obj;guarded=temp() if services or structure_ops is not None else None
+                if guarded is not None:obj=guarded
+                allowed={'add':(list,), 'get':(list,_TypedMap,_NakedMap),'set':(list,), 'find':(list,), 'ubound':(list,), 'property':((structure_ops._DirectStructure,) if structure_ops is not None else (dict,))}.get(method)
+                def source_member_call():
+                    return dynamic_call('_context.resolve_source_member('+guarded+', '+repr(callee.name)+
+                        ', require_value='+repr(require_value)+', argument_count='+str(len(node.arguments))+
+                        ', allow_references=True)',node)
+                def route(direct):
+                    if services and omitted:direct='_host_omission_error()'
+                    if guarded is None:return direct
+                    host_args=list(args)
+                    if services and method=='property' and len(args)>1 and byref:host_args[1]='_canonical_reference('+reference(node.arguments[1])+')'
+                    host=(source_member_call() if _source_routine_scopes else
+                        (('_context.resolve_configuration_member_call(' if _configuration_calls else '_context.resolve_member_call(')+guarded+', '+repr(callee.name)+', require_value='+repr(require_value)+', omitted='+repr(omitted)+(', argument_count='+str(len(node.arguments)) if _configuration_calls else '')+')' if services else 'getattr('+guarded+', '+repr(callee.name.casefold())+')')+'('+', '.join(host_args)+')')
+                    if allowed is not None:
+                        failure='_native_method_missing('+guarded+', '+repr(callee.name)+')'
+                        return '('+direct+' if id(type(('+guarded+' := '+original_obj+'))) in '+literal(tuple(map(id,allowed)))+' else ('+failure+' if id(type('+guarded+')) in _NATIVE_COLLECTION_IDS else '+host+'))'
+                    return '('+direct+' if id(type(('+guarded+' := '+original_obj+'))) in _NATIVE_COLLECTION_IDS else '+host+')'
+                bounds={'add':(0,1),'get':(1,1),'set':(2,2),'insert':(1,2),'delete':(1,1),'count':(0,0),'ubound':(0,0),'find':(1,1),'property':(1,2)}
+                if method in bounds and not bounds[method][0]<=len(args)<=bounds[method][1]:
+                    minimum,maximum=bounds[method]
+                    expected=str(minimum) if minimum==maximum else str(minimum)+'..'+str(maximum)
+                    message=callee.name+' ожидает '+expected+' аргументов, получено '+str(len(args))
+                    # Invalid-only sequence: receiver, every argument, then error.
+                    # Exact native/Python implementation names are not reproduced.
+                    return route('('+', '.join([obj,*args,'_invalid_native_arity('+repr(message)+')'])+')[-1]')
+                if services and method not in ('add','clear','find','count','ubound','get','insert','set','delete','property'):
+                    host=(source_member_call() if _source_routine_scopes else
+                        ('_context.resolve_configuration_member_call(' if _configuration_calls else '_context.resolve_member_call(')+guarded+', '+repr(callee.name)+', require_value='+repr(require_value)+', omitted='+repr(omitted)+(', argument_count='+str(len(node.arguments)) if _configuration_calls else '')+')('+', '.join(args)+')')
+                    return '(_native_method_missing('+guarded+', '+repr(callee.name)+') if id(type(('+guarded+' := '+original_obj+'))) in _NATIVE_COLLECTION_IDS else '+host+')'
+                if method=='find' and 'typed_find' in repairs:return route('_typed_find('+obj+', '+', '.join(args)+')')
+                if method in ('add','clear','find'):
+                    native_args=['None'] if method=='add' and not args else args
+                    target={'add':'append','clear':'clear','find':'index'}[method]
+                    return route('('+obj+').'+target+'('+', '.join(native_args)+')')
+                if method in ('count','ubound') and not args:
+                    count='(len('+obj+')'+(' - 1' if method=='ubound' else '')+')'
+                    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'}:count='Decimal('+count+')'
+                    return route(count)
+                if method in ('get','insert','set','delete'):
+                    receiver=temp();key=args[0] if args else 'None'
+                    if method=='get':
+                        yes=receiver+'['+('_checked_array_index('+receiver+', '+key+')' if 'array_index_contract' in repairs else 'int('+key+')')+']';no=receiver+'.get('+', '.join(args)+')'
+                    elif method=='delete':
+                        yes=receiver+'.__delitem__('+('_checked_array_index('+receiver+', '+key+')' if 'array_index_contract' in repairs else 'int('+key+')')+')';no=receiver+'.__delitem__('+key+')'
+                    else:
+                        value=args[1] if len(args)>1 else 'None'
+                        if method=='insert' and 'array_insert_shape' in repairs:
+                            yes='_array_insert_shape('+receiver+', '+key+', '+value+')'
+                        else:
+                            index=('_checked_array_index('+receiver+', '+key+')' if method=='set' and 'array_index_contract' in repairs else 'int('+key+')')
+                            yes=receiver+('.insert' if method=='insert' else '.__setitem__')+'('+index+', '+value+')'
+                            if method=='set':yes=('_array_set_checked' if 'array_index_contract' in repairs else '_array_set_raw')+'('+receiver+', '+key+', '+value+')'
+                        no=receiver+'.__setitem__('+key+', '+value+')'
+                        if method=='insert' and structure_ops is not None:no='(_structure_insert('+receiver+', '+key+', '+value+') if type('+receiver+') is _DirectStructure else '+no+')'
+                    return route('('+yes+' if isinstance(('+receiver+' := '+obj+'),list) else '+no+')')
+                if method=='property' and structure_ops is not None:
+                    receiver=temp();actuals=[args[0]] if args else []
+                    if len(args)>1:actuals.append(reference(node.arguments[1]) if byref else args[1])
+                    actuals.extend(args[2:])
+                    return route('_structure_property('+obj+(', ' if actuals else '')+', '.join(actuals)+')')
+                if method=='property' and len(args)>1 and byref:
+                    return route('_property_output('+obj+', '+args[0]+', '+reference(node.arguments[1])+''.join(', '+arg for arg in args[2:])+')')
+                if method=='property' and args:
+                    receiver=temp();key=temp()
+                    values=['('+receiver+' := '+obj+')','('+key+' := '+args[0]+')',*args[1:],key+' in '+receiver]
+                    return route('('+', '.join(values)+')[-1]')
+                return route('('+obj+').'+method+'('+', '.join(args)+')')
+            if type(callee) is ast.Name and callee.name.casefold() in routines and require_value and not routines[callee.name.casefold()].is_function:
+                return '_procedure_value_error('+repr(callee.name)+')'
+            if type(callee) is ast.Name and callee.name.casefold() in routines:
+                routine=routines[callee.name.casefold()]
+                required=max((index+1 for index,parameter in enumerate(routine.parameters) if parameter.default is None),default=0)
+                if not required<=len(node.arguments)<=len(routine.parameters):
+                    return '_argument_count_error('+repr(routine.name)+', '+str(len(routine.parameters))+', '+str(len(node.arguments))+')'
+            if byref and type(callee) is ast.Name and callee.name.casefold() in routines:
+                routine=routines[callee.name.casefold()];args=[]
+                for index,arg in enumerate(node.arguments):
+                    if type(arg) is ast.OmittedArgument:args.append('_OMITTED_REF')
+                    elif index<len(routine.parameters) and not routine.parameters[index].by_value:args.append(reference(arg))
+                    else:args.append(expression(arg))
+                function=function_symbols[callee.name.casefold()]
+                if source_checks:function='(_context._check(), '+function+')[-1]'
+                return function+'('+', '.join(args)+')'
+            if source_checks and type(callee) is ast.Name and callee.name.casefold() in routines:
+                return '(_context._check(), '+function_symbols[callee.name.casefold()]+')[-1]('+', '.join(expression(arg) for arg in node.arguments)+')'
+            if type(callee) is ast.Name and callee.name.casefold() in routines:
+                return function_symbols[callee.name.casefold()]+'('+', '.join(expression(arg) for arg in node.arguments)+')'
+            if services and type(callee) is ast.Name and callee.name.casefold() not in routines:
+                external_call=external_name(callee.name) and callee.name.casefold() in source_callable_externals
+                if external_name(callee.name) and not external_call:raise UnsupportedNakedSyntax('external namespace names are not callable: '+callee.name)
+                required_services.add(callee.name.casefold())
+                service_name=callee.name if _source_routine_scopes else callee.name.casefold()
+                fallback=('_initial.get('+repr(callee.name.casefold())+', _MISSING)' if module_name(callee.name) else '('+variable(callee.name)+' if '+repr(sym(callee.name))+' in locals() else _MISSING)')
+                if external_call:fallback='_MISSING'
+                if dynamic_refs and callee.name.casefold() not in service_references:
+                    bound='_context.resolve_service('+repr(service_name)+', '+fallback+', require_value='+repr(require_value)+', allow_references=True, argument_count='+str(len(node.arguments))+')'
+                    if 'execute_fragments' in repairs and callee.name.casefold() in ('eval','вычислить'):
+                        pairs=[]
+                        for key in sorted(execute_scopes[scope_id]):
+                            slot=sym(key);storage=(', '+slot) if boxed(key) else ''
+                            pairs.append(repr(key)+': _fragment_local_binding(get_'+slot+', set_'+slot+', has_'+slot+storage+')')
+                        visible=None if scope_id is None else tuple(sorted(routine_globals.get(scope_id,())))
+                        bound='_bind_eval('+bound+', _context, _initial, {'+', '.join(pairs)+'}, '+repr(visible)+')'
+                    return dynamic_call(bound,node)
+                return '_context.resolve_service('+repr(service_name)+', '+fallback+', require_value='+repr(require_value)+')('+', '.join(reference(arg) if index in service_references.get(callee.name.casefold(),()) else expression(arg) for index,arg in enumerate(node.arguments))+')'
+            if services and dynamic_refs:return dynamic_call('_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+', allow_references=True)',node)
+            if services:return '_context.resolve_callable('+expression(callee)+', require_value='+repr(require_value)+')('+', '.join(expression(arg) for arg in node.arguments)+')'
+            return expression(callee)+'('+', '.join(expression(arg) for arg in node.arguments)+')'
+        if kind is ast.OmittedArgument:return 'None'
+        raise UnsupportedNakedSyntax('expression '+kind.__name__)
+    def expression(node,require_value=True):
+        nonlocal region_active
+        operation=region_ops.get(id(node)) if region_active else None
+        if operation is None:
+            text=_expression(node,require_value)
+        else:
+            # The slow arm is wholly ordinary direct execution. Do not embed
+            # redundant nested region branches in both arms (source blow-up).
+            region_active=False
+            try:text=_expression(node,require_value)
+            finally:region_active=True
+        if operation is not None:
+            if type(node) is ast.Call:
+                parts=[expression(node.callee.object), *(expression(arg) for arg in node.arguments)]
+            else:
+                parts=[expression(node.object)]
+                if operation=='row_get':parts.append(repr(node.name))
+            fast='_collection_helpers['+repr(operation)+'](_context, '+', '.join(parts)+')'
+            text='('+fast+' if _collection_fast else '+text+')'
+
+        if _catalog_preparation_bounds:
+            text='_context.preparation_value((_context.preparation_step(), '+text+')[1])'
+        return source_map.expression(text,node,parenthesized=(operation is not None or type(node) in (ast.Binary,ast.Group,ast.Attribute,ast.Call))) if source_map is not None else text
+    def statement(node,depth):
+        if _catalog_preparation_bounds:emit(depth,'_context.preparation_step()')
+        if source_map is None:return _statement(node,depth)
+        source_map.enter(node)
+        try:return _statement(node,depth)
+        finally:source_map.leave()
+    def sequence(block,depth):
+        if not block:emit(depth,'pass')
+        for node in block:statement(node,depth)
+    module_variables={name.casefold() for node in program if type(node) is ast.Var for name in node.names} | predeclared
+    def _statement(node,depth):
+        nonlocal scope_id
+        kind=type(node)
+        if region_active and ((kind is ast.Assign and type(node.value) is ast.New) or (kind is ast.ExpressionStatement and type(node.expression) is ast.Call and id(node.expression) not in region_ops)):
+            emit(depth,'_collection_fast = False')
+        if kind is ast.Assign:
+            if region_active and region_ops.get(id(node))=='row_set':
+                emit(depth,'if _collection_fast:')
+                receiver=temp(); stored=temp()
+                emit(depth+1,receiver+' = '+expression(node.target.object))
+                emit(depth+1,stored+' = '+expression(node.value))
+                emit(depth+1,"_collection_helpers['row_set'](_context, "+receiver+', '+repr(node.target.name)+', '+stored+')')
+                emit(depth,'else:')
+                depth+=1
+            value=expression(node.value);target=node.target
+            if type(target) is ast.Name:assign_name(target.name,value,depth)
+            elif type(target) is ast.Index:
+                receiver=temp();index=temp();stored=temp()
+                emit(depth,receiver+' = '+expression(target.object))
+                writer=temp() if services else None
+                if services:emit(depth,writer+' = None if id(type('+receiver+')) in _NATIVE_COLLECTION_IDS else _context.resolve_member('+receiver+', "__setitem__")')
+                emit(depth,index+' = '+expression(target.index));emit(depth,stored+' = '+value)
+                position=('_checked_array_index('+receiver+', '+index+')' if 'array_index_contract' in repairs else 'int('+index+')')
+                if services:
+                    emit(depth,'if '+writer+' is not None: '+writer+'('+index+', '+stored+')')
+                    emit(depth,'else: '+receiver+'['+position+' if type('+receiver+') is list else '+index+'] = '+stored)
+                else:emit(depth,receiver+'['+position+' if isinstance('+receiver+',list) else '+index+'] = '+stored)
+            elif type(target) is ast.Attribute:
+                path=import_path(target)
+                if path is not None:
+                    writer=temp();emit(depth,writer+' = _context.resolve_import_write('+repr(path)+')')
+                    emit(depth,writer+'('+value+')');return
+                receiver=temp();stored=temp();emit(depth,receiver+' = '+expression(target.object))
+                writer=temp() if services else None
+                if services:emit(depth,writer+' = None if id(type('+receiver+')) in _NATIVE_DICT_IDS else _context.resolve_set_member('+receiver+', '+repr(target.name)+')')
+                emit(depth,stored+' = '+value)
+                if services:
+                    emit(depth,'if id(type('+receiver+')) in _MAP_TYPE_IDS: _native_property_write_missing('+repr(target.name)+')')
+                    emit(depth,'elif '+writer+' is None: '+receiver+'['+repr(target.name)+'] = '+stored)
+                    emit(depth,'else: '+writer+'('+stored+')')
+                else:
+                    emit(depth,'if id(type('+receiver+')) in _MAP_TYPE_IDS: _native_property_write_missing('+repr(target.name)+')')
+                    emit(depth,'elif isinstance('+receiver+',dict): '+receiver+'['+repr(target.name)+'] = '+stored)
+                    emit(depth,'else: setattr('+receiver+','+repr(target.name.casefold())+','+stored+')')
+            else:raise UnsupportedNakedSyntax('assignment target')
+        elif kind is ast.Var:
+            for name in node.names:
+                if scope_id is None and name.casefold() in import_keys:
+                    emit(depth,'_context.external_set('+repr(name.casefold())+', None)');continue
+                slot=sym(name)
+                if module_name(name):emit(depth,'_initial.setdefault('+repr(name.casefold())+', None)')
+                elif boxed(name):emit(depth,f'if {slot}._value is _UNSET_REF: {slot}.value = None')
+                else:emit(depth,f'if {slot!r} not in locals(): {slot} = None')
+        elif kind is ast.ExpressionStatement:
+            prefix='return ' if _return_last_expression and scope_id is None and node is program[-1] else ''
+            emit(depth,prefix+expression(node.expression,bool(prefix) and _require_last_expression))
+        elif kind is ast.Return:
+            result=expression(node.value) if node.value is not None else 'None'
+            if _source_scalar_routines:result='_context.scalar_result('+result+')'
+            emit(depth,'return '+result)
+        elif kind is ast.If:
+            for index,(condition,block) in enumerate(node.branches):
+                emit(depth,('if ' if index==0 else 'elif ')+truth_expression(condition)+':');sequence(block,depth+1)
+            if node.otherwise:emit(depth,'else:');sequence(node.otherwise,depth+1)
+        elif kind is ast.For:
+            if region_active and id(node) in region_states:
+                emit(depth,'_collection_fast = _collection_admitted(_context, _initial, '+repr(region_states[id(node)][0])+', '+repr(region_states[id(node)][1])+')')
+            counter=variable(node.name);last=temp()
+            if live:
+                first=temp();emit(depth,first+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end));assign_name(node.name,first,depth)
+            else:emit(depth,counter+' = '+expression(node.start));emit(depth,last+' = '+expression(node.end))
+            proven_counter = scope_id is None and id(node) in definite_reads
+            condition=read_variable(node.name) if live and not proven_counter else counter
+            if authority:
+                emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
+                emit(depth+1,f'if not ({condition} <= {last}): break')
+            else:emit(depth,f'while {condition} <= {last}:')
+            if external_name(node.name):increment='_context.external_set('+repr(node.name.casefold())+', '+read_variable(node.name)+' + 1)'
+            else:increment=counter+' = '+(counter if proven_counter else read_variable(node.name))+' + 1' if module_name(node.name) else counter+' += 1'
+            loops.append(increment);sequence(node.body,depth+1);loops.pop();emit(depth+1,increment)
+            if region_active:emit(depth,'_collection_fast = False')
+        elif kind is ast.While:
+            if authority:
+                emit(depth,'while True:');emit(depth+1,'_context.checkpoint()')
+                emit(depth+1,'if not ('+truth_expression(node.condition)+'): break')
+            else:emit(depth,'while '+truth_expression(node.condition)+':')
+            loops.append(None);sequence(node.body,depth+1);loops.pop()
+        elif kind is ast.ForEach:
+            loop_target=temp() if reserved_target(node.name) or external_name(node.name) else variable(node.name)
+            receiver=temp();emit(depth,receiver+' = '+expression(node.collection))
+            entry='_MapEntry' if services else 'SimpleNamespace'
+            iterable='(('+entry+'(key=k,value=v) for k,v in '+receiver+'.items()) if isinstance('+receiver+',dict) else '+receiver+')'
+            if services:
+                bound=temp();emit(depth,bound+' = iter('+iterable+') if id(type('+receiver+')) in _NATIVE_COLLECTION_IDS else _context.resolve_member('+receiver+', "__iter__")()');iterable=bound
+            if authority or source_map is not None:
+                iterator=temp();emit(depth,iterator+' = iter('+iterable+')')
+                emit(depth,'while True:')
+                if authority:emit(depth+1,'_context.checkpoint()')
+                emit(depth+1,'try: '+loop_target+' = next('+iterator+')')
+                emit(depth+1,'except StopIteration: break')
+                if source_map is not None:
+                    emit(depth+1,'except RuntimeError:')
+                    emit(depth+2,'if id(type('+receiver+')) not in _MAP_TYPE_IDS: raise')
+                    emit(depth+2,'raise ValueError("Изменение состава соответствия во время обхода пока не поддерживается") from None')
+            else:emit(depth,'for '+loop_target+' in '+iterable+':')
+            if reserved_target(node.name) or external_name(node.name):assign_name(node.name,loop_target,depth+1)
+            loops.append(None);sequence(node.body,depth+1);loops.pop()
+        elif kind is ast.Break:emit(depth,'break')
+        elif kind is ast.Continue:
+            if loops and loops[-1] is not None:emit(depth,loops[-1])
+            emit(depth,'continue')
+        elif kind is ast.Execute and 'execute_fragments' in repairs:
+            pairs=[]
+            for key in sorted(execute_scopes[scope_id]):
+                slot=sym(key)
+                storage=(', '+slot) if boxed(key) else ''
+                pairs.append(repr(key)+': _fragment_local_binding(get_'+slot+', set_'+slot+', has_'+slot+storage+')')
+            visible=None if scope_id is None else tuple(sorted(routine_globals.get(scope_id,())))
+            emit(depth,'_execute_fragment('+expression(node.expression)+', _context, _initial, {'+', '.join(pairs)+'}, '+repr(visible)+')')
+        elif kind is ast.Try:
+            emit(depth,'try:');sequence(node.body,depth+1)
+            if source_map is not None and services:
+                caught=temp()
+                emit(depth,'except (ArithmeticError,ValueError,TypeError,IndexError,RecursionError,_BSLRuntimeError) as '+caught+':')
+                emit(depth+1,'with _handled_error(_context, '+caught+', _error_filename, _error_source):')
+                sequence(node.handler,depth+2)
+            else:
+                emit(depth,'except (ArithmeticError,ValueError,TypeError,IndexError,RecursionError,_BSLRuntimeError):' if source_map is not None else 'except Exception:');sequence(node.handler,depth+1)
+        elif kind is ast.Raise:
+            if source_map is not None and services and node.value is None:
+                emit(depth,'_reraise_handled(_context)')
+            elif source_map is not None and services and node.value is not None:
+                if len(node.optional_arguments or ())>4:
+                    # Public execute_program/prepare_program can receive an AST
+                    # the parser would reject. Convert description first, but
+                    # never run any excess optional-argument expression.
+                    emit(depth,f'_raise_arity_error(_raise_presentation({expression(node.value)}))')
+                else:
+                    optional=', '.join('None' if type(arg) is ast.OmittedArgument else expression(arg) for arg in (node.optional_arguments or ()))
+                    arguments='('+optional+(',' if optional else '')+')'
+                    emit(depth,f'_raise_direct(_context, _raise_presentation({expression(node.value)}), {arguments}, {source_name!r}, {node.token.line}, {node.token.column}, {node.token.source_line!r})')
+            elif source_map is not None and node.value is not None:
+                emit(depth,f'raise _BSLRuntimeError(str({expression(node.value)}), {source_name!r}, {node.token.line}, {node.token.column})')
+            else:emit(depth,'raise'+(' RuntimeError('+expression(node.value)+')' if node.value is not None else ''))
+        elif kind is ast.Routine:
+            if byref:
+                optional=False;parameters=[]
+                for parameter in node.parameters:
+                    optional=optional or parameter.default is not None
+                    parameters.append(sym(parameter.name)+('=_OMITTED_REF' if optional else ''))
+            else:parameters=[sym(parameter.name)+('='+expression(parameter.default) if parameter.default is not None else '') for parameter in node.parameters]
+            emit(depth,'def '+function_symbols[node.name.casefold()]+'('+', '.join(parameters)+'):')
+            nonlocals=(routine_globals[id(node)] if byref else module_variables-{p.name.casefold() for p in node.parameters})
+            if nonlocals and not live:emit(depth+1,'nonlocal '+', '.join(sym(name) for name in sorted(nonlocals)))
+            if source_checks:
+                emit(depth+1,'_context._check()');emit(depth+1,'try:')
+            body_depth=depth+2 if source_checks else depth+1
+            if _source_routine_scopes:
+                emit(body_depth,'with _context.routine_scope():');body_depth+=1
+            if _source_scalar_routines:
+                actuals=', '.join(sym(parameter.name) for parameter in node.parameters)
+                emit(body_depth,'_context.scalar_values(('+actuals+(',' if actuals else '')+'))')
+            previous_scope=scope_id
+            if byref:
+                scope_id=id(node)
+                for parameter in node.parameters:
+                    slot=sym(parameter.name)
+                    fallback=expression(parameter.default) if parameter.default is not None else 'None'
+                    emit(body_depth,f'if {slot} is _OMITTED_REF: {slot} = {fallback}')
+                    if parameter.name.casefold() in cells[scope_id]:
+                        emit(body_depth,slot+' = '+('_Cell' if parameter.by_value else '_as_ref')+'('+slot+')')
+                for key in sorted(cells[scope_id]-{parameter.name.casefold() for parameter in node.parameters}):
+                    emit(body_depth,sym(key)+' = _Cell()')
+            if dynamic_refs:lexical_helpers(id(node),body_depth)
+            saved=loops[:];loops.clear();sequence(node.body,body_depth);loops[:]=saved;scope_id=previous_scope
+            if source_checks:
+                emit(depth+1,'finally:');emit(depth+2,'_context._check()')
+        else:raise UnsupportedNakedSyntax('statement '+kind.__name__)
+    root_depth=1 if live else 2
+    if dynamic_refs:lexical_helpers(None,root_depth)
+    # Emit declarations first: BSL routines are available before textual calls.
+    sequence([node for node in program if type(node) is ast.Routine],root_depth)
+    if _persistent_routines:
+        emit(root_depth,'if _bind_only:')
+        emit(root_depth+1,'return {'+', '.join(repr(name)+': '+symbol for name,symbol in function_symbols.items())+'}')
+    if region_end:
+        emit(root_depth,'_collection_fast = False')
+        region_active=True
+        if source_map is not None:source_map.markers=source_map._allow_markers
+        sequence(program[:region_end],root_depth)
+        if source_map is not None:source_map.markers=False
+        region_active=False
+        sequence(program[region_end:],root_depth)
+    else:
+        sequence([node for node in program if type(node) is not ast.Routine
+                  and (_initialize_module or type(node) is not ast.Var)],root_depth)
+    body=lines;lines=[]
+    builtin_names={'message':'_outputs.append','сообщить':'_outputs.append','string':'str','строка':'str',
+                   'number':'Decimal','число':'Decimal','typeof':'type','типзнч':'type',
+                   'boolean':'bool','булево':'bool'}
+    emit(0,'def naked_module(_initial, _constants, _outputs'+(', _context' if services or authority else '')+(', _bind_only=False' if _persistent_routines else '')+'):')
+    if live:
+        for key,slot in source_ref_slots.items():emit(1,slot+' = _live_slot_ref(_initial, '+repr(key)+')')
+        if _initialize_module:
+            for name in sorted(module_variables):emit(1,('if not _bind_only: ' if _persistent_routines else '')+'_initial.setdefault('+repr(name)+', None)')
+    for name,slot in symbols.items():
+        if live:continue
+        if name in builtin_names:emit(1,slot+' = '+builtin_names[name])
+        if byref and name in cells[None]:emit(1,f'{slot} = _Cell(_initial.get({name!r}, _UNSET_REF))')
+        else:emit(1,f'if {name!r} in _initial: {slot} = _initial[{name!r}]')
+    if not live:emit(1,'try:')
+    body_offset=len(lines);lines.extend(body)
+    if not live:
+        emit(1,'finally:')
+        emit(2,'_locals = locals()')
+    for name,slot in symbols.items():
+        if live:continue
+        output=f'_locals[{slot!r}]'+('.value' if byref and name in cells[None] else '')
+        condition=f'{slot!r} in _locals'
+        if byref and name in cells[None]:condition+=f' and _locals[{slot!r}]._value is not _UNSET_REF'
+        emit(2,f'if {condition}: _initial[{name!r}] = {output}')
+    if _export_routines:
+        emit(1,'return {'+', '.join(repr(name)+': '+symbol for name,symbol in function_symbols.items())+'}')
+    else:emit(1,'return _initial')
+    generated='\n'.join(lines)+'\n'
+    namespace={name:value for name,value in globals().items() if name.startswith('_')}
+    if region_end:
+        from yadinassi.python_direct_collection_regions import admitted,helpers
+        namespace.update(_collection_admitted=admitted,_collection_helpers=helpers())
+    if live:
+        from yadinassi import experimental_naked_live_state as live_ops
+        namespace.update(_live_slot_ref=live_ops._SlotReference,_LIVE_UNSET=live_ops.UNSET,_live_missing=live_ops.missing,_live_readonly=live_ops.readonly,_live_source_ref=live_ops.source_reference,_live_host_ref=live_ops.host_reference)
+    if 'resource_bounds' in repairs:
+        from yadinassi.experimental_naked_resources import bounded_array, bounded_insert
+        namespace.update(_array_constructor_bounds=bounded_array,_array_insert_shape=bounded_insert)
+    if scalar_ops is not None:namespace.update(_bsl_truth=scalar_ops.truth,_bsl_concatenate=scalar_ops.concatenate,_native_order=(scalar_ops.uca_order if 'uca_string_order' in repairs else scalar_ops.order),_typed_find=scalar_ops.typed_find)
+    if repairs & {'array_identity_equality','structure_identity_equality','map_identity_equality'}:
+        if 'map_identity_equality' in repairs:
+            equal,not_equal=scalar_ops.map_identity_operators(
+                array='array_identity_equality' in repairs,
+                structure='structure_identity_equality' in repairs)
+        elif 'structure_identity_equality' not in repairs:
+            equal,not_equal=scalar_ops.array_equal,scalar_ops.array_not_equal
+        elif 'array_identity_equality' not in repairs:
+            equal,not_equal=scalar_ops.structure_equal,scalar_ops.structure_not_equal
+        else:equal,not_equal=scalar_ops.collection_equal,scalar_ops.collection_not_equal
+        namespace.update(_array_equal=equal,_array_not_equal=not_equal)
+    if 'numeric_boolean_equality' in repairs:
+        equal,not_equal=scalar_ops.numeric_boolean_operators(
+            namespace.get('_array_equal'),namespace.get('_array_not_equal'))
+        namespace.update(_numeric_boolean_equal=equal,_numeric_boolean_not_equal=not_equal)
+    if 'decimal_division' in repairs:
+        namespace.update(_decimal_divide=scalar_ops.decimal_divide,_decimal_sign=scalar_ops.decimal_sign)
+    native_dicts=(dict,_TypedMap,_NakedMap)
+    if structure_ops is not None:
+        native_dicts+= (structure_ops._DirectStructure,)
+        namespace.update(_DirectStructure=structure_ops._DirectStructure,_new_structure=structure_ops.new_structure,_structure_from_schema=structure_ops.structure_from_schema,_structure_get_known=structure_ops.structure_get_known,_structure_insert=structure_ops.structure_insert,_structure_property=structure_ops.structure_property)
+    if 'method_values' in repairs:
+        from yadinassi.experimental_naked_array_methods import array_method_value
+        index=_checked_array_index if 'array_index_contract' in repairs else lambda obj,key:int(key)
+        insert=namespace['_array_insert_shape'] if 'array_insert_shape' in repairs else lambda obj,key,value=None:obj.insert(int(key),value)
+        find=scalar_ops.typed_find if 'typed_find' in repairs else None
+        namespace['_array_method_value']=lambda obj,name:array_method_value(obj,name,index=index,insert=insert,find=find,delete=lambda obj,key:obj.__delitem__(index(obj,key)))
+    namespace.update(Decimal=Decimal,SimpleNamespace=SimpleNamespace,_NATIVE_COLLECTION_TYPES=(list,*native_dicts),_NATIVE_DICT_TYPES=native_dicts,_NATIVE_COLLECTION_IDS=tuple(map(id,(list,*native_dicts))),_NATIVE_DICT_IDS=tuple(map(id,native_dicts)))
+    from yadinassi.errors import BSLRuntimeError
+    namespace['_BSLRuntimeError']=BSLRuntimeError
+    if 'execute_fragments' in repairs:
+        from yadinassi.python_direct_execute import execute_fragment,local_binding,local_exists
+        from yadinassi.python_direct_eval import bind_eval
+        namespace.update(_bind_eval=bind_eval,_execute_fragment=execute_fragment,_fragment_local_binding=local_binding,_fragment_local_exists=local_exists)
+    if source_map is not None and services:
+        from yadinassi.experimental_naked_errors import handled_error,reraise_handled
+        from yadinassi.python_direct_error_info import raise_error,raise_arity_error
+        from yadinassi.experimental_naked_scalar_semantics import presentation
+        namespace.update(_raise_direct=raise_error,_raise_presentation=presentation,_raise_arity_error=raise_arity_error)
+        namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,
+                         _error_filename=source_name,_error_source=source)
+    if _dynamic_new:
+        from yadinassi.python_direct_dynamic_new import construct
+        namespace['_direct_dynamic_new']=construct
+    try:
+        code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
+    finally:
+        # Recursive emitter closures can outlive this call until cyclic GC.
+        # They must not keep compile-only location markers/AST metadata alive.
+        source_map=None
+    exec(code,namespace)
+    result=Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)
+    result._source_implicit_shadows=frozenset(name for names in routine_shadows.values() for name in names)
+    return result
+
+compile_source=prepare
+
+def execute(source,initial=None,*,repairs=()):return prepare(source,repairs=repairs).run(initial)

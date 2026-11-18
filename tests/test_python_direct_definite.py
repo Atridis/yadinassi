@@ -5,7 +5,7 @@ from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 from yadinassi.python_direct_definite import definite_module_reads
 from yadinassi.python_direct import REPAIRS
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 
 
 class DefiniteReadsTests(unittest.TestCase):

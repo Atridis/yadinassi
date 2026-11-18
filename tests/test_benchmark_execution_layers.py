@@ -14,7 +14,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             with self.subTest(case=name):
                 job = bench.workload(name, 13)
                 self.assertEqual(job.expected, result)
-                for route in ('default', 'prepared', 'compiled-strict', 'experimental'):
+                for route in ('default', 'prepared', 'compiled-strict'):
                     with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '1'}):
                         bsl, _ = bench.prepare_bsl(job.source, route)
                         for run in (job.native, job.classes, bsl):
@@ -39,7 +39,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             run, info = bench.prepare_bsl('r=1;', 'prepared')
             constructor.assert_called_once_with()
         self.assertEqual(info['api'], 'execute_prepared(plan)')
-        with patch('yadinassi.experimental_naked_collections.prepare', side_effect=AssertionError('recompiled')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True, side_effect=AssertionError('recompiled')):
             for _ in range(3):bench.validate(run(), Decimal(1))
 
     def test_edge_workload_size(self):
@@ -53,6 +53,7 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
             with self.assertRaises(ValueError): bench.workload('array', n)
         with self.assertRaises(ValueError): bench.workload('unknown', 10)
         with self.assertRaises(ValueError): bench.prepare_bsl('r=0;', 'unknown')
+        with self.assertRaises(ValueError): bench.prepare_bsl('r=0;', 'experimental')
         with self.assertRaises(ValueError): bench.measure('array', 1, 2)
         for value in (True, 1, 1.0, '1', Decimal(2)):
             with self.assertRaises(AssertionError): bench.validate(value, Decimal(1))
@@ -70,9 +71,10 @@ class ExecutionLayerBenchmarkTests(unittest.TestCase):
         self.assertIn('bsl_parse_prepare', report['preparation_seconds'])
         self.assertEqual(set(report['summary']), set(bench.LAYERS))
 
-    def test_experimental_still_requires_opt_in(self):
-        with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': '0'}):
-            with self.assertRaises(RuntimeError): bench.prepare_bsl('r=1;', 'experimental')
+    def test_retired_experimental_route_is_not_reenabled_by_environment(self):
+        for value in ('0','1'):
+            with patch.dict(os.environ, {'YADINASSI_UNSAFE_COLLECTION_ABLATION': value}):
+                with self.assertRaises(ValueError): bench.prepare_bsl('r=1;', 'experimental')
 
     def test_no_results_are_accepted_on_semantic_mismatch(self):
         with patch.object(bench, 'prepare_bsl', return_value=(lambda: Decimal(-99), {})):

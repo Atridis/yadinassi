@@ -7,7 +7,7 @@ from yadinassi import BSLError,Interpreter
 from yadinassi.catalog_object_preparation import _ObjectInterpreter,prepare_catalog_object
 from yadinassi.python_direct_catalog_preparation import CatalogPreparationBoundary,prepared_validator
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 import test_catalog_object_preparation as catalog_fixture
 
 

@@ -225,7 +225,7 @@ class BSLCollectionIndexes(BSLObject):
     def _add_columns(self, columns):
         # Internal codec/copy entry point; schema references, never guessed names.
         if any(type(column) is not BSLValueTableColumn or column.table is not self.table
-               or column._deleted or column not in self.table.columns.items
+               or column._deleted or column not in self.table.columns._items
                for column in columns):
             raise ValueError("Индекс: колонка не принадлежит таблице")
         self._budget(extra_columns=columns)
@@ -239,7 +239,7 @@ class BSLCollectionIndexes(BSLObject):
         columns = _text(columns)
         if columns.count(",") + 1 > _MAX_INDEX_COLUMNS:
             raise ValueError("Индексы: превышен предел списка колонок Yadinassi")
-        by_name = {column.name.casefold(): column for column in self.table.columns.items}
+        by_name = {column.name.casefold(): column for column in self.table.columns._items}
         selected = []
         for part in columns.split(","):
             name = part.strip()
@@ -393,6 +393,9 @@ class BSLCollectionIndexes(BSLObject):
         return prepared
 
     def _set_cell(self, row, column, value):
+        if not self.items:
+            row.cells[column] = value
+            return
         keys = [(index, index._key(row, column, value))
                 for index in self.items if column in index.columns]
         self._check_units(sum(_index_key_units(key) - _index_key_units(index._keys[row])
@@ -443,11 +446,27 @@ class BSLCollectionIndexes(BSLObject):
 class BSLValueTableColumn(BSLObject):
     def __init__(self, table, name, value_type, title, width):
         self.table = table
-        self.name = name
+        self._name = name
         self.value_type = value_type
         self.title = title
         self.width = width
         self._deleted = False
+
+    @property
+    def name(self):
+        if 'name' in self.__dict__:
+            raise ValueError('Column name storage is noncanonical')
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if type(self.table) is not BSLValueTable or self._deleted:
+            raise ValueError('Column has no live table owner')
+        if self.table._bounded_slice_read:
+            raise ValueError('slice schema mutation is not admitted')
+        self.table.columns._validate_name(value, self)
+        self.table.columns._name_index = None
+        self._name = value
 
     def __str__(self):
         return "КолонкаТаблицыЗначений"
@@ -456,7 +475,7 @@ class BSLValueTableColumn(BSLObject):
         if (type(self.table) is BSLValueTable and self.table._bounded_slice_read
                 and name.casefold() not in ('name', 'имя')
                 and not (name.casefold() in ('valuetype','типзначения')
-                         and self is self.table.columns.items[0])):
+                         and self is self.table.columns._items[0])):
             # !todo Native slice column descriptors/qualifiers require evidence;
             # never expose the internal untyped materialization as native schema.
             raise ValueError('slice column schema inspection is not admitted')
@@ -477,7 +496,8 @@ class BSLValueTableColumn(BSLObject):
         key = name.casefold()
         if key in ("name", "имя"):
             self.table.columns._validate_name(value, self)
-            self.name = value
+            self.table.columns._name_index = None
+            self._name = value
         elif key in ("title", "заголовок"):
             self.title = _text(value)
         elif key in ("width", "ширина"):
@@ -489,28 +509,71 @@ class BSLValueTableColumn(BSLObject):
 class BSLValueTableColumnCollection(BSLObject):
     def __init__(self, table):
         self.table = table
-        self.items = []
+        self._items = []
+        self._name_index = {}
+
+    @property
+    def items(self):
+        # Public inspection is readonly. There is one owned representation,
+        # not a second compatibility mode that rescans every field access.
+        return tuple(self._items)
+
+    @items.setter
+    def items(self, value):
+        raise AttributeError('raw schema replacement is unsupported; use Columns methods')
+
+    def _append_materialized(self, column):
+        # Query schemas have already passed their source admission. Preserve
+        # duplicate projection names and first-physical lookup semantics.
+        if type(column) is not BSLValueTableColumn or column.table is not self.table:
+            raise ValueError('materialized column owner mismatch')
+        self._items.append(column)
+        self._name_index = None
+
+    def _names(self):
+        index = self._name_index
+        if index is not None and type(index) is not dict:
+            raise ValueError('Column name index is noncanonical')
+        if index is None:
+            index = {}
+            for column in self._items:
+                if type(column) is not BSLValueTableColumn or type(column.name) is not str:
+                    raise ValueError('Column storage is noncanonical')
+                index.setdefault(column.name.casefold(), column)
+            self._name_index = index
+        return index
 
     def __str__(self):
         return "КоллекцияКолонокТаблицыЗначений"
 
     def __iter__(self):
-        return iter(self.items)
+        return iter(self._items)
 
     def _validate_name(self, name, current=None):
         _text(name)
         if name:
             _key(name)
-            if any(c is not current and c.name.casefold() == name.casefold()
-                   for c in self.items):
+            index = self._names()
+            if current is None:
+                duplicate = name.casefold() in index
+            else:
+                # Query materialization can contain duplicate aliases. A
+                # rename must check every other identity, not just first match.
+                duplicate = any(c is not current and c.name.casefold() == name.casefold()
+                                for c in self._items)
+            if duplicate:
                 raise ValueError(f"Колонка уже существует: {name}")
 
     def find(self, name):
         name = _text(name).casefold()
-        return next((c for c in self.items if c.name.casefold() == name), None)
+        index = self._names()
+        column = index.get(name)
+        if column is not None and 'name' in column.__dict__:
+            raise ValueError('Column name storage is noncanonical')
+        return column
 
     def get(self, index):
-        return self.items[_position(index, len(self.items))]
+        return self._items[_position(index, len(self._items))]
 
     def get_index(self, index):
         if type(index) is str:
@@ -535,13 +598,13 @@ class BSLValueTableColumnCollection(BSLObject):
             raise TypeError("Ожидается колонка таблицы")
         if column.table is self.table and column._deleted:
             return Decimal(2 ** 32 - 1)
-        return Decimal(next((i for i, c in enumerate(self.items) if c is column), -1))
+        return Decimal(next((i for i, c in enumerate(self._items) if c is column), -1))
 
     def add(self, name="", value_type=None, title="", width=Decimal(0)):
-        return self.insert(Decimal(len(self.items)), name, value_type, title, width)
+        return self.insert(Decimal(len(self._items)), name, value_type, title, width)
 
     def insert(self, index, name="", value_type=None, title="", width=Decimal(0)):
-        position = _position(index, len(self.items), True)
+        position = _position(index, len(self._items), True)
         self._validate_name(name)
         if value_type is None:
             value_type = BSLTypeDescription()
@@ -549,10 +612,18 @@ class BSLValueTableColumnCollection(BSLObject):
             raise TypeError("Ожидается ОписаниеТипов")
         title = _text(title)
         width = Decimal(_integer(width) % (2 ** 32))
-        self.table._budget(len(self.table.rows), len(self.items) + 1)
+        self.table._budget(len(self.table.rows), len(self._items) + 1)
         default = _default(value_type)
         column = BSLValueTableColumn(self.table, name, value_type, title, width)
-        self.items.insert(position, column)
+        self._items.insert(position, column)
+        if self._name_index is not None:
+            key = name.casefold()
+            if key and key not in self._name_index:
+                self._name_index[key] = column
+            else:
+                # Anonymous columns may duplicate; insertion changes which
+                # physical identity Find("") must return.
+                self._name_index = None
         for row in self.table.rows:
             row.cells[column] = default
         return column
@@ -560,13 +631,14 @@ class BSLValueTableColumnCollection(BSLObject):
     def delete(self, column):
         column = self.resolve(column)
         self.table.indexes._column_deleted(column)
-        self.items.remove(column)
+        self._name_index = None
+        self._items.remove(column)
         for row in self.table.rows:
             del row.cells[column]
         column._deleted = True
-        column.name, column.title, column.width = "", "", Decimal(0)
+        column._name, column.title, column.width = "", "", Decimal(0)
         column.value_type = BSLTypeDescription()
-        if not self.items:
+        if not self._items:
             self.table.clear()
 
     def clear(self):
@@ -574,7 +646,7 @@ class BSLValueTableColumnCollection(BSLObject):
         for index in self.table.indexes.items:
             index.columns.clear()
         self.table.indexes._rows_cleared()
-        for column in list(self.items):
+        for column in list(self._items):
             self.delete(column)
         self.table.clear()
 
@@ -583,9 +655,10 @@ class BSLValueTableColumnCollection(BSLObject):
                 or type(column) is BSLValueTableColumn):
             raise TypeError("Ожидается имя, индекс или колонка таблицы")
         column = self.resolve(column)
-        old = self.items.index(column)
-        new = _position(Decimal(old + _integer(offset)), len(self.items))
-        self.items.insert(new, self.items.pop(old))
+        old = self._items.index(column)
+        new = _position(Decimal(old + _integer(offset)), len(self._items))
+        self._name_index = None
+        self._items.insert(new, self._items.pop(old))
 
     def get_member(self, name):
         return self.get_index(name)
@@ -593,7 +666,7 @@ class BSLValueTableColumnCollection(BSLObject):
     def get_method(self, name):
         if self.table._bounded_slice_read and name.casefold() not in ('count','количество','get','получить','find','найти','indexof','индекс'):
             raise ValueError('slice schema mutation is not admitted')
-        return _method(name, {"count": lambda: Decimal(len(self.items)), "количество": lambda: Decimal(len(self.items)),
+        return _method(name, {"count": lambda: Decimal(len(self._items)), "количество": lambda: Decimal(len(self._items)),
             "get": self.get, "получить": self.get, "find": self.find, "найти": self.find,
             "indexof": self.index_of, "индекс": self.index_of, "add": self.add, "добавить": self.add,
             "insert": self.insert, "вставить": self.insert, "delete": self.delete, "удалить": self.delete,
@@ -603,7 +676,7 @@ class BSLValueTableColumnCollection(BSLObject):
 class BSLValueTableRow(BSLObject):
     def __init__(self, table):
         self.table = table
-        self.cells = {c: _default(c.value_type) for c in table.columns.items}
+        self.cells = {c: _default(c.value_type) for c in table.columns._items}
         self._deleted = False
 
     def __str__(self):
@@ -618,7 +691,7 @@ class BSLValueTableRow(BSLObject):
         # though Owner/Get/member access remains invalid.
         if self._deleted:
             return iter(self.table.rows)
-        return iter([self.cells[c] for c in self.table.columns.items])
+        return iter([self.cells[c] for c in self.table.columns._items])
 
     def owner(self):
         self._live()
@@ -684,16 +757,20 @@ class BSLValueTable(BSLObject):
         raise ValueError("Строки таблицы недоступны для замены")
 
     def add(self):
-        return self.insert(Decimal(len(self.rows)))
+        return self._insert_at(len(self.rows))
 
     def insert(self, index):
-        position = _position(index, len(self.rows), True)
+        return self._insert_at(_position(index, len(self.rows), True))
+
+    def _insert_at(self, position):
         if self.indexes.items and position != len(self.rows):
             raise ValueError("Вставка не в конец таблицы с индексами пока не подтверждена")
-        self._budget(len(self.rows) + 1, len(self.columns.items))
-        self.indexes._budget(rows=len(self.rows) + 1)
+        self._budget(len(self.rows) + 1, len(self.columns._items))
+        if self.indexes.items:
+            self.indexes._budget(rows=len(self.rows) + 1)
         row = BSLValueTableRow(self)
-        self.indexes._row_added(row)
+        if self.indexes.items:
+            self.indexes._row_added(row)
         self.rows.insert(position, row)
         return row
 
@@ -732,7 +809,7 @@ class BSLValueTable(BSLObject):
 
     def _selection(self, columns):
         if columns is None or (type(columns) is str and columns == ""):
-            return list(self.columns.items)
+            return list(self.columns._items)
         _text(columns)
         names = columns.split(",")
         if len(names) > _MAX_COLUMNS:
@@ -859,16 +936,16 @@ class BSLValueTable(BSLObject):
             row._live()
             # The native foreign-row probe has the same schema. Other schemas
             # cannot distinguish positional from name-based copying yet.
-            if row.table is not self and [(c.name, c.value_type) for c in row.table.columns.items] != [(c.name, c.value_type) for c in self.columns.items]:
+            if row.table is not self and [(c.name, c.value_type) for c in row.table.columns._items] != [(c.name, c.value_type) for c in self.columns._items]:
                 raise ValueError("Копирование чужих строк другой схемы пока не поддерживается")
         result = self.copy_columns(columns)
         for old in source:
             new = result.add()
-            for src, dst in zip(selected, result.columns.items):
-                foreign = src if old.table is self else old.table.columns.items[self.columns.items.index(src)]
+            for src, dst in zip(selected, result.columns._items):
+                foreign = src if old.table is self else old.table.columns._items[self.columns._items.index(src)]
                 new.cells[dst] = old.cells[foreign]
         if columns is None or columns == "":
-            mapping = dict(zip(selected, result.columns.items))
+            mapping = dict(zip(selected, result.columns._items))
             for index in self.indexes.items:
                 result.indexes._add_columns([mapping[column] for column in index.columns])
         return result
@@ -902,10 +979,24 @@ class BSLValueTable(BSLObject):
             "итог": self.total, "copy": self.copy, "скопировать": self.copy,
             "copycolumns": self.copy_columns, "скопироватьколонки": self.copy_columns})
 
+# The working lightweight implementation replaces the legacy storage above.
+# Old helper functions remain only for independent tree/codec modules during
+# migration; no compiler selector or VM fallback is involved.
+from .plain_value_table_runtime import (BSLValueTable, BSLValueTableRow,
+    BSLValueTableColumn, BSLValueTableColumnCollection, BSLCollectionIndexes)
+
 # Definition-time receiver identities/raw storage for direct read iteration.
 _DIRECT_ITERATION_TYPES = (BSLValueTable, BSLValueTableColumnCollection,
                           BSLValueTableRow, BSLValueTableColumn)
 _DIRECT_ITERATION_DICT = vars(BSLObject)['__dict__']
+
+# Property objects are stable while their accessor code can be replaced. Pin
+# both levels before lazy direct bridges import the schema protocol.
+_DIRECT_SCHEMA_ACCESSOR_ABI = tuple(
+    (fn, fn.__code__, fn.__defaults__, tuple((fn.__kwdefaults__ or {}).items()))
+    for cls in (BSLValueTableColumn, BSLValueTableColumnCollection)
+    for value in vars(cls).values() if type(value) is property
+    for fn in (value.fget, value.fset, value.fdel) if fn is not None)
 
 # New reference capabilities pin their receiver protocol at definition time,
 # never at first lazy import after a host has replaced a method/descriptor.
@@ -930,6 +1021,6 @@ _DIRECT_REGION_FUNCTIONS = tuple(
     (fn,fn.__code__,fn.__defaults__,tuple((fn.__kwdefaults__ or {}).items()))
     for fn in [*globals().values(), *(getattr(value,'__func__',value)
                 for cls,mro,entries in _DIRECT_REGION_ABI for name,value in entries)]
-    if type(fn) is type(lambda:None))
+    if type(fn) is type(lambda:None)) + _DIRECT_SCHEMA_ACCESSOR_ABI
 _DIRECT_REGION_GLOBALS = tuple((name,value) for name,value in tuple(globals().items()) if not name.startswith('__'))
 _DIRECT_REGION_KEYS = frozenset(globals()) | {'_DIRECT_REGION_GLOBALS','_DIRECT_REGION_KEYS'}

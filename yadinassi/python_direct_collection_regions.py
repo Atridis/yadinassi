@@ -133,7 +133,9 @@ def _admitted(context, state, specification, writes):
         if any(vars(module).get(name) is not value for name,value in module._DIRECT_REGION_GLOBALS):return False
         for fn,code,defaults,kwdefaults in module._DIRECT_REGION_FUNCTIONS:
             if fn.__code__ is not code or fn.__defaults__ is not defaults:return False
-            current=fn.__kwdefaults__ or {}
+            current=fn.__kwdefaults__
+            if current is not None and type(current) is not dict:return False
+            current={} if current is None else current
             if any(type(k) is not str for k in current):return False
             if len(current)!=len(kwdefaults) or any(current.get(k) is not v for k,v in kwdefaults):return False
     for module in (table, values, type_qualifiers):
@@ -194,30 +196,15 @@ def _admitted(context, state, specification, writes):
         if kind=='number':
             if not scalar(value):return False
         elif kind=='table':
-            if type(value) is not table.BSLValueTable:return False
-            data=raw(value)
-            if data.keys()!={'_bounded_slice_read','rows','columns','indexes'}:return False
-            if data.get('_bounded_slice_read') is not False:return False
-            rows=data.get('rows'); columns=data.get('columns'); indexes=data.get('indexes')
-            if type(rows) is not list or type(columns) is not table.BSLValueTableColumnCollection or type(indexes) is not table.BSLCollectionIndexes:return False
-            cd=raw(columns); ix=raw(indexes)
-            if cd.keys()!={'table','items'} or ix.keys()!={'table','items'}:return False
-            if cd.get('table') is not value or ix.get('table') is not value:return False
-            cols=cd.get('items')
-            if type(cols) is not list or type(ix.get('items')) is not list or ix['items']:return False
-            if len(rows)>table._MAX_ROWS or len(cols)>table._MAX_COLUMNS or len(rows)*len(cols)>table._MAX_CELLS:return False
-            for col in cols:
-                if type(col) is not table.BSLValueTableColumn:return False
-                c=raw(col)
-                if c.keys()!={'table','name','value_type','title','width','_deleted'}:return False
-                if c.get('table') is not value or c.get('_deleted') is not False or type(c.get('name')) is not str:return False
-                if type(c.get('title')) is not str or type(c.get('width')) is not Decimal or not description(c.get('value_type')):return False
-            for row in rows:
-                if type(row) is not table.BSLValueTableRow:return False
-                r=raw(row); cells=r.get('cells')
-                if r.keys()!={'table','cells','_deleted'}:return False
-                if r.get('table') is not value or r.get('_deleted') is not False or type(cells) is not dict or len(cells)!=len(cols):return False
-                if any(not any(key is c for c in cols) or not scalar(v) for key,v in cells.items()):return False
+            from .python_direct_plain_tables import validate
+            if not validate(value,pure=True):return False
+            # Existing raw() lifetime checks still reject observable weakref
+            # finalizers before entering a callback-free operation group.
+            raw(value)
+            for row in value.rows:raw(row)
+            for col in value.columns._items:
+                fields=raw(col)
+                if type(fields["title"]) is not str or not scalar(fields["width"]) or not description(fields["value_type"]):return False
             tables.add(id(value))
         elif kind=='list':
             if type(value) is not values.BSLValueList:return False
@@ -259,28 +246,20 @@ def helpers():
     list_type,item_type=v._DIRECT_REGION_TYPES
     table_limits=dict(t._DIRECT_REGION_LIMITS); list_limits=dict(v._DIRECT_REGION_LIMITS)
     def table_add(value):
-        count=len(value.rows)+1; columns=value.columns.items
-        if count>table_limits['_MAX_ROWS'] or len(columns)>table_limits['_MAX_COLUMNS'] or count*len(columns)>table_limits['_MAX_CELLS']:
-            raise ValueError('ТаблицаЗначений: превышен предел ресурсов Yadinassi')
-        row=object.__new__(row_type)
-        row.table=value;row.cells={col:None for col in columns};row._deleted=False
+        if len(value.rows)>=table_limits["_MAX_ROWS"] or len(value.columns._items)>table_limits["_MAX_COLUMNS"] or (len(value.rows)+1)*len(value.columns._items)>table_limits["_MAX_CELLS"]:raise ValueError("ValueTable growth limit exceeded")
+        row=row_type(value,value._storage.schema)
         value.rows.append(row)
         return row
     def table_get(value,index):
-        if type(index) is not Decimal or not index.is_finite():raise TypeError('ТаблицаЗначений: ожидается конечное число')
-        if index.copy_abs()>2**32:raise ValueError('ТаблицаЗначений: число вне поддерживаемых границ')
-        position=int(index)
-        if not 0<=position<len(value.rows):raise IndexError('Индекс таблицы вне границ')
-        return value.rows[position]
-    def column(row,name):
-        # Schema and row liveness were proved at entry and cannot change inside
-        # the island: no Delete, Columns.Add, aliases escaping, or callbacks.
+        if type(index) is not Decimal or not index.is_finite():raise TypeError('table index requires finite number')
+        position=index.to_integral_value(rounding='ROUND_DOWN')
+        if not 0<=position<len(value.rows):raise IndexError('table index out of range')
+        return value.rows[int(position)]
+    def row_get(row,name):return list.__getitem__(row,row.schema._offsets[name.casefold()])
+    def row_set(row,name,value):
         key=name.casefold()
-        for col in row.table.columns.items:
-            if col.name.casefold()==key:return col
-        raise ValueError('Колонка не найдена: '+name)
-    def row_get(row,name):return row.cells[column(row,name)]
-    def row_set(row,name,value):row.cells[column(row,name)]=value
+        if key not in row.schema._offsets:raise ValueError('column not found: '+name)
+        list.__setitem__(row,row.schema._offsets[key],value)
     def list_add(value,number):
         count=len(value.items)
         if count+1>list_limits['_MAX_ITEMS']:raise ValueError('СписокЗначений: превышен предел ресурсов Yadinassi')

@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLRuntimeError
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.python_direct_posting import _POSTING_REPAIRS
 import test_document_posting_runtime as fixture
 

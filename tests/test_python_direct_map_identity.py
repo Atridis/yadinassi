@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_collections import _TypedMap,_NakedMap,prepare
+from tests.retired_text_compiler import _TypedMap,_NakedMap,prepare
 from yadinassi.experimental_naked_scalar_semantics import map_identity_operators
 from yadinassi.experimental_naked_structure import new_structure
 

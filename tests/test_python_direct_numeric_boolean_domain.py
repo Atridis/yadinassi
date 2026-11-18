@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_scalar_semantics import numeric_boolean_operators,map_identity_operators
 
 class DirectNumericBooleanDomainTests(unittest.TestCase):

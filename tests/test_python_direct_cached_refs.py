@@ -4,7 +4,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.values import Reference,HostFunction
 from yadinassi.experimental_naked_live_state import source_reference,_SlotReference
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_boundaries import BoundaryContext
 from yadinassi.python_direct import REPAIRS
 

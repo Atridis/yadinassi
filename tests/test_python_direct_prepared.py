@@ -10,7 +10,7 @@ from yadinassi.native_targets import LINUX_8_3_27_1508
 class PreparedDirectTests(unittest.TestCase):
     def test_compile_once_current_state(self):
         vm=Interpreter();vm.variables['x']=Decimal(1);p=vm.prepare('x=x+1;x;')
-        with patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('recompile')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('recompile')):
             self.assertEqual(vm.execute_prepared(p),2)
             self.assertEqual(vm.execute_prepared(p),3)
         self.assertIsNone(p._plan.last_state)

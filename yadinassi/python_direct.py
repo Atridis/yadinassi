@@ -71,8 +71,9 @@ def _admit_vm(vm,*,_transaction_owner=None):
         _reject('legacy imports/routine registries are not direct modules')
     if type(vm.variables) is not dict or type(vm.functions) is not dict or type(vm.types) is not dict or type(vm.module_names) is not set:
         _reject('custom namespace mappings are not supported')
-    if any(type(key) is not str or type(value) is not HostFunction for key,value in vm.functions.items()):
-        _reject('host registry requires canonical HostFunction entries')
+    for key,value in vm.functions.items():
+        if type(key) is not str or type(value) is not HostFunction:
+            _reject('host registry requires canonical HostFunction entries')
 
 
 def _source_facts(program):
@@ -264,7 +265,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     initializers=tuple(getattr(vm,'_direct_server_initializers',()))
     if exports is not None and exports.initializer_plan is not None:initializers+= (exports,)
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
-    context=make_boundary(vm)
+    context=None
     database=vm.database_context
     from .runtime import _DIRECT_EXECUTION_SCOPE_ABI
     with _DIRECT_EXECUTION_SCOPE_ABI(vm):
@@ -296,7 +297,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             if returns_expression:return result
             return None if result is vm.variables else result
         finally:
-            context._routine_exports.clear()
+            if context is not None:context._routine_exports.clear()
             vm._direct_active=False
             vm._transaction_activation_allowed=previous_transactions
 
@@ -346,7 +347,9 @@ def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
             from .python_direct_transactions import check as check_transaction
             check_transaction(_transaction_owner,database)
-    context=DirectBoundary(services=vm.functions)
+    # The live registry is assigned below; a normalized throwaway copy grants
+    # nothing and must not be rebuilt on every invocation.
+    context=DirectBoundary()
     context.vm=vm
     context._direct_transaction_owner=_transaction_owner
     context._import_check_required=bool(vm.imports)

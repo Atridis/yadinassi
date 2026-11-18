@@ -3,6 +3,7 @@
 No VM dispatch, ownership scan, or per-node guard. Exact supported values only:
 host callbacks require an explicit boundary rather than accidental str/equality.
 """
+from .python_direct_plain_array import PlainArray as _PlainArray
 from decimal import Decimal
 from .strings import concatenate as _join
 from .collation import _DIRECT_STRING_KEY_ABI as _string_key
@@ -146,14 +147,14 @@ def array_equal(left, right):
     Other operands keep their existing direct Python operator, including
     scalar conversion and explicitly supplied host equality behavior.
     """
-    if type(left) is list or type(right) is list or _fixed_identity(left) or _fixed_identity(right):
+    if type(left) is list or type(right) is list or type(left) is _PlainArray or type(right) is _PlainArray or _fixed_identity(left) or _fixed_identity(right):
         _array_date_check(left); _array_date_check(right)
         return left is right
     return left == right
 
 
 def array_not_equal(left, right):
-    if type(left) is list or type(right) is list or _fixed_identity(left) or _fixed_identity(right):
+    if type(left) is list or type(right) is list or type(left) is _PlainArray or type(right) is _PlainArray or _fixed_identity(left) or _fixed_identity(right):
         _array_date_check(left); _array_date_check(right)
         return left is not right
     # Do not rewrite arbitrary __ne__ as not __eq__: this slice does not change
@@ -198,10 +199,14 @@ def collection_not_equal(left, right):
 
 def map_identity_operators(*, array=False, structure=False):
     """Compile-time selection of exact Map identity, independent of other repairs."""
+    from .python_direct_plain_map import PlainMap
+    from .plain_value_list import PlainValueList, PlainValueListItem
     def equal(left, right):
         left_type,right_type=type(left),type(right)
         if (left_type is _TypedMap or right_type is _TypedMap or
-                (array and (left_type is list or right_type is list)) or
+                left_type is PlainMap or right_type is PlainMap or
+                left_type is PlainValueList or right_type is PlainValueList or left_type is PlainValueListItem or right_type is PlainValueListItem or
+                (array and (left_type is list or right_type is list or left_type is _PlainArray or right_type is _PlainArray)) or
                 (structure and (left_type is _DirectStructure or right_type is _DirectStructure)) or
                 _fixed_identity(left) or _fixed_identity(right)):
             _array_date_check(left); _array_date_check(right)
@@ -210,7 +215,9 @@ def map_identity_operators(*, array=False, structure=False):
     def not_equal(left, right):
         left_type,right_type=type(left),type(right)
         if (left_type is _TypedMap or right_type is _TypedMap or
-                (array and (left_type is list or right_type is list)) or
+                left_type is PlainMap or right_type is PlainMap or
+                left_type is PlainValueList or right_type is PlainValueList or left_type is PlainValueListItem or right_type is PlainValueListItem or
+                (array and (left_type is list or right_type is list or left_type is _PlainArray or right_type is _PlainArray)) or
                 (structure and (left_type is _DirectStructure or right_type is _DirectStructure)) or
                 _fixed_identity(left) or _fixed_identity(right)):
             _array_date_check(left); _array_date_check(right)

@@ -1,4 +1,9 @@
-# Direct Python execution: audit-driven broad slice (Draft, incompatible)
+# Historical direct Python audit (retired text-generator experiment)
+
+This document records an earlier experiment, not an available production route.
+The text generator now lives only in `tests/retired_text_compiler.py` as a
+differential oracle. Public compilation uses the direct Python AST generator;
+there is no experimental selector or error fallback to this oracle.
 
 The supplied `perf_audit1.md` inspected research source `5c9157ed`. Its exact
 benchmark harness/raw samples were not supplied, so the numbers are not treated
@@ -23,7 +28,7 @@ not promise custom cancellation polling within pure loops; normal Python
 interrupts remain available.
 
 ```python
-from yadinassi.experimental_naked_collections import prepare, REPAIRS
+from tests.retired_text_compiler import prepare, REPAIRS
 from yadinassi.experimental_naked_boundaries import BoundaryContext
 state = {}
 program = prepare(source, repairs=REPAIRS - {'resource_bounds', 'authority_checkpoints'})

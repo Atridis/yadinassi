@@ -82,7 +82,7 @@ class DirectDecimalDivisionTests(unittest.TestCase):
         self.assertEqual(output[350:],fixture['records'])
 
     def test_experiment_opt_in(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         source='Result=1/268435456;'
         raw=prepare(source,_trusted_entry=True).run({})['result']
         fixed=prepare(source,repairs=('decimal_division',),_trusted_entry=True).run({})['result']

@@ -8,7 +8,7 @@ from yadinassi import Interpreter, BSLError
 from yadinassi.values import BSLArray, BSLType
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.syntax.parser import parse
-from yadinassi.experimental_naked_collections import prepare, UnsupportedNakedSyntax, _TypedMap
+from tests.retired_text_compiler import prepare, UnsupportedNakedSyntax, _TypedMap
 from yadinassi.experimental_naked_structure import _DirectStructure
 from yadinassi.python_direct import REPAIRS
 

@@ -2,7 +2,7 @@ import unittest
 from decimal import Decimal
 from unittest.mock import patch
 from yadinassi import Interpreter
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.python_direct import REPAIRS
 
 class ArraySpecializationTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest.mock import patch
 from decimal import Decimal
-from yadinassi.experimental_naked_collections import prepare,ENV
+from tests.retired_text_compiler import prepare,ENV
 
 class NakedCollectionExperimentTests(unittest.TestCase):
     def setUp(self):

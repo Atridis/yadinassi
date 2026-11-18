@@ -13,7 +13,7 @@ from yadinassi.syntax.parser import parse
 class DirectASTDynamicScopesTests(unittest.TestCase):
     def no_old(self):
         stack=ExitStack()
-        stack.enter_context(patch.object(old,'prepare',side_effect=AssertionError('old text compiler')))
+        stack.enter_context(patch.object(old,'prepare',create=True,side_effect=AssertionError('old text compiler')))
         for name in ('block','call_routine','_execute_program'):
             stack.enter_context(patch.object(Interpreter,name,side_effect=AssertionError('legacy visitor')))
         return stack

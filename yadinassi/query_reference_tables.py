@@ -151,7 +151,7 @@ def unload(columns, rows):
     table._budget(len(rows), len(columns))
     for column, description in zip(columns, descriptions):
         table.columns._validate_name(column.name)
-        table.columns.items.append(BSLValueTableColumn(table, column.name, description, '', Decimal(0)))
+        table.columns._append_materialized(BSLValueTableColumn(table, column.name, description, '', Decimal(0)))
     for values in rows:
         row = object.__new__(BSLValueTableRow)
         row.table, row._deleted = table, False

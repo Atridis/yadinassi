@@ -74,7 +74,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
             self.assertEqual(events,['left','right'])
 
     def test_experiment_opt_in_is_explicit(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         source='A=New Array;B=New Array;Same=(A=B);'
         for repairs,expected in (((),True),(('array_identity_equality',),False)):
             scope=prepare(source,repairs=repairs,_trusted_entry=True).run({})
@@ -125,7 +125,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
                 self.assertIs(array_not_equal(left,right),True)
 
     def test_static_primitive_literals_exclude_helper_but_variables_do_not(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         for literal in ('1','True','"x"','Undefined'):
             for left,right in (('X',literal),(literal,'X')):
                 for operator in ('=','<>'):
@@ -167,7 +167,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
             self.assertIs(vm.execute('('+source+')'),expected)
 
     def test_literal_exclusion_is_exact_not_subclass_admission(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         class CustomInt(int):pass
         class CustomString(str):pass
         for value,excluded in ((1,True),(True,True),(Decimal(1),True),('x',True),(None,True),

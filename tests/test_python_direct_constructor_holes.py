@@ -4,7 +4,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter,BSLError
 from yadinassi.syntax.parser import parse
 from yadinassi.python_direct import PythonDirectUnsupported
-from yadinassi.experimental_naked_collections import prepare,UnsupportedNakedSyntax
+from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 
 class DirectConstructorHolesTests(unittest.TestCase):
     def test_all_constructors_positions_reject_before_effects(self):

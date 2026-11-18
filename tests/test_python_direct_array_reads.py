@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from yadinassi import Interpreter
 from yadinassi import python_direct_arrays as arrays
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.python_direct import REPAIRS
 
 

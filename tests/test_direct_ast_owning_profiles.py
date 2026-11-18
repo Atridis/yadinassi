@@ -7,7 +7,7 @@ class OwningProfilesTests(unittest.TestCase):
         from importlib import import_module
         original=getattr(import_module(module),cls)(name)
         self.addCleanup(original.doCleanups)
-        with patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('old compiler')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('old compiler')):
             original.setUp()
             try:getattr(original,name)()
             finally:original.tearDown()

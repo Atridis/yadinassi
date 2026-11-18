@@ -68,7 +68,7 @@ class ScalarSemanticsTests(unittest.TestCase):
     def test_reference_backends_agree_while_native_variant_differs(self):
         import os
         from unittest.mock import patch
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         for a,b in [('a','A'),('ё','ж'),('apple','Banana')]:
             source=f'result="{a}"<"{b}";'
             results=[]

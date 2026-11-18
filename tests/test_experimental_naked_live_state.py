@@ -5,7 +5,7 @@ from unittest.mock import patch
 from yadinassi import Interpreter
 from yadinassi.values import Reference,HostFunction
 from yadinassi.errors import BSLRuntimeError
-from yadinassi.experimental_naked_collections import prepare,UnsupportedNakedSyntax
+from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 FLAGS=('live_module_state','byref_routines','service_boundaries','dynamic_host_refs','error_boundaries')
 class LiveModuleStateTests(unittest.TestCase):

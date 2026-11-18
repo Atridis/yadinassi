@@ -20,7 +20,9 @@ def invalid():
 
 def owner(value):
     if type(value) is _TABLE:return value
-    root=dict.get(state(value),'table')
+    fields=state(value)
+    if any(type(k) is not str for k in fields):invalid()
+    root=dict.get(fields,'table')
     if type(root) is not _TABLE:invalid()
     return root
 
@@ -31,32 +33,17 @@ def resolve(boundary,value):
         boundary._check()
         if owner(value) is not root:invalid()
     def invoke():
-        check();kind=type(value);raw=state(value);expected=None
+        from .python_direct_plain_tables import validate
+        check();validate(value);kind=type(value);expected=None
         if kind is _TABLE:
-            items=dict.get(raw,'rows');expected=_ROW
+            items=state(root)['rows'];expected=_ROW
         elif kind is _COLUMNS:
-            items=dict.get(raw,'items');expected=_COLUMN
+            items=state(value)['_items'];expected=_COLUMN
+        elif state(value)['_deleted']:
+            items=state(root)['rows'];expected=_ROW
         else:
-            deleted=dict.get(raw,'_deleted')
-            if type(deleted) is not bool:invalid()
-            if deleted:
-                # Native deleted rows enumerate their still-live owner's rows.
-                items=dict.get(state(root),'rows');expected=_ROW
-            else:
-                columns=dict.get(state(root),'columns');cells=dict.get(raw,'cells')
-                if type(columns) is not _COLUMNS or owner(columns) is not root or type(cells) is not dict:invalid()
-                fields=dict.get(state(columns),'items')
-                if type(fields) is not list:invalid()
-                # Dict lookup must not reach a forged key's equality callback.
-                for name,expected_hook in (('__hash__',object.__hash__),('__eq__',object.__eq__)):
-                    actual=next(vars(base)[name] for base in _COLUMN.__mro__ if name in vars(base))
-                    if actual is not expected_hook:invalid()
-                for column in dict.keys(cells):
-                    if type(column) is not _COLUMN or owner(column) is not root:invalid()
-                items=[]
-                for column in fields:
-                    if type(column) is not _COLUMN or owner(column) is not root:invalid()
-                    items.append(dict.__getitem__(cells,column))
+            schema=state(value)['schema']
+            items=list(list.__iter__(value))
         if type(items) is not list:invalid()
         check()
         def iterator():

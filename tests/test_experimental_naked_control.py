@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_control import SharedBoundaryContext
 
 

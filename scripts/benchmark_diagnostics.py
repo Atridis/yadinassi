@@ -23,6 +23,7 @@ COUNT_SIZES = (32, 128, 512)
 # Keys specify exact source file AND function name, not similarly named functions
 # from unrelated subsystems. Counts are entries, including recursive calls.
 WATCHED = {
+    'direct_ast_compile': ('experimental_direct_ast.py', 'compile_module'),
     'source_map_compile': ('experimental_naked_errors.py', 'compile'),
     'prepared_ast_snapshot': ('python_direct.py', '_snapshot'),
     'sqlite_catalog_begin': ('sqlite_catalog.py', '_begin'),
@@ -43,7 +44,7 @@ WATCHED = {
 def validate_targets():
     """Fail visibly on renamed instrumentation targets instead of false zeros."""
     for file, name in WATCHED.values():
-        tree = ast.parse((ROOT / 'yadinassi' / file).read_text())
+        tree = ast.parse((ROOT / 'yadinassi' / file).read_text(encoding='utf-8'))
         if not any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name for node in ast.walk(tree)):
             raise ValueError(f'missing diagnostic target: {file}:{name}')
 
@@ -119,7 +120,7 @@ def diagnose(name, iterations, route, *, catalog_rows=32):
 def render(report):
     if report['schema'] != 'execution-call-diagnostics-v1' or not report['cases']:
         raise ValueError('invalid diagnostic report')
-    columns = ('python_calls', 'builtin_compile', 'source_map_compile', 'sqlite_execute',
+    columns = ('python_calls', 'builtin_compile', 'direct_ast_compile', 'source_map_compile', 'sqlite_execute',
                'configuration_read_source', 'configuration_validate_ddl',
                'configuration_validate_canonical', 'direct_boundary_check', 'catalog_owner_check')
     lines = ['## Диагностика вызовов без замера времени (отдельный процесс)', '',
@@ -129,8 +130,8 @@ def render(report):
              'Нулевой read_source при прогретом readonly COUNT допустим: полный допуск уже выполнен до профилирования; '
              'счётчик не измеряет число проверок полномочий или холодных допусков. '
              'В подписи указаны итерации и операции за один запуск; жизненный цикл формы считается одной операцией.', '',
-             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | SourceMap.compile | API SQLite execute | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
-             '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
+             '| Сценарий / режим / объём | Слой | Вызовы Python | Встроенный compile | Прямой AST compile_module | SourceMap.compile | API SQLite execute | read_source | Проверки DDL | Проверки конфигурации | Прямой _check | Проверки владельца |',
+             '|---|---|' + '---:|' * len(columns)]
     for case in report['cases']:
         for layer, data in case['layers'].items():
             if data['result'] != case['expected'] or any(type(v) is not int or v < 0 for v in data['counters'].values()):
@@ -138,10 +139,10 @@ def render(report):
             label = (case['case'] + ' / ' + labels.ROUTES.get(case['requested_route'],case['requested_route'])
                      + ' / итераций=' + str(case['iterations']) + ' / операций=' + str(case['operations_per_capture']))
             if case['catalog_rows'] is not None: label += ' / строк=' + str(case['catalog_rows'])
-            lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join(str(data['counters'][key]) for key in columns) + ' |')
+            lines.append('| ' + label + ' | ' + labels.LAYERS.get(layer,layer) + ' | ' + ' | '.join('—' if key == 'direct_ast_compile' and key not in data['counters'] else str(data['counters'][key]) for key in columns) + ' |')
     lines += ['', 'Порогов скорости нет; коэффициенты времени и цветовые категории к счётчикам не применяются. '
               'Счётчики SQLite отражают вызовы API Connection/Cursor, а не SQL-операторы, инструкции виртуальной машины, строки или триггеры. '
-              'Встроенный compile включает разбор в AST; SourceMap.compile — другая метрика, складывать их нельзя. '
+              'Встроенный compile включает разбор в AST; compile_module считает входы в текущий прямой AST-компилятор. SourceMap.compile относится к прежнему генератору и штатно равен нулю на новом пути. Эти счётчики не складываются. Тире означает отсутствие счётчика в старом JSON, а не ноль. '
               'Вызовы Python учитывают рекурсию; профилировщик добавляет накладные расходы и не подходит для сравнения времени. '
               'Наблюдается только текущий поток. Отсутствующие или несопоставимые слои не подменяются вымышленными данными.', '',
               'JSON сохраняет все именованные счётчики и сведения об исходниках и среде. COUNT выполняет одинаковое число '

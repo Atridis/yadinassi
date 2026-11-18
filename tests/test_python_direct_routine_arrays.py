@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest import TestCase
 from yadinassi import Interpreter
 from yadinassi.python_direct import REPAIRS
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation
 
 BODY='a=New Array;For i=0 To 99 Do a.Add(i);EndDo;s=0;For j=0 To 99 Do s=s+a.Get(j);EndDo;Return s;'

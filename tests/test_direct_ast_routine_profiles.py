@@ -17,7 +17,7 @@ Function Both(Val N=2) Return N+1; EndFunction
 Function Server() Counter=Counter+Both(); Return Counter; EndFunction
 R=Server(); C=Both();
 '''
-        with patch('yadinassi.experimental_naked_collections.prepare', side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True, side_effect=AssertionError('retired compiler')):
             vm=Interpreter(compilation_profile='managed-thick-file');self.addCleanup(vm.close)
             vm.execute_prepared(vm.prepare(source))
             self.assertEqual((vm.variables['r'],vm.variables['c']),(13,3))
@@ -34,7 +34,7 @@ R=Server(); C=Both();
         code=b'Procedure Inner() SetSafeMode(True); Raise "error"; EndProcedure\nProcedure Outer() SetSafeMode(True);Try Inner();Except EndTry;Message(SafeMode());EndProcedure\nProcedure OnStart() Outer();Message(SafeMode());EndProcedure'
         output=[]
         app=SourceApplication(source(code),output=output.append);self.addCleanup(app.close)
-        with patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
             app.start()
         self.assertEqual(output,['Да','Нет'])
 
@@ -90,7 +90,7 @@ R=Server(); C=Both();
             def external_get(self,name):return external[name]
             def external_set(self,name,value):external[name]=value
         text='Var Total; Procedure Event(x) Field=Field+1;x=Total;EndProcedure'
-        with patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('retired compiler')):
+        with patch('yadinassi.experimental_naked_collections.prepare',create=True,side_effect=AssertionError('retired compiler')):
             plan=prepare_handlers(parse(text),source_text=text,external_names=('FiElD',))
             self.assertEqual(plan.invoke('Event','client',[0],state=state,context_factory=Context),[None])
             state['total']=9

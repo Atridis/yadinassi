@@ -3,7 +3,7 @@ from contextlib import contextmanager
 import unittest
 
 from yadinassi.experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from yadinassi.experimental_naked_collections import prepare, UnsupportedNakedSyntax
+from tests.retired_text_compiler import prepare, UnsupportedNakedSyntax
 from yadinassi.python_direct import REPAIRS
 from yadinassi.values import HostFunction
 

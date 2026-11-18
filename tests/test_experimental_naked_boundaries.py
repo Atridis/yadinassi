@@ -3,7 +3,7 @@ import unittest
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
-from yadinassi.experimental_naked_collections import prepare
+from tests.retired_text_compiler import prepare
 from yadinassi.experimental_naked_boundaries import BoundaryContext,BoundaryViolation,HostMembers
 
 class NakedBoundaryIntegrationTests(unittest.TestCase):

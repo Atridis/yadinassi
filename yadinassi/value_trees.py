@@ -8,7 +8,7 @@ from weakref import WeakKeyDictionary, ref
 from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded, localcontext
 
 from .values import BSLArray, BSLObject, BSLType, HostFunction, NULL, equal, number
-from .structures import BSLStructure
+from .structures import BSLStructure, _key
 from .type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
                            _default, _adjust, _method, _text, _MAX_TOTAL_PRECISION)
@@ -245,8 +245,11 @@ def _move_number(value):
 
 class BSLValueTreeColumn(BSLObject):
     __slotnames__ = []
-    def __init__(self,table,*args):
-        BSLValueTableColumn.__init__(self,table,*args)
+    def __init__(self,table,name,value_type,title,width):
+        # Tree descriptors retain their own raw layout. Table schema ownership
+        # is not a representation grant for the independent tree boundary.
+        self.table=table;self.name=name;self.value_type=value_type
+        self.title=title;self.width=width;self._deleted=False
         _direct_tree_record(self,table)
     def get_member(self, name):
         if name.casefold() not in {"name", "имя", "title", "заголовок", "width", "ширина", "valuetype", "типзначения"}:
@@ -256,7 +259,11 @@ class BSLValueTreeColumn(BSLObject):
                     and name.casefold() in {"name", "имя", "title", "заголовок", "width", "ширина"}):
                 return Decimal(0) if name.casefold() in {"width", "ширина"} else ""
             raise ValueError("Колонка дерева удалена")
-        return BSLValueTableColumn.get_member(self, name)
+        key=name.casefold()
+        if key in ('name','имя'):return self.name
+        if key in ('title','заголовок'):return self.title
+        if key in ('width','ширина'):return self.width
+        return self.value_type
 
     def set_member(self, name, value):
         if self._deleted:
@@ -283,11 +290,21 @@ class BSLValueTreeColumn(BSLObject):
 class BSLValueTreeColumnCollection(BSLObject):
     __slotnames__ = []
     def __init__(self,table):
-        BSLValueTableColumnCollection.__init__(self,table)
+        self.table=table;self.items=[]
         _direct_tree_record(self,table)
-    __iter__ = BSLValueTableColumnCollection.__iter__
-    _validate_name = BSLValueTableColumnCollection._validate_name
-    find = BSLValueTableColumnCollection.find
+
+    def __iter__(self):return iter(self.items)
+
+    def _validate_name(self,name,current=None):
+        _text(name)
+        if name:
+            _key(name)
+            if any(c is not current and c.name.casefold()==name.casefold() for c in self.items):
+                raise ValueError(f"Колонка уже существует: {name}")
+
+    def find(self,name):
+        key=_text(name).casefold()
+        return next((column for column in self.items if column.name.casefold()==key),None)
     get_member = BSLValueTableColumnCollection.get_member
     get_index = BSLValueTableColumnCollection.get_index
     set_index = BSLValueTableColumnCollection.set_index

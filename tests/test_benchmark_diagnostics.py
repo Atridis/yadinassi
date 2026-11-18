@@ -50,10 +50,25 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         with patch.dict(bench.WATCHED, {'bad': ('python_direct.py', 'does_not_exist')}):
             with self.assertRaises(ValueError): bench.validate_targets()
 
+    def test_targets_are_read_as_utf8_independently_of_host_locale(self):
+        original = Path.read_text
+        encodings = []
+        def read(path, *args, **kwargs):
+            encodings.append(kwargs.get('encoding'))
+            if kwargs.get('encoding') != 'utf-8':
+                raise UnicodeError('host locale must not decode Python source')
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'read_text', read):
+            bench.validate_targets()
+        self.assertEqual(encodings, ['utf-8'] * len(bench.WATCHED))
+
     def test_prepared_excludes_setup_compilation_but_default_counts_it(self):
         default = bench.diagnose('structure.fields', 2, 'default')
         prepared = bench.diagnose('structure.fields', 2, 'prepared')
-        self.assertGreater(default['layers']['bsl']['counters']['source_map_compile'], 0)
+        self.assertEqual(default['layers']['bsl']['counters']['direct_ast_compile'], 1)
+        self.assertEqual(prepared['layers']['bsl']['counters']['direct_ast_compile'], 0)
+        self.assertGreater(default['layers']['bsl']['counters']['builtin_compile'], 0)
+        self.assertEqual(default['layers']['bsl']['counters']['source_map_compile'], 0)
         self.assertEqual(prepared['layers']['bsl']['counters']['source_map_compile'], 0)
         self.assertEqual(prepared['layers']['bsl']['counters']['builtin_compile'], 0)
         self.assertEqual(default['layers']['bsl']['result'], prepared['layers']['bsl']['result'])
@@ -131,6 +146,14 @@ class BenchmarkDiagnosticTests(unittest.TestCase):
         self.assertEqual(report, before)
         self.assertIn('Диагностика вызовов без замера времени', text)
         self.assertIn('API SQLite execute', text)
+        self.assertIn('Прямой AST compile_module', text)
+        table = [line for line in text.splitlines() if line.startswith('|')]
+        self.assertGreaterEqual(len(table), 3)
+        self.assertEqual({len(line.split('|')) - 2 for line in table}, {12})
+        self.assertIn('SourceMap.compile', text)
+        old_report = deepcopy(report)
+        del old_report['cases'][0]['layers']['bsl']['counters']['direct_ast_compile']
+        self.assertIn('—', bench.render(old_report))
         self.assertFalse(any(emoji in text for emoji in '🟩🟨🟧'))
         self.assertNotIn('median_seconds', str(case))
         self.assertNotIn('samples', case)

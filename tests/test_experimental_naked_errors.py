@@ -72,7 +72,7 @@ class NakedErrorMappingTests(unittest.TestCase):
 class NakedErrorIntegrationTests(unittest.TestCase):
     def test_exact_source_errors_and_partial_effects(self):
         from yadinassi import Interpreter
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         for source in ('result=1/0;','a=New Array;a.Add(1);result=a[2];',
                        'Function F() Return 1/0;EndFunction result=F();'):
             outcomes=[]
@@ -84,7 +84,7 @@ class NakedErrorIntegrationTests(unittest.TestCase):
                     except Exception as error:outcomes.append((type(error),str(error)))
             self.assertEqual(len(outcomes),2);self.assertEqual(*outcomes)
     def test_permission_error_is_not_swallowed_by_bsl_try(self):
-        from yadinassi.experimental_naked_collections import prepare
+        from tests.retired_text_compiler import prepare
         def denied():raise PermissionError('denied')
         with patch.dict(os.environ,{'YADINASSI_UNSAFE_COLLECTION_ABLATION':'1'}):
             program=prepare('caught=False;Try Host();Except caught=True;EndTry;',repairs=('error_boundaries',))

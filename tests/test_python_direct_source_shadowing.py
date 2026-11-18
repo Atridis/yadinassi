@@ -6,7 +6,7 @@ import test_source_application_exports as exports
 from test_configuration_source_runtime import source
 from yadinassi.configuration_source_runtime import SourceApplication
 from yadinassi.runtime import Interpreter
-from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax,prepare
+from tests.retired_text_compiler import UnsupportedNakedSyntax,prepare
 
 class SourceShadowingTests(unittest.TestCase):
     def setUp(self):

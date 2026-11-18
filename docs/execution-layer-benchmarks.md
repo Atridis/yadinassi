@@ -5,19 +5,14 @@ Run from the repository root with its supported Python environment:
 ```sh
 python -m unittest tests.test_benchmark_execution_layers
 python scripts/benchmark_execution_layers.py --iterations 1000 --rounds 9 > layers-default.json
-YADINASSI_UNSAFE_COLLECTION_ABLATION=1 python scripts/benchmark_execution_layers.py \
-  --bsl-route experimental --iterations 1000 --rounds 9 > layers-experimental.json
 ```
 
 The second command measures the public `Interpreter()` default, currently
 `python-direct`, without an explicit backend override. To compare the legacy
 backend, add `--bsl-route compiled-strict` and save a separate report. The JSON
 records both the requested route and the actual backend.
-The third explicitly measures the **trusted, standalone research translator**,
-not the production VM or a configuration application. It retains the research
-semantic repairs but excludes optional `resource_bounds` and
-`authority_checkpoints`; the exact repair set is recorded in every case. It is
-not safe to use this opt-in as an untrusted-code execution service.
+The retired standalone `experimental` text-compiler route is no longer accepted.
+Use `prepared` for repeated execution through the current public AST compiler.
 
 Use `--case arithmetic` (repeatable) to select workloads. Iterations must be
 1..100000. At least three rounds are required; use nine or more for evidence.

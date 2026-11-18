@@ -22,7 +22,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   self.assertEqual(output,['3'])
  def test_execute_program_does_not_reparse_or_prepare_legacy_engine(self):
   vm=Interpreter();program=parse('r=2+3;')
-  with patch('yadinassi.experimental_naked_collections.parse',side_effect=AssertionError('reparsed')),patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
+  with patch('yadinassi.experimental_naked_collections.parse',create=True,side_effect=AssertionError('retired reparsing')),patch('yadinassi.syntax.parser.parse',side_effect=AssertionError('reparsed')),patch.object(vm,'_compiled',side_effect=AssertionError('legacy')):
    vm.execute_program(program)
   self.assertEqual(vm.variables['r'],5)
  def test_repeated_variables_and_declared_globals(self):
@@ -75,7 +75,7 @@ class PythonDirectDefaultTests(unittest.TestCase):
   p=subprocess.run([sys.executable,'-m','yadinassi','--legacy','--execution-backend','interpreter','-c','x=1;'],capture_output=True,text=True)
   self.assertNotEqual(p.returncode,0)
  def test_experimental_gate_still_required_for_manual_prepare(self):
-  from yadinassi.experimental_naked_collections import prepare
+  from tests.retired_text_compiler import prepare
   with patch.dict(os.environ,{},clear=True):
    with self.assertRaises(RuntimeError):prepare('x=1;')
  def test_nested_direct_execution_is_explicitly_rejected(self):

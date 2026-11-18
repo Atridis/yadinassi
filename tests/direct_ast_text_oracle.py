@@ -3,7 +3,7 @@ from yadinassi.python_direct import REPAIRS, _reject, _owned_import_child
 from yadinassi.syntax import ast
 
 def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False):
-    from yadinassi.experimental_naked_collections import prepare,UnsupportedNakedSyntax
+    from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
     from yadinassi.python_direct_database import NAMES as DATABASE_NAMES
     from yadinassi.python_direct_services import CONSTRUCTORS
     from yadinassi.python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES

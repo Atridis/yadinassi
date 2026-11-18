@@ -9,11 +9,12 @@ BSLArray=_DIRECT_COLLECTION_CLASS_ABI[2][0]
 HostFunction=_DIRECT_COLLECTION_CLASS_ABI[3][0]
 BSLStructure=_STRUCTURE_ABI[1][0]
 BSLMap=_MAP_ABI[1][0]
+from .value_lists import BSLValueList
 
 _MAX_ARGUMENTS=1024
 _NATIVE={'array':BSLArray,'массив':BSLArray,
          'structure':BSLStructure,'структура':BSLStructure,
-         'map':BSLMap,'соответствие':BSLMap}
+         'map':BSLMap,'соответствие':BSLMap,'valuelist':BSLValueList,'списокзначений':BSLValueList}
 
 
 def construct(context,target,parameters=None):
@@ -56,12 +57,15 @@ def construct(context,target,parameters=None):
             if expected is BSLArray:
                 from .experimental_naked_resources import bounded_array
                 return bounded_array(*arguments)
+            if expected is BSLValueList:
+                from .plain_value_list import PlainValueList
+                return PlainValueList(*arguments)
             if expected is BSLStructure:
                 from .experimental_naked_structure import new_structure
                 return new_structure(*arguments)
-            from .experimental_naked_collections import _TypedMap
+            from .python_direct_plain_map import plain_map
             # The exact FixedMap copy path never expands arbitrary iterables.
-            return _TypedMap(*arguments)
+            return plain_map(*arguments)
         finally:context._check()
     # Preserve finite canonical factories and their current boundary/resource checks.
     bound=context.resolve_service('new:'+key)

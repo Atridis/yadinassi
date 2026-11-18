@@ -9,7 +9,7 @@ from yadinassi.values import BSLObject
 from yadinassi.syntax.parser import parse
 from yadinassi.experimental_naked_boundaries import BoundaryViolation
 from yadinassi.python_direct import REPAIRS
-from yadinassi.experimental_naked_collections import prepare,UnsupportedNakedSyntax
+from tests.retired_text_compiler import prepare,UnsupportedNakedSyntax
 
 class DirectValueTreeTests(unittest.TestCase):
     def vm(self):
