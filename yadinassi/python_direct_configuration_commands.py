@@ -216,6 +216,12 @@ def _validate_command(program,app):
                 expression(node.value)
             elif type(node) is ast.Assign and reader_kind(node.target) is not None:readonly(node.token)
             elif type(node) is ast.ExpressionStatement:expression(node.expression)
+            elif type(node) is ast.If:
+                # Validate every condition/body before lowering, even branches
+                # which will not run. Execution retains direct truth semantics.
+                for condition,body in node.branches:
+                    expression(condition);statements(body)
+                statements(node.otherwise)
             elif type(node) is ast.Try:
                 # Validate both branches before any effect, even unreachable
                 # handlers. Execution uses the existing typed error lowering,

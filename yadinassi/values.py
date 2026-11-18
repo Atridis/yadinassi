@@ -702,3 +702,5 @@ _DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)
 
 # Stable identity for bounded direct fixed-collection lookup.
 _DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray
+_DIRECT_FIXED_FIND_ABI=(_ArrayBase.find,tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in BSLFixedArray.__mro__))

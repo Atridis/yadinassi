@@ -22,7 +22,7 @@ from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
 from .binary_streams import BSLBinaryDataBuffer, BSLMemoryStream, BSLStream
 from .maps import BSLMap, BSLFixedMap
 from .value_lists import BSLValueList, BSLValueListItem
-from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
+from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings, _DIRECT_SOURCE_JSON_CLASSES
 from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALUE_IDS, ITERABLES
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
@@ -105,6 +105,9 @@ class CatalogBoundary:
             raise BoundaryViolation('unregistered or foreign database receiver')
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        from .python_direct_fixed_find import captured
+        bound=captured(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         bound=movements.captured(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
         return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
@@ -174,10 +177,33 @@ class CatalogBoundary:
         return super().reference_index(value,index)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        # Preserve the public JSON function/procedure contract before argument
+        # evaluation. This is only a restriction on an already admitted surface.
+        if require_value and any(type(value) is cls for cls in (BSLJSONReader, BSLJSONWriter)):
+            self._catalog_owner(value)
+            # Validate definition-time receiver/base ABI before reading metadata;
+            # neither a class override nor an instance hook may run here.
+            for cls,mro,entries in _DIRECT_SOURCE_JSON_CLASSES:
+                if not any(cls is base for base in type(value).__mro__):continue
+                current=vars(cls)
+                if (len(cls.__mro__)!=len(mro)
+                        or any(actual is not expected for actual,expected in zip(cls.__mro__,mro))
+                        or len(current)!=len(entries)
+                        or any(current.get(key) is not expected for key,expected in entries)):
+                    raise BoundaryViolation('JSON method metadata ABI changed')
+            fields=vars(value)
+            if (any(type(key) is not str for key in fields)
+                    or any(key in vars(base) for key in fields for base in type(value).__mro__)):
+                raise BoundaryViolation('JSON method instance metadata changed')
+            function=value.get_method(name)
+            if type(function) is not HostFunction:
+                raise BoundaryViolation('JSON method requires canonical HostFunction')
+            if not function.returns_value:
+                raise TypeError('Процедура не возвращает значение: '+name)
         # Tables already have an admitted method boundary. Only omission calls
         # need the extra call-site protocol; ordinary calls remain unchanged.
         table_holes=bool(omitted) and any(type(value) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW))
-        if not table_holes and type(value) not in (BSLValueList,BSLValueListItem):
+        if not table_holes and not any(type(value) is cls for cls in (BSLValueList,BSLValueListItem)):
             return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
         self._catalog_owner(value)
         function=value.get_method(name)
@@ -209,6 +235,8 @@ class CatalogBoundary:
         return invoke
 
     def resolve_member(self,value,name):
+        from . import python_direct_fixed_find as fixed_find
+        if fixed_find.owns(value,name):return fixed_find.resolve(self,value,name)
         if name=='__iter__':
             from . import python_direct_table_iteration as tables
             if tables.owns(value):return tables.resolve(self,value)

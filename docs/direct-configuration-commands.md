@@ -87,3 +87,14 @@ read and bound operation validates the live application, original thread/context
 issuer and canonical definition storage. Forged, stale, revoked or cross-scope
 readers fail closed. Existing no-database/client/DontUse/scalar restrictions remain
 in force; inspecting metadata does not grant execution or host-service authority.
+
+### Scalar conditional commands
+
+`If` / `ElsIf` / `Else` (`Если` / `ИначеЕсли` / `Иначе`) may select scalar
+commands, including qualified calls and nested `Try` / `Raise`. All conditions
+and all branch bodies are admitted up front, including unreachable branches,
+before the first command effect. Only the selected branch is executed, using
+the existing direct backend's condition semantics and error lowering. This adds
+no loop, constructor, dynamic evaluation or host capability. Fatal scope/lifetime
+violations remain outside the catchable error set; captured callables remain
+bound to their original active command and exact context.
