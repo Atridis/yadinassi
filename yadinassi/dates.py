@@ -67,6 +67,11 @@ class BSLDate:
         return f"{value.day:02}.{value.month:02}.{value.year:04} {value.hour}:{value.minute:02}:{value.second:02}"
 
 
+# Canonical slot access for direct collection equality's date-boundary gate.
+# Capture at definition time; do not dispatch a mutable require_known hook.
+_DIRECT_EQUALITY_DATE_STATE = (BSLDate, vars(BSLDate)['boundary'])
+
+
 def _require_date(value):
     if type(value) is not BSLDate:
         raise TypeError("Ожидается дата")

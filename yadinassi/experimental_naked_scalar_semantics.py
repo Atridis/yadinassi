@@ -5,6 +5,7 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 """
 from decimal import Decimal
 from .strings import concatenate as _join
+from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
 from .values import NULL, to_string
 from .experimental_naked_boundaries import BoundaryViolation
 from .experimental_naked_collections import _NakedMap, _TypedMap
@@ -87,3 +88,39 @@ def order(left, right, operator):
     if operator == '>': return left > right
     if operator == '>=': return left >= right
     raise ValueError('ordering operator required')
+
+
+_DATE_TYPE, _DATE_BOUNDARY_SLOT = _DIRECT_EQUALITY_DATE_STATE
+
+
+def _array_date_check(value):
+    if type(value) is _DATE_TYPE:
+        boundary = _DATE_BOUNDARY_SLOT.__get__(value, _DATE_TYPE)
+        if type(boundary) is not bool:
+            raise UnsupportedScalarSemantics('invalid exact date boundary state')
+        if boundary:
+            raise UnsupportedDateRange(
+                'Дата: после выхода за диапазон известно только скалярное '
+                'внутреннее представление; дальнейшая операция пока не поддерживается')
+
+
+def array_equal(left, right):
+    """Only exact native Array equality is repaired; no payload traversal.
+
+    Different BSL kinds compare unequal (values.equal's existing type gate).
+    Non-array operands keep their existing direct Python operator, including
+    scalar conversion and explicitly supplied host equality behavior.
+    """
+    if type(left) is list or type(right) is list:
+        _array_date_check(left); _array_date_check(right)
+        return left is right
+    return left == right
+
+
+def array_not_equal(left, right):
+    if type(left) is list or type(right) is list:
+        _array_date_check(left); _array_date_check(right)
+        return left is not right
+    # Do not rewrite arbitrary __ne__ as not __eq__: this slice does not change
+    # the pre-existing non-array operator contract.
+    return left != right
