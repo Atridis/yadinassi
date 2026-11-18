@@ -60,9 +60,8 @@ def construct(context,target,parameters=None):
                 from .experimental_naked_structure import new_structure
                 return new_structure(*arguments)
             from .experimental_naked_collections import _TypedMap
-            # Never expose dict(*foreign) iteration through a dynamic target.
-            if arguments:raise TypeError('direct Map dynamic constructor currently requires no arguments')
-            return _TypedMap()
+            # The exact FixedMap copy path never expands arbitrary iterables.
+            return _TypedMap(*arguments)
         finally:context._check()
     # Preserve finite canonical factories and their current boundary/resource checks.
     bound=context.resolve_service('new:'+key)

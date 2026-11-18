@@ -146,3 +146,7 @@ _DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items())
 _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
     '_key', 'BSLMap', 'BSLCatalogReference', 'BSLUUID', 'BSLTypeDescription',
     'BSLDate', 'BSLType', 'BSLNull'))
+
+# Definition-time identity/raw storage for bounded direct mutable snapshots.
+_DIRECT_FIXED_MAP_SNAPSHOT = (BSLFixedMap, vars(BSLObject)["__dict__"],
+    (BSLCatalogReference, BSLUUID, BSLTypeDescription, BSLDate), (BSLType, BSLNull))

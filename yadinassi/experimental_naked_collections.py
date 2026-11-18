@@ -14,6 +14,9 @@ from .syntax.parser import parse
 from .experimental_naked_boundaries import _HostMemberReference, _HostIndexReference, _MISSING
 
 from .values import Reference as _CanonicalReference, BSLFixedArray as _CanonicalFixedArray
+from .maps import _DIRECT_FIXED_MAP_SNAPSHOT
+
+_FIXED_MAP, _FIXED_MAP_STORAGE, _CANONICAL_VALUE_KEY_TYPES, _SINGLETON_KEY_TYPES = _DIRECT_FIXED_MAP_SNAPSHOT
 
 def _canonical_reference(value):
     return _CanonicalReference(value.get,value.set)
@@ -99,8 +102,32 @@ class _TypedMap(dict):
         return object,id(key)
     def __init__(self,*args):
         dict.__init__(self)
-        if args:
-            for key,value in dict(*args).items():self[key]=value
+        if not args:return
+        if len(args)!=1:raise TypeError('Конструктор соответствия ожидает один аргумент')
+        source=args[0]
+        if type(source) is not _FIXED_MAP:
+            raise TypeError('Конструктор соответствия ожидает фиксированное соответствие')
+        state=_FIXED_MAP_STORAGE.__get__(source, _FIXED_MAP)
+        items=dict.get(state, '_items')
+        if type(items) is not dict:raise TypeError('Некорректное фиксированное соответствие')
+        for token,entry in dict.items(items):
+            if type(token) is not tuple or len(token)!=2 or type(entry) is not tuple or len(entry)!=2:
+                raise TypeError('Некорректное фиксированное соответствие')
+            key,value=entry;kind=type(key)
+            if kind is str or kind is bool or kind is Decimal or kind is type(None):
+                if token[0] is not kind or type(token[1]) is not kind or not (token[1] is key or token[1]==key):
+                    raise TypeError('Некорректное фиксированное соответствие')
+            elif any(kind is cls for cls in _SINGLETON_KEY_TYPES):
+                if token[0] is not kind or token[1] is not key:
+                    raise TypeError('Некорректное фиксированное соответствие')
+                token=(object,id(key))
+            elif any(kind is cls for cls in _CANONICAL_VALUE_KEY_TYPES) or token[0] is not object:
+                # Date/UUID/descriptors use value equality in canonical maps,
+                # unlike current direct identity keys. Never silently change it.
+                raise TypeError('direct Map copy: canonical value-key semantics are not integrated')
+            elif type(token[1]) is not int or token[1]!=id(key):
+                raise TypeError('Некорректное фиксированное соответствие')
+            dict.__setitem__(self,token,entry)
     def __setitem__(self,key,value):dict.__setitem__(self,self.token(key),(key,value))
     def __getitem__(self,key):return dict.__getitem__(self,self.token(key))[1]
     def __delitem__(self,key):

@@ -753,3 +753,25 @@ where New Map(FixedMap) is still unsupported. No native fixtures or expected out
 were changed, and full collections parity is not claimed. The existing shallow
 Structure snapshot/copy-back and spelling tests pass. Python3.10 still has the
 pre-existing literal-error source-column mismatch; that test is not weakened.
+
+### Bounded direct mutable Map from FixedMap (2026-11-18)
+
+Direct Map can copy an exact canonical FixedMap containing string, number,
+boolean, Undefined, Type/Null singleton and identity-object keys. Storage is a
+fresh shallow map: original keys and nested payload aliases remain. The dynamic
+constructor uses the same route. No arbitrary iterable expansion, receiver hooks,
+payload hashing/equality or deep traversal is introduced; malformed storage and
+noncanonical roots reject. Extra arguments run before the arity error.
+
+**Explicit remaining key limitation:** canonical Date, UUID, TypeDescription and
+CatalogReference keys use value equality; the present direct Map uses identity
+for these domains. Copy therefore rejects them explicitly and atomically rather
+than silently changing lookups or losing entries. Completing those semantics
+requires a separate change to direct insertion, lookup, deletion, snapshots and
+serialization, with canonical-field/ABI authority checks. The source and prior
+assignment target remain unchanged on refusal. No full Map parity is claimed.
+
+Descriptor-map replay now reaches source line3106, where the existing direct
+Array.Find rejects a host value with UnsupportedScalarSemantics. That is still a
+BaseException boundary failure and can abort unittest setup; this copy slice
+must not be presented as making the complete light runner or native replay pass.
