@@ -300,10 +300,26 @@ def _same(expected, actual):
             return False
         return type(value) is int and expected.int == value
     if type(expected) is tuple:
-        return len(expected) == len(actual) and all(_same(a, b) for a, b in zip(expected, actual))
+        if len(expected) != len(actual):
+            return False
+        for a, b in zip(expected, actual):
+            try:
+                equal = _same(a, b)
+            except StopIteration as error:
+                raise RuntimeError('generator raised StopIteration') from error
+            if not equal:
+                return False
+        return True
     if is_dataclass(expected):
         try:
-            return all(_same(getattr(expected, f.name), getattr(actual, f.name)) for f in fields(expected))
+            for f in fields(expected):
+                try:
+                    equal = _same(getattr(expected, f.name), getattr(actual, f.name))
+                except StopIteration as error:
+                    raise RuntimeError('generator raised StopIteration') from error
+                if not equal:
+                    return False
+            return True
         except AttributeError:
             return False
     return expected == actual

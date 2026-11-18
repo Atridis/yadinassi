@@ -30,6 +30,17 @@ not replace the saved source or admit a new application under an old marker.
 Projection removes only validated form/default-form metadata and preserves
 QName namespace bindings without changing the global XML namespace registry.
 
+The shared structural comparator walks tuple elements and dataclass fields in
+order with recursive, short-circuiting loops. It still checks exact types and
+UUID integer payloads and reads each field only when reached; it does not trust
+object identity or cache a successful comparison. The loops avoid generator
+allocation, not validation work. `StopIteration` from a recursive comparison or
+field read retains the former generator's `RuntimeError` wrapping and cause;
+truth-testing the result remains outside that wrapping boundary.
+Cyclic input still raises `RecursionError`;
+this is not a promise of an unchanged recursion-depth threshold or support for
+arbitrarily deep structures. Source and database admission checks are unchanged.
+
 ## Closed manifest
 
 `InventoryApplication.xml` is an authored host extension, not native standard
