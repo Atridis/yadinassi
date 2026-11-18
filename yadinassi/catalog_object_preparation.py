@@ -192,7 +192,8 @@ def _admit_catalog_object_source(source, schema):
 
     Every branch is inspected; validation never runs a handler or writes data.
     Runtime receiver/type and writer validation remain authoritative at each Write.
-    Legacy expression resource quotas are not part of the direct profile.
+    Direct preparation has its own opt-in scalar/work budget profile; counters
+    are per invocation and are not authority cached in this admitted source.
     """
     from dataclasses import fields
     if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:

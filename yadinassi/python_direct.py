@@ -284,36 +284,38 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     validate_calls(vm,calls,registry=prospective,layout=frozenset(vm.module_names)|declared,initializers=initializers)
     context=make_boundary(vm)
     database=vm.database_context
-    vm.module_names.update(declared)
-    if exports is not None:
-        if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
-        vm._direct_routine_modules.update({name:exports for name in exports.signatures})
-    vm._direct_server_initializers=initializers
-    previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
-    if database is not None:vm._transaction_activation_allowed=False
-    vm._direct_active=True
-    try:
-        with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
-            decimal_context.prec=38
-            from .python_direct_imports import initialize, record_exports
-            incoming=program if _prepared is None else list(_prepared._snapshot)
-            record_exports(vm,incoming)
-            from .database_transactions import admission as transaction_admission
-            with transaction_admission(False):
-                initialize(vm,incoming)
+    from .runtime import _DIRECT_EXECUTION_SCOPE_ABI
+    with _DIRECT_EXECUTION_SCOPE_ABI(vm):
+        vm.module_names.update(declared)
+        if exports is not None:
+            if not hasattr(vm,'_direct_routine_modules'):vm._direct_routine_modules={}
+            vm._direct_routine_modules.update({name:exports for name in exports.signatures})
+        vm._direct_server_initializers=initializers
+        previous_transactions=getattr(vm,"_transaction_activation_allowed",True)
+        if database is not None:vm._transaction_activation_allowed=False
+        vm._direct_active=True
+        try:
+            with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
+                decimal_context.prec=38
+                from .python_direct_imports import initialize, record_exports
+                incoming=program if _prepared is None else list(_prepared._snapshot)
+                record_exports(vm,incoming)
+                from .database_transactions import admission as transaction_admission
+                with transaction_admission(False):
+                    initialize(vm,incoming)
+                vm._transaction_activation_allowed=previous_transactions
+                from .python_direct_transactions import execution as transaction_execution
+                with transaction_execution(vm) as owner:
+                    context=make_boundary(vm,_transaction_owner=owner)
+                    result=plan.run(vm.variables,context=context)
+            vm._self_module.ready=True
+            vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
+            if returns_expression:return result
+            return None if result is vm.variables else result
+        finally:
+            context._routine_exports.clear()
+            vm._direct_active=False
             vm._transaction_activation_allowed=previous_transactions
-            from .python_direct_transactions import execution as transaction_execution
-            with transaction_execution(vm) as owner:
-                context=make_boundary(vm,_transaction_owner=owner)
-                result=plan.run(vm.variables,context=context)
-        vm._self_module.ready=True
-        vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
-        if returns_expression:return result
-        return None if result is vm.variables else result
-    finally:
-        context._routine_exports.clear()
-        vm._direct_active=False
-        vm._transaction_activation_allowed=previous_transactions
 
 
 def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):

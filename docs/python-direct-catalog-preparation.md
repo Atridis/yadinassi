@@ -40,15 +40,36 @@ uses identity for such objects and would miss equal, separately materialized
 references. This costs explicit method dispatch at map operations, not a return
 to AST/VM execution. No performance claim is made for this patch.
 
-## Deliberately not transferred
+## Scoped resource accounting
 
-The old interpreter's per-AST-node step count, Decimal object-size/exponent
-quota, and cumulative UTF-8 accounting of every intermediate result are execution
-resource quotas, not catalog field/schema checks. They are not copied into the
-generated route. There is no per-expression observer. Extremely expensive local
-arithmetic, recursion or allocation is not given a new sandbox/resource guarantee;
-Python exceptions before commit still unwind the existing writer transaction.
-Existing field, section-buffer, message and persistence constraints remain.
+Only catalog preparation opts into generated work/scalar checks. Ordinary direct
+programs have no new per-expression cost. This profile does not call VM visitors
+or `compiled_before`/`compiled_after`; generated code checks before each reached
+expression/statement and at loop backedges, and validates each scalar expression
+result before it can feed later operations or assignments.
+
+A fresh preparation interpreter/context owns the remaining 16,384 work units and
+1 MiB cumulative UTF-8 result budget. Routines and nested calls share those
+counters; cached validators retain code/options only. Each string result is also
+limited to 65,536 characters, checked before UTF-8 encoding. Exact Decimals must
+remain finite, with the existing 256-byte object-size and adjusted-exponent ±64
+bounds. Foreign types are neither coerced nor traversed by these guards.
+
+These are local subset limits, not native 1C limits or identical VM node counts.
+One operation can allocate its result before the result check: for bounded string
+operands, concatenation can briefly produce up to twice the per-result bound.
+Existing host formatting/source/field/container limits still apply; this is not a
+universal host-allocation sandbox or rollback guarantee. Python recursion limits
+may reject deep recursion earlier. Budget failure prevents successful preparation
+and later persistence, but earlier disposable candidate changes are not undone.
+The preparation AST profile does not admit Try/Except, so source cannot catch a
+budget failure and continue consuming work. Closed/revoked authority stays fatal.
+
+The cache key includes this profile and authority-checkpoint compiler options.
+Tests cover intermediate expansion, cumulative multibyte text, numeric results,
+loop/recursion work, cache reuse after success/error, hostile payload non-access
+and unchanged ordinary compiler output. Existing native fixtures are not changed;
+this restores a bounded local preparation contract, not native parity.
 
 ## Verification
 

@@ -1,6 +1,7 @@
 from .runtime_dependencies import runtime_module as _runtime_module
 from functools import lru_cache
 from weakref import WeakValueDictionary
+from threading import RLock
 from contextlib import nullcontext, contextmanager
 from .http_security import (BSLOpenSSLSecureConnection, BSLFileCertificationAuthorityCertificates,
                             BSLOSCertificationAuthorityCertificates, BSLInternetProxy)
@@ -244,6 +245,9 @@ class Interpreter:
         self._family_released = False
         self._family_generation = 0 if family_owner is None else family_owner._family_generation
         if family_owner is None:
+            self._direct_execution_lock = RLock()
+            self._direct_executions = 0
+            self._direct_cancelling = False
             self._schema_scopes = WeakValueDictionary()
         self._bind_schema_scope()
         self._scheduler = (Scheduler(self._native_target, execution_backend=self.execution_backend, compiled_ast_contract=self.compiled_ast_contract) if family_owner is None
@@ -506,11 +510,29 @@ class Interpreter:
             from .inventory_enum_runtime import bind as bind_storage_enums
             bind_storage_enums(self,self._metadata)
 
+    @contextmanager
+    def _direct_execution_scope(self):
+        """Account for synchronous direct execution without driving the scheduler."""
+        root=self._family_owner
+        with root._direct_execution_lock:
+            if root._direct_cancelling:
+                raise RuntimeError('Cannot execute while scheduler cancellation is active')
+            root._direct_executions+=1
+        try:yield
+        finally:
+            with root._direct_execution_lock:root._direct_executions-=1
+
     def cancel_pending(self):
         """Cancel current cooperative work without retiring the module family."""
         if self._family_owner is not self or self._family_closed:
             raise ValueError('active root interpreter required')
-        self._scheduler.reset()
+        with self._direct_execution_lock:
+            if self._direct_executions or self._direct_cancelling:
+                raise RuntimeError('Cannot reset an active scheduler')
+            self._direct_cancelling=True
+        try:self._scheduler.reset()
+        finally:
+            with self._direct_execution_lock:self._direct_cancelling=False
 
     def close(self):
         """Release suspended frames explicitly at the embedding lifecycle boundary."""
@@ -2987,3 +3009,6 @@ _DIRECT_TRANSACTION_ABI = (Interpreter._begin_transaction, Interpreter._commit_t
 
 # Definition-time Message identity for the finite direct configuration command lane.
 _DIRECT_CONFIGURATION_MESSAGE_ABI = Interpreter._message
+
+# Definition-time execute lease; instance/class rebinding cannot replace it.
+_DIRECT_EXECUTION_SCOPE_ABI = Interpreter._direct_execution_scope

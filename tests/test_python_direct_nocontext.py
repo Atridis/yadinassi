@@ -95,7 +95,14 @@ R=Read();''')
                 else:vm._module_context_stack[-1]=True
             vm.register_function('Change',change)
             vm.execute('&AtServerNoContext\nProcedure F(X) X=9;Change();EndProcedure X=1;')
-            with self.assertRaises(BoundaryViolation):vm.execute('F(X);')
+            if action=='reset':
+                with patch.object(vm._scheduler,'reset',wraps=vm._scheduler.reset) as reset:
+                    with self.assertRaisesRegex(RuntimeError,'^Cannot reset an active scheduler$') as caught:
+                        vm.execute('F(X);')
+                    self.assertIs(type(caught.exception),RuntimeError)
+                    reset.assert_not_called()
+            else:
+                with self.assertRaises(BoundaryViolation):vm.execute('F(X);')
             self.assertEqual(vm.variables['x'],1);self.assertTrue(vm._has_module_context)
             self.assertEqual(vm.execution_context,'client')
 

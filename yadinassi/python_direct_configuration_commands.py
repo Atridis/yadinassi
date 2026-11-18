@@ -11,7 +11,7 @@ from .experimental_naked_collections import prepare
 from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
 from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot
 from .native_targets import target_context
-from .runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI
+from .runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI, _DIRECT_EXECUTION_SCOPE_ABI
 from .syntax import ast
 from .syntax.parser import parse
 from .values import HostFunction
@@ -284,17 +284,18 @@ def execute_command(app,text,source):
         _trusted_entry=True,_return_last_expression=True,_configuration_calls=True)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
-    scope.enter()
-    owner._transaction_activation_allowed=False
-    owner._direct_active=True
-    try:
-        context=ConfigurationBoundary(app,owner)
-        with target_context(owner.native_target),localcontext():
-            result=plan.run(owner.variables,context=context)
-            scope.check(app,owner)
-            if not program or type(program[-1]) is not ast.ExpressionStatement:return None
-            scope.values((result,));return result
-    finally:
-        owner._direct_active=False
-        owner._transaction_activation_allowed=previous
-        scope.leave()
+    with _DIRECT_EXECUTION_SCOPE_ABI(owner):
+        scope.enter()
+        owner._transaction_activation_allowed=False
+        owner._direct_active=True
+        try:
+            context=ConfigurationBoundary(app,owner)
+            with target_context(owner.native_target),localcontext():
+                result=plan.run(owner.variables,context=context)
+                scope.check(app,owner)
+                if not program or type(program[-1]) is not ast.ExpressionStatement:return None
+                scope.values((result,));return result
+        finally:
+            owner._direct_active=False
+            owner._transaction_activation_allowed=previous
+            scope.leave()

@@ -101,7 +101,14 @@ Z=100;Tick();
                 else:vm._module_context_stack[-1]=True
             vm.register_function('Change',change)
             vm.execute('&AtClientAtServerNoContext\nProcedure F() Change();EndProcedure')
-            with self.assertRaises(BoundaryViolation):vm.execute('F();')
+            if action=='reset':
+                with patch.object(vm._scheduler,'reset',wraps=vm._scheduler.reset) as reset:
+                    with self.assertRaisesRegex(RuntimeError,'^Cannot reset an active scheduler$') as caught:
+                        vm.execute('F();')
+                    self.assertIs(type(caught.exception),RuntimeError)
+                    reset.assert_not_called()
+            else:
+                with self.assertRaises(BoundaryViolation):vm.execute('F();')
             self.assertEqual(vm._module_context_stack,[True]);self.assertEqual(vm.execution_context,'client')
 
     def test_malformed_pairs_refuse_before_effects(self):

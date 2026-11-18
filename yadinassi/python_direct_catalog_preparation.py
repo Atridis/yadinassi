@@ -3,7 +3,7 @@
 No persistence endpoint is exposed here. CatalogObject._write retains source
 selection, schema validation, transaction ownership and uncertain-write recovery.
 """
-from decimal import localcontext
+from decimal import Decimal, localcontext
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .experimental_naked_collections import prepare, _Cell
 from .experimental_naked_live_state import _ForwardReference
@@ -33,6 +33,28 @@ class CatalogPreparationBoundary(BoundaryContext):
         super()._check()
         if self.vm._family_closed:raise BoundaryViolation('catalog preparation is closed')
         if self._transaction_scope is not None:self._transaction_scope.check()
+
+    def preparation_step(self):
+        # Per invocation only: prepared validators cache code, never counters.
+        self._check()
+        self.vm.remaining-=1
+        if self.vm.remaining<0:raise ValueError('catalog preparation: step budget')
+
+    def preparation_value(self,value):
+        self._check()
+        if type(value) is Decimal and (not value.is_finite()
+                or value.__sizeof__()>256 or abs(value.adjusted())>64):
+            raise ValueError('catalog preparation: numeric budget')
+        if type(value) is str:
+            # Per-result guard precedes encoding, then cumulative UTF-8 cost.
+            if len(value)>65536:raise ValueError('catalog preparation: text budget')
+            self.vm.text_budget-=len(value.encode('utf-8'))
+            if self.vm.text_budget<0:raise ValueError('catalog preparation: text budget')
+        return value
+
+    def checkpoint(self):
+        super().checkpoint()
+        self.preparation_step()
 
     def _adopt(self,value):
         if self._transaction_scope is not None:self._check()
@@ -159,6 +181,7 @@ from dataclasses import dataclass
 # This fixed constructor set matches _ObjectInterpreter's closed allowlist.
 # Changing that profile requires changing these compiler options together.
 _VALIDATOR_CONSTRUCTORS=('соответствие','сообщениепользователю')
+_VALIDATOR_EXTRA_REPAIRS=('authority_checkpoints',)
 
 @dataclass(frozen=True,slots=True)
 class PreparedCatalogValidator:
@@ -168,15 +191,16 @@ class PreparedCatalogValidator:
     _plan: object
 
 
-def _validator_key(manager,source):
+def _validator_key(manager,source,repairs):
     from .native_targets import current_native_target
     from .execution_policy import current_backend
-    return (source,manager._schema,current_native_target(),current_backend(),tuple(REPAIRS),_VALIDATOR_CONSTRUCTORS)
+    return (source,manager._schema,current_native_target(),current_backend(),repairs,_VALIDATOR_CONSTRUCTORS,'scalar-bounds-v1')
 
 
 def prepared_validator(manager,source,*,prepared=None):
     """One explicit last-plan slot per schema-bound manager, never authority."""
-    key=_validator_key(manager,source)
+    repairs=tuple(REPAIRS)+_VALIDATOR_EXTRA_REPAIRS
+    key=_validator_key(manager,source,repairs)
     if prepared is not None:
         if type(prepared) is not PreparedCatalogValidator or prepared._key != key:
             raise ValueError('catalog preparation: prepared source/schema/options changed')
@@ -187,10 +211,10 @@ def prepared_validator(manager,source,*,prepared=None):
     program=_admit_catalog_object_source(source,manager._schema)
     names=_ALIASES|{field.name.casefold() for field in manager._schema.fields}|{section.name.casefold() for section in manager._schema.tabular_sections}
     if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
-    plan=prepare(source,source_name='<catalog-preparation>',repairs=REPAIRS,
+    plan=prepare(source,source_name='<catalog-preparation>',repairs=repairs,
                  constructors=_VALIDATOR_CONSTRUCTORS,
                  external_names=tuple(names|_SELF),parsed_ast=program,
-                 _trusted_entry=True,_export_routines=True)
+                 _trusted_entry=True,_export_routines=True,_catalog_preparation_bounds=True)
     result=PreparedCatalogValidator(key,tuple(program),plan)
     manager._direct_validator_plan=result
     return result

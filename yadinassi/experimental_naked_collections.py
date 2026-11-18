@@ -285,7 +285,9 @@ class Program:
             raise converted from None
 
 
-def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False,_configuration_calls=False):
+def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),constructors=(),service_references=None,module_names=(),external_names=(),parsed_ast=None,_trusted_entry=False,_return_last_expression=False,_export_routines=False,_initialize_module=True,_persistent_routines=False,_source_routine_scopes=False,_source_callable_externals=(),_source_scalar_routines=False,_require_last_expression=False,_source_shadowable_externals=(),_host_routine_bindings=False,_host_callable_externals=(),_import_names=(),_dynamic_new=False,_configuration_calls=False,_catalog_preparation_bounds=False):
+    if type(_catalog_preparation_bounds) is not bool:
+        raise TypeError('catalog preparation bounds require Boolean')
     # Internal trusted backend entry, not an environment mutation or sandbox grant.
     if type(_trusted_entry) is not bool:raise TypeError("trusted entry requires Boolean")
     if type(_dynamic_new) is not bool:raise TypeError('dynamic construction opt-in requires Boolean')
@@ -300,6 +302,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if 'uca_string_order' in repairs and 'native_order' not in repairs:
         raise ValueError('uca_string_order requires native_order')
     services='service_boundaries' in repairs;authority='authority_checkpoints' in repairs
+    if _catalog_preparation_bounds and not (_trusted_entry and services and authority):
+        raise ValueError('catalog preparation bounds require trusted authority boundaries')
     if type(_host_routine_bindings) is not bool:raise TypeError('host routine bindings require Boolean')
     if _host_routine_bindings and not (_trusted_entry and services and {'byref_routines','dynamic_host_refs'}<=repairs):
         raise ValueError('host routine bindings require trusted service and reference boundaries')
@@ -628,7 +632,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         value=expression(node)
         if 'bsl_truth' not in repairs:return value
         if type(node) is ast.Literal and type(node.value) is bool:return value
-        if type(node) is ast.Literal and type(node.value) is Decimal:return literal(node.value!=0)
+        if not _catalog_preparation_bounds and type(node) is ast.Literal and type(node.value) is Decimal:return literal(node.value!=0)
         return '_bsl_truth('+value+')'
     def _expression(node,require_value=True):
         kind=type(node)
@@ -651,7 +655,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
             if node.operator in ('AND','OR') and 'bsl_truth' in repairs:
                 return '('+truth_expression(node.left)+(' and ' if node.operator=='AND' else ' or ')+truth_expression(node.right)+')'
             if node.operator=='+' and 'bsl_presentation' in repairs:
-                if type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str:
+                if not _catalog_preparation_bounds and type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str:
                     return literal(scalar_ops.concatenate(node.left.value,node.right.value))
                 left=expression(node.left);right=expression(node.right)
                 if type(node.left) is ast.Literal and type(node.left.value) is not str:return '('+left+' + '+right+')'
@@ -877,8 +881,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         raise UnsupportedNakedSyntax('expression '+kind.__name__)
     def expression(node,require_value=True):
         text=_expression(node,require_value)
+        if _catalog_preparation_bounds:
+            text='_context.preparation_value((_context.preparation_step(), '+text+')[1])'
         return source_map.expression(text,node) if source_map is not None else text
     def statement(node,depth):
+        if _catalog_preparation_bounds:emit(depth,'_context.preparation_step()')
         if source_map is None:return _statement(node,depth)
         source_map.enter(node)
         try:return _statement(node,depth)
