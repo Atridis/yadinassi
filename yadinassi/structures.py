@@ -252,3 +252,6 @@ _DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items())
 _DIRECT_COLLECTION_TRIM_CHARS = trim_all.__globals__['_WHITESPACE']
 _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
     '_key', 'BSLStructure', 'BSLKeyAndValue', 'trim_all', '_DIRECT_COLLECTION_TRIM_CHARS'))
+
+# Definition-time identity and raw storage access for direct shallow thawing.
+_DIRECT_FIXED_STRUCTURE_SNAPSHOT = (BSLFixedStructure, vars(BSLObject)["__dict__"])

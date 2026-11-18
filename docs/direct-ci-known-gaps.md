@@ -738,3 +738,18 @@ ordinary reported BSLRuntimeError, not successful full collections parity. The
 larger focused cohort still has its pre-existing array diagnostic-text mismatch
 (test_exact_source_errors_and_partial_effects); this slice does not hide or update
 that assertion. Python3.10 source-column precision also remains limited.
+
+### Direct mutable Structure from FixedStructure (2026-11-18)
+
+An exact canonical FixedStructure can now be copied into direct mutable Structure,
+including the dynamic constructor path. Storage is fresh at the top level; field
+spelling/order and nested payload identity remain unchanged. Extra arguments are
+still evaluated before the one-argument diagnostic. Canonical definition identity
+and raw dictionary access avoid receiver hooks; subclasses, foreign values and
+malformed storage shapes are rejected without traversing payload objects.
+
+The unchanged descriptor-map replay advances from source line3013 to line3014,
+where New Map(FixedMap) is still unsupported. No native fixtures or expected output
+were changed, and full collections parity is not claimed. The existing shallow
+Structure snapshot/copy-back and spelling tests pass. Python3.10 still has the
+pre-existing literal-error source-column mismatch; that test is not weakened.

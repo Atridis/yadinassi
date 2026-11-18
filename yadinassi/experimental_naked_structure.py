@@ -4,6 +4,9 @@ Only spelling/value and composition version are retained. Static dot access can
 use already-folded keys; dynamic key operations validate only their own key.
 """
 from .strings import _WHITESPACE
+from .structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
+
+_FIXED_STRUCTURE, _FIXED_STORAGE = _DIRECT_FIXED_STRUCTURE_SNAPSHOT
 
 class _DirectStructure(dict):
     __slots__ = ('_version',)
@@ -33,6 +36,20 @@ def structure_key(name):
 
 
 def new_structure(keys='', *values):
+    if type(keys) is _FIXED_STRUCTURE:
+        if values:raise TypeError('Копирование структуры ожидает один аргумент')
+        # Read only exact canonical storage without invoking receiver hooks.
+        # Validate names/container shape, never the shared payload values.
+        state=_FIXED_STORAGE.__get__(keys, _FIXED_STRUCTURE)
+        items=dict.get(state, '_items')
+        if type(items) is not dict:raise TypeError('Некорректная фиксированная структура')
+        for key,entry in dict.items(items):
+            if (type(key) is not str or type(entry) is not tuple or len(entry)!=2
+                    or type(entry[0]) is not str or structure_key(entry[0])!=key):
+                raise TypeError('Некорректная фиксированная структура')
+        result=_DirectStructure()
+        dict.update(result,items)
+        return result
     if type(keys) is not str:
         raise TypeError('Список свойств структуры должен быть строкой')
     result=_DirectStructure()
