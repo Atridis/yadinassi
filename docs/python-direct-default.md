@@ -83,3 +83,22 @@ This is a compile-time classification, not a blanket conversion of host
 `NameError` exceptions, and adds no lookup to valid bound-name reads. Conditional
 reads before a local assignment and other incomplete local/reference contracts
 are not claimed fixed by this slice.
+
+### Finite TextDocument operations
+
+Standalone direct execution now admits the canonical `TextDocument` constructor
+(including dynamic construction), its bounded in-memory text/line operations,
+and ordinary bounded file `Read`/`Write`. The implementation reuses the finite
+canonical resource adapter, not VM member dispatch or an arbitrary host-object
+grant. Saved method values are checked again at invocation; exact class ABI,
+state invariants, constructor aliases, and current boundary lifetime are checked.
+Optional file encoding/separator slots use the existing defaults. Required holes,
+UI/async operations, properties, indexing and iteration remain unavailable.
+
+The existing 44 native TextDocument observations cover selected in-memory
+behavior, not full parity: the historical aggregate comparison was red, and
+mutator return-value expressions are not established by those observations.
+File Read/Write and their encoding/newline options remain local extensions
+without native observations; passing local tests is not new native evidence.
+A server routine can use a document locally and return text; transport of the
+TextDocument object itself between client/server contexts remains unsupported.

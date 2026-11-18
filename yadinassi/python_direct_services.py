@@ -1,5 +1,7 @@
 """Finite canonical constructors for direct JSON, regex and HTTP/file protocols."""
 from .file_io import BSLFile, BSLBinaryData
+from .text_documents import BSLTextDocument
+from . import python_direct_source_resources as text_resources
 from .http_client import BSLHTTPConnection, BSLHTTPRequest
 from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
@@ -35,6 +37,7 @@ CONSTRUCTORS = {
         (('stringqualifiers','квалификаторыстроки'),BSLStringQualifiers),
         (('datequalifiers','квалификаторыдаты'),BSLDateQualifiers),
         (('binarydataqualifiers','квалификаторыдвоичныхданных'),BSLBinaryDataQualifiers),
+        (('textdocument','текстовыйдокумент'),BSLTextDocument),
         (('file','файл'),BSLFile),
         (('binarydata','двоичныеданные'),BSLBinaryData),
         (('binarydatabuffer','буфердвоичныхданных'),BSLBinaryDataBuffer),
@@ -52,7 +55,36 @@ CONSTRUCTORS = {
 }
 
 class ServicesBoundary:
+    def get_member(self,value,name):
+        if type(value) is BSLTextDocument:return text_resources.get(self,value,name)
+        return super().get_member(value,name)
+
+    def resolve_member(self,value,name):
+        if type(value) is BSLTextDocument:return text_resources.resolve(self,value,name)
+        return super().resolve_member(value,name)
+
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if type(value) is not BSLTextDocument:
+            return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        text_resources.check(self,value)
+        if omitted and (name.casefold() not in ('read','прочитать','write','записать')
+                or any(index not in (1,2) for index in omitted)):
+            raise TypeError('TextDocument method required argument omitted')
+        bound=text_resources.resolve(self,value,name,require_value=require_value)
+        if not omitted:return bound
+        def invoke(*arguments):
+            values=list(arguments)
+            for index in omitted:values[index]=None
+            return bound(*values)
+        return invoke
+
     def resolve_set_member(self, value, name):
+        if type(value) is BSLTextDocument:
+            text_resources.check(self,value)
+            def unsupported(new_value):
+                text_resources.check(self,value)
+                raise ValueError('TextDocument property is not integrated: '+name)
+            return unsupported
         # Iterator pairs are direct scalar containers, not database receivers.
         # Resolve before the RHS, but report readonly only after evaluating it.
         # Exact identity admits no protocol, subclass, or payload authority.
@@ -65,6 +97,11 @@ class ServicesBoundary:
         return readonly
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        # Only exact canonical TextDocument methods, not arbitrary host objects.
+        from types import MethodType
+        if (type(value) is HostFunction and type(value.function) is MethodType
+                and type(value.function.__self__) is BSLTextDocument):
+            return text_resources.captured(self,value,require_value=require_value,allow_references=allow_references)
         from .temporary_storage import SourceTemporaryCall
         from .common_templates import SourceTemplateCall
         if type(value) is HostFunction and type(value.function) is SourceTemporaryCall:
@@ -82,6 +119,8 @@ class ServicesBoundary:
             raise ValueError('temporary storage belongs to another or closed source application')
         if type(function) is HostFunction and type(function.function) is SourceTemplateCall:
             raise ValueError('foreign or inactive source common template owner')
+        if key.startswith('new:') and key[4:] in text_resources.CONSTRUCTOR_NAMES:
+            return text_resources.resolve_constructor(self,key,**kwargs)
         if key.startswith('new:') and key[4:] in CONSTRUCTORS:
             self._check()
             expected=CONSTRUCTORS[key[4:]]

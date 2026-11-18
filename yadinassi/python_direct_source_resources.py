@@ -23,6 +23,8 @@ _SPECS=(
 _METHODS={alias:spec[:4] for spec in _SPECS for alias in spec[4]}
 _TEXT_IMPL=dict(_DIRECT_TEXT_DOCUMENT_ABI)
 _BINARY_IMPL=dict(_DIRECT_SOURCE_BINARY_ABI)
+_RESOURCE_STORAGE=tuple((cls,cls.__mro__,tuple((base,vars(base).get('__dict__'))
+    for base in cls.__mro__)) for cls in (BSLTextDocument,BSLBinaryData))
 
 
 def owns(value):return type(value) in (BSLTextDocument,BSLBinaryData)
@@ -31,6 +33,11 @@ def owns(value):return type(value) in (BSLTextDocument,BSLBinaryData)
 def check_factories():
     if text.BSLTextDocument is not BSLTextDocument or file_io.BSLBinaryData is not BSLBinaryData:
         raise BoundaryViolation('source resource class binding changed')
+    for cls,mro,storage in _RESOURCE_STORAGE:
+        current=cls.__mro__
+        if (len(current)!=len(mro) or any(actual is not expected for actual,expected in zip(current,mro))
+                or any(vars(base).get('__dict__') is not expected for base,expected in storage)):
+            raise BoundaryViolation('source resource storage descriptor changed')
     for cls,abi in ((BSLTextDocument,_DIRECT_TEXT_DOCUMENT_ABI),(BSLBinaryData,_DIRECT_SOURCE_BINARY_ABI)):
         if any(getattr(cls,name) is not expected for name,expected in abi):
             raise BoundaryViolation('source resource hooks changed')

@@ -135,6 +135,7 @@ jobs:
         with:
           name: ordinary-browser-${{ needs.admission.outputs.source_sha }}-${{ github.run_attempt }}
           path: |
+            ${{ runner.temp }}/yadinassi-browser-artifacts/source-binding.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/result.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/manifest.json
             ${{ runner.temp }}/yadinassi-browser-artifacts/*.png
