@@ -790,3 +790,20 @@ Other scalar operations are not widened.
 Whole descriptor-map replay advances again but still aborts at the pre-existing
 ValueTable.Columns iteration boundary (source helper line578). This is not full
 native replay parity or a green light runner. No fixtures/gates were changed.
+
+### Detached direct ValueTable iteration (2026-11-18)
+
+Exact canonical ValueTable, column collection and row receivers now have a bounded
+read iterator. Table/column traversal follows the live list; live row iteration
+snapshots cell values at iterator creation, and a deleted row enumerates the
+still-live owner's rows, matching the existing canonical/native contract. Raw
+storage access avoids receiver iteration/attribute hooks. Receiver ownership and
+execution lifetime are rechecked before every advance; foreign rows/columns,
+forged container/key shapes and patched column hash/equality hooks reject without
+running those hooks. Cell values are not inspected and gain no database authority.
+Bounded-slice writes remain prohibited. This is not generic host iteration.
+
+The unchanged descriptor-map replay now gets beyond the table iteration boundary
+and reports ordinary UnsupportedNakedSyntax for ValueTableRow construction inside
+an Eval probe. No complete collections parity or full green CI is claimed. The
+existing 24-observation catalog-query native replay remains unchanged and passes.

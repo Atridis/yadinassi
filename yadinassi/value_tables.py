@@ -901,3 +901,8 @@ class BSLValueTable(BSLObject):
             "unloadcolumn": self.unload_column, "выгрузитьколонку": self.unload_column, "total": self.total,
             "итог": self.total, "copy": self.copy, "скопировать": self.copy,
             "copycolumns": self.copy_columns, "скопироватьколонки": self.copy_columns})
+
+# Definition-time receiver identities/raw storage for direct read iteration.
+_DIRECT_ITERATION_TYPES = (BSLValueTable, BSLValueTableColumnCollection,
+                          BSLValueTableRow, BSLValueTableColumn)
+_DIRECT_ITERATION_DICT = vars(BSLObject)['__dict__']

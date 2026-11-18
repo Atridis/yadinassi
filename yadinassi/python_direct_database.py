@@ -189,6 +189,9 @@ class CatalogBoundary:
         return invoke
 
     def resolve_member(self,value,name):
+        if name=='__iter__':
+            from . import python_direct_table_iteration as tables
+            if tables.owns(value):return tables.resolve(self,value)
         self._catalog_owner(value)
         if type(value) in (BSLArray, BSLFixedArray) and name.casefold() in ('get','получить'):
             function=value.get
