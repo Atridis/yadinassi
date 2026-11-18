@@ -286,7 +286,7 @@ class Emitter:
                 return self.invoke(bound,[self.expr(arg) for arg in node.arguments],t)
             native=kindname in ('array','массив','map','соответствие','structure','структура')
             if not native and kindname not in self.constructor_names:
-                _reject('constructor outside research subset')
+                _reject(f'constructor {node.name}; outside research subset')
             if any(type(arg) is bsl.OmittedArgument for arg in node.arguments):
                 if native:return self.call('_host_omission_error',[],t)
                 key='new:'+kindname;self.required.add(key)

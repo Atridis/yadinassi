@@ -1,7 +1,7 @@
 """Extended Raise evaluates description then optional values through canonical errors."""
-from test_experimental_direct_ast_externals import DirectASTExternalTests
+import test_experimental_direct_ast_externals as external_cases
 
-class RaiseTests(DirectASTExternalTests):
+class RaiseTests(external_cases.DirectASTExternalTests):
     def test_extended_raise_metadata_and_order(self):
         for source in (
             'Try Raise "hello","code",,"info";Except R=ErrorInfo().Description;C=ErrorInfo().Code;A=ErrorInfo().AdditionalInformation;EndTry;',

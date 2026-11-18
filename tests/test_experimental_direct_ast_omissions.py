@@ -1,7 +1,7 @@
 """Omitted slots are validated at the reached call before argument effects."""
-from test_experimental_direct_ast_externals import DirectASTExternalTests
+import test_experimental_direct_ast_externals as external_cases
 
-class OmissionTests(DirectASTExternalTests):
+class OmissionTests(external_cases.DirectASTExternalTests):
     def test_omitted_slots_and_unreachable_calls(self):
         for source in (
             'R=1;If False Then A=New Array(,Touch());EndIf;',

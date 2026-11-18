@@ -1,7 +1,7 @@
 """Dynamic construction uses the same finite boundary, never an evaluator."""
-from test_experimental_direct_ast_externals import DirectASTExternalTests
+import test_experimental_direct_ast_externals as external_cases
 
-class DynamicNewTests(DirectASTExternalTests):
+class DynamicNewTests(external_cases.DirectASTExternalTests):
     def test_dynamic_new_expression_order_and_results(self):
         for source in (
             'A=New("Array");A.Add(3);R=A[0];A=0;',

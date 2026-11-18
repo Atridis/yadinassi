@@ -1,7 +1,7 @@
 """Expression call targets resolve before their arguments through the boundary."""
-from test_experimental_direct_ast_externals import DirectASTExternalTests
+import test_experimental_direct_ast_externals as external_cases
 
-class CallableTests(DirectASTExternalTests):
+class CallableTests(external_cases.DirectASTExternalTests):
     def test_callable_expression_resolution(self):
         def setup(vm):
             vm.register_function('Get',lambda:vm.functions['touch'])

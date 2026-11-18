@@ -1,7 +1,7 @@
 """Native methods route runtime argument and receiver errors without preflight rejection."""
-from test_experimental_direct_ast_externals import DirectASTExternalTests
+import test_experimental_direct_ast_externals as external_cases
 
-class NativeMethodsTests(DirectASTExternalTests):
+class NativeMethodsTests(external_cases.DirectASTExternalTests):
     def test_native_method_families(self):
         for source in (
             'A=New Array;A.Add(1);A.Add(2);R=A.UBound();F=A.Find(2);A.Delete(0);S=A[0];A=0;',

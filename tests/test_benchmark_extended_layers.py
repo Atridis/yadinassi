@@ -65,6 +65,21 @@ class ExtendedReferenceTests(unittest.TestCase):
         case.name = 'structure.fields'
         self.assertFalse(bench.optional_xml_constructor(case, bench.PythonDirectUnsupported('constructor XMLWriter;')))
 
+    def test_direct_ast_constructor_diagnostic_keeps_optional_capability_specific(self):
+        for name, optional in (('XMLWriter', True), ('UnsupportedResearchConstructor', False)):
+            for route in ('default', 'prepared'):
+                with self.subTest(name=name, route=route):
+                    vm = bench.Interpreter()
+                    try:
+                        action = vm.prepare if route == 'prepared' else vm.execute
+                        with self.assertRaises(bench.PythonDirectUnsupported) as caught:
+                            action('Before=1; X=New ' + name + ';')
+                        case = bench.Case('xml.roundtrip', Decimal(1), allow_unsupported=True)
+                        self.assertEqual(bench.optional_xml_constructor(case, caught.exception), optional)
+                        self.assertNotIn('before', vm.variables)
+                    finally:
+                        vm.close()
+
     def test_fixture_directories_removed_on_success_and_validation_error(self):
         original = tempfile.TemporaryDirectory
         for name in ('file.binary_roundtrip', 'db.count'):
