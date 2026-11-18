@@ -168,6 +168,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
     from .python_direct_database import NAMES as DATABASE_NAMES
     from .python_direct_services import CONSTRUCTORS
+    from .python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
     from .python_direct_names import NAMES as SYSTEM_NAMES
     from .python_direct_imports import import_names
     imported=import_names(vm,program)
@@ -180,7 +181,7 @@ def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
     try:
         plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
                      module_names=tuple(vm.module_names),
-                     constructors=tuple(CONSTRUCTORS) + ("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
+                     constructors=TREE_NAMES+tuple(CONSTRUCTORS) + ("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
                      external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()) + imported,
                      _import_names=imported,_dynamic_new=True,_host_routine_bindings=bool(imported) or _owned_import_child(vm),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
                      _export_routines=_exports,_initialize_module=not _exports,_persistent_routines=not _exports and any(type(node) is ast.Routine for node in program))
@@ -313,11 +314,12 @@ def make_boundary(vm,*,_parent_check=None):
     from .python_direct_detached_metadata import DetachedMetadataBoundary
     database = vm.database_context
     from .python_direct_services import ServicesBoundary
+    from .python_direct_value_tree import ValueTreeBoundary
     from .python_direct_imports import ImportBoundary,check_live
     from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
     from . import safe_mode,source_transactions,database_transactions
     from .python_direct_routines import resolve as resolve_routine
-    class DirectBoundary(ImportBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
+    class DirectBoundary(ImportBoundary,ValueTreeBoundary,ServicesBoundary, LiveMetadataBoundary, DetachedMetadataBoundary, CatalogBoundary, BoundaryContext):
         def resolve_service(self,name,*args,**kwargs):
             modules=getattr(vm,'_direct_routine_modules',None)
             if modules is not None and name.casefold() in modules:

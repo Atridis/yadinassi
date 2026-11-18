@@ -105,6 +105,9 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         constructor_names=('uuid','уникальныйидентификатор',*CONSTRUCTORS)+(('query','запрос') if vm.database_context is not None else ())
         external_names=tuple(NAMES)+(DB_NAMES if vm.database_context is not None else ())
         if profile is not None:constructor_names,external_names=profile
+        else:
+            from .python_direct_value_tree import CONSTRUCTOR_NAMES
+            constructor_names+=CONSTRUCTOR_NAMES
         source_repairs=REPAIRS+('authority_checkpoints',) if profile is not None else REPAIRS
         key=(text,_contract(vm),source_repairs,constructor_names,external_names,profile is not None,EXECUTE_MAX_SOURCE,EXECUTE_MAX_DEPTH)
         if profile is not None:

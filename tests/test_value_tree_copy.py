@@ -112,7 +112,7 @@ class CopyLocalPolicyTests(unittest.TestCase):
                  lambda t:setattr(t.columns.items[0],'table',BSLValueTree()),
                  lambda t:setattr(t.rows.items[0].rows,'parent',None),
                  lambda t:setattr(t.rows.items[0],'depth',False),
-                 lambda t:t._all_rows.__setitem__(t.rows.items[0],D(1)))
+                 lambda t:setattr(t,'_all_rows',{t.rows.items[0]:D(1)}))
         for change in changes:
             t=self.fixture();change(t)
             with self.subTest(change=change),self.assertRaises(ValueError):t.copy()

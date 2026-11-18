@@ -3,6 +3,8 @@
 No recursive host traversal, UI, codecs, transport, or database integration.
 Limits apply to the whole tree, not independently to each child collection.
 """
+from weakref import WeakKeyDictionary, ref
+
 from decimal import Context, Decimal, DecimalException, InvalidOperation, MAX_EMAX, MIN_EMIN, Overflow, ROUND_DOWN, Rounded, localcontext
 
 from .values import BSLArray, BSLObject, BSLType, HostFunction, NULL, equal, number
@@ -10,6 +12,118 @@ from .structures import BSLStructure
 from .type_descriptions import BSLTypeDescription, _boolean_value, _number_value, _MAX_NUMBER_DIGITS
 from .value_tables import (BSLValueTableColumn, BSLValueTableColumnCollection,
                            _default, _adjust, _method, _text, _MAX_TOTAL_PRECISION)
+
+# Definition-owned provenance, not a database or interpreter grant. Weak links
+# allow ordinary detached trees to be collected and reject coherent reparenting.
+_DIRECT_TREE_ORIGINS=WeakKeyDictionary()
+def _direct_tree_record(value,*owners):
+    _DIRECT_TREE_ORIGINS[value]=tuple(None if owner is None else ref(owner) for owner in owners)
+
+# Private identity storage. Neither registry objects nor row keys expose the
+# backing dictionary. Weak values avoid sidecar -> row -> tree -> registry leaks.
+_ROW_REGISTRY_STATE = {}
+
+
+def _registry_hooks():
+    for cls,mro,fields in _ROW_REGISTRY_ABI:
+        current=vars(cls)
+        if cls.__mro__ is not mro or len(current)!=len(fields) or any(current.get(k) is not v for k,v in fields):
+            raise ValueError('ValueTree registry hooks changed')
+        slots=current.get('__slotnames__')
+        if type(slots) is not list or slots:raise ValueError('ValueTree registry copy metadata changed')
+    for name,value in _ROW_REGISTRY_BINDINGS:
+        if globals().get(name) is not value:raise ValueError('ValueTree registry helper changed')
+
+
+def _registry_state(registry):
+    _registry_hooks()
+    if type(registry) is not _RowRegistry:raise ValueError('Invalid ValueTree registry')
+    state=_ROW_REGISTRY_STATE.get(id(registry))
+    if state is None or state[0]() is not registry or state[1]() is None or state[3]:
+        raise ValueError('Expired or corrupt ValueTree registry')
+    return state
+
+
+def _registry_key(state,row):
+    if type(row) is not BSLValueTreeRow:raise ValueError('Foreign ValueTree registry key')
+    # Birth links are weak and never invoke equality of arbitrary row keys.
+    saved=_DIRECT_TREE_ORIGINS.get(row)
+    if saved is None or saved[0]() is not state[1]():raise ValueError('Foreign ValueTree row owner')
+    return id(row)
+
+
+class _RowRegistry:
+    __slots__=('__weakref__',)
+    __slotnames__=[]
+    def __init__(self,owner):
+        _registry_hooks()
+        if type(self) is not _RowRegistry or not isinstance(owner,BSLValueTree):
+            raise ValueError('Invalid ValueTree registry owner')
+        identity=id(self)
+        if identity in _ROW_REGISTRY_STATE:raise ValueError('ValueTree registry already initialized')
+        def release(dead):
+            state=_ROW_REGISTRY_STATE.get(identity)
+            if state is not None and state[0] is dead:_ROW_REGISTRY_STATE.pop(identity,None)
+        _ROW_REGISTRY_STATE[identity]=[ref(self,release),ref(owner),{},False]
+    def __len__(self):return len(_registry_state(self)[2])
+    def __iter__(self):
+        state=_registry_state(self)
+        for reference in state[2].values():
+            _registry_state(self)
+            row=reference()
+            if row is None:raise ValueError('Dead ValueTree registry row')
+            yield row
+    def keys(self):return iter(self)
+    def items(self):
+        for row in self:yield row,None
+    def __getitem__(self,row):
+        state=_registry_state(self);key=_registry_key(state,row)
+        saved=state[2].get(key)
+        if saved is None or saved() is not row:raise KeyError('Missing ValueTree row')
+        return None
+    def __setitem__(self,row,value):
+        state=_registry_state(self);key=_registry_key(state,row)
+        if value is not None:raise ValueError('Invalid ValueTree registry value')
+        previous=state[2].get(key)
+        if previous is not None:
+            if previous() is not row:raise ValueError('ValueTree row identity reused')
+            return
+        if len(state[2])>=_MAX_ROWS:raise ValueError('ValueTree registry row limit')
+        def expired(dead):state[3]=True
+        state[2][key]=ref(row,expired)
+    def __delitem__(self,row):
+        state=_registry_state(self);key=_registry_key(state,row)
+        saved=state[2].get(key)
+        if saved is None or saved() is not row:raise KeyError('Missing ValueTree row')
+        del state[2][key]
+    def __contains__(self,row):
+        state=_registry_state(self);key=_registry_key(state,row)
+        saved=state[2].get(key)
+        return saved is not None and saved() is row
+    def pop(self,row,*default):
+        if len(default)>1:raise TypeError('Too many registry pop arguments')
+        try:self.__delitem__(row)
+        except KeyError:
+            if default:return default[0]
+            raise
+        return None
+    def clear(self):_registry_state(self)[2].clear()
+    def __eq__(self,other):
+        if type(other) is _RowRegistry:
+            return len(self)==len(other) and all(row in other for row in self)
+        if type(other) is not dict:return False
+        # Validate every foreign mapping key before any lookup/hash/equality.
+        state=_registry_state(self)
+        if len(state[2])!=len(other):return False
+        for row,value in other.items():
+            if type(row) is not BSLValueTreeRow or value is not None:return False
+            saved=state[2].get(id(row))
+            if saved is None or saved() is not row:return False
+        return True
+
+
+def _registry_owned(registry,owner):
+    return type(registry) is _RowRegistry and _registry_state(registry)[1]() is owner
 
 _MAX_ROWS = 100_000
 _MAX_COLUMNS = 4096
@@ -130,7 +244,10 @@ def _move_number(value):
 
 
 class BSLValueTreeColumn(BSLObject):
-    __init__ = BSLValueTableColumn.__init__
+    __slotnames__ = []
+    def __init__(self,table,*args):
+        BSLValueTableColumn.__init__(self,table,*args)
+        _direct_tree_record(self,table)
     def get_member(self, name):
         if name.casefold() not in {"name", "имя", "title", "заголовок", "width", "ширина", "valuetype", "типзначения"}:
             return super().get_member(name)
@@ -164,7 +281,10 @@ class BSLValueTreeColumn(BSLObject):
 
 
 class BSLValueTreeColumnCollection(BSLObject):
-    __init__ = BSLValueTableColumnCollection.__init__
+    __slotnames__ = []
+    def __init__(self,table):
+        BSLValueTableColumnCollection.__init__(self,table)
+        _direct_tree_record(self,table)
     __iter__ = BSLValueTableColumnCollection.__iter__
     _validate_name = BSLValueTableColumnCollection._validate_name
     find = BSLValueTableColumnCollection.find
@@ -406,6 +526,7 @@ class BSLValueTreeColumnCollection(BSLObject):
 
 
 class BSLValueTreeRow(BSLObject):
+    __slotnames__ = []
     def __init__(self, collection):
         self.collection = collection
         self.tree = collection.tree
@@ -417,6 +538,7 @@ class BSLValueTreeRow(BSLObject):
                       for c in self.tree.columns.items}
         self.rows = BSLValueTreeRowCollection(self.tree, self)
         self._deleted = False
+        _direct_tree_record(self,self.tree,self.collection,self.parent,self.rows)
 
     def __str__(self):
         return "СтрокаДереваЗначений"
@@ -475,11 +597,13 @@ class BSLValueTreeRow(BSLObject):
 
 
 class BSLValueTreeRowCollection(BSLObject):
+    __slotnames__ = []
     def __init__(self, tree, parent=None):
         self.tree = tree
         self.parent = parent
         self.items = []
         self._columns_clear_forward = False
+        _direct_tree_record(self,tree,parent)
 
     def _clear_target(self, operation=None):
         """Only measured column-removal wrappers redirect their observed operations.
@@ -509,7 +633,7 @@ class BSLValueTreeRowCollection(BSLObject):
                 or not _clear_fields(root, {"tree", "parent", "items", "_columns_clear_forward"})
                 or root.tree is not self.tree or root.parent is not None
                 or root._columns_clear_forward is not False or type(root.items) is not list
-                or type(self.tree._all_rows) is not dict
+                or not _registry_owned(self.tree._all_rows,self.tree)
                 or type(self.tree.columns) is not BSLValueTreeColumnCollection
                 or self.tree.columns.table is not self.tree or type(self.tree.columns.items) is not list):
             raise ValueError("Неверная корневая коллекция дерева")
@@ -1120,10 +1244,12 @@ class BSLValueTreeRowCollection(BSLObject):
 
 
 class BSLValueTree(BSLObject):
+    __slotnames__ = []
     def __init__(self):
-        self._all_rows = {}
+        self._all_rows = _RowRegistry(self)
         self.columns = BSLValueTreeColumnCollection(self)
         self.rows = BSLValueTreeRowCollection(self)
+        _direct_tree_record(self,self.columns,self.rows,self._all_rows)
 
     def __str__(self):
         return "ДеревоЗначений"
@@ -1148,7 +1274,7 @@ class BSLValueTree(BSLObject):
                 or self.columns.table is not self or type(self.columns.items) is not list
                 or type(self.rows) is not BSLValueTreeRowCollection or self.rows.tree is not self
                 or self.rows.parent is not None or self.rows._columns_clear_forward is not False
-                or type(self.rows.items) is not list or type(self._all_rows) is not dict):
+                or type(self.rows.items) is not list or not _registry_owned(self._all_rows,self)):
             raise ValueError("Неверная структура очистки дерева")
         columns = self.columns.items
         BSLValueTree._budget(len(self._all_rows), len(columns))
@@ -1201,7 +1327,7 @@ class BSLValueTree(BSLObject):
         if (type(self) is not BSLValueTree
                 or type(self.columns) is not BSLValueTreeColumnCollection
                 or self.columns.table is not self or type(self.columns.items) is not list
-                or type(self._all_rows) is not dict
+                or not _registry_owned(self._all_rows,self)
                 or type(self.rows) is not BSLValueTreeRowCollection
                 or self.rows.tree is not self or self.rows.parent is not None
                 or type(self.rows.items) is not list):
@@ -1284,6 +1410,7 @@ class BSLValueTree(BSLObject):
             cloned.depth, cloned._deleted = row.depth, False
             cloned.cells = {new: row.cells[old] for old, new in zip(columns, new_columns)}
             cloned.rows = BSLValueTreeRowCollection(result, cloned)
+            _direct_tree_record(cloned,result,collection,parent,cloned.rows)
             collection.items.append(cloned)
             result._all_rows[cloned] = None
             rows[row] = cloned
@@ -1291,3 +1418,57 @@ class BSLValueTree(BSLObject):
 
     def get_method(self, name):
         return _method(name, {"copy": self.copy, "скопировать": self.copy})
+
+# Capture at definition time, before a direct bridge can be imported lazily.
+_DIRECT_TREE_CLASSES=(BSLValueTree,BSLValueTreeRowCollection,BSLValueTreeRow,
+                      BSLValueTreeColumnCollection,BSLValueTreeColumn)
+_DIRECT_TREE_CLASS_ABI=tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in _DIRECT_TREE_CLASSES)
+_DIRECT_TREE_BASE_ABI=tuple((cls,cls.__mro__,tuple((name,value) for name,value in vars(cls).items() if name!='__slotnames__'))
+                           for cls in (BSLObject,BSLValueTableColumn,BSLValueTableColumnCollection))
+_DIRECT_TREE_BINDINGS=tuple((name,value) for name,value in tuple(globals().items())
+                           if callable(value) and not name.startswith('__'))+(('_DIRECT_TREE_ORIGINS',_DIRECT_TREE_ORIGINS),)
+_DIRECT_TREE_LIMITS=tuple((name,value) for name,value in tuple(globals().items()) if name.startswith('_MAX_') and type(value) is int)
+
+# Definition-time schema hooks: the lazy direct bridge must not bless patches.
+from . import type_qualifiers as _direct_qualifiers
+_DIRECT_TREE_SCHEMA_CLASSES = (BSLTypeDescription,
+    _direct_qualifiers.BSLNumberQualifiers, _direct_qualifiers.BSLStringQualifiers,
+    _direct_qualifiers.BSLBinaryDataQualifiers, _direct_qualifiers.BSLDateQualifiers,
+    _direct_qualifiers._LengthQualifiers)
+_DIRECT_TREE_SCHEMA_ABI = tuple((cls, cls.__mro__, tuple(
+    (key, value) for key, value in vars(cls).items() if key != '__slotnames__'))
+    for cls in _DIRECT_TREE_SCHEMA_CLASSES)
+_DIRECT_TREE_SCHEMA_BINDINGS = tuple((vars(_direct_qualifiers), name, value)
+    for name, value in vars(_direct_qualifiers).items()
+    if isinstance(value, type) and name.startswith('BSL'))
+
+# Registry operations also gate canonical row hashing used by weak origins.
+_ROW_REGISTRY_ABI = tuple((cls,cls.__mro__,tuple(vars(cls).items()))
+    for cls in (_RowRegistry,BSLValueTreeRow,BSLObject))
+_ROW_REGISTRY_BINDINGS = tuple((name,globals()[name]) for name in
+    ('_registry_hooks','_registry_state','_registry_key','_registry_owned','_RowRegistry',
+     '_ROW_REGISTRY_STATE','_DIRECT_TREE_ORIGINS','ref'))
+from enum import Enum as _DirectEnum
+_DIRECT_TREE_ENUM_ABI = tuple((cls,cls.__mro__,tuple(vars(cls).items())) for cls in
+    (BSLType,_direct_qualifiers.BSLAllowedSign,_direct_qualifiers.BSLAllowedLength,
+     _direct_qualifiers.BSLDateFractions,_DirectEnum))
+from .values import _DIRECT_COLLECTION_CLASS_ABI as _DIRECT_TREE_ARRAY_ABI
+
+from . import type_descriptions as _direct_descriptions
+from . import dates as _direct_dates
+from . import unique_identifiers as _direct_identifiers
+from . import value_tables as _direct_tables
+_DIRECT_TREE_DEPENDENCY_BINDINGS = tuple((vars(module),name,value)
+    for module in (_direct_descriptions,_direct_qualifiers,_direct_dates,_direct_identifiers,_direct_tables)
+    for name,value in tuple(vars(module).items()) if callable(value))
+_DIRECT_TREE_SCALAR_ABI = tuple((cls,cls.__mro__,tuple(
+    (name,value) for name,value in vars(cls).items() if name!='__slotnames__'),
+    tuple(name for base in cls.__mro__ for name in vars(base).get('__slots__',()) if name not in ('__dict__','__weakref__')))
+    for cls in (_direct_dates.BSLDate,_direct_identifiers.BSLUUID,_direct_descriptions.UUID))
+
+# Enum.__hash__ reads mutable member._name_, not just the Enum class. Retain
+# definition-time exact member dictionaries before the direct bridge loads.
+_DIRECT_TREE_ENUM_MEMBERS = tuple((member,tuple(vars(member).items()))
+    for cls in (BSLType,_direct_qualifiers.BSLAllowedSign,
+                _direct_qualifiers.BSLAllowedLength,_direct_qualifiers.BSLDateFractions)
+    for member in cls)

@@ -224,7 +224,9 @@ def _row_endpoint(row, budget, target, readable_rows=False):
         collection = row.collection
         _instance(collection, BSLValueTreeRowCollection)
         _sequence(collection.items, list, MAX_OWNER_ROWS)
-        _sequence(owner._all_rows, dict, MAX_OWNER_ROWS)
+        from .value_trees import _registry_owned
+        if not _registry_owned(owner._all_rows,owner) or len(owner._all_rows)>MAX_OWNER_ROWS:
+            _invalid('неверный реестр строк дерева')
         if (collection.tree is not owner or collection.parent is not row.parent
                 or not any(item is row for item in collection.items)
                 or not any(item is row for item in owner._all_rows)):

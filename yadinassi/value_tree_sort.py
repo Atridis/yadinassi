@@ -70,9 +70,10 @@ def sort_rows(receiver, selector, recursive=False, comparison=None):
         _invalid()
     if type(receiver) is not BSLValueTreeRowCollection or type(receiver.tree) is not BSLValueTree:
         _invalid()
+    from .value_trees import _registry_owned
     tree = receiver.tree
     if (type(tree.columns) is not BSLValueTreeColumnCollection or tree.columns.table is not tree
-            or type(tree.columns.items) is not list or type(tree._all_rows) is not dict
+            or type(tree.columns.items) is not list or not _registry_owned(tree._all_rows,tree)
             or len(tree._all_rows) > _MAX_SORT_ROWS or len(tree.columns.items) > _MAX_SORT_COLUMNS
             or type(tree.rows) is not BSLValueTreeRowCollection or tree.rows.tree is not tree
             or tree.rows.parent is not None):

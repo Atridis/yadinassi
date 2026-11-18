@@ -144,7 +144,7 @@ class ClearPolicyTests(unittest.TestCase):
         mutations=(lambda t,c,r:r[1].rows.items.append(r[0]),lambda t,c,r:t.rows.items.append(r[0]),
             lambda t,c,r:setattr(r[0],'tree',BSLValueTree()),lambda t,c,r:setattr(r[0],'depth',True),
             lambda t,c,r:setattr(r[0].rows,'parent',r[1]),lambda t,c,r:t._all_rows.pop(r[1]),
-            lambda t,c,r:t._all_rows.__setitem__(r[0],D(1)),lambda t,c,r:r[0].cells.clear(),
+            lambda t,c,r:setattr(t,'_all_rows',{r[0]:D(1)}),lambda t,c,r:r[0].cells.clear(),
             lambda t,c,r:r[0].cells.__setitem__(Poison(),D(1)),lambda t,c,r:setattr(t.rows,'items',()),
             lambda t,c,r:setattr(c,'_deleted',Poison()),lambda t,c,r:setattr(t.columns,'items',[c,c]))
         for mutate in mutations:
