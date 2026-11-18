@@ -291,15 +291,21 @@ class NativeValueListReferenceTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(source_bytes.replace(b'\r\n', b'\n')).hexdigest(),
                          SOURCE_SHA256)
         source = source_bytes.decode('utf-8-sig')
-        vm = Interpreter(native_target='linux-8.3.27.1508')
-        vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
         self.assertEqual(NATIVE_RECORDS.count('table.list.reference.'), len(CASES))
-        for name in CASES:
-            with self.subTest(case=name):
-                expected = plain(read_observation(extract_payload(
-                    NATIVE_RECORDS, 'table.list.reference.' + name), compact=True))
-                actual = plain(vm.execute('ПробаСсылкиСписка("' + name + '")'))
-                self.assertEqual(actual, expected)
+        for backend in ('python-direct', 'compiled-strict'):
+            vm = Interpreter(native_target='linux-8.3.27.1508', execution_backend=backend)
+            self.addCleanup(vm.close)
+            vm.execute(source.split('#Область МассивыИСтруктуры', 1)[0])
+            for name in CASES:
+                with self.subTest(backend=backend, case=name):
+                    expected = serialization.value_to_string_internal(read_observation(
+                        extract_payload(NATIVE_RECORDS, 'table.list.reference.' + name),
+                        compact=True))
+                    # Compare the full BSL-observable value, not either backend's
+                    # private Python storage layout. This retains field spelling,
+                    # order, types and every nested value from the native record.
+                    actual = vm.execute('ValueToStringInternal(ПробаСсылкиСписка("' + name + '"))')
+                    self.assertEqual(actual, expected)
 
 
 class ValueListReferenceRuntimeTests(unittest.TestCase):

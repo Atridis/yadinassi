@@ -685,6 +685,11 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 bound='_context.resolve_service('+repr('new:'+kindname)+arity+')'
                 if any(type(arg) is ast.OmittedArgument for arg in node.arguments):return dynamic_call(bound,node,False)
                 return bound+'('+', '.join(args)+')'
+            if (services and kindname in ('array','массив','map','соответствие','structure','структура')
+                    and any(type(arg) is ast.OmittedArgument for arg in node.arguments)):
+                # Native collection lowering has no optional-slot protocol.
+                # Reject the reached call before any supplied argument effects.
+                return '_host_omission_error()'
             if kindname in ('array','массив'):
                 if 'constructor_bounds' in repairs:return '_array_constructor_bounds('+', '.join(args)+')'
                 if not args:return '[]'

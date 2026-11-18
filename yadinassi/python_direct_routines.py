@@ -120,7 +120,8 @@ def resolve(context, name, *, require_value=False, allow_references=False, argum
     validate_calls(vm,(name,))
     returns_value,minimum,maximum,references=module.signatures[name]
     if argument_count is not None and not minimum<=argument_count<=maximum:
-        raise TypeError('Неверное количество аргументов: '+name)
+        from .experimental_naked_collections import _argument_count_error
+        _argument_count_error(name,maximum,argument_count)
     if name in module.dual_names and not getattr(context,'_server_side',False):
         from .python_direct_server import resolve_dual_client
         return resolve_dual_client(context,module,name,require_value=require_value,allow_references=allow_references)
