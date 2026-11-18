@@ -100,3 +100,18 @@ projections in Python and classes; BSL lowers its entry projections directly.
 The input Map is prefilled outside timing (unknown receiver, iterator choice once
 before the loop); this is not a benchmark of construction or entry allocation.
 Read-only workloads additionally validate the complete original collection state.
+
+## Next recovery slice (31 bound identifiers)
+
+The additional 13 drivers are all remaining Array methods, all seven Structure
+methods, and core calls/byref. They define **new explicit contracts**, not inferred
+historical source equivalence. Array.Find performs N successful ascending searches
+(quadratic total work); Insert prepends N times; Delete computes descending indices.
+Structure.Insert overwrites one fixed name after its first insertion; Delete
+removes one name then performs N-1 missing deletes. Neither claims to measure N
+distinct field operations. Structure iteration uses N prefilled fields, with Python
+values versus classes' lightweight entry objects. Calls defines a value-argument
+function in each timed call; byref uses an explicit mutable cell in Python and a
+BSL procedure incrementing its actual argument. Fixture creation and validation
+remain outside timing; both compilation-included and preprepared bare paths are
+checked. All raw workload sources and their hashes remain in the JSON.

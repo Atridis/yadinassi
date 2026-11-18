@@ -38,7 +38,11 @@ CONTRACTS = {
 }
 
 
+from scripts.benchmark_recovered_more import CASES as MORE_CASES, bind as bind_more
+CONTRACTS.update({name: (entry[0],entry[1],entry[4],entry[5]) for name,entry in MORE_CASES.items()})
+
 def binding(case, n, layer):
+    if case in MORE_CASES: return bind_more(case,n,layer)
     from yadinassi import Interpreter
     from yadinassi import native_bare_compiler as bare
     from yadinassi.syntax.parser import parse

@@ -48,3 +48,29 @@ class DriversTests(unittest.TestCase):
     def test_limits(self):
         for n,rounds in ((0,3),(1,2),(True,3)):
             with self.assertRaises(ValueError): measure_case('addition',n,rounds)
+
+class MoreDriversTests(unittest.TestCase):
+    def test_mutated_results_rejected_and_reset(self):
+        cases = ('method.array.create','method.array.insert','method.array.delete',
+                 'method.structure.create','method.structure.insert','method.structure.set','method.structure.delete')
+        for case in cases:
+            for layer in ('python','classes','default','prepared'):
+                with self.subTest(case=case,layer=layer):
+                    reset,run,validate,_,_=binding(case,5,layer)
+                    reset(); value=run(); validate(value)
+                    if 'structure' in case: value['extra']=None
+                    elif layer=='python': value.append(99)
+                    else: value.add(99)
+                    with self.assertRaises(AssertionError): validate(value)
+                    reset(); validate(run())
+    def test_scalar_validation_not_boolean(self):
+        for case in ('calls','byref','method.structure.property','method.array.find'):
+            for layer in ('python','classes','default','prepared'):
+                reset,run,validate,_,_=binding(case,1,layer)
+                reset(); validate(run())
+                with self.assertRaises(AssertionError): validate(True)
+    def test_contract_differences_explicit(self):
+        self.assertIn('not N distinct fields',CONTRACTS['method.structure.insert'][3])
+        self.assertIn('remaining missing',CONTRACTS['method.structure.delete'][3])
+        self.assertIn('quadratic',CONTRACTS['method.array.find'][3])
+        self.assertIn('mutable list cell',CONTRACTS['byref'][3])
