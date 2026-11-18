@@ -14,6 +14,9 @@ class BareRow(list):
     get_index = list.__getitem__
     set_index = list.__setitem__
 
+    def owner(self):
+        return self.table
+
     def get_member(self, name):
         return self[self.table.schema[name]]
 
@@ -29,12 +32,12 @@ class BareColumn:
         self.name = name
 
     def get_member(self, name):
-        if name == 'name':
+        if name in ('name', 'имя'):
             return self.name
         raise AttributeError(name)
 
     def set_member(self, name, value):
-        if name != 'name':
+        if name not in ('name', 'имя'):
             raise AttributeError(name)
         value = value.casefold()
         if value != self.name and value in self.table.schema:
@@ -86,7 +89,7 @@ class BareTable:
         return BareColumns(self)
 
     def get_member(self, name):
-        if name == 'columns':
+        if name in ('columns', 'колонки'):
             return BareColumns(self)
         raise AttributeError(name)
 

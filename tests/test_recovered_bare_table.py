@@ -45,6 +45,24 @@ class RecoveredBareTableTests(unittest.TestCase):
         self.assertFalse(hasattr(table, '__dict__'))
         self.assertIsNot(table.columns, table.columns)
 
+    def test_builtin_russian_aliases_do_not_translate_user_fields(self):
+        table = BareTable()
+        columns = table.get_member('колонки')
+        column = columns.add('Имя')
+        table.add_column('name')
+        self.assertEqual(column.get_member('имя'), 'имя')
+        self.assertEqual(column.get_member('name'), 'имя')
+        row = table.add()
+        self.assertIs(row.owner(), table)
+        row.set_member('имя', 'russian field')
+        row.set_member('name', 'english field')
+        self.assertEqual(row.get_member('имя'), 'russian field')
+        self.assertEqual(row.get_member('name'), 'english field')
+        column.set_member('имя', 'НовоеИмя')
+        self.assertEqual(table.get_member('columns').get(0).get_member('имя'), 'новоеимя')
+        self.assertEqual(row.get_member('новоеимя'), 'russian field')
+        self.assertEqual(row.get_member('name'), 'english field')
+
     def test_insert_delete_and_iteration(self):
         table = self.table()
         table.add().set(0, 2)
