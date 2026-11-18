@@ -45,8 +45,10 @@ sandbox against trusted Python embedding code.
 - System namespace values, dynamic Execute/Eval-style interpreter services,
   custom constructors, arbitrary host-object member exposure, legacy collection
   wrapper interoperability and full error/runtime equivalence are incomplete.
-- String ordering is native Python ordering in this direct profile, not the
-  preceding UCA ordering. Decimal/native arithmetic equivalence is incomplete.
+- Exact string relational ordering now explicitly uses the existing bounded UCA10
+  kernel; ordinal experimental profiles remain available. See
+  [evidence and limits](direct-string-collation.md). Full native locale and
+  Decimal/native arithmetic equivalence remain incomplete.
 - Conditional local Var shadowing a module name is explicitly unsupported.
 - Private generated routine locals are not exposed through `vm.locals`.
 - This is trusted-process execution, not an untrusted-code sandbox. No custom

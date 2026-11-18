@@ -43,7 +43,7 @@ class DirectSourceTransactionTests(unittest.TestCase):
             with self.subTest(sql=sql),self.assertRaises((BackendError,BSLRuntimeError)):
                 self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="bad";BeginTransaction();Corrupt();A.Write();CommitTransaction();')
             self.clean();self.assertEqual(self.count(),0)
-    def test_handler_bearing_write_stays_denied_and_rolls_back_prior_staging(self):
+    def test_refused_handler_rolls_back_prior_staging(self):
         with self.assertRaises((BackendError,BSLRuntimeError)):
             self.vm.execute('A=Catalogs.Склады.CreateItem();A.Description="staged";B=Catalogs.Номенклатура.CreateItem();B.Description="product";BeginTransaction();A.Write();B.Write();CommitTransaction();')
         self.clean();self.assertEqual(self.count(),0);self.assertTrue(self.vm.variables['a'].is_new())

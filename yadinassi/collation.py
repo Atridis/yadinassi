@@ -42,6 +42,10 @@ def string_key(value: str) -> tuple[int, ...]:
     return _collator().sort_key(normalized)
 
 
+# Definition-time pure kernel identity for the direct relational adapter.
+_DIRECT_STRING_KEY_ABI = string_key
+
+
 def caseless_string_key(value: str) -> tuple[int, ...]:
     """Primary and secondary UCA weights; native-backed subset, not locale ICU.
 

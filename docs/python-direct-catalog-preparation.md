@@ -59,3 +59,10 @@ the saved section; marked warehouse refusal; source replacement refusal;
 unavailable methods rejected before candidate effects; explicit transactions
 cannot bypass validation; and host-only preparation does not write. Full database,
 query, posting and application UI parity are separate integration work.
+
+
+Policy-selected main_demo handlers may also run inside an owned explicit direct
+transaction through the [guarded preparation lane](direct-transaction-beforewrite-design.md).
+It uses the same writer snapshot, stages a frozen draft and never replays the
+handler during uncertain-commit resolution. Unselected host preparation and
+legacy explicit-transaction handler paths remain rejected.

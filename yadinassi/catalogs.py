@@ -324,7 +324,10 @@ class BSLCatalogObject(BSLObject):
 
     def _write(self, *, preparation=None):
         """Shared host writer. Preparation is never an exposed BSL argument."""
-        m=self._manager;caps=m._backend.capabilities()
+        m=self._manager
+        from .python_direct_transactions import check_current_root_if_present
+        check_current_root_if_present(m._backend)
+        caps=m._backend.capabilities()
         from .database_transactions import current
         active = current(m._backend)
         if active is not None and self._pending_write is not None: raise BackendError('unsupported')
@@ -342,9 +345,11 @@ class BSLCatalogObject(BSLObject):
             # Never reinterpret a previously submitted ordinary write as one
             # protected by a new source/validation contract.
             raise BackendError('uncertain_commit')
+        selected_source=None
         if self._pending_write is None:
             policy = getattr(m._backend, 'catalog_write_preparation', None)
             source = policy(m._schema.identity) if policy is not None else None
+            selected_source=source
             if source is not None:
                 if preparation is not None and preparation[0] != source:
                     raise BackendError('schema_changed')
@@ -365,7 +370,9 @@ class BSLCatalogObject(BSLObject):
         from .database_transactions import current
         transaction = current(m._backend)
         if transaction is not None:
-            if preparation is not None: raise BackendError('unsupported')
+            if preparation is not None:
+                from .python_direct_transaction_preparation import stage_selected_source
+                return stage_selected_source(self,preparation,selected_source)
             transaction.stage(self, 'catalog_create' if expected is None else 'catalog_update',
                               draft, expected, (draft,expected,operation))
             return ()
@@ -493,3 +500,6 @@ class BSLCatalogSelection(BSLObject):
 # Definition-time ABI for the direct live movement ownership traversal.
 _DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in dict.fromkeys(base for receiver in (BSLCatalogs,BSLCatalogManager,) for base in receiver.__mro__))
+
+# Definition-time family identity/raw storage for direct transaction ingress.
+_DIRECT_CATALOG_FAMILY_ABI=(BSLCatalogs,next(vars(cls)["__dict__"] for cls in BSLCatalogs.__mro__ if "__dict__" in vars(cls)))

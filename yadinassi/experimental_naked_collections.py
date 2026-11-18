@@ -89,7 +89,7 @@ _ALIASES={'добавить':'add','вставить':'insert','получить
 # Named, independently selectable repairs. These are experiment variants, NOT a
 # restoration of the production admission/runtime pipeline. Each repair has a
 # specific reproduced failure; incomplete global contracts remain explicit.
-REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'))
+REPAIRS=frozenset(('typed_map_keys','array_index_contract','array_insert_shape','constructor_bounds','byref_routines','error_boundaries','service_boundaries','authority_checkpoints','bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','structure_fields','method_values','dynamic_host_refs','resource_bounds','live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'))
 
 class _NakedMap(dict):
     """Map kind only, needed for valid missing-key reference outputs."""
@@ -296,6 +296,8 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if 'resource_bounds' in repairs:
         repairs=repairs | {'constructor_bounds','array_insert_shape'}
     if not repairs<=REPAIRS:raise ValueError('unknown naked repairs: '+repr(repairs-REPAIRS))
+    if 'uca_string_order' in repairs and 'native_order' not in repairs:
+        raise ValueError('uca_string_order requires native_order')
     services='service_boundaries' in repairs;authority='authority_checkpoints' in repairs
     if type(_host_routine_bindings) is not bool:raise TypeError('host routine bindings require Boolean')
     if _host_routine_bindings and not (_trusted_entry and services and {'byref_routines','dynamic_host_refs'}<=repairs):
@@ -330,7 +332,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if service_references and (not services or 'byref_routines' not in repairs):raise ValueError('service references require explicit byref and service repairs')
     if any(type(index) is not int or index<0 for indices in service_references.values() for index in indices):raise ValueError('invalid service reference index')
     scalar_ops=None
-    if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'}:
+    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division'}:
         from . import experimental_naked_scalar_semantics as scalar_ops
     structure_ops=None
     if 'structure_fields' in repairs:
@@ -459,7 +461,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         definite_reads=definite_reads|array_definite_reads
     # Raw diagnostic profiles return Python int from Count, which the existing
     # checked-index contract rejects. Do not silently repair that mismatch.
-    if not repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:array_indexes=frozenset()
+    if not repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'}:array_indexes=frozenset()
     # Names with no lexical binding in a routine cannot resolve to another
     # side's module or a generated Python global. Diagnose them as BSL names,
     # without adding locals() probes to every valid routine variable read.
@@ -655,7 +657,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                 captured=temp()
                 return '(_bsl_concatenate('+captured+', '+right+') if type(('+captured+' := '+left+')) is str else '+captured+' + '+right+')'
             if node.operator in ('<','<=','>','>=') and 'native_order' in repairs:
-                if type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str and type(node.right.value) is str:
+                if 'uca_string_order' not in repairs and type(node.left) is ast.Literal and type(node.right) is ast.Literal and type(node.left.value) is str and type(node.right.value) is str:
                     return literal(scalar_ops.order(node.left.value,node.right.value,node.operator))
                 return '_native_order('+expression(node.left)+', '+expression(node.right)+', '+repr(node.operator)+')'
             if node.operator in ('=','<>') and repairs & {'array_identity_equality','structure_identity_equality','map_identity_equality'}:
@@ -751,7 +753,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     if method=='clear':return '('+obj+').clear()'
                     if method in ('count','ubound'):
                         value='len('+obj+')'+(' - 1' if method=='ubound' else '')
-                        return 'Decimal('+value+')' if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'} else '('+value+')'
+                        return 'Decimal('+value+')' if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'} else '('+value+')'
                     if method=='get':
                         if id(node) in array_indexes:return '('+obj+')[int('+args[0]+')]'
                         receiver=temp()
@@ -793,7 +795,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
                     return route('('+obj+').'+target+'('+', '.join(native_args)+')')
                 if method in ('count','ubound') and not args:
                     count='(len('+obj+')'+(' - 1' if method=='ubound' else '')+')'
-                    if repairs & {'bsl_truth','bsl_presentation','native_order','typed_find'}:count='Decimal('+count+')'
+                    if repairs & {'bsl_truth','bsl_presentation','native_order','uca_string_order','typed_find'}:count='Decimal('+count+')'
                     return route(count)
                 if method in ('get','insert','set','delete'):
                     receiver=temp();key=args[0] if args else 'None'
@@ -1089,7 +1091,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if 'resource_bounds' in repairs:
         from .experimental_naked_resources import bounded_array, bounded_insert
         namespace.update(_array_constructor_bounds=bounded_array,_array_insert_shape=bounded_insert)
-    if scalar_ops is not None:namespace.update(_bsl_truth=scalar_ops.truth,_bsl_concatenate=scalar_ops.concatenate,_native_order=scalar_ops.order,_typed_find=scalar_ops.typed_find)
+    if scalar_ops is not None:namespace.update(_bsl_truth=scalar_ops.truth,_bsl_concatenate=scalar_ops.concatenate,_native_order=(scalar_ops.uca_order if 'uca_string_order' in repairs else scalar_ops.order),_typed_find=scalar_ops.typed_find)
     if repairs & {'array_identity_equality','structure_identity_equality','map_identity_equality'}:
         if 'map_identity_equality' in repairs:
             equal,not_equal=scalar_ops.map_identity_operators(

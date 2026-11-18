@@ -22,6 +22,7 @@ class CatalogPreparationBoundary(BoundaryContext):
     def __init__(self, vm):
         super().__init__()
         self.vm=vm
+        self._transaction_scope=getattr(vm,"_direct_transaction_preparation_scope",None)
         self.receiver=vm.receiver_object
         self.catalogs=self.receiver._manager._catalogs
         self._owned={id(self.receiver):self.receiver}
@@ -31,8 +32,10 @@ class CatalogPreparationBoundary(BoundaryContext):
     def _check(self):
         super()._check()
         if self.vm._family_closed:raise BoundaryViolation('catalog preparation is closed')
+        if self._transaction_scope is not None:self._transaction_scope.check()
 
     def _adopt(self,value):
+        if self._transaction_scope is not None:self._check()
         kind=type(value)
         if kind is BSLCatalogObject:
             if value._manager._catalogs is not self.catalogs:raise ValueError('catalog preparation: foreign object')
@@ -62,7 +65,9 @@ class CatalogPreparationBoundary(BoundaryContext):
         self._check()
         from .catalog_object_preparation import _SELF
         if name in _SELF:raise ValueError('catalog preparation: ThisObject is read-only')
-        self.receiver.set_member(name,value)
+        try:self.receiver.set_member(name,value)
+        finally:
+            if self._transaction_scope is not None:self._check()
 
     def external_reference(self,name):
         from .catalog_object_preparation import _SELF
@@ -71,7 +76,12 @@ class CatalogPreparationBoundary(BoundaryContext):
 
     def resolve_service(self,*args,**kwargs):
         bound=super().resolve_service(*args,**kwargs)
-        def invoke(*values):return self._adopt(bound(*values))
+        def invoke(*values):
+            if (self._transaction_scope is not None
+                    and args[0].casefold() not in ('значениезаполнено','valueisfilled')
+                    and any(type(value) is BSLCatalogReference for value in values)):
+                raise ValueError('catalog transaction preparation: reference presentation unavailable')
+            return self._adopt(bound(*values))
         if hasattr(bound,'requires_reference'):invoke.requires_reference=bound.requires_reference
         return invoke
 
@@ -86,11 +96,14 @@ class CatalogPreparationBoundary(BoundaryContext):
                 or view.catalog_schema(manager._schema.identity) != manager._schema):
             raise BackendError('schema_changed')
         card=view.read_catalog(manager._key(reference.reference_uuid))
+        if self._transaction_scope is not None:self._check()
         return None if card is None else self._adopt(BSLCatalogObject(manager,card))
 
     def get_member(self,value,name):
         self._receiver(value)
         from .catalog_object_preparation import _METHODS
+        if self._transaction_scope is not None and type(value) is BSLCatalogReference:
+            raise ValueError('catalog transaction preparation: use GetObject for reference reads')
         if name.casefold() not in self.vm.member_names|_METHODS:
             raise ValueError('catalog preparation: unavailable member')
         result=value.get_member(name)
@@ -102,7 +115,10 @@ class CatalogPreparationBoundary(BoundaryContext):
         if name.casefold() not in self.vm.member_names:
             raise ValueError('catalog preparation: unavailable assignment')
         def write(new):
-            self._receiver(value);value.set_member(name,new)
+            self._receiver(value)
+            try:value.set_member(name,new)
+            finally:
+                if self._transaction_scope is not None:self._check()
         return write
 
     def set_member(self,value,name,new):return self.resolve_set_member(value,name)(new)

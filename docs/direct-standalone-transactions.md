@@ -10,8 +10,9 @@ preparation restrictions. Main_demo source admission may borrow a registered
 read-only lease of the exact active writer, validating the unchanged source,
 schema, profile and handler grants on that same snapshot. This allows catalogs
 with no object handler (for example, Warehouses) to stage ordinary writes. A
-catalog with a selected BeforeWrite handler remains unsupported in an explicit
-transaction: this slice does not bypass or execute that handler.
+policy-selected main_demo BeforeWrite handler uses a separate bounded direct
+[preparation lane](direct-transaction-beforewrite-design.md); arbitrary host
+preparation and legacy handler execution remain unsupported.
 
 The module owns a fresh private lifecycle object. No database execution token is
 installed just for running a module: doing that breaks ordinary server boundaries.
@@ -71,10 +72,9 @@ journals are not reinterpreted as an absent handler. No source decision is cache
 across transaction boundaries. Existing staging, rollback and uncertain-commit
 recovery are unchanged.
 
-Supporting selected BeforeWrite handlers is separate architectural work. It must
-run the bounded handler against the same writer snapshot before staging, keep
-writes inside an appropriate savepoint, preserve cancellation and message semantics,
-validate referenced objects against that writer, freeze the prepared submitted
-intent, and resolve uncertain outcomes without re-running the handler. The current
-`preparation is not None` transaction rejection is deliberately retained. Simply
-removing it, using a second connection, or skipping a handler is not a safe fix.
+Selected main_demo BeforeWrite handlers now have a separate direct-only lane,
+with owner/context/thread checks, a readonly writer lease and a savepoint. The
+prepared draft is frozen before staging; cancellation and faults do not create
+journal entries, and uncertain recovery never re-executes the handler. See the
+[contract and regression matrix](direct-transaction-beforewrite-design.md).
+This does not admit arbitrary host-supplied source or legacy handler execution.

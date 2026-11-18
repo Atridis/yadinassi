@@ -67,7 +67,7 @@ class DirectCatalogPreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unavailable'):prepare_catalog_object(source,self.card)
         self.assertEqual(self.card.get_member('Наименование'),'  Кабель  ')
 
-    def test_explicit_transaction_does_not_bypass_preparation(self):
+    def test_host_explicit_transaction_does_not_gain_handler_authority(self):
         from yadinassi import database_transactions as tx
         with self.assertRaises(BackendError):
             with tx.execution(self.db.backend):

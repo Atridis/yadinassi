@@ -2996,3 +2996,6 @@ def _preflight_create(configuration, *, activate=True, query_indexes=False, _sou
 # Definition-time ABI for the direct live movement ownership traversal.
 _DIRECT_MOVEMENT_PARENT_CLASSES=tuple((cls,cls.__mro__,tuple(vars(cls).items()))
     for cls in dict.fromkeys(base for receiver in (SQLiteCatalogBackend,) for base in receiver.__mro__))
+
+# Exact source-selection entry for bounded explicit-transaction preparation.
+_TRANSACTION_PREPARATION_POLICY_ABI=(SQLiteCatalogBackend,SQLiteCatalogBackend._main_demo_write_source)

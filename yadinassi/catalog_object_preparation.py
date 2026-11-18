@@ -248,7 +248,7 @@ def prepare_catalog_object(source, receiver, *, cancel=False):
     return _prepare_catalog_object(source, receiver, cancel=cancel)
 
 
-def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, prepared=None):
+def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, prepared=None, _transaction_scope=None):
     if type(receiver) is not BSLCatalogObject or type(cancel) is not bool:
         raise TypeError('catalog preparation: exact object and Boolean required')
     if receiver._pending_write is not None:
@@ -256,6 +256,7 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, 
     if type(source) is not str or len(source.encode('utf-8')) > _MAX_SOURCE:
         raise ValueError('catalog preparation: source limit')
     from .execution_policy import current_backend
+    if _transaction_scope is not None:_transaction_scope.check()
     if current_backend() == 'python-direct':
         from .python_direct_catalog_preparation import prepared_validator
         prepared=prepared_validator(receiver._manager,source,prepared=prepared)
@@ -277,7 +278,13 @@ def _prepare_catalog_object(source, receiver, *, cancel=False, write_view=None, 
             raise ValueError('catalog preparation: message limit')
         records.append(record)
     vm = _ObjectInterpreter(receiver, sink, write_view)
+    vm._direct_transaction_preparation_scope=_transaction_scope
     try:
+        if _transaction_scope is not None:
+            _transaction_scope.check()
+            if vm.execution_backend!='python-direct':
+                from .experimental_naked_boundaries import BoundaryViolation
+                raise BoundaryViolation('catalog preparation requires direct execution')
         if any(n.name.casefold() in vm.object_names | _SELF | set(vm.functions)
                for n in program):
             raise ValueError('catalog preparation: routine collision')

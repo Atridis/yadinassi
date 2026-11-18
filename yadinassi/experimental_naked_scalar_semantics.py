@@ -5,6 +5,7 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 """
 from decimal import Decimal
 from .strings import concatenate as _join
+from .collation import _DIRECT_STRING_KEY_ABI as _string_key
 from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
 from .values import NULL, to_string, _DIRECT_FIXED_ARRAY_TYPE, divide as _divide
 from .structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
@@ -94,6 +95,18 @@ def order(left, right, operator):
     if operator == '<=': return left <= right
     if operator == '>': return left > right
     if operator == '>=': return left >= right
+    raise ValueError('ordering operator required')
+
+
+def uca_order(left, right, operator):
+    """Exact string ordering through the existing bounded, pinned UCA kernel."""
+    if type(left) is not str or type(right) is not str:
+        return order(left, right, operator)
+    left_key, right_key = _string_key(left), _string_key(right)
+    if operator == '<': return left_key < right_key
+    if operator == '<=': return left_key <= right_key
+    if operator == '>': return left_key > right_key
+    if operator == '>=': return left_key >= right_key
     raise ValueError('ordering operator required')
 
 
