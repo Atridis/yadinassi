@@ -84,10 +84,38 @@ class AccumulationHeaderTests(unittest.TestCase):
         for method in ('schema_data', 'validate_replacement'):
             for writer in (False, True):
                 with self.subTest(method=method, writer=writer):
+                    # PreparedSource is an importer cache, not the retained
+                    # readonly epoch admission. Force this fault path cold.
+                    self.backend._close_idle_read_handle()
                     self.backend._prepared_source.clear()
-                    with patch.object(movements, method, side_effect=BackendError('integrity')):
+                    with patch.object(movements, method, side_effect=BackendError('integrity')) as injected:
                         with self.assertRaises(BackendError):
-                            self.backend.begin_write(uuid4()) if writer else self.backend.begin_read()
+                            # Close an unexpected successful view as well, so a
+                            # missed fault cannot turn the next case into busy.
+                            with closing(self.backend.begin_write(uuid4()) if writer else self.backend.begin_read()):
+                                pass
+                        injected.assert_called_once()
                     self.assertIsNone(self.backend._active)
                     self.assertIsNone(self.backend._prepared_source._entry)
                     with closing(self.backend.begin_read()): pass
+
+    def test_warm_header_admission_does_not_reenter_initializer(self):
+        with closing(self.backend.begin_read()): pass
+        handle = self.backend._read_handle
+        self.assertIsNotNone(handle.admission)
+        # Clearing only parsed source must not masquerade as a changed DB epoch.
+        self.backend._prepared_source.clear()
+        with patch.object(movements, 'validate_replacement', side_effect=BackendError('integrity')) as injected:
+            with closing(self.backend.begin_read()) as view:
+                self.assertTrue(view.catalogs())
+            injected.assert_not_called()
+            self.assertIsNone(self.backend._active)
+            self.assertIs(self.backend._read_handle, handle)
+            # A writer cannot borrow that warm proof, even when it fails.
+            with self.assertRaises(BackendError):
+                with closing(self.backend.begin_write(uuid4())): pass
+            injected.assert_called_once()
+        self.assertIsNone(self.backend._active)
+        self.assertIsNone(handle.admission)
+        self.assertIsNone(self.backend._prepared_source._entry)
+        with closing(self.backend.begin_read()): pass

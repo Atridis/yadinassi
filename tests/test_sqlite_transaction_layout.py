@@ -16,12 +16,17 @@ class TransactionLayoutTests(unittest.TestCase):
     setUp = fixture.TransactionSourceTests.setUp
     mutate = fixture.TransactionSourceTests.mutate
 
-    def test_each_transaction_loads_layout_and_sections_once(self):
+    def test_cold_writer_and_invalidated_reads_load_maps_once_warm_reuses_admission(self):
         # Source admission checks the layout; header-only admission performs
         # no reference operations and must not reload the same registry.
-        for writer in (False, False, True, False):
-            with self.subTest(writer=writer):
+        for phase, writer, expected in (('cold', False, 1), ('warm', False, 0),
+                                         ('writer', True, 1), ('after_writer', False, 1)):
+            with self.subTest(phase=phase):
                 trace = []
+                # The warm path never enters read_source: observe its retained
+                # connection directly rather than silently collecting no trace.
+                if self.backend._read_handle is not None:
+                    self.backend._read_handle.connection.set_trace_callback(trace.append)
                 original = profile.read_source
                 def observed(connection, **kwargs):
                     self.assertTrue(connection.in_transaction)
@@ -32,9 +37,14 @@ class TransactionLayoutTests(unittest.TestCase):
                     with closing(view):
                         connection = view._connection
                     connection.set_trace_callback(None) if not writer else None
-                self.assertEqual(source.call_count, 1)
-                self.assertEqual(trace.count('SELECT catalog_id,physical_name FROM catalog_storage_map'), 1)
-                self.assertEqual(trace.count('SELECT catalog_id,section_id,physical_name FROM catalog_section_storage_map'), 1)
+                self.assertEqual(source.call_count, expected)
+                self.assertEqual(trace.count('SELECT catalog_id,physical_name FROM catalog_storage_map'), expected)
+                self.assertEqual(trace.count('SELECT catalog_id,section_id,physical_name FROM catalog_section_storage_map'), expected)
+                if expected == 0:
+                    self.assertIn('BEGIN', trace)
+                    self.assertIn('PRAGMA main.data_version', trace)
+                self.assertIn('ROLLBACK', trace)
+                self.assertIsNone(self.backend._active)
 
     def test_default_triple_and_optional_maps_match_fresh_loads(self):
         with closing(self.backend.begin_read()) as view:
