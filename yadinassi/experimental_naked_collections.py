@@ -75,6 +75,10 @@ class _MapEntry:
     value: object
 
 
+# Retain the definition identity before lazy direct service admission.
+_DIRECT_MAP_ENTRY_TYPE = _MapEntry
+
+
 _ALIASES={'добавить':'add','вставить':'insert','получить':'get','установить':'set',
           'удалить':'delete','очистить':'clear','количество':'count','найти':'find',
           'вграница':'ubound','свойство':'property'}

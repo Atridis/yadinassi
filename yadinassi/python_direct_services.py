@@ -14,6 +14,7 @@ from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQu
 from . import regex_functions, strings
 from .experimental_naked_boundaries import BoundaryViolation
 
+from .experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry
 from .type_values import _DIRECT_TYPE_OF_ABI
 from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from .runtime import _eval_marker
@@ -125,6 +126,7 @@ class ServicesBoundary:
                 if kind is list:return BSLType.ARRAY
                 if kind is _DirectStructure:return BSLType.STRUCTURE
                 if kind is _TypedMap:return BSLType.MAP
+                if kind is _CanonicalMapEntry:return BSLType.KEY_AND_VALUE
                 return _DIRECT_TYPE_OF_ABI(value)
             self._check()
             self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))
