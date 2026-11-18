@@ -11,7 +11,8 @@ An already-running exact configuration application, with synchronous client-only
 common modules, no database, session module/parameters, reusable result cache,
 global modules or server transport. All registered routines have explicit
 `Val` parameters without defaults. Commands can assign scalar root variables,
-evaluate scalar expressions, call named exported module routines and report
+evaluate scalar expressions, handle ordinary errors with nested Try/Except,
+raise or rethrow them, call named exported module routines and report
 results using canonical `Message`/`Сообщить`. Arguments and results are limited
 to exact `None`, `bool`, `str` and `Decimal`; collections and host objects cannot
 cross a public command boundary.
@@ -53,3 +54,17 @@ standalone configuration guard. Merely removing that guard would lose the
 finite contract above. Tests cover the separate runner, no legacy evaluator
 calls, live policies/owner changes, hostile values, unsupported data/transport,
 transitive service restrictions, reentrant execution and cleanup.
+
+## Ordinary error recovery
+
+Command validation descends through both Try and Except branches before any
+source effect, including unreachable handlers. Raise accepts an ordinary scalar
+description or a bare rethrow in a syntactically valid handler; optional extended
+Raise arguments remain outside this lane. Execution reuses the existing direct
+error lowering, not an AST evaluator. Its catchable exception set does not
+include BoundaryViolation. Active command state is checked before generic
+closed-application diagnostics, so closing or failing the application in an
+output callback cannot enter an Except handler. Owner, service and command-scope rejections cannot
+be swallowed by a BSL handler. A rethrow preserves the original module location;
+command scope, context-stack and transaction-activation cleanup still happen on
+both caught and escaping errors. This adds no new host service or endpoint.

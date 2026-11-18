@@ -169,12 +169,22 @@ def _validate_command(program,app):
             for argument in node.arguments:expression(argument)
             return
         _unsupported()
-    for node in program:
-        if type(node) is ast.Assign and type(node.target) is ast.Name:
-            app.check_assignment(node.target.name.casefold(),app.interpreter)
-            expression(node.value)
-        elif type(node) is ast.ExpressionStatement:expression(node.expression)
-        else:_unsupported()
+    def statements(nodes):
+        for node in nodes:
+            if type(node) is ast.Assign and type(node.target) is ast.Name:
+                app.check_assignment(node.target.name.casefold(),app.interpreter)
+                expression(node.value)
+            elif type(node) is ast.ExpressionStatement:expression(node.expression)
+            elif type(node) is ast.Try:
+                # Validate both branches before any effect, even unreachable
+                # handlers. Execution uses the existing typed error lowering,
+                # which never catches fail-closed BoundaryViolation.
+                statements(node.body);statements(node.handler)
+            elif type(node) is ast.Raise:
+                if node.optional_arguments:_unsupported()
+                if node.value is not None:expression(node.value)
+            else:_unsupported()
+    statements(program)
 
 
 def execute_command(app,text,source):

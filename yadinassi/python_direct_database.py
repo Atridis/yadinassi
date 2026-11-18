@@ -15,6 +15,7 @@ from .enum_types import BSLEnumReference
 from .document_posting_values import DOCUMENT_WRITE_MODES
 from .structures import BSLStructure, BSLFixedStructure, BSLKeyAndValue
 from .values import HostFunction, BSLArray, BSLFixedArray
+from decimal import Decimal
 from .regex_functions import BSLRegexResult, BSLRegexGroup
 from .file_io import BSLFile, BSLBinaryData
 from .http_client import BSLHTTPConnection, BSLHTTPRequest, BSLHTTPResponse
@@ -26,7 +27,8 @@ from .python_direct_names import NAMES as SYSTEM_NAMES, VALUE_IDS as SYSTEM_VALU
 from .metadata import BSLMetadata, BSLCatalogMetadataCollection, BSLCatalogMetadata
 from .queries import BSLQuery, BSLQueryResult, BSLQueryResultSelection
 from .value_tables import (BSLValueTable, BSLValueTableRow, BSLCollectionIndex, BSLCollectionIndexes,
-                           BSLValueTableColumn, BSLValueTableColumnCollection)
+                           BSLValueTableColumn, BSLValueTableColumnCollection, _DIRECT_ITERATION_TYPES)
+_CALL_TABLE, _CALL_COLUMNS, _CALL_ROW, _ = _DIRECT_ITERATION_TYPES
 from .type_descriptions import BSLTypeDescription
 from .type_qualifiers import (BSLNumberQualifiers, BSLStringQualifiers,
                               BSLDateQualifiers, BSLBinaryDataQualifiers)
@@ -165,21 +167,32 @@ class CatalogBoundary:
         return _ForwardReference(Reference(read,write))
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
-        if type(value) not in (BSLValueList,BSLValueListItem):
+        # Tables already have an admitted method boundary. Only omission calls
+        # need the extra call-site protocol; ordinary calls remain unchanged.
+        table_holes=bool(omitted) and any(type(value) is cls for cls in (_CALL_TABLE,_CALL_COLUMNS,_CALL_ROW))
+        if not table_holes and type(value) not in (BSLValueList,BSLValueListItem):
             return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
         self._catalog_owner(value)
         function=value.get_method(name)
         if type(function) is not HostFunction:
-            raise BoundaryViolation('value list method requires canonical HostFunction')
+            raise BoundaryViolation('table/list method requires canonical HostFunction')
         if require_value and not function.returns_value:
             raise TypeError('Процедура не возвращает значение: '+name)
         defaults=()
         if type(value) is BSLValueList:
             if name.casefold() in ('add','добавить'):defaults=(None,'',False)
             elif name.casefold() in ('insert','вставить'):defaults=(None,None,'',False)
-        optional=range(1 if name.casefold() in ('insert','вставить') else 0,len(defaults))
+        elif type(value) is _CALL_COLUMNS:
+            if name.casefold() in ('add','добавить'):defaults=('',None,'',Decimal(0))
+            elif name.casefold() in ('insert','вставить'):defaults=(None,'',None,'',Decimal(0))
+        elif type(value) is _CALL_TABLE:
+            if name.casefold() in ('copy','скопировать'):defaults=(None,None)
+            elif name.casefold() in ('copycolumns','скопироватьколонки'):defaults=(None,)
+            elif name.casefold() in ('fillvalues','заполнитьзначения'):defaults=(None,None)
+        first=1 if name.casefold() in ('insert','вставить','fillvalues','заполнитьзначения') else 0
+        optional=range(first,len(defaults))
         if any(index not in optional for index in omitted):
-            raise TypeError('Пропуск обязательного аргумента метода списка значений')
+            raise TypeError('Пропуск обязательного аргумента метода таблицы или списка значений')
         def invoke(*arguments):
             self._catalog_owner(value)
             values=list(arguments) if omitted else arguments

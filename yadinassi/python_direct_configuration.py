@@ -39,11 +39,15 @@ class ConfigurationBoundary(BoundaryContext):
         self.app,self.owner,self.routine=app,owner,routine
         self._command_scope=_COMMAND_SCOPE.get()
     def _check(self):
-        super()._check();check_owner(self.app,self.owner)
+        super()._check()
         scope=self._command_scope
         if _COMMAND_SCOPE.get() is not scope:
             raise BoundaryViolation('direct configuration boundary left its command context')
+        # Within a command, scope validates state/thread/context before the
+        # generic owner's catchable closed-application diagnostic. A revoked
+        # command must not enter a BSL Except handler after a host callback.
         if scope is not None:scope.check(self.app,self.owner)
+        else:check_owner(self.app,self.owner)
         if self.routine is not None:self.app.check_call(self.routine,self.owner)
     def external_get(self,name):
         self._check()
