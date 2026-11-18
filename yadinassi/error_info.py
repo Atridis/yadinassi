@@ -95,3 +95,9 @@ def empty_error_info() -> BSLErrorInfo:
     """Native empty diagnostic value, distinct from Undefined and Raise(\"\")."""
     return BSLErrorInfo("", categories=frozenset({BSLErrorCategory.ALL_ERRORS,
                                                 BSLErrorCategory.OTHER_ERROR}), _empty=True)
+
+# Definition-time identity and raw storage for direct scalar snapshots. Public
+# aliases and constructor methods may be rebound by trusted host integrations.
+_DIRECT_SNAPSHOT_ABI = (BSLErrorInfo, vars(BSLObject)['__dict__'],
+    frozenset({BSLErrorCategory.ALL_ERRORS, BSLErrorCategory.SCRIPT_RUNTIME_ERROR}),
+    frozenset({BSLErrorCategory.ALL_ERRORS, BSLErrorCategory.OTHER_ERROR}))

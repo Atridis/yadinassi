@@ -175,11 +175,29 @@ def description_service(context,function):
     """Replace only the current owner's canonical diagnostic builtin."""
     from types import MethodType
     from .values import HostFunction
-    from .runtime import _DIRECT_ERROR_DESCRIPTION_ABI
+    from .runtime import _DIRECT_ERROR_DESCRIPTION_ABI, _DIRECT_ERROR_INFO_ABI
     method=function.function
-    if (type(method) is not MethodType or method.__func__ is not _DIRECT_ERROR_DESCRIPTION_ABI
+    if (type(method) is not MethodType
+            or (method.__func__ is not _DIRECT_ERROR_DESCRIPTION_ABI
+                and method.__func__ is not _DIRECT_ERROR_INFO_ABI)
             or method.__self__ is not getattr(context,'vm',None)):
         return function
+    if method.__func__ is _DIRECT_ERROR_INFO_ABI:
+        from .python_direct_error_info import BSLErrorInfo, snapshot
+        def info():
+            errors=context._handled_errors
+            if (getattr(context,'_eval_depth',None) or [0])[0] or not errors or errors[-1] is None:
+                return snapshot(empty=True)
+            error=errors[-1].resolve(context)
+            if type(error) is not BSLRuntimeError:
+                raise ValueError('ИнформацияОбОшибке: тип исключения пока не поддерживается')
+            if error.info is None:
+                error.info=snapshot(error.message,module_name=error.source,
+                    line_number=error.line,initial_string=error.source_line)
+            if type(error.info) is not BSLErrorInfo:
+                raise ValueError('ИнформацияОбОшибке: требуется штатный снимок ошибки')
+            return error.info
+        return HostFunction(function.name,info,reference_parameters=function.reference_parameters,returns_value=function.returns_value)
     def description():
         errors=context._handled_errors
         return str(errors[-1].resolve(context)) if errors and errors[-1] is not None else ''

@@ -56,6 +56,8 @@ CONSTRUCTORS = {
 
 class ServicesBoundary:
     def get_member(self,value,name):
+        from .python_direct_error_info import owns, read
+        if owns(value):return read(self,value,name)
         if type(value) is BSLTextDocument:return text_resources.get(self,value,name)
         return super().get_member(value,name)
 
@@ -88,7 +90,8 @@ class ServicesBoundary:
         # Iterator pairs are direct scalar containers, not database receivers.
         # Resolve before the RHS, but report readonly only after evaluating it.
         # Exact identity admits no protocol, subclass, or payload authority.
-        if type(value) is not _CanonicalMapEntry:
+        from .python_direct_error_info import owns
+        if type(value) is not _CanonicalMapEntry and not owns(value):
             return super().resolve_set_member(value, name)
         self._check()
         def readonly(new_value):

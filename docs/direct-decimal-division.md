@@ -32,3 +32,13 @@ Python3.10 retains its existing diagnostic column limitation (statement column1
 rather than expression column12 in the zero-division test); line and message are
 preserved. The independent Python3.12 review reran35 tests:34 pass, one known
 string-collation failure in full native numbers prefix.
+
+For an exact `Decimal` whose normalized coefficient contains one digit, the
+bounded division helper reads that existing integer digit instead of allocating
+an intermediate Decimal and converting it back to an integer. This happens only
+after the unchanged work-limit checks. Operand lengths already computed for
+those checks are reused; no cache is added. Scale, sign, divmod and rounding stay
+unchanged. Decimal subclasses retain the original coefficient-constructor path,
+including validation of invalid/custom digits; the direct adapter continues to
+reject subclasses. This optimization targets small coefficients, not arbitrary
+division or overall application performance.

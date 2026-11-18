@@ -351,14 +351,20 @@ def divide(left: Decimal, right: Decimal) -> Decimal:
     shift = left_exponent - right_exponent + scale
     # Check metadata before constructing coefficients or allocating powers.
     # These are explicit Yadinassi work limits, not a platform precision cap.
-    sizes = (len(left_digits) + max(shift, 0),
-             len(right_digits) + max(-shift, 0),
+    left_size, right_size = len(left_digits), len(right_digits)
+    sizes = (left_size + max(shift, 0),
+             right_size + max(-shift, 0),
              abs(left_exponent), abs(right_exponent), abs(scale),
              max(1, left.adjusted() - right.adjusted() + 1) + max(scale, 0))
     if max(sizes) > _DIVISION_MAX_DIGITS:
         raise ValueError("Деление: превышен предел ресурсов Yadinassi (4096 десятичных разрядов)")
-    numerator = Decimal((0, left_digits, 0)).as_integer_ratio()[0]
-    denominator = Decimal((0, right_digits, 0)).as_integer_ratio()[0]
+    # A normalized one-digit coefficient is already an exact Python int.
+    # Keep this after all work-limit checks; no operand normalization/cache
+    # or precision/rounding rule changes are involved.
+    numerator = (left_digits[0] if left_size == 1 and type(left) is Decimal else
+                 Decimal((0, left_digits, 0)).as_integer_ratio()[0])
+    denominator = (right_digits[0] if right_size == 1 and type(right) is Decimal else
+                   Decimal((0, right_digits, 0)).as_integer_ratio()[0])
     if shift >= 0:
         numerator *= 10 ** shift
     else:
