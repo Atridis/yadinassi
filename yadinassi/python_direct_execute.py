@@ -98,7 +98,7 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
         from .syntax.parser import parse_fragment
         from .errors import BSLError, BSLRuntimeError
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from .experimental_naked_collections import prepare
+        from .experimental_direct_ast import compile_module_whole_source, compile_owned
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -123,8 +123,20 @@ def _execute_fragment(text,context,parent,bindings,visible,profile):
                 raise BSLRuntimeError(error.message,error.source,error.line,error.column) from None
             _,routines,constructors,calls=_source_facts(program)
             _admit_bindings(vm,routines,constructors,calls)
-            plan=prepare(text,source_name='<Выполнить>',parsed_ast=program,repairs=source_repairs,
-                constructors=constructor_names,external_names=external_names,_trusted_entry=True,_dynamic_new=profile is None,_source_routine_scopes=profile is not None)
+            from .python_direct import _nodes
+            # Preparation failure is not a BSL runtime error: an enclosing
+            # Try must not turn an unsupported fragment into successful execution.
+            from .python_direct import PythonDirectUnsupported
+            from .experimental_naked_collections import UnsupportedNakedSyntax
+            try:
+                if profile is not None:
+                    plan=compile_owned(program,source_text=text,source_name='<Выполнить>',
+                        external_names=external_names,constructors=constructor_names,
+                        source_scopes=True,authority_checks=True,require_last_expression=False)
+                else:
+                    plan=compile_module_whole_source(vm,program,tuple(_nodes(program)),text,'<Выполнить>')
+            except PythonDirectUnsupported as error:
+                raise UnsupportedNakedSyntax(str(error)) from None
             # No AST, mutable Program, caller scope, references or authorization is retained.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             if len(text)<=EXECUTE_MAX_SOURCE:

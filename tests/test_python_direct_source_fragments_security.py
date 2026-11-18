@@ -14,6 +14,8 @@ from yadinassi.python_direct_source_fragments import execution, _ACTIVE
 
 class SourceFragmentsSecurity(unittest.TestCase):
     def setUp(self):
+        old=patch('yadinassi.experimental_naked_collections.prepare',side_effect=AssertionError('old compiler'))
+        old.start();self.addCleanup(old.stop)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name))
             guard.start();self.addCleanup(guard.stop)
@@ -102,3 +104,27 @@ Procedure WriteShared() Export Execute("Shared=9;");EndProcedure''')
             self.assertEqual(effects,[])
             self.assertEqual(len(owners),1)
             self.assertNotIn(owners[0],_UNITS)
+
+    def test_unsupported_fragment_is_fatal_and_depth_recovers(self):
+        from yadinassi.experimental_naked_collections import UnsupportedNakedSyntax
+        app,_=self.app();app.start();vm=app.interpreter;effects=[]
+        vm.register_function('Effect',lambda:effects.append(1))
+        for expression in ('Execute("Effect();New UnsupportedConstructor;")',
+                           'Eval("New UnsupportedConstructor(Effect())")'):
+            for _ in range(2):
+                with self.assertRaises(UnsupportedNakedSyntax):
+                    vm.execute('Try '+expression+';Except Caught=True;EndTry;')
+                self.assertEqual(effects,[]);self.assertNotIn('caught',vm.variables)
+                self.assertEqual(_ACTIVE.get(),())
+        self.assertEqual(vm.execute('Eval("2+3");'),5)
+
+    def test_loop_authority_is_checked_after_callback_before_next_effect(self):
+        app,_=self.app();app.start();effects=[];vm=app.interpreter
+        def close():
+            effects.append('close');app.close()
+        vm.register_function('CloseOwner',close)
+        vm.register_function('Touch',lambda:effects.append('touch'))
+        with self.assertRaises(BoundaryViolation):
+            vm.execute('Execute("For I=1 To 2 Do CloseOwner();Touch();EndDo;");')
+        self.assertEqual(effects,['close'])
+        self.assertEqual(_ACTIVE.get(),())

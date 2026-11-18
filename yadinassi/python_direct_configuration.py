@@ -22,7 +22,8 @@ def parameter_snapshot(plan):
 _COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
 from . import safe_mode, source_transactions, database_transactions
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from .experimental_naked_collections import prepare, _Cell
+from .experimental_naked_collections import _Cell
+from .experimental_direct_ast import compile_owned
 from .experimental_naked_errors import convert_error
 from .python_direct import REPAIRS, _snapshot
 from .native_targets import target_context
@@ -193,9 +194,8 @@ def install(app,owner,program,source_text=''):
     if any(type(n) is ast.Routine and (n.is_async or n.is_dual) for n in program):
         raise BoundaryViolation('direct configured async/dual routines are not connected')
     owned=_snapshot(program)
-    plan=prepare(source_text,source_name=program[0].token.source if program else '<configuration>',
-        parsed_ast=owned,repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions),
-        _trusted_entry=True,_export_routines=True,_configuration_calls=True)
+    plan=compile_owned(owned,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
+        external_names=tuple(app._definitions),exports=True,authority_checks=True,configuration_calls=True)
     # Capture original declaration bindings when this exact plan is installed.
     # Never infer a default from later host-mutated declaration metadata.
     plan._configuration_parameters=tuple((node,tuple(

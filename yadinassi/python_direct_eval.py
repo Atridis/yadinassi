@@ -53,7 +53,7 @@ def _evaluate(value,context,parent,bindings,visible,profile):
         from .syntax.parser import parse_expression
         from .syntax.ast import ExpressionStatement
         from .python_direct import _source_facts,_admit_bindings,_contract,REPAIRS
-        from .experimental_naked_collections import prepare
+        from .experimental_direct_ast import compile_module_whole_source, compile_owned
         from .python_direct_services import CONSTRUCTORS
         from .python_direct_names import NAMES
         from .python_direct_database import NAMES as DB_NAMES
@@ -80,9 +80,20 @@ def _evaluate(value,context,parent,bindings,visible,profile):
             program=[ExpressionStatement(expression.token,expression)]
             _,routines,constructors,calls=_source_facts(program)
             _admit_bindings(vm,routines,constructors,calls)
-            plan=prepare(text,source_name='<Вычислить>',parsed_ast=program,repairs=source_repairs,
-                constructors=constructor_names,external_names=external_names,
-                _trusted_entry=True,_dynamic_new=profile is None,_return_last_expression=True,_source_routine_scopes=profile is not None,_require_last_expression=True)
+            from .python_direct import _nodes
+            # Preparation failure is not a BSL runtime error: an enclosing
+            # Try must not turn an unsupported fragment into successful execution.
+            from .python_direct import PythonDirectUnsupported
+            from .experimental_naked_collections import UnsupportedNakedSyntax
+            try:
+                if profile is not None:
+                    plan=compile_owned(program,source_text=text,source_name='<Вычислить>',
+                        external_names=external_names,constructors=constructor_names,
+                        source_scopes=True,authority_checks=True,require_last_expression=True)
+                else:
+                    plan=compile_module_whole_source(vm,program,tuple(_nodes(program)),text,'<Вычислить>',_require_last_expression=True)
+            except PythonDirectUnsupported as error:
+                raise UnsupportedNakedSyntax(str(error)) from None
             # Retain compilation only, never AST, mutable Program, bindings or authority.
             unit=(routines,constructors,calls,plan.function,plan.constants,plan.source_name,plan.source_text)
             while cache and (len(cache)>=16 or sum(len(k[0]) for k in cache)+len(text)>EVAL_MAX_SOURCE):

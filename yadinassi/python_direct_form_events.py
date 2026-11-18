@@ -2,7 +2,8 @@
 from decimal import localcontext
 from dataclasses import dataclass
 from .experimental_naked_boundaries import BoundaryContext,BoundaryViolation
-from .experimental_naked_collections import prepare,_Cell
+from .experimental_naked_collections import _Cell
+from .experimental_direct_ast import compile_owned
 from .experimental_naked_errors import convert_error
 from .python_direct import REPAIRS,_snapshot,_nodes
 from .python_direct_catalog_preparation import CatalogPreparationBoundary
@@ -118,8 +119,8 @@ def _event_plan(vm,program,source,product,owner):
                 receiver=node.callee.object
                 node.callee=ast.Name(node.callee.token,'_direct_check_object' if node.callee.name.casefold()=='проверитьданные' else '_direct_prepare_object')
                 node.arguments=[receiver,*node.arguments]
-    plan=prepare(source,parsed_ast=owned,repairs=REPAIRS,constructors=tuple(vm.types),
-                 module_names=tuple(vm.variables),_trusted_entry=True,_export_routines=True)
+    plan=compile_owned(owned,source_text=source,source_name=owned[0].token.source if owned else '<form-event>',
+                 constructors=tuple(vm.types),module_names=tuple(vm.variables),exports=True)
     if cache_owner is not None:setattr(cache_owner,slot,PreparedEvent(key,plan))
     return plan
 

@@ -5,7 +5,8 @@ selection, schema validation, transaction ownership and uncertain-write recovery
 """
 from decimal import Decimal, localcontext
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from .experimental_naked_collections import prepare, _Cell
+from .experimental_naked_collections import _Cell
+from .experimental_direct_ast import compile_owned
 from .experimental_naked_live_state import _ForwardReference
 from .experimental_naked_errors import convert_error
 from .python_direct import REPAIRS
@@ -200,6 +201,8 @@ def _validator_key(manager,source,repairs):
 def prepared_validator(manager,source,*,prepared=None):
     """One explicit last-plan slot per schema-bound manager, never authority."""
     repairs=tuple(REPAIRS)+_VALIDATOR_EXTRA_REPAIRS
+    if 'service_boundaries' not in repairs:
+        raise ValueError('catalog preparation bounds require trusted authority boundaries')
     key=_validator_key(manager,source,repairs)
     if prepared is not None:
         if type(prepared) is not PreparedCatalogValidator or prepared._key != key:
@@ -211,10 +214,9 @@ def prepared_validator(manager,source,*,prepared=None):
     program=_admit_catalog_object_source(source,manager._schema)
     names=_ALIASES|{field.name.casefold() for field in manager._schema.fields}|{section.name.casefold() for section in manager._schema.tabular_sections}
     if names & (_SELF|{'отказ'}):raise ValueError('catalog preparation: reserved object member')
-    plan=prepare(source,source_name='<catalog-preparation>',repairs=repairs,
-                 constructors=_VALIDATOR_CONSTRUCTORS,
-                 external_names=tuple(names|_SELF),parsed_ast=program,
-                 _trusted_entry=True,_export_routines=True,_catalog_preparation_bounds=True)
+    plan=compile_owned(program,source_text=source,source_name='<catalog-preparation>',
+                 constructors=_VALIDATOR_CONSTRUCTORS,external_names=tuple(names|_SELF),
+                 exports=True,authority_checks=True,catalog_bounds=True)
     result=PreparedCatalogValidator(key,tuple(program),plan)
     manager._direct_validator_plan=result
     return result

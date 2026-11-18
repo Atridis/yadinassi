@@ -14,13 +14,13 @@ class PreparedPostingTests(TestCase):
         self.vm=self.f.vm
     def test_compile_once_before_own_transaction_fresh_receivers_contexts(self):
         import yadinassi.python_direct_posting as direct
-        original=direct.prepare;boundary=direct.PostingBoundary;compiles=[];contexts=[]
+        original=direct.compile_owned;boundary=direct.PostingBoundary;compiles=[];contexts=[]
         def compile(*args,**kwargs):
             self.assertIsNone(self.f.fixture.context.backend._active);compiles.append(1)
             return original(*args,**kwargs)
         def context(vm):
             result=boundary(vm);contexts.append(result);return result
-        with patch.object(direct,'prepare',compile),patch.object(direct,'PostingBoundary',context):
+        with patch.object(direct,'compile_owned',compile),patch.object(direct,'PostingBoundary',context):
             a=self.f.document();a.write(DocumentWriteMode.POSTING);a.write(DocumentWriteMode.POSTING)
             b=self.f.document();b.set_member('Number','second');b.write(DocumentWriteMode.POSTING)
         self.assertEqual(len(compiles),1);self.assertEqual(len(contexts),3)
@@ -31,7 +31,7 @@ class PreparedPostingTests(TestCase):
         self.assertEqual(self.f.counts(),(2,2,2))
     def test_cached_handler_cancel_and_raise_read_current_inputs(self):
         d=self.f.document();d.write(DocumentWriteMode.POSTING);before=self.f.counts()
-        with patch('yadinassi.python_direct_posting.prepare',side_effect=AssertionError('recompile')):
+        with patch('yadinassi.python_direct_posting.compile_owned',side_effect=AssertionError('recompile')):
             for mode in (1,2):
                 d.get_member('AdditionalProperties').insert('Mode',Decimal(mode))
                 with self.assertRaises(Exception):d.write(DocumentWriteMode.POSTING)
@@ -94,7 +94,7 @@ class PreparedPostingTests(TestCase):
 
     def test_plain_write_without_selected_handlers_does_not_compile(self):
         d=self.f.document()
-        with patch('yadinassi.python_direct_posting.prepare',side_effect=AssertionError('unused posting compile')):
+        with patch('yadinassi.python_direct_posting.compile_owned',side_effect=AssertionError('unused posting compile')):
             d.write(DocumentWriteMode.WRITE)
         self.assertEqual(self.f.counts(),(1,1,0))
         self.assertFalse(d.get_member('Posted'))

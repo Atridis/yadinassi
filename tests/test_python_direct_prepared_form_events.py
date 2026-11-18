@@ -13,7 +13,7 @@ class PreparedFormEventsTests(TestCase):
         f=hostfixture.MainDemoHostTests();f.setUp();self.addCleanup(f.doCleanups)
         kind=next(c for c in f.config.catalogs if c.name=='ВидыНоменклатуры')
         owner=f.host.owner;owner.select(str(kind.identity));owner.open()
-        with patch.object(direct,'prepare',wraps=direct.prepare) as compile:
+        with patch.object(direct,'compile_owned',wraps=direct.compile_owned) as compile:
             owner.editor.change('InputData1','  First kind  ')
             owner.editor.change('InputData1','  Second kind  ')
             owner.event('command',control='SaveButton')
@@ -25,7 +25,7 @@ class PreparedFormEventsTests(TestCase):
         first=f.make();first.change_description(' First ',revision=0)
         plan=f.backend._direct_event_plan
         second=f.make()
-        with patch.object(direct,'prepare',side_effect=AssertionError('recompile')):
+        with patch.object(direct,'compile_owned',side_effect=AssertionError('recompile')):
             second.change_description(' Second ',revision=0)
         self.assertIs(f.backend._direct_event_plan,plan)
         self.assertEqual(dict(first.snapshot().values)['Description'],'First')
@@ -42,7 +42,7 @@ class PreparedFormEventsTests(TestCase):
     def test_product_event_and_object_code_reused_with_fresh_cancellation(self):
         f=productfixture.ProductFormEventTests();f.setUp();self.addCleanup(f.doCleanups)
         import yadinassi.python_direct_catalog_preparation as object_direct
-        with patch.object(direct,'prepare',wraps=direct.prepare) as event_compile,patch.object(object_direct,'prepare',wraps=object_direct.prepare) as object_compile:
+        with patch.object(direct,'compile_owned',wraps=direct.compile_owned) as event_compile,patch.object(object_direct,'compile_owned',wraps=object_direct.compile_owned) as object_compile:
             self.assertFalse(f.run_event('BeforeWriteAtServer').cancel)
             self.assertFalse(f.run_event('BeforeWriteAtServer').cancel)
             f.card.get_member('Склады').clear()
@@ -82,7 +82,7 @@ class PreparedFormEventsTests(TestCase):
         f=fixture.ProductListCheckTests();f.setUp();self.addCleanup(f.doCleanups)
         reference=f.saved();manager=f.editor.object._manager
         editor_plan=manager._direct_event_plan
-        with patch.object(direct,'prepare',wraps=direct.prepare) as compile:
+        with patch.object(direct,'compile_owned',wraps=direct.compile_owned) as compile:
             for _ in range(3):
                 f.check(reference)
                 f.app.event('openCard',reference=reference)

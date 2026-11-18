@@ -15,11 +15,11 @@ class PreparedValidatorTests(TestCase):
         self.manager=self.f.card._manager
     def test_single_compile_before_transaction_and_fresh_receivers(self):
         import yadinassi.python_direct_catalog_preparation as direct
-        original=direct.prepare;seen=[]
+        original=direct.compile_owned;seen=[]
         def compile(*args,**kwargs):
             self.assertIsNone(self.f.db.backend._active);seen.append(1)
             return original(*args,**kwargs)
-        with patch.object(direct,'prepare',compile):
+        with patch.object(direct,'compile_owned',compile):
             self.f.card.write();first=self.manager._direct_validator_plan
             self.f.card.set_member('Наименование','  Other  ');self.f.card.write()
             second=self.manager.create_item();second.set_member('Наименование','  Second  ')

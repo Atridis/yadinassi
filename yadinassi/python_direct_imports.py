@@ -1,5 +1,6 @@
 """Owned synchronous file imports; syntax-only namespaces, never host objects."""
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from weakref import WeakKeyDictionary, ref
 
@@ -32,10 +33,13 @@ def _hooks(vm):
             raise BoundaryViolation('import loader hooks changed')
 
 
-def import_names(vm,program=()):
+def import_names(vm,program=(),*,facts=None):
     if type(vm.imports) is not dict or any(type(name) is not str for name in vm.imports):
         raise BoundaryViolation('invalid import root storage')
     names=set(vm.imports)
+    if facts is not None:
+        names.update(facts.roots)
+        return tuple(sorted(names))
     from .syntax.lexer import KEYWORDS
     for node in program:
         if type(node) is not ast.Import:continue
@@ -47,6 +51,37 @@ def import_names(vm,program=()):
             raise BSLError('Недопустимое имя импорта',node.token.source,node.token.line,node.token.column)
         names.add(parts[0].casefold())
     return tuple(sorted(names))
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedImportFacts:
+    """Syntax-only immutable summaries, never cached authority or live state."""
+    imports: tuple
+    declarations: tuple
+    routine_exports: tuple
+    variable_exports: frozenset
+    roots: frozenset
+    source: str
+
+
+def prepare_facts(vm, program):
+    # Validate filenames once against the same canonical syntax rules. Live
+    # namespace storage/layout is still validated at every invocation.
+    import_names(vm, program)
+    imports=[]; declarations=[]; routines=[]; variables=set(); roots=set()
+    for node in program:
+        if type(node) is ast.Import:
+            imports.append((node.filename,node.token))
+            roots.add(node.filename.split('.')[0].casefold())
+        elif type(node) is ast.Routine:
+            key=node.name.casefold()
+            declarations.append(((key,),node.token));routines.append((key,node.exported))
+        elif type(node) is ast.Var:
+            declarations.append((tuple(name.casefold() for name in node.names),node.token))
+            variables.update(name.casefold() for name in node.exported_names)
+    return PreparedImportFacts(tuple(imports),tuple(declarations),tuple(routines),
+                               frozenset(variables),frozenset(roots),
+                               program[0].token.source if program else '<строка>')
 
 
 def _contract(vm):
@@ -138,7 +173,19 @@ def check_live(vm):
         if _SEALS.get(vm)!=_tree(vm):raise BoundaryViolation('import namespace changed outside loader')
 
 
-def preflight(vm,program):
+def preflight(vm,program=(),*,facts=None):
+    if facts is not None:
+        if facts.imports:_hooks(vm)
+        names=set(import_names(vm,facts=facts))
+        if names:
+            for declared,token in facts.declarations:
+                if any(name in names for name in declared):
+                    raise BSLError('Имя импорта конфликтует с объявлением',token.source,token.line,token.column)
+        for filename,token in facts.imports:
+            name=filename.split('.')[0].casefold()
+            if name in vm.variables or name in vm.functions or name in getattr(vm,'_direct_routine_modules',{}):
+                raise BSLError('Имя импорта уже занято: '+name,token.source,token.line,token.column)
+        return
     if any(type(node) is ast.Import for node in program):_hooks(vm)
     names=set(import_names(vm,program))
     for node in program:
@@ -152,10 +199,18 @@ def preflight(vm,program):
                 raise BSLError('Имя импорта уже занято: '+name,node.token.source,node.token.line,node.token.column)
 
 
-def record_exports(vm,program):
+def record_exports(vm,program=(),*,facts=None):
     routines,variables=_PUBLIC.get(vm,({},frozenset()))
     routines=dict(routines);variables=set(variables)
     registry=getattr(vm,'_direct_routine_modules',{})
+    if facts is not None:
+        for key,exported in facts.routine_exports:
+            routines.pop(key,None)
+            if exported:
+                module=registry[key];routines[key]=(id(module),module.signatures[key])
+        variables.update(facts.variable_exports)
+        _PUBLIC[vm]=(routines,frozenset(variables))
+        return
     for node in program:
         if type(node) is ast.Routine:
             key=node.name.casefold();routines.pop(key,None)
@@ -165,12 +220,13 @@ def record_exports(vm,program):
     _PUBLIC[vm]=(routines,frozenset(variables))
 
 
-def initialize(vm,program):
-    imports=[node for node in program if type(node) is ast.Import]
+def initialize(vm,program=(),*,facts=None):
+    imports=([ast.Import(token,filename) for filename,token in facts.imports] if facts is not None
+             else [node for node in program if type(node) is ast.Import])
     if not imports:return
     check_live(vm)
-    preflight(vm,program)
-    source=program[0].token.source if program else '<строка>'
+    preflight(vm,program,facts=facts)
+    source=facts.source if facts is not None else program[0].token.source if program else '<строка>'
     path=None if source.startswith('<') else Path(source).resolve()
     if path is not None:vm._loading.append(path)
     try:

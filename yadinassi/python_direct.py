@@ -159,6 +159,7 @@ class PreparedDirectModule:
     _server_layout: frozenset
     _server_declared: frozenset
     _import_layout: frozenset
+    _import_facts: object
 
 
 def _contract(vm):
@@ -167,29 +168,9 @@ def _contract(vm):
 
 
 def _compile(vm,program,nodes,source_text,source_name,*,_exports=False):
-    from .experimental_naked_collections import prepare,UnsupportedNakedSyntax
-    from .python_direct_database import NAMES as DATABASE_NAMES
-    from .python_direct_services import CONSTRUCTORS
-    from .python_direct_value_tree import CONSTRUCTOR_NAMES as TREE_NAMES
-    from .python_direct_names import NAMES as SYSTEM_NAMES
-    from .python_direct_imports import import_names
-    imported=import_names(vm,program)
-    program=[node for node in program if type(node) not in (ast.ServerInitializer,ast.Import)
-             and (type(node) not in (ast.Var,ast.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))]
-    source_name=source_name or (nodes[0].token.source if nodes else '<строка>')
-    if source_text is None:
-        lines={node.token.line:node.token.source_line for node in nodes if node.token is not None}
-        source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
-    try:
-        plan=prepare(source_text,source_name=source_name,repairs=REPAIRS,
-                     module_names=tuple(vm.module_names),
-                     constructors=TREE_NAMES+tuple(CONSTRUCTORS) + ("uuid","уникальныйидентификатор") + (("query","запрос") if vm.database_context is not None else ()),
-                     external_names=tuple(SYSTEM_NAMES) + (DATABASE_NAMES if vm.database_context is not None else ()) + imported,
-                     _import_names=imported,_dynamic_new=True,_collection_regions=True,_host_routine_bindings=bool(imported) or _owned_import_child(vm),parsed_ast=program,_trusted_entry=True,_return_last_expression=not _exports,
-                     _export_routines=_exports,_initialize_module=not _exports,_persistent_routines=not _exports and any(type(node) is ast.Routine for node in program))
-    except UnsupportedNakedSyntax as error:
-        _reject(str(error))
-    return plan
+    # One compiler path. Unsupported forms fail; there is no text/legacy retry.
+    from .experimental_direct_ast import compile_module_whole_source
+    return compile_module_whole_source(vm,program,nodes,source_text,source_name,_exports=_exports)
 
 
 def _snapshot(value):
@@ -227,11 +208,12 @@ def prepare_module(vm,program,*,source_text=None,source_name=None):
     exports=prepare_routines(vm,owned,plan) if routines or any(type(n) is ast.ServerInitializer for n in owned) else None
     server_declared=frozenset(name.casefold() for node in owned if type(node) is ast.Var and node.execution_context=='server' for name in node.names)
     server_layout=server_declared.union(*(m.server_layout for m in getattr(vm,'_direct_routine_modules',{}).values()))
-    from .python_direct_imports import import_names
+    from .python_direct_imports import import_names, prepare_facts
+    facts=prepare_facts(vm,owned)
     return PreparedDirectModule(tuple(owned),plan,frozenset(vm.module_names)|declared,
                                 declared,_contract(vm),routines,constructors,calls,
                                 bool(owned and type(owned[-1]) is ast.ExpressionStatement),exports,server_layout,server_declared,
-                                frozenset(import_names(vm,owned)))
+                                frozenset(import_names(vm,facts=facts)),facts)
 
 
 def execute_prepared(vm,prepared):
@@ -248,8 +230,8 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
     else:
         _admit_vm(vm)
         from .python_direct_imports import preflight,import_names
-        preflight(vm,list(_prepared._snapshot))
-        if frozenset(import_names(vm,_prepared._snapshot))!=_prepared._import_layout:
+        preflight(vm,facts=_prepared._import_facts)
+        if frozenset(import_names(vm,facts=_prepared._import_facts))!=_prepared._import_layout:
             _reject('prepared import namespace layout changed; prepare again')
         _admit_bindings(vm,_prepared._routines,_prepared._constructors,_prepared._calls)
         routines=_prepared._routines
@@ -298,11 +280,12 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             with target_context(vm.native_target), execution_backend_policy('python-direct'), localcontext() as decimal_context:
                 decimal_context.prec=38
                 from .python_direct_imports import initialize, record_exports
-                incoming=program if _prepared is None else list(_prepared._snapshot)
-                record_exports(vm,incoming)
+                incoming=program if _prepared is None else ()
+                facts=None if _prepared is None else _prepared._import_facts
+                record_exports(vm,incoming,facts=facts)
                 from .database_transactions import admission as transaction_admission
                 with transaction_admission(False):
-                    initialize(vm,incoming)
+                    initialize(vm,incoming,facts=facts)
                 vm._transaction_activation_allowed=previous_transactions
                 from .python_direct_transactions import execution as transaction_execution
                 with transaction_execution(vm) as owner:

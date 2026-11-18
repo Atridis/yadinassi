@@ -5,7 +5,8 @@ its query results. It does not own transactions or run Interpreter dispatch.
 """
 from decimal import localcontext
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
-from .experimental_naked_collections import prepare, _Cell
+from .experimental_naked_collections import _Cell
+from .experimental_direct_ast import compile_owned
 from .experimental_naked_errors import convert_error
 from .experimental_naked_live_state import _ForwardReference
 from .python_direct import REPAIRS
@@ -133,10 +134,9 @@ def prepared_posting(runtime,document,parent):
     program=runtime._programs[identity]
     names=_POSTING_NAMES|{field.name.casefold() for field in schema.fields}|{section.name.casefold() for section in schema.tabular_sections}
     with target_context(parent.native_target):
-        plan=prepare('',source_name='<document-posting>',repairs=_POSTING_REPAIRS,parsed_ast=program,
+        plan=compile_owned(program,source_text='',source_name='<document-posting>',
                      external_names=tuple(names),constructors=_POSTING_CONSTRUCTORS,
-                     _trusted_entry=True,_export_routines=True,
-                     _host_routine_bindings=True,_host_callable_externals=_POSTING_CALLABLE_FIELDS)
+                     exports=True,authority_checks=True,host_bindings=True,callable_externals=_POSTING_CALLABLE_FIELDS)
     result=PreparedPosting(key,plan,MappingProxyType({routine.name.casefold():tuple(p.by_value for p in routine.parameters) for routine in program}))
     runtime._direct_plans[identity]=result
     return result

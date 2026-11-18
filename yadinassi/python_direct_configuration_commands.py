@@ -7,7 +7,7 @@ from decimal import Decimal, localcontext
 from types import MethodType
 from threading import get_ident
 from .experimental_naked_boundaries import BoundaryViolation
-from .experimental_naked_collections import prepare
+from .experimental_direct_ast import compile_owned
 from .python_direct import REPAIRS, _snapshot, PythonDirectUnsupported
 from .python_direct_configuration import ConfigurationBoundary, _COMMAND_SCOPE, check_owner, parameter_snapshot
 from .native_targets import target_context
@@ -279,9 +279,8 @@ def execute_command(app,text,source):
     scope=_Scope(app)
     program=parse(text,source,compilation_profile=app.interpreter.compilation_profile)
     app.check_program(program);_validate_command(program,app)
-    plan=prepare(text,source_name=source,parsed_ast=_snapshot(program),
-        repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions)+metadata.ROOT_NAMES,
-        _trusted_entry=True,_return_last_expression=True,_configuration_calls=True)
+    plan=compile_owned(_snapshot(program),source_text=text,source_name=source,
+        external_names=tuple(app._definitions)+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
     with _DIRECT_EXECUTION_SCOPE_ABI(owner):

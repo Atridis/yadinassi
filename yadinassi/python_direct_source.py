@@ -6,7 +6,7 @@ transactions and closure. Unsupported crossings/receivers fail before effects.
 from contextlib import contextmanager
 from decimal import localcontext
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation, _MISSING
-from .experimental_naked_collections import prepare, _Cell
+from .experimental_naked_collections import _Cell
 from .experimental_naked_live_state import _ForwardReference
 from .experimental_naked_errors import convert_error
 from .python_direct import REPAIRS, _snapshot, _nodes
@@ -143,14 +143,14 @@ def _compile(owner,program,*,exports=False,layout=(),_extra_externals=(),_callab
     from .configuration_source_runtime import _SourceInterpreter
     from .source_manager_modules import MANAGER_NAMES
     shadowable=tuple(sorted((set(MANAGER_NAMES)|set(local_xdto.CONSTRUCTOR_NAMES))-set(owner.application.interpreter.exported_variables))) if type(owner) is _SourceInterpreter else ()
-    plan=prepare(_source_text(program),source_name=program[0].token.source if program else '<source>',
-        parsed_ast=_snapshot(program),repairs=REPAIRS+('authority_checkpoints',),
+    from .experimental_direct_ast import compile_owned
+    plan=compile_owned(_snapshot(program),source_text=_source_text(program),
+        source_name=program[0].token.source if program else '<source>',
         module_names=tuple(layout),external_names=tuple(dict.fromkeys((*_external_names(owner,names|set(layout)),*_extra_externals))),
         constructors=(local_xdto.CONSTRUCTOR_NAMES+xdto_xml.CONSTRUCTOR_NAMES+xdto_json.CONSTRUCTOR_NAMES if type(owner) is _SourceInterpreter else ())+tuple(CONSTRUCTORS)+query.CONSTRUCTOR_NAMES+host_info.CONSTRUCTORS+resources.CONSTRUCTOR_NAMES+stored_values.CONSTRUCTOR_NAMES+('uuid','уникальныйидентификатор'),
-        _trusted_entry=True,_export_routines=exports,_initialize_module=not exports,
-        _return_last_expression=not exports,_source_routine_scopes=True,
-        _source_callable_externals=_callable_externals,_source_shadowable_externals=shadowable,
-        _source_scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
+        exports=exports,source_scopes=True,authority_checks=True,
+        callable_externals=_callable_externals,shadowable_externals=shadowable,
+        scalar_routines=getattr(owner,'_direct_source_scalar_reuse',False))
     native={'array','массив','structure','структура','map','соответствие','uuid','уникальныйидентификатор'}
     plan._source_scalar_reuse=getattr(owner,'_direct_source_scalar_reuse',False)
     plan._source_layout=frozenset(layout)

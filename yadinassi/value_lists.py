@@ -95,8 +95,18 @@ def _check(value):
 def _value(value):
     # Stored objects are references, never recursively traversed or copied.
     # Exact built-in types avoid invoking arbitrary extension equality hooks.
-    from .type_values import _VALUE_TYPES
-    if not any(type(value) is known for known, _, _ in _VALUE_TYPES):
+    from .type_values import (_STATIC_VALUE_TYPES, _VALUE_TYPES,
+                              _DIRECT_REGION_VALUE_TYPES)
+    kind = type(value)
+    # Canonical registry membership is invariant across stored values. Reuse
+    # its retained identity index instead of rebuilding a linear search on each
+    # mutation. Private registry replacement keeps its existing live semantics.
+    if _VALUE_TYPES is _DIRECT_REGION_VALUE_TYPES:
+        entry = _STATIC_VALUE_TYPES.get(id(kind))
+        supported = entry is not None and entry[0] is kind
+    else:
+        supported = any(kind is known for known, _, _ in _VALUE_TYPES)
+    if not supported:
         _unsupported("этот тип значения")
     if type(value) is Decimal:
         if not value.is_finite():
