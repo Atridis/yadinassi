@@ -21,7 +21,7 @@ REPAIRS=('typed_map_keys','array_index_contract','array_insert_shape',
          'constructor_bounds','byref_routines','error_boundaries',
          'service_boundaries','bsl_truth','bsl_presentation','native_order',
          'typed_find','structure_fields','method_values','dynamic_host_refs',
-         'live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','decimal_division')
+         'live_module_state','execute_fragments','array_identity_equality','structure_identity_equality','map_identity_equality','decimal_division')
 
 
 def _nodes(value):

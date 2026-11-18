@@ -166,6 +166,27 @@ def collection_not_equal(left, right):
     return left != right
 
 
+def map_identity_operators(*, array=False, structure=False):
+    """Compile-time selection of exact Map identity, independent of other repairs."""
+    def equal(left, right):
+        left_type,right_type=type(left),type(right)
+        if (left_type is _TypedMap or right_type is _TypedMap or
+                (array and (left_type is list or right_type is list)) or
+                (structure and (left_type is _DirectStructure or right_type is _DirectStructure))):
+            _array_date_check(left); _array_date_check(right)
+            return left is right
+        return left == right
+    def not_equal(left, right):
+        left_type,right_type=type(left),type(right)
+        if (left_type is _TypedMap or right_type is _TypedMap or
+                (array and (left_type is list or right_type is list)) or
+                (structure and (left_type is _DirectStructure or right_type is _DirectStructure))):
+            _array_date_check(left); _array_date_check(right)
+            return left is not right
+        return left != right
+    return equal,not_equal
+
+
 def decimal_divide(left, right):
     """Pure bounded native-observed division, never host arithmetic dispatch."""
     if type(left) is not Decimal or type(right) is not Decimal:

@@ -906,3 +906,16 @@ class BSLValueTable(BSLObject):
 _DIRECT_ITERATION_TYPES = (BSLValueTable, BSLValueTableColumnCollection,
                           BSLValueTableRow, BSLValueTableColumn)
 _DIRECT_ITERATION_DICT = vars(BSLObject)['__dict__']
+
+# New reference capabilities pin their receiver protocol at definition time,
+# never at first lazy import after a host has replaced a method/descriptor.
+_DIRECT_REFERENCE_ABI = tuple((cls, cls.__mro__, tuple(
+    (name, value) for name, value in vars(cls).items() if name != '__slotnames__'))
+    for cls in (BSLValueTableRow, BSLValueTableColumn, BSLValueTable,
+                BSLValueTableColumnCollection, BSLObject))
+_DIRECT_REFERENCE_WRITE_TYPES = (BSLCollectionIndexes, BSLTypeDescription)
+_DIRECT_REFERENCE_WRITE_ABI = tuple((cls, cls.__mro__, tuple(
+    (name, value) for name, value in vars(cls).items() if name != '__slotnames__'))
+    for cls in _DIRECT_REFERENCE_WRITE_TYPES)
+_DIRECT_REFERENCE_ADJUST = _adjust
+_DIRECT_REFERENCE_INDEX_LIMIT = _MAX_INDEX_UNITS

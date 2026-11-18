@@ -51,9 +51,18 @@ class ConfigurationBoundary(BoundaryContext):
         if self.routine is not None:self.app.check_call(self.routine,self.owner)
     def external_get(self,name):
         self._check()
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import ROOT_NAMES
+            if name.casefold() in ROOT_NAMES:return self._command_scope.metadata.root(self)
         result=self.app.resolve_module(name,self.owner)
         if result is None:raise BoundaryViolation('unsupported configuration name: '+name)
         return result
+    def get_member(self,value,name):
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import is_reader
+            if is_reader(value):return self._command_scope.metadata.get(self,value,name)
+        return super().get_member(value,name)
+
     def external_set(self,name,value):
         raise ValueError('common module names are read-only')
     def resolve_service(self,name,fallback=None,*,require_value=False,allow_references=False,argument_count=None):
@@ -89,6 +98,9 @@ class ConfigurationBoundary(BoundaryContext):
 
     def resolve_member(self,value,name):
         self._check()
+        if self._command_scope is not None:
+            from .python_direct_configuration_metadata import is_reader
+            if is_reader(value):return self._command_scope.metadata.method(self,value,name)
         matches=[key for key,module in self.app._modules.items() if module is value]
         if not matches:raise BoundaryViolation('unsupported configuration member receiver')
         module_name,side=matches[0]

@@ -151,6 +151,8 @@ class CatalogBoundary:
         return write
 
     def reference_member(self,value,name):
+        from . import python_direct_table_references as table_refs
+        if table_refs.member(value):return table_refs.bind(self,value,name)
         if type(value) is not BSLValueListItem:return super().reference_member(value,name)
         self._catalog_owner(value)
         value.reference_get_member(name)
@@ -165,6 +167,11 @@ class CatalogBoundary:
         from .experimental_naked_live_state import _ForwardReference
         from .values import Reference
         return _ForwardReference(Reference(read,write))
+
+    def reference_index(self,value,index):
+        from . import python_direct_table_references as table_refs
+        if table_refs.indexed(value):return table_refs.bind(self,value,index,index=True)
+        return super().reference_index(value,index)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
         # Tables already have an admitted method boundary. Only omission calls

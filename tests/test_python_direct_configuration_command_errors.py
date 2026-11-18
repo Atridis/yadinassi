@@ -61,7 +61,7 @@ class ConfigurationCommandErrorTests(unittest.TestCase):
                            'Try Message("body");Except Try Message("inner");Except '+statement+'EndTry;EndTry;'):
                 output=[];app=self.app(output.append)
                 with self.subTest(statement=statement,branch=branch):
-                    with self.assertRaises((PythonDirectUnsupported,ValueError)):
+                    with self.assertRaises((PythonDirectUnsupported,ValueError,BSLError)):
                         app.execute('Message("before");'+branch)
                     self.assertEqual(output,[])
                     self.assertIsNone(_COMMAND_SCOPE.get());self.assertFalse(getattr(app.interpreter,'_direct_active',False))

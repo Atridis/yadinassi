@@ -15,6 +15,8 @@ from .runtime import Interpreter, _Module, _DIRECT_CONFIGURATION_MESSAGE_ABI
 from .syntax import ast
 from .syntax.parser import parse
 from .values import HostFunction
+from . import python_direct_configuration_metadata as metadata
+from .errors import BSLRuntimeError
 
 _MESSAGE = _DIRECT_CONFIGURATION_MESSAGE_ABI
 
@@ -34,6 +36,8 @@ class _Scope:
         from .configuration_xml import ConfigurationImport
         if type(app.configuration) is not ConfigurationImport:_deny()
         self.configuration=app.configuration
+        if type(self.configuration.common_modules) is not tuple:_deny()
+        self.definition_list=self.configuration.common_modules
         root=app.interpreter
         if type(root) is not Interpreter:_deny()
         self.app,self.root=app,root
@@ -50,7 +54,8 @@ class _Scope:
         if (app.side not in (None,'client') or root.execution_context!='client'
                 or app._session_program or app.configuration.session_parameters
                 or app._server_exchange is not None or app._global_names):_unsupported()
-        for _,definition in self.definitions:
+        for name,definition in self.definitions:
+            if metadata.validate_definition(definition)[0].casefold()!=name:_deny()
             if (not definition.client or definition.server or definition.server_call
                     or definition.global_module or definition.return_values_reuse!='DontUse'):_unsupported()
         owners=[root]
@@ -74,6 +79,7 @@ class _Scope:
         self.functions=tuple(plan.function for plan in self.plans)
         self.routines=tuple(tuple(owner.routines.items()) for owner in owners)
         self._check_state(app,root)
+        self.metadata=metadata.Readers(self)
 
     @staticmethod
     def values(values):
@@ -105,7 +111,7 @@ class _Scope:
     def _check_state(self,app,owner):
         if app is not self.app or not any(owner is item for item in self.owners):_deny()
         root=self.root
-        if app.configuration is not self.configuration:_deny()
+        if app.configuration is not self.configuration or self.configuration.common_modules is not self.definition_list:_deny()
         if (app.interpreter is not root or app.state!='running' or app.side not in (None,'client')
                 or root.execution_context!='client' or root.locals is not None
                 or app._session_program or app.configuration.session_parameters
@@ -115,6 +121,7 @@ class _Scope:
         for key,module in self.modules:
             if app._modules.get(key) is not module or module.interpreter._self_module is not module:_deny()
         for name,definition in self.definitions:
+            if metadata.validate_definition(definition)[0].casefold()!=name:_deny()
             if (app._definitions.get(name) is not definition or not definition.client
                     or definition.server or definition.server_call or definition.global_module
                     or definition.return_values_reuse!='DontUse'):_deny()
@@ -149,7 +156,38 @@ class _Scope:
 
 
 def _validate_command(program,app):
+    def readonly(token,message='metadata is read-only'):
+        raise BSLRuntimeError(message,token.source,token.line,token.column,source_line=token.source_line)
+    def reader_kind(node):
+        kind=type(node)
+        if kind is ast.Name and node.name.casefold() in metadata.ROOT_NAMES:return 'root'
+        if kind is ast.Group:return reader_kind(node.expression)
+        if kind is ast.Attribute:
+            parent=reader_kind(node.object);key=node.name.casefold()
+            if parent=='root' and key in metadata.COLLECTION_NAMES:return 'collection'
+            if parent=='collection':return 'item'
+            if parent=='item' and key in metadata.SCALAR_FIELDS:return 'scalar'
+            if parent is not None:_unsupported()
+        if kind is ast.Index and reader_kind(node.object)=='collection':
+            expression(node.index);return 'item'
+        if kind is ast.Call:
+            callee=node.callee
+            while type(callee) is ast.Group:callee=callee.expression
+            if type(callee) is ast.Attribute:
+                parent=reader_kind(callee.object);key=callee.name.casefold()
+                if parent=='collection' and key in metadata.COUNT:result,count='scalar',0
+                elif parent=='collection' and key in metadata.FIND+metadata.GET:result,count='item',1
+                elif parent=='item' and key in metadata.FULLNAME:result,count='scalar',0
+                elif parent is not None:_unsupported()
+                else:return None
+                if len(node.arguments)!=count:_unsupported()
+                for argument in node.arguments:expression(argument)
+                return result
+        return None
     def expression(node):
+        reader=reader_kind(node)
+        if reader=='scalar':return
+        if reader is not None:_unsupported()
         kind=type(node)
         if kind is ast.Literal:_Scope.values((node.value,));return
         if kind is ast.Name:
@@ -172,8 +210,11 @@ def _validate_command(program,app):
     def statements(nodes):
         for node in nodes:
             if type(node) is ast.Assign and type(node.target) is ast.Name:
-                app.check_assignment(node.target.name.casefold(),app.interpreter)
+                if node.target.name.casefold() in metadata.ROOT_NAMES:readonly(node.token)
+                try:app.check_assignment(node.target.name.casefold(),app.interpreter)
+                except ValueError as error:readonly(node.token,str(error))
                 expression(node.value)
+            elif type(node) is ast.Assign and reader_kind(node.target) is not None:readonly(node.token)
             elif type(node) is ast.ExpressionStatement:expression(node.expression)
             elif type(node) is ast.Try:
                 # Validate both branches before any effect, even unreachable
@@ -193,7 +234,7 @@ def execute_command(app,text,source):
     program=parse(text,source,compilation_profile=app.interpreter.compilation_profile)
     app.check_program(program);_validate_command(program,app)
     plan=prepare(text,source_name=source,parsed_ast=_snapshot(program),
-        repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions),
+        repairs=REPAIRS+('authority_checkpoints',),external_names=tuple(app._definitions)+metadata.ROOT_NAMES,
         _trusted_entry=True,_return_last_expression=True)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)

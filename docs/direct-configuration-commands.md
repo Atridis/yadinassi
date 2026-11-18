@@ -68,3 +68,22 @@ output callback cannot enter an Except handler. Owner, service and command-scope
 be swallowed by a BSL handler. A rethrow preserves the original module location;
 command scope, context-stack and transaction-activation cleanup still happen on
 both caught and escaping errors. This adds no new host service or endpoint.
+
+### Read-only common-module metadata
+
+The scalar command lane accepts finite `Metadata.CommonModules` / `Метаданные.ОбщиеМодули`
+lookup chains: `Count()`, `Find(name)`, numeric `Get(index)`, numeric/name indexing,
+and a named module member. A lookup must end in a public scalar field (`Name`,
+`Global`, `ClientManagedApplication`, `Server`, `ServerCall`, `Privileged`,
+`Synonym`, `Comment`, with Russian aliases), or `FullName()`.
+The values match the canonical common-module metadata objects. Missing names and
+invalid indices are ordinary errors; metadata writes are rejected before effects.
+
+This is not a general reflection facility. Reader intermediates cannot be stored,
+returned, passed to routines, enumerated or used to inspect module source/private
+state. Other metadata families remain unsupported. Tokens contain no owner or
+module payload and are interpreted only by their issuing command scope. Every
+read and bound operation validates the live application, original thread/context,
+issuer and canonical definition storage. Forged, stale, revoked or cross-scope
+readers fail closed. Existing no-database/client/DontUse/scalar restrictions remain
+in force; inspecting metadata does not grant execution or host-service authority.

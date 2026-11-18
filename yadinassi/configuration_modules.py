@@ -34,6 +34,13 @@ class CommonModuleDefinition:
         return 'CommonModules/' + self.name + '/Ext/Module.bsl'
 
 
+# Definition-time readonly scalar metadata ABI; no receiver/descriptor dispatch.
+_DIRECT_COMMON_MODULE_METADATA_ABI = (CommonModuleDefinition,
+    vars(CommonModuleDefinition).get('__getattribute__'),
+    tuple((name,vars(CommonModuleDefinition)[name]) for name in
+          ('name','global_module','client','server','server_call','return_values_reuse')))
+
+
 def read_common_modules(files, names, used, issues):
     from .configuration_xml import (MD, _activation_properties, _envelope_issues,
                                     _fail, _name, _object, _props, _text, _uuid)
