@@ -2984,3 +2984,6 @@ _PLAIN_STORAGE_ABI = tuple((cls, vars(cls).get('__dict__'), cls.__mro__)
 _DIRECT_ERROR_DESCRIPTION_ABI = Interpreter._error_description
 _DIRECT_ERROR_INFO_ABI = Interpreter._error_info
 _DIRECT_TRANSACTION_ABI = (Interpreter._begin_transaction, Interpreter._commit_transaction, Interpreter._rollback_transaction, Interpreter._transaction_active)
+
+# Definition-time Message identity for the finite direct configuration command lane.
+_DIRECT_CONFIGURATION_MESSAGE_ABI = Interpreter._message

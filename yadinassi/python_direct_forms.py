@@ -5,7 +5,7 @@ from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .python_direct import REPAIRS, _snapshot
 from .python_direct_handlers import prepare_handlers
 from .syntax import ast
-from .python_direct_configuration import ConfigurationBoundary, check_owner
+from .python_direct_configuration import ConfigurationBoundary, check_owner, _COMMAND_SCOPE
 from .database_context import SQLiteDBContext
 
 CALLBACK_CONSTRUCTORS=('callbackdescription','описаниеоповещения')
@@ -18,6 +18,9 @@ SYSTEM_NAMES = ('thisobject','этотобъект','items','элементы','
 class FormBoundary(ConfigurationBoundary):
     def __init__(self, session, routine):
         BoundaryContext.__init__(self)
+        self._command_scope=_COMMAND_SCOPE.get()
+        if self._command_scope is not None:
+            raise BoundaryViolation('scalar configuration commands cannot enter form execution')
         self.session = session
         self.routine = routine
         self.owner = session.interpreter
@@ -26,8 +29,13 @@ class FormBoundary(ConfigurationBoundary):
         self._services = session.interpreter.functions
         self.generation = session.interpreter._family_owner._family_generation
 
+    def _check_command_scope(self):
+        if self._command_scope is not None or _COMMAND_SCOPE.get() is not None:
+            raise BoundaryViolation('scalar configuration commands cannot enter form execution')
+
     def _check(self):
         BoundaryContext._check(self)
+        FormBoundary._check_command_scope(self)
         if (safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None
                 or database_transactions._execution.get() is not None):
             raise BoundaryViolation("direct restricted form execution is not connected")

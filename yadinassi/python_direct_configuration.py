@@ -4,6 +4,9 @@ Metadata owners and existing module/transport gates remain authoritative. No AST
 execution, scheduler dispatcher, arbitrary host reflection or implicit fallback.
 """
 from decimal import localcontext
+from contextvars import ContextVar
+
+_COMMAND_SCOPE = ContextVar("direct_configuration_command", default=None)
 from . import safe_mode, source_transactions, database_transactions
 from .experimental_naked_boundaries import BoundaryContext, BoundaryViolation
 from .experimental_naked_collections import prepare, _Cell
@@ -34,8 +37,13 @@ class ConfigurationBoundary(BoundaryContext):
         super().__init__()
         self._services=owner.functions
         self.app,self.owner,self.routine=app,owner,routine
+        self._command_scope=_COMMAND_SCOPE.get()
     def _check(self):
         super()._check();check_owner(self.app,self.owner)
+        scope=self._command_scope
+        if _COMMAND_SCOPE.get() is not scope:
+            raise BoundaryViolation('direct configuration boundary left its command context')
+        if scope is not None:scope.check(self.app,self.owner)
         if self.routine is not None:self.app.check_call(self.routine,self.owner)
     def external_get(self,name):
         self._check()
@@ -50,12 +58,31 @@ class ConfigurationBoundary(BoundaryContext):
         if type(function) is not HostFunction:
             raise BoundaryViolation('unsupported configuration service: '+name)
         self.app.check_host_service(function,self.owner)
+        scope=self._command_scope
+        if scope is not None:scope.service(function,self.owner)
         call=super().resolve_service(name,require_value=require_value,allow_references=allow_references)
         def invoke(*args):
             self._check();self.app.check_host_service(function,self.owner)
-            return call(*args)
+            if scope is not None:scope.service(function,self.owner);scope.values(args)
+            result=call(*args)
+            if scope is not None:scope.values((result,))
+            return result
         if allow_references:invoke.requires_reference=call.requires_reference
         return invoke
+    def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        scope=self._command_scope
+        if scope is None:
+            return super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        self._check();scope.service(value,self.owner)
+        self.app.check_host_service(value,self.owner)
+        call=super().resolve_callable(value,require_value=require_value,allow_references=allow_references)
+        def invoke(*args):
+            self._check();self.app.check_host_service(value,self.owner)
+            scope.service(value,self.owner);scope.values(args)
+            result=call(*args);scope.values((result,));return result
+        if allow_references:invoke.requires_reference=call.requires_reference
+        return invoke
+
     def resolve_member(self,value,name):
         self._check()
         matches=[key for key,module in self.app._modules.items() if module is value]
@@ -84,8 +111,21 @@ class ConfigurationBoundary(BoundaryContext):
                 finally:self._check()
             if side!=self.owner.execution_context:
                 raise BoundaryViolation('direct common-module crossing requires explicit transport')
-            return invoke_routine(self.app,target,routine,args)
+            scope=self._command_scope
+            if scope is not None:scope.values(args)
+            result=invoke_routine(self.app,target,routine,args)
+            if scope is not None:scope.values((result,))
+            return result
+        invoke.returns_value=routine.is_function
         return invoke
+
+    def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if self._command_scope is None:
+            return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
+        bound=self.resolve_member(value,name)
+        if self._command_scope is not None and require_value and not bound.returns_value:
+            raise TypeError('Процедура не возвращает значение: '+name)
+        return bound
 
 
 def install(app,owner,program,source_text=''):

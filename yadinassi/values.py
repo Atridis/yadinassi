@@ -289,6 +289,9 @@ def to_string(value: object) -> str:
     return str(value)
 
 
+# Definition-time identity for canonical direct String adaptation.
+_DIRECT_TO_STRING_ABI = to_string
+
 def number(value: object) -> Decimal:
     if isinstance(value, bool):
         return Decimal(int(value))

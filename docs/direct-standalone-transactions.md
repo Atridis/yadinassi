@@ -6,9 +6,12 @@ queued-task, configured-application, source-handler, form, or logical-server
 transaction control. It reuses the database coordinator, not VM execution.
 A managed compilation profile alone neither grants nor removes this standalone
 runtime contract. Source-backed catalog writes remain subject to their existing
-preparation restrictions: for example, main_demo catalog preparation can reject
-an explicit active transaction as busy. This slice does not certify those writes
-or bypass their source validation.
+preparation restrictions. Main_demo source admission may borrow a registered
+read-only lease of the exact active writer, validating the unchanged source,
+schema, profile and handler grants on that same snapshot. This allows catalogs
+with no object handler (for example, Warehouses) to stage ordinary writes. A
+catalog with a selected BeforeWrite handler remains unsupported in an explicit
+transaction: this slice does not bypass or execute that handler.
 
 The module owns a fresh private lifecycle object. No database execution token is
 installed just for running a module: doing that breaks ordinary server boundaries.
@@ -54,3 +57,24 @@ Existing refusal tests now explicitly select a denied caller and retain their
 no-coordinator-call assertions. Separate positive tests exercise Begin/write/
 Commit inside Execute and preserve the old no-effects behavior under inherited
 denial. No snapshot, native fixture or expected observed-query output is changed.
+
+
+## Source-backed catalog boundary
+
+The previous `busy` occurred before handler selection: `_main_demo_write_source`
+opened an independent reader and rejected every active writer, even for a catalog
+without an object handler. Only that read ownership is extended. A registered
+lease must belong to the current execution token/backend and open UnitOfWork;
+checks run before and after source validation. Closing it releases the lease, not
+the writer. Unrelated writers, foreign tokens, invalid source/schema and uncertain
+journals are not reinterpreted as an absent handler. No source decision is cached
+across transaction boundaries. Existing staging, rollback and uncertain-commit
+recovery are unchanged.
+
+Supporting selected BeforeWrite handlers is separate architectural work. It must
+run the bounded handler against the same writer snapshot before staging, keep
+writes inside an appropriate savepoint, preserve cancellation and message semantics,
+validate referenced objects against that writer, freeze the prepared submitted
+intent, and resolve uncertain outcomes without re-running the handler. The current
+`preparation is not None` transaction rejection is deliberately retained. Simply
+removing it, using a second connection, or skipping a handler is not a safe fix.

@@ -1120,11 +1120,23 @@ class SQLiteCatalogBackend:
         return config
 
     def _main_demo_write_source(self, catalog_id, *, expected=None):
-        if self._active is not None: raise BackendError('busy')
-        connection = self._connect()
+        lease = None
+        if self._active is not None:
+            from .database_transactions import current, require_registered_query_lease
+            if current(self) is None: raise BackendError('busy')
+            lease = self.begin_read()
+            try:
+                require_registered_query_lease(self, lease)
+                connection = lease._connection
+            except BaseException:
+                lease.close()
+                raise
+        else:
+            connection = self._connect()
         try:
-            connection.execute('BEGIN')
+            if lease is None: connection.execute('BEGIN')
             config = self._main_demo_source_snapshot(connection)
+            if lease is not None: require_registered_query_lease(self, lease)
             owner = next((c for c in config.catalog_sources if c.identity == catalog_id), None)
             if owner is None: raise BackendError('not_found')
             grant = next((g for g in config.catalog_handlers if g[0] == catalog_id), None)
@@ -1139,7 +1151,8 @@ class SQLiteCatalogBackend:
             if hashlib.sha256(raw).hexdigest() != grant[2]: raise BackendError('integrity')
             return raw.decode('utf-8-sig')
         finally:
-            connection.close()
+            if lease is not None: lease.close()
+            else: connection.close()
 
     def _demo_profile(self):
         profile = _source_profile_for_issues(self.activation_issues)

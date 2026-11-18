@@ -74,6 +74,7 @@ class SourceFormBoundary(FormBoundary,SourceBoundary):
 
     def _check(self):
         BoundaryContext._check(self)
+        FormBoundary._check_command_scope(self)
         if (not self._active or self.session.interpreter is not self.vm or self.session.form is not self.form
                 or self.vm.application is not self.app or self.vm.variables is not self.storage
                 or self.vm.functions is not self._services or self.vm.types is not self.types

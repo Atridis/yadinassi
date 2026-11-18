@@ -5,7 +5,7 @@ from . import python_direct_source_resources as text_resources
 from .http_client import BSLHTTPConnection, BSLHTTPRequest
 from .binary_streams import BSLBinaryDataBuffer
 from .json_processing import BSLJSONReader, BSLJSONWriter, BSLJSONWriterSettings
-from .values import HostFunction, BSLFixedArray
+from .values import HostFunction, BSLFixedArray, _DIRECT_TO_STRING_ABI
 from .structures import BSLFixedStructure
 from .maps import BSLFixedMap
 from . import python_direct_fixed as fixed
@@ -16,7 +16,8 @@ from .type_qualifiers import BSLNumberQualifiers, BSLStringQualifiers, BSLDateQu
 from . import regex_functions, strings
 from .experimental_naked_boundaries import BoundaryViolation
 
-from .experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry
+from .experimental_naked_collections import _DIRECT_MAP_ENTRY_TYPE as _CanonicalMapEntry, _TypedMap as _DirectMapType
+from .experimental_naked_structure import _DirectStructure as _DirectStructureType
 from .type_values import _DIRECT_TYPE_OF_ABI
 from .serialization import _DIRECT_VALUE_TO_STRING_ABI, _direct_value_to_string_internal
 from .runtime import _eval_marker
@@ -53,6 +54,29 @@ CONSTRUCTORS = {
         (('resultofsearchbyregularexpressiongroup','группарезультатапоискапорегулярномувыражению'),None),
     ) for alias in aliases
 }
+
+def _string_callable(context,function,*,name=None,require_value=False,allow_references=False,**unused):
+    if type(function) is not HostFunction or function.function is not _DIRECT_TO_STRING_ABI:return None
+    context._check()
+    context._validate_host_function(function,require_value,allow_references)
+    key=name if name is not None else function.name.casefold()
+    def stringify(value):
+        context._before('call' if name is not None else 'call_value',key)
+        try:
+            if function.function is not _DIRECT_TO_STRING_ABI:
+                raise BoundaryViolation('String implementation changed during argument evaluation')
+            kind=type(value)
+            if kind is list:return 'Массив'
+            if kind is _DirectStructureType:return 'Структура'
+            if kind is _DirectMapType:return 'Соответствие'
+            # Preserve the existing canonical service for all other values.
+            # This adds no new host-object admission or payload traversal.
+            return _DIRECT_TO_STRING_ABI(value)
+        except PermissionError as error:raise BoundaryViolation(str(error)) from error
+        finally:context._check()
+    if allow_references:stringify.requires_reference=lambda index:index in function.reference_parameters
+    return stringify
+
 
 class ServicesBoundary:
     def get_member(self,value,name):
@@ -110,6 +134,8 @@ class ServicesBoundary:
         return readonly
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        bound=_string_callable(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         from .python_direct_fill import resolve_fill
         bound=resolve_fill(self,value,require_value=require_value,allow_references=allow_references)
         if bound is not None:return bound
@@ -207,6 +233,8 @@ class ServicesBoundary:
                 finally:self._check()
             if kwargs.get('allow_references',False):invoke.requires_reference=lambda index:index in function.reference_parameters
             return invoke
+        bound=_string_callable(self,function,name=key,**kwargs)
+        if bound is not None:return bound
         if type(function) is HostFunction and function.function is _DIRECT_VALUE_TO_STRING_ABI:
             self._check()
             self._validate_host_function(function,kwargs.get('require_value',False),kwargs.get('allow_references',False))

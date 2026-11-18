@@ -626,6 +626,9 @@ class ConfigurationApplication:
     def execute(self, text, source='<application command>'):
         if self.state != 'running':
             raise ValueError('configuration application must be running')
+        if self.interpreter.execution_backend == 'python-direct':
+            from .python_direct_configuration_commands import execute_command
+            return execute_command(self,text,source)
         return self.interpreter.execute(text, source)
 
     def close(self, *, force=False):

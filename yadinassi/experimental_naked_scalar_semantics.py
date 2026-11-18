@@ -133,6 +133,39 @@ def array_not_equal(left, right):
     return left != right
 
 
+def structure_equal(left, right):
+    if type(left) is _DirectStructure or type(right) is _DirectStructure:
+        _array_date_check(left); _array_date_check(right)
+        return left is right
+    return left == right
+
+
+def structure_not_equal(left, right):
+    if type(left) is _DirectStructure or type(right) is _DirectStructure:
+        _array_date_check(left); _array_date_check(right)
+        return left is not right
+    return left != right
+
+
+def collection_equal(left, right):
+    """Exact direct Array/Structure identity, never recursive payload equality."""
+    left_type,right_type=type(left),type(right)
+    if (left_type is list or right_type is list or
+            left_type is _DirectStructure or right_type is _DirectStructure):
+        _array_date_check(left); _array_date_check(right)
+        return left is right
+    return left == right
+
+
+def collection_not_equal(left, right):
+    left_type,right_type=type(left),type(right)
+    if (left_type is list or right_type is list or
+            left_type is _DirectStructure or right_type is _DirectStructure):
+        _array_date_check(left); _array_date_check(right)
+        return left is not right
+    return left != right
+
+
 def decimal_divide(left, right):
     """Pure bounded native-observed division, never host arithmetic dispatch."""
     if type(left) is not Decimal or type(right) is not Decimal:
