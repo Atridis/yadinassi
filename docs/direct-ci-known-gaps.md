@@ -775,3 +775,18 @@ Descriptor-map replay now reaches source line3106, where the existing direct
 Array.Find rejects a host value with UnsupportedScalarSemantics. That is still a
 BaseException boundary failure and can abort unittest setup; this copy slice
 must not be presented as making the complete light runner or native replay pass.
+
+### Direct Array.Find exact fixed-collection identity (2026-11-18)
+
+Mutable direct Array.Find now accepts exact canonical FixedArray, FixedStructure
+and FixedMap values using identity only. The first matching reference wins; a
+separate equal-content collection does not match. This agrees with the recorded
+fixed-*.find-alias=[0] / fixed-*.find-copy=[] observations and the existing combined
+mutable/fixed receiver regression. Definition-time identities survive lazy module
+name rebinding. Receiver/value subclasses and arbitrary host values remain denied;
+no equality, attribute, hash or payload hook is called for these fixed operands.
+Other scalar operations are not widened.
+
+Whole descriptor-map replay advances again but still aborts at the pre-existing
+ValueTable.Columns iteration boundary (source helper line578). This is not full
+native replay parity or a green light runner. No fixtures/gates were changed.

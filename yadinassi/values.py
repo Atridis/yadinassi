@@ -690,3 +690,6 @@ _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
 # Immutable identity/name pairs for finite direct dynamic construction. Never
 # read a host-patched Enum.value descriptor at the lazy adapter boundary.
 _DIRECT_DYNAMIC_TYPE_NAMES = tuple((member, member.value) for member in BSLType)
+
+# Stable identity for bounded direct fixed-collection lookup.
+_DIRECT_FIXED_ARRAY_TYPE = BSLFixedArray

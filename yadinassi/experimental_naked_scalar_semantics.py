@@ -6,7 +6,9 @@ host callbacks require an explicit boundary rather than accidental str/equality.
 from decimal import Decimal
 from .strings import concatenate as _join
 from .dates import _DIRECT_EQUALITY_DATE_STATE, UnsupportedDateRange
-from .values import NULL, to_string
+from .values import NULL, to_string, _DIRECT_FIXED_ARRAY_TYPE
+from .structures import _DIRECT_FIXED_STRUCTURE_SNAPSHOT
+from .maps import _DIRECT_FIXED_MAP_SNAPSHOT
 from .experimental_naked_boundaries import BoundaryViolation
 from .experimental_naked_collections import _NakedMap, _TypedMap
 from .experimental_naked_structure import _DirectStructure
@@ -18,11 +20,14 @@ class UnsupportedScalarSemantics(BoundaryViolation):
 
 _COLLECTION_TYPES = (list, dict, _NakedMap, _TypedMap, _DirectStructure)
 _SCALAR_TYPES = (bool, Decimal, str, type(None))
+_FIND_FIXED_TYPES = (_DIRECT_FIXED_ARRAY_TYPE, _DIRECT_FIXED_STRUCTURE_SNAPSHOT[0],
+                     _DIRECT_FIXED_MAP_SNAPSHOT[0])
 
 
 _SCALAR_TYPE_IDS=tuple(map(id,_SCALAR_TYPES))
 _COLLECTION_TYPE_IDS=tuple(map(id,_COLLECTION_TYPES))
 _SUPPORTED_TYPE_IDS=_SCALAR_TYPE_IDS+_COLLECTION_TYPE_IDS
+_FIND_IDENTITY_TYPE_IDS=_COLLECTION_TYPE_IDS+tuple(map(id,_FIND_FIXED_TYPES))
 
 def truth(value):
     if type(value) is bool:
@@ -40,9 +45,11 @@ def _supported(value):
 def typed_find(array, value):
     if type(array) is not list:
         raise UnsupportedScalarSemantics('typed_find requires a native array')
-    _supported(value)
     value_type = type(value)
-    identity = id(value_type) in _COLLECTION_TYPE_IDS
+    # Exact canonical fixed collections have native identity lookup semantics.
+    # This does not admit their fields, equality hooks, subclasses or payloads.
+    identity = id(value_type) in _FIND_IDENTITY_TYPE_IDS
+    if not identity:_supported(value)
     for index, item in enumerate(array):
         # Different exact types cannot compare equal and need no callback.
         if type(item) is value_type:
