@@ -924,7 +924,7 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
 
         if _catalog_preparation_bounds:
             text='_context.preparation_value((_context.preparation_step(), '+text+')[1])'
-        return source_map.expression(text,node) if source_map is not None else text
+        return source_map.expression(text,node,parenthesized=(operation is not None or type(node) in (ast.Binary,ast.Group,ast.Attribute,ast.Call))) if source_map is not None else text
     def statement(node,depth):
         if _catalog_preparation_bounds:emit(depth,'_context.preparation_step()')
         if source_map is None:return _statement(node,depth)
@@ -1123,7 +1123,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if region_end:
         emit(root_depth,'_collection_fast = False')
         region_active=True
+        if source_map is not None:source_map.markers=source_map._allow_markers
         sequence(program[:region_end],root_depth)
+        if source_map is not None:source_map.markers=False
         region_active=False
         sequence(program[region_end:],root_depth)
     else:
@@ -1213,7 +1215,12 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
     if _dynamic_new:
         from .python_direct_dynamic_new import construct
         namespace['_direct_dynamic_new']=construct
-    code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
+    try:
+        code=source_map.compile(generated,source_name,body_offset) if source_map is not None else compile(generated,source_name,'exec')
+    finally:
+        # Recursive emitter closures can outlive this call until cyclic GC.
+        # They must not keep compile-only location markers/AST metadata alive.
+        source_map=None
     exec(code,namespace)
     result=Program(generated,tuple(constants),namespace['naked_module'],dict(symbols),repairs,source_name=source_name,source_text=source,required_services=tuple(sorted(required_services)),trusted_entry=_trusted_entry)
     result._source_implicit_shadows=frozenset(name for names in routine_shadows.values() for name in names)

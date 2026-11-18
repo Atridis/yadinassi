@@ -40,12 +40,15 @@ class _StructureIndex:
 
 
 class SourceMap:
+    _use_markers=False
+    _allow_markers=True
     def __init__(self):
         self.current=None;self.expressions=[];self.rows={};self.stack=[]
+        self.markers=self._use_markers;self.locations=[];self.expression_sources=[]
     def enter(self,node):
         self.stack.append((self.current,self.expressions));self.current=node;self.expressions=[]
     def leave(self):self.current,self.expressions=self.stack.pop()
-    def expression(self,text,node):
+    def expression(self,text,node,*,parenthesized=False):
         # Binding failures belong to the invoked name, not its opening paren.
         # Child expressions retain their own entries and override this location.
         location=node
@@ -56,23 +59,55 @@ class SourceMap:
         token=location.token
         if type(node) is bsl_ast.Call and type(node.callee) is bsl_ast.Attribute and node.callee.name.casefold() in ("property","свойство"):
             token=node.token
+        if self.markers:
+            # The emitter certifies a single enclosing pair; replace it rather
+            # than increasing nesting depth for every source expression.
+            if parenthesized and text.startswith('(') and text.endswith(')'):text=text[1:-1]
+            index=len(self.locations);self.locations.append(token);self.expression_sources.append(text)
+            self.expressions.append((index,token))
+            return '_source_location_marker('+str(index)+', '+text+')'
         self.expressions.append((text,token));return text
     def line(self,number):
         if self.current is not None:self.rows[number]=(self.current.token,tuple(self.expressions))
     def compile(self,generated,filename,body_offset):
         tree=ast.parse(generated,filename=filename);by_line={};normalized={};index=_StructureIndex()
-        # Repeated generated text needs normalization only once in this compile.
-        # Nothing is retained between programs or added to the execution path.
-        for line,(token,expressions) in self.rows.items():
-            groups={};root_types=set()
-            for text,where in expressions:
-                if text not in normalized:normalized[text]=_normalized(text)
-                expression=normalized[text]
-                if not isinstance(expression,ast.AST):continue
-                groups.setdefault(index.key(expression),[]).append(where)
-                root_types.add(type(expression).__name__)
-            # Impossible root classes cannot match; do not index their subtrees.
-            by_line[line+body_offset]=(token,groups,root_types)
+        marked={}
+        def strip(node):
+            if (type(node) is ast.Call and type(node.func) is ast.Name
+                    and node.func.id=='_source_location_marker'):
+                if (len(node.args)!=2 or node.keywords or type(node.args[0]) is not ast.Constant
+                        or type(node.args[0].value) is not int
+                        or not 0<=node.args[0].value<len(self.locations)):
+                    raise ValueError('invalid compiler source-location marker')
+                result=strip(node.args[1]);marked.setdefault(node.args[0].value,result)
+                return result
+            for field,value in ast.iter_fields(node):
+                if isinstance(value,ast.AST):setattr(node,field,strip(value))
+                elif isinstance(value,list):
+                    for i,child in enumerate(value):
+                        if isinstance(child,ast.AST):value[i]=strip(child)
+            return node
+        try:
+            if self.locations:tree=strip(tree)
+            # Marker ids reuse the already parsed expression subtree. Structural
+            # matching and occurrence order remain exactly the old source-map rule.
+            for line,(token,expressions) in self.rows.items():
+                groups={};root_types=set()
+                for text,where in expressions:
+                    if text not in normalized:
+                        if type(text) is int:
+                            expression=marked.get(text)
+                            if expression is None:
+                                expression=_normalized(self.expression_sources[text])
+                                if isinstance(expression,ast.AST):expression=strip(expression)
+                            normalized[text]=expression
+                        else:normalized[text]=_normalized(text)
+                    expression=normalized[text]
+                    if not isinstance(expression,ast.AST):continue
+                    groups.setdefault(index.key(expression),[]).append(where)
+                    root_types.add(type(expression).__name__)
+                by_line[line+body_offset]=(token,groups,root_types)
+        finally:del strip
         consumed={}
         def visit(node,inherited=None,parent_line=None):
             original=getattr(node,'lineno',None)
@@ -81,9 +116,7 @@ class SourceMap:
             if row:
                 token=token or row[0]
                 if isinstance(node,ast.expr) and type(node).__name__ in row[2]:
-                    key=index.key(node)
-                    # Attribute/source location fields do not enter the key.
-                    matches=row[1].get(key)
+                    key=index.key(node);matches=row[1].get(key)
                     if matches:
                         used=consumed.get((original,key),0)
                         token=matches[min(used,len(matches)-1)]
@@ -93,9 +126,8 @@ class SourceMap:
                 node.lineno=token.line;node.end_lineno=token.line
                 node.col_offset=max(0,token.column-1);node.end_col_offset=node.col_offset+1
         try:visit(tree)
-        finally:del visit  # Break the recursive closure cycle; release the index promptly.
+        finally:del visit
         return compile(tree,filename,'exec')
-
 
 class _ErrorLocations:
     """One code table and one source, owned by the current boundary activation."""

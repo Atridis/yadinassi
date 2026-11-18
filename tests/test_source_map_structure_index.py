@@ -78,11 +78,52 @@ class SourceMapStructureTests(unittest.TestCase):
         for source in sources:
             with self.subTest(source=source[:40]):
                 direct=Interpreter().prepare(source,'mapping.bsl')
-                with patch.object(SourceMap,'compile',dump_compile):
+                with patch.object(SourceMap,'_allow_markers',False),patch.object(SourceMap,'compile',dump_compile):
                     reference=Interpreter().prepare(source,'mapping.bsl')
                 self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
                 if direct._exports and direct._exports.server_plan:
                     self.assertEqual(signature(direct._exports.server_plan.function.__code__),signature(reference._exports.server_plan.function.__code__))
+
+    def test_collection_markers_preserve_exact_code_and_locations(self):
+        prefixes=[
+            'T=New ValueTable;T.Columns.Add("N");For I=0 To 3 Do Row=T.Add();Row.N=I;EndDo;',
+            'T=New ValueList;For I=0 To 3 Do Item=T.Add(I);EndDo;',
+            'Т=Новый ТаблицаЗначений;Т.Колонки.Добавить("Цена");Для Н=0 По 3 Цикл Стр=Т.Добавить();Стр.Цена=Н;КонецЦикла;',
+            'T=New ValueList;For I=0 To 2 Do For J=0 To 2 Do T.Add(I*J);EndDo;EndDo;']
+        suffixes=['', '\nTry\n X=1/0;\nExcept\n Text=ErrorDescription();\nEndTry;',
+                  '\nA=New Array;A.Add(1);If A.Get(0)=1 Then Result=2;Else Result=3;EndIf;',
+                  '\nX=New Structure("a",1);Y=X.a+X.a;']
+        for prefix in prefixes:
+            for suffix in suffixes:
+                with self.subTest(prefix=prefix[:30],suffix=suffix[:30]):
+                    direct=Interpreter().prepare(prefix+suffix,'mixed.bsl')
+                    self.assertIn('_source_location_marker',direct._plan.generated_source)
+                    with patch.object(SourceMap,'_allow_markers',False),patch.object(SourceMap,'compile',dump_compile):
+                        reference=Interpreter().prepare(prefix+suffix,'mixed.bsl')
+                    self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
+                    self.assertNotIn('_source_location_marker',direct._plan.function.__code__.co_names)
+
+    def test_collection_markers_do_not_increase_arithmetic_nesting(self):
+        for depth in (5,30,60):
+            source='T=New ValueList;For I=0 To 1 Do T.Add('+('1+('*depth)+'1'+(')'*depth)+');EndDo;'
+            direct=Interpreter().prepare(source)
+            with patch.object(SourceMap,'_allow_markers',False):reference=Interpreter().prepare(source)
+            self.assertEqual(signature(direct._plan.function.__code__),signature(reference._plan.function.__code__))
+
+    def test_marker_metadata_not_retained_by_prepared_plan(self):
+        import gc,weakref
+        import yadinassi.experimental_naked_errors as errors
+        refs=[]
+        def create():
+            value=SourceMap();refs.append(weakref.ref(value));return value
+        was_enabled=gc.isenabled();gc.disable()
+        try:
+            with patch.object(errors,'SourceMap',create):
+                plan=Interpreter().prepare('T=New ValueList;For I=0 To 2 Do T.Add(I);EndDo;')
+            self.assertTrue(refs);self.assertTrue(all(ref() is None for ref in refs))
+            self.assertNotIn('_source_location_marker',plan._plan.function.__globals__)
+        finally:
+            if was_enabled:gc.enable()
 
     def test_index_is_released_without_waiting_for_cyclic_gc(self):
         import gc,weakref
@@ -92,7 +133,7 @@ class SourceMapStructureTests(unittest.TestCase):
             value=_StructureIndex();refs.append(weakref.ref(value));return value
         was_enabled=gc.isenabled();gc.disable()
         try:
-            with patch.object(errors,'_StructureIndex',create):
+            with patch.object(SourceMap,'_use_markers',False),patch.object(errors,'_StructureIndex',create):
                 Interpreter().prepare('Function F(Val X) Return X+1;EndFunction R=F(2);')
             self.assertTrue(refs)
             self.assertTrue(all(ref() is None for ref in refs))
