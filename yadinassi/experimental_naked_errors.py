@@ -174,7 +174,8 @@ def reraise_handled(context):
 def description_service(context,function):
     """Replace only the current owner's canonical diagnostic builtin."""
     from types import MethodType
-    from .values import HostFunction
+    from .values import _DIRECT_COLLECTION_CLASS_ABI
+    HostFunction=_DIRECT_COLLECTION_CLASS_ABI[3][0]
     from .runtime import _DIRECT_ERROR_DESCRIPTION_ABI, _DIRECT_ERROR_INFO_ABI
     method=function.function
     if (type(method) is not MethodType

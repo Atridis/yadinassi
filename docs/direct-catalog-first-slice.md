@@ -1,5 +1,9 @@
 # Direct catalog protocol: initial slice
 
+Current scope update: admitted standalone direct modules now have a separate
+[owned transaction lifecycle](direct-standalone-transactions.md). This does not
+admit externally supplied ambient transactions or widen source-handler grants.
+
 A host-selected exact SQLiteDBContext now permits the Catalogs/Справочники
 namespace. Generated Python calls the existing public catalog field/method
 protocol, not Python getattr or interpreter dispatch. Receivers must belong to

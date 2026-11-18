@@ -102,3 +102,23 @@ File Read/Write and their encoding/newline options remain local extensions
 without native observations; passing local tests is not new native evidence.
 A server routine can use a document locally and return text; transport of the
 TextDocument object itself between client/server contexts remains unsupported.
+
+### Structured direct Raise
+
+Direct Raise evaluates its description once, applies bounded BSL presentation,
+then evaluates all supplied optional arguments left-to-right before validating
+category, code, additional information and cause. Canonical immutable diagnostic
+snapshots retain those fields and the original definition's source line; rethrow
+retains the same snapshot. Category queries traverse exact canonical cause
+snapshots without calling their Python attribute/equality/hash hooks. Malformed,
+cyclic or over-1024-node host-supplied chains remain explicitly rejected. Reading
+or calling a member of Undefined is a recoverable type error, not a database
+receiver grant; arbitrary host receivers still fail closed.
+
+The named 28-record exception/context projection matches the unchanged audited
+Linux 8.3.27.1508 fixture exactly, with the complete input source SHA256 checked
+before selecting its four marked helper/observation blocks. This is not a claim
+that the complete historical 116-record functions program now passes: that
+program still encounters an unsupported Goto. Native fixtures and integration
+source are unchanged. Exact platform diagnostic formatting, other categories
+and broader exception/runtime parity remain outside this slice.

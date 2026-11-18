@@ -37,7 +37,7 @@ def _reject(message):
     raise PythonDirectUnsupported('python-direct: '+message+'; select --legacy or execution_backend="compiled-strict"')
 
 
-def _admit_vm(vm):
+def _admit_vm(vm,*,_transaction_owner=None):
     from .runtime import Interpreter, _COMPILED_BASE_ABI_NAMES, _COMPILED_BASE_ABI, _HYBRID_RUNTIME_HOOKS
     if type(vm) is not Interpreter:
         _reject('specialized Interpreter contexts are not integrated')
@@ -47,8 +47,10 @@ def _admit_vm(vm):
     if '_visit' in vars(vm) or vars(Interpreter).get('_visit') is not _HYBRID_RUNTIME_HOOKS['_visit']:
         _reject('custom visitor hooks are not integrated')
     from . import safe_mode, source_transactions, database_transactions
-    if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None or database_transactions._execution.get() is not None:
+    if safe_mode._CURRENT.get() is not None or source_transactions._current.get() is not None:
         _reject('application safe-mode/transaction contexts are not integrated')
+    from .python_direct_transactions import check as check_transaction
+    check_transaction(_transaction_owner,vm.database_context)
     if (vm._configuration_runtime is not None
             or (vm._family_owner is not vm and not _owned_import_child(vm)) or vm.locals is not None
             or not vm._has_module_context or vm.execution_context!='client'):
@@ -296,8 +298,14 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
             from .python_direct_imports import initialize, record_exports
             incoming=program if _prepared is None else list(_prepared._snapshot)
             record_exports(vm,incoming)
-            initialize(vm,incoming)
-            result=plan.run(vm.variables,context=context)
+            from .database_transactions import admission as transaction_admission
+            with transaction_admission(False):
+                initialize(vm,incoming)
+            vm._transaction_activation_allowed=previous_transactions
+            from .python_direct_transactions import execution as transaction_execution
+            with transaction_execution(vm) as owner:
+                context=make_boundary(vm,_transaction_owner=owner)
+                result=plan.run(vm.variables,context=context)
         vm._self_module.ready=True
         vm._hybrid_stats['python_direct_modules']=vm._hybrid_stats.get('python_direct_modules',0)+1
         if returns_expression:return result
@@ -308,7 +316,7 @@ def execute(vm,program,*,source_text=None,source_name=None,_prepared=None):
         vm._transaction_activation_allowed=previous_transactions
 
 
-def make_boundary(vm,*,_parent_check=None):
+def make_boundary(vm,*,_parent_check=None,_transaction_owner=None):
     from .python_direct_database import CatalogBoundary
     from .python_direct_live_metadata import LiveMetadataBoundary
     from .python_direct_detached_metadata import DetachedMetadataBoundary
@@ -349,10 +357,13 @@ def make_boundary(vm,*,_parent_check=None):
                     or vm.execution_context!='client'
                     or safe_mode._CURRENT.get() is not None
                     or source_transactions._current.get() is not None
-                    or database_transactions._execution.get() is not None):
+                    or vm._scheduler.is_active or vm._scheduler.pending):
                 raise BoundaryViolation('python-direct restricted context changed at a host boundary')
+            from .python_direct_transactions import check as check_transaction
+            check_transaction(_transaction_owner,database)
     context=DirectBoundary(services=vm.functions)
     context.vm=vm
+    context._direct_transaction_owner=_transaction_owner
     context._import_check_required=bool(vm.imports)
     context._routine_exports={}
     # Preserve live registry updates at subsequent host boundaries, not a copy.

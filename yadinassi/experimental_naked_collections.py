@@ -997,6 +997,16 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         elif kind is ast.Raise:
             if source_map is not None and services and node.value is None:
                 emit(depth,'_reraise_handled(_context)')
+            elif source_map is not None and services and node.value is not None:
+                if len(node.optional_arguments or ())>4:
+                    # Public execute_program/prepare_program can receive an AST
+                    # the parser would reject. Convert description first, but
+                    # never run any excess optional-argument expression.
+                    emit(depth,f'_raise_arity_error(_raise_presentation({expression(node.value)}))')
+                else:
+                    optional=', '.join('None' if type(arg) is ast.OmittedArgument else expression(arg) for arg in (node.optional_arguments or ()))
+                    arguments='('+optional+(',' if optional else '')+')'
+                    emit(depth,f'_raise_direct(_context, _raise_presentation({expression(node.value)}), {arguments}, {source_name!r}, {node.token.line}, {node.token.column}, {node.token.source_line!r})')
             elif source_map is not None and node.value is not None:
                 emit(depth,f'raise _BSLRuntimeError(str({expression(node.value)}), {source_name!r}, {node.token.line}, {node.token.column})')
             else:emit(depth,'raise'+(' RuntimeError('+expression(node.value)+')' if node.value is not None else ''))
@@ -1103,6 +1113,9 @@ def prepare(source,*,source_name='<naked-collection-experiment>',repairs=(),cons
         namespace.update(_bind_eval=bind_eval,_execute_fragment=execute_fragment,_fragment_local_binding=local_binding,_fragment_local_exists=local_exists)
     if source_map is not None and services:
         from .experimental_naked_errors import handled_error,reraise_handled
+        from .python_direct_error_info import raise_error,raise_arity_error
+        from .experimental_naked_scalar_semantics import presentation
+        namespace.update(_raise_direct=raise_error,_raise_presentation=presentation,_raise_arity_error=raise_arity_error)
         namespace.update(_handled_error=handled_error,_reraise_handled=reraise_handled,
                          _error_filename=source_name,_error_source=source)
     if _dynamic_new:

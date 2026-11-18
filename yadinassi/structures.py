@@ -177,12 +177,24 @@ def fill_property_values(target: object, source: object,
         raise TypeError("ЗаполнитьЗначенияСвойств: приемник должен быть структурой")
     if not (type(source) is BSLStructure or type(source) is BSLFixedStructure):
         raise TypeError("ЗаполнитьЗначенияСвойств: источник должен быть структурой")
+    return _fill_structure_items(target._items, source._items, properties, exclude,
+        target_fixed=type(target) is BSLFixedStructure,
+        source_mutable=type(source) is BSLStructure)
+
+
+def _fill_structure_items(target_items, source_items, properties, exclude, *,
+                          target_fixed, source_mutable):
+    """Pure structure traversal, shared by canonical and direct storage adapters.
+
+    Callers validate storage authority and shape. Payloads remain opaque; only
+    selected property names are validated lazily in native traversal order.
+    """
     for value in (properties, exclude):
         if value is not None and type(value) is not str:
             raise TypeError("ЗаполнитьЗначенияСвойств: список свойств должен быть строкой")
     if properties is not None and exclude is not None:
         raise ValueError("Одновременные списки заполнения и исключения пока не поддерживаются")
-    if type(target) is BSLFixedStructure:
+    if target_fixed:
         if properties is not None or exclude is not None:
             raise ValueError("Списки свойств для фиксированного приемника пока не поддерживаются")
         # Native 1C accepts this target without changing its immutable values.
@@ -209,20 +221,20 @@ def fill_property_values(target: object, source: object,
         # right to left; the historical Windows checkpoint stays left to right.
         reverse = current_native_target() == LINUX_8_3_27_1508
         for name, key in selected_names(properties, reverse=reverse):
-            if key not in target._items or key not in source._items:
+            if not dict.__contains__(target_items, key) or not dict.__contains__(source_items, key):
                 raise ValueError(f"Свойство структуры не найдено: {name}")
-            target._items[key] = target._items[key][0], source._items[key][1]
+            dict.__setitem__(target_items, key, (dict.__getitem__(target_items, key)[0], dict.__getitem__(source_items, key)[1]))
         return
 
     excluded = set()
     deferred_key = None
     if exclude is not None:
         defer_missing_target = (current_native_target() == LINUX_8_3_27_1508
-                                and type(source) is BSLStructure)
+                                and source_mutable)
         for name, key in selected_names(exclude):
-            if key not in source._items:
+            if not dict.__contains__(source_items, key):
                 raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
-            if key not in target._items:
+            if not dict.__contains__(target_items, key):
                 # Native run 40048537592 measures one mutable source-only key,
                 # appearing exactly once in EXCLUDE. Keep mixed-invalid shapes
                 # and fixed-source/default-target calls guarded before writes.
@@ -231,20 +243,20 @@ def fill_property_values(target: object, source: object,
                 deferred_key = key
             excluded.add(key)
     if deferred_key is not None:
-        if source._items.keys() - target._items.keys() != {deferred_key}:
+        if dict.keys(source_items) - dict.keys(target_items) != {deferred_key}:
             raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
         # Only this measured error path follows source insertion order. Earlier
         # common, nonexcluded writes survive; do not change valid copy paths.
-        for key, (_, value) in source._items.items():
+        for key, (_, value) in dict.items(source_items):
             if key == deferred_key:
                 raise ValueError("Отсутствующие исключаемые свойства пока не поддерживаются")
-            if key in target._items and key not in excluded:
-                target._items[key] = target._items[key][0], value
+            if dict.__contains__(target_items, key) and key not in excluded:
+                dict.__setitem__(target_items, key, (dict.__getitem__(target_items, key)[0], value))
         return
-    for key, (name, _) in target._items.items():
-        if key in source._items and key not in excluded:
+    for key, (name, _) in dict.items(target_items):
+        if dict.__contains__(source_items, key) and key not in excluded:
             # Preserve target spelling and composition, and share value references.
-            target._items[key] = name, source._items[key][1]
+            dict.__setitem__(target_items, key, (name, dict.__getitem__(source_items, key)[1]))
 
 # Captured before optional translated collection code is imported.
 _DIRECT_COLLECTION_CLASS_ABI = tuple((cls, cls.__mro__, tuple(vars(cls).items()))
@@ -255,3 +267,6 @@ _DIRECT_COLLECTION_HELPER_ABI = tuple((name, globals()[name]) for name in (
 
 # Definition-time identity and raw storage access for direct shallow thawing.
 _DIRECT_FIXED_STRUCTURE_SNAPSHOT = (BSLFixedStructure, vars(BSLObject)["__dict__"])
+
+_DIRECT_FILL_STRUCTURE_ABI = (fill_property_values, BSLStructure, BSLFixedStructure,
+    vars(BSLObject)["__dict__"], _fill_structure_items)

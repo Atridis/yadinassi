@@ -97,11 +97,12 @@ class DirectErrorInfoTests(unittest.TestCase):
         prepared=prepare_directory(root/'scripts/inventory_reference_behavior/runtime_source',profile=PROFILE)
         with tempfile.TemporaryDirectory() as temp,closing(create_prepared(Path(temp)/'test.sqlite',prepared)) as context:
             with closing(Interpreter(database_context=context)) as vm:
+                vm._transaction_activation_allowed=False
                 captured=[];vm.register_function('Capture',lambda info:captured.append(info.get_member('Description')),returns_value=False)
                 vm.execute('Try BeginTransaction();Except E=ErrorInfo();Capture(E);EndTry;')
                 self.assertEqual(captured,['Transactions require synchronous execution without pending tasks'])
                 self.assertIsNone(getattr(context.backend,'_bsl_transaction',None))
-                self.assertTrue(getattr(vm,'_transaction_activation_allowed',True))
+                self.assertFalse(vm._transaction_activation_allowed)
 
     def test_public_snapshot_rebinding_never_calls_foreign_constructor(self):
         from yadinassi import error_info

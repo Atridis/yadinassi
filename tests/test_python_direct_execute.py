@@ -114,6 +114,7 @@ X=1;Execute("SetX(X);");''');self.assertEqual(v.variables['x'],9)
         try:
             owner.vm.execute('R=Undefined;Execute("Q=New Query(""SELECT COUNT(*) AS N FROM Catalog.Номенклатура"");S=Q.Execute().Select();S.Next();R=S.N;");')
             self.assertEqual(owner.vm.variables['r'],0);self.assertNotIn('q',owner.vm.variables)
+            owner.vm._transaction_activation_allowed=False
             with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('transaction effect')) as begin:
                 with self.assertRaises(BSLError):owner.vm.execute('Execute("BeginTransaction();");')
                 begin.assert_not_called()

@@ -1,5 +1,9 @@
 # Generated catalog BeforeWrite
 
+Current scope update: admitted standalone direct modules now have a separate
+[owned transaction lifecycle](direct-standalone-transactions.md). This does not
+admit externally supplied ambient transactions or widen source-handler grants.
+
 The default direct backend now runs the selected catalog object module as
 ordinary generated Python functions. `_prepare_catalog_object` still constructs
 its small `_ObjectInterpreter` only to obtain the existing five pure host

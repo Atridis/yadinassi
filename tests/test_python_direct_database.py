@@ -34,11 +34,12 @@ class DirectDatabaseTests(unittest.TestCase):
         with self.assertRaises(BoundaryViolation):other.execute('foreign.Description="bad";')
         with self.assertRaises(Exception):self.vm.execute('secret=A._manager;')
 
-    def test_transactions_rejected_before_effect_and_flag_restored(self):
+    def test_denied_transaction_caller_is_rejected_before_effect_and_flag_restored(self):
+        self.vm._transaction_activation_allowed=False
         with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
             with self.assertRaises(Exception):self.vm.execute('BeginTransaction();')
             begin.assert_not_called()
-        self.assertTrue(self.vm._transaction_activation_allowed)
+        self.assertFalse(self.vm._transaction_activation_allowed)
 
     def test_query_selection_on_real_sqlite_without_vm_dispatch(self):
         with patch.object(Interpreter,'block',side_effect=AssertionError('legacy block')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('legacy routine')):

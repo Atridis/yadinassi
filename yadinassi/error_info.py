@@ -101,3 +101,10 @@ def empty_error_info() -> BSLErrorInfo:
 _DIRECT_SNAPSHOT_ABI = (BSLErrorInfo, vars(BSLObject)['__dict__'],
     frozenset({BSLErrorCategory.ALL_ERRORS, BSLErrorCategory.SCRIPT_RUNTIME_ERROR}),
     frozenset({BSLErrorCategory.ALL_ERRORS, BSLErrorCategory.OTHER_ERROR}))
+
+# Pin category singletons for direct validation without enum/hash/equality hooks.
+_DIRECT_CATEGORY_ABI = tuple(BSLErrorCategory)
+# All finite combinations are assembled before host callbacks can replace enum
+# hashing. Direct code selects a prebuilt set by an identity-only bit mask.
+_DIRECT_CATEGORY_SETS = tuple(frozenset(member for index,member in enumerate(_DIRECT_CATEGORY_ABI)
+    if mask & (1 << index)) for mask in range(1 << len(_DIRECT_CATEGORY_ABI)))

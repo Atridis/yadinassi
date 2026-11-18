@@ -89,6 +89,9 @@ class BoundaryContext:
             from .experimental_naked_errors import description_service
             function=description_service(self,function)
         if type(function) is HostFunction:
+            if getattr(self,'_direct_transaction_owner',None) is not None:
+                from .python_direct_transactions import service as transaction_service
+                function=transaction_service(self,function)
             self._validate_host_function(function,require_value,allow_references)
         def invoke(*args):
             self._before('call',key)
@@ -117,6 +120,9 @@ class BoundaryContext:
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
         self._check()
+        if type(value) is HostFunction and getattr(self,'_direct_transaction_owner',None) is not None:
+            from .python_direct_transactions import service as transaction_service
+            value=transaction_service(self,value)
         self._validate_host_function(value,require_value,allow_references)
         # Bind the canonical wrapper, not its mutable implementation field.
         name=value.name.casefold()

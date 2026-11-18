@@ -56,16 +56,26 @@ CONSTRUCTORS = {
 
 class ServicesBoundary:
     def get_member(self,value,name):
+        if value is None:
+            self._check();raise ValueError('Значение не является значением объектного типа')
         from .python_direct_error_info import owns, read
         if owns(value):return read(self,value,name)
         if type(value) is BSLTextDocument:return text_resources.get(self,value,name)
         return super().get_member(value,name)
 
     def resolve_member(self,value,name):
+        if value is None:
+            self._check();raise ValueError('Значение не является значением объектного типа')
+        from .python_direct_error_info import owns,resolve_query
+        if owns(value):return resolve_query(self,value,name)
         if type(value) is BSLTextDocument:return text_resources.resolve(self,value,name)
         return super().resolve_member(value,name)
 
     def resolve_member_call(self,value,name,*,require_value=False,omitted=()):
+        if value is None:
+            self._check();raise ValueError('Значение не является значением объектного типа')
+        from .python_direct_error_info import owns,resolve_query
+        if owns(value):return resolve_query(self,value,name,require_value=require_value,omitted=omitted)
         if type(value) is not BSLTextDocument:
             return super().resolve_member_call(value,name,require_value=require_value,omitted=omitted)
         text_resources.check(self,value)
@@ -100,6 +110,9 @@ class ServicesBoundary:
         return readonly
 
     def resolve_callable(self,value,*,require_value=False,allow_references=False):
+        from .python_direct_fill import resolve_fill
+        bound=resolve_fill(self,value,require_value=require_value,allow_references=allow_references)
+        if bound is not None:return bound
         # Only exact canonical TextDocument methods, not arbitrary host objects.
         from types import MethodType
         if (type(value) is HostFunction and type(value.function) is MethodType
@@ -118,6 +131,9 @@ class ServicesBoundary:
         from .temporary_storage import SourceTemporaryCall
         from .common_templates import SourceTemplateCall
         function=self._services.get(key)
+        from .python_direct_fill import resolve_fill
+        bound=resolve_fill(self,function,name=key,**kwargs)
+        if bound is not None:return bound
         if type(function) is HostFunction and type(function.function) is SourceTemporaryCall:
             raise ValueError('temporary storage belongs to another or closed source application')
         if type(function) is HostFunction and type(function.function) is SourceTemplateCall:

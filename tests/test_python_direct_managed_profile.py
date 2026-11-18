@@ -88,4 +88,8 @@ class DirectManagedDatabaseTests(unittest.TestCase):
         vm=Interpreter(database_context=self.context,compilation_profile=PROFILE);self.addCleanup(vm.close)
         vm.execute('A=Catalogs.Склады.CreateItem(); A.Description="managed"; A.Write(); R=A.Ref.GetObject().Description;')
         self.assertEqual(vm.variables['r'],'managed')
-        with self.assertRaises(BSLRuntimeError):vm.execute('BeginTransaction();')
+        vm._transaction_activation_allowed=False
+        with patch('yadinassi.database_transactions.begin',side_effect=AssertionError('effect')) as begin:
+            with self.assertRaises(BSLRuntimeError):vm.execute('BeginTransaction();')
+            begin.assert_not_called()
+        self.assertFalse(vm._transaction_activation_allowed)

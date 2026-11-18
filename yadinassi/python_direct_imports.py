@@ -249,7 +249,7 @@ class ImportBoundary:
         if public is None:raise ValueError('Метод объекта не обнаружен: '+name)
         from .python_direct import _admit_vm
         from .python_direct_routines import validate_calls
-        _admit_vm(child);validate_calls(child,(name,))
+        _admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
         module=child._direct_routine_modules[name]
         if name in module.dual_names:raise ValueError('Двухконтекстная подпрограмма через объект модуля пока не поддерживается')
         returns_value,minimum,maximum,references=public[1]
@@ -264,12 +264,12 @@ class ImportBoundary:
                 raise BoundaryViolation('imported routine binding changed')
         def invoke(*args):
             nonlocal used
-            validate();_admit_vm(child);validate_calls(child,(name,))
+            validate();_admit_vm(child,_transaction_owner=getattr(self,'_direct_transaction_owner',None));validate_calls(child,(name,))
             if used:raise BoundaryViolation('import call already consumed')
             used=True
             from .python_direct import make_boundary
             from .python_direct_routines import resolve
-            context=make_boundary(child,_parent_check=validate)
+            context=make_boundary(child,_parent_check=validate,_transaction_owner=getattr(self,'_direct_transaction_owner',None))
             context._handled_errors=self._handled_errors
             for attribute in ('_execute_depth','_eval_depth'):
                 shared=getattr(self,attribute,None)

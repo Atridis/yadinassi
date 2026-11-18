@@ -109,7 +109,8 @@ class NativeTargetFillTests(unittest.TestCase):
                 self.assertIs(target.get('A'), vm.variables['items'])
                 self.assertIsNone(target.get('B'))
                 self.assertEqual(target.get('Other'), Decimal(3))
-                self.assertEqual([pair.key for pair in target], ['A', 'B', 'Other'])
+                vm.execute('Keys = ""; For Each Pair In target Do Keys = Keys + Pair.Key + ","; EndDo;')
+                self.assertEqual(vm.variables['keys'], 'A,B,Other,')
                 self.assertEqual(vm.execute('source.a[0]'), Decimal(7))
 
     def test_no_list_and_exclude_paths_are_identical_in_every_target(self):

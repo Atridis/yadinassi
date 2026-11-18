@@ -17,8 +17,10 @@ Eval does not see the caller's ErrorInfo. Nested handlers clear stale outer stat
 rethrow retains the original snapshot, silent handlers do not format errors, and
 custom host service replacements retain their own behavior.
 
-The inventory-period replay still refuses BeginTransaction in cases13/14; it now
-reports the actual reason instead of an empty description. On the earlier head,
+The ErrorInfo-only slice leaves BeginTransaction denial intact and reports its
+actual reason instead of an empty description. A separate standalone transaction
+lifecycle now handles the period replay cases 13/14; see
+[the lifecycle scope](direct-standalone-transactions.md). On the earlier head,
 that replay stopped at a missing ValueTable.Columns iterator before reaching those
 cases. This is not a new numeric regression or a license to relax transaction
 security.
@@ -26,8 +28,8 @@ security.
 Safe direct transaction support needs a separate owned execution-token lifecycle:
 root admission, per-boundary token/backend identity, unwind on BaseException,
 unclosed transaction rollback, uncertain-commit resolution, and consistent import,
-source-handler and server-crossing denial. The current direct blanket guard is
-not removed here. Async/pending tasks and existing caller admission stay unchanged.
+source-handler and server-crossing denial. ErrorInfo itself changes none of these guards. The separate standalone lifecycle
+is bounded to its owned root. Async/pending tasks and caller denial stay unchanged.
 
 Definition-time class, raw storage and default-category identities are captured
 before host integrations can rebind public aliases. Direct snapshot construction
