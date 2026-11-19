@@ -4,8 +4,8 @@ from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 
 class NativeCellTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
     def test_shared_alias_and_nested_forwarding(self):
         vm=self.vm();vm.execute('Procedure Inc(X) X=X+1;EndProcedure Procedure Both(A,B) Inc(A);B=B+2;EndProcedure R=0;Both(R,R);')
         self.assertEqual(vm.variables['r'],D(3))
@@ -36,7 +36,7 @@ class NativeCellTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],D(1));self.assertEqual(vm.variables['i'],D(6))
     def test_host_reference_does_not_survive_activation(self):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-        vm=self.vm();saved=[]
+        vm=self.vm(allow_extensions=True);saved=[]
         vm.register_function('Capture',lambda ref:saved.append(ref))
         vm.functions['capture'].reference_parameters=frozenset({0})
         vm.execute('Procedure F(X) Capture(X);EndProcedure R=1;F(R);')
@@ -49,7 +49,7 @@ class NativeCellTests(unittest.TestCase):
             both(0,1);self.assertEqual((store[0],store[1]),(D(4),D(7)))
     def test_host_close_remains_fatal(self):
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
-        vm=self.vm();vm.register_function('Stop',lambda:vm.close())
+        vm=self.vm(allow_extensions=True);vm.register_function('Stop',lambda:vm.close())
         with self.assertRaises(BoundaryViolation):vm.execute('Procedure Inc(X) X=X+1;Stop();X=X+1;EndProcedure R=0;Try Inc(R);Except Caught=True;EndTry;After=1;')
         self.assertNotIn('after',vm.variables);self.assertNotIn('caught',vm.variables)
 

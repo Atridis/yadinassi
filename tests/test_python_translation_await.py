@@ -10,10 +10,11 @@ from unittest.mock import patch
 from yadinassi import Interpreter, BSLError
 class DirectAsyncBehavior(unittest.TestCase):
 
-    def run_vm(self, source, setup=lambda vm: None):
-        vm = Interpreter()
+    def run_vm(self, source, setup=None):
+        vm = Interpreter(allow_extensions=setup is not None)
         self.addCleanup(vm.close)
-        setup(vm)
+        if setup is not None:
+            setup(vm)
         vm.execute(source)
         return vm
 

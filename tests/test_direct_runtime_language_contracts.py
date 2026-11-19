@@ -9,8 +9,8 @@ from yadinassi.types.errors import BSLRuntimeError
 
 
 class DirectRuntimeLanguageContractsTests(unittest.TestCase):
-    def vm(self):
-        vm = Interpreter()
+    def vm(self, *, allow_extensions=False):
+        vm = Interpreter(allow_extensions=allow_extensions)
         self.addCleanup(vm.close)
         return vm
 
@@ -109,7 +109,7 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
             (gc.enable if original else gc.disable)()
 
     def test_discarded_result_released_after_handled_error(self):
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         refs = []
         seen = []
 
@@ -151,7 +151,7 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
 
     def test_undefined_for_counter_bound_does_not_execute_loop(self):
         from yadinassi import BSLError
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         effects = []
         vm.register_function('Effect', lambda: effects.append(1))
         with self.assertRaisesRegex(BSLError, r'(?i)(i|присваивани)'):
@@ -161,7 +161,7 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
         self.assertNotIn('result', vm.variables)
 
     def test_single_registered_effect_and_result(self):
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         effects = []
         vm.register_function('Effect', lambda: effects.append(1) or 7)
         vm.execute('r=Effect();')
@@ -187,7 +187,7 @@ class DirectRuntimeLanguageContractsTests(unittest.TestCase):
 
         for mutate in (malformed_target, omitted_value, statement_operand, metadata_statement):
             with self.subTest(case=mutate.__name__):
-                vm = self.vm()
+                vm = self.vm(allow_extensions=True)
                 effects = []
                 vm.register_function('Effect', lambda: effects.append(1))
                 program = parse('Effect();x=1;', 'roles.bsl')

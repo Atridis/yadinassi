@@ -27,14 +27,14 @@ SELECTED = b'Procedure Posting(Cancel, Mode) RegisterRecords.OwnedAccumulationRo
 
 
 class AccumulationQueryRuntimeTests(unittest.TestCase):
-    def make(self, module=SELECTED, files=None):
+    def make(self, module=SELECTED, files=None, *, allow_extensions=False):
         temp = tempfile.TemporaryDirectory(dir=ROOT.parent)
         self.addCleanup(temp.cleanup)
         config = import_accumulation_configuration(
             accumulation_source(module) if files is None else files, accumulation_runtime=PROFILE)
         context = SQLiteDBContext.create_accumulation(Path(temp.name) / 'query.sqlite', config)
         self.addCleanup(context.close)
-        vm = Interpreter(database_context=context, output=lambda line: None)
+        vm = Interpreter(allow_extensions=allow_extensions, database_context=context, output=lambda line: None)
         self.addCleanup(vm.close)
         return vm, context
 

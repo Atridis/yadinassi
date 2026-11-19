@@ -13,8 +13,8 @@ from yadinassi.execution.direct.python_direct_fill import fill
 
 
 class DirectFillStructureTests(TestCase):
-    def vm(self,backend='python-direct',target=WINDOWS_8_3_27_2342):
-        return Interpreter(execution_backend=backend,native_target=target)
+    def vm(self,backend='python-direct',target=WINDOWS_8_3_27_2342, *, allow_extensions=False):
+        return Interpreter(allow_extensions=allow_extensions, execution_backend=backend,native_target=target)
 
     def test_compiled_oracle_selection_matrix(self):
         selections=(None,'A,B','A,Missing,B','Missing,A,B','A,B,Missing',
@@ -45,7 +45,7 @@ class DirectFillStructureTests(TestCase):
         self.assertEqual(vm.execute('S.a[0]'),Decimal(7))
 
     def test_custom_registration_is_not_intercepted(self):
-        vm=self.vm();calls=[]
+        vm=self.vm(allow_extensions=True);calls=[]
         vm.register_function('FillPropertyValues',lambda *args:calls.append(args))
         vm.execute('FillPropertyValues(1,2);')
         self.assertEqual(calls,[(Decimal(1),Decimal(2))])
@@ -84,7 +84,7 @@ class DirectFillStructureTests(TestCase):
         with self.assertRaises(BoundaryViolation):fill(target,source)
 
     def test_implementation_change_during_arguments_is_rejected(self):
-        vm=self.vm();vm.execute('T=New Structure("A",1);S=New Structure("A",2);')
+        vm=self.vm(allow_extensions=True);vm.execute('T=New Structure("A",1);S=New Structure("A",2);')
         calls=[]
         def mutate():
             vm.functions['fillpropertyvalues'].function=lambda *a:calls.append(a)

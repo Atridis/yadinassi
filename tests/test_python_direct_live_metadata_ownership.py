@@ -12,7 +12,7 @@ DENIED=(BoundaryViolation,BSLRuntimeError,ValueError,TypeError)
 class LiveMetadataOwnershipTests(unittest.TestCase):
     def setUp(self):
         owner=fixture.MetadataGraphTests();self.addCleanup(owner.doCleanups)
-        self.vm,self.context=owner.runtime()
+        self.vm,self.context=owner.runtime(allow_extensions=True)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             guard=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));guard.start();self.addCleanup(guard.stop)
     def prepared(self):

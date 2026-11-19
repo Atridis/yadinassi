@@ -12,7 +12,7 @@ from yadinassi.types.values import InterpreterCall
 
 class CallShapeContracts(unittest.TestCase):
     def pair(self, operation):
-        vm=Interpreter();events=[]
+        vm=Interpreter(allow_extensions=True);events=[]
         try:
             result=operation(vm,events)
             self.assertIsNone(vm.locals)

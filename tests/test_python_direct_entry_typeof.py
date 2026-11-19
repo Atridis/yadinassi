@@ -11,8 +11,8 @@ from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 
 class DirectEntryTypeOfTests(unittest.TestCase):
-    def vm(self, backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self, backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_map_and_structure_pairs_match_legacy_without_vm(self):
         source='''M=New Map;M.Insert("K",1);S=New Structure("K",1);
@@ -28,12 +28,12 @@ For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"
             self.assertIs(vm.variables['mr'],True);self.assertIs(vm.variables['sr'],True)
 
     def test_alias_override_and_late_function_revocation(self):
-        vm=self.vm();pair=_MapEntry('K',1);vm.variables['p']=pair
+        vm=self.vm(allow_extensions=True);pair=_MapEntry('K',1);vm.variables['p']=pair
         vm.register_function('Alias',type_of)
         self.assertIs(vm.execute('Alias(P)'),BSLType.KEY_AND_VALUE)
         vm.register_function('TypeOf',lambda value:'custom')
         self.assertEqual(vm.execute('TypeOf(P)'),'custom')
-        vm=self.vm()
+        vm=self.vm(allow_extensions=True)
         def change():vm.functions['typeof'].function=lambda value:'wrong';return pair
         vm.register_function('Change',change)
         with self.assertRaises(BoundaryViolation):vm.execute('R=TypeOf(Change());')
@@ -41,7 +41,7 @@ For Each P In S Do ST=ТипЗнч(P);SR=(ST=Тип("КлючИЗначение"
 
     def test_policy_and_lifetime_still_gate_classification(self):
         class Context(ServicesBoundary,BoundaryContext):pass
-        vm=self.vm();events=[]
+        vm=self.vm(allow_extensions=True);events=[]
         context=Context(services=vm.functions,policy=lambda action,name:events.append((action,name)) or False)
         context.vm=vm;context.enter()
         try:

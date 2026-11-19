@@ -10,8 +10,8 @@ from yadinassi.syntax.parser import parse
 
 
 class DirectStructureCopyTests(unittest.TestCase):
-    def vm(self,backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self,backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_routes_shallow_copy_case_spelling_order_and_independent_top_level(self):
         source='''A=New Array;A.Add(1);S=New Structure("ß,SS,Child",0,2,A);
@@ -44,7 +44,7 @@ Empty=New Structure(New FixedStructure);E=Empty.Count();'''
 
     def test_extra_actuals_run_then_error_and_old_target_is_not_replaced(self):
         for backend in ('python-direct','compiled-strict'):
-            vm=self.vm(backend);events=[]
+            vm=self.vm(backend, allow_extensions=True);events=[]
             vm.register_function('Effect',lambda:events.append('rhs') or 4)
             vm.execute('F=New FixedStructure("X",1);T=7;Try T=New Structure(F,Effect());Except Error=ErrorDescription();EndTry;')
             self.assertEqual(events,['rhs']);self.assertEqual(vm.variables['t'],7)

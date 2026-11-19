@@ -26,8 +26,8 @@ def calls():
     return start + text.split(start, 1)[1].split(end, 1)[0] + end
 
 class ColumnsDiagnosticTests(unittest.TestCase):
-    def vm(self, helper=None, *, backend=None):
-        output = []; vm = Interpreter(output.append, execution_backend=backend)
+    def vm(self, helper=None, *, backend=None, allow_extensions=False):
+        output = []; vm = Interpreter(output.append, allow_extensions=allow_extensions, execution_backend=backend)
         vm.execute('Procedure Показать(Label, Value) Message(Label + ": [" + Value + "]"); EndProcedure;'
                    + (helpers() if helper is None else helper))
         return vm, output
@@ -55,7 +55,7 @@ class ColumnsDiagnosticTests(unittest.TestCase):
     def test_all_81_vectors_fixed_packet_and_single_four_part_experiment(self):
         text = helpers(); begin = text.index('Функция TreeColumnsDiagnosticPart(')
         end = text.index('КонецФункции', begin) + len('КонецФункции')
-        vm, output = self.vm(text[:begin] + text[end:])
+        vm, output = self.vm(text[:begin] + text[end:], allow_extensions=True)
         observed = []
         def part(number):
             observed.append(int(number)); return vector[int(number)-1]

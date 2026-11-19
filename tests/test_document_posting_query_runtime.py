@@ -12,16 +12,16 @@ from test_document_posting_runtime import posting_source,ROOT
 
 
 class PostingQueryRuntimeTests(unittest.TestCase):
-    def make(self,module=None):
+    def make(self,module=None, *, allow_extensions=False):
         temp=tempfile.TemporaryDirectory(dir=ROOT.parent);self.addCleanup(temp.cleanup)
         config=import_posting_configuration(posting_source(module),posting_runtime=PROFILE)
         context=SQLiteDBContext.create_posting(Path(temp.name)/'query.sqlite',config)
         self.addCleanup(context.close)
-        vm=Interpreter(database_context=context,output=lambda line:None);self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=allow_extensions, database_context=context,output=lambda line:None);self.addCleanup(vm.close)
         return vm,context
 
     def test_unchanged_native14_observer_uses_public_query(self):
-        vm,context=self.make();observed=[];diagnostics=[]
+        vm,context=self.make(allow_extensions=True);observed=[];diagnostics=[]
         # Native diagnostic formatting is test instrumentation, not a posting API.
         vm.register_function('ПодробноеПредставлениеОшибки',lambda info:info.get_member('Description'))
         vm.register_function('PostingEmit',lambda number,value:observed.append((int(number),value)),returns_value=False)

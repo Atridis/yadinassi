@@ -13,8 +13,8 @@ from yadinassi.execution.direct.python_direct_plain_map import PlainMap as _Type
 
 
 class DirectDynamicNewTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
 
     def test_three_routes_use_exact_native_values_without_vm(self):
         code='Args=New Array;Args.Add(2);A=New(Type("Array"),Args);S=New("Structure");M=New("Map");'
@@ -39,7 +39,7 @@ class DirectDynamicNewTests(unittest.TestCase):
             with self.subTest(target=target),self.assertRaises(BSLError):vm.execute('New('+target+')')
 
     def test_order_and_invalid_target_validation_after_parameters(self):
-        vm=self.vm();events=[]
+        vm=self.vm(allow_extensions=True);events=[]
         vm.register_function('Kind',lambda:events.append('type') or 'Missing')
         vm.register_function('Params',lambda:events.append('parameters') or False)
         with self.assertRaises(BSLError):vm.execute('New(Kind(),Params())')
@@ -95,7 +95,7 @@ class DirectDynamicNewTests(unittest.TestCase):
         self.assertNotIn('after',vm.variables)
 
     def test_unknown_registered_factories_and_replacements_are_not_grants(self):
-        vm=self.vm();effects=[]
+        vm=self.vm(allow_extensions=True);effects=[]
         factory=lambda *args:effects.append('factory')
         vm.register_type('Arbitrary',factory)
         for name in ('Arbitrary','JSONReader','Array','UUID','Query'):
@@ -105,7 +105,7 @@ class DirectDynamicNewTests(unittest.TestCase):
                 self.assertEqual(effects,[])
 
     def test_parameter_effect_updates_live_registry_before_admission(self):
-        vm=self.vm();effects=[]
+        vm=self.vm(allow_extensions=True);effects=[]
         def replace():
             effects.append('params');vm.register_type('Array',lambda:effects.append('bad'));return None
         vm.register_function('Replace',replace)
@@ -113,7 +113,7 @@ class DirectDynamicNewTests(unittest.TestCase):
         self.assertEqual(effects,['params'])
 
     def test_owner_revocation_and_constructor_failure_preserve_target(self):
-        vm=self.vm();vm.execute('Saved=7;')
+        vm=self.vm(allow_extensions=True);vm.execute('Saved=7;')
         def close():vm.close();return None
         vm.register_function('CloseOwner',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Saved=New("Array",CloseOwner())')
@@ -132,7 +132,7 @@ class DirectDynamicNewTests(unittest.TestCase):
 
 
     def test_runtime_source_coordinates_and_prepared_live_admission(self):
-        vm=self.vm();plan=vm.prepare('Saved=New("JSONReader");','dynamic.bsl')
+        vm=self.vm(allow_extensions=True);plan=vm.prepare('Saved=New("JSONReader");','dynamic.bsl')
         vm.execute_prepared(plan)
         vm.register_type('JSONReader',lambda:None)
         with self.assertRaises(BoundaryViolation):vm.execute_prepared(plan)

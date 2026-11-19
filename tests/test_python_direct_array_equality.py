@@ -7,8 +7,8 @@ from yadinassi.execution.codegen.experimental_naked_scalar_semantics import arra
 
 
 class DirectArrayEqualityTests(unittest.TestCase):
-    def vm(self,backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self,backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_alias_distinct_empty_equal_nested_and_cyclic(self):
         for left,right in (([],[]),([1],[1]),([[1]],[[1]])):
@@ -67,7 +67,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
 
     def test_effect_order_and_single_evaluation(self):
         for operator in ('=','<>'):
-            vm=self.vm();events=[];left=[];right=[]
+            vm=self.vm(allow_extensions=True);events=[];left=[];right=[]
             vm.register_function('LeftValue',lambda:events.append('left') or left)
             vm.register_function('RightValue',lambda:events.append('right') or right)
             self.assertIs(vm.execute('(LeftValue()'+operator+'RightValue())'),operator=='<>')
@@ -122,7 +122,7 @@ class DirectArrayEqualityTests(unittest.TestCase):
     def test_literal_comparisons_evaluate_dynamic_operand_once(self):
         for operator in ('=','<>'):
             for left,right in (('Effect()','1'),('1','Effect()')):
-                vm=self.vm();events=[]
+                vm=self.vm(allow_extensions=True);events=[]
                 vm.register_function('Effect',lambda:events.append('effect') or Decimal(1))
                 self.assertIs(vm.execute('('+left+operator+right+')'),operator=='=')
                 self.assertEqual(events,['effect'])

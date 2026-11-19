@@ -125,7 +125,7 @@ class NativeAsyncObservationTests(unittest.TestCase):
     def test_exact_eight_native_observations(self):
         for case in OBSERVATIONS['cases']:
             with self.subTest(case=case['case']):
-                vm = Interpreter(output=lambda message: None,
+                vm = Interpreter(allow_extensions=True, output=lambda message: None,
                                  native_target=LINUX_8_3_27_1508)
                 capture = Capture()
                 capture.install(vm)

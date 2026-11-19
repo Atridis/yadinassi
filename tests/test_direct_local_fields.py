@@ -44,7 +44,7 @@ class LocalFieldsTests(unittest.TestCase):
         self.assertEqual(vm.execute_prepared(plan), D(2016))
 
     def prepare(self, source, configure=None):
-        vm=Interpreter();self.addCleanup(vm.close)
+        vm=Interpreter(allow_extensions=configure is not None);self.addCleanup(vm.close)
         if configure:configure(vm)
         plan=vm.prepare(source)
         return vm,plan,plan._plan.generated_source

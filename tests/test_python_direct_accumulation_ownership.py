@@ -12,7 +12,7 @@ DENIED=(BoundaryViolation,BSLError,ValueError,TypeError)
 class DirectAccumulationOwnershipTests(unittest.TestCase):
     def setUp(self):
         owner=fixture.AccumulationQueryRuntimeTests();self.addCleanup(owner.doCleanups)
-        self.vm,self.context=owner.make()
+        self.vm,self.context=owner.make(allow_extensions=True)
         for name in ('_execute_program','call_routine','_planned_routine_block'):
             p=patch.object(Interpreter,name,side_effect=AssertionError('legacy '+name));p.start();self.addCleanup(p.stop)
     def prepared(self):

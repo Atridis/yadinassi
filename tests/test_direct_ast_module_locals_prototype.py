@@ -4,10 +4,10 @@ from yadinassi import Interpreter
 from yadinassi.syntax.parser import parse
 
 class ModuleLocalsPrototypeTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
     def test_host_callback_reads_writes_and_exception(self):
-        vm=self.vm();seen=[]
+        vm=self.vm(allow_extensions=True);seen=[]
         def touch():
             seen.append(vm.variables['x']);vm.variables['x']=D(9);return D(2)
         vm.register_function('Touch',touch)
@@ -25,12 +25,12 @@ class ModuleLocalsPrototypeTests(unittest.TestCase):
         with self.assertRaises(Exception):vm.execute('A=New Array;A.Add(3);R=7;X=A[99];After=1;')
         self.assertEqual(vm.variables['r'],D(7));self.assertNotIn('after',vm.variables)
     def test_host_reference_sync(self):
-        vm=self.vm()
+        vm=self.vm(allow_extensions=True)
         def inc(ref):ref.set(ref.get()+D(1))
         vm.register_function('Inc',inc);vm.functions['inc'].reference_parameters=frozenset({0})
         vm.execute('X=3;Inc(X);R=X;');self.assertEqual(vm.variables['r'],D(4))
     def test_close_during_callback_remains_fatal(self):
-        vm=self.vm();vm.register_function('Stop',lambda:vm.close())
+        vm=self.vm(allow_extensions=True);vm.register_function('Stop',lambda:vm.close())
         from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
         with self.assertRaises(BoundaryViolation):vm.execute('X=1;Try Stop();Except Caught=True;EndTry;After=1;')
         self.assertNotIn('caught',vm.variables);self.assertNotIn('after',vm.variables)

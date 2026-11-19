@@ -4,21 +4,21 @@ from yadinassi import Interpreter
 from yadinassi.types.errors import BSLRuntimeError
 
 class MethodArityTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
 
     def test_invalid_arity_preserves_argument_effect_order(self):
         cases=[('Array','Get',0),('Array','Get',2),('Array','Set',1),('Array','Set',3),('Array','Insert',0),('Array','Insert',3),('Array','Delete',0),('Array','Delete',2),('Map','Get',0),('Map','Get',2),('Map','Insert',3),('Map','Delete',0),('Map','Delete',2),('Structure','Insert',3),('Structure','Delete',0),('Array','Count',1),('Map','Count',1),('Structure','Count',1)]
         for kind,method,count in cases:
             with self.subTest(kind=kind,method=method,count=count):
-                vm=self.vm();effects=[]
+                vm=self.vm(allow_extensions=True);effects=[]
                 vm.register_function('Host',lambda i:effects.append(i) or i)
                 source='a=New '+kind+';a.'+method+'('+','.join('Host('+str(i)+')' for i in range(count))+');'
                 with self.assertRaises(BSLRuntimeError):vm.execute(source,'arity.bsl')
                 self.assertEqual(effects,list(range(count)))
 
     def test_set_value_effect_precedes_bounds_error(self):
-        vm=self.vm();effects=[];vm.register_function('Host',lambda:effects.append('value') or 7)
+        vm=self.vm(allow_extensions=True);effects=[];vm.register_function('Host',lambda:effects.append('value') or 7)
         with self.assertRaises(BSLRuntimeError):vm.execute('a=New Array;a.Add(1);a.Set(2,Host());','set.bsl')
         self.assertEqual(effects,['value']);self.assertEqual(vm.variables['a'],[1])
 
@@ -29,7 +29,7 @@ class MethodArityTests(unittest.TestCase):
     def test_unsupported_method_is_catchable_before_arguments(self):
         for family,method in (('Array','Nonsense'),('Map','Set'),('Structure','Get')):
             with self.subTest(family=family):
-                vm=self.vm();events=[];vm.register_function('Host',lambda:events.append('arg'))
+                vm=self.vm(allow_extensions=True);events=[];vm.register_function('Host',lambda:events.append('arg'))
                 vm.execute('a=New '+family+';r=False;Try a.'+method+'(Host());Except r=True;EndTry;')
                 self.assertTrue(vm.variables['r']);self.assertEqual(events,[])
 
@@ -48,7 +48,7 @@ class MethodArityTests(unittest.TestCase):
         self.assertTrue(vm.variables['r'])
 
     def test_host_error_not_confused_with_iterator_error(self):
-        vm=self.vm()
+        vm=self.vm(allow_extensions=True)
         def host():raise RuntimeError('host runtime failure, not iterator')
         vm.register_function('Host',host)
         with self.assertRaisesRegex(RuntimeError,'host runtime failure'):

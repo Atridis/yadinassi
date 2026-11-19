@@ -9,14 +9,14 @@ from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryVi
 
 DECL='&AtServer\nVar N;\n&AtServer\nFunction Read() Return N;EndFunction\n'
 def initialize(body):return '#If AtServer Then\n'+body+'\n#EndIf\n'
-def vm():return Interpreter(compilation_profile='managed-thick-file')
+def vm(*, allow_extensions=False):return Interpreter(allow_extensions=allow_extensions, compilation_profile='managed-thick-file')
 
 class DirectServerInitializerTests(unittest.TestCase):
     def test_source_ast_prepared_initializer_once_per_crossing(self):
         from yadinassi.syntax.parser import parse
         source=DECL+'&AtServer\nFunction Nested() N=N+1;Return Read();EndFunction\n'+initialize('N=100;Tick();')+'R=Nested();'
         for route in ('source','ast','prepared'):
-            owner=vm();ticks=[];owner.register_function('Tick',lambda:ticks.append(owner.execution_context))
+            owner=vm(allow_extensions=True);ticks=[];owner.register_function('Tick',lambda:ticks.append(owner.execution_context))
             with patch.object(Interpreter,'block',side_effect=AssertionError('VM')),patch.object(Interpreter,'call_routine',side_effect=AssertionError('VM')):
                 if route=='source':owner.execute(source)
                 elif route=='ast':owner.execute_program(parse(source,compilation_profile='managed-thick-file'))
@@ -39,13 +39,13 @@ class DirectServerInitializerTests(unittest.TestCase):
         owner.execute('R=Read();');self.assertEqual(owner.variables['r'],122)
 
     def test_declaration_load_does_not_run_server_initializer(self):
-        owner=vm();effects=[];owner.register_function('Tick',lambda:effects.append(1))
+        owner=vm(allow_extensions=True);effects=[];owner.register_function('Tick',lambda:effects.append(1))
         owner.execute(DECL+initialize('Tick();N=1;'))
         self.assertEqual(effects,[])
         owner.execute('R=Read();');self.assertEqual(effects,[1])
 
     def test_initializer_failure_discards_output_and_recovers(self):
-        owner=vm();enabled=[True];owner.register_function('FailNow',lambda:enabled[0])
+        owner=vm(allow_extensions=True);enabled=[True];owner.register_function('FailNow',lambda:enabled[0])
         owner.execute(DECL+'&AtServer\nProcedure SetX(X) X=9;EndProcedure\n'+initialize('N=1;If FailNow() Then Raise "init-failure";EndIf;'))
         owner.execute('X=3;')
         with self.assertRaisesRegex(BSLRuntimeError,'init-failure'):owner.execute('SetX(X);')
@@ -53,7 +53,7 @@ class DirectServerInitializerTests(unittest.TestCase):
         enabled[0]=False;owner.execute('SetX(X);');self.assertEqual(owner.variables['x'],9)
 
     def test_current_constructor_and_initializer_dependencies_admit_before_effects(self):
-        owner=vm();owner.execute(DECL+initialize('N=New Array;'))
+        owner=vm(allow_extensions=True);owner.execute(DECL+initialize('N=New Array;'))
         owner.register_type('Array',lambda:[])
         with self.assertRaises(PythonDirectUnsupported):owner.execute('Effect=1;Read();')
         self.assertNotIn('effect',owner.variables)
@@ -76,12 +76,12 @@ class DirectServerInitializerTests(unittest.TestCase):
         self.assertFalse(getattr(fresh,'_direct_server_initializers',()))
 
     def test_host_closure_during_initializer_fails_closed(self):
-        owner=vm();owner.register_function('Close',owner.close)
+        owner=vm(allow_extensions=True);owner.register_function('Close',owner.close)
         owner.execute(DECL+initialize('Close();'))
         with self.assertRaises(BoundaryViolation):owner.execute('Read();')
 
     def test_initializer_cannot_invoke_client_routine(self):
-        owner=vm();effects=[];owner.register_function('Effect',lambda:effects.append(1))
+        owner=vm(allow_extensions=True);effects=[];owner.register_function('Effect',lambda:effects.append(1))
         owner.execute('Function C(Val X) Return X;EndFunction\n'+DECL+initialize('N=C(Effect());'))
         with self.assertRaises(BSLRuntimeError):owner.execute('Read();')
         self.assertEqual(effects,[])

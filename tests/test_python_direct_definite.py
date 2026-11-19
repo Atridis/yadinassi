@@ -10,7 +10,7 @@ class DefiniteReadsTests(unittest.TestCase):
     def paired(self, source, install=None):
         results=[]
         for optimize in (False, True):
-            vm=Interpreter()
+            vm=Interpreter(allow_extensions=install is not None)
             if install: install(vm)
             error=None
             with patch('yadinassi.execution.direct.python_direct_definite.definite_module_reads',

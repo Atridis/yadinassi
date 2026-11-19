@@ -21,11 +21,11 @@ from configuration_runtime_fixture import module_files
 
 
 class MetadataGraphTests(unittest.TestCase):
-    def runtime(self, files=None):
+    def runtime(self, files=None, *, allow_extensions=False):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         context = SQLiteDBContext.create(Path(directory.name)/'app.sqlite',import_configuration(files or configuration_files()))
         self.addCleanup(context.close)
-        vm = Interpreter(database_context=context); self.addCleanup(vm.close)
+        vm = Interpreter(allow_extensions=allow_extensions, database_context=context); self.addCleanup(vm.close)
         return vm, context
 
     def test_configuration_name_and_empty_presentation(self):

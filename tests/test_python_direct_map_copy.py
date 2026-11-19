@@ -16,8 +16,8 @@ from uuid import UUID
 
 
 class DirectMapCopyTests(unittest.TestCase):
-    def vm(self,backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self,backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_routes_typed_keys_fresh_storage_shallow_aliases(self):
         source='''Key=New Array;Child=New Array;M=New Map;
@@ -47,7 +47,7 @@ Args=New Array;Args.Add(F);T=New("Map",Args);T.Insert("K",2);R=F.Get("K");V=T.Ge
 
     def test_invalid_arity_source_runs_arguments_then_preserves_target(self):
         for source in ('T=New Map(Effect(),Effect());','T=New Map(Effect());'):
-            vm=self.vm();events=[];vm.variables['t']=7
+            vm=self.vm(allow_extensions=True);events=[];vm.variables['t']=7
             vm.register_function('Effect',lambda:events.append('argument') or {})
             with self.assertRaises(BSLError):vm.execute(source)
             self.assertEqual(len(events),source.count('Effect()'));self.assertEqual(vm.variables['t'],7)

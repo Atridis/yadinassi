@@ -9,8 +9,8 @@ from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_scalar_semantics import decimal_divide, decimal_sign
 
 class DirectDecimalDivisionTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter(execution_backend='python-direct');self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend='python-direct');self.addCleanup(vm.close);return vm
 
     def test_source_ast_prepared_eval_execute_routine(self):
         expected=Decimal('0.000000003725290298461914063')
@@ -27,7 +27,7 @@ class DirectDecimalDivisionTests(unittest.TestCase):
                 self.assertEqual(vm.variables['result'],expected)
 
     def test_no_vm_dispatch_and_operand_effect_order(self):
-        vm=self.vm();events=[]
+        vm=self.vm(allow_extensions=True);events=[]
         vm.register_function('LeftValue',lambda: events.append('left') or Decimal(1))
         vm.register_function('RightValue',lambda: events.append('right') or Decimal(3))
         with ExitStack() as stack:

@@ -26,7 +26,7 @@ class CollectionRegionsTests(unittest.TestCase):
     def paired(self, source, *, install=None):
         outputs=[]
         for enabled in (False,True):
-            vm=Interpreter();self.addCleanup(vm.close)
+            vm=Interpreter(allow_extensions=install is not None);self.addCleanup(vm.close)
             if install:install(vm)
             with patch('yadinassi.execution.direct.python_direct_collection_regions.analyze',analyze if enabled else lambda *a,**k:(0,{},frozenset())):
                 plan=vm.prepare(source)

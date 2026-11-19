@@ -15,8 +15,8 @@ from yadinassi.collections.structures import BSLFixedStructure, BSLStructure, fi
 TARGETS = (None, WINDOWS_8_3_27_2342, LINUX_8_3_27_1508)
 
 
-def interpreter(name):
-    return Interpreter() if name is None else Interpreter(native_target=name)
+def interpreter(name, *, allow_extensions=False):
+    return Interpreter(allow_extensions=allow_extensions) if name is None else Interpreter(allow_extensions=allow_extensions, native_target=name)
 
 
 def structure(items, reverse=False):
@@ -208,7 +208,7 @@ class NativeTargetFillTests(unittest.TestCase):
 
     def test_alias_identity_omission_arity_and_procedure_checks_before_operands(self):
         for name in TARGETS:
-            vm = interpreter(name)
+            vm = interpreter(name, allow_extensions=True)
             observed = []
             vm.register_function('Touch', lambda: observed.append('touch'))
             vm.execute('target = New Structure("First", 1); source = New Structure("First", 2);')
@@ -233,7 +233,7 @@ class NativeTargetFillTests(unittest.TestCase):
 
     def test_operand_evaluation_remains_once_left_to_right_before_reverse_copy(self):
         for name in TARGETS:
-            vm = interpreter(name)
+            vm = interpreter(name, allow_extensions=True)
             observed = []
 
             def argument(tag, value):

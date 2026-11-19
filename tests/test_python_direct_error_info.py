@@ -9,8 +9,8 @@ from yadinassi.types.error_info import BSLErrorInfo
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectErrorInfoTests(unittest.TestCase):
-    def vm(self,backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self,backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_source_ast_prepared_snapshot_and_fields_without_vm(self):
         from yadinassi.syntax.parser import parse
@@ -47,13 +47,13 @@ class DirectErrorInfoTests(unittest.TestCase):
         self.assertEqual(vm.variables['a'],'');self.assertEqual(vm.variables['b'],'outer')
 
     def test_custom_registration_and_class_override_are_not_wrapped(self):
-        vm=self.vm();vm.register_function('ErrorInfo',lambda:'custom');self.assertEqual(vm.execute('ErrorInfo()'),'custom')
+        vm=self.vm(allow_extensions=True);vm.register_function('ErrorInfo',lambda:'custom');self.assertEqual(vm.execute('ErrorInfo()'),'custom')
         with patch.object(Interpreter,'_error_info',lambda self:'class custom'):
-            vm=self.vm();self.assertEqual(vm.execute('ErrorInfo()'),'class custom')
+            vm=self.vm(allow_extensions=True);self.assertEqual(vm.execute('ErrorInfo()'),'class custom')
         with self.assertRaises(BSLRuntimeError):self.vm().execute('ErrorInfo(1)')
 
     def test_readonly_assignment_evaluates_rhs_but_does_not_mutate(self):
-        vm=self.vm();events=[];vm.register_function('Touch',lambda:events.append(1) or 'changed')
+        vm=self.vm(allow_extensions=True);events=[];vm.register_function('Touch',lambda:events.append(1) or 'changed')
         vm.execute('Try Raise "real";Except E=ErrorInfo();EndTry;Try E.Description=Touch();Except Caught=True;EndTry;')
         self.assertEqual(events,[1]);self.assertTrue(vm.variables['caught']);self.assertEqual(vm.variables['e'].description,'real')
 
@@ -81,7 +81,7 @@ class DirectErrorInfoTests(unittest.TestCase):
             self.vm().execute('Try X=1/0;Except Saved=1;EndTry;')
 
     def test_failed_handler_and_revoked_owner_do_not_leak(self):
-        vm=self.vm()
+        vm=self.vm(allow_extensions=True)
         with self.assertRaises(BSLRuntimeError):vm.execute('Try Raise "one";Except E=ErrorInfo();Raise "two";EndTry;')
         self.assertTrue(vm.execute('ErrorInfo()')._empty)
         vm.register_function('Close',vm.close)
@@ -128,7 +128,7 @@ class DirectErrorInfoTests(unittest.TestCase):
                             calls.append('equality')
                             if mode=='hostile':raise AssertionError('foreign equality')
                             return True
-                    vm=self.vm();vm.register_function(name,MethodType(Custom(),vm))
+                    vm=self.vm(allow_extensions=True);vm.register_function(name,MethodType(Custom(),vm))
                     vm.execute('R='+name+'();Try Raise "real";Except S='+name+'();EndTry;')
                     self.assertEqual(vm.variables['r'],'custom');self.assertEqual(vm.variables['s'],'custom')
                     self.assertEqual(calls,['call','call'])

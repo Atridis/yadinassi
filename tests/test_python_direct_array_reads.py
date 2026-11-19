@@ -9,7 +9,7 @@ from yadinassi import Interpreter
 class ArrayDefiniteReadTests(unittest.TestCase):
     def paired(self, source, install=None):
         # Product observations, not a comparison of an inactive optimizer hook.
-        with closing(Interpreter()) as vm:
+        with closing(Interpreter(allow_extensions=install is not None)) as vm:
             if install:install(vm)
             error=None
             try:vm.execute(source)

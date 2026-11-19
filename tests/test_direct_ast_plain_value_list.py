@@ -5,10 +5,10 @@ from yadinassi.collections.plain_value_list import PlainValueList,PlainValueList
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectPlainValueListTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
     def test_general_default_dynamic_and_four_fields(self):
-        vm=self.vm();vm.register_function('Input',lambda:D(7))
+        vm=self.vm(allow_extensions=True);vm.register_function('Input',lambda:D(7))
         vm.execute('L=New ValueList;Item=L.Add(Input(),"seven",True);Item.Presentation="changed";Item.Value=9;R=L.Get(0).Value;Text=Item.Presentation;N=L.Count();Found=L.FindByID(Item.GetID());')
         self.assertIs(type(vm.variables['l']),PlainValueList)
         item=vm.variables['item'];self.assertIs(type(item),PlainValueListItem)

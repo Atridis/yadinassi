@@ -56,7 +56,7 @@ class DirectBehaviorTests(unittest.TestCase):
         self.assertEqual(vm.variables['r'],5)
 
     def test_error_never_replays_and_preserves_location(self):
-        vm=self.vm();events=[]
+        vm=self.vm(allow_extensions=True);events=[]
         vm.register_function('Touch',lambda:events.append(1))
         with self.assertRaises(BSLRuntimeError) as caught:
             vm.execute('r=0;For i=1 To 2 Do Touch();r=r+1;\nz=1/0;EndDo;','once.bsl')

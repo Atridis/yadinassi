@@ -4,8 +4,8 @@ import unittest
 from yadinassi import Interpreter
 
 class CompiledLifecycleTests(unittest.TestCase):
-    def vm(self):
-        return Interpreter(execution_backend='python-direct')
+    def vm(self, *, allow_extensions=False):
+        return Interpreter(allow_extensions=allow_extensions, execution_backend='python-direct')
 
     def test_repeated_host_routine_calls_return_values(self):
         vm = self.vm()
@@ -15,7 +15,7 @@ class CompiledLifecycleTests(unittest.TestCase):
             self.assertEqual(result, Decimal(value + 2))
 
     def pending_vm(self):
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         signal = vm._scheduler.new_pending()
         vm.register_function('Signal', lambda: signal)
         vm.execute('Async Function F() Return Await Signal(); EndFunction p=F();')
@@ -36,7 +36,7 @@ class CompiledLifecycleTests(unittest.TestCase):
     def test_late_host_callback_child_inherits_strict_scheduler_policy(self):
         from yadinassi.execution.execution_policy import current_backend
         entry_backend = current_backend()
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         signal = vm._scheduler.new_pending()
         vm.register_function('Signal', lambda: signal)
         children = []

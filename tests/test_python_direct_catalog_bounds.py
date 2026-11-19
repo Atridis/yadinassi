@@ -139,7 +139,8 @@ import test_python_direct_transaction_preparation as transaction_fixture
 from yadinassi.db import database_transactions as tx
 
 class DirectCatalogBoundsWriteTests(unittest.TestCase):
-    setUp=main_fixture.DirectCatalogPreparationTests.setUp
+    def setUp(self):
+        main_fixture.DirectCatalogPreparationTests.setUp(self, allow_extensions=True)
 
     def test_selected_standalone_write_budget_failure_never_persists(self):
         with patch('yadinassi.db.catalog.catalog_object_preparation._MAX_STEPS',0),self.assertRaisesRegex(BSLError,'step budget'):

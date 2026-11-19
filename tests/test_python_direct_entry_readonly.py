@@ -10,8 +10,8 @@ from yadinassi.execution.direct.python_direct_services import ServicesBoundary
 
 
 class DirectEntryReadonlyTests(unittest.TestCase):
-    def vm(self, backend='python-direct'):
-        vm=Interpreter(execution_backend=backend);self.addCleanup(vm.close);return vm
+    def vm(self, backend='python-direct', *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions, execution_backend=backend);self.addCleanup(vm.close);return vm
 
     def test_map_structure_properties_catch_error_and_keep_contents(self):
         for constructor in ('New Map', 'New Structure'):
@@ -40,7 +40,7 @@ N=M.Count();'''
         for rhs_fails in (False,True):
             for backend in ('python-direct','compiled-strict'):
                 with self.subTest(rhs_fails=rhs_fails,backend=backend):
-                    vm=self.vm(backend);events=[]
+                    vm=self.vm(backend, allow_extensions=True);events=[]
                     vm.execute('M=New Map;M.Insert("K",1);For Each P In M Do EndDo;')
                     pair=vm.variables['p']
                     def receiver():events.append('receiver');return pair
@@ -55,7 +55,7 @@ N=M.Count();'''
                     self.assertEqual(pair.value,Decimal(1))
 
     def test_closed_lifetime_cannot_be_hidden_as_catchable_readonly(self):
-        vm=self.vm();pair=Entry('K',Decimal(1));vm.variables['p']=pair
+        vm=self.vm(allow_extensions=True);pair=Entry('K',Decimal(1));vm.variables['p']=pair
         def close():vm.close();return Decimal(2)
         vm.register_function('CloseNow',close)
         with self.assertRaises(BoundaryViolation):vm.execute('Try P.Value=CloseNow();Except Caught=True;EndTry;')

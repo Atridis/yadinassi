@@ -29,8 +29,8 @@ def reference(iterations, steps):
 
 
 class DirectScalarPrefixTests(TestCase):
-    def vm(self):
-        vm = Interpreter()
+    def vm(self, *, allow_extensions=False):
+        vm = Interpreter(allow_extensions=allow_extensions)
         self.addCleanup(vm.close)
         return vm
 
@@ -38,7 +38,7 @@ class DirectScalarPrefixTests(TestCase):
         expected = '_constants[0] + _constants[1] + _constants[2] + _constants[3]'
         for text in ('1+2+3+5', 'R=1+2+3+5;', 'R=1+2+3+5;Host();'):
             with self.subTest(text=text):
-                vm = self.vm()
+                vm = self.vm(allow_extensions=True)
                 observed = []
                 vm.register_function('Host', lambda: observed.append(vm.variables['r']))
                 prepared = vm.prepare(text)
@@ -55,7 +55,7 @@ class DirectScalarPrefixTests(TestCase):
         for steps in (2, 6, 12):
             for host_call in ('', 'Host();'):
                 with self.subTest(steps=steps, host=bool(host_call)):
-                    vm = self.vm()
+                    vm = self.vm(allow_extensions=True)
                     published = []
                     vm.register_function('Host', lambda: published.append(vm.variables['r']))
                     prepared = vm.prepare(source(50, steps) + host_call)
@@ -80,7 +80,7 @@ class DirectScalarPrefixTests(TestCase):
 
         counts = []
         for iterations, steps in ((4, 2), (40, 12)):
-            vm = self.vm()
+            vm = self.vm(allow_extensions=True)
             vm.register_function('Host', lambda: None)
             prepared = vm.prepare(source(iterations, steps) + 'Host();')
             before = len(calls)
@@ -90,13 +90,13 @@ class DirectScalarPrefixTests(TestCase):
         self.assertEqual(*counts)
 
     def test_types_after_host_are_not_inferred_from_prefix(self):
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         vm.register_function('Host', lambda: vm.variables.update(r='host'))
         vm.execute('R=1+2+3+5;Host();T=R+"!";')
         self.assertEqual(vm.variables['t'], 'host!')
 
     def test_unproven_suffix_preserves_dynamic_comparison(self):
-        vm = self.vm()
+        vm = self.vm(allow_extensions=True)
         vm.register_function('Host', lambda: vm.variables.update(r=True, v=1))
         vm.execute('R=1+2+3+5;Host();T=(R=V);')
         self.assertIs(vm.variables['t'], False)

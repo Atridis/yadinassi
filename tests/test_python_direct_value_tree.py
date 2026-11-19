@@ -10,8 +10,8 @@ from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.experimental_naked_boundaries import BoundaryViolation
 
 class DirectValueTreeTests(unittest.TestCase):
-    def vm(self):
-        vm=Interpreter();self.addCleanup(vm.close);return vm
+    def vm(self, *, allow_extensions=False):
+        vm=Interpreter(allow_extensions=allow_extensions);self.addCleanup(vm.close);return vm
     def setup_tree(self,vm):
         vm.execute('T=New ValueTree;C=T.Columns.Add("Name");R=T.Rows.Add();R.Name="one";')
         return vm.variables['t'],vm.variables['r']
@@ -51,7 +51,7 @@ class DirectValueTreeTests(unittest.TestCase):
         with self.assertRaises(BSLError):vm.execute('R.Name')
 
     def test_late_argument_mutation_rechecks_before_method(self):
-        vm=self.vm();tree,row=self.setup_tree(vm);events=[]
+        vm=self.vm(allow_extensions=True);tree,row=self.setup_tree(vm);events=[]
         def mutate():
             tree.rows.add=lambda:events.append('hostile');return 0
         vm.register_function('Mutate',mutate)
@@ -67,7 +67,7 @@ class DirectValueTreeTests(unittest.TestCase):
                 self.assertEqual(events,[])
 
     def test_constructor_hooks_checked_before_and_after_arguments(self):
-        vm=self.vm();events=[]
+        vm=self.vm(allow_extensions=True);events=[]
         with patch.object(trees.BSLValueTree,'__init__',lambda *args:events.append('constructor')):
             with self.assertRaises(BoundaryViolation):vm.execute('New ValueTree')
         self.assertEqual(events,[])
@@ -80,7 +80,7 @@ class DirectValueTreeTests(unittest.TestCase):
         self.assertEqual(events,[])
 
     def test_owner_revocation_prevents_method_after_arguments(self):
-        vm=self.vm();tree,row=self.setup_tree(vm)
+        vm=self.vm(allow_extensions=True);tree,row=self.setup_tree(vm)
         vm.register_function('Close',lambda:vm.close() or 0)
         with self.assertRaises(BoundaryViolation):vm.execute('T.Rows.Insert(Close())')
         self.assertEqual(len(tree.rows.items),1)

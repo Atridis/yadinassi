@@ -25,7 +25,7 @@ class DirectUserMessageSecurity(unittest.TestCase):
         self.assertEqual(a.variables['m']._text,'owned');self.assertEqual(seen,[])
 
     def test_registry_mutation_during_argument_denies_before_factory(self):
-        vm=self.vm();seen=[]
+        vm=self.vm(allow_extensions=True);seen=[]
         def change():
             vm.register_type('UserMessage',lambda:seen.append('foreign'));return None
         vm.register_function('Change',change)
@@ -33,7 +33,7 @@ class DirectUserMessageSecurity(unittest.TestCase):
         self.assertEqual(seen,[]);self.assertNotIn('m',vm.variables)
 
     def test_close_during_rhs_prevents_assignment(self):
-        vm=self.vm();vm.execute('M=New UserMessage;M.Text="kept";');message=vm.variables['m']
+        vm=self.vm(allow_extensions=True);vm.execute('M=New UserMessage;M.Text="kept";');message=vm.variables['m']
         vm.register_function('Stop',lambda:vm.close() or 'changed')
         with self.assertRaises(BoundaryViolation):vm.execute('M.Text=Stop();')
         self.assertEqual(message._text,'kept')
