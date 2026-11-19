@@ -47,6 +47,63 @@ def _reject(message):
     raise PythonDirectUnsupported('direct-AST: '+message)
 
 
+def _goto_lists(nodes):
+    """Validate the deliberately narrow direct Goto contract before emission.
+
+    Even unreachable jumps must obey it. The parser already validates label
+    scope; this additional restriction excludes all cross-list transfers.
+    """
+    from .syntax.parser import validate_labels
+    validate_labels(nodes)  # execute_program also accepts caller-owned mutable ASTs.
+    pending=[nodes];found=False
+    while pending:
+        body=pending.pop()
+        labels={node.name.casefold() for node in body if type(node) is bsl.Label}
+        for node in body:
+            kind=type(node)
+            if kind is bsl.Goto:
+                found=True
+                if node.name.casefold() not in labels:
+                    _reject('Goto across statement lists is not supported yet')
+            elif kind is bsl.If:
+                pending.extend(branch for _,branch in node.branches)
+                pending.append(node.otherwise)
+            elif kind is bsl.Try:pending.extend((node.body,node.handler))
+            elif kind in (bsl.For,bsl.ForEach,bsl.While,bsl.Routine):pending.append(node.body)
+    return found
+
+
+def _goto_order(nodes):
+    """Same-list unconditional edges form a prefix and at most one cycle.
+
+    Resolve these edges at compile time, not in an instruction dispatcher.
+    """
+    labels={node.name.casefold():index for index,node in enumerate(nodes) if type(node) is bsl.Label}
+    seen={};order=[];index=0
+    while index<len(nodes) and index not in seen:
+        seen[index]=len(order);order.append(index)
+        node=nodes[index]
+        index=labels[node.name.casefold()] if type(node) is bsl.Goto else index+1
+    split=seen.get(index,len(order))
+    return ([nodes[i] for i in order[:split] if type(nodes[i]) not in (bsl.Goto,bsl.Label)],
+            [nodes[i] for i in order[split:] if type(nodes[i]) not in (bsl.Goto,bsl.Label)],
+            index<len(nodes))
+
+
+def _goto_cycle_check(nodes):
+    # A synthetic while must never capture a BSL loop's break/continue.
+    pending=list(nodes)
+    while pending:
+        node=pending.pop();kind=type(node)
+        if kind in (bsl.Break,bsl.Continue,bsl.Var):
+            _reject('Goto cycle with outer loop control or variable declarations is not supported yet')
+        if kind is bsl.If:
+            pending.extend(node.otherwise)
+            for _,body in node.branches:pending.extend(body)
+        elif kind is bsl.Try:pending.extend(node.body);pending.extend(node.handler)
+        # Real nested loops retain their own break/continue targets.
+
+
 def _fragment_binding(storage):
     return local_binding(lambda:storage.value,lambda value:setattr(storage,'value',value),
                          lambda:local_exists(storage),storage)
@@ -99,21 +156,24 @@ def _native_partial_binding(value):
 
 def _bounds(program):
     # Iterative preflight, not recursive subtree serialization/copying.
-    count=0;pending=[(program,0)]
+    count=0;has_goto=False;has_label=False;pending=[(program,0)]
     while pending:
         value,depth=pending.pop()
         if isinstance(value,bsl.Node):
             count+=1
+            if type(value) is bsl.Goto:has_goto=True
+            elif type(value) is bsl.Label:has_label=True
             if value.token is None or value.token.line<1:_reject('source location is invalid')
             pending.extend((getattr(value,f.name),depth+1) for f in fields(value) if f.name!='token' and not (type(value) is bsl.Literal and f.name=='value'))
         elif type(value) is list or type(value) is tuple:
             pending.extend((item,depth+1) for item in value)
-    return count
+    return count,has_goto,has_label
 
 
 class Emitter:
     def __init__(self,filename,source):
         self.filename=filename;self.source=source;self.constants=[];self.serial=0
+        self.has_goto=False;self.goto_last_expression=None
         self.native_cells=False;self.module_cells=set();self.static_module_names={};self.static_module_kinds={};self.module_boundaries=0;self.range_indices={}
         self.owned_constructors=False;self.configuration_calls=False;self.host_bindings=False;self.catalog_bounds=False;self.source_scopes=False;self.authority=False;self.scalar_routines=False;self.callable_externals=frozenset();self.shadowable=frozenset();self.implicit_shadows=set()
         self.import_names=frozenset();self.require_last_expression=None;self.region_active=False;self.region_ops={};self.region_states={};self.routines={};self.routine_symbols={};self.module_globals=set();self.scope=None;self.source_refs={};self.loop_increments=[];self.required=set();self.visits=0;self.python_nodes=0
@@ -915,6 +975,32 @@ class Emitter:
             if not self.catalog_bounds and type(node.value) is Decimal:return self.literal(node.value!=0,token)
         return self.call('_truth',[self.expr(node)],token)
     def sequence(self,nodes):
+        if self.has_goto and any(type(node) is bsl.Goto for node in nodes):
+            prefix,cycle,cyclic=_goto_order(nodes)
+            result=[]
+            for node in prefix:result.extend(self.statement(node))
+            if cyclic:
+                _goto_cycle_check(cycle)
+                if self.scope is not None:
+                    # Routine-name shadowing uses a compile-time initialized
+                    # fact. Do not freeze a fact that changes on a back edge.
+                    pending=list(cycle)
+                    while pending:
+                        item=pending.pop()
+                        if type(item) is bsl.Name and item.name.casefold() in self.routines and item.name.casefold() not in self.scope['initialized']:
+                            _reject('Goto cycle with possibly uninitialized routine shadow is not supported yet')
+                        if isinstance(item,bsl.Node):pending.extend(getattr(item,f.name) for f in fields(item) if f.name!='token')
+                        elif type(item) in (list,tuple):pending.extend(item)
+                body=[]
+                for node in cycle:body.extend(self.statement(node))
+                token=(cycle or nodes)[0].token
+                condition=self.const(True,token)
+                if self.authority:
+                    check=self.invoke(self.attribute(self.name('_context',token),'checkpoint',token),[],token)
+                    condition=self.node(py.Subscript,token,value=self.node(py.Tuple,token,elts=[check,condition],ctx=py.Load()),slice=self.const(-1,token),ctx=py.Load())
+                result.append(self.node(py.While,token,test=condition,
+                    body=body or [self.node(py.Pass,token)],orelse=[]))
+            return result
         result=[]
         for node in nodes:result.extend(self.statement(node))
         return result
@@ -979,6 +1065,7 @@ class Emitter:
         return result
     def _statement(self,node):
         self.visits+=1;t=node.token;k=type(node)
+        if k is bsl.Label:return []
         if k is bsl.Execute:
             call=self.call('_execute_fragment',[self.expr(node.expression),*self.fragment_arguments(t)],t)
             if self.static_module_names:call=self.module_boundary(call,t)
@@ -1076,7 +1163,9 @@ class Emitter:
                     continue
                 result.append(self.node(py.Expr,t,value=self.invoke(self.attribute(self.name('_initial',t),'setdefault',t),[self.const(name.casefold(),t),self.const(None,t)],t)))
             return result
-        if k is bsl.ExpressionStatement:return [self.node(py.Expr,t,value=self.expr(node.expression,node is self.require_last_expression))]
+        if k is bsl.ExpressionStatement:
+            value=self.expr(node.expression,node is self.require_last_expression)
+            return [self.node(py.Return if self.has_goto and node is self.goto_last_expression else py.Expr,t,value=value)]
         if k is bsl.If:
             branches=[];initialized_paths=[]
             def branch_sequence(body):
@@ -1303,7 +1392,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     program=[node for node in program if type(node) is not bsl.Import and
              (_profile is not None or (type(node) is not bsl.ServerInitializer and
               (type(node) not in (bsl.Var,bsl.Routine) or (node.execution_context=='client' and not getattr(node,'is_dual',False)))))]
-    count=_bounds(program)
+    count,has_goto,has_label=_bounds(program)
+    if has_goto or has_label:_goto_lists(program)
     if not program:
         from .syntax.lexer import Token
         token=nodes[0].token if nodes else Token('EOF','',1,1,source_name or '<строка>','')
@@ -1314,6 +1404,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         lines={node.token.line:node.token.source_line for node in nodes}
         source_text='\n'.join(lines.get(line,'') for line in range(1,max(lines,default=0)+1))
     emitter=Emitter(filename,source_text)
+    emitter.has_goto=has_goto
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
@@ -1363,7 +1454,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
                 if id(stmt) not in direct_vars and any(name.casefold() in conditional_shadow_names for name in stmt.names):
                     _reject('conditional local Var shadowing module storage is unsupported')
                 declarations.update(name.casefold() for name in stmt.names)
-            elif kind not in (bsl.Return,bsl.ExpressionStatement,bsl.Break,bsl.Continue,bsl.Raise,bsl.Execute):_reject('routine control flow outside research subset')
+            elif kind not in (bsl.Return,bsl.ExpressionStatement,bsl.Break,bsl.Continue,bsl.Raise,bsl.Execute,bsl.Label,bsl.Goto):_reject('routine control flow outside research subset')
         parameters={parameter.name.casefold() for parameter in routine.parameters}
         globals_=emitter.module_globals-declarations-parameters
         slots={parameter.name.casefold():emitter.temp() for parameter in routine.parameters}
@@ -1452,7 +1543,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             args=py.arguments(posonlyargs=[],args=[emitter.node(py.arg,token,arg='_new',annotation=None)],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
             prologue.append(emitter.node(py.FunctionDef,token,name=setter,args=args,body=body,decorator_list=[],returns=None,type_comment=None))
         if shadows and has_fragments:_reject('source implicit namespace shadow with Execute/Eval is not integrated')
-        routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
+        routine_end,emitter.region_ops,emitter.region_states=(0,{}, {}) if has_goto or emitter.authority or emitter.source_scopes else _routine_region(routine,emitter.scope)
         emitter.region_active=bool(routine_end)
         region_body=emitter.sequence(routine.body[:routine_end])
         emitter.region_active=False
@@ -1506,14 +1597,16 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             emitter.static_module_names={key:emitter.temp() for key in sorted(names)}
     from .python_direct_collection_regions import analyze,admitted,helpers
     region_end=0
-    if not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:
+    if not has_goto and not emitter.static_module_names and not emitter.routines and not emitter.authority and not emitter.source_scopes:
         region_end,emitter.region_ops,emitter.region_states=analyze(program,opaque_names=emitter.external_names)
     emitter.region_active=bool(region_end)
+    if has_goto and type(program[-1]) is bsl.ExpressionStatement:
+        emitter.goto_last_expression=program[-1]
     body=emitter.sequence(program[:region_end])
     emitter.region_active=False
     body+=emitter.sequence([node for node in program[region_end:] if type(node) is not bsl.Routine])
     if region_end:body.insert(0,emitter.node(py.Assign,t,targets=[emitter.name('_collection_fast',t,True)],value=emitter.const(False,t)))
-    if type(program[-1]) is bsl.ExpressionStatement:
+    if not has_goto and type(program[-1]) is bsl.ExpressionStatement:
         last=body.pop()
         if type(last) is py.Try and emitter.static_module_names:
             last.body[-1]=emitter.node(py.Return,program[-1].token,value=last.body[-1].value);body.append(last)
