@@ -5,6 +5,34 @@ from yadinassi.syntax.parser import parse
 from yadinassi.execution.codegen.native_bare_collections import BareArray, BareStructure, BareMap, BareValueList
 from yadinassi.execution.codegen.native_bare_table import BareTable
 
+class ReferenceRow(list):
+    """Minimal named-write reference; no epochs, indexes or ownership protocol."""
+    def __init__(self, schema, value):
+        super().__init__([value])
+        self.schema = schema
+
+    def set_member(self, name, value):
+        self[self.schema[name]] = value
+
+
+class ReferenceTable:
+    def __init__(self, values):
+        self.schema = {'n': 0}
+        self.rows = [ReferenceRow(self.schema, value) for value in values]
+
+    def get(self, index):
+        return self.rows[index]
+
+    def __iter__(self):
+        return iter(self.rows)
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, index):
+        return self.rows[index]
+
+
 # BSL source, Python source, classes source, fixture kind, result kind, description.
 CASES = {}
 def case(name, bsl, py, cls, fixture, result, note):
@@ -87,11 +115,11 @@ case('method.valuetable.insert', 'For I=0 To N-1 Do A.Insert(0); EndDo; R=A;',
      'for i in range(n):\n    a.insert(0,[None])\nr=a', 'for i in range(n):\n    a.insert(0)\nr=a',
      'table_empty', 'table_null', 'N default one-cell row insertions at zero')
 case('method.valuetable.set', 'For I=0 To N-1 Do A.Get(I).N=I; EndDo; R=A;',
-     'for i in range(n):\n    a[i][columns["n"]]=i\nr=a', 'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a',
-     'table_zero', 'table_ascending', 'N named cell writes; Python resolves the column via a prebuilt schema dictionary on each write')
+     'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a', 'for i in range(n):\n    a.get(i).set_member("n",i)\nr=a',
+     'table_zero', 'table_ascending', 'N named writes; minimal Python Table.get returns rows[index], Row(list).set_member uses shared schema[name]; no epochs/indexes')
 case('method.valuetable.set_positional', 'For I=0 To N-1 Do A.Get(I)[0]=I; EndDo; R=A;',
-     'for i in range(n):\n    a[i][0]=i\nr=a', 'for i in range(n):\n    a.get(i).set(0,i)\nr=a',
-     'table_zero', 'table_ascending', 'N positional cell writes in prefilled one-column table')
+     'for i in range(n):\n    a.get(i)[0]=i\nr=a', 'for i in range(n):\n    a.get(i)[0]=i\nr=a',
+     'table_zero', 'table_ascending', 'N positional writes via a.get(i)[0]=i; minimal Python table; Classes uses the same BareTable as BSL, a translation-only control')
 case('method.valuetable.sort', 'A.Sort("N"); R=A;',
      'a.sort(key=lambda row:row[0])\nr=a', 'a.sort("N")\nr=a',
      'table_reverse', 'table_ascending', 'One ascending named-column sort of N reverse-ordered rows')
@@ -138,7 +166,9 @@ def bind(name, n, layer):
             table = fixture_kind.startswith('table')
             data = ([] if fixture_kind.endswith('empty') else [0]*n if fixture_kind.endswith('zero')
                     else list(reversed(range(n))) if fixture_kind.endswith('reverse') else list(range(n)))
-            if layer == 'python': value = [[i] if table else [i,'',False,None] for i in data]
+            if layer == 'python':
+                value = (ReferenceTable(data) if name in ('method.valuetable.set', 'method.valuetable.set_positional')
+                         else [[i] if table else [i,'',False,None] for i in data])
             else:
                 value = BareTable() if table else BareValueList()
                 if table: value.add_column('N')
@@ -159,8 +189,6 @@ def bind(name, n, layer):
     if layer in ('python','classes'):
         source = py if layer == 'python' else cls
         namespace = {'BareArray': BareArray, 'BareStructure': BareStructure, 'BareMap':BareMap, 'BareValueList':BareValueList, 'BareTable':BareTable}
-        if layer == 'python' and name == 'method.valuetable.set':
-            namespace['columns'] = {'n': 0}
         exec('def run(n,a):\n'+'\n'.join('    '+line for line in source.splitlines())+'\n    return r', namespace)
         function = namespace['run']
         def reset(): reset_fixture()
@@ -175,6 +203,9 @@ def bind(name, n, layer):
             else: bare.execute(vm,program)
             return vm.variables['r']
     def validate(value):
+        if layer == 'python' and name in ('method.valuetable.set', 'method.valuetable.set_positional'):
+            if value is not current[0] or value.schema != {'n': 0} or any(row.schema is not value.schema for row in value.rows):
+                raise AssertionError('Python table shared schema changed')
         if fixture_kind.endswith('read') and snapshot(current[0]) != before[0]:
             raise AssertionError('read workload mutated fixture')
         if fixture_kind.startswith('table') and layer != 'python':

@@ -190,9 +190,12 @@ def summary(report):
              f"Коммит `{report['commit']}`; статусы: {dict(counts)}.",
              'Python = 1×. Короткая серия, общая машина: не гарантия ускорения.', '']
     measured = {(r['case'],r['n'],r['layer']):r for r in report['rows'] if r['status']=='measured'}
-    if any(case == 'method.valuetable.set' for case, _, _ in measured):
-        lines += ['`method.valuetable.set`: Python ищет колонку по имени в словаре схемы на каждой записи. '
-                  '`set_positional` использует готовый индекс. Каждый сценарий делает один проход.', '']
+    if any(case in ('method.valuetable.set', 'method.valuetable.set_positional') for case, _, _ in measured):
+        lines += ['Эталон Python для set/set_positional: минимальная Table с общим словарём схемы и списком строк; '
+                  'Table.get возвращает rows[index], Row(list).set_member пишет self[self.schema[name]]. '
+                  'Нет epoch или индексов. Named: a.get(i).set_member("n",i); positional: a.get(i)[0]=i. '
+                  'Классы positional выполняют тот же a.get(i)[0]=i на BareTable, что и BSL: это контроль трансляции. '
+                  'Подготовка таблиц и полная проверка результата вне таймера. Один проход на сценарий.', '']
     for n in (512,4096):
         lines += [f'### N={n}', '| Сценарий | Python мс | Классы × | Bare с компиляцией × | Готовый bare × | Python/C готового bare |', '|---|---:|---:|---:|---:|---:|']
         for case in CONTRACTS:

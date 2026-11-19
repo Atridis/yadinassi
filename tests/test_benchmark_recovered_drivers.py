@@ -92,10 +92,26 @@ class TableListDriversTests(unittest.TestCase):
             reset, run, validate, source, _ = binding('method.valuetable.'+suffix, 7, 'python')
             tree = ast.parse(source)
             self.assertEqual(sum(isinstance(node, ast.For) for node in ast.walk(tree)), 1)
-            self.assertEqual('columns' in {node.id for node in ast.walk(tree)
-                                           if isinstance(node, ast.Name)}, lookup)
+            self.assertEqual('set_member' in {node.attr for node in ast.walk(tree)
+                                              if isinstance(node, ast.Attribute)}, lookup)
+            self.assertIn('a.get(i)', source)
             reset()
             validate(run())
+
+    def test_minimal_table_shared_schema_and_positional_classes_control(self):
+        from scripts.benchmark_recovered_more import ReferenceTable, CASES
+        for suffix in ('set', 'set_positional'):
+            reset, run, validate, _, _ = binding('method.valuetable.'+suffix, 7, 'python')
+            reset(); table = run(); validate(table)
+            self.assertIs(type(table), ReferenceTable)
+            self.assertEqual(table.rows, [[i] for i in range(7)])
+            self.assertTrue(all(row.schema is table.schema for row in table.rows))
+            table.rows[0].schema = dict(table.schema)
+            with self.assertRaises(AssertionError): validate(table)
+            reset(); validate(run())
+        positional = CASES['method.valuetable.set_positional']
+        self.assertEqual(positional[1], positional[2])
+        self.assertIn('a.get(i)[0]=i', positional[2])
 
     def test_nested_result_corruption_and_reset(self):
         names=('method.valuetable.create','method.valuetable.delete','method.valuetable.insert',
