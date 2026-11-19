@@ -30,7 +30,7 @@ def _unsupported():
 
 
 class _Scope:
-    def __init__(self,app):
+    def __init__(self,app,*,starting=False):
         from yadinassi.configuration.configuration_runtime import ConfigurationApplication
         if type(app) is not ConfigurationApplication:_deny()
         from yadinassi.configuration.configuration_xml import ConfigurationImport
@@ -41,6 +41,8 @@ class _Scope:
         root=app.interpreter
         if type(root) is not Interpreter:_deny()
         self.app,self.root=app,root
+        self.expected_state='starting' if starting else 'running'
+        if starting and app._cli_database is None:_deny()
         self.thread=get_ident()
         self.active=False
         self.token=None
@@ -137,7 +139,7 @@ class _Scope:
         if app is not self.app or not any(owner is item for item in self.owners):_deny()
         root=self.root
         if app.configuration is not self.configuration or self.configuration.common_modules is not self.definition_list:_deny()
-        if (app.interpreter is not root or app.state!='running' or app.side not in (None,'client')
+        if (app.interpreter is not root or app.state!=self.expected_state or app.side not in (None,'client')
                 or root.execution_context!='client' or root.locals is not None
 ):_deny()
         if type(app._modules) is not dict or type(app._definitions) is not dict:_deny()
@@ -302,12 +304,21 @@ def _validate_command(program,app):
 
 
 def execute_command(app,text,source):
-    if _COMMAND_SCOPE.get() is not None or getattr(app.interpreter,'_direct_active',False):_deny()
-    scope=_Scope(app)
     program=parse(text,source,compilation_profile=app.interpreter.compilation_profile)
+    return _execute_program(app,program,text,source)
+
+
+def run_cli_initializer(app,program,text):
+    return _execute_program(app,program,text,'<configuration:Ext/ManagedApplicationModule.bsl>',starting=True)
+
+
+def _execute_program(app,program,text,source,*,starting=False):
+    if _COMMAND_SCOPE.get() is not None or getattr(app.interpreter,'_direct_active',False):_deny()
+    scope=_Scope(app,starting=starting)
     app.check_program(program);referenced=_validate_command(program,app)
     plan=compile_owned(_snapshot(program),source_text=text,source_name=source,
-        external_names=referenced+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True)
+        external_names=referenced+metadata.ROOT_NAMES,authority_checks=True,configuration_calls=True,
+        lean_configuration=app._cli_database is not None)
     owner=app.interpreter
     previous=getattr(owner,"_transaction_activation_allowed",True)
     with _DIRECT_EXECUTION_SCOPE_ABI(owner):

@@ -46,6 +46,15 @@ reports cancellation and exits with code 1; this finite CLI cannot preserve a
 live interactive process after returning. A host that needs cancellable close
 should retain the `ConfigurationApplication` instance instead.
 
+The direct CLI opens the validated SQLite configuration once, runs the managed
+application startup, and sends `-c`, a file, stdin or console commands to that
+same application. It uses the existing bounded configuration command profile
+(client scalar common-module calls and supported metadata reads); activating
+the application does not admit direct catalog writes, transactions, external
+Python extensions or additional client/server crossings. Ordinary BSL
+operations inside an owned CLI module do not emit redundant checks; calls at
+an actual application, database or transport boundary remain checked.
+
 ## Common modules and exports
 
 * Common modules contain only procedure/function declarations, no module

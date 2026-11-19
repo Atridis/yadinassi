@@ -864,7 +864,7 @@ class Emitter:
                         arguments.append(actual)
                     else:arguments.append(self.output_reference(plain,node.callee.token if type(plain) is not bsl.Name or self.external_name(plain.name) else None) if type(plain) in (bsl.Name,bsl.Index,bsl.Attribute) else self.call('_Cell',[self.expr(arg)],node.callee.token))
             function=self.name(self.routine_symbols[routine.name.casefold()],node.callee.token)
-            if self.source_scopes or self.authority:
+            if self.source_scopes or (self.authority and not self.standalone_script):
                 check=self.invoke(self.attribute(self.name('_context',t),'_check',t),[],t)
                 function=self.node(py.Subscript,t,value=self.node(py.Tuple,t,elts=[check,function],ctx=py.Load()),slice=self.const(-1,t),ctx=py.Load())
             keywords=[self.node(py.keyword,node.callee.token,arg='_native_cells',value=self.const(True,node.callee.token))] if self.native_cells else []
@@ -1097,7 +1097,7 @@ class Emitter:
                 for node in cycle:body.extend(self.statement(node))
                 token=(cycle or nodes)[0].token
                 condition=self.const(True,token)
-                if self.authority:
+                if self.authority and not self.standalone_script:
                     check=self.invoke(self.attribute(self.name('_context',token),'checkpoint',token),[],token)
                     condition=self.node(py.Subscript,token,value=self.node(py.Tuple,token,elts=[check,condition],ctx=py.Load()),slice=self.const(-1,token),ctx=py.Load())
                 result.append(self.node(py.While,token,test=condition,
@@ -1120,7 +1120,7 @@ class Emitter:
         value=self.node(py.BinOp,t,left=self.read(name,t),op=py.Add(),right=self.const(1,t))
         return self.assign_name(name,value,t)
     def checkpoint_loop(self,loop,t):
-        if self.authority:
+        if self.authority and not self.standalone_script:
             call=self.invoke(self.attribute(self.name('_context',t),'checkpoint',t),[],t)
             pair=self.node(py.Tuple,t,elts=[call,loop.test],ctx=py.Load())
             loop.test=self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
@@ -1160,7 +1160,7 @@ class Emitter:
         exact=self.call('_plain_append_receiver',[bind],t)
         pair=self.node(py.Tuple,t,elts=[check,exact],ctx=py.Load())
         eligible=exact if self.standalone_script else self.node(py.Subscript,t,value=pair,slice=self.const(-1,t),ctx=py.Load())
-        if self.authority:
+        if self.authority and not self.standalone_script:
             # The metered path keeps its own checkpoint and error order.
             unmetered=self.call('_plain_array_loop',[self.name('_context',t)],t)
             eligible=self.node(py.BoolOp,t,op=py.And(),values=[unmetered,eligible])
@@ -1202,7 +1202,7 @@ class Emitter:
                 admission=self.node(py.BoolOp,t,op=py.And(),values=[safe,admission])
             result.append(self.node(py.Assign,t,targets=[self.name('_collection_fast',t,True)],value=admission))
         emitted=self._statement(node)
-        if self.authority and type(node) in (bsl.For,bsl.While,bsl.ForEach):
+        if self.authority and not self.standalone_script and type(node) in (bsl.For,bsl.While,bsl.ForEach):
             for loop in emitted:
                 if type(loop) is py.While:self.checkpoint_loop(loop,t)
         result.extend(emitted)
@@ -1558,7 +1558,7 @@ def _routine_region(routine, scope):
     return end,operations,states
 
 
-def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False):
+def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_whole_source=False,_require_last_expression=False,_profile=None,_source_scopes=False,_authority=False,_scalar_routines=False,_callable_externals=(),_shadowable=(),_configuration_calls=False,_host_bindings=False,_catalog_bounds=False,_lean_configuration=False):
     """Lower a module; the whole-source wrapper is the default compile entry."""
     if not _native_partial_binding(partial):_reject('noncanonical partial binding is outside research contract')
     if not _native_operator_binding(_NATIVE_ADD,'add') or not _native_operator_binding(_NATIVE_GETITEM,'getitem'):
@@ -1584,7 +1584,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
     emitter.owned_constructors=_profile is not None;emitter.configuration_calls=_configuration_calls;emitter.host_bindings=_host_bindings;emitter.catalog_bounds=_catalog_bounds;emitter.source_scopes=_source_scopes;emitter.authority=_authority;emitter.scalar_routines=_scalar_routines
     emitter.callable_externals=frozenset(_callable_externals);emitter.shadowable=frozenset(_shadowable)
     emitter.import_names=frozenset(imported);t=program[0].token
-    emitter.standalone_script=_profile is None and not _authority and not _source_scopes and not vm.allow_extensions
+    emitter.standalone_script=_lean_configuration or (
+        _profile is None and not _authority and not _source_scopes and not vm.allow_extensions)
     emitter.link_imports=bool(imported) and emitter.standalone_script and (
         vm._family_owner.__dict__.get('_standalone_script') is True)
     if _require_last_expression:emitter.require_last_expression=program[-1]
@@ -1739,7 +1740,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
         if emitter.source_scopes:
             manager=emitter.invoke(emitter.attribute(emitter.name('_context',routine.token),'routine_scope',routine.token),[],routine.token)
             routine_body=[emitter.node(py.With,routine.token,items=[py.withitem(context_expr=manager,optional_vars=None)],body=routine_body)]
-        elif emitter.authority:
+        elif emitter.authority and not emitter.standalone_script:
             check=lambda:emitter.node(py.Expr,routine.token,value=emitter.invoke(emitter.attribute(emitter.name('_context',routine.token),'_check',routine.token),[],routine.token))
             routine_body=[check(),emitter.node(py.Try,routine.token,body=routine_body,handlers=[],orelse=[],finalbody=[check()])]
         emitter.region_ops={};emitter.region_states={}
@@ -1878,14 +1879,15 @@ def compile_module_whole_source(vm,program,nodes,source_text,source_name,*,_expo
 def compile_owned(program, *, source_text, source_name, module_names=(),
                   external_names=(), constructors=(), exports=False, source_scopes=False,
                   authority_checks=False, scalar_routines=False, callable_externals=(),
-                  shadowable_externals=(), require_last_expression=False, configuration_calls=False, host_bindings=False, catalog_bounds=False):
+                  shadowable_externals=(), require_last_expression=False, configuration_calls=False, host_bindings=False, catalog_bounds=False,
+                  lean_configuration=False):
     """Compile an already-authorized side's declarations to Python definitions.
 
     Namespace inputs describe names, not a runtime grant. The owning invocation
     still supplies its checked context and state. No interpreter or old emitter
     is called, and no foreign side is inferred from ambient VM state.
     """
-    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds):
+    for flag in (exports,source_scopes,authority_checks,scalar_routines,require_last_expression,configuration_calls,host_bindings,catalog_bounds,lean_configuration):
         if type(flag) is not bool:raise TypeError('owned compile flags require Boolean')
     for names in (module_names,external_names,constructors,callable_externals,shadowable_externals):
         if type(names) is not tuple or any(type(name) is not str for name in names):
@@ -1894,6 +1896,8 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
         raise ValueError('source capabilities require source scopes')
     if callable_externals and not (source_scopes or host_bindings):raise ValueError('callable externals require an owning binding profile')
     if catalog_bounds and not authority_checks:raise ValueError('catalog bounds require authority checkpoints')
+    if lean_configuration and (not configuration_calls or not authority_checks or source_scopes or host_bindings or catalog_bounds):
+        raise ValueError('lean configuration requires the managed CLI compiler contract')
     nodes=[];pending=list(program)
     while pending:
         node=pending.pop()
@@ -1911,7 +1915,8 @@ def compile_owned(program, *, source_text, source_name, module_names=(),
             _profile=(tuple(module_names),tuple(external_names),tuple(constructors)),
             _source_scopes=source_scopes,_authority=authority_checks,
             _scalar_routines=scalar_routines,_callable_externals=callable_externals,
-            _shadowable=shadowable_externals,_configuration_calls=configuration_calls,_host_bindings=host_bindings,_catalog_bounds=catalog_bounds)
+            _shadowable=shadowable_externals,_configuration_calls=configuration_calls,_host_bindings=host_bindings,_catalog_bounds=catalog_bounds,
+            _lean_configuration=lean_configuration)
     except PythonDirectUnsupported as error:
         if not source_scopes:raise
         from .experimental_naked_collections import UnsupportedNakedSyntax

@@ -6,6 +6,7 @@ execution, scheduler dispatcher, arbitrary host reflection or implicit fallback.
 from decimal import localcontext
 from contextvars import ContextVar
 from types import FunctionType
+from threading import get_ident
 from weakref import WeakKeyDictionary, ref
 
 _PARAMETERS = WeakKeyDictionary()
@@ -51,7 +52,16 @@ def check_owner(app, owner, *, allow_database=False):
             or database_transactions._execution.get() is not None
             or root._scheduler.pending or root._scheduler._active_task is not None):
         raise BoundaryViolation('direct configuration restricted execution is not connected')
-    if owner.database_context is not None and not allow_database:
+    grant=app._cli_database
+    if grant is not None:
+        from yadinassi.runtime import Interpreter
+        database,backend,thread=grant
+        if (type(root) is not Interpreter or type(owner) is not Interpreter
+                or get_ident()!=thread or owner.database_context is not database
+                or root.database_context is not database or database.backend is not backend
+                or backend._closed or root.allow_extensions or owner.allow_extensions):
+            raise BoundaryViolation('managed CLI database owner changed or closed')
+    elif owner.database_context is not None and not allow_database:
         raise BoundaryViolation('direct configuration database execution is not connected')
 
 
@@ -242,7 +252,8 @@ def install(app,owner,program,source_text=''):
     owned=_snapshot(program)
     plan=compile_owned(owned,source_text=source_text,source_name=program[0].token.source if program else '<configuration>',
         external_names=tuple(app._definitions),constructors=('uuid','уникальныйидентификатор'),
-        exports=True,authority_checks=True,configuration_calls=True)
+        exports=True,authority_checks=True,configuration_calls=True,
+        lean_configuration=app._cli_database is not None)
     # Capture original declaration bindings when this exact plan is installed.
     # Never infer a default from later host-mutated declaration metadata.
     plan._configuration_parameters=tuple((node,tuple(

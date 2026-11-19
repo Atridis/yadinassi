@@ -11,6 +11,7 @@ from .types.errors import BSLError, BSLRuntimeError, IncompleteInput
 from .syntax.parser import parse
 from .syntax.preprocessor import COMPILATION_PROFILES
 from .runtime import Interpreter
+from .execution.codegen.experimental_naked_boundaries import BoundaryViolation
 from .types.values import to_string
 
 
@@ -46,7 +47,7 @@ def _has_empty_database_option(arguments: list[str]) -> bool:
                for argument, following in _option_arguments(arguments))
 
 
-def repl(interpreter: Interpreter) -> int:
+def repl(interpreter: Interpreter, *, application=None) -> int:
     interactive = sys.stdin.isatty()
     read_line = input
     if interactive:
@@ -64,7 +65,8 @@ def repl(interpreter: Interpreter) -> int:
         except EOFError:
             if buffer:
                 try:
-                    interpreter.execute(buffer, "<консоль>")
+                    owner = interpreter if application is None else application
+                    owner.execute(buffer, "<консоль>")
                 except BSLError as error:
                     print(error, file=sys.stderr)
                     had_error = True
@@ -95,9 +97,10 @@ def repl(interpreter: Interpreter) -> int:
             had_error = True
             buffer = ""
             continue
-        buffer = ""
+        text, buffer = buffer, ""
         try:
-            result = interpreter.execute_program(program)
+            result = (interpreter.execute_program(program) if application is None
+                      else application.execute(text, "<консоль>"))
             if result is not None:
                 try:
                     presentation = to_string(result)
@@ -372,7 +375,7 @@ def _run_selected(args, parser):
     try:
         if args.module_runtime is not None:
             from .configuration.configuration_runtime import ConfigurationApplication
-            application = ConfigurationApplication.from_database(database_context)
+            application = ConfigurationApplication._from_cli_database(database_context)
             interpreter = application.interpreter
         else:
             interpreter = Interpreter(encoding=args.encoding, database_context=database_context,
@@ -381,10 +384,10 @@ def _run_selected(args, parser):
             # This CLI owns the activation; opening SQLite is not equivalent
             # to allowing embedded Python callbacks between BSL instructions.
             interpreter._standalone_script = True
-    except (BSLError, ValueError, TypeError):
+    except (BSLError, ValueError, TypeError, BoundaryViolation) as error:
         if database_context is not None:
             database_context.close()
-        print("yadinassi: configuration runtime refused", file=sys.stderr)
+        print(f"yadinassi: configuration runtime refused: {error}", file=sys.stderr)
         return 1
     except BackendError as error:
         if database_context is not None:
@@ -394,8 +397,9 @@ def _run_selected(args, parser):
     try:
         if application is not None and not application.start():
             return 0
+        owner = interpreter if application is None else application
         if args.command is not None:
-            interpreter.execute(args.command, "<команда>")
+            owner.execute(args.command, "<команда>")
         elif args.file is not None:
             if args.file == "-":
                 text = sys.stdin.read()
@@ -403,9 +407,9 @@ def _run_selected(args, parser):
             else:
                 text = Path(args.file).read_text(encoding=args.encoding)
                 source = args.file
-            interpreter.execute(text, source)
+            owner.execute(text, source)
         else:
-            result = repl(interpreter)
+            result = repl(interpreter) if application is None else repl(interpreter, application=application)
             if result:
                 return result
             interpreter.ensure_complete()
@@ -420,7 +424,7 @@ def _run_selected(args, parser):
     except BSLError as error:
         print(error, file=sys.stderr)
         return 1
-    except (OSError, UnicodeError, LookupError, ValueError, TypeError) as error:
+    except (OSError, UnicodeError, LookupError, ValueError, TypeError, BoundaryViolation) as error:
         print(f"yadinassi: {error}", file=sys.stderr)
         return 1
     except RecursionError:
@@ -430,7 +434,10 @@ def _run_selected(args, parser):
         print("\nИсполнение прервано.", file=sys.stderr)
         return 130
     finally:
-        interpreter.close()
+        if application is None:
+            interpreter.close()
+        else:
+            application.close(force=True)
         if database_context is not None:
             database_context.close()
     return 0

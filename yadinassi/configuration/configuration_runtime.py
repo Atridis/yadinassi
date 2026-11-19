@@ -5,6 +5,7 @@ here. Metadata selects ordinary compiled module instances and existing calls.
 """
 from contextlib import contextmanager
 from decimal import localcontext
+from threading import get_ident
 from yadinassi.execution.codegen.native_targets import target_context
 
 from .configuration_modules import MODULE_RUNTIME, compile_module, compile_session_module
@@ -13,6 +14,9 @@ from yadinassi.types.errors import BSLError
 from .metadata import BSLCommonModuleMetadataCollection
 from yadinassi.collections.structures import BSLStructure
 from yadinassi.syntax import ast
+
+
+_CLI_DATABASE = object()
 
 
 _RESERVED = frozenset(('sessionparameters', 'параметрысеанса', 'thisobject', 'этотобъект', 'metadata', 'метаданные',
@@ -35,10 +39,16 @@ class ConfigurationApplication:
     """
     def __init__(self, configuration, *, output=print, database_context=None,
                  native_target='windows-8.3.27.2342', side=None, host_services=None,
-                 server_exchange=None, value_selection_service=None):
+                 server_exchange=None, value_selection_service=None, _cli_database=None):
         from yadinassi.runtime import Interpreter
         if type(configuration) is not ConfigurationImport or configuration.module_runtime != MODULE_RUNTIME:
             raise TypeError('an explicitly compiled configuration is required')
+        if _cli_database is not None:
+            from yadinassi.db.database_context import SQLiteDBContext
+            if (_cli_database is not _CLI_DATABASE or type(database_context) is not SQLiteDBContext
+                    or side is not None or host_services is not None or server_exchange is not None
+                    or value_selection_service is not None or output is not print):
+                raise ValueError('invalid managed CLI database activation')
         if side not in (None, 'client', 'server'):
             raise ValueError('invalid application process side')
         if server_exchange is not None and (side != 'client' or not callable(server_exchange)):
@@ -104,8 +114,11 @@ class ConfigurationApplication:
         self.configuration = configuration
         self.state = 'prepared'
         self.last_exit_warning = ''
+        self._cli_database = ((database_context, database_context.backend, get_ident())
+                              if _cli_database is _CLI_DATABASE else None)
         self.interpreter = Interpreter(self._message, native_target=native_target,
-                                       database_context=database_context, allow_extensions=True)
+                                       database_context=database_context,
+                                       allow_extensions=self._cli_database is None)
         from yadinassi.formats.xml.xdto_packages import load_packages
         self._xdto_factory = load_packages(self.interpreter._xdto_factory, configuration.xdto_packages)
         if side == 'server':
@@ -129,8 +142,10 @@ class ConfigurationApplication:
         self._globals = {}
         self._global_names = set()
         self._metadata = BSLCommonModuleMetadataCollection(configuration.common_modules)
-        self._program = compile_module(sources.get('Ext/ManagedApplicationModule.bsl', b''),
-                                       'Ext/ManagedApplicationModule.bsl', 'client', common=False)
+        application_source = sources.get('Ext/ManagedApplicationModule.bsl', b'')
+        self._program = compile_module(application_source, 'Ext/ManagedApplicationModule.bsl',
+                                       'client', common=False)
+        self._program_source = application_source.decode('utf-8-sig')
         self._session_program,self._session_handler=compile_session_module(sources.get('Ext/SessionModule.bsl',b''))
         self._session_owner=None
         from yadinassi.application.session_parameters import BSLSessionParameters
@@ -167,6 +182,12 @@ class ConfigurationApplication:
     def from_business_files(cls, files, **kwargs):
         from .configuration_business_profile import import_business_configuration
         return cls(import_business_configuration(files), **kwargs)
+
+    @classmethod
+    def _from_cli_database(cls, context):
+        if cls is not ConfigurationApplication:
+            raise TypeError('managed CLI requires the built-in application class')
+        return cls.from_database(context, _cli_database=_CLI_DATABASE)
 
     @classmethod
     def from_database(cls, context, **kwargs):
@@ -571,7 +592,15 @@ class ConfigurationApplication:
                 self.state = 'running'
                 return True
             from yadinassi.execution.direct.python_direct_configuration import install
-            install(self, self.interpreter, self._program)
+            if self._cli_database is None:
+                install(self, self.interpreter, self._program)
+            else:
+                from yadinassi.execution.direct.python_direct_configuration_commands import run_cli_initializer
+                declarations = [node for node in self._program if type(node) in (ast.Var, ast.Routine)]
+                initializer = [node for node in self._program if type(node) not in (ast.Var, ast.Routine)]
+                install(self, self.interpreter, declarations, self._program_source)
+                if initializer:
+                    run_cli_initializer(self, initializer, self._program_source)
             cancel = BSLStructure('Cancel', False)
             self._invoke('before_start', ((cancel, 'Cancel'),))
             if type(cancel.get_member('Cancel')) is not bool:
