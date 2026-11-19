@@ -27,6 +27,32 @@ def diagnostic_transport_cases(cases, message, seen_messages):
 
 
 class CLITests(unittest.TestCase):
+    def test_repl_uses_standalone_codegen_with_live_session_state(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from yadinassi.cli import main
+        from yadinassi.execution.direct import python_direct
+
+        program = ('A=New Array;A.Add(2);\n'
+                   'Execute("A[0]=A[0]+3;");\n'
+                   'A[0]+Eval("A[0]")\n/exit\n')
+        generated = []
+        original = python_direct._compile
+
+        def capture(*args, **kwargs):
+            plan = original(*args, **kwargs)
+            generated.append(plan.generated_source)
+            return plan
+
+        with patch.object(sys, 'stdin', StringIO(program)), \
+                patch.object(python_direct, '_compile', side_effect=capture), \
+                redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
+            status = main([])
+        self.assertEqual((status, stdout.getvalue(), stderr.getvalue()), (0, '10\n', ''))
+        self.assertEqual(len(generated), 3)
+        self.assertTrue(all('_context._check()' not in source for source in generated))
+
     def run_cli(self, *arguments, stdin=None, cwd=ROOT):
         environment = os.environ.copy()
         environment["PYTHONPATH"] = os.pathsep.join(

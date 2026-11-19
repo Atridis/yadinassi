@@ -380,8 +380,7 @@ def _run_selected(args, parser):
                                       execution_backend=args.execution_backend)
             # This CLI owns the activation; opening SQLite is not equivalent
             # to allowing embedded Python callbacks between BSL instructions.
-            if args.file is not None or args.command is not None:
-                interpreter._standalone_script = True
+            interpreter._standalone_script = True
     except (BSLError, ValueError, TypeError):
         if database_context is not None:
             database_context.close()
