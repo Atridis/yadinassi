@@ -1173,7 +1173,11 @@ class Emitter:
             reload=self.node(py.Expr,t,value=self.module_sync(t,True))
             clear=self.node(py.Assign,t,targets=[self.name('_dynamic_depth',t,True)],value=self.const(0,t))
             cleanup=self.node(py.If,t,test=self.name('_dynamic_depth',t),body=[reload,clear],orelse=[])
-            result=[self.node(py.Try,t,body=result,handlers=[],orelse=[],finalbody=[cleanup])]
+            # A successful boundary expression already balances its depth and
+            # reloads. Only an exception can interrupt that sequence.
+            rethrow=self.node(py.Raise,t,exc=None,cause=None)
+            recover=self.node(py.ExceptHandler,t,type=None,name=None,body=[cleanup,rethrow])
+            result=[self.node(py.Try,t,body=result,handlers=[recover],orelse=[],finalbody=[])]
         return result
     def _statement(self,node):
         self.visits+=1;t=node.token;k=type(node)
@@ -1738,7 +1742,8 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             value=emitter.invoke(emitter.attribute(emitter.name('_initial',t),'get',t),[emitter.const(key,t),emitter.name('_UNSET',t)],t)
             if key in emitter.module_cells:value=emitter.call('_NativeCell',[value],t)
             load.append(emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=value))
-        depth=emitter.node(py.Assign,t,targets=[emitter.name('_dynamic_depth',t,True)],value=emitter.const(0,t))
+        depth=([emitter.node(py.Assign,t,targets=[emitter.name('_dynamic_depth',t,True)],value=emitter.const(0,t))]
+               if emitter.module_boundaries else [])
         final=[emitter.node(py.Expr,t,value=emitter.module_sync(t,False))]
         sync_helpers=[]
         for reload in ((False,True) if emitter.module_boundaries else (False,)):
@@ -1747,7 +1752,7 @@ def compile_module(vm,program,nodes,source_text,source_name,*,_exports=False,_wh
             helperbody.append(emitter.node(py.Expr,t,value=emitter.module_sync_body(t,reload)))
             args=emitter.node(py.arguments,t,posonlyargs=[],args=[],vararg=None,kwonlyargs=[],kw_defaults=[],kwarg=None,defaults=[])
             sync_helpers.append(emitter.node(py.FunctionDef,t,name='_reload_module' if reload else '_publish_module',args=args,body=helperbody,decorator_list=[],returns=None,type_comment=None))
-        body=[*load,*sync_helpers,depth,emitter.node(py.Try,t,body=body,handlers=[],orelse=[],finalbody=final)]
+        body=[*load,*sync_helpers,*depth,emitter.node(py.Try,t,body=body,handlers=[],orelse=[],finalbody=final)]
         emitter.static_module_names={};emitter.static_module_kinds={}
     initializers=[emitter.node(py.Assign,t,targets=[emitter.name(slot,t,True)],value=emitter.call('_SlotReference',[emitter.name('_initial',t),emitter.const(key,t)],t)) for key,slot in emitter.source_refs.items()]
     if emitter.routines:
