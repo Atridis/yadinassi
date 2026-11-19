@@ -23,7 +23,7 @@ from yadinassi.types.type_qualifiers import (BSLAllowedLength, BSLAllowedSign, B
                               BSLStringQualifiers, _MAX_LENGTH_UNITS, _MAX_NUMBER_DIGITS)
 from yadinassi.types.values import BSLType
 from .plain_table_storage import Schema, TableStorage
-from .value_tables import (BSLCollectionIndex, BSLCollectionIndexes, BSLValueTable,
+from .value_tables import (BSLValueTable,
                            BSLValueTableColumn, BSLValueTableColumnCollection, BSLValueTableRow)
 from .value_trees import (BSLValueTree, BSLValueTreeColumn, BSLValueTreeColumnCollection,
                           BSLValueTreeRow, BSLValueTreeRowCollection)
@@ -34,8 +34,6 @@ MAX_SCHEMA_UNITS = 1_000_000
 MAX_LIST_UNITS = 65_536
 MAX_LIST_NAMES = 4096
 MAX_OWNER_ROWS = 100_000
-MAX_INDEXES = 256
-MAX_INDEX_COLUMNS = 4096
 
 # Aliases are activated only by an endpoint that actually owns that standard
 # property. Two ordinary user fields are otherwise compared by name alone.
@@ -240,7 +238,8 @@ def _row_endpoint(row, budget, target, readable_rows=False):
         if row.rows.tree is not owner or row.rows.parent is not row:
             _invalid('неверный владелец дочерних строк')
     else:
-        _sequence(owner.rows, list, MAX_OWNER_ROWS)
+        if type(owner.rows) is not list:
+            _invalid('недопустимый состав строк таблицы')
         if not any(item is row for item in owner.rows):
             _invalid('строка отсутствует в таблице')
         if type(owner._bounded_slice_read) is not bool:

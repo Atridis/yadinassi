@@ -49,6 +49,18 @@ class PropertyTransferRowTests(unittest.TestCase):
                 self.assertEqual((target.get_member('Text'), target.get_member('Amount')), ('new', D(4)))
                 self.assertEqual(len(target.cells), 2)
 
+    def test_table_fill_accepts_rows_beyond_former_owner_limit(self):
+        table = BSLValueTable()
+        table.columns.add('Amount')
+        first = table.add()
+        first.set(0, D(7))
+        for _ in range(99_999):
+            table.add()
+        last = table.add()
+        fill_property_values(last, first)
+        self.assertEqual(last.get_member('Amount'), D(7))
+        self.assertEqual(table.count(), D(100_001))
+
     def test_both_row_families_to_structure_without_adding_properties(self):
         for family in ('table', 'tree'):
             source = row(family, values=('new', D(7)))
