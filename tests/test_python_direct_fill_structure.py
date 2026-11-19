@@ -13,28 +13,55 @@ from yadinassi.execution.direct.python_direct_fill import fill
 
 
 class DirectFillStructureTests(TestCase):
-    def vm(self,backend='python-direct',target=WINDOWS_8_3_27_2342, *, allow_extensions=False):
-        return Interpreter(allow_extensions=allow_extensions, execution_backend=backend,native_target=target)
+    def vm(self, target=WINDOWS_8_3_27_2342, *, allow_extensions=False):
+        return Interpreter(allow_extensions=allow_extensions, native_target=target)
 
-    def test_compiled_oracle_selection_matrix(self):
-        selections=(None,'A,B','A,Missing,B','Missing,A,B','A,B,Missing',
-                    'A,,B','A, ,B','A, B','A,bad-name,B','B,A,A','')
-        for target,fixed,reverse,exclude,selection in product(
-                (WINDOWS_8_3_27_2342,LINUX_8_3_27_1508), (False,True),
-                (False,True),(False,True),selections):
-            with self.subTest(target=target,fixed=fixed,reverse=reverse,exclude=exclude,selection=selection):
-                results=[]
-                for backend in ('compiled-strict','python-direct'):
-                    vm=self.vm(backend,target)
-                    vm.execute('T=New Structure("A,B,Keep",1,2,3); S=New Structure('+ ('"B,A,Extra",20,10,30' if reverse else '"A,B,Extra",10,20,30')+');')
-                    if fixed:vm.execute('S=New FixedStructure(S);')
-                    vm.variables['selection']=selection
-                    error=None
-                    try:vm.execute('FillPropertyValues(T,S,'+('Undefined,selection' if exclude else 'selection')+');')
-                    except BSLRuntimeError as exc:error=exc.message
-                    vm.execute('Keys="";For Each P In T Do Keys=Keys+P.Key+",";EndDo;')
-                    results.append((error,vm.execute('T.A'),vm.execute('T.B'),vm.execute('T.Keep'),vm.variables['keys']))
-                self.assertEqual(*results)
+    def test_selection_matrix_preserves_errors_partial_writes_and_key_order(self):
+        missing = 'Свойство структуры не найдено: Missing'
+        whitespace = 'Пустые имена или пробелы в списках свойств пока не поддерживаются'
+        invalid = 'Недопустимое имя свойства структуры: bad-name'
+        excluded_missing = 'Отсутствующие исключаемые свойства пока не поддерживаются'
+        copied = (None, 10, 20)
+        unchanged = (None, 1, 2)
+        # Each outcome is (error, A, B). Verified against the pre-removal
+        # compiled executor at 14e1e729; native observations are tested separately.
+        cases = (
+            # Selection       Windows include        Linux include          Either exclude
+            (None,            copied,                copied,                copied),
+            ('A,B',           copied,                copied,                unchanged),
+            ('A,Missing,B',   (missing, 10, 2),      (missing, 1, 20),      (excluded_missing, 1, 2)),
+            ('Missing,A,B',   (missing, 1, 2),       (missing, 10, 20),     (excluded_missing, 1, 2)),
+            ('A,B,Missing',   (missing, 10, 20),     (missing, 1, 2),       (excluded_missing, 1, 2)),
+            ('A,,B',          (whitespace, 10, 2),   copied,               (whitespace, 1, 2)),
+            ('A, ,B',         (whitespace, 10, 2),   (whitespace, 1, 20),   (whitespace, 1, 2)),
+            ('A, B',          (whitespace, 10, 2),   copied,               (whitespace, 1, 2)),
+            ('A,bad-name,B',  (invalid, 10, 2),      (invalid, 1, 20),      (invalid, 1, 2)),
+            ('B,A,A',         copied,                copied,                unchanged),
+            ('',              (whitespace, 1, 2),    unchanged,             (whitespace, 1, 2)),
+        )
+        for target, fixed, reverse, exclude, case in product(
+                (WINDOWS_8_3_27_2342, LINUX_8_3_27_1508),
+                (False, True), (False, True), (False, True), cases):
+            selection, windows, linux, excluded = case
+            expected = excluded if exclude else (linux if target == LINUX_8_3_27_1508 else windows)
+            with self.subTest(target=target, fixed=fixed, reverse=reverse, exclude=exclude, selection=selection):
+                vm = self.vm(target)
+                self.addCleanup(vm.close)
+                source = '"B,A,Extra",20,10,30' if reverse else '"A,B,Extra",10,20,30'
+                vm.execute(f'T=New Structure("A,B,Keep",1,2,3); S=New Structure({source});')
+                if fixed:
+                    vm.execute('S=New FixedStructure(S);')
+                vm.variables['selection'] = selection
+                error = None
+                lists = 'Undefined,selection' if exclude else 'selection'
+                try:
+                    vm.execute(f'FillPropertyValues(T,S,{lists});')
+                except BSLRuntimeError as exc:
+                    error = exc.message
+                vm.execute('Keys="";For Each P In T Do Keys=Keys+P.Key+",";EndDo;')
+                actual = (error, vm.execute('T.A'), vm.execute('T.B'),
+                          vm.execute('T.Keep'), vm.variables['keys'])
+                self.assertEqual(actual, (*expected, 3, 'A,B,Keep,'))
 
     def test_payload_alias_self_copy_and_iteration_version(self):
         vm=self.vm();vm.execute('A=New Array();S=New Structure("a,b",A,Undefined);T=New Structure("A,B",1,2);Alias=T;'
