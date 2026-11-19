@@ -446,7 +446,7 @@ class ComparisonTests(SyntheticFilesystemCase):
         calls = []
         def runner(args, cwd, **limits):
             calls.append(args[-3])
-            self.assertEqual(args[-2:], [full.WINDOWS_TARGET, 'interpreter'])
+            self.assertEqual(args[-2:], [full.WINDOWS_TARGET, 'python-direct'])
             self.assertIn("-I", args)
             self.assertIn("-B", args)
             self.assertTrue(any(value.startswith("pycache_prefix=") for value in args))
@@ -878,7 +878,7 @@ class SemanticComparisonTests(ComparisonTests):
     def semantic_compare(self, *, verdict=None, equal=False, other_diff=False, context=None):
         calls = []
         def runner(args, cwd, **limits):
-            self.assertEqual(args[-2:], [full.LINUX_TARGET, 'interpreter'])
+            self.assertEqual(args[-2:], [full.LINUX_TARGET, 'python-direct'])
             calls.append(Path(args[-3]).stem)
             different = (calls[-1] == "collections" and not equal) or (calls[-1] == "dates" and other_diff)
             return 0, self.payload + b"x" if different else self.payload, b""
@@ -1010,7 +1010,10 @@ class SemanticComparisonTests(ComparisonTests):
 
     def test_comparison_schema_and_aggregate_claims_cannot_disagree(self):
         result, _, _ = self.semantic_compare()
+        self.assertEqual(result['schema'], 4)
+        self.assertEqual(result['execution_backend'], 'python-direct')
         edits = [lambda r:r.update(extra="PRIVATE"),lambda r:r.update(schema=1),
+            lambda r:r.pop("execution_backend"),lambda r:r.update(execution_backend="interpreter"),
             lambda r:r.pop("acceptance_status"),lambda r:r.update(acceptance_status="rejected"),
             lambda r:r.update(status="ok"),lambda r:r.update(native_target=full.WINDOWS_TARGET),
             lambda r:r["cases"][0].update(status="matched"),lambda r:r["cases"][0].update(semantic=None),

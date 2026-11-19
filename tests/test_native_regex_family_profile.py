@@ -96,6 +96,20 @@ class RegexFamilyProfileTests(unittest.TestCase):
         self.assertEqual(result.stderr, b'')
         self.assertEqual(result.stdout, emit())
 
+    def test_child_rejects_retired_backends_before_source_effects(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'probe.bsl'
+            source.write_text('Message("must-not-run");', encoding='utf-8')
+            for backend in ('interpreter', 'hybrid', 'compiled-strict'):
+                with self.subTest(backend=backend):
+                    result = subprocess.run(
+                        [sys.executable, '-I', '-B', '-c', host.FULL.EXECUTE_SCRIPT,
+                         str(ROOT), str(source), host.FULL.LINUX_TARGET, backend],
+                        capture_output=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, b'')
+                    self.assertIn(b'invalid execution backend', result.stderr)
+
     @unittest.skipUnless(os.name == 'posix', 'Native host containment requires POSIX pipes/process groups')
     def test_real_isolated_replay_adapter_matches_its_own_local_observation(self):
         raw = emit()

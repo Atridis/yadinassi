@@ -455,8 +455,8 @@ def validate_report(raw: bytes, *, bootstrap: bool = False, full_suite: bool = F
 
 def run_smoke(temp_root: Path, *, bootstrap: bool = False, full_suite: bool = False,
               export_native_outputs: bool = False, native_target: str = FULL.WINDOWS_TARGET,
-              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, execution_backend: str = "interpreter") -> dict[str, object]:
-    if execution_backend not in ('interpreter', 'compiled-strict') or (execution_backend != 'interpreter' and (not full_suite or preprocessor_measurement)):
+              comparison_mode: str = FULL.BYTE_EXACT, client_probe: bool = False, watchdog_check: bool = False, client_dates: bool = False, client_values: bool = False, client_collections: bool = False, client_numbers: bool = False, client_async: bool = False, preprocessor_measurement: bool = False, execution_backend: str = "python-direct") -> dict[str, object]:
+    if execution_backend != 'python-direct':
         raise SmokeError('execution_backend_profile_unsupported')
     if type(preprocessor_measurement) is not bool or (preprocessor_measurement and (not client_probe or not full_suite)):
         raise SmokeError("preprocessor_measurement_requires_client_full_suite")
@@ -692,7 +692,7 @@ def main(argv: list[str] | None = None) -> int:
                         default=FULL.WINDOWS_TARGET, help="Explicit host interpreter native checkpoint, never auto-detected")
     parser.add_argument("--comparison-mode", choices=(FULL.BYTE_EXACT, FULL.MAP_MODE, FULL.ASSOCIATIVE_MODE),
                         default=FULL.BYTE_EXACT, help="Raw-byte comparison or a reviewed, source-bound associative order contract")
-    parser.add_argument('--execution-backend', choices=('interpreter', 'compiled-strict'), default='interpreter')
+    parser.add_argument('--execution-backend', choices=('python-direct',), default='python-direct')
     parser.add_argument("--output", type=Path, default=Path("native-smoke-report.json"))
     args = parser.parse_args(argv)
     if args.client_preprocessor_measurement and (not args.client_probe or not args.full_suite):

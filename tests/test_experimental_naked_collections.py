@@ -1,45 +1,52 @@
-"""Experiment-only controls; no claim of production BSL equivalence."""
-import os
-import unittest
-from unittest.mock import patch
+"""Live collection contracts, independent of the retired repair experiment."""
 from decimal import Decimal
-from tests.retired_text_compiler import prepare,ENV
+import unittest
+from yadinassi import Interpreter
+from yadinassi.errors import BSLRuntimeError
 
-class NakedCollectionExperimentTests(unittest.TestCase):
-    def setUp(self):
-        self.enabled=patch.dict(os.environ,{ENV:'1'});self.enabled.start();self.addCleanup(self.enabled.stop)
-    def test_explicit_opt_in_on_prepare_and_run(self):
-        program=prepare('x=1;')
-        with patch.dict(os.environ,{ENV:'0'}):
-            with self.assertRaises(RuntimeError):prepare('x=1;')
-            with self.assertRaises(RuntimeError):program.run()
-    def test_direct_python_loop_and_routine(self):
-        p=prepare('Function Inc(Val x) Return x+1;EndFunction a=New Array;For i=1 To 10 Do a.Add(Inc(i));EndDo;s=0;For Each x In a Do s=s+x;EndDo;')
-        self.assertEqual(p.run()['s'],65)
-        for helper in ('_method(', '_new(', '_get(', '_set(', '_iterate('):self.assertNotIn(helper,p.generated_source)
-    def test_partial_state_survives_raw_exception(self):
-        p=prepare('x=1;y=1/0;')
-        with self.assertRaises(ArithmeticError):p.run()
-        self.assertEqual(p.last_state['x'],1)
-    def test_typed_map_keys_independent(self):
-        source='m=New Map;m.Insert(True,1);m.Insert(1,2);n=m.Count();'
-        self.assertEqual(prepare(source).run()['n'],1)
-        self.assertEqual(prepare(source,repairs=('typed_map_keys',)).run()['n'],2)
-        source='a=New Array;m=New Map;m.Insert(a,7);n=m.Get(a);'
-        self.assertEqual(prepare(source,repairs=('typed_map_keys',)).run()['n'],7)
-    def test_index_repair_independent(self):
-        source='a=New Array;a.Add(7);n=a[-1];'
-        self.assertEqual(prepare(source).run()['n'],7)
-        with self.assertRaises(IndexError):prepare(source,repairs=('array_index_contract',)).run()
-        for index in ('True','0.5'):
-            with self.assertRaises((TypeError,ValueError)):
-                prepare('a=New Array;a.Add(7);n=a['+index+'];',repairs=('array_index_contract',)).run()
-    def test_insert_shape_repair_independent(self):
-        source='a=New Array;a.Insert(3,7);n=a.Count();'
-        self.assertEqual(prepare(source).run()['n'],1)
-        self.assertEqual(prepare(source,repairs=('array_insert_shape',)).run()['a'],[None,None,None,Decimal(7)])
-    def test_constructor_bounds_repair_independent(self):
-        self.assertEqual(prepare('a=New Array(-1);').run()['a'],[])
-        with self.assertRaises(ValueError):prepare('a=New Array(-1);',repairs=('constructor_bounds',)).run()
-    def test_unknown_flag_rejected(self):
-        with self.assertRaises(ValueError):prepare('x=1;',repairs=('unrequested_fix',))
+
+class DirectCollectionContracts(unittest.TestCase):
+    def run_source(self, source):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        vm.execute(source)
+        return vm
+
+    def test_direct_loop_and_routine(self):
+        vm = self.run_source('Function Inc(Val x) Return x+1;EndFunction a=New Array;For i=1 To 10 Do a.Add(Inc(i));EndDo;s=0;For Each x In a Do s=s+x;EndDo;')
+        self.assertEqual(vm.variables['s'], Decimal(65))
+
+    def test_partial_state_survives_error(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute('x=1;y=1/0;')
+        self.assertEqual(vm.variables['x'], Decimal(1))
+
+    def test_typed_map_keys_are_distinct(self):
+        vm = self.run_source('m=New Map;m.Insert(True,1);m.Insert(1,2);n=m.Count();a=m.Get(True);b=m.Get(1);')
+        self.assertEqual(tuple(vm.variables[n] for n in ('n','a','b')), (2,1,2))
+
+    def test_collection_map_key_is_identity(self):
+        vm = self.run_source('a=New Array;b=New Array;m=New Map;m.Insert(a,7);n=m.Get(a);other=m.Get(b);')
+        self.assertEqual(vm.variables['n'], Decimal(7))
+        self.assertIsNone(vm.variables['other'])
+
+    def test_invalid_indices_rejected(self):
+        for index in ('-1', 'True', '0.5'):
+            with self.subTest(index=index):
+                vm = Interpreter()
+                self.addCleanup(vm.close)
+                with self.assertRaises(BSLRuntimeError):
+                    vm.execute('a=New Array;a.Add(7);n=a['+index+'];')
+
+    def test_insert_extends_with_undefined(self):
+        vm = self.run_source('a=New Array;a.Insert(3,7);n=a.Count();')
+        self.assertEqual(vm.variables['n'], Decimal(4))
+        self.assertEqual(vm.variables['a'], [None,None,None,Decimal(7)])
+
+    def test_negative_constructor_size_rejected(self):
+        vm = Interpreter()
+        self.addCleanup(vm.close)
+        with self.assertRaises(BSLRuntimeError):
+            vm.execute('a=New Array(-1);')

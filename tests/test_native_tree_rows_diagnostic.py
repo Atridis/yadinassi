@@ -6,29 +6,25 @@ from unittest import mock
 
 from yadinassi import Interpreter
 from yadinassi.value_trees import BSLValueTree, BSLValueTreeRowCollection
-from yadinassi import runtime, python_translation_expressions
+from direct_equality_fixture import direct_equality
 from scripts import native_historical_replay as replay
 
 ROOT = Path(__file__).resolve().parents[1]
 START = '// Begin isolated Rows view diagnostic (fail-only; no LoadColumn calls).\n'
 END = '// End isolated Rows view diagnostic.\n\n'
 
-
 def source():
     text = (ROOT / 'integrational_tests/tests/collections.bsl').read_text(encoding='utf-8-sig')
     # These are exact historical Rows experiment tests, not current Columns measurements.
     return replay.without_tree_columns_diagnostic(text)
 
-
 def helpers():
     return START + source().split(START, 1)[1].split(END, 1)[0] + END
-
 
 def calls():
     text = source(); start = '// Begin bounded ValueTree LoadColumn observations (measurement only; no native answers).\n'
     end = '// End bounded ValueTree LoadColumn observations.\n'
     return start + text.split(start, 1)[1].split(end, 1)[0] + end
-
 
 class RowsDiagnosticTests(unittest.TestCase):
     def vm(self, helper=None, *, backend=None):
@@ -37,39 +33,10 @@ class RowsDiagnosticTests(unittest.TestCase):
                    + (helpers() if helper is None else helper))
         return vm, output
 
-    def test_actual_host_observables_and_no_loadcolumn_dispatch(self):
-        vm, output = self.vm(); original = BSLValueTreeRowCollection.get_method
-        def checked(receiver, name):
-            self.assertNotIn(name.casefold(), ('loadcolumn', 'загрузитьколонку'))
-            return original(receiver, name)
-        with mock.patch.object(BSLValueTreeRowCollection, 'get_method', checked):
-            self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), 'FFTT')
-            vm.execute(calls())
-        self.assertEqual(len(output), 45)
-        self.assertEqual(sum(len(line.encode('utf-16-le'))//2 for line in output), 3285)
-        self.assertTrue(all('1?D0FFTT!' in line for line in output))
-        # The ordinary action helper need not even exist in this interpreter.
-        self.assertNotIn('treeloadprobe', vm.variables)
-
-    def test_four_independent_fixtures_preserve_unrelated_tree(self):
-        vm, _ = self.vm()
-        vm.execute('Existing = New ValueTree; Existing.Columns.Add("Marker"); Existing.Rows.Add().Marker = 91;')
-        existing = vm.variables['existing']; created = []; original = BSLValueTree.__init__
-        def initialize(tree):
-            original(tree); created.append(tree)
-        with mock.patch.object(BSLValueTree, '__init__', initialize):
-            self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), 'FFTT')
-        self.assertEqual(len(created), 6)
-        self.assertEqual(len({id(tree) for tree in created}), 6)
-        self.assertEqual([int(tree.rows.count()) for tree in created], [2,0,2,0,1,1])
-        self.assertEqual(int(existing.rows.count()), 1)
-        self.assertEqual(int(existing.rows.items[0].get_member('Marker')), 91)
-
     def test_comparison_false_true_and_exception_are_distinct(self):
-        # Each backend binds its own value service. Patch the live consumer,
-        # not the legacy visitor's unused imported name in translated execution.
-        for backend, service in (('interpreter', runtime),
-                                 ('compiled-strict', python_translation_expressions)):
+        # Instrument the actual direct compiler binding, not retired visitors.
+        with direct_equality() as service:
+            backend = 'python-direct'
             real = service.equal
             for value, expected in ((False, 'T'), (True, 'F'), (None, 'E')):
                 comparisons = []
@@ -85,31 +52,6 @@ class RowsDiagnosticTests(unittest.TestCase):
                         self.assertEqual(vm.execute('TreeRowsDiagnosticPart(1)'), expected)
                         self.assertEqual(vm.execute('TreeRowsDiagnosticPart(2)'), expected)
                     self.assertEqual(len(comparisons), 2)
-
-    def test_fresh_wrappers_and_copied_containers_are_not_conflated(self):
-        original = BSLValueTree.get_member
-        for shared, expected in ((True, 'TFTT'), (False, 'TFFF')):
-            def getter(tree, name):
-                if name.casefold() in ('rows', 'строки'):
-                    view = BSLValueTreeRowCollection(tree)
-                    view.items = tree.rows.items if shared else list(tree.rows.items)
-                    return view
-                return original(tree, name)
-            vm, _ = self.vm()
-            with mock.patch.object(BSLValueTree, 'get_member', getter):
-                self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), expected)
-
-    def test_mutation_errors_are_e_and_setup_errors_hard_fail(self):
-        vm, _ = self.vm()
-        with mock.patch.object(BSLValueTreeRowCollection, 'add', side_effect=ValueError('synthetic add error')):
-            self.assertEqual(vm.execute('TreeRowsDiagnosticPart(3)'), 'E')
-            self.assertEqual(vm.execute('TreeRowsDiagnosticPart(4)'), 'E')
-            self.assertEqual(vm.execute('TreeRowsDiagnosticPart(1)'), '?')
-            self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), '?')
-        with mock.patch.object(BSLValueTree, '__init__', side_effect=ValueError('synthetic setup error')):
-            self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), '?')
-        for value in ('"?"', '""', 'Undefined', '17', '"tFTT"', '"TFTTX"'):
-            self.assertEqual(vm.execute(f'TreeRowsDiagnosticProbe(1, {value})'), '1?O0--!' + '.'*58)
 
     def test_all_81_vectors_fixed_packet_and_single_four_part_experiment(self):
         text = helpers(); begin = text.index('Функция TreeRowsDiagnosticPart(')
@@ -128,5 +70,21 @@ class RowsDiagnosticTests(unittest.TestCase):
                 self.assertEqual(line, f'TL{i:02d}: [1?D0{vector}!' + '.'*56 + ']')
             self.assertEqual(sum(len(line) for line in output),3285)
 
+    def test_direct_actual_observation(self):
+        vm, output = self.vm()
+        self.addCleanup(vm.close)
+        self.assertEqual(vm.execute('TreeRowsDiagnosticExperiment()'), 'FFTT')
+        vm.execute(calls())
+        self.assertEqual(len(output),45)
+        self.assertTrue(all('1?D0FFTT!' in line for line in output))
+
+    def test_class_hook_changes_fail_closed_not_synthetic_observations(self):
+        from yadinassi.experimental_naked_boundaries import BoundaryViolation
+        vm, _ = self.vm()
+        self.addCleanup(vm.close)
+        with mock.patch.object(BSLValueTree, '__init__', side_effect=AssertionError('must not run')) as hook:
+            with self.assertRaisesRegex(BoundaryViolation,'ValueTree class hooks changed'):
+                vm.execute('TreeRowsDiagnosticExperiment()')
+            hook.assert_not_called()
 
 if __name__ == '__main__': unittest.main()

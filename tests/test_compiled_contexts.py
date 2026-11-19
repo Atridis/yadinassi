@@ -1,95 +1,50 @@
-"""Contextual strict execution: preserved policies, factories and no old visitors.
+"""Live contextual behavior after retirement of the old execution engines.
 
-Existing behavioral oracles are rerun with explicit strict selection. The helper
-asserts every constructed VM uses strict mode, and poisons legacy visit_* routes;
-shared semantic adapters and the original before/after-node policy wrappers remain.
+Original semantic fixtures run under explicit python-direct selection. Profiling
+observes context construction without replacing sealed Interpreter methods.
+Behavioral outcomes, not a retired runner entrypoint, establish execution.
+Unsupported behavior remains an ordinary test failure, not a skipped oracle.
 """
 from contextlib import ExitStack
 import unittest
 from unittest.mock import patch
 
 from yadinassi import Interpreter
-from yadinassi.compiled_backend import Engine
 from yadinassi.execution_policy import execution_backend_policy
 
 
 class StrictContextTests(unittest.TestCase):
     def run_existing(self, names, required_types=(), *, explicit_cli=False):
+        import sys
         from yadinassi import cli
-        from yadinassi.configuration_source_runtime import _SourceInterpreter
-        from yadinassi.form_runtime import _FormInterpreter
-        from yadinassi.form_event_simulation import _EventInterpreter
-        from yadinassi.catalog_object_preparation import _ObjectInterpreter
-        from yadinassi.document_posting import _PostingInterpreter
-        from yadinassi.source_constant_managers import _ValueInterpreter
-        from yadinassi.source_catalog_runtime import _ObjectInterpreter as CatalogInterpreter
-        from yadinassi.source_document_runtime import _ObjectInterpreter as DocumentInterpreter
-        created=[];executed=set();translated=set();engines={}
-        original_init=Interpreter.__init__
-        original_node=Engine.run_node
-        original_python_node=Engine._run_python_node
-        original_python_block=Engine._run_python_block
+        created=[]
+        init_code=Interpreter.__init__.__code__
         original_cli=cli.main
-        def initialize(vm,*args,**kwargs):
-            original_init(vm,*args,**kwargs)
-            created.append((type(vm).__name__,vm.execution_backend))
-            self.assertEqual(vm.execution_backend,'compiled-strict',
-                             'factory silently chose the old interpreter')
-        def run_node(engine,node):
-            executed.add(type(engine.vm).__name__)
-            return (yield from original_node(engine,node))
-        def translated_node(engine,node):
-            translated.add(type(engine.vm).__name__)
-            executed.add(type(engine.vm).__name__)
-            engines[id(engine)]=engine
-            return (yield from original_python_node(engine,node))
-        def translated_block(engine,statements):
-            translated.add(type(engine.vm).__name__)
-            executed.add(type(engine.vm).__name__)
-            engines[id(engine)]=engine
-            return (yield from original_python_block(engine,statements))
-        def old_visitor(*args,**kwargs):
-            raise AssertionError('legacy visit_* used during strict context test')
+        old_profile=sys.getprofile()
+        def profile(frame,event,arg):
+            if event=='return' and frame.f_code is init_code:
+                vm=frame.f_locals['self']
+                created.append((type(vm).__name__,vm.execution_backend))
         def run_cli(args=None):
-            return original_cli(['--execution-backend','compiled-strict',*(args or [])])
+            return original_cli(['--execution-backend','python-direct',*(args or [])])
         with ExitStack() as stack:
-            stack.enter_context(execution_backend_policy('compiled-strict'))
-            stack.enter_context(patch.object(Interpreter,'__init__',initialize))
-            stack.enter_context(patch.object(Engine,'run_node',run_node))
-            stack.enter_context(patch.object(Engine,'_run_python_node',translated_node))
-            stack.enter_context(patch.object(Engine,'_run_python_block',translated_block))
-            for cls in (Interpreter,_SourceInterpreter,_FormInterpreter,_EventInterpreter,
-                        _ObjectInterpreter,_PostingInterpreter,_ValueInterpreter,
-                        CatalogInterpreter,DocumentInterpreter):
-                for name in tuple(cls.__dict__):
-                    if name.startswith('visit_'):
-                        stack.enter_context(patch.object(cls,name,old_visitor))
+            stack.enter_context(execution_backend_policy('python-direct'))
             if explicit_cli:
-                # Discovery may already have bound the CLI function in this module.
                 import test_configuration_runtime
                 stack.enter_context(patch.object(cli,'main',run_cli))
                 stack.enter_context(patch.object(test_configuration_runtime,'main',run_cli))
             suite=unittest.defaultTestLoader.loadTestsFromNames(names)
-            result=unittest.TestResult();suite.run(result)
-        self.assertTrue(result.wasSuccessful(), '\n'.join(
-            f'{test.id()}\n{trace}' for test,trace in result.errors+result.failures))
+            result=unittest.TestResult()
+            try:
+                sys.setprofile(profile)
+                suite.run(result)
+            finally:
+                sys.setprofile(old_profile)
+        self.assertTrue(result.wasSuccessful(), '\n'.join(f'{test.id()}\n{trace}' for test,trace in result.errors+result.failures))
         self.assertTrue(created,'fixture did not construct any VM')
-        self.assertTrue(set(required_types)<=executed,(required_types,executed))
-        # A whole translated body need not call run_node for every expression.
-        # Keep the behavioral suite and poisoned visitors; witness the actual
-        # selected route instead of requiring obsolete per-node dispatch.
-        if Engine.FORCE_PYTHON_TRANSLATION:
-            # Entry attempts alone may reject before executing generated code.
-            translated={type(engine.vm).__name__ for engine in engines.values()
-                        if engine.stats.get('python_translated_blocks',0)>0
-                        or sum(engine.stats.get('python_translated_node_kinds',{}).values())>0}
-            self.assertTrue(set(required_types)<=translated,(required_types,translated))
-            self.assertTrue(engines,'no translated runtime entry observed')
-            for engine in engines.values():
-                self.assertEqual(engine.vm.execution_backend,'compiled-strict')
-                self.assertEqual(engine.stats['interpreter_fallbacks'],0)
-                self.assertEqual(engine.stats.get('plain_adapter_blocks',0),0)
-
+        self.assertTrue(all(mode=='python-direct' for _,mode in created),created)
+        constructed={name for name,_ in created}
+        self.assertTrue(set(required_types)<=constructed,(required_types,constructed))
 
     def test_source_lazy_session_synthetic_actuals(self):
         self.run_existing([
@@ -118,15 +73,13 @@ class StrictContextTests(unittest.TestCase):
 
     def test_known_event_adapter_budget_not_unregistered_subclass(self):
         from yadinassi.form_event_simulation import _EventInterpreter
-        with execution_backend_policy('compiled-strict'):
+        with execution_backend_policy('python-direct'):
             vm=_EventInterpreter(lambda value: None)
             vm._remaining=0
             with self.assertRaisesRegex(ValueError,'execution budget or node'):
                 vm.execute('x=1;')
             self.assertEqual(vm._remaining,-1)
             self.assertNotIn('x',vm.variables)
-            self.assertGreater(vm.compiled_backend_stats['prepared_nodes'],0)
-            self.assertEqual(vm.compiled_backend_stats['interpreter_fallbacks'],0)
 
     def test_object_post_result_budget_and_live_reference(self):
         self.run_existing([

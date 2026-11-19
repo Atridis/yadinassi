@@ -96,48 +96,11 @@ source = Path(sys.argv[2])
 source_text = source.read_text(encoding="utf-8-sig")
 post_create = post_create_requested(source_text)
 options = {"native_target": sys.argv[3]} if len(sys.argv) > 3 else {}
-# Legacy invocations still select the oracle explicitly, independent of UI/API defaults.
-backend = sys.argv[4] if len(sys.argv) > 4 else 'interpreter'
-if (backend not in ('interpreter', 'compiled-strict')
-        or (backend == 'compiled-strict' and len(sys.argv) != 6)
-        or (backend == 'interpreter' and len(sys.argv) not in (3, 4, 5))):
+# Isolated replays execute the current product engine, never a retired oracle.
+backend = sys.argv[4] if len(sys.argv) > 4 else 'python-direct'
+if backend != 'python-direct' or len(sys.argv) not in (3, 4, 5):
     raise ValueError('invalid execution backend')
 options['execution_backend'] = backend
-if backend == 'compiled-strict':
-    from yadinassi.compiled_backend import Engine, CompiledUnsupported
-    counters = []
-    original_engine_init = Engine.__init__
-    def observe_engine(engine, vm):
-        original_engine_init(engine, vm)
-        counters.append(engine.stats)  # Numeric dictionaries, never retain engine/VM.
-    Engine.__init__ = observe_engine
-    violations = {'old_backend_executions': 0, 'strict_rejections': 0}
-    from yadinassi.configuration_source_runtime import _SourceInterpreter
-    from yadinassi.form_runtime import _FormInterpreter
-    from yadinassi.catalog_object_preparation import _ObjectInterpreter
-    from yadinassi.document_posting import _PostingInterpreter
-    from yadinassi.form_event_simulation import _EventInterpreter
-    from yadinassi.source_constant_managers import _ValueInterpreter
-    old_visitors = {(cls, name): method for cls in (Interpreter, _SourceInterpreter, _FormInterpreter, _ObjectInterpreter, _PostingInterpreter, _EventInterpreter, _ValueInterpreter)
-                    for name, method in cls.__dict__.items() if name.startswith('visit_')}
-    def count_legacy(method):
-        def counted(vm, *args, **kwargs):
-            violations['old_backend_executions'] += 1
-            return method(vm, *args, **kwargs)
-        return counted
-    for (cls, name), method in old_visitors.items():
-        setattr(cls, name, count_legacy(method))
-    original_visit = Interpreter._visit
-    def observe_visit(vm, node):
-        if vm.execution_backend != 'compiled-strict':
-            violations['old_backend_executions'] += 1
-        return (yield from original_visit(vm, node))
-    Interpreter._visit = observe_visit
-    original_rejection = CompiledUnsupported.__init__
-    def observe_rejection(error, node, reason):
-        violations['strict_rejections'] += 1
-        original_rejection(error, node, reason)
-    CompiledUnsupported.__init__ = observe_rejection
 interpreter = Interpreter(output=emit, **options)
 if interpreter.execution_backend != backend:
     raise ValueError('execution backend mismatch')
@@ -159,21 +122,6 @@ if post_create:
 # Never publish output acceptance/evidence for a silently changed backend.
 if interpreter.execution_backend != backend:
     raise ValueError('execution backend mismatch')
-if backend == 'compiled-strict':
-    import json
-    keys = ('emitted_executions', 'helper_executions', 'rejected_units', 'unsupported_executions', 'interpreter_fallbacks', 'inline_blocks', 'inline_fragments')
-    observed = {key: sum(stats.get(key, 0) for stats in counters) for key in keys}
-    observed["node_coverage"] = "unobserved" if any(stats.get("node_coverage") == "unobserved" for stats in counters) else "observed"
-    observed["python_sync_routine_calls"] = sum(stats.get("python_sync_routine_calls", 0) for stats in counters)
-    observed["python_translated_blocks"] = sum(stats.get("python_translated_blocks", 0) for stats in counters)
-    observed["python_translated_nodes"] = sum(sum(stats.get("python_translated_node_kinds", {}).values()) for stats in counters)
-    observed["block_executions"] = sum(stats.get("block_executions", 0) for stats in counters)
-    observed["metadata_block_executions"] = sum(stats.get("metadata_block_executions", 0) for stats in counters)
-    observed["plain_adapter_blocks"] = sum(stats.get("plain_adapter_blocks", 0) for stats in counters)
-    observed.update(violations)
-    observed["lowering_variant"] = "python-translation" if Engine.FORCE_PYTHON_TRANSLATION else "inline" if Engine.INLINE else "node-scaffold"
-    observed["fast_inline_enabled"] = bool(Engine.FAST_INLINE)
-    Path(sys.argv[5]).write_text(json.dumps(observed), encoding='utf-8')
 '''
 
 
@@ -1590,13 +1538,11 @@ try:
     runtime = importlib.util.module_from_spec(spec)
     sys.modules["yadinassi"] = runtime
     spec.loader.exec_module(runtime)
-    evidence = []
-    backend = sys.argv[2] if len(sys.argv) > 2 else 'interpreter'
-    actual = module.execute_actual(bodies, execution_backend=backend, execution_evidence=evidence)
+    backend = sys.argv[2] if len(sys.argv) > 2 else 'python-direct'
+    if len(sys.argv) not in (2, 3):
+        raise ValueError('invalid execution backend arguments')
+    actual = module.execute_actual(bodies, execution_backend=backend)
     sys.stdout.buffer.write(module.canonical(actual))
-    if len(sys.argv) > 2:
-        import json
-        Path(sys.argv[3]).write_text(json.dumps(evidence), encoding='utf-8')
 except BaseException:
     sys.exit(1)
 """
@@ -1632,9 +1578,9 @@ def validate_async_comparison(result):
     return result
 
 
-def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child, execution_backend="interpreter"):
+def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes: dict, *, runner=bounded_child, execution_backend="python-direct"):
     """Execute actual-only rows in isolation; compare accepted same-run evidence here."""
-    if execution_backend not in ("interpreter", "compiled-strict"):
+    if execution_backend != "python-direct":
         raise FullError("execution_backend_invalid")
     source_path = "scripts/native_1c_bootstrap/full_suite.py"
     validate_semantic_context(report, APPROVED_IMAGE)
@@ -1656,17 +1602,12 @@ def compare_async_runtime(root: Path, private: Path, report: dict, input_hashes:
         with tempfile.TemporaryDirectory(prefix="async-cache-", dir=private) as cache:
             code, stdout, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                 "-c", ASYNC_EXECUTE_SCRIPT, str(root),
-                *([execution_backend, str(Path(cache) / 'execution.json')]
-                  if execution_backend == 'compiled-strict' else [])], root,
+                execution_backend], root,
                 stdout_limit=ASYNC_ACTUAL_LIMIT, stderr_limit=MAX_STDERR)
-            evidence = (strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536)
-                        if execution_backend == 'compiled-strict' else None)
         if code or stderr:
             raise FullError("async_execution_failed")
         actual = strict_json(stdout, ASYNC_ACTUAL_LIMIT)
         result = contract.compare_observations(template, bodies, native, actual)
-        if execution_backend == 'compiled-strict':
-            result['execution'] = execution_evidence(evidence)
     except FullError:
         raise
     except Exception:
@@ -1708,11 +1649,16 @@ def validate_comparison(comparison: dict, stage3: dict, native_target: str, comp
         raise FullError('comparison_evidence_invalid')
     # Fresh callers bind the requested mode; historical schema-2 reports remain readable.
     if expected_execution_backend is not None:
-        if expected_execution_backend not in ('interpreter', 'compiled-strict'):
+        if expected_execution_backend not in ('python-direct', 'interpreter', 'compiled-strict'):
             raise FullError('execution_backend_invalid')
-        expected_schema = 3 if expected_execution_backend == 'compiled-strict' else 2
+        expected_schema = 4 if expected_execution_backend == 'python-direct' else 3 if expected_execution_backend == 'compiled-strict' else 2
         if type(comparison) is not dict or comparison.get('schema') != expected_schema:
             raise FullError('comparison_evidence_invalid')
+    if comparison.get('schema') == 4:
+        if comparison.get('execution_backend') != 'python-direct':
+            raise FullError('comparison_evidence_invalid')
+        comparison = {k: v for k, v in comparison.items() if k != 'execution_backend'}
+        comparison['schema'] = 2
     if type(comparison) is dict and comparison.get('schema') == 3:
         validate_execution_evidence(comparison.get('execution'), len(SCENARIOS))
         comparison = {k: v for k, v in comparison.items() if k != 'execution'}
@@ -1837,10 +1783,9 @@ def execution_evidence(cases):
 
 
 def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict, *, runner=bounded_child,
-                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None, execution_backend="interpreter") -> dict:
-    if execution_backend not in ('interpreter', 'compiled-strict'):
+                    native_target=WINDOWS_TARGET, comparison_mode=BYTE_EXACT, runtime_evidence=None, execution_backend="python-direct") -> dict:
+    if execution_backend != 'python-direct':
         raise FullError('execution_backend_invalid')
-    compiled_cases = []
     validate_comparison_options(native_target, comparison_mode)
     if comparison_mode in (MAP_MODE, ASSOCIATIVE_MODE):
         validate_semantic_context(runtime_evidence, APPROVED_IMAGE)
@@ -1878,11 +1823,7 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
             with tempfile.TemporaryDirectory(prefix="interpreter-cache-", dir=capture.parent) as cache:
                 code, actual, stderr = runner([sys.executable, "-I", "-B", "-X", "pycache_prefix=" + cache,
                                               "-c", EXECUTE_SCRIPT, str(root), str(source), native_target,
-                                              execution_backend,
-                                              *([str(Path(cache) / 'execution.json')]
-                                                if execution_backend == 'compiled-strict' else [])], root, **limits)
-                if execution_backend == 'compiled-strict':
-                    compiled_cases.append(strict_json(read_regular(Path(cache) / 'execution.json', 65536, nonempty=True), 65536))
+                                              execution_backend], root, **limits)
             if code != 0 or stderr:
                 if interpreter_post_create_failed(source_bytes, code, actual, stderr):
                     raise FullError(POST_CREATE_FAILURE)
@@ -1928,9 +1869,8 @@ def compare_outputs(root: Path, capture: Path, stage3: dict, input_hashes: dict,
               "status": "ok" if all(case["status"] == "matched" for case in records) else "failed",
               "acceptance_status": "accepted" if all(case["acceptance_status"] == "accepted" for case in records) else "rejected",
               "cases": records}
-    if execution_backend == 'compiled-strict':
-        result['schema'] = 3
-        result['execution'] = execution_evidence(compiled_cases)
+    result['schema'] = 4
+    result['execution_backend'] = 'python-direct'
     validate_comparison(result, stage3, native_target, comparison_mode,
                         expected_execution_backend=execution_backend)
     return result

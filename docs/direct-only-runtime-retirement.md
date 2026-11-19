@@ -77,3 +77,27 @@ On the e91a700 base, discovery changes from 16,873 IDs / 61 import placeholders 
 and two restored modules; 27 real cases become collectable. Focused normal/-O:
 27 tests, 24 passes, one failure and two errors in each mode. This is exposed
 remaining migration work, not a green-suite claim.
+
+## Isolated replay child / Python 3.10 regex checkpoint
+
+`native_1c_full_host.EXECUTE_SCRIPT` now selects `python-direct` explicitly, both
+for default invocations and the optional backend argument. Retired engine names
+are rejected before source execution. Compiled engine imports/instrumentation
+were removed from this child; package pinning, backend checks before/after
+execution, stdout bytes and post-create error handling remain unchanged.
+
+The regex family profile's portable child and contained POSIX replay compare
+against their own local observation. They do not establish real-1C parity.
+The follow-up migrates live `native_1c_smoke`/`compare_outputs` and async replay
+to direct-only selection. New full comparison reports use schema 4 with explicit
+`execution_backend: python-direct`; historical schemas 2/3 remain readable, not
+selectable engines. Native bytes, source/provenance checks and semantic acceptance
+rules are unchanged. Async replay returns actual failure observations when direct
+cannot execute a body, never expected/native replacement rows or retired stats.
+
+CPython 3.10 full-host/smoke: 98 tests, 96 pass, two pre-existing historical inverse
+source-identity checks fail. Async: 19 tests, 11 pass, seven failures and one error
+retain baseline identities; direct async execution is not claimed compatible.
+Two new routing/failure-preservation tests pass. Combined optimized run: 119 tests,
+109 pass, nine failures and one error. Historical test_compiled* and evidence
+fixtures are untouched; no failures are skipped or converted to expectedFailure.
