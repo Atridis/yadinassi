@@ -46,15 +46,22 @@ class DirectHTTPTests(unittest.TestCase):
             with self.assertRaises(BSLRuntimeError):vm.execute('C.Get(Q);')
             connect.assert_not_called()
 
-    def test_exact_maps_header_bounds_and_duplicates(self):
+    def test_exact_maps_header_syntax_and_duplicates(self):
         for map_type in (_TypedMap,PlainMap):
             class Child(map_type):pass
             for value in ({},Child()):
                 with self.assertRaises(TypeError):_headers(value)
-            for pairs in ([('x','a'),('X','b')],[(Decimal(1),'x')],[('x','bad\r\n')],[(str(i),'a') for i in range(101)]):
+            for pairs in ([('x','a'),('X','b')],[(Decimal(1),'x')],[('x','bad\r\n')]):
                 value=map_type()
                 for key,item in pairs:value[key]=item
                 with self.assertRaises((TypeError,ValueError)):_headers(value)
+
+    def test_no_private_header_count_or_size_cap(self):
+        value=PlainMap()
+        for index in range(110):
+            value['X-'+str(index)]='x'*700
+        self.assertEqual(len(_headers(value)),110)
+        self.assertEqual(len(_headers(PlainMap({'X-Large':'x'*70000}))[0][1]),70000)
 
     def test_closed_runtime_and_external_access_guard(self):
         vm=Interpreter();vm.execute('C=New HTTPConnection("127.0.0.1",8080);Q=New HTTPRequest("/");')

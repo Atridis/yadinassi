@@ -25,8 +25,6 @@ from .http_security import (BSLOpenSSLSecureConnection, BSLInternetProxy,
                             server_name, authority, credentials, basic_authorization)
 
 MAX_BODY = 8 * 1024 * 1024
-MAX_HEADER_BYTES = 65536
-MAX_HEADERS = 100
 MAX_TARGET = 8192
 MAX_TIMEOUT = 60
 DEFAULT_SOCKET_SECONDS = 30
@@ -54,6 +52,15 @@ def _body(data):
     return data
 
 
+def _validate_header(key, value):
+    if type(key) is not str or type(value) is not str:
+        raise TypeError('HTTP: ожидается Строка')
+    if not _TOKEN.fullmatch(key) or any(ord(c) < 32 or ord(c) == 127 for c in value):
+        raise ValueError('HTTP: недопустимый заголовок')
+    # HTTP/1.1 field values are octets; do not silently UTF8-encode them.
+    if not value.isascii(): value.encode('latin-1')
+
+
 def _headers(value):
     from .experimental_naked_collections import _TypedMap
     from .python_direct_plain_map import PlainMap
@@ -61,36 +68,25 @@ def _headers(value):
     if kind is BSLMap: entries = value._items
     elif kind is PlainMap or kind is _TypedMap: entries = value
     else: raise TypeError('HTTP: заголовки должны быть Соответствием')
-    if len(entries) > MAX_HEADERS: raise ValueError('HTTP: слишком много заголовков')
     pairs = dict.items(entries) if kind is PlainMap else dict.values(entries)
-    result = []; seen = set(); size = 0
+    result = []; seen = set()
     for key, val in pairs:
-        key = _text(key, 256); val = _text(val, MAX_HEADER_BYTES)
-        if not _TOKEN.fullmatch(key) or any(ord(c) < 32 or ord(c) == 127 for c in val):
-            raise ValueError('HTTP: недопустимый заголовок')
-        # HTTP/1.1 field values are octets; do not silently UTF8-encode them.
-        encoded = val.encode('latin-1')
+        _validate_header(key, val)
         lower = key.lower()
         if lower in seen: raise ValueError('HTTP: повторное имя заголовка')
-        seen.add(lower); size += len(key) + len(encoded) + 4
-        if size > MAX_HEADER_BYTES: raise ValueError('HTTP: превышен предел заголовков')
+        seen.add(lower)
         result.append((key, val))
     return result
 
 
 def _header_map(pairs):
     result = BSLMap(); names = {}
-    size = 0
-    if len(pairs) > MAX_HEADERS: raise ValueError('HTTP: слишком много заголовков ответа')
     for key, value in pairs:
-        size += len(key) + len(value) + 4
-        if size > MAX_HEADER_BYTES: raise ValueError('HTTP: превышен предел заголовков ответа')
+        _validate_header(key, value)
         lower = key.lower(); original = names.setdefault(lower, key)
         previous = result.get(original)
         result.insert(original, value if previous is None else value + ', ' + previous)
-    _headers(result)
     return result
-
 
 def _response_framing(pairs):
     lengths = [v for k, v in pairs if k.lower() == 'content-length']
@@ -230,7 +226,7 @@ class BSLHTTPResponse(_FileMethods):
     @classmethod
     def _create(cls, status, headers, body, filename=None):
         result = cls.__new__(cls)
-        result._status, result._headers = status, _header_map(headers)
+        result._status, result._headers = status, headers
         result._body, result._file = _body(body), filename
         return result
     def __str__(self): return 'HTTPОтвет'
@@ -277,6 +273,18 @@ class _ResponseSocket:
     def makefile(self, mode):
         if mode != 'rb': raise ValueError('HTTP reader mode')
         return io.BufferedReader(_DeadlineReader(self.sock, self.deadline))
+
+
+class _ConnectHeaderReader:
+    """Keep strict CONNECT line syntax; http.client owns parser limits."""
+    def __init__(self, stream):
+        self.stream = stream
+
+    def readline(self, limit):
+        line = self.stream.readline(limit)
+        if len(line) < limit and (not line.endswith(b'\r\n') or line[:1] in (b' ', b'\t')):
+            raise ValueError('HTTP: недопустимый ответ CONNECT')
+        return line
 
 
 class _Connection(http.client.HTTPConnection):
@@ -334,21 +342,12 @@ class _Connection(http.client.HTTPConnection):
             version, status, reason = response._read_status()
             if status != 200:
                 raise ValueError('HTTP: прокси отказал в CONNECT')
-            pairs = []; size = 0
-            while True:
-                line = response.fp.readline(MAX_HEADER_BYTES + 1)
-                size += len(line)
-                if size > MAX_HEADER_BYTES or not line.endswith(b'\r\n'):
-                    raise ValueError('HTTP: недопустимый ответ CONNECT')
-                if line == b'\r\n':
-                    break
-                if len(pairs) >= MAX_HEADERS or line[:1] in (b' ', b'\t'):
-                    raise ValueError('HTTP: недопустимые заголовки CONNECT')
-                name, separator, value = line[:-2].partition(b':')
-                if not separator:
-                    raise ValueError('HTTP: недопустимый заголовок CONNECT')
-                pairs.append((name.decode('ascii'), value.strip(b' \t').decode('latin-1')))
-            _header_map(pairs)
+            headers = http.client.parse_headers(_ConnectHeaderReader(response.fp))
+            if headers.defects:
+                raise ValueError('HTTP: недопустимый заголовок CONNECT')
+            pairs = headers.items()
+            for key, value in pairs:
+                _validate_header(key, value)
             if any(key.lower() == 'transfer-encoding' or
                    (key.lower() == 'content-length' and value != '0') for key, value in pairs):
                 raise ValueError('HTTP: тело ответа CONNECT не поддерживается')
@@ -429,8 +428,6 @@ class BSLHTTPConnection(_FileMethods):
             if authentication is not None:
                 headers['Proxy-Authorization'] = authentication
             target = 'http://' + authority(self._host, self._port) + target
-        # Generated headers count toward the same admission budget.
-        _header_map(list(headers.items()))
         filename = None if output_file is None else _text(output_file)
         filename = _stream_path(filename) if filename else None
         seconds = self._timeout or DEFAULT_SOCKET_SECONDS
@@ -440,7 +437,7 @@ class BSLHTTPConnection(_FileMethods):
             connection.request(method,target,body=body,headers=headers)
             response = connection.getresponse()
             try:
-                response_headers = response.getheaders(); _header_map(response_headers)
+                response_headers = response.getheaders(); headers_map = _header_map(response_headers)
                 _response_framing(response_headers)
                 if response.length is not None and response.length>MAX_BODY:
                     raise ValueError('HTTP: превышен предел тела ответа')
@@ -454,7 +451,7 @@ class BSLHTTPConnection(_FileMethods):
                 if response.length not in (None, 0):
                     raise ValueError('HTTP: неполное тело ответа')
                 data=b''.join(chunks)
-                result=BSLHTTPResponse._create(response.status,response_headers,data,filename)
+                result=BSLHTTPResponse._create(response.status,headers_map,data,filename)
             finally: response.close()
         except (OSError,http.client.HTTPException) as error:
             raise ValueError('HTTP: ошибка соединения или ответа') from error
