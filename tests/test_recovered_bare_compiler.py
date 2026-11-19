@@ -47,7 +47,7 @@ class RecoveredBareCompilerTests(unittest.TestCase):
         self.assertEqual(a.find(3),0)
         with self.assertRaises(ValueError): a.find(8)
         with self.assertRaises(TypeError): a.get(Decimal(0))
-        with self.assertRaises(NotImplementedError): BareArray(2,3)
+        self.assertEqual([len(row) for row in BareArray(2,3)], [3,3])
         a.clear(); self.assertEqual(a.count(),0)
     def test_native_strings(self):
         vm=self.run_source('A=ВРег("Straße"); B=НРег("ABC"); C=СокрЛП(" x ");')

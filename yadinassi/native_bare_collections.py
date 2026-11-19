@@ -6,7 +6,8 @@ class BareArray:
     __slots__ = ('_data',)
     def __init__(self, size=0, *dimensions):
         if dimensions:
-            raise NotImplementedError('Multidimensional bare arrays are not implemented')
+            self._data = _array_children(size, dimensions)
+            return
         self._data = [] if size == 0 else [None] * size
     def __len__(self): return len(self._data)
     def __iter__(self): return iter(self._data)
@@ -119,3 +120,8 @@ class BareValueList(list):
     def move(self, index, offset):
         item = list.pop(self, index)
         list.insert(self, index + offset, item)
+
+
+def _array_children(size, dimensions):
+    # The comprehension closure exists only on the multidimensional path.
+    return [BareArray(*dimensions) for _ in range(size)]

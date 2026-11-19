@@ -9,6 +9,7 @@ from decimal import Decimal
 from .syntax import ast as bsl
 from .native_bare_collections import BareArray, BareMap, BareStructure, BareValueList, BareMapEntry
 from .native_bare_table import BareTable
+from .native_bare_structure_ops import bare_fill_property_values
 
 METHODS = {}
 for names, target in [
@@ -142,13 +143,31 @@ class Compiler:
                         unsupported('indexed/member by-reference arguments')
                     else: args.append('[' + self.expr(arg) + ']')
                 return self.routine_name(routine.name) + '(' + ', '.join(args) + ')'
-            args = ', '.join(map(self.expr, node.arguments))
+            arguments = list(map(self.expr, node.arguments))
+            args = ', '.join(arguments)
             if type(node.callee) is bsl.Attribute:
                 method = METHODS.get(node.callee.name.casefold())
                 if method is None: unsupported('method ' + node.callee.name)
                 return '(' + self.expr(node.callee.object) + ').' + method + '(' + args + ')'
             if type(node.callee) is bsl.Name:
                 name = node.callee.name.casefold()
+                if name in ('fillpropertyvalues','заполнитьзначениясвойств'):
+                    if len(arguments) not in (2,3,4):unsupported('FillPropertyValues arity')
+                    return '_fill_properties('+args+')'
+                if name in ('strreplace','стрзаменить'):
+                    if len(arguments)!=3:unsupported('StrReplace arity')
+                    return 'str.replace('+args+')'
+                if name in ('mid','сред'):
+                    if len(arguments) not in (2,3):unsupported('Mid arity')
+                    bounds=node.arguments[1:]
+                    if all(type(n) is bsl.Literal and type(n.value) is Decimal and n.value.as_tuple().exponent==0 for n in bounds):
+                        start=max(0,int(bounds[0].value)-1)
+                        stop='' if len(bounds)==1 else str(start+max(0,int(bounds[1].value)))
+                        return '('+arguments[0]+')['+str(start)+':'+stop+']'
+                    start=self.temp()
+                    lower='('+start+' := max(0, '+arguments[1]+' - 1))'
+                    upper='' if len(arguments)==2 else start+' + max(0, '+arguments[2]+')'
+                    return '('+arguments[0]+')['+lower+':'+upper+']'
                 target = {'strlen':'len','стрдлина':'len', 'upper':'str.upper','врег':'str.upper',
                           'lower':'str.lower','нрег':'str.lower','trimall':'str.strip','сокрлп':'str.strip'}.get(name)
                 if target: return target + '(' + args + ')'
@@ -320,7 +339,7 @@ class Compiler:
         source='\n'.join(['def run(_state):', *loads, *definitions, '    try:', *body,
                          '    finally:', *(publish or ['        pass'])])+'\n'
         namespace={'_BareArray':BareArray,'_BareTable':BareTable,
-                   '_BareMap':BareMap,'_BareMapEntry':BareMapEntry,'_unsupported':unsupported,'_BareStructure':BareStructure,'_BareValueList':BareValueList,'_Decimal':Decimal,'_constants':tuple(self.constants),'_unset':object()}
+                   '_fill_properties':bare_fill_property_values,'_BareMap':BareMap,'_BareMapEntry':BareMapEntry,'_unsupported':unsupported,'_BareStructure':BareStructure,'_BareValueList':BareValueList,'_Decimal':Decimal,'_constants':tuple(self.constants),'_unset':object()}
         exec(compile(source,source_name or '<bare>','exec'),namespace)
         return BarePrepared(namespace['run'],source)
 

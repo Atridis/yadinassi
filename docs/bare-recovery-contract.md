@@ -43,7 +43,7 @@ No legacy resolver or interpreter retry exists in this compiler.
 No imports, host free functions, dynamic execution, SQL/form integration,
 async/server routines, routine defaults/omissions, cross-execution routine
 registry, routine free module variables, indexed/member by-reference arguments,
-multidimensional array construction, table indexes or full column metadata.
+table indexes or full column metadata.
 Whole unmaterialized map-entry argument/byref escapes, iterator reassignment and
 branch-dependent iterator representation are unsupported; assign an entry to an
 alias first. Other unlisted syntax/functions/methods fail explicitly.
@@ -59,3 +59,26 @@ walk. Lifecycle closure is checked once at execution entry. Supplied objects can
 execute their native Python methods; this backend is not authorization isolation.
 There is no broad-suite-green claim. Before a default switch the missing APIs,
 CI scenarios and explicit security/host contract must be reviewed individually.
+
+## Independent multidimensional arrays and direct strings
+
+Array dimensions create independent BareArray children only when dimensions are
+provided. Dimension expressions evaluate once, left to right. Empty construction
+retains its direct single-list branch; native size errors/negative-size behavior
+are not adapted to old contracts.
+
+Mid uses native slicing with a one-based start (nonpositive starts clamp to zero;
+negative counts produce empty strings). Integer literal bounds fold at compile
+time; other arguments evaluate once. StrReplace uses str.replace directly.
+Unicode indexes count Python code points, not UTF-16 units. No implicit string or
+index conversions are performed.
+
+## Basic FillPropertyValues
+
+Only BareStructure→BareStructure is supported. Existing destination/source keys
+are copied; missing keys are skipped, None is copied, payloads are shared, and no
+new destination keys are added. Two arguments allocate no filter sets and split
+no names. Optional include/exclude strings are normalized once per call;
+exclusion wins, unknown names are skipped, empty include copies nothing, and
+None means no filter. Host objects, old/fixed structures and legacy partial-write
+error-order semantics are not adapted.
